@@ -10,6 +10,23 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a250 - 2026-10-08
+
+- **Payees removed; the description is a transaction's only name, as in GnuCash.**
+  Native schema advances from 10 to 11. The 10→11 migration converts each
+  categorization rule that matched a payee into one rule per description key that
+  payee claimed, in the same position; drops `set_payee` from rules and `payee` from
+  transactions; and drops the `payee` table, after the usual verified
+  pre-migration backup. Gone with them: the payee model, engine, service, and
+  verification checks; the GTK Payees dialog and **Actions → Payees…**; the browser
+  **Payees** view and its routes (`/api/payees`, `/api/payee/save`,
+  `/api/payee/delete`, `/api/payees/accept`, `/api/transaction/payee`); `breadsched
+  payees`; the Payee column and picker in both registers and the transaction
+  editor; rule matching by payee and `--add-payee`/`--set-payee`; autocomplete by
+  payee; and the CSV import payee column (`--payee`) with its row note.
+- `match_key` moved to `engine/description_keys`, shared by categorization rules,
+  reimbursement proposals, and entry autocomplete.
+
 ## 0.2.0a249 - 2026-10-08
 
 - **Storage safety tests.** `tests/test_storage_safety.py` covers the code every

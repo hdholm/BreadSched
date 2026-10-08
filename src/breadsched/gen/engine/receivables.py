@@ -36,7 +36,7 @@ from ..lib.receivable import Receivable, ReceivableSplitLink, ReceivableWriteOff
 from ..lib.transaction import Split, Transaction
 from . import split_links
 from .currency import commodity_fraction, reporting_currency_handle
-from .payees import match_key
+from .description_keys import match_key
 
 __all__ = [
     "ReceivableError",
@@ -205,7 +205,7 @@ def propose_reimbursements(
     - it is not already linked to any receivable.
 
     Where a credit fits several receivables, it is proposed only when the payer's
-    name (by ``payees.match_key``) appears in its description and singles one out.
+    name (by ``description_keys.match_key``) appears in its description and singles one out.
     Otherwise it is left alone. Credits are allocated oldest first, so proposals
     never promise more than a receivable's remaining balance. Nothing is written.
     """

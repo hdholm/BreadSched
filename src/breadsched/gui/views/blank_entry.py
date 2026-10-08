@@ -143,7 +143,6 @@ class BlankEntryRow:
         self.transfers: list = []
         #: Every postable, visible account, for split lines (the register's too).
         self.accounts: list = []
-        self.payees: list = []
         self.split_mode = False
         self.lines: list[SplitLine] = []
         self.imbalance = ImbalanceLine()
@@ -157,7 +156,6 @@ class BlankEntryRow:
         self.num.set_width_chars(4)
         self.description = Gtk.Entry(placeholder_text="Description")
         self.description.set_hexpand(True)
-        self.payee = bounded_dropdown(["(no payee)"])
         self.transfer = bounded_dropdown()
         self.transfer.set_hexpand(True)
         self.transfer.set_tooltip_text("Other side of this two-split transaction")
@@ -181,7 +179,6 @@ class BlankEntryRow:
             (self.date, "date"),
             (self.num, "number"),
             (self.description, "description"),
-            (self.payee, "payee"),
             (self.transfer, "transfer account"),
             (self.split_toggle, "split in place"),
             (self.editor_button, "full editor"),
@@ -191,7 +188,6 @@ class BlankEntryRow:
             self.date,
             self.num,
             self.description,
-            self.payee,
             self.transfer,
             self.increase,
             self.decrease,
@@ -203,7 +199,6 @@ class BlankEntryRow:
         # Typing in one amount clears the other, so the direction is never ambiguous.
         self._pair(self.increase, self.decrease)
         self.transfer.connect("notify::selected", self._on_transfer_changed)
-        self.payee.connect("notify::selected", self._on_payee_changed)
         leave = Gtk.EventControllerFocus()
         leave.connect("leave", lambda *_: self.propose())
         self.description.add_controller(leave)
@@ -213,7 +208,6 @@ class BlankEntryRow:
             "Date": self.date,
             "Num": self.num,
             "Description": self.description,
-            "Payee": self.payee,
             "Transfer": self.transfer,
             "Increase": self.increase,
             "Decrease": self.decrease,
@@ -243,7 +237,7 @@ class BlankEntryRow:
     @property
     def fields(self) -> list[Gtk.Widget]:
         """Tab order, which is also the column order, line by line in split mode."""
-        head: list[Gtk.Widget] = [self.date, self.num, self.description, self.payee]
+        head: list[Gtk.Widget] = [self.date, self.num, self.description]
         if self.split_mode:
             body = [widget for line in self.lines for widget in line.fields]
         else:
@@ -463,10 +457,8 @@ class BlankEntryRow:
         if self.editing is not None:
             return self._state() != self._snapshot
         typed = (self.num, self.description, self.increase, self.decrease)
-        return (
-            any(entry.get_text().strip() for entry in typed)
-            or self.payee.get_selected() > 0
-            or any(line.has_input() for line in self.lines)
+        return any(entry.get_text().strip() for entry in typed) or any(
+            line.has_input() for line in self.lines
         )
 
     def clear(self) -> None:
@@ -484,7 +476,6 @@ class BlankEntryRow:
             self.date.set_text(self.default_date().isoformat())
             for entry in (self.num, self.description, self.increase, self.decrease):
                 entry.set_text("")
-            self.payee.set_selected(0)
             if self.transfers:
                 self.transfer.set_selected(0)
         self._transfer_touched = False
@@ -505,9 +496,8 @@ class BlankEntryRow:
         return self._enabled
 
     def populate(self, db, account_handle: str) -> None:
-        """Rebuild the transfer and payee pickers, keeping their selections."""
+        """Rebuild the transfer picker, keeping its selection."""
         chosen_transfer = self.transfer_handle()
-        chosen_payee = self.payee_handle()
         with self._quiet():
             self.transfers = sorted(
                 (
@@ -542,16 +532,6 @@ class BlankEntryRow:
                 self.transfer.set_selected(
                     handles.index(chosen_transfer) if chosen_transfer in handles else 0
                 )
-            self.payees = sorted(db.iter_payees(), key=lambda payee: payee.name.casefold())
-            payee_names = Gtk.StringList()
-            payee_names.append("(no payee)")
-            for payee in self.payees:
-                payee_names.append(payee.name)
-            self.payee.set_model(payee_names)
-            payee_handles = [payee.handle for payee in self.payees]
-            self.payee.set_selected(
-                payee_handles.index(chosen_payee) + 1 if chosen_payee in payee_handles else 0
-            )
         if chosen_transfer not in [account.handle for account in self.transfers]:
             self._transfer_touched = False
 
@@ -576,7 +556,6 @@ class BlankEntryRow:
             self.date.get_text().strip(),
             self.num.get_text().strip(),
             self.description.get_text().strip(),
-            self.payee_handle(),
             self.split_mode,
             None if self.split_mode else self.transfer_handle(),
             None if self.split_mode else self.increase.get_text().strip(),
@@ -605,10 +584,6 @@ class BlankEntryRow:
             self.date.set_text(transaction.post_date.isoformat())
             self.num.set_text(transaction.num)
             self.description.set_text(transaction.description)
-            handles = [payee.handle for payee in self.payees]
-            self.payee.set_selected(
-                handles.index(transaction.payee) + 1 if transaction.payee in handles else 0
-            )
             simple = (
                 mine is not None
                 and len(others) == 1
@@ -636,12 +611,6 @@ class BlankEntryRow:
         index = self.transfer.get_selected()
         if 0 <= index < len(self.transfers):
             return self.transfers[index].handle
-        return None
-
-    def payee_handle(self) -> str | None:
-        index = self.payee.get_selected() - 1
-        if 0 <= index < len(self.payees):
-            return self.payees[index].handle
         return None
 
     def select_transfer(self, handle: str) -> bool:
@@ -698,16 +667,11 @@ class BlankEntryRow:
         if not self._syncing:
             self._transfer_touched = True
 
-    def _on_payee_changed(self, *_args) -> None:
-        if not self._syncing:
-            self.propose()
-
     def propose(self) -> EntrySuggestion | None:
         """Fill fields still at their defaults from the latest matching entry.
 
         Typed input is never overwritten: amounts are filled only while both are
-        empty, the transfer only while the user has not chosen one, and the payee
-        only while none is chosen.
+        empty, and the transfer only while the user has not chosen one.
         """
         view = self.view
         if view.db is None or view.account_handle is None or not self._enabled:
@@ -715,12 +679,10 @@ class BlankEntryRow:
         if self.editing is not None:
             return None  # a stored transaction is never proposed over
         description = self.description.get_text()
-        payee = self.payee_handle()
-        if not description.strip() and payee is None:
+        if not description.strip():
             return None
         result = suggest_entry(
-            view.db,
-            SuggestEntry(description=description, payee=payee, account=view.account_handle),
+            view.db, SuggestEntry(description=description, account=view.account_handle)
         )
         suggestion = result.value.suggestion if result.value is not None else None
         if suggestion is None:
@@ -740,7 +702,6 @@ class BlankEntryRow:
                     lines=[(split.account, split.value, split.memo) for split in suggestion.splits],
                 )
                 filled.append(f"{len(suggestion.splits)} splits")
-            self._propose_payee(suggestion, payee, filled)
             if filled:
                 view.set_entry_status(
                     f"Proposed from {source}: {', '.join(filled)}. Edit anything, then press Enter."
@@ -758,21 +719,11 @@ class BlankEntryRow:
             with self._quiet():
                 target.set_text(abs(suggestion.amount).format())
             filled.append(abs(suggestion.amount).format())
-        self._propose_payee(suggestion, payee, filled)
         if filled:
             view.set_entry_status(
                 f"Proposed from {source}: {', '.join(filled)}. Edit anything, then press Enter."
             )
         return suggestion
-
-    def _propose_payee(self, suggestion, chosen: str | None, filled: list[str]) -> None:
-        if chosen is not None or suggestion.payee is None:
-            return
-        handles = [item.handle for item in self.payees]
-        if suggestion.payee in handles:
-            with self._quiet():
-                self.payee.set_selected(handles.index(suggestion.payee) + 1)
-            filled.append(self.payees[handles.index(suggestion.payee)].name)
 
     def _fail(self, message: str, widget: Gtk.Widget) -> None:
         self.view.set_entry_status(message, error=True)
@@ -913,7 +864,6 @@ class BlankEntryRow:
 
     def _save(self, when: date, description: str, currency: str, splits, amount: Money) -> bool:
         view = self.view
-        payee = self.payee_handle()
         editing = self.editing
         if editing is None:
             # The new entry's repaint scrolls to the end, where the blank row is (#157).
@@ -928,9 +878,6 @@ class BlankEntryRow:
                     # Notes are not shown in the row, so an edit keeps them.
                     notes=editing.notes if editing is not None else "",
                     currency=currency,
-                    payee=payee,
-                    # An edit shows the payee, so choosing none clears it.
-                    set_payee=payee is not None or editing is not None,
                     splits=tuple(splits),
                 ),
                 existing_handle=editing.handle if editing is not None else None,
@@ -1001,7 +948,6 @@ class BlankEntryRow:
         dialog.prefill(
             description=self.description.get_text().strip(),
             num=self.num.get_text().strip(),
-            payee=self.payee_handle(),
             transfer=self.transfer_handle(),
             amount=amount,
             splits=lines,

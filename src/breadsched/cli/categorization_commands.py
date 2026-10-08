@@ -1,4 +1,4 @@
-"""Commands that organize transactions: payees, categorization rules, tags, attachments."""
+"""Commands that organize transactions: categorization rules, tags, attachments."""
 
 from __future__ import annotations
 
@@ -7,9 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from ..gen.db.sqlite import DbSQLite
-from ..gen.lib import (
-    Payee,
-)
 from ..gen.services.categorization import (
     AddRule,
     add_rule,
@@ -18,13 +15,6 @@ from ..gen.services.categorization import (
     list_rules,
     move_rule,
     preview_category_proposals,
-)
-from ..gen.services.payees import (
-    SavePayee,
-    apply_payee_proposals,
-    delete_payee,
-    preview_payee_proposals,
-    save_payee,
 )
 from ..presentation import (
     service_error_message,
@@ -40,16 +30,6 @@ from .common import (
 )
 
 
-def _find_payee(db: DbSQLite, reference: str) -> Payee:
-    payee = db.get_payee(reference)
-    if payee is not None:
-        return payee
-    matches = [item for item in db.iter_payees() if item.name.casefold() == reference.casefold()]
-    if not matches:
-        raise CommandError(f"no payee matches {reference!r}")
-    return matches[0]
-
-
 def _rule_at(db: DbSQLite, position: int) -> str:
     rules = list_rules(db)
     if not 1 <= position <= len(rules):
@@ -59,7 +39,7 @@ def _rule_at(db: DbSQLite, position: int) -> str:
 
 def cmd_rules(args: argparse.Namespace) -> int:
     """List categorization rules, change them, or preview and accept their proposals."""
-    writes = args.add_payee or args.add_description or args.delete or args.move
+    writes = args.add_description or args.delete or args.move
     read_only = not (writes or args.accept or args.accept_all)
     db = open_book(args.book, "r" if read_only else "w")
 
@@ -72,33 +52,23 @@ def cmd_rules(args: argparse.Namespace) -> int:
         return result.value
 
     try:
-        if args.add_payee or args.add_description:
+        if args.add_description:
             if not args.category:
                 raise CommandError("--category is required when adding a rule")
-            payee = _find_payee(db, args.add_payee).handle if args.add_payee else None
-            set_payee = _find_payee(db, args.set_payee).handle if args.set_payee else None
             rule = check(
                 add_rule(
                     db,
                     AddRule(
                         category=resolve_account(db, args.category).handle,
-                        payee=payee,
                         description=args.add_description,
                         position=args.position,
-                        set_payee=set_payee,
                     ),
                 )
             )
             emit(
-                {
-                    "handle": rule.handle,
-                    "category": rule.category,
-                    "key": rule.key,
-                    "set_payee": rule.set_payee,
-                },
+                {"handle": rule.handle, "category": rule.category, "key": rule.key},
                 args,
-                f"Added rule: {rule.key or args.add_payee} -> {name(rule.category)}"
-                + (f", payee {args.set_payee}" if args.set_payee else ""),
+                f"Added rule: {rule.key} -> {name(rule.category)}",
             )
             return 0
         if args.delete:
@@ -119,18 +89,12 @@ def cmd_rules(args: argparse.Namespace) -> int:
             )
             applied = check(apply_category_proposals(db, chosen))
             emit(
-                {
-                    "assigned": applied.assigned,
-                    "unchanged": applied.unchanged,
-                    "payees_set": applied.payees_set,
-                },
+                {"assigned": applied.assigned, "unchanged": applied.unchanged},
                 args,
                 f"Categorized {applied.assigned} transaction(s); "
-                f"{applied.unchanged} left unchanged"
-                + (f"; set the payee on {applied.payees_set}" if applied.payees_set else ""),
+                f"{applied.unchanged} left unchanged",
             )
             return 0
-        payee_names = {payee.handle: payee.name for payee in db.iter_payees()}
         if args.preview:
             proposals = check(preview_category_proposals(db))
             emit(
@@ -142,8 +106,6 @@ def cmd_rules(args: argparse.Namespace) -> int:
                         "amount": item.amount,
                         "category": item.category,
                         "category_name": name(item.category),
-                        "payee": item.payee,
-                        "payee_name": payee_names.get(item.payee or ""),
                         "rule_position": item.rule_position,
                         "conflicts": [
                             {"rule_position": c.rule_position, "category_name": name(c.category)}
@@ -160,12 +122,7 @@ def cmd_rules(args: argparse.Namespace) -> int:
                             item.transaction[:8],
                             item.description,
                             item.amount.format(parens_negative=True),
-                            name(item.category)
-                            + (
-                                f"; payee {payee_names.get(item.payee, item.payee)}"
-                                if item.payee
-                                else ""
-                            ),
+                            name(item.category),
                             str(item.rule_position),
                             "; ".join(
                                 f"rule {c.rule_position}: {name(c.category)}"
@@ -188,13 +145,9 @@ def cmd_rules(args: argparse.Namespace) -> int:
                 {
                     "position": position,
                     "handle": rule.handle,
-                    "payee": rule.payee,
-                    "payee_name": payee_names.get(rule.payee or ""),
                     "key": rule.key,
                     "category": rule.category,
                     "category_name": name(rule.category),
-                    "set_payee": rule.set_payee,
-                    "set_payee_name": payee_names.get(rule.set_payee or ""),
                 }
                 for position, rule in enumerate(rules, start=1)
             ],
@@ -203,126 +156,16 @@ def cmd_rules(args: argparse.Namespace) -> int:
                 [
                     [
                         str(position),
-                        f"payee {payee_names.get(rule.payee or '', rule.payee)}"
-                        if rule.payee
-                        else f"description {rule.key}",
+                        f"description {rule.key}",
                         name(rule.category),
-                        payee_names.get(rule.set_payee, rule.set_payee) if rule.set_payee else "-",
                     ]
                     for position, rule in enumerate(rules, start=1)
                 ],
-                ["rule", "matches", "category", "sets payee"],
+                ["rule", "matches", "category"],
                 right={0},
             )
             if rules
-            else "No categorization rules yet. Add one with --add-description or --add-payee.",
-        )
-        return 0
-    finally:
-        db.close()
-
-
-def cmd_payees(args: argparse.Namespace) -> int:
-    """List payees, add or delete one, or preview and accept payee proposals."""
-    read_only = not (args.add or args.delete or args.accept or args.accept_all)
-    db = open_book(args.book, "r" if read_only else "w")
-    try:
-        if args.add:
-            saved = save_payee(db, SavePayee(args.add, tuple(args.match or ())))
-            if saved.value is None:
-                raise CommandError(service_error_message(saved.errors[0]))
-            payee = saved.value
-            emit(
-                {"handle": payee.handle, "name": payee.name, "match_keys": payee.match_keys},
-                args,
-                f"Saved payee {payee.name} matching {', '.join(payee.match_keys) or 'nothing'}",
-            )
-            return 0
-        if args.delete:
-            payee = _find_payee(db, args.delete)
-            deleted = delete_payee(db, payee.handle)
-            if deleted.value is None:
-                raise CommandError(service_error_message(deleted.errors[0]))
-            emit(
-                {"deleted": payee.handle, "cleared": deleted.value},
-                args,
-                f"Deleted payee {payee.name}; cleared it from {deleted.value} transaction(s)",
-            )
-            return 0
-        if args.accept or args.accept_all:
-            chosen = (
-                None
-                if args.accept_all
-                else tuple(find_transaction(db, reference).handle for reference in args.accept)
-            )
-            applied = apply_payee_proposals(db, chosen)
-            if applied.value is None:
-                raise CommandError(service_error_message(applied.errors[0]))
-            emit(
-                {"assigned": applied.value.assigned, "unchanged": applied.value.unchanged},
-                args,
-                f"Assigned {applied.value.assigned} payee(s); "
-                f"{applied.value.unchanged} left unchanged",
-            )
-            return 0
-        if args.preview:
-            proposals = preview_payee_proposals(db).value or ()
-            emit(
-                [
-                    {
-                        "transaction": item.transaction,
-                        "date": item.when,
-                        "description": item.description,
-                        "payee": item.payee,
-                        "payee_name": item.payee_name,
-                        "key": item.key,
-                    }
-                    for item in proposals
-                ],
-                args,
-                table(
-                    [
-                        [
-                            item.when.isoformat(),
-                            item.transaction[:8],
-                            item.description,
-                            item.payee_name,
-                            item.key,
-                        ]
-                        for item in proposals
-                    ],
-                    ["date", "transaction", "description", "proposed payee", "matched key"],
-                )
-                if proposals
-                else "No transactions without a payee match a payee's description keys.",
-            )
-            return 0
-        counts: dict[str, int] = {}
-        for transaction in db.iter_transactions():
-            if transaction.payee is not None:
-                counts[transaction.payee] = counts.get(transaction.payee, 0) + 1
-        payees = list(db.iter_payees())
-        emit(
-            [
-                {
-                    "handle": payee.handle,
-                    "name": payee.name,
-                    "match_keys": payee.match_keys,
-                    "transactions": counts.get(payee.handle, 0),
-                }
-                for payee in payees
-            ],
-            args,
-            table(
-                [
-                    [payee.name, ", ".join(payee.match_keys), counts.get(payee.handle, 0)]
-                    for payee in payees
-                ],
-                ["payee", "matches", "transactions"],
-                right={2},
-            )
-            if payees
-            else "No payees yet. Add one with --add NAME --match DESCRIPTION.",
+            else "No categorization rules yet. Add one with --add-description.",
         )
         return 0
     finally:
@@ -500,19 +343,13 @@ def cmd_attachments(args: argparse.Namespace) -> int:
 
 
 def register(add: AddCommand) -> None:
-    """Add the payee, rule, tag, and attachment subcommands."""
+    """Add the rule, tag, and attachment subcommands."""
     rules_cmd = add(
         "rules",
         "List categorization rules, change them, or preview and accept their proposals",
     )
     rules_cmd.add_argument("--add-description", metavar="TEXT", help="match this description")
-    rules_cmd.add_argument("--add-payee", metavar="PAYEE", help="match this payee (name or handle)")
     rules_cmd.add_argument("--category", help="income or expense category for a new rule")
-    rules_cmd.add_argument(
-        "--set-payee",
-        metavar="PAYEE",
-        help="with --add-description: also set this payee on a transaction that has none",
-    )
     rules_cmd.add_argument(
         "--position", type=int, help="1-based position for a new rule (default: last)"
     )
@@ -530,30 +367,6 @@ def register(add: AddCommand) -> None:
     )
     rules_cmd.add_argument("--accept-all", action="store_true", help="accept every proposal")
     rules_cmd.set_defaults(func=cmd_rules)
-
-    payees_cmd = add(
-        "payees",
-        "List payees, add or delete one, or preview and accept payee proposals",
-    )
-    payees_cmd.add_argument("--add", metavar="NAME", help="create a payee with this name")
-    payees_cmd.add_argument(
-        "--match",
-        action="append",
-        metavar="DESCRIPTION",
-        help="a description that identifies the new payee (repeatable)",
-    )
-    payees_cmd.add_argument("--delete", metavar="PAYEE", help="delete a payee (name or handle)")
-    payees_cmd.add_argument(
-        "--preview", action="store_true", help="list proposals for transactions without a payee"
-    )
-    payees_cmd.add_argument(
-        "--accept",
-        action="append",
-        metavar="TRANSACTION",
-        help="accept the proposal for one transaction (repeatable; handle or unique prefix)",
-    )
-    payees_cmd.add_argument("--accept-all", action="store_true", help="accept every proposal")
-    payees_cmd.set_defaults(func=cmd_payees)
 
     tags_cmd = add("tags", "List tags, the transactions with one, or set a transaction's tags")
     tags_cmd.add_argument("tag", nargs="?", help="list the transactions with this tag")

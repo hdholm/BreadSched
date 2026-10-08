@@ -66,7 +66,7 @@ def test_a_migration_backup_of_a_portal_book_goes_to_the_data_folder(portal):
     db = DbSQLite()
     db.load(str(book))
     try:
-        assert db.get_metadata("schema_version") == 10
+        assert db.get_metadata("schema_version") == 11
         expected = companions / "schema-6.breadsched.pre-migration-v6.bak"
         assert db.migration_backup == str(expected)
     finally:

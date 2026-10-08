@@ -377,7 +377,6 @@ class ChangeVerification(DbBase):
             "fsa_claim": ("service_date", "provider"),
             "receivable": ("incurred_date", "payer"),
             "reconciliation": ("account", "statement_date", "status"),
-            "payee": ("name",),
             "savings_goal": ("name",),
         }
         defaults: dict[tuple[str, str], Any] = {
@@ -399,7 +398,6 @@ class ChangeVerification(DbBase):
             ("reconciliation", "account"): "",
             ("reconciliation", "statement_date"): "",
             ("reconciliation", "status"): "",
-            ("payee", "name"): "",
             ("savings_goal", "name"): "",
         }
         columns = columns_by_table[table]

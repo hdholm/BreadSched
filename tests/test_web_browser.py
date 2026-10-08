@@ -137,7 +137,7 @@ def test_csv_statement_maps_previews_and_imports(page, served, tmp_path):
     assert panel.locator("tbody tr").count() == 2
     panel.get_by_role("button", name="Preview").click()
     page.wait_for_selector("text=New: 2")
-    assert panel.locator("tbody tr").first.locator("td").nth(6).inner_text() == "New"
+    assert panel.locator("tbody tr").first.locator("td").nth(5).inner_text() == "New"
     assert len(list(db.iter_transactions())) == before
 
     panel.locator("button.primary").click()
@@ -187,50 +187,6 @@ def test_help_opens_the_workflow_section_of_the_guide_in_a_new_tab(page):
     assert "Browser" in guide.locator("[aria-selected=true]").inner_text()
     # The page with the form stays where it was.
     assert page.evaluate("() => document.body.dataset.view") == "Import"
-
-
-def test_payees_view_adds_a_payee_and_accepts_proposals(page, served):
-    db, _httpd = served
-    transaction = next(iter(db.iter_transactions()))
-    page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Payees", exact=True).first.click()
-    page.wait_for_selector("text=No payees yet.")
-
-    page.fill("input[name=name]", "Known payee")
-    page.fill("textarea[name=matches]", transaction.description)
-    page.get_by_role("button", name="Add payee").click()
-    # The accept button is always shown; wait for the refreshed payee table instead.
-    page.wait_for_selector("td:has-text('Known payee')")
-    assert db.get_transaction(transaction.handle).payee is None
-
-    page.get_by_role("button", name="Accept selected").click()
-    page.wait_for_selector("text=No transactions without a payee match a payee.")
-    stored = db.get_transaction(transaction.handle)
-    assert stored.payee is not None
-    assert stored.description == transaction.description
-
-
-def test_register_payee_picker_sets_the_payee(page, served):
-    from breadsched.gen.services.payees import SavePayee, save_payee
-
-    db, _httpd = served
-    payee = save_payee(db, SavePayee("Known payee")).value
-    page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Register", exact=True).first.click()
-    picker = page.locator("select[aria-label^='Payee for']").first
-    picker.wait_for()
-    label = picker.get_attribute("aria-label")
-    description = label.removeprefix("Payee for ")
-
-    picker.select_option(label="Known payee")
-    page.wait_for_selector("text=Payee saved.")
-
-    [transaction] = [
-        item
-        for item in db.iter_transactions()
-        if item.description == description and item.payee == payee.handle
-    ]
-    assert transaction.description == description
 
 
 def test_rules_view_adds_a_rule_and_accepts_its_proposal(page, served, tmp_path):

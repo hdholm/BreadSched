@@ -1,8 +1,8 @@
 """Propose an earlier transaction's accounts and amount while entering a new one.
 
-Typing a description, or choosing a payee, proposes the most recent matching
-transaction. Descriptions match exactly on their normalized key
-(``payees.match_key``), the same comparison payees and categorization rules use,
+Typing a description proposes the most recent matching transaction.
+Descriptions match exactly on their normalized key
+(``description_keys.match_key``), the same comparison categorization rules use,
 so a proposal is always explainable. The proposal is plain data for a form: the
 user edits or ignores it and saves through the ordinary transaction service. It
 never carries reconcile state, source identifiers, notes, planning purposes or
@@ -20,7 +20,7 @@ from datetime import date
 
 from ..db.sqlite import DbSQLite
 from ..engine.currency import reporting_currency_handle
-from ..engine.payees import match_key
+from ..engine.description_keys import match_key
 from ..lib.money import Money
 from .contracts import ServiceError, ServiceResult
 
@@ -30,7 +30,6 @@ __all__ = ["EntryProposal", "EntrySuggestion", "SuggestEntry", "SuggestedSplit",
 @dataclass(frozen=True, slots=True)
 class SuggestEntry:
     description: str = ""
-    payee: str | None = None
     #: The register account being entered into; narrows candidates and fixes
     #: ``transfer_account`` and ``amount``.
     account: str | None = None
@@ -53,7 +52,6 @@ class EntrySuggestion:
     source: str
     when: date
     description: str
-    payee: str | None
     currency: str
     splits: tuple[SuggestedSplit, ...]
     #: The other account of a two-split transaction in ``account``.
@@ -72,10 +70,8 @@ def suggest_entry(db: DbSQLite, query: SuggestEntry) -> ServiceResult[EntryPropo
     """The most recent matching transaction, or ``None`` when nothing matches."""
     if query.account is not None and db.get_account(query.account) is None:
         return ServiceResult.failure(ServiceError("autocomplete.account.not_found", ("account",)))
-    if query.payee is not None and db.get_payee(query.payee) is None:
-        return ServiceResult.failure(ServiceError("payee.not_found", ("payee",)))
     key = match_key(query.description)
-    if not key and query.payee is None:
+    if not key:
         return ServiceResult.success(EntryProposal(None))
     reporting = reporting_currency_handle(db)
     currency = query.currency or reporting
@@ -85,8 +81,7 @@ def suggest_entry(db: DbSQLite, query: SuggestEntry) -> ServiceResult[EntryPropo
             continue
         if (transaction.currency or reporting) != currency:
             continue
-        payee_match = query.payee is not None and transaction.payee == query.payee
-        if not payee_match and (not key or match_key(transaction.description) != key):
+        if match_key(transaction.description) != key:
             continue
         accounts = [db.get_account(split.account) for split in transaction.splits]
         if any(account is None or account.hidden or account.placeholder for account in accounts):
@@ -117,7 +112,6 @@ def suggest_entry(db: DbSQLite, query: SuggestEntry) -> ServiceResult[EntryPropo
                 source=transaction.handle,
                 when=transaction.post_date,
                 description=transaction.description,
-                payee=transaction.payee,
                 currency=transaction.currency or reporting,
                 splits=splits,
                 transfer_account=transfer,

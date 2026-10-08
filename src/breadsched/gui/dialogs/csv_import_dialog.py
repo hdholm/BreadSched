@@ -48,7 +48,6 @@ _FIELDS = (
     "description",
     "memo",
     "category",
-    "payee",
     "currency",
 )
 _GUESSES = {
@@ -60,7 +59,6 @@ _GUESSES = {
     "memo": (r"memo", r"note", r"reference"),
     # Optional columns are suggested only on an exact header match.
     "category": (r"^category$",),
-    "payee": (r"^payee$",),
     "currency": (r"^currency$",),
 }
 
@@ -294,7 +292,6 @@ class CsvImportDialog(BoundedWindow):
             description=self._selected("description"),
             memo=self._selected("memo"),
             category=self._selected("category"),
-            payee=self._selected("payee"),
             currency=self._selected("currency"),
             date_format=self.DATE_FORMATS[self.date_format.get_selected()],  # type: ignore[arg-type]
             number_format=self.NUMBER_FORMATS[self.number_format.get_selected()],  # type: ignore[arg-type]
@@ -336,9 +333,8 @@ class CsvImportDialog(BoundedWindow):
             f"{preview.encoding}, delimiter {preview.delimiter!r}, {preview.date_format} "
             f"dates, {preview.number_format} decimals. {counts}"
         )
-        payees = {payee.handle: payee.name for payee in self.db.iter_payees()}
         self._show_rows(
-            ["Line", "Date", "Amount", "Description", "Category", "Payee", "Status", "Reason"],
+            ["Line", "Date", "Amount", "Description", "Category", "Status", "Reason"],
             [
                 [
                     str(row.line),
@@ -350,9 +346,8 @@ class CsvImportDialog(BoundedWindow):
                         for account, value in row.splits
                     )
                     or (self.db.full_name(row.category) if row.category else ""),
-                    payees.get(row.payee, "") if row.payee else "",
                     _STATUS_LABELS[row.status],
-                    row.reason or row.note,
+                    row.reason,
                 ]
                 for row in preview.rows
             ],

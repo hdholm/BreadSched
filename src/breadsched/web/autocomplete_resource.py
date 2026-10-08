@@ -20,7 +20,6 @@ if TYPE_CHECKING:
 def entry_suggestion(api: Api, query: QueryParams) -> dict[str, object]:
     request = SuggestEntry(
         description=query.text("description") or "",
-        payee=query.text("payee") or None,
         account=query.text("account") or None,
     )
     query.finish()
@@ -36,7 +35,6 @@ def entry_suggestion(api: Api, query: QueryParams) -> dict[str, object]:
             "source": suggestion.source,
             "date": suggestion.when.isoformat(),
             "description": suggestion.description,
-            "payee": suggestion.payee,
             "transfer": suggestion.transfer_account,
             "transfer_name": (
                 db.full_name(suggestion.transfer_account) if suggestion.transfer_account else None

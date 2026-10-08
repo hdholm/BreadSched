@@ -13,8 +13,8 @@ filled with whatever balances the rest — which is what makes the ordinary case
 "pick two accounts, type one number".
 
 A new transaction whose splits are still untouched is proposed from the latest
-earlier entry with the same description or payee (``services.autocomplete``) when
-the description is left or a payee is chosen. The proposal only fills the form,
+earlier entry with the same description (``services.autocomplete``) when the
+description is left. The proposal only fills the form,
 with a visible note; nothing is saved until the user chooses Save, typed splits
 are never replaced, and a transaction being edited is never rewritten.
 
@@ -259,18 +259,6 @@ class TransactionDialog(BoundedWindow):
             self.num_entry.set_text(transaction.num)
         header.attach(Gtk.Label(label="Number", xalign=0), 0, 2, 1, 1)
         header.attach(self.num_entry, 1, 2, 1, 1)
-
-        # The payee is BreadSched's own reference; the description is never rewritten.
-        self.payees = list(db.iter_payees())
-        self.payee_picker = bounded_dropdown(["(no payee)", *(payee.name for payee in self.payees)])
-        current = transaction.payee if transaction is not None else None
-        handles = [payee.handle for payee in self.payees]
-        if current in handles:
-            self.payee_picker.set_selected(handles.index(current) + 1)
-        header.attach(Gtk.Label(label="Payee", xalign=0), 2, 2, 1, 1)
-        header.attach(self.payee_picker, 3, 2, 1, 1)
-        if transaction is None:
-            self.payee_picker.connect("notify::selected", lambda *_: self.propose_from_entry())
 
         self.notes_view = Gtk.TextView()
         self.notes_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
@@ -579,7 +567,6 @@ class TransactionDialog(BoundedWindow):
         *,
         description: str = "",
         num: str = "",
-        payee: str | None = None,
         transfer: str | None = None,
         amount: Money | None = None,
         splits: list[tuple[str | None, Money | None, str]] | None = None,
@@ -595,9 +582,6 @@ class TransactionDialog(BoundedWindow):
             return
         self.description_entry.set_text(description)
         self.num_entry.set_text(num)
-        handles = [item.handle for item in self.payees]
-        if payee in handles:
-            self.payee_picker.set_selected(handles.index(payee) + 1)
         accounts = [account.handle for account in self.accounts]
         if splits:
             # In-place split lines (#158 slice 2) carry over one editor row each.
@@ -616,7 +600,7 @@ class TransactionDialog(BoundedWindow):
         if amount is not None:
             here.amount.set_text(str(amount.to_decimal()))
             other.amount.set_text(str((-amount).to_decimal()))
-        elif description or payee is not None:
+        elif description:
             self.propose_from_entry()
         self.revalidate()
 
@@ -628,12 +612,10 @@ class TransactionDialog(BoundedWindow):
             return None  # an existing transaction is never rewritten
         if any(e.amount.get_text().strip() or e.memo.get_text().strip() for e in self.splits):
             return None  # never overwrite what the user typed
-        payee = self._chosen_payee()
         result = suggest_entry(
             self.db,
             SuggestEntry(
                 description=self.description_entry.get_text(),
-                payee=payee,
                 account=self.default_account,
                 currency=transaction_currency(self.db),
             ),
@@ -652,10 +634,6 @@ class TransactionDialog(BoundedWindow):
             editor.account.set_selected(handles.index(split.account))
             editor.memo.set_text(split.memo)
             editor.amount.set_text(str(split.value.to_decimal()))
-        if payee is None and suggestion.payee is not None:
-            payees = [item.handle for item in self.payees]
-            if suggestion.payee in payees:
-                self.payee_picker.set_selected(payees.index(suggestion.payee) + 1)
         self.proposal_note.set_text(
             f"Proposed from {suggestion.when.isoformat()} “{suggestion.description}”. "
             "Edit anything before saving."
@@ -780,18 +758,12 @@ class TransactionDialog(BoundedWindow):
                 notes=self.notes_view.get_buffer().get_text(notes_start, notes_end, True).strip(),
                 currency=currency,
                 splits=tuple(splits),
-                payee=self._chosen_payee(),
-                set_payee=True,
                 tags=tuple(self.tags_entry.get_text().split(",")),
             ),
             existing_handle=self.transaction.handle if self.transaction is not None else None,
             claim_attachment=attachment,
             source=self.transaction,
         )
-
-    def _chosen_payee(self) -> str | None:
-        selected = self.payee_picker.get_selected()
-        return self.payees[selected - 1].handle if 0 < selected <= len(self.payees) else None
 
     def build(self) -> Transaction:
         """Return the service-built preview used by editor interactions and tests."""

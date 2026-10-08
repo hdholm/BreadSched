@@ -227,7 +227,7 @@ def test_schema_9_book_migrates_to_savings_goals(tmp_path):
     db = DbSQLite()
     db.load(str(path))
     try:
-        assert db.get_metadata("schema_version") == 10
+        assert db.get_metadata("schema_version") == 11
         assert db.get_metadata("fixture_marker") == "schema-9"
         assert list(db.iter_savings_goals()) == []
         goal = SavingsGoal(
@@ -245,7 +245,7 @@ def test_schema_9_book_migrates_to_savings_goals(tmp_path):
             for row in db._require().execute(
                 "SELECT version FROM schema_migration ORDER BY version"
             )
-        ] == [7, 8, 9, 10]
+        ] == [7, 8, 9, 10, 11]
         assert db.integrity_problems() == []
     finally:
         db.close()
@@ -318,7 +318,7 @@ def test_cli_migrate_brings_an_older_book_to_the_current_schema(tmp_path, capsys
     result = json.loads(capsys.readouterr().out)
     assert result == {
         "schema_before": 9,
-        "schema": 10,
+        "schema": 11,
         "migrated": True,
         "backup": f"{path}.pre-migration-v9.bak",
     }

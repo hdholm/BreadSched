@@ -88,7 +88,6 @@ def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
                 investment_activity=source.investment_activity if source is not None else None,
             )
         )
-    payee = _text(payload, "payee", optional=True) or None
     request = SaveTransaction(
         TransactionInput(
             post_date=when,
@@ -97,8 +96,6 @@ def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
             notes=existing.notes if existing is not None else "",
             currency=currency,
             splits=tuple(splits),
-            payee=payee,
-            set_payee=existing is not None or payee is not None,
         ),
         existing_handle=handle,
         source=existing,

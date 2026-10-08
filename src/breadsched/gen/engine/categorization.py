@@ -1,6 +1,6 @@
 """Ordered, reviewed categorization rules and the proposals they make.
 
-A rule maps a payee, or a normalized description key (``payees.match_key``), to an
+A rule maps a normalized description key (``description_keys.match_key``) to an
 income or expense category. Rules are kept in book metadata as one ordered list:
 the first rule that matches a transaction proposes its category, and every later
 matching rule that would choose a different category is reported as a conflict,
@@ -11,11 +11,6 @@ Only a transaction that still has exactly one split on an import placeholder
 source already chose is therefore never replaced, and a split transaction is never
 given a guessed category. Proposals are read-only; the service applies accepted
 ones.
-
-A description rule may also name a payee (``set_payee``): its proposal then sets
-that payee too, but only on a transaction that has none, so a payee the user or a
-payee match already chose is never replaced. A payee rule needs no such field; it
-matched because the payee was already set.
 """
 
 from __future__ import annotations
@@ -27,7 +22,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from ..db.base import DbBase
 from ..lib.money import Money
-from .payees import match_key
+from .description_keys import match_key
 
 __all__ = [
     "RULES_KEY",
@@ -59,39 +54,24 @@ def placeholder_handles() -> tuple[tuple[tuple[str, str], str], ...]:
 
 @dataclass(frozen=True, slots=True)
 class CategoryRule:
-    """Match exactly one of ``payee`` or ``key``; propose ``category``.
-
-    A ``key`` rule may also propose ``set_payee`` for a transaction with no payee.
-    """
+    """Match a description ``key``; propose ``category``."""
 
     handle: str
     category: str
-    payee: str | None = None
-    key: str | None = None
-    set_payee: str | None = None
+    key: str
 
     def serialize(self) -> dict[str, Any]:
-        return {
-            "handle": self.handle,
-            "category": self.category,
-            "payee": self.payee,
-            "key": self.key,
-            "set_payee": self.set_payee,
-        }
+        return {"handle": self.handle, "category": self.category, "key": self.key}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CategoryRule:
         return cls(
             handle=str(data["handle"]),
             category=str(data["category"]),
-            payee=data.get("payee"),
-            key=data.get("key"),
-            set_payee=data.get("set_payee"),
+            key=str(data.get("key") or ""),
         )
 
-    def matches(self, payee: str | None, key: str) -> bool:
-        if self.payee is not None:
-            return payee == self.payee
+    def matches(self, key: str) -> bool:
         return bool(key) and key == self.key
 
 
@@ -116,9 +96,6 @@ class CategoryProposal:
     rule_position: int
     rule: CategoryRule
     conflicts: tuple[CategoryConflict, ...] = ()
-    #: The payee accepting also sets: the rule's ``set_payee`` when the
-    #: transaction has no payee yet, else ``None``.
-    payee: str | None = None
 
 
 def load_rules(db: DbBase) -> list[CategoryRule]:
@@ -141,9 +118,7 @@ def propose_categories(db: DbBase) -> list[CategoryProposal]:
             continue
         key = match_key(transaction.description)
         matched = [
-            (position, rule)
-            for position, rule in enumerate(rules, start=1)
-            if rule.matches(transaction.payee, key)
+            (position, rule) for position, rule in enumerate(rules, start=1) if rule.matches(key)
         ]
         if not matched:
             continue
@@ -164,7 +139,6 @@ def propose_categories(db: DbBase) -> list[CategoryProposal]:
                 position,
                 rule,
                 conflicts,
-                rule.set_payee if transaction.payee is None else None,
             )
         )
     proposals.sort(key=lambda item: (item.when, item.transaction), reverse=True)

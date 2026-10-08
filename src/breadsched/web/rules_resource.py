@@ -53,20 +53,15 @@ def rules(api: Api, query: QueryParams) -> dict[str, object]:
     def name(handle: str) -> str:
         return db.full_name(handle) or handle
 
-    payee_names = {payee.handle: payee.name for payee in db.iter_payees()}
     proposals = preview_category_proposals(db).value or ()
     return {
         "rules": [
             {
                 "handle": rule.handle,
                 "position": position,
-                "payee": rule.payee,
-                "payee_name": payee_names.get(rule.payee or ""),
                 "key": rule.key,
                 "category": rule.category,
                 "category_name": name(rule.category),
-                "set_payee": rule.set_payee,
-                "set_payee_name": payee_names.get(rule.set_payee or ""),
             }
             for position, rule in enumerate(list_rules(db), start=1)
         ],
@@ -78,8 +73,6 @@ def rules(api: Api, query: QueryParams) -> dict[str, object]:
                 "amount": str(item.amount.to_decimal()),
                 "category": item.category,
                 "category_name": name(item.category),
-                "payee": item.payee,
-                "payee_name": payee_names.get(item.payee or ""),
                 "rule_position": item.rule_position,
                 "conflicts": [
                     {
@@ -100,7 +93,6 @@ def rules(api: Api, query: QueryParams) -> dict[str, object]:
             ),
             key=lambda item: item["name"].casefold(),
         ),
-        "payees": [{"handle": handle, "name": title} for handle, title in payee_names.items()],
     }
 
 
@@ -109,19 +101,13 @@ def rule_add(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         api.db,
         AddRule(
             category=_text(payload, "category") or "",
-            payee=_text(payload, "payee", optional=True),
-            description=_text(payload, "description", optional=True),
+            description=_text(payload, "description") or "",
             position=_position(payload, "position", optional=True),
-            set_payee=_text(payload, "set_payee", optional=True),
         ),
     )
     if result.value is None:
         raise service_error(result.errors[0])
-    return {
-        "handle": result.value.handle,
-        "key": result.value.key,
-        "set_payee": result.value.set_payee,
-    }
+    return {"handle": result.value.handle, "key": result.value.key}
 
 
 def rule_delete(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
@@ -148,8 +134,4 @@ def rules_accept(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     result = apply_category_proposals(api.db, tuple(raw) if raw is not None else None)
     if result.value is None:
         raise service_error(result.errors[0])
-    return {
-        "assigned": result.value.assigned,
-        "unchanged": result.value.unchanged,
-        "payees_set": result.value.payees_set,
-    }
+    return {"assigned": result.value.assigned, "unchanged": result.value.unchanged}

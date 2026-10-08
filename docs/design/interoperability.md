@@ -300,17 +300,14 @@ the refreshing `ImportSink.transaction` path, so a category chosen after import 
 never reverted. A possible duplicate is another transaction with a split in the
 target account on the same date and value, outside the row's own identity family.
 
-Optional `category`, `payee`, and `currency` columns resolve against the book
+Optional `category` and `currency` columns resolve against the book
 without inventing anything (`_Resolver`). A category matches a non-placeholder
 account other than the target by full name, else by a name exactly one such
 account has; no match or several make the row invalid with that reason, and an
 empty cell keeps the Uncategorized CSV placeholder. A currency code other than the
 target account's currency (or the reporting currency for an account without one)
-makes the row invalid. A payee resolves by name or `payees.match_key` through
-`payee_index`; an unknown payee is a non-blocking `CsvRow.note` and the row
-imports without one. The resolved category replaces the placeholder counter split,
-the payee is passed to `ImportSink.transaction(payee=...)` (set only on a new
-transaction), and a row with a category is never offered as a possible transfer.
+makes the row invalid. The resolved category replaces the placeholder counter
+split, and a row with a category is never offered as a possible transfer.
 These cells are not part of the row identity, so an accepted row is never
 re-categorized by re-import.
 Split columns (`CsvMapping.splits`, pairs of category and amount columns) replace

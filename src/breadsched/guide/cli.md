@@ -185,7 +185,7 @@ breadsched import-csv household.breadsched statement.csv --account Checking \
 Run the same command without `--preview` to import. Other options:
 
 - `--debit` and `--credit` instead of one signed `--amount` column; `--memo`;
-- `--category`, `--payee`, and `--currency` for the optional columns;
+- `--category` and `--currency` for the optional columns;
 - `--split CATEGORY=AMOUNT` maps one split's category and amount columns, repeated
   for each split (instead of `--category`), for example
   `--split "Cat 1=Amt 1" --split "Cat 2=Amt 2"`. The preview shows each row's
@@ -232,19 +232,6 @@ breadsched gnucash-writeback household.breadsched --all
 Choose how many backups to keep with `--keep-backups N` (10 by default). See
 [Write changes back to a GnuCash book](../USER_GUIDE.md#write-changes-back-to-a-gnucash-book).
 
-## Payees
-
-```sh
-breadsched payees book.breadsched --add "Corner Grocer" --match "CORNER GROCER #1234"
-breadsched payees book.breadsched --preview
-breadsched payees book.breadsched --accept-all       # or --accept TRANSACTION
-breadsched payees book.breadsched                    # list payees and their counts
-breadsched payees book.breadsched --delete "Corner Grocer"
-```
-
-`--match` takes an example description; the preview shows the matched key for each
-proposal and writes nothing.
-
 ## Tags and linked documents
 
 ```sh
@@ -273,9 +260,7 @@ tags and document count.
 
 ```sh
 breadsched rules book.breadsched --add-description "CORNER GROCER #1234" --category "Expenses:Groceries"
-breadsched rules book.breadsched --add-description "CORNER GROCER" --category "Expenses:Groceries" \
-    --set-payee "Corner Grocer"                     # also set a payee where there is none
-breadsched rules book.breadsched --add-payee "City Power" --category "Expenses:Utilities" --position 1
+breadsched rules book.breadsched --add-description "City Power" --category "Expenses:Utilities" --position 1
 breadsched rules book.breadsched                     # list rules in priority order
 breadsched rules book.breadsched --preview           # proposals, deciding rule, conflicts
 breadsched rules book.breadsched --accept-all        # or --accept TRANSACTION

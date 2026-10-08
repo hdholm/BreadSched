@@ -47,13 +47,6 @@ from .holdings_resource import holdings
 from .import_resource import import_defaults, import_local, import_review, import_review_resolve
 from .loan_resource import loan_options, loan_preview, loan_save
 from .net_worth_resource import net_worth_change, net_worth_history
-from .payee_resource import (
-    payee_accept,
-    payee_delete,
-    payee_save,
-    payees,
-    transaction_payee,
-)
 from .payroll_resource import (
     payroll,
     payroll_change,
@@ -324,7 +317,6 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/import/review": _without_query(import_review),
     "/api/due-review": _without_query(due_review),
     "/api/verify": _without_query(verify),
-    "/api/payees": payees,
     "/api/gnucash/writeback": gnucash_writeback,
     "/api/receivables": receivables,
     "/api/savings-goals": savings_goals,
@@ -373,10 +365,6 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/import/csv": csv_import,
     "/api/gnucash/writeback": gnucash_writeback_apply,
     "/api/gnucash/writeback/settings": gnucash_writeback_settings,
-    "/api/payee/save": payee_save,
-    "/api/payee/delete": payee_delete,
-    "/api/payees/accept": payee_accept,
-    "/api/transaction/payee": transaction_payee,
     "/api/transaction/tags": transaction_tags,
     "/api/transaction/attachment/link": transaction_attachment_link,
     "/api/transaction/attachment/remove": transaction_attachment_remove,

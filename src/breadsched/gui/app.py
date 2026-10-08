@@ -130,7 +130,6 @@ class BreadSchedApplication(Gtk.Application):
             ("import", self.on_import, "<Control>i"),
             ("import-new", self.on_import_new, None),
             ("import-csv", self.on_import_csv, None),
-            ("payees", self.on_payees, None),
             ("rules", self.on_rules, None),
             ("receivables", self.on_receivables, None),
             ("savings-goals", self.on_savings_goals, None),
@@ -162,7 +161,6 @@ class BreadSchedApplication(Gtk.Application):
             "redo",
             "import",
             "import-csv",
-            "payees",
             "rules",
             "receivables",
             "savings-goals",
@@ -197,7 +195,6 @@ class BreadSchedApplication(Gtk.Application):
         for name in (
             "import",
             "import-csv",
-            "payees",
             "rules",
             "receivables",
             "savings-goals",
@@ -388,17 +385,6 @@ class BreadSchedApplication(Gtk.Application):
         from .dialogs.csv_import_dialog import CsvImportDialog
 
         dialog = CsvImportDialog(self.props.active_window, self.db)
-        dialog.present()
-        return dialog
-
-    def on_payees(self, *_args):
-        """Open payee management and proposal review for the current book."""
-        if self.db is None:
-            self._report("Open a book before managing payees.")
-            return None
-        from .dialogs.payee_dialog import PayeesDialog
-
-        dialog = PayeesDialog(self.props.active_window, self.db)
         dialog.present()
         return dialog
 
@@ -625,7 +611,6 @@ class ActionsMenu:
         general = Gio.Menu()
         general.append("New _Transaction…", "app.new-transaction")
         general.append("_Post Scheduled Transactions", "app.post-scheduled")
-        general.append("Pa_yees…", "app.payees")
         general.append("Categorization _Rules…", "app.rules")
         general.append("Rei_mbursable Expenses…", "app.receivables")
         general.append("Savings _Goals…", "app.savings-goals")

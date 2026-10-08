@@ -88,8 +88,6 @@ class CsvMapping:
     memo: str | None = None
     #: An account for the other side, by full name or unique account name.
     category: str | None = None
-    #: A payee already in the book, by name or description key.
-    payee: str | None = None
     #: A currency code that must match the target account's currency.
     currency: str | None = None
     date_format: CsvDateFormat | Literal["auto"] = "auto"
@@ -121,10 +119,6 @@ class CsvRow:
     existing: str | None = None
     #: The mapped category account; ``None`` posts to Uncategorized CSV.
     category: str | None = None
-    #: The mapped payee.
-    payee: str | None = None
-    #: A note that does not stop the row, such as an unknown payee.
-    note: str = ""
     #: Mapped splits as (category account, amount), adding up to ``amount``.
     splits: tuple[tuple[str, Money], ...] = ()
 
@@ -336,7 +330,6 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
     description_col = _column(mapping.description, labels, mapping.header, "description")
     memo_col = _column(mapping.memo, labels, mapping.header, "memo")
     category_col = _column(mapping.category, labels, mapping.header, "category")
-    payee_col = _column(mapping.payee, labels, mapping.header, "payee")
     currency_col = _column(mapping.currency, labels, mapping.header, "currency")
     split_cols = [
         (
@@ -444,7 +437,6 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
         if problem:
             rows.append(CsvRow(line, when, amount, description, memo, "invalid", problem))
             continue
-        payee, note = resolve.payee(cell(source_row, payee_col))
         others = [
             handle for handle in existing_by_key.get((when, amount), []) if handle not in family
         ]
@@ -461,8 +453,6 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
                     identity,
                     others[0],
                     category=category,
-                    payee=payee,
-                    note=note,
                     splits=splits,
                 )
             )
@@ -478,8 +468,6 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
                 "",
                 identity,
                 category=category,
-                payee=payee,
-                note=note,
                 splits=splits,
             )
         )
@@ -497,18 +485,14 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
 
 
 class _Resolver:
-    """Map optional category, payee, and currency cells to what the book has.
+    """Map optional category and currency cells to what the book has.
 
     Nothing is invented: a category must name one existing account (its full name,
     or a name no other account shares), and a currency must be the target
-    account's. Those problems stop the row. An unknown payee only leaves the row
-    without one.
+    account's. Those problems stop the row.
     """
 
     def __init__(self, db: DbSQLite, account: str) -> None:
-        from ...gen.engine.payees import match_key, payee_index
-
-        self._match_key = match_key
         self._by_full: dict[str, str] = {}
         self._by_name: dict[str, list[str]] = {}
         for item in db.iter_accounts():
@@ -516,9 +500,6 @@ class _Resolver:
                 continue
             self._by_full[db.full_name(item).casefold()] = item.handle
             self._by_name.setdefault(item.name.casefold(), []).append(item.handle)
-        payees = list(db.iter_payees())
-        self._payee_names = {payee.name.casefold(): payee.handle for payee in payees}
-        self._payee_keys = {key: payee.handle for key, payee in payee_index(payees).items()}
         target = db.get_account(account)
         commodity = db.get_commodity(target.commodity) if target and target.commodity else None
         if commodity is None or not commodity.is_currency:
@@ -542,14 +523,6 @@ class _Resolver:
         if matches:
             return None, f"category {text!r} matches several accounts; use its full name"
         return None, f"category {text!r} is not an account in the book"
-
-    def payee(self, text: str) -> tuple[str | None, str]:
-        if not text:
-            return None, ""
-        found = self._payee_names.get(text.strip().casefold()) or self._payee_keys.get(
-            self._match_key(text)
-        )
-        return (found, "") if found else (None, f"payee {text!r} is not in the book")
 
 
 def _row_splits(
@@ -753,7 +726,6 @@ def import_rows(
                 None,
                 "",
                 [target, *legs],
-                payee=row.payee,
             )
         result.finish(db, txn)
     db.emit("database-changed", (db,))

@@ -2,59 +2,42 @@
 
 Part of the [BreadSched design](../../DESIGN.md).
 
-## Payees
+## Descriptions are names
 
-A `Payee` (`gen/lib/payee.py`, table `payee`) is a named identity with a list of
-normalized description keys. `Transaction.payee` holds the accepted payee's handle
-and is BreadSched-owned: GnuCash, OFX, QIF, and CSV re-import carry it forward
-through `import_review.merge_local_state`, and no import rewrites the description.
-`engine.payees.match_key` casefolds and NFKC-normalizes a description, splits on
-punctuation, and drops every word containing a digit, so store numbers, card
-suffixes, and references do not split one merchant. Matching is exact on that key,
-never fuzzy, so every proposal names the key that produced it. The service
-(`gen/services/payees.py`) keeps names unique (case-insensitively) and gives each key
-to at most one payee, so a proposal is never ambiguous; a conflicting key is
-refused. `preview_payee_proposals` lists transactions without a payee whose key
-matches and writes nothing. `apply_payee_proposals` recomputes the proposals and
-assigns only the requested transactions that still match and still have no payee,
-in one undo step, so a stale preview cannot replace a choice made since.
-`assign_payee` sets or clears one transaction explicitly; `delete_payee` clears the
-payee from its transactions and deletes it in one undo step. Book verification
-reports `transaction.missing_payee` and `payee.duplicate_match_key`.
-`TransactionInput` carries `payee` with an explicit `set_payee` flag, so an editor
-that does not show the payee keeps it, and an unknown payee is refused. GTK's Payees
-dialog, the web **Payees** view (`web/payee_resource.py`), the registers, and the CLI
-are adapters over this service; categorization rules and entry autocomplete can
-match on the payee.
+A transaction's description is its only name, as in GnuCash; there is no separate
+payee. `engine/description_keys.match_key` casefolds and NFKC-normalizes a
+description, splits on punctuation, and drops every word containing a digit, so
+store numbers, card suffixes, and references do not split one merchant. Matching is
+exact on that key, never fuzzy, so every match names the key that produced it.
+Categorization rules, expected-reimbursement proposals, and entry autocomplete all
+compare descriptions through it. Imports never rewrite a description.
+
+Schema 11 removed the payees of earlier alphas (a `payee` table and
+`Transaction.payee`). The 10→11 migration turns each rule that matched a payee into
+one rule per description key that payee claimed, in the same position (the first
+keeps the rule's handle, later ones add `-1`, `-2`, …), so it keeps matching what it
+matched; a payee with no keys matched nothing and leaves no rule. It drops every
+rule's `set_payee`, removes `payee` from transaction JSON, and drops the table.
 
 ## Categorization rules
 
 Rules live in book metadata (`categorization_rules`) as one ordered list of
-`CategoryRule(handle, category, payee | key)`, so they need no schema change and
-older builds ignore them; rule edits are metadata writes inside a database
+`CategoryRule(handle, category, key)`; rule edits are metadata writes inside a database
 transaction and therefore undoable. `engine/categorization.py` owns
 `placeholder_handles()` (the Uncategorized CSV/OFX accounts, also used by CSV
 transfer review) and `propose_categories`, which considers only transactions with
 exactly one split on a placeholder: a category chosen by the user or the source is
 never proposed again, and split transactions are not guessed. A rule matches by
-payee handle or by `payees.match_key` of the description; the first matching rule
-in list order decides and every later rule naming a different category is reported
-as a conflict with its position. `services/categorization.py` validates rules (one
-match kind, a non-empty key, an existing payee, a non-placeholder income or expense
-category, no duplicate match, a valid position) and applies accepted proposals by
+`match_key` of the description; the first matching rule in list order decides and
+every later rule naming a different category is reported as a conflict with its
+position (the service refuses a second rule for the same key, but a book migrated
+from payee rules can hold one). `services/categorization.py` validates rules (a
+non-empty key, a non-placeholder income or expense category, no duplicate key, a
+valid position) and applies accepted proposals by
 recomputing them and replacing only the placeholder split's account, keeping its
 value, memo, and handle, in one undo step. GTK's Rules dialog, the web **Rules**
 view (`web/rules_resource.py`), and `breadsched rules` are adapters over this
 service.
-
-A description rule may also carry `set_payee` (stored beside the other fields, so
-older builds ignore it). Its proposal's `payee` is that handle only while the
-transaction has no payee; accepting sets it only if the transaction still has none
-and the payee still exists, and reports the count (`AppliedCategories.payees_set`).
-A payee rule cannot set a payee (`rule.set_payee.payee_match`): it matched because
-the payee was already set. `services/payees.delete_payee` removes rules matching the
-deleted payee and clears it from rules that would set it, in the same undoable
-transaction, so no rule points at a missing payee.
 
 ## Tags and linked documents
 
@@ -63,7 +46,7 @@ Tags reuse `PrimaryObject.tags` on `Transaction`; linked documents are
 `Transaction.source_link` (GnuCash's `doclink`, or `assoc_uri` before GnuCash 4). Both
 live in the transaction's JSON, so books without them load with empty defaults.
 
-- **Ownership.** Re-import carries `tags` and `attachments` forward like the payee;
+- **Ownership.** Re-import carries `tags` and `attachments` forward;
   `source_link` is source-owned and refreshed. The source link enters the import
   fingerprint only when set, so older imports still compare unchanged.
 - **Locations.** `engine/attachments.py` resolves a web address (never fetched), a

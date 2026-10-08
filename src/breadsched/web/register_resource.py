@@ -48,11 +48,9 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
         "type": account.atype.value,
         "debit_label": debit_label,
         "credit_label": credit_label,
-        "payees": [{"handle": payee.handle, "name": payee.name} for payee in api.db.iter_payees()],
         "rows": [
             {
                 "handle": row.transaction.handle,
-                "payee": row.transaction.payee,
                 "date": row.post_date,
                 "num": row.transaction.num,
                 "description": row.description,
@@ -102,9 +100,6 @@ def transaction_add(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         investment_activity = InvestmentActivityKind(investment_raw) if investment_raw else None
     except ValueError:
         raise ValueError("choose a valid investment activity") from None
-    payee_raw = payload.get("payee")
-    if payee_raw is not None and not isinstance(payee_raw, str):
-        raise ValueError("payee must be text")
     claim_handle = str(payload.get("fsa_claim") or "").strip()
     claim_role = str(payload.get("fsa_role") or "").strip()
     funding_year = str(payload.get("fsa_year") or "").strip()
@@ -131,8 +126,6 @@ def transaction_add(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
                     TransactionSplitInput(credit.handle, Amount(-amount, currency), memo=memo),
                 ),
                 investment_activity=investment_activity,
-                payee=payee_raw or None,
-                set_payee="payee" in payload,
             ),
             claim_attachment=attachment,
         ),

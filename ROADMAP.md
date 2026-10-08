@@ -22,28 +22,22 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    completion, dates must be typed in full, and there is no reconcile column.
    `Gtk.ColumnView` has no editable cells and recycles row widgets, so the GTK
    register becomes a custom grid. Delivered in this order:
-   1. **Remove payees.** Description becomes the only name, as in GnuCash: remove
-      the payee model, table (a schema migration; existing books hold no payees
-      worth keeping, so names are not carried over), service, screens, register
-      column, and verification checks. Rules that matched a payee become rules on
-      that payee's description keys; `set_payee` goes. Renaming a merchant becomes
-      a bulk description edit.
-   2. **Shared entry parsing.** A date parser with GnuCash shortcuts (`+`/`-`,
+   1. **Shared entry parsing.** A date parser with GnuCash shortcuts (`+`/`-`,
       `t`, `[`/`]`, a bare day or month/day), typed account-path completion
       (`Ex:Gr` → `Expenses:Groceries`), Num increment, and arithmetic in amount
       fields through the existing safe formula language, in non-GUI code used by
       both registers.
-   3. **GTK custom register grid.** Every row editable in place by click or
+   2. **GTK custom register grid.** Every row editable in place by click or
       keyboard, Up/Down moving between transactions and committing as they go,
       Tab/Enter/Escape as in GnuCash, typed account completion in Transfer and
       split lines, an in-place reconcile column cycling n → c → y through the
       reconciliation service, and split expansion in the grid. Commits stay one
       `save_transaction` call and one undo step.
-   4. **Web register.** Equivalent editing in the browser (every capability
+   3. **Web register.** Equivalent editing in the browser (every capability
       available), using the shared parsers; it need not match the GTK look and may
       be less convenient for now.
 2. **Storage normalization, decided by measurement (in parallel with item 1).**
-   On a separate branch, starting from the payee-free schema, build normalized
+   On a separate branch, starting from schema 11, build normalized
    transaction and split tables (typed columns, foreign keys, CHECK constraints)
    with a migration, and compare them with the current blob-plus-derived-index
    design on the realistic books: file size, load, commit, and projection time, the

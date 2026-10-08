@@ -23,7 +23,6 @@ from typing import Any, Literal
 from ..lib.account import Account
 from ..lib.commodity import Commodity, CommodityPrice
 from ..lib.fsa_claim import FsaClaim
-from ..lib.payee import Payee
 from ..lib.receivable import Receivable
 from ..lib.reconciliation import Reconciliation
 from ..lib.savings_goal import SavingsGoal
@@ -114,9 +113,6 @@ class DbBase(Callback, ABC):
         "reconciliation-add": (list,),
         "reconciliation-update": (list,),
         "reconciliation-delete": (list,),
-        "payee-add": (list,),
-        "payee-update": (list,),
-        "payee-delete": (list,),
         "savings-goal-add": (list,),
         "savings-goal-update": (list,),
         "savings-goal-delete": (list,),
@@ -311,23 +307,6 @@ class DbBase(Callback, ABC):
 
     @abstractmethod
     def iter_reconciliations(self, account: str | None = None) -> Iterator[Reconciliation]: ...
-
-    # ------------------------------------------------------------------ payees
-
-    @abstractmethod
-    def add_payee(self, payee: Payee, txn: DbTxn) -> str: ...
-
-    @abstractmethod
-    def commit_payee(self, payee: Payee, txn: DbTxn) -> None: ...
-
-    @abstractmethod
-    def remove_payee(self, handle: str, txn: DbTxn) -> None: ...
-
-    @abstractmethod
-    def get_payee(self, handle: str) -> Payee | None: ...
-
-    @abstractmethod
-    def iter_payees(self) -> Iterator[Payee]: ...
 
     # ------------------------------------------------------------- receivables
 

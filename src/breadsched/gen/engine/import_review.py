@@ -243,7 +243,7 @@ def merge_local_state(incoming: Transaction, existing: Transaction) -> None:
     """Carry BreadSched-owned state from ``existing`` onto an incoming version.
 
     GnuCash remains authoritative for ledger facts such as dates, amounts,
-    accounts, memos, and actions. BreadSched owns planning/review annotations, payees,
+    accounts, memos, and actions. BreadSched owns planning/review annotations,
     FSA classifications, and the reconcile state of a split it reconciled while
     that split's account, value, and quantity are unchanged. Split annotations
     are preserved only when the source split GUID still exists, so a materially
@@ -256,7 +256,6 @@ def merge_local_state(incoming: Transaction, existing: Transaction) -> None:
     incoming.planned_amount = existing.planned_amount
     incoming.planning_resolution = existing.planning_resolution
     incoming.rejected_plan_occurrences = list(existing.rejected_plan_occurrences)
-    incoming.payee = existing.payee
     incoming.tags = list(existing.tags)
     incoming.attachments = list(existing.attachments)
 
