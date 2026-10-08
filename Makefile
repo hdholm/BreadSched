@@ -21,9 +21,9 @@ test-hardening:
 	pytest -n 0 tests/test_web.py -k TestSafety
 	pytest -n 0 -m performance
 
-# GTK tests open real windows. Where xvfb-run exists they run on a virtual X display
-# (X11, even from a Wayland session) so nothing appears on screen; set
-# GUI_VISIBLE=1 to watch them on your own display instead.
+# GTK tests open real windows. tests/conftest.py gives each pytest process its own
+# Xvfb wherever Xvfb is installed; xvfb-run here also covers the session bus run in
+# CI. Set GUI_VISIBLE=1 to watch them on your own display instead.
 GUI_DISPLAY := $(if $(GUI_VISIBLE),,$(shell command -v xvfb-run >/dev/null 2>&1 && echo "xvfb-run -a env -u WAYLAND_DISPLAY GDK_BACKEND=x11"))
 
 test-gui:

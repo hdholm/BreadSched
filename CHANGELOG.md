@@ -10,6 +10,20 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a261 - 2026-10-08
+
+- **GTK tests stay off the desktop.** Every test run, including a plain `pytest -n
+  auto`, now gives each pytest process a private Xvfb and GTK's X11 backend before
+  GTK loads (`tests/private_display.py`, started from `tests/conftest.py`), as CI
+  and `make` already did. On a GNOME/Wayland desktop, a dozen workers opening
+  windows on the real compositor crashed GTK inside its Wayland event handling.
+  `GUI_VISIBLE=1` still shows the windows; without `Xvfb` the current display is
+  used. CONTRIBUTING, the Makefile, and the validation design part describe it.
+- The workflows use `actions/upload-artifact@v7` and `actions/download-artifact@v8`,
+  which run on Node 24; v4 ran on the deprecated Node 20. Our steps pass only
+  `name`, `path`, `if-no-files-found`, and `retention-days`, whose meaning is
+  unchanged, and v8 rejects a download whose digest does not match.
+
 ## 0.2.0a260 - 2026-10-08
 
 - **Dialogs stay in front at start-up (#295).** Alerts and the due and GnuCash

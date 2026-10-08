@@ -97,7 +97,7 @@ jobs:
 
       - name: Transfer only release inputs as data
         if: steps.release.outputs.selected == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-inputs
           path: |
@@ -171,7 +171,7 @@ jobs:
           ./packaging/windows/stage-release.ps1 $installer release-installer
 
       - name: Transfer only the tested installer as data
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-installer
           path: release-installer/
@@ -233,7 +233,7 @@ jobs:
           sha256sum --check "BreadSched-${VERSION}.flatpak.sha256"
 
       - name: Transfer only the tested bundle as data
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-flatpak
           path: release-flatpak/
@@ -280,7 +280,7 @@ jobs:
           [[ "$TESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$TESTED_SHA"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-inputs
           path: release-inputs
@@ -304,7 +304,7 @@ jobs:
           sha256sum --check "$name.sha256"
 
       - name: Transfer only the tested package as data
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-linux-${{ matrix.format }}
           path: release-linux/
@@ -333,27 +333,27 @@ jobs:
           test "$TAG" = "v${VERSION}"
           test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$CANDIDATE_SHA"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-inputs
           path: release-inputs
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-installer
           path: release-inputs/installer
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-flatpak
           path: release-inputs/flatpak
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-linux-deb
           path: release-inputs/linux
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-linux-rpm
           path: release-inputs/linux
