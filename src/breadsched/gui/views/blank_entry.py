@@ -15,6 +15,13 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import date
 
+from ...gen.engine.entry_input import (
+    DATE_KEYS,
+    EntryInputError,
+    complete_account,
+    is_arithmetic,
+    parse_entry_date,
+)
 from ...gen.lib.amount import Amount
 from ...gen.lib.money import Money
 from ...gen.services import (
@@ -25,7 +32,7 @@ from ...gen.services import (
     transaction_currency,
 )
 from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry, suggest_entry
-from ...gen.utils.amount_input import parse_user_amount
+from ...gen.services.entry_input import next_entry_num, read_entry_amount
 from ...presentation import service_error_message
 from ..gi_setup import Gdk, GLib, Gtk
 from ..widgets.choice import bounded_dropdown
@@ -149,10 +156,19 @@ class BlankEntryRow:
         self._syncing = False
         self._transfer_touched = False
         self._enabled = True
+        #: Each amount entry → the other entry of its Increase/Decrease pair.
+        self._partners: dict[Gtk.Entry, Gtk.Entry] = {}
+        #: Account text typed into a picker so far, as (picker, text).
+        self._typed_account: tuple[Gtk.Widget | None, str] = (None, "")
 
         self.date = Gtk.Entry(text=date.today().isoformat(), placeholder_text="YYYY-MM-DD")
+        self.date.set_tooltip_text(
+            "Type a date such as 2026-03-15, 3/15, or 15; + and - move a day, "
+            "] and [ a month, t is today"
+        )
         self.date.set_width_chars(10)
         self.num = Gtk.Entry(placeholder_text="Num")
+        self.num.set_tooltip_text("+ and - step the number; in an empty field, from the last one")
         self.num.set_width_chars(4)
         self.description = Gtk.Entry(placeholder_text="Description")
         self.description.set_hexpand(True)
@@ -231,6 +247,8 @@ class BlankEntryRow:
         widget.add_controller(keys)
 
     def _pair(self, increase: Gtk.Entry, decrease: Gtk.Entry) -> None:
+        self._partners[increase] = decrease
+        self._partners[decrease] = increase
         increase.connect("changed", self._on_amount_changed, decrease)
         decrease.connect("changed", self._on_amount_changed, increase)
 
@@ -324,10 +342,7 @@ class BlankEntryRow:
         text, sign = line.value_text()
         if not text:
             return None
-        try:
-            value = Money(parse_user_amount(text))
-        except (ValueError, ArithmeticError) as error:
-            raise ValueError(text) from error
+        value = self.read_amount(text)
         return value if sign > 0 else -value
 
     def residual(self) -> Money:
@@ -621,14 +636,145 @@ class BlankEntryRow:
             self.transfer.set_selected(handles.index(handle))
         return True
 
+    # ---------------------------------------------------------------- typing
+    #
+    # What the row's text means comes from ``engine/entry_input`` and
+    # ``services/entry_input``, the rules the web register uses too.
+
+    def _date_base(self) -> date:
+        return self.editing.post_date if self.editing is not None else self.default_date()
+
+    def read_date(self) -> date:
+        """The date field's text as a date; ``ValueError`` when it is not one."""
+        return parse_entry_date(self.date.get_text(), self._date_base())
+
+    def read_amount(self, text: str) -> Money:
+        """Typed text as an amount, arithmetic evaluated; ``ValueError`` if unreadable."""
+        db = self.view.db
+        if db is None:
+            raise ValueError(text)
+        currency = transaction_currency(db, self.editing.currency if self.editing else None)
+        result = read_entry_amount(db, text, currency=currency)
+        if result.value is None or result.value.value is None:
+            raise ValueError(text)
+        return Money(result.value.value)
+
+    def settle(self, widget: Gtk.Widget) -> None:
+        """Show what a field's text means before leaving it.
+
+        A date becomes ``YYYY-MM-DD``; a calculation becomes its result, and a
+        negative result moves to the other amount column.
+        """
+        if widget is self.date:
+            try:
+                when = self.read_date()
+            except ValueError:
+                return
+            self.date.set_text(when.isoformat())
+            return
+        partner = self._partners.get(widget)
+        if partner is None or not isinstance(widget, Gtk.Entry):
+            return
+        text = widget.get_text()
+        if not is_arithmetic(text):
+            return
+        try:
+            value = self.read_amount(text)
+        except ValueError:
+            return
+        target = widget if value >= 0 else partner
+        target.set_text(abs(value).format())
+        if target is partner:
+            widget.set_text("")
+
+    def date_key(self, key: str) -> bool:
+        """Apply a date shortcut to a field holding a date; False lets the key type."""
+        try:
+            current = self.read_date()
+            self.date.set_text(parse_entry_date(key, current).isoformat())
+        except EntryInputError:
+            return False
+        self.date.set_position(-1)
+        return True
+
+    def num_key(self, step: int) -> bool:
+        """Step the check number; False lets the key type into other text."""
+        view = self.view
+        text = self.num.get_text()
+        if view.db is None or view.account_handle is None:
+            return False
+        if text.strip() and not text.strip()[-1].isdigit():
+            return False
+        result = next_entry_num(view.db, view.account_handle, text, step)
+        if result.value is None or result.value == text:
+            return bool(text.strip())
+        self.num.set_text(result.value)
+        self.num.set_position(-1)
+        return True
+
+    def _account_names(self, widget: Gtk.Widget) -> tuple[list, int] | None:
+        """A picker's accounts and the index of the first, or None for other fields."""
+        if widget is self.transfer:
+            return self.transfers, 0
+        if any(widget is line.account for line in self.lines):
+            return self.accounts, 1
+        return None
+
+    def type_account(self, picker: Gtk.Widget, character: str | None) -> bool:
+        """Add a typed character (None: remove one) and select the best completion."""
+        found = self._account_names(picker)
+        db = self.view.db
+        if found is None or db is None:
+            return False
+        accounts, first = found
+        typed = self._typed_account[1] if self._typed_account[0] is picker else ""
+        typed = typed + character if character is not None else typed[:-1]
+        self._typed_account = (picker, typed)
+        if not typed:
+            self.view.set_entry_status("")
+            return True
+        names = [db.full_name(account) for account in accounts]
+        matches = complete_account(typed, names)
+        if not matches:
+            self.view.set_entry_status(f"No account matches “{typed}”.", error=True)
+            return True
+        assert isinstance(picker, Gtk.DropDown)
+        picker.set_selected(names.index(matches[0]) + first)
+        more = f" ({len(matches) - 1} more)" if len(matches) > 1 else ""
+        self.view.set_entry_status(f"“{typed}” → {matches[0]}{more}")
+        return True
+
     # -------------------------------------------------------------- keyboard
 
     def _on_key(self, _controller, keyval: int, _keycode: int, state, widget) -> bool:
         return self.handle_key(widget, keyval, state)
 
     def handle_key(self, widget: Gtk.Widget, keyval: int, state=0) -> bool:
-        """Tab/Shift+Tab move between fields, Enter commits, Escape clears."""
+        """Tab/Shift+Tab move between fields, Enter commits, Escape clears.
+
+        The date and Num fields take GnuCash's shortcut keys, and typing into an
+        account picker completes ``Ex:Gr`` to Expenses:Groceries.
+        """
+        plain = not state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.ALT_MASK)
+        character = chr(Gdk.keyval_to_unicode(keyval) or 0)
+        if plain and widget is self.date and character in DATE_KEYS:
+            return self.date_key(character)
+        if plain and widget is self.num and character in "+=-_":
+            return self.num_key(1 if character in "+=" else -1)
+        if widget is not self._typed_account[0]:
+            self._typed_account = (None, "")
+        if plain and self._account_names(widget) is not None:
+            if keyval == Gdk.KEY_BackSpace:
+                return self.type_account(widget, None)
+            if (
+                character.isprintable()
+                and character
+                and (character != " " or self._typed_account[1])
+            ):
+                return self.type_account(widget, character)
         if keyval in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab, Gdk.KEY_KP_Tab):
+            self._typed_account = (None, "")
+            self.settle(widget)
             backwards = keyval == Gdk.KEY_ISO_Left_Tab or bool(state & Gdk.ModifierType.SHIFT_MASK)
             # A column the user has hidden takes no part in the order; before the
             # register is shown, every field counts.
@@ -646,9 +792,11 @@ class BlankEntryRow:
                 return False  # Enter on a button presses it
             if widget is self.description:
                 self.propose()
+            self.settle(widget)
             self.commit()
             return True
         if keyval == Gdk.KEY_Escape:
+            self._typed_account = (None, "")
             self.clear()
             self.view.set_entry_status("")
             self.date.grab_focus()
@@ -737,10 +885,7 @@ class BlankEntryRow:
         for entry, sign in ((self.increase, 1), (self.decrease, -1)):
             text = entry.get_text().strip()
             if text:
-                try:
-                    value = Money(parse_user_amount(text))
-                except (ValueError, ArithmeticError) as error:
-                    raise ValueError(text) from error
+                value = self.read_amount(text)
                 return value if sign > 0 else -value
         return None
 
@@ -753,9 +898,9 @@ class BlankEntryRow:
         if current is None or (current.hidden and self.editing is None):
             return False
         try:
-            when = date.fromisoformat(self.date.get_text().strip())
+            when = self.read_date()
         except ValueError:
-            self._fail("Enter the date as YYYY-MM-DD.", self.date)
+            self._fail("Enter a date such as 2026-03-15, 3/15, 15, or t.", self.date)
             return False
         description = self.description.get_text().strip()
         if not description:
@@ -788,7 +933,7 @@ class BlankEntryRow:
             try:
                 value = self.line_value(line)
             except ValueError:
-                self._fail("Enter a valid amount.", line.increase)
+                self._fail("Enter an amount, or arithmetic such as 12.50+3.", line.increase)
                 return None
             if value is None and account is None:
                 if line.memo.get_text().strip():
@@ -834,9 +979,9 @@ class BlankEntryRow:
             self._fail(f"Enter an amount under {heading} or {other}.", typed)
             return None
         try:
-            value = Money(parse_user_amount(text))
-        except (ValueError, ArithmeticError):
-            self._fail("Enter a valid amount.", typed)
+            value = self.read_amount(text)
+        except ValueError:
+            self._fail("Enter an amount, or arithmetic such as 12.50+3.", typed)
             return None
         if value <= 0:
             self._fail("Amount must be greater than zero.", typed)
@@ -921,7 +1066,7 @@ class BlankEntryRow:
         from ..dialogs.transaction_dialog import TransactionDialog
 
         try:
-            when = date.fromisoformat(self.date.get_text().strip())
+            when = self.read_date()
         except ValueError:
             when = self.default_date()
         try:

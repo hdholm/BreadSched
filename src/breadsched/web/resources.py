@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import date
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs
 
@@ -28,6 +29,7 @@ from .book_resource import summary, verify
 from .csv_import_resource import csv_import, csv_inspect, csv_preview
 from .currency_quote_resource import save_currency_quote
 from .dashboard_resource import dashboard_config_save, dashboard_report
+from .entry_input_resource import entry_accounts, entry_amount, entry_date, entry_num
 from .expense_resource import expense_report
 from .fsa_claim_resource import (
     fsa_claim_close,
@@ -196,6 +198,23 @@ class QueryParams:
             raise QueryError("query.integer.out_of_range", (name,))
         return value
 
+    def iso_date(self, name: str, *, required: bool = False) -> date | None:
+        raw = self._one(name, required=required)
+        if raw is None:
+            return None
+        try:
+            return date.fromisoformat(raw)
+        except ValueError:
+            raise QueryError("query.date.invalid", (name,)) from None
+
+    def choice(self, name: str, options: tuple[str, ...], default: str) -> str:
+        raw = self._one(name)
+        if raw is None:
+            return default
+        if raw not in options:
+            raise QueryError("query.invalid", (name,))
+        return raw
+
     def finish(self) -> None:
         unknown = tuple(sorted(set(self._values) - self._used))
         if unknown:
@@ -324,6 +343,10 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/rules": rules,
     "/api/payroll": payroll,
     "/api/entry/suggest": entry_suggestion,
+    "/api/entry/date": entry_date,
+    "/api/entry/amount": entry_amount,
+    "/api/entry/accounts": entry_accounts,
+    "/api/entry/num": entry_num,
 }
 
 

@@ -104,6 +104,18 @@ the shared transaction service, not a parallel transaction model:
   Transfer (visible, postable accounts), and Increase/Decrease entries titled
   with the account's headings. Tab moves in column order, Enter commits, Escape
   resets, and typing never changes the selection.
+- **Typing.** `engine/entry_input` holds the pure rules for dates (GnuCash's
+  `+`/`-`, `[`/`]`, `t`, `m`/`h`, `y`/`r`, and short forms relative to the date
+  shown), amount arithmetic (each number read in the entry's decimal convention,
+  then evaluated by the safe formula language and rounded half up to the
+  currency's unit; a single number stays exact), segment-by-segment account
+  completion, and Num stepping. `services/entry_input` adds what only the book
+  knows: postable visible accounts, the register's last number, and the
+  currency's fraction. GTK calls them directly (a shortcut applies only while the
+  date field holds a whole date, so typing an ISO date is never intercepted, and a
+  picker accumulates typed text until focus moves); the browser sends the text
+  to `GET /api/entry/date`, `/amount`, `/accounts`, and `/num`, so neither
+  register has its own parser.
 - **Commit.** Two balancing `TransactionSplitInput`s with a positive exact amount
   (direction from the cell typed in), or one per split line, go through
   `save_transaction` as one atomic change and one undo step. Fewer than two splits,
