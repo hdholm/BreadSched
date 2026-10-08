@@ -48,7 +48,8 @@ rhyme for a name.
 - [`CHANGELOG.md`](CHANGELOG.md) records completed changes by version; older
   versions are condensed and link their release notes.
 - [`DESIGN.md`](DESIGN.md) explains the current architecture and design
-  rationale for anyone who wants to dig into the code.
+  rationale for anyone who wants to dig into the code, with a part for each
+  topic under `docs/design/`.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) defines the development and pull-request
   workflow.
 

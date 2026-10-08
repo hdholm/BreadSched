@@ -957,6 +957,40 @@ class TestGuiBoundaries:
         )
 
 
+class TestPresentationPackage:
+    def test_wording_is_split_by_area_and_re_exported(self):
+        """Each area's wording is its own module; the package re-exports every name."""
+        import importlib
+
+        import breadsched.presentation as presentation
+
+        package = SRC / "presentation"
+        areas = sorted(p.stem for p in package.glob("*.py") if p.stem != "__init__")
+        assert areas == ["benefits", "investments", "messages", "notices", "planning"]
+        for area in areas:
+            path = package / f"{area}.py"
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            relative = {
+                node.module or ""
+                for node in ast.walk(tree)
+                if isinstance(node, ast.ImportFrom) and node.level
+            }
+            # Wording reads engine and service results; it never reaches an interface.
+            assert not any(m.split(".")[0] in {"gui", "web", "cli"} for m in relative), area
+            module = importlib.import_module(f"breadsched.presentation.{area}")
+            defined = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)} | {
+                target.id
+                for node in tree.body
+                if isinstance(node, ast.Assign)
+                for target in node.targets
+                if isinstance(target, ast.Name)
+            }
+            public = {name for name in defined if not name.startswith("_")}
+            assert public <= set(presentation.__all__), (area, public - set(presentation.__all__))
+            for name in public:
+                assert getattr(presentation, name) is getattr(module, name)
+
+
 class TestWebBoundaries:
     def test_the_request_context_holds_only_the_book(self):
         """Every handler is a resource adapter; ``Api`` carries the open book alone."""

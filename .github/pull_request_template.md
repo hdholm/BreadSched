@@ -14,7 +14,7 @@ For each document: **updated** (what and why), **reviewed; no change needed**
 - README.md:
 - AGENTS.md:
 - CONTRIBUTING.md:
-- DESIGN.md:
+- DESIGN.md (and its parts under docs/design/):
 - ROADMAP.md:
 - CHANGELOG.md (and version/release notes, if code or runtime behavior changed):
 - src/breadsched/USER_GUIDE.md:
