@@ -87,6 +87,7 @@ def cmd_import(args: argparse.Namespace) -> int:
             "transactions_held": result.transactions_held,
             "transactions_kept": result.transactions_kept,
             "possible_duplicates": result.possible_duplicates,
+            "share_splits": result.share_splits,
             "splits": result.splits,
             "splits_new": result.splits_new,
             "splits_refreshed": result.splits_refreshed,

@@ -76,7 +76,9 @@ sale and purchase at their recorded values; for longer same-day cycles,
 re-derivation carries a visiting set of (account, date) pairs and falls back rather
 than recursing. A transaction whose other legs are all zero in value and
 quantity, changing shares at zero value while shares are held, is a share split:
-every lot's shares scale by the same exact factor and its cost stays.
+every lot's shares scale by the same exact factor and its cost stays. A GnuCash share
+split imports in this shape: its one split plus an importer-added zero-value leg in
+`Equity:Share splits` (see the interoperability part).
 `HoldingCostBasis` compares the open lots' cost with `account_value`'s market value
 only when that value is a market quote in the same currency, and names zero-cost
 arrivals, uncovered sales, mixed currencies, and a missing or foreign quote instead
@@ -413,9 +415,10 @@ content (bold rows measured bold); text columns take spare width or wrap down to
 floor, numbers never wrap, and a table that still does not fit shrinks its type
 toward a 5.5 pt minimum and then scales. `printing.export_pdf` draws the same pages
 straight to a PDF 1.4 file, which tests and the Windows installer check use.
-**File → Print in Browser…** is the fallback: a private,
-owner-readable HTML preview opened in the default browser and removed when the
-application exits. The dialog reports (Net Worth History, its change detail, and
+The browser route, a private, owner-readable HTML preview opened in the default
+browser and removed when the application exits, is the placeholder for native macOS
+printing: only on macOS does the File menu offer **Print in Browser…** (Linux and
+Windows print natively). The dialog reports (Net Worth History, its change detail, and
 Expense Explorer) have layouts of their own and print through
 `printing.print_document`, which opens the browser preview only when GTK printing
 fails. A cell may span columns (`Cell.span`, used by the net worth change totals)

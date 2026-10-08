@@ -1321,7 +1321,7 @@ class TestMenuBarAndToolbar:
             window.print_action.activate(None)
             # Print goes through GTK printing with the view's report layout ...
             assert printed[-1].title == heading
-            # ... and Print in Browser renders the same layout as a web page.
+            # ... and the browser route (macOS's menu item) renders the same layout.
             window.print_browser_action.activate(None)
             assert f"<h1>{heading}</h1>" in opened[-1]
             cards = printed[-1].sections[0].blocks[0]
@@ -1352,6 +1352,29 @@ class TestMenuBarAndToolbar:
 
         walk(menu)
         assert missing == []
+
+    def test_print_in_browser_is_offered_only_on_macos(self, monkeypatch):
+        from breadsched.gui.app import build_menu_model
+
+        def targets(model):
+            found = []
+            for index in range(model.get_n_items()):
+                target = model.get_item_attribute_value(index, "action", None)
+                if target is not None:
+                    found.append(target.get_string())
+                for link in ("submenu", "section"):
+                    child = model.get_item_link(index, link)
+                    if child is not None:
+                        found.extend(targets(child))
+            return found
+
+        monkeypatch.setattr("sys.platform", "linux")
+        assert "win.print-browser" not in targets(build_menu_model())
+        assert "win.print-view" in targets(build_menu_model())
+        monkeypatch.setattr("sys.platform", "win32")
+        assert "win.print-browser" not in targets(build_menu_model())
+        monkeypatch.setattr("sys.platform", "darwin")
+        assert "win.print-browser" in targets(build_menu_model())
 
 
 class TestReplacingABook:

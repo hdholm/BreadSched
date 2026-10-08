@@ -107,7 +107,8 @@ class ViewManager(Gtk.ApplicationWindow):
         self.print_action.connect("activate", self._on_print_view)
         self.print_action.set_enabled(False)
         self.add_action(self.print_action)
-        # The HTML report in the system browser, kept as a fallback.
+        # The HTML report in the system browser: on the File menu only on macOS,
+        # until native macOS printing replaces it.
         self.print_browser_action = Gio.SimpleAction.new("print-browser", None)
         self.print_browser_action.connect("activate", self._on_print_in_browser)
         self.print_browser_action.set_enabled(False)

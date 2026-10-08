@@ -238,6 +238,7 @@ def written_facts(transaction: Transaction | None) -> tuple[object, ...] | None:
             sorted(
                 (split.handle, split.account, split.value, split.memo or "", split_state(split))
                 for split in transaction.splits
+                if not split.importer_added  # never sent, so never compared
             )
         ),
     )

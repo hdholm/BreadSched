@@ -46,24 +46,15 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    the transaction blob. Either way, record the measurements and decision in an
    ADR. Until then `split_index` stays derived and must never silently diverge
    from its transaction blob.
-3. **Remove Print in Browser from the GTK menus.** Native printing covers Linux and
-   Windows. Keep the code as the placeholder for native macOS printing; the web
-   interface keeps its own browser printing.
-4. **Import GnuCash stock splits.** GnuCash records a split as one zero-value split
-   that changes shares; import now skips it (and reports it), so shares are
-   missing. Import it as that split plus a zero-value balancing split to a
-   dedicated `Equity:Share splits` account, marked as importer-added so GnuCash
-   write-back never sends it; the same two-split shape serves splits entered in
-   BreadSched, and cost basis already treats it as a share split.
-5. **Online quote retrieval.** Optional, with explicit provenance, staleness, and
+3. **Online quote retrieval.** Optional, with explicit provenance, staleness, and
    failure behavior; manual and imported quotes remain usable offline.
-6. **Specific lots and a realized-gains report.** Let a sale name the lots it
+4. **Specific lots and a realized-gains report.** Let a sale name the lots it
    sells instead of the account's first-in, first-out or average-cost method, and
    report realized gains by year from the derived lots.
-7. **Tax-year outputs** (calendar year, US-oriented). Realized gains by tax year,
+5. **Tax-year outputs** (calendar year, US-oriented). Realized gains by tax year,
    short- and long-term; totals for categories or tags marked tax-relevant; and
    income totals by source.
-8. **Budget jars.** Every savings goal and every scheduled estimate is a jar filled
+6. **Budget jars.** Every savings goal and every scheduled estimate is a jar filled
    from planned income, as Dashboard reserves are today, and drawn down by the
    actual transactions it plans for. Reporting bundles jars by period (month,
    quarter, year) and account rather than by individual transaction or estimate,
@@ -76,7 +67,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    transactions that settle or draw on them, to how both feed the Plan and
    Projection, with a worked example that follows one paycheck and one estimate
    through every view.
-9. **Visualizations.** Today GTK has one Cairo line chart (Projection, Expense
+7. **Visualizations.** Today GTK has one Cairo line chart (Projection, Expense
    Explorer, Net worth history) and the browser has none. Build a chart model in
    non-GUI code (series, periods, exact values, labels) produced by the engines,
    drawn by the GTK Cairo widget and by inline SVG in the browser, and included in
