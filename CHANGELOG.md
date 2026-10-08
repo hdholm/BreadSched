@@ -23,6 +23,11 @@ section. Commits and pull requests hold the complete history.
 - CONTRIBUTING and AGENTS state the principle: write the complete tests even when
   the current environment cannot run them, gate them by the missing capability,
   and report where they run.
+- **0.2.0a258 was not published.** Its release run installed the `.deb` as
+  `./<absolute path>`, which apt rejects (CI's own package job used a relative
+  path), and a mirror outage stopped the Windows installer job. The release
+  workflow now installs the path `build-package.sh` prints, and a release test
+  holds it; the Debian/Ubuntu and Fedora packages first ship with this version.
 
 ## 0.2.0a258 - 2026-10-08
 
