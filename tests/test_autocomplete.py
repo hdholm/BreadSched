@@ -1,7 +1,7 @@
 """Entry autocomplete: propose an earlier transaction's accounts and amount.
 
-Typing a description (matched by its normalized key) or choosing a payee proposes
-the most recent matching transaction's splits. The proposal is data only: the user
+Typing a description (matched by its normalized key) proposes the most recent
+matching transaction's splits. The proposal is data only: the user
 edits or ignores it and saves an ordinary balanced transaction. Reconcile state,
 source identifiers, notes, planning links, and FSA claims are never copied.
 """
@@ -13,7 +13,6 @@ from datetime import date
 
 from breadsched.gen.lib import Commodity, Money, ReconcileState, Transaction
 from breadsched.gen.services.autocomplete import SuggestEntry, suggest_entry
-from breadsched.gen.services.payees import SavePayee, assign_payee, save_payee
 
 
 def _post(db, book, when, description, account, amount, **extra):
@@ -49,17 +48,6 @@ def test_no_match_or_empty_key_proposes_nothing(db, book):
     assert suggest_entry(db, SuggestEntry(description="Bakery")).value.suggestion is None
     assert suggest_entry(db, SuggestEntry(description="#1234")).value.suggestion is None
     assert suggest_entry(db, SuggestEntry(description="")).value.suggestion is None
-
-
-def test_a_payee_matches_even_with_a_different_description(db, book):
-    grocer = save_payee(db, SavePayee("Corner Grocer")).value
-    typed = _post(db, book, date(2026, 9, 1), "Weekly shop", book.groceries, "61.00")
-    assign_payee(db, typed.handle, grocer.handle)
-
-    suggestion = suggest_entry(db, SuggestEntry(payee=grocer.handle)).value.suggestion
-
-    assert suggestion is not None and suggestion.source == typed.handle
-    assert suggestion.payee == grocer.handle
 
 
 def test_private_state_is_never_copied(db, book):
@@ -110,10 +98,7 @@ def test_an_edited_transaction_is_not_proposed_to_itself(db, book):
     )
 
 
-def test_an_unknown_account_or_payee_is_refused(db, book):
+def test_an_unknown_account_is_refused(db, book):
     assert [e.code for e in suggest_entry(db, SuggestEntry("x", account="missing")).errors] == [
         "autocomplete.account.not_found"
-    ]
-    assert [e.code for e in suggest_entry(db, SuggestEntry(payee="missing")).errors] == [
-        "payee.not_found"
     ]

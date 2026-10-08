@@ -26,7 +26,6 @@ from ..lib.account import Account
 from ..lib.base import PrimaryObject
 from ..lib.commodity import DEFAULT_CURRENCY, Commodity, CommodityPrice
 from ..lib.fsa_claim import FsaClaim
-from ..lib.payee import Payee
 from ..lib.receivable import Receivable
 from ..lib.reconciliation import Reconciliation
 from ..lib.savings_goal import SavingsGoal
@@ -47,7 +46,7 @@ LOG = get_logger(__name__)
 
 __all__ = ["DbSQLite", "is_portal_book", "migration_backup_path"]
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 T = TypeVar("T", bound=PrimaryObject)
 
 _SCHEMA = """
@@ -124,11 +123,6 @@ CREATE TABLE IF NOT EXISTS reconciliation (
 );
 CREATE INDEX IF NOT EXISTS idx_reconciliation_account_date
     ON reconciliation(account, statement_date);
-CREATE TABLE IF NOT EXISTS payee (
-    handle TEXT PRIMARY KEY,
-    name   TEXT NOT NULL,
-    blob   TEXT NOT NULL
-);
 CREATE TABLE IF NOT EXISTS receivable (
     handle        TEXT PRIMARY KEY,
     incurred_date TEXT NOT NULL,
@@ -157,7 +151,6 @@ _TABLES: dict[str, tuple[type, str]] = {
     "scenario": (Scenario, "scenario"),
     "fsa_claim": (FsaClaim, "fsa-claim"),
     "reconciliation": (Reconciliation, "reconciliation"),
-    "payee": (Payee, "payee"),
     "receivable": (Receivable, "receivable"),
     "savings_goal": (SavingsGoal, "savings-goal"),
 }
@@ -1157,27 +1150,6 @@ class DbSQLite(ChangeVerification):
         sql += " ORDER BY statement_date, handle"
         for row in self._require().execute(sql, params):
             obj = self._decode_row("reconciliation", row["handle"], row["blob"], Reconciliation)
-            if obj is not None:
-                yield obj
-
-    # ------------------------------------------------------------------ payees
-
-    def add_payee(self, payee: Payee, txn: DbTxn) -> str:
-        return self._write(payee, txn, "payee")
-
-    def commit_payee(self, payee: Payee, txn: DbTxn) -> None:
-        self._write(payee, txn, "payee")
-
-    def remove_payee(self, handle: str, txn: DbTxn) -> None:
-        self._delete("payee", handle, txn)
-
-    def get_payee(self, handle: str) -> Payee | None:
-        data = self._read("payee", handle)
-        return Payee.from_dict(data) if data else None
-
-    def iter_payees(self) -> Iterator[Payee]:
-        for row in self._require().execute("SELECT handle, blob FROM payee ORDER BY name, handle"):
-            obj = self._decode_row("payee", row["handle"], row["blob"], Payee)
             if obj is not None:
                 yield obj
 

@@ -167,7 +167,6 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                 description=args.description,
                 memo=args.memo,
                 category=args.category,
-                payee=args.payee,
                 currency=args.currency,
                 date_format=args.date_format,
                 number_format=args.number_format,
@@ -192,7 +191,7 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                     row.amount.format(parens_negative=True) if row.amount is not None else "",
                     row.description,
                     row.status.replace("_", " "),
-                    row.reason or row.note or _splits_text(db, row.splits),
+                    row.reason or _splits_text(db, row.splits),
                 ]
                 for row in preview.rows
             ]
@@ -224,8 +223,6 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                             "reason": row.reason,
                             "existing": row.existing,
                             "category": db.full_name(row.category) if row.category else None,
-                            "payee": row.payee,
-                            "note": row.note,
                             "splits": [
                                 {"category": db.full_name(account), "amount": value}
                                 for account, value in row.splits
@@ -521,7 +518,7 @@ def register(add: AddCommand) -> None:
     csv_cmd.add_argument("--amount", help="signed amount column; negative is money out")
     csv_cmd.add_argument("--debit", help="money-out column, instead of --amount")
     csv_cmd.add_argument("--credit", help="money-in column, instead of --amount")
-    csv_cmd.add_argument("--description", help="description or payee column")
+    csv_cmd.add_argument("--description", help="description column")
     csv_cmd.add_argument("--memo", help="memo column")
     csv_cmd.add_argument(
         "--category",
@@ -534,7 +531,6 @@ def register(add: AddCommand) -> None:
         help="a split's category and amount columns; repeat for each split. Filled splits "
         "must add up to the row's amount (use instead of --category)",
     )
-    csv_cmd.add_argument("--payee", help="payee column: a payee already in the book")
     csv_cmd.add_argument("--currency", help="currency column; rows in another currency are refused")
     csv_cmd.add_argument(
         "--date-format", default="auto", choices=["auto", "iso", "month-first", "day-first"]

@@ -25,7 +25,7 @@ without GTK.
 Press `F1` or choose **Help → User Guide** to open this guide. The switcher at the
 top shows the overview or the desktop, browser, or command-line part, and a link to
 another part opens it. **Help** in an import, reconciliation, schedule, paycheck,
-payee, rule, reimbursable, goal, Expense Explorer, or net worth history window opens
+rule, reimbursable, goal, Expense Explorer, or net worth history window opens
 the guide at that window's section.
 
 ### Install on Windows
@@ -96,9 +96,8 @@ Empty Accounts** and **View → Show Hidden Accounts** filter the account tree.
 Buttons that act on a selected row, such as a schedule's **View / Edit…**, stay
 beside their table.
 
-Payees, categorization rules, and reimbursable expenses open from **Actions →
-Payees…**, **Actions → Categorization Rules…**, and **Actions → Reimbursable
-Expenses…**.
+Categorization rules and reimbursable expenses open from **Actions →
+Categorization Rules…** and **Actions → Reimbursable Expenses…**.
 
 On the Dashboard, account groups, pending bills, and expected income are separate
 sections, each as wide as its own columns; they sit side by side when the window has
@@ -167,13 +166,13 @@ first out, or average cost.
 
 Select an account to open its register. It opens scrolled to the most recent entry
 at the bottom; posting a new entry keeps you there, and changes made elsewhere leave
-your place alone. The register filter also matches payee names.
+your place alone.
 
 The last row of every register is a blank transaction. Type a new entry straight
 into it:
 
 1. Enter the date (it starts as the date you last entered, or today), an optional
-   number, and a description. Choose a payee if you use one.
+   number, and a description.
 2. Choose the other visible account under **Transfer**.
 3. Type a positive amount under the heading that describes the effect on this
    account, such as **Deposit** or **Withdrawal**. Typing in one clears the other.
@@ -211,11 +210,9 @@ transaction in the full editor. Double-clicking a transaction also opens the ful
 editor.
 
 In the full editor, a new transaction is proposed the same way: when you leave the
-description or choose a payee, and no split has an amount or memo yet, every split
-of the latest matching transaction (with its accounts, amounts, and memos) is filled
-in, along with its payee if you have not chosen one, and a note says where it came
-from. Edit anything before choosing **Save**. Choose a payee under **Payee**, or
-**(no payee)** to clear it.
+description and no split has an amount or memo yet, every split of the latest
+matching transaction (with its accounts, amounts, and memos) is filled in, and a
+note says where it came from. Edit anything before choosing **Save**.
 
 ### Tags and linked documents
 
@@ -436,22 +433,11 @@ the transactions to write and choose **Write selected**. **Backups to keep** set
 many backups are kept. See
 [Write changes back to a GnuCash book](../USER_GUIDE.md#write-changes-back-to-a-gnucash-book).
 
-## Payees
-
-Choose **Actions → Payees…**. Enter a name and one or more example descriptions (one
-per line) and choose **Add payee**. The **Proposals** list shows each transaction
-without a payee whose description matches, with the matched key; every proposal
-starts checked. Clear any you do not want and choose **Accept selected**. **Edit**
-loads a payee into the form so you can rename it or change its descriptions;
-**Delete** removes it and clears it from its transactions (**Edit → Undo** restores
-it).
-
 ## Categorization rules
 
-Choose **Actions → Categorization Rules…**. Choose whether a rule matches a
-description (enter an example) or a payee, choose the category, and choose **Add
-rule**. For a description rule, **Also set payee** chooses a payee to record on a
-matching transaction that has none; the **Sets payee** column shows it. **Up** and **Down** change a rule's priority and **Delete** removes it
+Choose **Actions → Categorization Rules…**. Enter an example description under
+**Matching description**, choose the category, and choose **Add rule**. **Up** and
+**Down** change a rule's priority and **Delete** removes it
 (**Edit → Undo** restores it). The **Proposals** list shows each transaction's
 proposed category, the deciding rule, and any later rule that would have chosen
 differently; every proposal starts checked. Clear any you do not want and choose

@@ -1,6 +1,6 @@
 // Page state, DOM and number helpers, and the authenticated JSON API calls.
 
-const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Payroll", "Plan", "Review", "Projection", "Enter", "Import", "Payees", "Rules", "Reimbursables", "Goals", "Verify", "Guide"];
+const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Payroll", "Plan", "Review", "Projection", "Enter", "Import", "Rules", "Reimbursables", "Goals", "Verify", "Guide"];
 const launchParams = new URLSearchParams(window.location.search);
 let current = VIEWS.includes(launchParams.get("view")) ? launchParams.get("view") : "Dashboard";
 let state = {

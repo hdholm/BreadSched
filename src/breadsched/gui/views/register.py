@@ -85,8 +85,6 @@ class RegisterView(BaseView):
         "transaction-update",
         "transaction-delete",
         "account-update",
-        "payee-update",
-        "payee-delete",
     )
 
     def __init__(self, manager) -> None:
@@ -114,7 +112,7 @@ class RegisterView(BaseView):
 
         self.filter_entry = Gtk.SearchEntry(placeholder_text="Filter this register")
         self.filter_entry.set_tooltip_text(
-            "Filter by description, payee, number, notes, tag, memo, or account"
+            "Filter by description, number, notes, tag, memo, or account"
         )
         self.filter_entry.connect("search-changed", lambda *_: self.schedule_refresh())
         bar.append(self.filter_entry)
@@ -175,13 +173,6 @@ class RegisterView(BaseView):
         # The description carries the expander, so splits appear indented directly
         # beneath the transaction they belong to.
         self.column_view.append_column(self._description_column())
-        self.column_view.append_column(
-            column(
-                "Payee",
-                lambda r: self._payee_name(r.transaction) if _is_parent(r) else "",
-                cell=cell("Payee"),
-            )
-        )
         self.column_view.append_column(
             column(
                 "Transfer",
@@ -445,7 +436,6 @@ class RegisterView(BaseView):
                 self.editor.populate(self.db, account.handle)
                 self.update_blank_rows(self.editor)
 
-        self._payee_names = {payee.handle: payee.name for payee in self.db.iter_payees()}
         self._rows = ledger.register(self.db, self.account_handle)
         store = Gio.ListStore.new(Row)
         for row in self._rows:
@@ -492,12 +482,6 @@ class RegisterView(BaseView):
         else:
             self.balance_label.remove_css_class("negative")
 
-    def _payee_name(self, transaction) -> str:
-        """The accepted payee's name; blank when the transaction has none."""
-        if transaction.payee is None:
-            return ""
-        return getattr(self, "_payee_names", {}).get(transaction.payee, "")
-
     def _matches_filter(self, row) -> bool:
         needle = self.filter_entry.get_text().strip().casefold()
         if not needle or self.db is None:
@@ -506,7 +490,6 @@ class RegisterView(BaseView):
         text = " ".join(
             [
                 transaction.description,
-                self._payee_name(transaction),
                 transaction.num,
                 transaction.notes,
                 transaction.source_notes,

@@ -22,8 +22,8 @@ interface you use. Three companion parts give the steps for each interface:
 Every interface can show all four parts: **Help → User Guide** (`F1`) in the
 desktop application, the **Guide** page in the browser, and `breadsched guide`
 (`overview`, `desktop`, `web`, or `cli`) on the command line. Windows and pages for
-longer workflows, such as imports, reconciliation, schedules, paychecks, payees,
-rules, reimbursables, and goals, also have a **Help** button that opens their
+longer workflows, such as imports, reconciliation, schedules, paychecks, rules,
+reimbursables, and goals, also have a **Help** button that opens their
 section of the desktop or browser part. The interfaces share one book and one set
 of rules, so you can move between them freely.
 
@@ -220,8 +220,8 @@ The desktop application and the browser offer the same work areas:
 - **Review** resolves actual activity and supports related review queues.
 - **Projection** calculates future state under Base or saved scenarios.
 
-Payees, categorization rules, reimbursable expenses, imports, and this guide have
-their own screens. How to reach each one is in the
+Categorization rules, reimbursable expenses, imports, and this guide have their own
+screens. How to reach each one is in the
 [Desktop guide](guide/desktop.md#find-your-way-around) and the
 [Browser guide](guide/web.md#find-your-way-around); the command line has a
 command for most of them ([Command-line guide](guide/cli.md)).
@@ -374,7 +374,7 @@ replace one you entered yourself.
 A register lists one account's entries oldest first, like a check register, with a
 full-ledger running balance. Headings use account-appropriate household language
 such as Deposit/Withdrawal or Payment/Charge. Filtering the register searches
-descriptions, numbers, notes, tags, split memos, payees, and account names without
+descriptions, numbers, notes, tags, split memos, and account names without
 changing the running balance. A transaction cannot be saved unless its exact splits
 balance.
 
@@ -387,8 +387,8 @@ When you type a description for a new entry, BreadSched looks for the latest
 earlier transaction in this account whose description matches (ignoring case,
 punctuation, and words containing digits, such as store numbers). It fills only what
 you have not yet typed or chosen: the transfer account (or every split line of a
-multi-split entry), the amount under the same heading, and the payee, and says where
-they came from. Nothing is saved until you confirm. Notes, reconciliation, planning
+multi-split entry) and the amount under the same heading, and says where they came
+from. Nothing is saved until you confirm. Notes, reconciliation, planning
 links, and FSA claims are never copied, and editing an existing transaction never
 proposes anything.
 
@@ -1431,16 +1431,14 @@ out as a positive number. The whole import is one undo step. New rows are posted
 against **Uncategorized CSV** under Expenses or Income for you to categorize. Two
 identical rows on the same day remain two transactions.
 
-Three more columns are optional. A **category** column posts each row to an account
+Two more columns are optional. A **category** column posts each row to an account
 you already have, named by its full name such as `Expenses:Groceries`, or by its own
 name when no other account shares it; a row whose category names no account, or
 several, is invalid and says so, and an empty cell uses **Uncategorized CSV**. A row
-with a category is not offered as a possible transfer. A **payee** column sets the
-payee when it matches one you already have, by name or by the same description
-matching payees use; an unknown payee is noted in the preview and the row imports
-without one. A **currency** column must match the account's currency; a row in
-another currency is invalid rather than imported at the wrong value. BreadSched
-never creates accounts, payees, or currencies from these columns. Re-importing a
+with a category is not offered as a possible transfer. A **currency** column must
+match the account's currency; a row in another currency is invalid rather than
+imported at the wrong value. BreadSched never creates accounts or currencies from
+these columns. Re-importing a
 row already imported leaves it untouched even if its category cell has changed.
 
 A statement that splits one charge across several categories, such as a warehouse
@@ -1475,31 +1473,13 @@ preview and duplicate review work as for any CSV statement, so downloading
 overlapping days again adds nothing twice
 ([command line](guide/cli.md#import-a-csv-statement)).
 
-### Payees
-
-A payee records who a transaction was with, separately from its description, so
-"CORNER GROCER #1234" and "Corner Grocer 0987" can both belong to **Corner Grocer**
-while each keeps the text its statement printed
-([desktop](guide/desktop.md#payees), [browser](guide/web.md#payees),
-[command line](guide/cli.md#payees)).
-
-A payee has a name and one or more example descriptions. BreadSched ignores case,
-punctuation, and any word containing a digit, so "CORNER GROCER #1234" matches every
-description that reduces to "corner grocer"; proposals show that matched key.
-Matching is exact after that, never a guess, and one description key can belong to
-only one payee. Proposals list transactions that have no payee yet and write
-nothing. Accepting assigns the payee in one undo step, and a transaction that
-already has a payee is never changed. Deleting a payee clears it from its
-transactions. Re-importing from GnuCash, OFX, QIF, or CSV keeps the payees you
-assigned. The register shows each transaction's payee, and you can set or clear it
-in the transaction editor or the register row.
-
 ### Categorization rules
 
 Imported transactions start in **Uncategorized CSV** or **Uncategorized OFX**. A
-categorization rule proposes a category for them, matched by payee or by
-description (with the same matching as payees: case, punctuation, and words
-containing digits are ignored) ([desktop](guide/desktop.md#categorization-rules),
+categorization rule proposes a category for them, matched by description: case,
+punctuation, and any word containing a digit are ignored, so "CORNER GROCER #1234"
+and "Corner Grocer 0987" both match a rule made from either, and matching is exact
+after that, never a guess ([desktop](guide/desktop.md#categorization-rules),
 [browser](guide/web.md#categorization-rules),
 [command line](guide/cli.md#categorization-rules)). Rules are ordered: the first rule
 that matches decides, and proposals name any later rule that would have chosen
@@ -1508,11 +1488,9 @@ are ever proposed, so a category you chose yourself is never replaced, and a
 transaction split across several placeholder lines is left for you. Nothing changes
 until you accept, and accepting is one undo step.
 
-A description rule can also set a payee: accepting its proposal then records that
-payee on a transaction that has none, so "CORNER GROCER #1234" becomes a Groceries
-purchase from Corner Grocer in one step. A payee you already chose is never
-replaced. Deleting a payee removes the rules that match it and stops rules from
-setting it; their categories stay.
+A transaction's description is its only name, as in GnuCash. BreadSched 0.2.0a250
+removed the separate payees of earlier alphas; opening an older book converts each
+rule that matched a payee into rules for that payee's descriptions.
 
 ## Print, export, and inspect
 

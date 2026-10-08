@@ -56,7 +56,7 @@ concrete overlap and legibility problems; reproducing GnuCash's look is not a go
 
 Windows must stay usable on small screens whatever the book holds:
 
-- Dialogs keep minimum sizes within 800 × 600 even with very long names, 150 payees,
+- Dialogs keep minimum sizes within 800 × 600 even with very long names
   and 40-split transactions (`TestDialogsFitTheScreen`); long forms move their body
   into a scroller (`widgets.bounded.scroll_body`) and keep the button row outside.
 - Views keep within a 1024 × 700 work area (`TestBoundedSizes`). Drop-downs come
@@ -82,7 +82,7 @@ shared engine mapping, so GTK and web name the same ledger directions.
 
 Entry autocomplete comes from one service, `services/autocomplete.suggest_entry`,
 so GTK and web never infer different templates. A description matches on its
-normalized key (`payees.match_key`) or a chosen payee matches exactly; candidates
+normalized key (`description_keys.match_key`); candidates
 must use the entry's account and currency and only visible, postable accounts, and
 the latest wins. The proposal carries accounts, values, and memos only (never
 reconcile state, source identity, notes, planning purpose, investment activity, or
@@ -101,7 +101,7 @@ the shared transaction service, not a parallel transaction model:
   entry widgets are created once per register and moved into cells, so typed values
   survive repaints.
 - **Cells and keys.** Date (defaulting to the last date entered), Num, Description,
-  Payee, Transfer (visible, postable accounts), and Increase/Decrease entries titled
+  Transfer (visible, postable accounts), and Increase/Decrease entries titled
   with the account's headings. Tab moves in column order, Enter commits, Escape
   resets, and typing never changes the selection.
 - **Commit.** Two balancing `TransactionSplitInput`s with a positive exact amount

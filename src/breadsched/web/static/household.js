@@ -1,82 +1,4 @@
-// Payees, savings goals, reimbursable expenses, and categorization rules.
-
-async function showPayees() {
-  const data = await get("/api/payees");
-  const refresh = async () => { current = "Payees"; await render(); };
-  const run = (action) => async () => {
-    try { await action(); } catch (error) { say(error.message, "error"); }
-  };
-  const name = el("input", { name:"name", placeholder:"Corner Grocer" });
-  const matches = el("textarea", { name:"matches", rows:"3",
-    placeholder:"One example description per line, e.g. CORNER GROCER #1234" });
-  let editing = null;
-  const saveButton = el("button", { class:"action primary", type:"submit" }, "Add payee");
-  const form = el("form", { class:"entry", onsubmit:(event) => {
-    event.preventDefault();
-    run(async () => {
-      const lines = matches.value.split("\n").map((line) => line.trim()).filter(Boolean);
-      const saved = await post("/api/payee/save",
-        { name:name.value, matches:lines, handle:editing });
-      say(`Saved ${saved.name}.`);
-      await refresh();
-    })();
-  } },
-    el("label", {}, "Name", name),
-    el("label", {}, "Matching descriptions", matches),
-    saveButton);
-  const payeeRows = data.payees.map((payee) => el("tr", {},
-    el("td", {}, payee.name),
-    el("td", {}, payee.match_keys.join(", ") || "—"),
-    el("td", { class:"num" }, String(payee.transactions)),
-    el("td", {},
-      el("button", { class:"action", type:"button", onclick:() => {
-        editing = payee.handle;
-        name.value = payee.name;
-        matches.value = payee.match_keys.join("\n");
-        saveButton.textContent = "Save changes";
-        name.focus();
-      } }, "Edit"),
-      el("button", { class:"action", type:"button", onclick:run(async () => {
-        if (!window.confirm(`Delete ${payee.name}? It is cleared from `
-          + `${payee.transactions} transaction(s); descriptions are unchanged.`)) return;
-        const deleted = await post("/api/payee/delete", { handle:payee.handle });
-        say(`Deleted ${payee.name}; cleared from ${deleted.cleared} transaction(s).`);
-        await refresh();
-      }) }, "Delete"))));
-  const chosen = new Set(data.proposals.map((item) => item.transaction));
-  const proposalRows = data.proposals.map((item) => {
-    const box = el("input", { type:"checkbox", checked:"checked",
-      "aria-label":`Accept ${item.payee_name} for ${item.description}` });
-    box.addEventListener("change", () => {
-      if (box.checked) chosen.add(item.transaction); else chosen.delete(item.transaction);
-    });
-    return el("tr", {}, el("td", {}, box), el("td", {}, item.date),
-      el("td", {}, item.description), el("td", {}, item.payee_name), el("td", {}, item.key));
-  });
-  const accept = el("button", { class:"action primary", type:"button",
-    disabled:data.proposals.length ? null : "disabled",
-    onclick:run(async () => {
-      const result = await post("/api/payees/accept", { transactions:[...chosen] });
-      say(`Assigned ${result.assigned} payee(s); ${result.unchanged} left unchanged.`);
-      await refresh();
-    }) }, "Accept selected");
-  return el("div", {},
-    el("p", { class:"note" },
-      "A payee records who a transaction was with; descriptions are never changed. "
-      + "Matching ignores case, punctuation, and words containing digits, and is otherwise "
-      + "exact. Nothing is assigned until you accept, and a transaction that already has "
-      + "a payee is never changed."),
-    el("div", { class:"panel panel-pad-16" }, el("h2", {}, "Payees"),
-      data.payees.length
-        ? table(["Payee", "Matches", { label:"Transactions", num:true }, ""], payeeRows)
-        : el("p", { class:"note" }, "No payees yet."),
-      form),
-    el("div", { class:"panel panel-pad-16" }, el("h2", {}, "Proposals"),
-      data.proposals.length
-        ? table(["Accept", "Date", "Description", "Payee", "Matched key"], proposalRows)
-        : el("p", { class:"note" }, "No transactions without a payee match a payee."),
-      el("div", { class:"toolbar" }, accept)));
-}
+// Savings goals, reimbursable expenses, and categorization rules.
 
 // Savings goals from the shared service: each income sets aside a share until the
 // target date, and extra money can be allocated. The page only gathers input.
@@ -461,51 +383,26 @@ async function showRules() {
   const run = (action) => async () => {
     try { await action(); } catch (error) { say(error.message, "error"); }
   };
-  const kind = el("select", { name:"kind" },
-    el("option", { value:"description" }, "Description"),
-    el("option", { value:"payee" }, "Payee"));
   const description = el("input", { name:"description",
     placeholder:"Example description, e.g. CORNER GROCER #1234" });
-  const payee = el("select", { name:"payee" },
-    ...data.payees.map((item) => el("option", { value:item.handle }, item.name)));
   const category = el("select", { name:"category" },
     ...data.categories.map((item) => el("option", { value:item.handle }, item.name)));
-  const setPayee = el("select", { name:"set_payee" },
-    el("option", { value:"" }, "(no payee)"),
-    ...data.payees.map((item) => el("option", { value:item.handle }, item.name)));
-  const setPayeeLabel = el("label", {}, "Also set payee", setPayee);
-  const syncKind = () => {
-    description.hidden = kind.value !== "description";
-    payee.hidden = kind.value !== "payee";
-    setPayeeLabel.hidden = kind.value !== "description";
-  };
-  kind.addEventListener("change", syncKind);
-  syncKind();
   const form = el("form", { class:"entry", onsubmit:(event) => {
     event.preventDefault();
     run(async () => {
-      const body = { category:category.value };
-      if (kind.value === "payee") body.payee = payee.value || null;
-      else {
-        body.description = description.value;
-        if (setPayee.value) body.set_payee = setPayee.value;
-      }
-      await post("/api/rule/add", body);
+      await post("/api/rule/add", { category:category.value, description:description.value });
       say("Rule added.");
       await refresh();
     })();
   } },
-    el("label", {}, "Match", kind),
-    el("label", {}, "Matching", description, payee),
+    el("label", {}, "Matching description", description),
     el("label", {}, "Category", category),
-    setPayeeLabel,
     el("button", { class:"action primary", type:"submit" }, "Add rule"));
   const last = data.rules.length;
   const ruleRows = data.rules.map((rule) => el("tr", {},
     el("td", { class:"num" }, String(rule.position)),
-    el("td", {}, rule.payee ? `Payee ${rule.payee_name || rule.payee}` : `Description ${rule.key}`),
+    el("td", {}, `Description ${rule.key}`),
     el("td", {}, rule.category_name),
-    el("td", {}, rule.set_payee ? (rule.set_payee_name || rule.set_payee) : "—"),
     el("td", {},
       el("button", { class:"action", type:"button", disabled:rule.position === 1 ? "disabled" : null,
         onclick:run(async () => {
@@ -533,8 +430,7 @@ async function showRules() {
       .join("; ");
     return el("tr", {}, el("td", {}, box), el("td", {}, item.date),
       el("td", {}, item.description), el("td", { class:"num" }, money(item.amount)),
-      el("td", {}, item.payee ? `${item.category_name}; payee ${item.payee_name || item.payee}`
-        : item.category_name),
+      el("td", {}, item.category_name),
       el("td", { class:"num" }, String(item.rule_position)),
       el("td", {}, conflicts || "—"));
   });
@@ -542,8 +438,7 @@ async function showRules() {
     disabled:data.proposals.length ? null : "disabled",
     onclick:run(async () => {
       const result = await post("/api/rules/accept", { transactions:[...chosen] });
-      say(`Categorized ${result.assigned} transaction(s); ${result.unchanged} left unchanged`
-        + (result.payees_set ? `; set the payee on ${result.payees_set}.` : "."));
+      say(`Categorized ${result.assigned} transaction(s); ${result.unchanged} left unchanged.`);
       await refresh();
     }) }, "Accept selected");
   return el("div", {},
@@ -551,11 +446,10 @@ async function showRules() {
       "Rules propose a category for imported transactions still in Uncategorized CSV or "
       + "Uncategorized OFX. The first matching rule decides; a later rule that would choose "
       + "differently is listed as a conflict. A category you chose is never replaced, and "
-      + "nothing changes until you accept. A description rule can also set a payee on a "
-      + "transaction that has none."),
+      + "nothing changes until you accept."),
     el("div", { class:"panel panel-pad-16" }, el("h2", {}, "Rules"),
       data.rules.length
-        ? table([{ label:"Rule", num:true }, "Matches", "Category", "Sets payee", ""], ruleRows)
+        ? table([{ label:"Rule", num:true }, "Matches", "Category", ""], ruleRows)
         : el("p", { class:"note" }, "No rules yet."),
       form),
     el("div", { class:"panel panel-pad-16" }, el("h2", {}, "Proposals"),

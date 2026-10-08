@@ -36,7 +36,6 @@ def derived_column_issues(conn: sqlite3.Connection) -> list[BookIssue]:
         "fsa_claim": ("service_date", "provider"),
         "receivable": ("incurred_date", "payer"),
         "reconciliation": ("account", "statement_date", "status"),
-        "payee": ("name",),
         "savings_goal": ("name",),
     }
     defaults: dict[tuple[str, str], Any] = {
@@ -58,7 +57,6 @@ def derived_column_issues(conn: sqlite3.Connection) -> list[BookIssue]:
         ("reconciliation", "account"): "",
         ("reconciliation", "statement_date"): "",
         ("reconciliation", "status"): "",
-        ("payee", "name"): "",
         ("savings_goal", "name"): "",
     }
     for table, columns in derived_specs.items():

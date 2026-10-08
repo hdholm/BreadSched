@@ -19,11 +19,9 @@ GTK. To create a book first, use the [command line](cli.md#create-and-inspect-bo
 
 The navigation bar offers the work areas (**Dashboard**, **FSA Dashboard**,
 **Accounts**, **Register**, **Scheduled**, **Plan**, **Review**, **Projection**) and
-**Enter**, **Import**, **Payees**, **Rules**, **Reimbursables**, **Goals**, **Verify**, and
-**Guide**. **Guide** shows this guide: choose the overview or the desktop, browser,
+**Enter**, **Import**, **Rules**, **Reimbursables**, **Goals**, **Verify**, and **Guide**. **Guide** shows this guide: choose the overview or the desktop, browser,
 or command-line part, and a link to another part opens it there. **Help** on
-**Scheduled**, **Payroll**, **Plan**, **Projection**, **Import**, **Payees**,
-**Rules**, **Reimbursables**, and **Goals**, and in the CSV statement, write-back,
+**Scheduled**, **Payroll**, **Plan**, **Projection**, **Import**, **Rules**, **Reimbursables**, and **Goals**, and in the CSV statement, write-back,
 reconciliation, due review, held GnuCash changes, Expense Explorer, and net worth
 history sections, opens this guide at that section in a new browser tab, so the
 form you were filling in stays as it was.
@@ -75,7 +73,7 @@ lines with an imbalance line, and **Edit** on any row to change it in place, wit
 proposal from an earlier matching transaction (see
 [Transactions and registers](../USER_GUIDE.md#transactions-and-registers)). Choosing
 another account, or editing another row, while something is typed asks before
-discarding it. Choose a payee in the row's **Payee** list.
+discarding it.
 
 ### Tags and linked documents
 
@@ -281,21 +279,11 @@ GnuCash**. Tick the transactions to write and choose **Write selected**. **Backu
 to keep** sets how many backups are kept. See
 [Write changes back to a GnuCash book](../USER_GUIDE.md#write-changes-back-to-a-gnucash-book).
 
-## Payees
-
-Open **Payees**. Enter a name and one or more example descriptions (one per line)
-and choose **Add payee**. The **Proposals** list shows each transaction without a
-payee whose description matches, with the matched key; every proposal starts
-checked. Clear any you do not want and choose **Accept selected**. **Edit** loads a
-payee into the form; **Delete** removes it and clears it from its transactions.
-
 ## Categorization rules
 
-Open **Rules**. Choose whether a rule matches a description (enter an example) or a
-payee, choose the category, and choose **Add rule**. For a description rule, **Also
-set payee** chooses a payee to record on a matching transaction that has none; the
-**Sets payee** column shows it. **Up** and **Down** change a
-rule's priority and **Delete** removes it. The **Proposals** list shows each
+Open **Rules**. Enter an example description under **Matching description**,
+choose the category, and choose **Add rule**. **Up** and **Down** change a rule's
+priority and **Delete** removes it. The **Proposals** list shows each
 transaction's proposed category, the deciding rule, and any later rule that would
 have chosen differently; every proposal starts checked. Clear any you do not want
 and choose **Accept selected**.

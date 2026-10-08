@@ -4,14 +4,14 @@ const RENDERERS = {
   Dashboard: showDashboard, Accounts: showAccounts, Register: showRegister, Scheduled: showScheduled, Payroll: showPayroll,
   "FSA Dashboard": showFsaDashboard, Plan: showPlan, Scenarios: showScenarios,
   Review: showReview, Projection: showProjection, Enter: showEntry, Import: showImport,
-  Payees: showPayees, Rules: showRules, Reimbursables: showReimbursables, Goals: showGoals, Verify: showVerify,
+  Rules: showRules, Reimbursables: showReimbursables, Goals: showGoals, Verify: showVerify,
   Guide: showGuide,
 };
 
 // Views whose workflow has a section in the browser guide get a Help button.
 const VIEW_HELP = {
   Scheduled: "scheduled", Payroll: "payroll", Plan: "plan", Projection: "plan",
-  Import: "import", Payees: "payees", Rules: "rules", Reimbursables: "reimbursables",
+  Import: "import", Rules: "rules", Reimbursables: "reimbursables",
   Goals: "goals",
 };
 

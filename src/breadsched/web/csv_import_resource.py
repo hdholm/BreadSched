@@ -35,7 +35,6 @@ _TEXT_FIELDS = (
     "description",
     "memo",
     "category",
-    "payee",
     "currency",
 )
 _CHOICES = {
@@ -95,7 +94,6 @@ def _mapping(payload: Mapping[str, Any]) -> CsvMapping:
         description=columns["description"],
         memo=columns["memo"],
         category=columns["category"],
-        payee=columns["payee"],
         currency=columns["currency"],
         date_format=cast(Any, _choice(raw, "date_format")),
         number_format=cast(Any, _choice(raw, "number_format")),
@@ -144,7 +142,6 @@ def csv_preview(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     if result.value is None:
         raise service_error(result.errors[0])
     preview = result.value
-    payee_names = {payee.handle: payee.name for payee in api.db.iter_payees()}
     return {
         "encoding": preview.encoding,
         "delimiter": preview.delimiter,
@@ -168,8 +165,6 @@ def csv_preview(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
                 "status": row.status,
                 "reason": row.reason,
                 "category": api.db.full_name(row.category) if row.category else None,
-                "payee": payee_names.get(row.payee) if row.payee else None,
-                "note": row.note,
                 "splits": [
                     {"category": api.db.full_name(account), "amount": str(value.to_decimal())}
                     for account, value in row.splits

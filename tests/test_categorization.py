@@ -1,11 +1,11 @@
 """Reviewed categorization rules.
 
-A rule maps a payee, or a normalized description key, to an income or expense
-category. Rules are ordered: the first matching rule proposes the category, and any
-later rule that would choose differently is reported as a conflict. Only
-transactions still posted to an import placeholder (Uncategorized CSV or OFX) are
-proposed, so a category the user already chose is never replaced. Nothing changes
-until the user accepts, and accepting is one undo step.
+A rule maps a normalized description key to an income or expense category. Rules
+are ordered: the first matching rule proposes the category, and any later rule
+that would choose differently is reported as a conflict. Only transactions still
+posted to an import placeholder (Uncategorized CSV or OFX) are proposed, so a
+category the user already chose is never replaced. Nothing changes until the user
+accepts, and accepting is one undo step.
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ from breadsched.gen.services.categorization import (
     preview_category_proposals,
 )
 from breadsched.gen.services.csv_import import CsvImportRequest, CsvMapping, import_csv
-from breadsched.gen.services.payees import SavePayee, assign_payee, save_payee
 
 STATEMENT = """Date,Description,Amount
 2026-09-01,CORNER GROCER #1234,-42.10
@@ -75,11 +74,20 @@ def test_description_rule_proposes_then_accepts(db, book, imported):
     ]
 
 
-def test_payee_rule_and_priority_order_with_conflicts(db, book, imported):
-    power = save_payee(db, SavePayee("City Power")).value
-    assign_payee(db, imported["City Power"], power.handle)
-    add_rule(db, AddRule(category=book.utilities, payee=power.handle))
-    add_rule(db, AddRule(category=book.rent, description="city power"))
+def test_priority_order_with_conflicts(db, book, imported):
+    from breadsched.gen.engine.categorization import RULES_KEY
+
+    # The service refuses a second rule for the same key, but a book migrated from
+    # payee rules can hold two; the first decides and the other is a conflict.
+    with db.transaction("Rules from a migrated book") as txn:
+        db.set_metadata(
+            RULES_KEY,
+            [
+                {"handle": "a", "category": book.utilities, "key": "city power"},
+                {"handle": "b", "category": book.rent, "key": "city power"},
+            ],
+            txn,
+        )
 
     [proposal] = [
         item for item in preview_category_proposals(db).value if item.description == "City Power"
@@ -135,19 +143,13 @@ def test_rule_changes_are_undoable_and_delete_works(db, book):
 
 
 def test_rejected_rules_leave_the_book_unchanged(db, book):
-    payee = save_payee(db, SavePayee("Landlord")).value
     add_rule(db, AddRule(category=book.rent, description="rent"))
     before = list_rules(db)
 
     for request, code in [
-        (AddRule(category=book.rent), "rule.match.required"),
-        (
-            AddRule(category=book.rent, description="x", payee=payee.handle),
-            "rule.match.required",
-        ),
+        (AddRule(category=book.rent, description=""), "rule.match.empty"),
         (AddRule(category=book.rent, description="#123"), "rule.match.empty"),
         (AddRule(category=book.rent, description="RENT"), "rule.match.duplicate"),
-        (AddRule(category=book.rent, payee="missing"), "rule.payee.not_found"),
         (AddRule(category=book.checking, description="deposit"), "rule.category.invalid"),
         (AddRule(category=book.expenses, description="deposit"), "rule.category.invalid"),
         (AddRule(category="missing", description="deposit"), "rule.category.invalid"),
@@ -227,89 +229,3 @@ def test_cli_adds_previews_and_accepts(tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["assigned"] == 2
     assert main([*command, "--add-description", "#12", "--category", category]) == 2
     assert "at least one word without digits" in capsys.readouterr().err
-
-
-def test_a_description_rule_can_also_set_a_payee(db, book, imported):
-    grocer = save_payee(db, SavePayee("Corner Grocer")).value
-    rule = add_rule(
-        db, AddRule(category=book.groceries, description="CORNER GROCER", set_payee=grocer.handle)
-    ).value
-    assert rule.set_payee == grocer.handle
-    assert list_rules(db)[0].set_payee == grocer.handle
-    # A payee already chosen is never replaced: only the other transaction gets one.
-    other = save_payee(db, SavePayee("Grocer Outlet")).value
-    assign_payee(db, imported["Corner Grocer 0987"], other.handle)
-
-    proposals = {item.description: item for item in preview_category_proposals(db).value}
-    assert proposals["CORNER GROCER #1234"].payee == grocer.handle
-    assert proposals["Corner Grocer 0987"].payee is None
-
-    applied = apply_category_proposals(db).value
-    assert (applied.assigned, applied.payees_set) == (2, 1)
-    assert db.get_transaction(imported["CORNER GROCER #1234"]).payee == grocer.handle
-    assert db.get_transaction(imported["Corner Grocer 0987"]).payee == other.handle
-
-
-def test_a_payee_chosen_after_the_preview_is_kept(db, book, imported):
-    grocer = save_payee(db, SavePayee("Corner Grocer")).value
-    other = save_payee(db, SavePayee("Grocer Outlet")).value
-    add_rule(
-        db, AddRule(category=book.groceries, description="CORNER GROCER", set_payee=grocer.handle)
-    )
-    assign_payee(db, imported["CORNER GROCER #1234"], other.handle)
-    applied = apply_category_proposals(db, (imported["CORNER GROCER #1234"],)).value
-    assert (applied.assigned, applied.payees_set) == (1, 0)
-    assert db.get_transaction(imported["CORNER GROCER #1234"]).payee == other.handle
-
-
-def test_set_payee_is_refused_on_payee_rules_and_for_missing_payees(db, book):
-    power = save_payee(db, SavePayee("City Power")).value
-    before = list_rules(db)
-    refused = add_rule(
-        db, AddRule(category=book.utilities, payee=power.handle, set_payee=power.handle)
-    )
-    assert [error.code for error in refused.errors] == ["rule.set_payee.payee_match"]
-    missing = add_rule(db, AddRule(category=book.utilities, description="Power", set_payee="nope"))
-    assert [error.code for error in missing.errors] == ["rule.set_payee.not_found"]
-    assert list_rules(db) == before
-
-
-def test_deleting_a_payee_cleans_the_rules_that_name_it(db, book):
-    from breadsched.gen.services.payees import delete_payee
-
-    grocer = save_payee(db, SavePayee("Corner Grocer")).value
-    add_rule(db, AddRule(category=book.groceries, payee=grocer.handle))
-    add_rule(db, AddRule(category=book.groceries, description="GROCER", set_payee=grocer.handle))
-    assert delete_payee(db, grocer.handle).ok
-    [kept] = list_rules(db)
-    assert (kept.key, kept.set_payee, kept.category) == ("grocer", None, book.groceries)
-    db.undo()
-    assert [rule.set_payee for rule in list_rules(db)] == [None, grocer.handle]
-
-
-def test_cli_sets_a_payee_with_a_description_rule(tmp_path, capsys):
-    import json
-
-    from breadsched.cli.main import main
-    from breadsched.gen.sample_book import create_sample_book
-
-    book = tmp_path / "cli.breadsched"
-    create_sample_book(book, as_of=date(2026, 8, 15))
-    statement = tmp_path / "statement.csv"
-    statement.write_text(STATEMENT, encoding="utf-8")
-    mapping = ["--date", "Date", "--amount", "Amount", "--description", "Description"]
-    command = ["import-csv", str(book), str(statement), "--account", "Checking", *mapping]
-    assert main(command) == 0
-    assert main(["payees", str(book), "--add", "Corner Grocer"]) == 0
-    capsys.readouterr()
-    rules = ["rules", str(book)]
-    added = [*rules, "--add-description", "corner grocer", "--category", "Expenses:Groceries"]
-    assert main([*added, "--set-payee", "Corner Grocer"]) == 0
-    assert "payee Corner Grocer" in capsys.readouterr().out
-    assert main([*rules, "--json"]) == 0
-    [rule] = json.loads(capsys.readouterr().out)
-    assert rule["set_payee_name"] == "Corner Grocer"
-    assert main([*rules, "--preview", "--json"]) == 0
-    assert {item["payee_name"] for item in json.loads(capsys.readouterr().out)} == {"Corner Grocer"}
-    assert main([*rules, "--accept-all", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["payees_set"] == 2

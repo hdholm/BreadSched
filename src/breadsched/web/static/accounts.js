@@ -1012,21 +1012,6 @@ async function showRegister() {
       openScheduledEditor(schedules, draft);
     } catch (error) { say(error.message, "error"); }
   };
-  const payeePicker = (row) => {
-    // The payee is BreadSched's own reference; the description is never rewritten.
-    const select = el("select", { "aria-label":`Payee for ${row.description}`,
-      onchange: async (event) => {
-        try {
-          await post("/api/transaction/payee",
-            { transaction:row.handle, payee:event.target.value || null });
-          say("Payee saved.");
-        } catch (error) { say(error.message, "error"); render(); }
-      } },
-      el("option", { value:"" }, "(no payee)"),
-      ...data.payees.map((payee) => el("option", { value:payee.handle,
-        selected: payee.handle === row.payee ? "selected" : null }, payee.name)));
-    return select;
-  };
   const rows = [];
   for (const row of data.rows) {
     if (state.editing && state.editing.split === row.split) {
@@ -1047,7 +1032,6 @@ async function showRegister() {
           `Documents: ${row.documents.length}`
           + (row.documents.some((item)=>item.missing)
             ? ` (${row.documents.filter((item)=>item.missing).length} missing)` : "")) : null),
-      el("td", {}, payeePicker(row)),
       el("td", { class: "muted" }, row.transfer),
       el("td", { class: "num" }, amount > 0 ? money(row.amount) : ""),
       el("td", { class: "num" }, amount < 0 ? money(String(row.amount).slice(1)) : ""),
@@ -1078,7 +1062,7 @@ async function showRegister() {
         if (account) openReconciliation(account).catch((error)=>say(error.message,"error"));
       }}, "Reconcile…"),
       el("span", { class: "muted" }, `${data.rows.length} entries`)),
-    table(["Date", "Num", "Description", "Payee", "Transfer",
+    table(["Date", "Num", "Description", "Transfer",
            { label: data.debit_label, num: true }, { label: data.credit_label, num: true },
            { label: "Balance", num: true }, ""], rows));
 }

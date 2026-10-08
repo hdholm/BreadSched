@@ -68,11 +68,11 @@ function registerEntry(data, usable, row) {
   const accounts = usable.filter((item) => !item.hidden || referenced.has(item.handle));
   const transfers = accounts.filter((item) => item.handle !== state.account);
   if (!editing && (!selected || selected.hidden)) {
-    return [el("tr", { class:"entry-row" }, el("td", { colspan:"9", class:"note" },
+    return [el("tr", { class:"entry-row" }, el("td", { colspan:"8", class:"note" },
       "Hidden accounts remain readable but take no new transactions."))];
   }
   if (!editing && !transfers.length) {
-    return [el("tr", { class:"entry-row" }, el("td", { colspan:"9", class:"note" },
+    return [el("tr", { class:"entry-row" }, el("td", { colspan:"8", class:"note" },
       "No other visible account to transfer to."))];
   }
 
@@ -87,7 +87,6 @@ function registerEntry(data, usable, row) {
       date: editing ? row.date : (state.entryLastDate || new Date().toISOString().slice(0, 10)),
       num: editing ? row.num : "",
       description: editing ? row.description : "",
-      payee: editing ? (row.payee || "") : "",
       transfer: editing && simple ? others[0].account : "",
       transferTouched: editing,
       increase: editing && simple && mineUnits > 0n ? entryText(mineUnits) : "",
@@ -144,11 +143,6 @@ function registerEntry(data, usable, row) {
   const dateInput = input("date", { type:"date", label:"date" });
   const numInput = input("num", { placeholder:"Num", label:"number", size:"5" });
   const description = input("description", { placeholder:"Description", label:"description" });
-  const payee = el("select", { "aria-label":`${noun} payee` },
-    el("option", { value:"" }, "(no payee)"),
-    ...data.payees.map((item) => el("option", { value:item.handle,
-      selected:item.handle === draft.payee ? "selected" : null }, item.name)));
-  payee.addEventListener("change", () => { draft.payee = payee.value; touch(); propose(); });
   const transfer = accountSelect(draft.transfer, transfers, `${noun} transfer account`,
     (value) => { draft.transfer = value; draft.transferTouched = true; });
   if (!draft.transfer) draft.transfer = transfer.value;
@@ -230,7 +224,7 @@ function registerEntry(data, usable, row) {
     try {
       await post("/api/register/entry", {
         handle: editing ? row.handle : null, date:draft.date, num:draft.num,
-        description:draft.description.trim(), payee:draft.payee || null, splits,
+        description:draft.description.trim(), splits,
       });
       delete state.entryDrafts[key];
       if (editing) {
@@ -252,10 +246,9 @@ function registerEntry(data, usable, row) {
     if (editing) return;  // a stored transaction is never proposed over
     const amountsEmpty = !draft.increase.trim() && !draft.decrease.trim()
       && !draft.lines.some((line) => line.increase.trim() || line.decrease.trim());
-    if (!draft.description.trim() && !draft.payee) return;
+    if (!draft.description.trim()) return;
     try {
-      const query = new URLSearchParams({ account:state.account,
-        description:draft.description, ...(draft.payee ? {payee:draft.payee} : {}) });
+      const query = new URLSearchParams({ account:state.account, description:draft.description });
       const { suggestion } = await get(`/api/entry/suggest?${query}`);
       if (!suggestion) return;
       const filled = [];
@@ -285,12 +278,6 @@ function registerEntry(data, usable, row) {
           else if (units < 0n) { draft.decrease = entryText(-units); decrease.value = draft.decrease; }
           if (units) filled.push(entryText(units < 0n ? -units : units));
         }
-      }
-      if (!draft.payee && suggestion.payee
-          && data.payees.some((item) => item.handle === suggestion.payee)) {
-        draft.payee = suggestion.payee;
-        payee.value = suggestion.payee;
-        filled.push(data.payees.find((item) => item.handle === suggestion.payee).name);
       }
       if (filled.length) {
         draft.dirty = true;
@@ -350,7 +337,6 @@ function registerEntry(data, usable, row) {
 
   const main = el("tr", { class:"entry-row", onkeydown:keys },
     el("td", {}, dateInput), el("td", {}, numInput), el("td", {}, description),
-    el("td", {}, payee),
     el("td", {}, draft.split ? el("span", { class:"muted" }, "-- Split --") : transfer),
     el("td", { class:"num" }, draft.split ? null : increase),
     el("td", { class:"num" }, draft.split ? null : decrease),
@@ -361,7 +347,7 @@ function registerEntry(data, usable, row) {
   if (draft.split) {
     const imbalanceRow = el("tr", { class:"entry-row entry-line" },
       el("td", {}), el("td", {}), el("td", { class:"muted" }, "Imbalance"),
-      el("td", {}), el("td", {}), el("td", {}), el("td", {}), imbalance, el("td", {}));
+      el("td", {}), el("td", {}), el("td", {}), imbalance, el("td", {}));
     const lineRow = (line, index) => {
       const label = `${editing ? "Edited" : "New"} split ${index + 1}`;
       const memo = el("input", { value:line.memo, placeholder:"Memo", "aria-label":`${label} memo` });
@@ -382,7 +368,7 @@ function registerEntry(data, usable, row) {
       up.addEventListener("input", grow);
       down.addEventListener("input", grow);
       return el("tr", { class:"entry-row entry-line", onkeydown:keys },
-        el("td", {}), el("td", {}), el("td", {}, memo), el("td", {}),
+        el("td", {}), el("td", {}), el("td", {}, memo),
         el("td", {}, account), el("td", { class:"num" }, up), el("td", { class:"num" }, down),
         el("td", {}), el("td", {}));
     };

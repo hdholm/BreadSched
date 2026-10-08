@@ -116,7 +116,7 @@ correlation identifier and returns only that identifier with a stable error code
 Each resource module (`web/*_resource.py`: book summary and verification, accounts
 and securities, Plan, Plan detail, Expense Explorer, Dashboard, Projection, scenarios,
 schedules and due review, loans, Review, registers, reconciliation, FSA, claims,
-receivables, goals, payroll, payees, rules, tags and documents, imports, write-back,
+receivables, goals, payroll, rules, tags and documents, imports, write-back,
 net worth, guide) is a thin adapter. Controls several adapters share have one parser:
 ``web.controls`` turns a browser amount into `Money` and a `ServiceError` into a
 resource error with presentation-owned wording, and ``web.schedule_controls`` parses
@@ -172,7 +172,7 @@ module that defines both their parsers, in a `register(add)` function, and their
 handlers: `book_commands` (create, back up, restore, migrate, verify, guide, export,
 read GnuCash, start web or GTK), `import_commands` (book, CSV, held changes,
 write-back, inference), `ledger_commands` (accounts, registers, balances, rates,
-transactions), `categorization_commands` (rules, payees, tags, attachments),
+transactions), `categorization_commands` (rules, tags, attachments),
 `investment_commands` (holdings and cost basis), `plan_commands` (schedules,
 Review, due review, Plan matches, activity, estimates, paychecks),
 `benefit_commands` (FSA claims, receivables, goals), and `projection_commands`

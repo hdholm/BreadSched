@@ -63,7 +63,9 @@ def test_each_interface_part_links_to_the_overview_and_the_other_parts():
 
 
 def test_links_resolve_the_same_way_from_any_file():
-    assert resolve_link("guide/web.md#payees", "overview") == GuideLink("web", "payees")
+    assert resolve_link("guide/web.md#categorization-rules", "overview") == GuideLink(
+        "web", "categorization-rules"
+    )
     assert resolve_link("../USER_GUIDE.md", "cli") == GuideLink("overview", None)
     assert resolve_link("#plan", "overview") == GuideLink("overview", "plan")
     assert resolve_link("https://example.org/x", "web") == GuideLink(

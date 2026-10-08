@@ -1243,7 +1243,7 @@ class TestMenuBarAndToolbar:
             assert (target.part, target.anchor) == ("overview", "reimbursable-expenses")
             assert guide.part == "overview" and guide.part_buttons["overview"].get_active()
             assert buffer.get_mark("h:reimbursable-expenses") is not None
-            guide.follow("guide/web.md#payees")
+            guide.follow("guide/web.md#categorization-rules")
             assert guide.part == "web"
         finally:
             guide.destroy()
@@ -1263,7 +1263,6 @@ class TestMenuBarAndToolbar:
 
     def test_workflow_dialogs_have_a_help_button_for_their_topic(self, app, window, populated_book):
         from breadsched.gui.dialogs.csv_import_dialog import CsvImportDialog
-        from breadsched.gui.dialogs.payee_dialog import PayeesDialog
         from breadsched.gui.dialogs.rules_dialog import RulesDialog
         from breadsched.gui.gi_setup import Gtk
         from breadsched.gui.user_guide import UserGuideWindow
@@ -1271,7 +1270,6 @@ class TestMenuBarAndToolbar:
         app.open_book(populated_book)
         for make, heading in (
             (CsvImportDialog, "h:import-a-csv-statement"),
-            (PayeesDialog, "h:payees"),
             (RulesDialog, "h:categorization-rules"),
         ):
             dialog = make(window, app.db)
@@ -5713,131 +5711,6 @@ class TestCsvImportDialog:
             opened.destroy()
 
 
-class TestPayeesDialog:
-    """Add, edit, delete payees and accept proposals through the shared service."""
-
-    @pytest.fixture
-    def dialog(self, app, window, populated_book):
-        from breadsched.gui.dialogs.payee_dialog import PayeesDialog
-
-        app.open_book(populated_book)
-        dialog = PayeesDialog(window, app.db)
-        yield dialog
-        dialog.destroy()
-
-    @staticmethod
-    def _describe(dialog, description):
-        dialog.edit(None)
-        dialog.name_entry.set_text("Known")
-        dialog.matches_view.get_buffer().set_text(description)
-
-    def test_add_then_accept_selected_proposals(self, dialog, app):
-        transaction = next(iter(app.db.iter_transactions()))
-        self._describe(dialog, transaction.description)
-
-        payee = dialog.save()
-
-        assert payee is not None and dialog.editing is None
-        assert transaction.handle in dialog.proposal_checks
-        assert app.db.get_transaction(transaction.handle).payee is None
-        for handle, check in dialog.proposal_checks.items():
-            check.set_active(handle == transaction.handle)
-        result = dialog.accept_selected()
-        assert result is not None and result.assigned == 1
-        stored = app.db.get_transaction(transaction.handle)
-        assert (stored.payee, stored.description) == (payee.handle, transaction.description)
-        assert transaction.handle not in dialog.proposal_checks
-        assert "Assigned 1 payee(s)" in dialog.status.get_text()
-
-    def test_refused_save_explains_and_writes_nothing(self, dialog, app):
-        dialog.name_entry.set_text("  ")
-        assert dialog.save() is None
-        assert "Enter a payee name" in dialog.status.get_text()
-        assert list(app.db.iter_payees()) == []
-
-    def test_edit_renames_and_delete_clears(self, dialog, app):
-        transaction = next(iter(app.db.iter_transactions()))
-        self._describe(dialog, transaction.description)
-        payee = dialog.save()
-        dialog.accept_selected()
-
-        dialog.edit(payee.handle)
-        assert dialog.save_button.get_label() == "Save changes"
-        dialog.name_entry.set_text("Renamed")
-        assert dialog.save() is not None
-        assert app.db.get_payee(payee.handle).name == "Renamed"
-        assert app.db.get_transaction(transaction.handle).payee == payee.handle
-
-        cleared = dialog.delete(payee.handle)
-        assert cleared is not None and cleared >= 1
-        assert app.db.get_transaction(transaction.handle).payee is None
-        assert "Edit → Undo restores it" in dialog.status.get_text()
-
-    def test_app_action_opens_the_dialog(self, app, window, populated_book):
-        from breadsched.gui.dialogs.payee_dialog import PayeesDialog
-
-        assert app.actions["payees"].get_enabled() is False
-        app.open_book(populated_book)
-        assert app.actions["payees"].get_enabled() is True
-        opened = app.on_payees()
-        try:
-            assert isinstance(opened, PayeesDialog)
-        finally:
-            opened.destroy()
-
-
-class TestPayeeInRegisterAndEditor:
-    """The register shows the accepted payee; the editor sets, keeps, or clears it."""
-
-    def _payee(self, app, name="Landlord"):
-        from breadsched.gen.services.payees import SavePayee, save_payee
-
-        return save_payee(app.db, SavePayee(name)).value
-
-    def test_register_column_shows_the_payee_name(self, app, window, populated_book):
-        from breadsched.gen.services.payees import assign_payee
-
-        app.open_book(populated_book)
-        window.show_category("register")
-        view = window._views["register"]
-        columns = view.column_view.get_columns()
-        titles = [columns.get_item(i).get_title() for i in range(columns.get_n_items())]
-        assert titles.index("Payee") == titles.index("Description") + 1
-        payee = self._payee(app)
-        row = view._rows[0]
-        assert view._payee_name(row.transaction) == ""
-        assert assign_payee(app.db, row.transaction.handle, payee.handle).ok
-        view.refresh()
-        assert view._payee_name(app.db.get_transaction(row.transaction.handle)) == "Landlord"
-
-    def test_editor_picker_sets_keeps_and_clears(self, app, window, populated_book):
-        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
-
-        app.open_book(populated_book)
-        payee = self._payee(app)
-        existing = next(iter(app.db.iter_transactions()))
-        description = existing.description
-
-        dialog = TransactionDialog(window, app.db, transaction=existing)
-        assert dialog.payee_picker.get_selected() == 0
-        dialog.payee_picker.set_selected(1)
-        dialog._on_save(None)
-        stored = app.db.get_transaction(existing.handle)
-        assert (stored.payee, stored.description) == (payee.handle, description)
-
-        reopened = TransactionDialog(window, app.db, transaction=stored)
-        assert reopened.payee_picker.get_selected() == 1
-        reopened._on_save(None)
-        assert app.db.get_transaction(existing.handle).payee == payee.handle
-
-        cleared = TransactionDialog(
-            window, app.db, transaction=app.db.get_transaction(existing.handle)
-        )
-        cleared.payee_picker.set_selected(0)
-        cleared._on_save(None)
-        assert app.db.get_transaction(existing.handle).payee is None
-
-
 class TestDashboardWidth:
     """Issue #140: a combined group's long note must not widen the window."""
 
@@ -5937,7 +5810,6 @@ class TestRulesDialog:
         dialog.destroy()
 
     def _add(self, dialog, description, category=0):
-        dialog.kind_picker.set_selected(0)
         dialog.description_entry.set_text(description)
         dialog.category_picker.set_selected(category)
         return dialog.add_rule()
@@ -6209,26 +6081,6 @@ class TestEditorAutocomplete:
         assert dialog.proposal_note.get_visible() is True
         assert dialog.save_button.get_sensitive() is True
         assert len(list(app.db.iter_transactions())) == before
-
-    def test_choosing_a_payee_proposes_and_a_proposed_payee_is_selected(
-        self, app, window, populated_book
-    ):
-        from breadsched.gen.services.payees import SavePayee, assign_payee, save_payee
-        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
-
-        app.open_book(populated_book)
-        checking, source = self._grocer(app)
-        payee = save_payee(app.db, SavePayee("Corner Grocer")).value
-        assert assign_payee(app.db, source.handle, payee.handle).ok
-
-        by_payee = TransactionDialog(window, app.db, default_account=checking)
-        by_payee.payee_picker.set_selected(1)
-        assert [e.value() for e in by_payee.splits] == [s.value for s in source.splits]
-
-        by_description = TransactionDialog(window, app.db, default_account=checking)
-        by_description.description_entry.set_text("Corner Grocer")
-        assert by_description.propose_from_entry() is not None
-        assert by_description.payee_picker.get_selected() == 1
 
     def test_typed_splits_are_never_overwritten(self, app, window, populated_book):
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
@@ -6729,20 +6581,6 @@ class TestBlankEntryRow:
         posted = next(t for t in app.db.iter_transactions() if t.description == "Paycheck")
         assert posted.split_for(checking.handle).value == Money("100")
 
-    def test_a_chosen_payee_is_saved(self, app, window, populated_book):
-        from breadsched.gen.services.payees import SavePayee, save_payee
-
-        app.open_book(populated_book)
-        payee = save_payee(app.db, SavePayee(name="Corner Grocer")).value
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        blank.payee.set_selected([p.handle for p in blank.payees].index(payee.handle) + 1)
-        blank.description.set_text("Groceries")
-        blank.decrease.set_text("9.99")
-        assert blank.commit() is True
-        posted = next(t for t in app.db.iter_transactions() if t.description == "Groceries")
-        assert posted.payee == payee.handle
-
     def test_an_error_keeps_what_was_typed_and_names_it(self, app, window, populated_book):
         view = self._register(app, window, populated_book)
         blank = view.blank
@@ -6904,16 +6742,16 @@ class TestBlankEntryRow:
             assert view.blank.description.get_ancestor(Gtk.ColumnView) is view.column_view
             assert view.blank.description.get_text() == "Survives a repaint"
             # Tab skips a column the user has hidden.
-            payee_column = next(
-                column for column in view.column_view.get_columns() if column.get_title() == "Payee"
+            num_column = next(
+                column for column in view.column_view.get_columns() if column.get_title() == "Num"
             )
-            payee_column.set_visible(False)
+            num_column.set_visible(False)
             for _ in range(200):
                 context.iteration(False)
             focused = []
-            view.blank.transfer.grab_focus = lambda: focused.append("transfer") or True
-            view.blank.handle_key(view.blank.description, Gdk.KEY_Tab)
-            assert focused == ["transfer"]
+            view.blank.description.grab_focus = lambda: focused.append("description") or True
+            view.blank.handle_key(view.blank.date, Gdk.KEY_Tab)
+            assert focused == ["description"]
         finally:
             window.set_visible(False)
 
@@ -7385,8 +7223,8 @@ class TestGnuCashWritebackDialog:
 class TestDialogsFitTheScreen:
     """Dialog audit (#148, like #140): no dialog demands more than a laptop screen.
 
-    A book with very long account names, descriptions, and memos, plus many
-    payees and a many-split transaction, must not raise any dialog's minimum
+    A book with very long account names, descriptions, and memos, plus a
+    many-split transaction, must not raise any dialog's minimum
     size past what a 1366x768 screen shows with its title bar and panel.
     """
 
@@ -7396,7 +7234,6 @@ class TestDialogsFitTheScreen:
     @pytest.fixture
     def stressed(self, app, populated_book):
         from breadsched.gen.lib import Account, AccountType, Split, Transaction
-        from breadsched.gen.services.payees import SavePayee, save_payee
 
         app.open_book(populated_book)
         db = app.db
@@ -7419,8 +7256,6 @@ class TestDialogsFitTheScreen:
             db.add_account(long_account, txn)
             db.add_transaction(long_entry, txn)
             db.add_transaction(many, txn)
-        for index in range(150):
-            save_payee(db, SavePayee(name=f"Payee {index}"))
         return db, long_account, checking, many
 
     DIALOGS = (
@@ -7436,7 +7271,6 @@ class TestDialogsFitTheScreen:
         ("import_dialog", "ImportDialog", None),
         ("loan_dialog", "LoanDialog", None),
         ("net_worth_history_dialog", "NetWorthHistoryDialog", None),
-        ("payee_dialog", "PayeesDialog", None),
         ("receivables_dialog", "ReceivablesDialog", None),
         ("reconciliation_dialog", "ReconciliationDialog", "checking"),
         ("rules_dialog", "RulesDialog", None),
@@ -8450,7 +8284,6 @@ class TestBoundedSizes:
         from breadsched.gui.dialogs.account_dialog import AccountDialog
         from breadsched.gui.dialogs.csv_import_dialog import CsvImportDialog
         from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
-        from breadsched.gui.dialogs.payee_dialog import PayeesDialog
         from breadsched.gui.dialogs.reconciliation_dialog import ReconciliationDialog
         from breadsched.gui.dialogs.rules_dialog import RulesDialog
         from breadsched.gui.dialogs.savings_goals_dialog import SavingsGoalsDialog
@@ -8465,7 +8298,6 @@ class TestBoundedSizes:
             "account": lambda: AccountDialog(window, db, db.get_account(chain[-1])),
             "csv-import": lambda: CsvImportDialog(window, db),
             "dashboard-groups": lambda: DashboardDialog(window, db),
-            "payees": lambda: PayeesDialog(window, db),
             "reconcile": lambda: ReconciliationDialog(window, db, bank),
             "rules": lambda: RulesDialog(window, db),
             "goals": lambda: SavingsGoalsDialog(window, db),

@@ -335,8 +335,8 @@ class TestItServes:
         assert payload == {
             "ok": True,
             "application_version": __version__,
-            "native_schema_version": 10,
-            "supported_schema_versions": {"minimum": 6, "maximum": 10},
+            "native_schema_version": 11,
+            "supported_schema_versions": {"minimum": 6, "maximum": 11},
             "sqlite": [],
             "issues": [],
         }
@@ -5208,8 +5208,6 @@ class TestCsvImport:
             "status": "new",
             "reason": "",
             "category": None,
-            "payee": None,
-            "note": "",
             "splits": [],
         }
         assert len(list(client.database.iter_transactions())) == before
@@ -5316,115 +5314,6 @@ class TestCsvImport:
         assert preview["counts"]["new"] == 2
 
 
-class TestPayees:
-    """Browser payee management and proposal review through the shared service."""
-
-    def _rent(self, client):
-        return next(txn for txn in client.database.iter_transactions() if txn.description == "Rent")
-
-    def test_add_preview_accept_rename_and_delete(self, client):
-        rent = self._rent(client)
-        status, empty = client.get("/api/payees")
-        assert status == 200 and empty == {"payees": [], "proposals": []}
-
-        status, saved = client.post("/api/payee/save", {"name": "Landlord", "matches": ["RENT"]})
-        assert status == 200 and saved["match_keys"] == ["rent"]
-        _status, listed = client.get("/api/payees")
-        [proposal] = listed["proposals"]
-        assert (proposal["transaction"], proposal["payee_name"], proposal["key"]) == (
-            rent.handle,
-            "Landlord",
-            "rent",
-        )
-        assert client.database.get_transaction(rent.handle).payee is None
-
-        status, accepted = client.post("/api/payees/accept", {"transactions": [rent.handle]})
-        assert status == 200 and accepted == {"assigned": 1, "unchanged": 0}
-        stored = client.database.get_transaction(rent.handle)
-        assert (stored.payee, stored.description) == (saved["handle"], "Rent")
-        _status, after = client.get("/api/payees")
-        assert after["proposals"] == [] and after["payees"][0]["transactions"] == 1
-
-        client.post(
-            "/api/payee/save",
-            {"name": "Property manager", "matches": ["rent"], "handle": saved["handle"]},
-        )
-        assert client.database.get_payee(saved["handle"]).name == "Property manager"
-        status, deleted = client.post("/api/payee/delete", {"handle": saved["handle"]})
-        assert status == 200 and deleted == {"cleared": 1}
-        assert client.database.get_transaction(rent.handle).payee is None
-
-    def test_rejected_requests_leave_payees_unchanged(self, client):
-        client.post("/api/payee/save", {"name": "Landlord", "matches": ["rent"]})
-        before = [(p.handle, p.name, p.match_keys) for p in client.database.iter_payees()]
-
-        for path, body, status, code in [
-            ("/api/payee/save", {"name": "landlord"}, 400, "payee.name.duplicate"),
-            (
-                "/api/payee/save",
-                {"name": "Other", "matches": ["RENT"]},
-                400,
-                "payee.match.conflict",
-            ),
-            ("/api/payee/save", {"name": "Other", "matches": "rent"}, 400, None),
-            ("/api/payee/save", {"name": 5}, 400, None),
-            ("/api/payee/delete", {"handle": "missing"}, 404, "payee.not_found"),
-            ("/api/payees/accept", {"transactions": ["missing"]}, 404, None),
-        ]:
-            with pytest.raises(urllib.error.HTTPError) as caught:
-                client.post(path, body)
-            assert caught.value.code == status
-            if code is not None:
-                assert json.loads(caught.value.read())["code"] == code
-
-        assert [(p.handle, p.name, p.match_keys) for p in client.database.iter_payees()] == before
-
-    def test_register_shows_and_sets_a_payee(self, client):
-        rent = self._rent(client)
-        checking = client.database.get_account_by_name("Checking")
-        _status, saved = client.post("/api/payee/save", {"name": "Landlord"})
-
-        _status, register = client.get(f"/api/register?account={checking.handle}")
-        assert register["payees"] == [{"handle": saved["handle"], "name": "Landlord"}]
-        row = next(item for item in register["rows"] if item["handle"] == rent.handle)
-        assert row["payee"] is None
-
-        status, set_ = client.post(
-            "/api/transaction/payee", {"transaction": rent.handle, "payee": saved["handle"]}
-        )
-        assert status == 200 and set_ == {"transaction": rent.handle, "payee": saved["handle"]}
-        _status, register = client.get(f"/api/register?account={checking.handle}")
-        row = next(item for item in register["rows"] if item["handle"] == rent.handle)
-        assert row["payee"] == saved["handle"]
-        assert client.database.get_transaction(rent.handle).description == "Rent"
-
-        with pytest.raises(urllib.error.HTTPError) as caught:
-            client.post("/api/transaction/payee", {"transaction": rent.handle, "payee": "gone"})
-        assert caught.value.code == 404
-        assert client.database.get_transaction(rent.handle).payee == saved["handle"]
-
-        status, cleared = client.post(
-            "/api/transaction/payee", {"transaction": rent.handle, "payee": None}
-        )
-        assert status == 200 and cleared["payee"] is None
-
-    def test_web_entry_records_a_chosen_payee(self, client):
-        _status, saved = client.post("/api/payee/save", {"name": "Landlord"})
-        status, posted = client.post(
-            "/api/transaction",
-            {
-                "date": "2026-02-01",
-                "description": "Rent",
-                "amount": "10.00",
-                "from": "Checking",
-                "to": "Expenses:Rent",
-                "payee": saved["handle"],
-            },
-        )
-        assert status == 200
-        assert client.database.get_transaction(posted["handle"]).payee == saved["handle"]
-
-
 class TestRules:
     """Browser categorization rules and proposal review through the shared service."""
 
@@ -5472,7 +5361,7 @@ class TestRules:
         status, accepted = client.post(
             "/api/rules/accept", {"transactions": [handles["City Power"]]}
         )
-        assert status == 200 and accepted == {"assigned": 1, "unchanged": 0, "payees_set": 0}
+        assert status == 200 and accepted == {"assigned": 1, "unchanged": 0}
         stored = client.database.get_transaction(handles["City Power"])
         assert rent.handle in {split.account for split in stored.splits}
         assert stored.description == "City Power"
@@ -5487,29 +5376,6 @@ class TestRules:
         _status, after = client.get("/api/rules")
         assert [rule["handle"] for rule in after["rules"]] == [added["handle"]]
 
-    def test_a_description_rule_sets_a_payee_when_accepted(self, client, tmp_path):
-        handles = self._import(client, tmp_path)
-        rent = client.database.get_account_by_name("Expenses:Rent")
-        _status, payee = client.post("/api/payee/save", {"name": "Corner Grocer"})
-        grocer = payee["handle"]
-        status, added = client.post(
-            "/api/rule/add",
-            {"category": rent.handle, "description": "corner grocer", "set_payee": grocer},
-        )
-        assert status == 200 and added["set_payee"] == grocer
-        _status, listed = client.get("/api/rules")
-        assert listed["rules"][0]["set_payee_name"] == "Corner Grocer"
-        [proposal] = listed["proposals"]
-        assert (proposal["payee"], proposal["payee_name"]) == (grocer, "Corner Grocer")
-        _status, accepted = client.post("/api/rules/accept", {})
-        assert accepted == {"assigned": 1, "unchanged": 0, "payees_set": 1}
-        assert client.database.get_transaction(handles["CORNER GROCER #1"]).payee == grocer
-        with pytest.raises(urllib.error.HTTPError) as caught:
-            client.post(
-                "/api/rule/add", {"category": rent.handle, "description": "x y", "set_payee": 5}
-            )
-        assert caught.value.code == 400
-
     def test_rejected_requests_leave_rules_unchanged(self, client, tmp_path):
         rent = client.database.get_account_by_name("Expenses:Rent")
         checking = client.database.get_account_by_name("Checking")
@@ -5517,7 +5383,13 @@ class TestRules:
         _status, before = client.get("/api/rules")
 
         for path, body, status, code in [
-            ("/api/rule/add", {"category": rent.handle}, 400, "rule.match.required"),
+            ("/api/rule/add", {"category": rent.handle}, 400, None),
+            (
+                "/api/rule/add",
+                {"category": rent.handle, "description": "#12"},
+                400,
+                "rule.match.empty",
+            ),
             (
                 "/api/rule/add",
                 {"category": checking.handle, "description": "x"},
@@ -5730,7 +5602,6 @@ class TestRegisterEntry:
                 "date": "2026-04-02",
                 "num": "12",
                 "description": "Shared bill",
-                "payee": None,
                 "splits": [
                     {"account": checking.handle, "value": ["-100000000", "1000000"]},
                     {"account": rent.handle, "value": ["60000000", "1000000"], "memo": "rent"},

@@ -314,11 +314,7 @@ MAPPED = """Date,Description,Amount,Category,Payee,Currency
 """
 
 
-def test_category_payee_and_currency_columns_map_to_the_book(db, book, tmp_path):
-    from breadsched.gen.services.payees import SavePayee, save_payee
-
-    grocer = save_payee(db, SavePayee(name="Corner Grocer", matches=("corner grocer",)))
-    assert grocer.value is not None
+def test_category_and_currency_columns_map_to_the_book(db, book, tmp_path):
     path = tmp_path / "mapped.csv"
     path.write_text(MAPPED, encoding="utf-8")
     request = _request(
@@ -326,7 +322,6 @@ def test_category_payee_and_currency_columns_map_to_the_book(db, book, tmp_path)
         book.checking,
         memo=None,
         category="Category",
-        payee="Payee",
         currency="Currency",
     )
 
@@ -334,7 +329,6 @@ def test_category_payee_and_currency_columns_map_to_the_book(db, book, tmp_path)
     assert preview is not None
     rows = {row.description: row for row in preview.rows}
     assert rows["CORNER GROCER #12"].category == book.groceries
-    assert rows["CORNER GROCER #12"].payee == grocer.value.handle
     assert rows["Salary"].category == book.salary
     assert (rows["Mystery"].status, rows["Mystery"].reason) == (
         "invalid",
@@ -342,16 +336,14 @@ def test_category_payee_and_currency_columns_map_to_the_book(db, book, tmp_path)
     )
     assert rows["Abroad"].status == "invalid"
     assert rows["Abroad"].reason == "the row is in EUR, but the account is in USD"
+    # A Payee column in the file is simply not mapped; the row still imports.
     assert rows["Unknown shop"].status == "new"
-    assert rows["Unknown shop"].payee is None
-    assert rows["Unknown shop"].note == "payee 'Someone New' is not in the book"
 
     imported = import_csv(db, request).value
     assert imported is not None
     assert imported.result.transactions_new == 3
     by_description = {item.description: item for item in db.iter_transactions()}
     grocery = by_description["CORNER GROCER #12"]
-    assert grocery.payee == grocer.value.handle
     assert {split.account for split in grocery.splits} == {book.checking, book.groceries}
     salary = by_description["Salary"]
     assert {split.account for split in salary.splits} == {book.checking, book.salary}

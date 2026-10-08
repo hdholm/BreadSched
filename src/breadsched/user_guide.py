@@ -81,7 +81,6 @@ HELP_TOPICS: dict[str, str] = {
     "plan": "Plan and projection",
     "expenses": "Explore expenses",
     "net-worth": "Net worth history",
-    "payees": "Payees",
     "rules": "Categorization rules",
     "reimbursables": "Reimbursable expenses",
     "goals": "Savings goals",

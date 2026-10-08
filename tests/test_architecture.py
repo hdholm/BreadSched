@@ -1054,13 +1054,13 @@ class TestCliBoundaries:
         }
         assert handlers and handlers <= defined
 
-    def test_rules_payees_tags_and_attachments_have_their_own_module(self):
+    def test_rules_tags_and_attachments_have_their_own_module(self):
         tree = ast.parse((SRC / "cli" / "categorization_commands.py").read_text(encoding="utf-8"))
         defined = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
-        assert {"cmd_rules", "cmd_payees", "cmd_tags", "cmd_attachments"} <= defined
+        assert {"cmd_rules", "cmd_tags", "cmd_attachments"} <= defined
         ledger = ast.parse((SRC / "cli" / "ledger_commands.py").read_text(encoding="utf-8"))
         ledger_defined = {node.name for node in ledger.body if isinstance(node, ast.FunctionDef)}
-        assert ledger_defined.isdisjoint({"cmd_rules", "cmd_payees", "cmd_tags", "cmd_attachments"})
+        assert ledger_defined.isdisjoint({"cmd_rules", "cmd_tags", "cmd_attachments"})
 
     def test_shared_helpers_depend_on_no_command_module(self):
         tree = ast.parse((SRC / "cli" / "common.py").read_text(encoding="utf-8"))

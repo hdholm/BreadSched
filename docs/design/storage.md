@@ -17,8 +17,9 @@ native book can be opened or must be migrated; it is currently 10. A behavior-on
 release changes only the application version. A persistent representation change
 increments the data-format version and supplies an explicit migration.
 
-SQLite is the native persistence engine. The current application writes schema 10 and
-can migrate schemas 6, 7, 8, and 9 before decoding primary objects. Schema 10 added the
+SQLite is the native persistence engine. The current application writes schema 11 and
+can migrate schemas 6, 7, 8, 9, and 10 before decoding primary objects. Schema 11
+removed payees (10→11, see household workflows); schema 10 added the
 `savings_goal` table (9→10); schema 9 added the `receivable` table (8→9); schema 8 added the `payee` table (7→8); schema 7 added
 reconciliation sessions (6→7). An explicit sequential registry and durable ledger,
 transactional runner, verified pre-migration backup hook, and versioned fixture make
