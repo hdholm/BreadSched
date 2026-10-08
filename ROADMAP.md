@@ -84,6 +84,30 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    dated events; nothing is converted into fictional monthly cells. A goal remains
    a shadow sub-account holding real money plus the scheduled contributions toward
    it.
+   The User Guide gains one coherent explanation of the whole model, from
+   scheduled transactions, estimates, and goals (the jars), through the actual
+   transactions that settle or draw on them, to how both feed the Plan and
+   Projection, with a worked example that follows one paycheck and one estimate
+   through every view.
+9. **Visualizations.** Today GTK has one Cairo line chart (Projection, Expense
+   Explorer, Net worth history) and the browser has none. Build a chart model in
+   non-GUI code (series, periods, exact values, labels) produced by the engines,
+   drawn by the GTK Cairo widget and by inline SVG in the browser, and included in
+   the shared print layout:
+   - **Budget jars:** planned against actual by period for each jar and account
+     (paired bars), and current jar fill levels with targets.
+   - **Cash and Projection:** projected cash with the runway and first shortfall
+     marked, scenario comparison overlays, and stacked account balances.
+   - **Spending:** category spending over time and its share of the total, from
+     the Expense Explorer's data.
+   - **Net worth:** history with its composition (assets and liabilities by
+     group).
+   - **Goals and holdings:** goal progress toward target and date; holdings by
+     cost and market value with unrealized gain.
+
+   Every chart has a table of its exact values beside it (for accuracy and
+   screen readers), colors that keep contrast in light and dark themes, and
+   tooltips with exact amounts; charts never compute their own totals.
 
 ## At the first Beta
 
@@ -141,7 +165,7 @@ The rest of this file is unscheduled and comes after the first Beta.
 
 ### Projection and scenarios
 
-- Add richer charts and deeper account explanations.
+- Add deeper account explanations to Projection.
 
 - Evolve assumptions toward extensible dated rules (salary changes, retirement,
   pensions/Social Security, temporary expenses, mortgage payoff, changing
