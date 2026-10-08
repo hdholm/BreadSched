@@ -387,7 +387,12 @@ only for commodities that have a quote source:
 - **Any other source name**, such as `vanguard` or `europe`: fetched by
   Finance::Quote, the Perl library GnuCash uses, when it is installed on your
   computer. The Flatpak cannot use it; the native Linux packages and installs from
-  the Python package can.
+  the Python package can. Quote websites change often, so use a current
+  Finance::Quote: in October 2026 version 1.71 fetched US stock quotes, while
+  1.59 (the version Ubuntu 24.04 packages) was refused by every source that needs
+  no key. On such a system, install the current release with `sudo cpanm
+  Finance::Quote` (from the `cpanminus` package), or use `alphavantage`. The line
+  under Finance::Quote in Online quotes shows the version in use.
 
 Importing a GnuCash book carries over the quote source of every commodity GnuCash
 fetches quotes for. Each fetched price is stored like any other dated price, with

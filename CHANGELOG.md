@@ -10,6 +10,24 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a262 - 2026-10-08
+
+- **First live quote runs.** Against the real services, the live tests fetched
+  every TSP fund from tsp.gov, ECB rates, and Alpha Vantage, and stored them
+  through the service, CLI, web route, and an installed `breadsched`. Through
+  Finance::Quote, its current CPAN release (1.71) passed everything, while the
+  1.59 that Ubuntu 24.04 packages was refused by every keyless US stock source
+  (Yahoo and MarketWatch with 401, stooq unparseable, Google "not found"), and
+  its `usa` and `nasdaq` groups stop with "IEXCloud API_KEY not defined".
+- The round-trip test tries keyless sources in turn (`marketwatch`, `stooq`,
+  `googleweb`, `yahoo_json`, `usa`, `nasdaq`) and fails, listing every reason,
+  only if none answers; `BREADSCHED_FQ_METHOD` still checks exactly one source.
+- The *Live quote sources* workflow runs against both Finance::Quote versions:
+  CPAN decides the result, and the distribution package reports without failing it.
+- The Finance::Quote status in Online quotes (desktop, browser, and `breadsched
+  quotes --list`) names the installed version, and the guide tells users with
+  an old package how to install the current one.
+
 ## 0.2.0a261 - 2026-10-08
 
 - **GTK tests stay off the desktop.** Every test run, including a plain `pytest -n

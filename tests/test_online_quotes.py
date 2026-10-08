@@ -217,6 +217,44 @@ class TestOnlineQuotes:
         )
         assert quotes == [] and "Flatpak" in failures[0].reason
 
+    @pytest.mark.parametrize(
+        ("returncode", "stdout", "expected"),
+        [
+            (0, "1.71", (True, "Finance::Quote 1.71 is installed")),
+            (0, "1.59\n", (True, "Finance::Quote 1.59 is installed")),
+            (0, "", (True, "Finance::Quote is installed")),
+            (0, "1.71; rm -rf /", (True, "Finance::Quote is installed")),
+            (2, "", (False, "Finance::Quote is not installed")),
+        ],
+    )
+    def test_the_status_names_the_installed_version(
+        self, monkeypatch, returncode, stdout, expected
+    ):
+        """An old Finance::Quote is the usual reason its sources fail, so say which."""
+        from breadsched.plugins.quotes import fetch
+
+        monkeypatch.delenv("FLATPAK_ID", raising=False)
+        monkeypatch.setattr(fetch.shutil, "which", lambda name: "/usr/bin/perl")
+        seen = []
+
+        def run(args, **kwargs):
+            seen.append(args)
+            return subprocess.CompletedProcess(args, returncode, stdout=stdout, stderr="")
+
+        monkeypatch.setattr(fetch.subprocess, "run", run)
+        assert finance_quote_status() == expected
+        assert seen[0][:3] == ["/usr/bin/perl", "-MFinance::Quote", "-MJSON::PP"]
+
+    @pytest.mark.skipif(
+        shutil.which("perl") is None
+        or subprocess.run(["perl", "-MFinance::Quote", "-e", "1"], check=False).returncode,
+        reason="Finance::Quote is not installed",
+    )
+    def test_the_real_status_reports_a_version(self, monkeypatch):
+        monkeypatch.delenv("FLATPAK_ID", raising=False)
+        available, text = finance_quote_status()
+        assert available and text.startswith("Finance::Quote ") and text[15].isdigit()
+
     @pytest.mark.skipif(
         shutil.which("perl") is None
         or subprocess.run(["perl", "-MFinance::Quote", "-e", "1"], check=False).returncode,
