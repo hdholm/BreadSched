@@ -109,6 +109,16 @@ backup/restore validation, tests, and corruption investigation.
 This separation is deliberate: correctness checks on ordinary edits should scale
 with the change, not with the lifetime size of the household ledger.
 
+`tests/test_storage_safety.py` holds the safety net that every book-format
+migration depends on. It drives each commit-time refusal (a changed object naming a
+missing account, commodity, currency, split, transaction, or receivable; a deletion
+leaving such a reference; an index row disagreeing with its blob) and checks the
+book verifies unchanged afterwards; it exercises the writer lock's stale, foreign,
+unreadable, and replaced lock files and its POSIX and Windows liveness probes; and
+it injects failures into backup and restore (a failed integrity check, copy, or
+verification, and a damaged destination) to check that no temporary file, partly
+installed book, or lock is left behind and the existing book is untouched.
+
 The exhaustive domain pass materializes accounts, commodities, scenarios,
 transactions, and split ownership once, then dispatches that immutable snapshot to
 responsibility-specific checkers. This keeps cross-object checks consistent while

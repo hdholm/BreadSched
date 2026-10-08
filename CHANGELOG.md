@@ -10,6 +10,17 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a249 - 2026-10-08
+
+- **Storage safety tests.** `tests/test_storage_safety.py` covers the code every
+  book-format migration relies on: each commit-time refusal and deletion check,
+  derived-index disagreement, the writer lock's stale, foreign, unreadable, and
+  replaced lock files and its POSIX and Windows liveness probes, and injected
+  backup and restore failures, each checked to leave no temporary file, partly
+  installed book, or lock behind. Line coverage rose from 71% to 100% for the book
+  lock, 80% to 99% for backups, and 77% to 95% for change verification. No
+  application code changed; nothing the tests exercised needed a fix.
+
 ## 0.2.0a248 - 2026-10-08
 
 - **Wording split by area.** `presentation.py` (808 lines) is now the
