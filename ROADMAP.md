@@ -15,25 +15,15 @@ slice uses shared calculations and covers GTK, web, CLI, and printable output
 wherever that behavior is exposed, and preserves imported source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **Register entry as close to GnuCash as GTK allows (top priority).** The blank
-   entry row works, but editing has more friction than GnuCash: only the bottom
-   row is editable (F2 or the full editor for any other), the arrow keys do not move
-   between transactions, Transfer is a drop-down that completes typed account paths
-   but shows no list of matches as you type, and there is no reconcile column.
-   Shared entry parsing (date shortcuts, amount arithmetic, account-path
-   completion, Num stepping) is in place in both registers.
-   `Gtk.ColumnView` has no editable cells and recycles row widgets, so the GTK
-   register becomes a custom grid. Delivered in this order:
-   1. **GTK custom register grid.** Every row editable in place by click or
-      keyboard, Up/Down moving between transactions and committing as they go,
-      Tab/Enter/Escape as in GnuCash, typed account completion in Transfer and
-      split lines with the matches listed as you type, an in-place reconcile
-      column cycling n → c → y through the reconciliation service, and split
-      expansion in the grid. Commits stay one
-      `save_transaction` call and one undo step.
-   2. **Web register.** Equivalent editing in the browser (every capability
-      available), using the shared parsers; it need not match the GTK look and may
-      be less convenient for now.
+1. **Web register equivalence (top priority).** The GTK register now edits every
+   row in place by click or F2, moves with Up/Down while committing, completes typed
+   account paths with the matches listed, and toggles cleared in its **R** column;
+   both registers share the entry parsing (date shortcuts, amount arithmetic,
+   account-path completion, Num stepping). The browser register still starts an edit
+   only through **Edit**, cannot move between rows with Up/Down, shows no list of
+   matching accounts, and has no **R** column. Give it equivalent editing (every capability available), using the
+   shared parsers and `toggle_cleared`; it need not match the GTK look and may be
+   less convenient for now.
 2. **Storage normalization, decided by measurement (in parallel with item 1).**
    On a separate branch, starting from schema 11, build normalized
    transaction and split tables (typed columns, foreign keys, CHECK constraints)

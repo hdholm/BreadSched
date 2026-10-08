@@ -10,6 +10,23 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a253 - 2026-10-08
+
+- **The desktop register edits like GnuCash's.** A single click (or F2) edits a
+  transaction in place. Up/Down move between split lines and then between
+  transactions, saving the one being left through `save_transaction` (a refused
+  save keeps the user there with the reason); below the last transaction is the
+  blank row. A typed account path lists its matches under the register, and
+  clicking one chooses it.
+- **R column.** Each register row shows its split's reconcile state; clicking
+  toggles not cleared ↔ cleared through the new `toggle_cleared` reconciliation
+  service, which also adds a newly cleared entry to (or removes it from) an open
+  statement in the same change. Reconciled, frozen, and void entries are refused
+  (`reconciliation.split.locked`).
+- The roadmap's register item is now web register equivalence; the GTK behaviors
+  are built on the existing column view with persistent editor widgets rather than a
+  separate grid widget (see the user-interfaces design part).
+
 ## 0.2.0a252 - 2026-10-08
 
 - **GnuCash stock splits import.** A GnuCash share split (one split that changes

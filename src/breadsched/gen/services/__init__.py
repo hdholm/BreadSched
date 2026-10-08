@@ -102,11 +102,13 @@ from .plan import (
 from .reconciliations import (
     ReconciliationAction,
     StartReconciliation,
+    ToggleCleared,
     UpdateReconciliation,
     cancel_reconciliation,
     complete_reconciliation,
     reopen_reconciliation,
     start_reconciliation,
+    toggle_cleared,
     update_reconciliation,
 )
 from .review import (
@@ -254,6 +256,7 @@ __all__ = [
     "ReviewOccurrence",
     "ReviewTransaction",
     "StartReconciliation",
+    "ToggleCleared",
     "UpdateReconciliation",
     "SaveSchedule",
     "SavedSchedule",
@@ -327,6 +330,7 @@ __all__ = [
     "complete_reconciliation",
     "reopen_reconciliation",
     "start_reconciliation",
+    "toggle_cleared",
     "update_reconciliation",
     "build_fixed_scenario_schedule",
     "build_fixed_schedule",

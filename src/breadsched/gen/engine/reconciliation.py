@@ -22,6 +22,7 @@ __all__ = [
     "set_selection",
     "start",
     "summary",
+    "toggle_cleared",
     "update",
     "update_ending_balance",
 ]
@@ -362,6 +363,46 @@ def reopen(db: DbSQLite, handle: str) -> Reconciliation:
             db.commit_transaction(transaction, txn)
         db.commit_reconciliation(reconciliation, txn)
     return reconciliation
+
+
+def toggle_cleared(db: DbSQLite, transaction: str, split: str) -> ReconcileState:
+    """Mark one split cleared, or not cleared again, from a register's R column.
+
+    Only ``n`` and ``c`` change here: ``y`` comes from completing a statement and
+    goes back only by reopening it, so the statement's record stays true. While the
+    account has an open statement, a newly cleared split that is a candidate joins
+    its selection and an uncleared one leaves it, in the same change.
+    """
+    stored = db.get_transaction(transaction)
+    if stored is None:
+        raise KeyError(transaction)
+    target = next((item for item in stored.splits if item.handle == split), None)
+    if target is None:
+        raise ReconciliationError(
+            "reconciliation.split.missing", ("split",), "the split no longer exists"
+        )
+    if target.reconcile not in {ReconcileState.NOT_RECONCILED, ReconcileState.CLEARED}:
+        raise ReconciliationError(
+            "reconciliation.split.locked",
+            ("split",),
+            "a reconciled, frozen, or void entry changes only through its statement",
+        )
+    cleared = target.reconcile is ReconcileState.NOT_RECONCILED
+    target.reconcile = ReconcileState.CLEARED if cleared else ReconcileState.NOT_RECONCILED
+    target.reconcile_date = None
+    session = open_for_account(db, target.account)
+    if session is not None:
+        selected = [item for item in session.selected_splits if item != split]
+        if cleared and session.statement_date >= stored.post_date:
+            selected.append(split)
+        changed = selected != session.selected_splits
+        session.selected_splits = selected
+    label = "Mark cleared" if cleared else "Mark not cleared"
+    with db.transaction(f"{label}: {stored.description}") as txn:
+        db.commit_transaction(stored, txn)
+        if session is not None and changed:
+            db.commit_reconciliation(session, txn)
+    return target.reconcile
 
 
 def _require_open(db: DbSQLite, handle: str) -> Reconciliation:

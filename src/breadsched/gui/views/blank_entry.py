@@ -39,6 +39,9 @@ from ..widgets.choice import bounded_dropdown
 
 __all__ = ["BLANK", "BLANK_PAYLOADS", "BlankEntry", "BlankEntryRow", "ImbalanceLine", "SplitLine"]
 
+#: Accounts listed under a picker while its path is typed.
+_COMPLETION_ROWS = 8
+
 
 class BlankEntry:
     """Marker payload for the register's last, always-editable row."""
@@ -160,6 +163,8 @@ class BlankEntryRow:
         self._partners: dict[Gtk.Entry, Gtk.Entry] = {}
         #: Account text typed into a picker so far, as (picker, text).
         self._typed_account: tuple[Gtk.Widget | None, str] = (None, "")
+        #: The names the register's completion list shows for this row.
+        self._completion_names: list[str] = []
 
         self.date = Gtk.Entry(text=date.today().isoformat(), placeholder_text="YYYY-MM-DD")
         self.date.set_tooltip_text(
@@ -732,9 +737,11 @@ class BlankEntryRow:
         self._typed_account = (picker, typed)
         if not typed:
             self.view.set_entry_status("")
+            self._show_completion(picker, [])
             return True
         names = [db.full_name(account) for account in accounts]
         matches = complete_account(typed, names)
+        self._show_completion(picker, matches)
         if not matches:
             self.view.set_entry_status(f"No account matches “{typed}”.", error=True)
             return True
@@ -743,6 +750,66 @@ class BlankEntryRow:
         more = f" ({len(matches) - 1} more)" if len(matches) > 1 else ""
         self.view.set_entry_status(f"“{typed}” → {matches[0]}{more}")
         return True
+
+    def move(self, widget: Gtk.Widget, step: int) -> bool:
+        """Up/Down: between split lines, then on to the next transaction, committing."""
+        if self.split_mode:
+            here = next(
+                (index for index, line in enumerate(self.lines) if widget in line.fields), None
+            )
+            if here is not None:
+                column = self.lines[here].fields.index(widget)
+                target = here + step
+                if 0 <= target < len(self.lines):
+                    self.lines[target].fields[column].grab_focus()
+                    return True
+                if target < 0:
+                    self.description.grab_focus()
+                    return True
+            elif step > 0 and self.lines:
+                self.lines[0].fields[0].grab_focus()
+                return True
+        mover = getattr(self.view, "move_edit", None)
+        return bool(mover(self, step)) if mover is not None else False
+
+    def completions(self) -> list[str]:
+        """The account names the open completion list shows, best first."""
+        return list(self._completion_names)
+
+    def _show_completion(self, picker: Gtk.Widget, names: list[str]) -> None:
+        """List the matches below the register as the user types (the first is chosen)."""
+        self._completion_names = names[:_COMPLETION_ROWS]
+        box = getattr(self.view, "completion_list", None)
+        if box is None:
+            return
+        while (child := box.get_first_child()) is not None:
+            box.remove(child)
+        for name in self._completion_names:
+            row = Gtk.ListBoxRow()
+            row.pick = lambda name=name: self._pick_completion(picker, name)
+            row.set_child(Gtk.Label(label=name, xalign=0))
+            box.append(row)
+        box.select_row(box.get_row_at_index(0))
+        box.set_visible(bool(self._completion_names))
+
+    def _pick_completion(self, picker: Gtk.Widget, name: str) -> None:
+        found = self._account_names(picker)
+        db = self.view.db
+        if found is None or db is None or not isinstance(picker, Gtk.DropDown):
+            return
+        accounts, first = found
+        names = [db.full_name(account) for account in accounts]
+        if name in names:
+            picker.set_selected(names.index(name) + first)
+        self._end_completion()
+        picker.grab_focus()
+
+    def _end_completion(self) -> None:
+        self._typed_account = (None, "")
+        self._completion_names = []
+        box = getattr(self.view, "completion_list", None)
+        if box is not None:
+            box.set_visible(False)
 
     # -------------------------------------------------------------- keyboard
 
@@ -762,7 +829,7 @@ class BlankEntryRow:
         if plain and widget is self.num and character in "+=-_":
             return self.num_key(1 if character in "+=" else -1)
         if widget is not self._typed_account[0]:
-            self._typed_account = (None, "")
+            self._end_completion()
         if plain and self._account_names(widget) is not None:
             if keyval == Gdk.KEY_BackSpace:
                 return self.type_account(widget, None)
@@ -772,8 +839,12 @@ class BlankEntryRow:
                 and (character != " " or self._typed_account[1])
             ):
                 return self.type_account(widget, character)
+        if plain and keyval in (Gdk.KEY_Up, Gdk.KEY_Down, Gdk.KEY_KP_Up, Gdk.KEY_KP_Down):
+            self._end_completion()
+            self.settle(widget)
+            return self.move(widget, -1 if keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up) else 1)
         if keyval in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab, Gdk.KEY_KP_Tab):
-            self._typed_account = (None, "")
+            self._end_completion()
             self.settle(widget)
             backwards = keyval == Gdk.KEY_ISO_Left_Tab or bool(state & Gdk.ModifierType.SHIFT_MASK)
             # A column the user has hidden takes no part in the order; before the
@@ -796,7 +867,7 @@ class BlankEntryRow:
             self.commit()
             return True
         if keyval == Gdk.KEY_Escape:
-            self._typed_account = (None, "")
+            self._end_completion()
             self.clear()
             self.view.set_entry_status("")
             self.date.grab_focus()

@@ -91,6 +91,7 @@ _SERVICE_MESSAGES = {
     "reconciliation.later_completed.exists": "Reopen later statements first",
     "reconciliation.split.changed": "A reconciled entry changed after completion",
     "reconciliation.split.missing": "A reconciled entry is missing",
+    "reconciliation.split.locked": ("A reconciled entry changes only by reopening its statement"),
     "entry.account.not_found": "The account no longer exists",
     "entry.currency.not_found": "The entry's currency no longer exists",
     "entry.amount.invalid": "Enter an amount, or arithmetic such as 12.50+3",
