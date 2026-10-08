@@ -15,27 +15,15 @@ slice uses shared calculations and covers GTK, web, CLI, and printable output
 wherever that behavior is exposed, and preserves imported source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **Storage normalization, decided by measurement.**
-   On a separate branch, starting from schema 11, build normalized
-   transaction and split tables (typed columns, foreign keys, CHECK constraints)
-   with a migration, and compare them with the current blob-plus-derived-index
-   design on the realistic books: file size, load, commit, and projection time, the
-   test suite, and development flexibility (lossless unknown/imported fields,
-   undo/redo, atomic writes, import refresh ownership, schema evolution). Merge only
-   if it is no worse on size and speed (within 5%) and measurably better on at
-   least one, or removes real complexity such as keeping `split_index` in step with
-   the transaction blob. Either way, record the measurements and decision in an
-   ADR. Until then `split_index` stays derived and must never silently diverge
-   from its transaction blob.
-2. **Online quote retrieval.** Optional, with explicit provenance, staleness, and
+1. **Online quote retrieval.** Optional, with explicit provenance, staleness, and
    failure behavior; manual and imported quotes remain usable offline.
-3. **Specific lots and a realized-gains report.** Let a sale name the lots it
+2. **Specific lots and a realized-gains report.** Let a sale name the lots it
    sells instead of the account's first-in, first-out or average-cost method, and
    report realized gains by year from the derived lots.
-4. **Tax-year outputs** (calendar year, US-oriented). Realized gains by tax year,
+3. **Tax-year outputs** (calendar year, US-oriented). Realized gains by tax year,
    short- and long-term; totals for categories or tags marked tax-relevant; and
    income totals by source.
-5. **Budget jars.** Every savings goal and every scheduled estimate is a jar filled
+4. **Budget jars.** Every savings goal and every scheduled estimate is a jar filled
    from planned income, as Dashboard reserves are today, and drawn down by the
    actual transactions it plans for. Reporting bundles jars by period (month,
    quarter, year) and account rather than by individual transaction or estimate,
@@ -48,7 +36,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    transactions that settle or draw on them, to how both feed the Plan and
    Projection, with a worked example that follows one paycheck and one estimate
    through every view.
-6. **Visualizations.** Today GTK has one Cairo line chart (Projection, Expense
+5. **Visualizations.** Today GTK has one Cairo line chart (Projection, Expense
    Explorer, Net worth history) and the browser has none. Build a chart model in
    non-GUI code (series, periods, exact values, labels) produced by the engines,
    drawn by the GTK Cairo widget and by inline SVG in the browser, and included in
@@ -172,6 +160,10 @@ The rest of this file is unscheduled and comes after the first Beta.
 
 ### Storage, integrity, and recovery
 
+- Write transaction JSON compactly, omitting fields at their default values (as
+  `Split.importer_added` already is), to recover most of the 43% size difference
+  that [decision 0001](docs/design/decisions/0001-transaction-storage.md) measured
+  without its load-time cost. Re-run `scripts/storage_benchmark.py` to confirm.
 - Longer term, separate planning resolutions/classifications from imported ledger
   records where doing so materially simplifies synchronization and ownership.
 
