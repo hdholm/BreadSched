@@ -15,19 +15,13 @@ slice uses shared calculations and covers GTK, web, CLI, and printable output
 wherever that behavior is exposed, and preserves imported source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **Fedora RPM and Ubuntu DEB packages.** The Flatpak cannot use an installed
-   Finance::Quote, so build native packages that run on the host. They depend on
-   the distribution's Python 3.11+, PyGObject, pycairo, and GTK 4 packages, and
-   recommend Finance::Quote (`perl-Finance-Quote`, `libfinance-quote-perl`). Build
-   and install-smoke them in CI on current Fedora and Ubuntu LTS, and publish them
-   with each release beside the wheel, Flatpak, and Windows installer.
-2. **Specific lots and a realized-gains report.** Let a sale name the lots it
+1. **Specific lots and a realized-gains report.** Let a sale name the lots it
    sells instead of the account's first-in, first-out or average-cost method, and
    report realized gains by year from the derived lots.
-3. **Tax-year outputs** (calendar year, US-oriented). Realized gains by tax year,
+2. **Tax-year outputs** (calendar year, US-oriented). Realized gains by tax year,
    short- and long-term; totals for categories or tags marked tax-relevant; and
    income totals by source.
-4. **Budget jars.** Every savings goal and every scheduled estimate is a jar filled
+3. **Budget jars.** Every savings goal and every scheduled estimate is a jar filled
    from planned income, as Dashboard reserves are today, and drawn down by the
    actual transactions it plans for. Reporting bundles jars by period (month,
    quarter, year) and account rather than by individual transaction or estimate,
@@ -40,7 +34,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    transactions that settle or draw on them, to how both feed the Plan and
    Projection, with a worked example that follows one paycheck and one estimate
    through every view.
-5. **Visualizations.** Today GTK has one Cairo line chart (Projection, Expense
+4. **Visualizations.** Today GTK has one Cairo line chart (Projection, Expense
    Explorer, Net worth history) and the browser has none. Build a chart model in
    non-GUI code (series, periods, exact values, labels) produced by the engines,
    drawn by the GTK Cairo widget and by inline SVG in the browser, and included in

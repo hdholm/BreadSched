@@ -240,9 +240,80 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  linux-packages:
+    name: Build and test the ${{ matrix.format }} package for release
+    needs: prepare
+    if: needs.prepare.outputs.selected == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - format: deb
+            image: ubuntu:24.04
+          - format: rpm
+            image: fedora:latest
+    container: ${{ matrix.image }}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Install build tools
+        shell: bash
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              ca-certificates git python3 python3-pip
+          else
+            dnf install -y git python3 python3-pip rpm-build
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: main
+
+      - name: Require the tested main checkout before running source code
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          [[ "$TESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$TESTED_SHA"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-inputs
+          path: release-inputs
+
+      - name: Package the tested wheel, install it, and check it
+        shell: bash
+        run: |
+          wheel="release-inputs/dist/breadsched-${VERSION}-py3-none-any.whl"
+          test -f "$wheel"
+          mkdir -p release-linux
+          file=$(bash packaging/linux/build-package.sh "${{ matrix.format }}" "$wheel" release-linux)
+          if [ "${{ matrix.format }}" = deb ]; then
+            DEBIAN_FRONTEND=noninteractive apt-get install -y "./$file"
+          else
+            dnf install -y "./$file"
+          fi
+          (cd /tmp && PATH=/usr/bin:/bin bash "$GITHUB_WORKSPACE/packaging/linux/smoke-test.sh" "$VERSION")
+          cd release-linux
+          name=$(basename "$file")
+          sha256sum "$name" > "$name.sha256"
+          sha256sum --check "$name.sha256"
+
+      - name: Transfer only the tested package as data
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-${{ matrix.format }}
+          path: release-linux/
+          if-no-files-found: error
+          retention-days: 1
+
   publish:
     name: Tag and publish verified artifacts
-    needs: [prepare, windows-installer, flatpak-bundle]
+    needs: [prepare, windows-installer, flatpak-bundle, linux-packages]
     if: needs.prepare.outputs.selected == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -276,6 +347,16 @@ jobs:
         with:
           name: release-flatpak
           path: release-inputs/flatpak
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-linux-deb
+          path: release-inputs/linux
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-linux-rpm
+          path: release-inputs/linux
 
       - name: Validate transferred files without executing them
         shell: bash
@@ -319,6 +400,15 @@ jobs:
           assert all(p.is_file() and not p.is_symlink() for p in flatpak)
           line = Path("flatpak", f"{bundle}.sha256").read_text(encoding="utf-8")
           assert re.fullmatch(r"[0-9a-f]{64}  " + re.escape(bundle) + r"\n", line)
+
+          # The Debian/Ubuntu and Fedora packages, built from the same wheel and installed.
+          packages = {f"breadsched_{version}_all.deb", f"breadsched-{version}-1.noarch.rpm"}
+          linux = list(Path("linux").iterdir())
+          assert {p.name for p in linux} == packages | {f"{name}.sha256" for name in packages}
+          assert all(p.is_file() and not p.is_symlink() for p in linux)
+          for name in packages:
+              line = Path("linux", f"{name}.sha256").read_text(encoding="utf-8")
+              assert re.fullmatch(r"[0-9a-f]{64}  " + re.escape(name) + r"\n", line)
           PY
           cd dist
           sha256sum --check ../SHA256SUMS
@@ -326,9 +416,14 @@ jobs:
           sha256sum --check "BreadSched-${VERSION}-setup.exe.sha256"
           cd ../flatpak
           sha256sum --check "BreadSched-${VERSION}.flatpak.sha256"
+          cd ../linux
+          sha256sum --check "breadsched_${VERSION}_all.deb.sha256" \
+            "breadsched-${VERSION}-1.noarch.rpm.sha256"
           # SHA256SUMS then covers every published file.
           cat "../installer/BreadSched-${VERSION}-setup.exe.sha256" \
-            "BreadSched-${VERSION}.flatpak.sha256" >> ../SHA256SUMS
+            "../flatpak/BreadSched-${VERSION}.flatpak.sha256" \
+            "breadsched_${VERSION}_all.deb.sha256" \
+            "breadsched-${VERSION}-1.noarch.rpm.sha256" >> ../SHA256SUMS
 
       - name: Create or verify the accepted-main tag
         env:
@@ -371,7 +466,9 @@ jobs:
             "dist/breadsched-${VERSION}-py3-none-any.whl" \
             "dist/breadsched-${VERSION}.tar.gz" \
             "installer/BreadSched-${VERSION}-setup.exe" \
-            "flatpak/BreadSched-${VERSION}.flatpak" SHA256SUMS "${release_flags[@]}" \
+            "flatpak/BreadSched-${VERSION}.flatpak" \
+            "linux/breadsched_${VERSION}_all.deb" \
+            "linux/breadsched-${VERSION}-1.noarch.rpm" SHA256SUMS "${release_flags[@]}" \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "BreadSched $TAG" \
             --notes-file "docs/releases/${TAG}.md"

@@ -57,7 +57,8 @@ Alpha releases provide a wheel, source archive, a per-user Windows installer
 with its own Python and GTK runtime (`BreadSched-<version>-setup.exe`, built
 and tested on Windows from the released commit; not yet code-signed), a Linux
 Flatpak bundle (`BreadSched-<version>.flatpak`, built and installed from the
-released commit), and checksums covering all of them. Read the release notes
+released commit), Debian/Ubuntu and Fedora packages (`breadsched_<version>_all.deb`,
+`breadsched-<version>-1.noarch.rpm`), and checksums covering all of them. Read the release notes
 and verify the checksums before installing. The
 [User Guide](src/breadsched/USER_GUIDE.md) covers current features and their
 limits, including exchange rates, imports, and recovery. CI tests the Flatpak

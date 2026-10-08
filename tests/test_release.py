@@ -115,7 +115,7 @@ def test_release_builds_and_tests_the_windows_installer_from_the_tested_commit()
     assert windows.index("test-installer.ps1") < stage
     assert "BreadSched-$env:VERSION-setup.exe" in windows
     assert "name: release-installer" in windows
-    assert "needs: [prepare, windows-installer, flatpak-bundle]" in publication
+    assert "needs: [prepare, windows-installer, flatpak-bundle, linux-packages]" in publication
     assert "name: release-installer" in publication
     assert '"installer/BreadSched-${VERSION}-setup.exe" \\' in publication
     assert "test-installer.ps1" not in publication and "build-installer" not in publication
@@ -123,7 +123,7 @@ def test_release_builds_and_tests_the_windows_installer_from_the_tested_commit()
 
 def test_release_builds_and_installs_the_flatpak_bundle_from_the_tested_commit():
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    bundle = workflow.split("\n  flatpak-bundle:\n", 1)[1].split("\n  publish:\n", 1)[0]
+    bundle = workflow.split("\n  flatpak-bundle:\n", 1)[1].split("\n  linux-packages:\n", 1)[0]
     publication = workflow.split("\n  publish:\n", 1)[1]
 
     assert "needs: prepare" in bundle and "contents: write" not in bundle
@@ -135,7 +135,7 @@ def test_release_builds_and_installs_the_flatpak_bundle_from_the_tested_commit()
     assert install < bundle.index("sha256sum --check")
     assert "name: release-flatpak" in bundle
     assert "name: release-flatpak" in publication
-    assert '"flatpak/BreadSched-${VERSION}.flatpak" SHA256SUMS' in publication
+    assert '"flatpak/BreadSched-${VERSION}.flatpak" \\' in publication
     assert "flatpak-builder" not in publication
 
 
@@ -232,6 +232,13 @@ def test_release_publisher_treats_artifacts_as_fixed_name_data(tmp_path: Path):
     (flatpak / bundle).write_bytes(b"bundle")
     bundle_line = f"{hashlib.sha256(b'bundle').hexdigest()}  {bundle}\n"
     (flatpak / f"{bundle}.sha256").write_text(bundle_line, encoding="utf-8")
+    linux = root / "linux"
+    linux.mkdir()
+    packages = [f"breadsched_{version}_all.deb", f"breadsched-{version}-1.noarch.rpm"]
+    for package in packages:
+        (linux / package).write_bytes(package.encode())
+        digest = hashlib.sha256(package.encode()).hexdigest()
+        (linux / f"{package}.sha256").write_text(f"{digest}  {package}\n", encoding="utf-8")
 
     def validate() -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -244,9 +251,10 @@ def test_release_publisher_treats_artifacts_as_fixed_name_data(tmp_path: Path):
         )
 
     assert validate().returncode == 0, validate().stderr
-    # The published SHA256SUMS then covers the wheel, sdist, installer, and bundle.
+    # The published SHA256SUMS then covers the wheel, sdist, installer, bundle, and
+    # Linux packages.
     published = (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
-    assert [line.split("  ")[1] for line in published] == [*names, setup, bundle]
+    assert [line.split("  ")[1] for line in published] == [*names, setup, bundle, *packages]
     (root / "SHA256SUMS").write_text("\n".join(published[:2]) + "\n", encoding="utf-8")
 
     # A tampered installer or bundle, a Windows-style checksum line, or a stray file
@@ -260,6 +268,13 @@ def test_release_publisher_treats_artifacts_as_fixed_name_data(tmp_path: Path):
     (flatpak / bundle).write_bytes(b"tampered")
     assert validate().returncode != 0
     (flatpak / bundle).write_bytes(b"bundle")
+    (linux / packages[0]).write_bytes(b"tampered")
+    assert validate().returncode != 0
+    (linux / packages[0]).write_bytes(packages[0].encode())
+    (linux / "other.deb").write_bytes(b"x")
+    assert validate().returncode != 0
+    (linux / "other.deb").unlink()
+    (root / "SHA256SUMS").write_text("\n".join(published[:2]) + "\n", encoding="utf-8")
     (installer / "other.exe").write_bytes(b"x")
     assert validate().returncode != 0
     (installer / "other.exe").unlink()
@@ -305,3 +320,30 @@ def test_release_workflow_marks_only_alpha_versions_as_prereleases():
             check=True,
         )
         assert ("--prerelease" in result.stdout) is prerelease
+
+
+def test_release_packages_the_tested_wheel_as_deb_and_rpm():
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    job = workflow.split("\n  linux-packages:\n", 1)[1].split("\n  publish:\n", 1)[0]
+    assert "needs: prepare" in job and "contents: write" not in job
+    assert "image: ubuntu:24.04" in job and "image: fedora:latest" in job
+    assert "persist-credentials: false" in job and "ref: main" in job
+    verify = job.index('test "$(git rev-parse HEAD)" = "$TESTED_SHA"')
+    assert verify < job.index("packaging/linux/build-package.sh")
+    # The package is built from the release's own tested wheel, installed, and checked.
+    assert 'wheel="release-inputs/dist/breadsched-${VERSION}-py3-none-any.whl"' in job
+    assert job.index("build-package.sh") < job.index("smoke-test.sh")
+    assert "name: release-linux-${{ matrix.format }}" in job
+    publication = workflow.split("\n  publish:\n", 1)[1]
+    assert '"linux/breadsched_${VERSION}_all.deb" \\' in publication
+    assert '"linux/breadsched-${VERSION}-1.noarch.rpm" SHA256SUMS' in publication
+
+
+def test_ci_installs_and_removes_both_linux_packages():
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    job = workflow.split("\n  linux-packages:\n", 1)[1].split("\n  windows-installer:\n", 1)[0]
+    assert "format: deb" in job and "format: rpm" in job
+    assert "apt-get install -y ./packages/*.deb" in job
+    assert "dnf install -y ./packages/*.rpm" in job
+    assert "packaging/linux/smoke-test.sh" in job
+    assert "test ! -e /usr/lib/breadsched" in job

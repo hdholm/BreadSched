@@ -48,6 +48,21 @@ not yet code-signed, so Windows SmartScreen may ask you to confirm before it run
 
 ### Install on Linux
 
+On Ubuntu 24.04 or later, Debian 12 or later, or Fedora, the release's native package
+uses your system's Python 3 and GTK 4. Unlike the Flatpak, it can use Finance::Quote
+for [online quotes](#online-quotes), which it installs as a recommended package.
+Check the file against `SHA256SUMS`, then install it with your package manager,
+which also fetches what it needs:
+
+```sh
+sudo apt install ./breadsched_<version>_all.deb         # Debian, Ubuntu
+sudo dnf install ./breadsched-<version>-1.noarch.rpm    # Fedora
+```
+
+BreadSched then appears in your application menu, and `breadsched` is the
+[command line](cli.md). Installing a newer package upgrades it. Removing it
+(`sudo apt remove breadsched` or `sudo dnf remove breadsched`) never removes a book.
+
 The Flatpak bundle (`BreadSched-<version>.flatpak`) installs BreadSched with its
 own GTK runtime from Flathub. Check it against the release's `SHA256SUMS`
 (`sha256sum BreadSched-<version>.flatpak`), then install it for your user:
