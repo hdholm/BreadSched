@@ -6623,6 +6623,109 @@ class TestBlankEntryRow:
         assert blank.handle_key(blank.decrease, Gdk.KEY_Return) is True
         assert any(t.description == "Entered by keyboard" for t in app.db.iter_transactions())
 
+    def test_date_shortcuts_apply_to_a_whole_date_and_type_otherwise(
+        self, app, window, populated_book
+    ):
+        blank = self._register(app, window, populated_book).blank
+        blank.date.set_text("2026-01-31")
+        assert blank.handle_key(blank.date, Gdk.KEY_plus) is True
+        assert blank.date.get_text() == "2026-02-01"
+        assert blank.handle_key(blank.date, Gdk.KEY_bracketleft) is True
+        assert blank.date.get_text() == "2026-01-01"
+        assert blank.handle_key(blank.date, Gdk.KEY_minus) is True
+        assert blank.date.get_text() == "2025-12-31"
+        assert blank.handle_key(blank.date, Gdk.KEY_t) is True
+        assert blank.date.get_text() == date.today().isoformat()
+        # Half-typed text is not a date yet, so "-" is typed rather than applied.
+        blank.date.set_text("2026")
+        assert blank.handle_key(blank.date, Gdk.KEY_minus) is False
+        # Ctrl+T is not the "today" shortcut.
+        blank.date.set_text("2026-01-31")
+        assert blank.handle_key(blank.date, Gdk.KEY_t, Gdk.ModifierType.CONTROL_MASK) is False
+        # Leaving a short form shows the whole date.
+        blank.date.set_text("3/15")
+        blank.settle(blank.date)
+        assert blank.date.get_text() == f"{date.today().year}-03-15"
+
+    def test_a_short_date_and_arithmetic_amount_post(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        blank = view.blank
+        blank.last_date = date(2026, 1, 20)
+        blank.date.set_text("15")
+        blank.description.set_text("Shared groceries")
+        blank.decrease.set_text("100/3")
+        assert blank.commit() is True
+        posted = next(t for t in app.db.iter_transactions() if t.description == "Shared groceries")
+        assert posted.post_date == date(2026, 1, 15)
+        assert posted.split_for(checking.handle).value == Money("-33.33")
+
+    def test_leaving_a_calculation_shows_its_result_in_the_right_column(
+        self, app, window, populated_book
+    ):
+        blank = self._register(app, window, populated_book).blank
+        blank.increase.set_text("12.50+3*2")
+        blank.settle(blank.increase)
+        assert blank.increase.get_text() == "18.50"
+        blank.increase.set_text("5-12")
+        blank.settle(blank.increase)
+        assert (blank.increase.get_text(), blank.decrease.get_text()) == ("", "7.00")
+        # A single number is left exactly as typed.
+        blank.decrease.set_text("1.005")
+        blank.settle(blank.decrease)
+        assert blank.decrease.get_text() == "1.005"
+        blank.description.set_text("Bad sum")
+        blank.decrease.set_text("1/0")
+        assert blank.commit() is False
+        assert "arithmetic" in window._views["register"].entry_status.get_text()
+
+    def test_num_steps_from_the_field_or_the_registers_last_number(
+        self, app, window, populated_book
+    ):
+        view = self._register(app, window, populated_book)
+        blank = view.blank
+        blank.num.set_text("0099")
+        assert blank.handle_key(blank.num, Gdk.KEY_plus) is True
+        assert blank.num.get_text() == "0100"
+        assert blank.handle_key(blank.num, Gdk.KEY_minus) is True
+        assert blank.num.get_text() == "0099"
+        blank.num.set_text("ATM")
+        assert blank.handle_key(blank.num, Gdk.KEY_plus) is False
+        blank.description.set_text("Check")
+        blank.num.set_text("1041")
+        blank.decrease.set_text("5")
+        assert blank.commit() is True
+        assert blank.num.get_text() == ""
+        assert blank.handle_key(blank.num, Gdk.KEY_plus) is True
+        assert blank.num.get_text() == "1042"
+
+    def test_typing_into_the_transfer_picker_completes_account_paths(
+        self, app, window, populated_book
+    ):
+        view = self._register(app, window, populated_book)
+        blank = view.blank
+        rent = app.db.get_account_by_name("Expenses:Rent").handle
+        for keyval in (Gdk.KEY_E, Gdk.KEY_x, Gdk.KEY_colon, Gdk.KEY_R):
+            assert blank.handle_key(blank.transfer, keyval) is True
+        assert blank.transfer_handle() == rent
+        assert "Expenses:Rent" in view.entry_status.get_text()
+        assert blank.handle_key(blank.transfer, Gdk.KEY_z) is True
+        assert "No account matches" in view.entry_status.get_text()
+        assert blank.transfer_handle() == rent
+        assert blank.handle_key(blank.transfer, Gdk.KEY_BackSpace) is True
+        assert blank._typed_account[1] == "Ex:R"
+        # Moving on starts the next picker's text afresh.
+        blank.handle_key(blank.transfer, Gdk.KEY_Tab)
+        assert blank._typed_account == (None, "")
+
+    def test_split_line_pickers_complete_too(self, app, window, populated_book):
+        blank = self._register(app, window, populated_book).blank
+        assert blank.set_split_mode(True)
+        line = blank.lines[-1]
+        for keyval in (Gdk.KEY_e, Gdk.KEY_colon, Gdk.KEY_r):
+            assert blank.handle_key(line.account, keyval) is True
+        assert blank.line_account(line) == app.db.get_account_by_name("Expenses:Rent").handle
+
     def test_hidden_accounts_show_the_row_insensitive_with_a_reason(
         self, app, window, populated_book
     ):

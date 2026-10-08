@@ -10,6 +10,24 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a251 - 2026-10-08
+
+- **Register typing shared by both registers.** `engine/entry_input` and
+  `services/entry_input` read register text for GTK directly and for the browser
+  through `GET /api/entry/date`, `/api/entry/amount`, `/api/entry/accounts`, and
+  `/api/entry/num`:
+  - Dates take GnuCash's shortcuts while the field holds a whole date (`+`/`-` a
+    day, `]`/`[` a month, `t`, `m`/`h`, `y`/`r`) and short forms relative to the
+    date shown (`15`, `3/15`, `3/15/27`).
+  - Amounts accept arithmetic (`12.50+3*2`) through the safe formula language,
+    rounded half up to the currency's unit; a negative result moves to the other
+    column, and a single number stays exact.
+  - Account choices complete typed paths segment by segment (`Ex:Gr` →
+    Expenses:Groceries) in the Transfer picker and split lines.
+  - `+`/`-` in **Num** step the number, continuing from the register's last one
+    when empty.
+- The browser register's date is now a text field so the shortcuts can be typed.
+
 ## 0.2.0a250 - 2026-10-08
 
 - **Payees removed; the description is a transaction's only name, as in GnuCash.**

@@ -5579,6 +5579,61 @@ class TestEntrySuggestion:
         assert caught.value.code == 400
 
 
+class TestEntryInput:
+    """The browser reads register typing through the same service as GTK."""
+
+    def test_dates_amounts_accounts_and_numbers(self, client):
+        before = len(list(client.database.iter_transactions()))
+        status, data = client.get("/api/entry/date?text=%5D&base=2026-01-31")
+        assert status == 200 and data == {"date": "2026-02-28"}
+        assert client.get("/api/entry/date?text=3%2F15&base=2026-01-31")[1] == {
+            "date": "2026-03-15"
+        }
+        status, data = client.get("/api/entry/amount?text=10%2F3&number_format=dot")
+        assert status == 200 and data == {"amount": "3.33"}
+        assert client.get("/api/entry/amount?text=1%2C5%2B2&number_format=comma")[1] == {
+            "amount": "3.50"
+        }
+        assert client.get("/api/entry/amount?text=")[1] == {"amount": None}
+        status, data = client.get("/api/entry/accounts?text=Ex%3AR")
+        assert status == 200
+        rent = client.database.get_account_by_name("Rent")
+        assert data == {"accounts": [{"handle": rent.handle, "full_name": "Expenses:Rent"}]}
+        checking = client.database.get_account_by_name("Checking")
+        assert client.get(f"/api/entry/accounts?text=A&exclude={checking.handle}")[1][
+            "accounts"
+        ] == [
+            {
+                "handle": client.database.get_account_by_name("401(k)").handle,
+                "full_name": "Assets:401(k)",
+            }
+        ]
+        status, data = client.get(f"/api/entry/num?account={checking.handle}&text=0099&step=1")
+        assert status == 200 and data == {"num": "0100"}
+        assert len(list(client.database.iter_transactions())) == before
+
+    @pytest.mark.parametrize(
+        ("path", "status", "code"),
+        [
+            ("/api/entry/date?text=x&base=2026-01-01", 400, "entry.date.invalid"),
+            ("/api/entry/date?text=%2B&base=soon", 400, "query.date.invalid"),
+            ("/api/entry/amount?text=1%2F0", 400, "entry.amount.invalid"),
+            ("/api/entry/amount?text=1&number_format=roman", 400, "query.invalid"),
+            ("/api/entry/amount?text=1&currency=missing", 404, "entry.currency.not_found"),
+            ("/api/entry/accounts?text=E&limit=0", 400, "query.integer.out_of_range"),
+            ("/api/entry/num?text=1", 400, "query.missing"),
+            ("/api/entry/num?account=missing&text=1", 404, "entry.account.not_found"),
+            ("/api/entry/num?account=x&text=1&step=many", 400, "query.integer.invalid"),
+            ("/api/entry/date?text=t&surprise=1", 400, "query.unknown"),
+        ],
+    )
+    def test_refusals(self, client, path, status, code):
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get(path)
+        assert caught.value.code == status
+        assert json.loads(caught.value.read())["code"] == code
+
+
 class TestRegisterEntry:
     """#158 on the web: the register's blank row and in-place edits.
 

@@ -383,6 +383,30 @@ with split lines for entries of more than two splits, and let you edit an existi
 entry in place ([desktop](guide/desktop.md#enter-transactions-in-a-register),
 [browser](guide/web.md#enter-transactions-in-the-register)).
 
+### Typing shortcuts in the register
+
+The desktop and browser registers read what you type the same way:
+
+- **Dates.** Type a full date (`2026-03-15`), a month and day in this year
+  (`3/15`), a day in this month (`15`), or a two- or four-digit year after the day
+  (`3/15/27`; a two-digit year is the one nearest the date shown, within 50 years).
+  While the field holds a whole date, single keys change it in place: `+` and `-`
+  move a day, `]` and `[` move a month (keeping the day, or the month's last day
+  when it is shorter), `t` is today, `m` and `h` are the first and last day of
+  the month, and `y` and `r` the first and last day of the year.
+- **Amounts.** Type arithmetic such as `12.50+3*2` or `(100-20)/4` and leaving the
+  field shows the result. The result is rounded half up to the currency's smallest
+  unit (cents), and a negative result moves to the other column. A single number is
+  kept exactly as typed. Only numbers, `+ - * /`, and parentheses are accepted.
+- **Accounts.** Typing into an account choice picks the first account whose name
+  matches segment by segment: `Ex:Gr` picks **Expenses:Groceries**, because `Ex`
+  begins `Expenses` and `Gr` begins `Groceries`. Accounts exactly as deep as what
+  you typed come first. The line under the register says which account was picked
+  and how many others match.
+- **Numbers.** In **Num**, `+` and `-` step a number up or down, keeping leading
+  zeros (`0099` → `0100`). In an empty field they continue from the register's last
+  numbered transaction.
+
 When you type a description for a new entry, BreadSched looks for the latest
 earlier transaction in this account whose description matches (ignoring case,
 punctuation, and words containing digits, such as store numbers). It fills only what

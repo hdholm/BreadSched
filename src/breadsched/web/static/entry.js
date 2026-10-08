@@ -40,6 +40,33 @@ function entryValue(units) {
   return [units.toString(), ENTRY_DENOMINATOR];
 }
 
+// What typed text means comes from the server's shared entry rules
+// (gen/services/entry_input), the same ones the desktop register uses.
+const ENTRY_DATE_KEYS = new Set("+-=_[]tTmMhHyYrR");
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function plainKey(event) {
+  return !event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1;
+}
+
+async function entryDate(text, base) {
+  const query = new URLSearchParams({ text });
+  if (ISO_DATE.test(base || "")) query.set("base", base);
+  return (await get(`/api/entry/date?${query}`)).date;
+}
+
+function isArithmetic(text) {
+  // A calculation rather than one number: an operator after the first character.
+  const clean = String(text ?? "").trim().replace(/^[-+]/, "").replace(/^\((.*)\)$/, "$1");
+  return /[-+*/()]/.test(clean);
+}
+
+async function entryAmount(text) {
+  const query = new URLSearchParams({ text, number_format:browserNumberFormat });
+  const { amount } = await get(`/api/entry/amount?${query}`);
+  return amount === null ? null : entryUnits(amount, "dot");
+}
+
 // Typed-but-unsaved state survives the register repainting, keyed by what is
 // being entered: "blank" for the new row, or the edited split's handle.
 function entryDraft(key) {
@@ -112,6 +139,20 @@ function registerEntry(data, usable, row) {
     node.addEventListener("input", () => { draft[field] = node.value; touch(); });
     return node;
   };
+  const settleAmount = async (holder, up, down) => {
+    // Show a calculation's result; a negative one moves to the other column.
+    for (const [field, other, node, otherNode] of [
+      ["increase", "decrease", up, down], ["decrease", "increase", down, up]]) {
+      if (!isArithmetic(holder[field])) continue;
+      const units = await entryAmount(holder[field]);
+      if (units === null || units === undefined) continue;
+      holder[field] = units < 0n ? "" : entryText(units);
+      holder[other] = units < 0n ? entryText(-units) : holder[other];
+      if (node) node.value = holder[field];
+      if (otherNode) otherNode.value = holder[other];
+      touch();
+    }
+  };
   const amountPair = (holder, label) => {
     // Typing in one amount clears the other, so the direction is never ambiguous.
     const up = el("input", { value:holder.increase, inputmode:"decimal", class:"num",
@@ -128,6 +169,12 @@ function registerEntry(data, usable, row) {
       if (down.value) { holder.increase = ""; up.value = ""; }
       updateImbalance();
     });
+    const settle = async () => {
+      try { await settleAmount(holder, up, down); updateImbalance(); }
+      catch (error) { say(error.message, "error"); }
+    };
+    up.addEventListener("change", settle);
+    down.addEventListener("change", settle);
     return [up, down];
   };
   const accountSelect = (value, choices, label, onchange, blank) => {
@@ -137,11 +184,66 @@ function registerEntry(data, usable, row) {
         selected:item.handle === value ? "selected" : null }, item.full_name)));
     if (!blank && !value && choices.length) node.value = choices[0].handle;
     node.addEventListener("change", () => { onchange(node.value); touch(); });
+    // Typing completes account paths segment by segment: "Ex:Gr" picks
+    // Expenses:Groceries, as in the desktop register.
+    let typed = "";
+    node.addEventListener("blur", () => { typed = ""; });
+    node.addEventListener("keydown", async (event) => {
+      if (event.key === "Backspace" && typed) typed = typed.slice(0, -1);
+      else if (plainKey(event) && (event.key !== " " || typed)) typed += event.key;
+      else return;
+      event.preventDefault();
+      if (!typed) return;
+      const wanted = typed;
+      try {
+        const query = new URLSearchParams({ text:wanted });
+        const { accounts:found } = await get(`/api/entry/accounts?${query}`);
+        if (wanted !== typed) return;  // a later key is already being looked up
+        const match = found.find((item) => choices.some((choice) => choice.handle === item.handle));
+        if (!match) { say(`No account matches “${wanted}”.`, "error"); return; }
+        node.value = match.handle;
+        onchange(match.handle); touch();
+        say(`“${wanted}” → ${match.full_name}`);
+      } catch (error) { say(error.message, "error"); }
+    });
     return node;
   };
 
-  const dateInput = input("date", { type:"date", label:"date" });
-  const numInput = input("num", { placeholder:"Num", label:"number", size:"5" });
+  const dateInput = input("date", { placeholder:"YYYY-MM-DD", label:"date", size:"10",
+    title:"A date such as 2026-03-15, 3/15, or 15; + and - move a day, ] and [ a month, t is today" });
+  const numInput = input("num", { placeholder:"Num", label:"number", size:"5",
+    title:"+ and - step the number; in an empty field, from the last one" });
+  const lastDate = () => (editing ? row.date : (state.entryLastDate
+    || new Date().toISOString().slice(0, 10)));
+  const settleDate = async () => {
+    if (ISO_DATE.test(draft.date)) return true;
+    try {
+      draft.date = await entryDate(draft.date, lastDate());
+      dateInput.value = draft.date;
+      return true;
+    } catch (error) { return false; }
+  };
+  dateInput.addEventListener("keydown", async (event) => {
+    // A shortcut applies to a whole date; while one is being typed, keys type.
+    if (!plainKey(event) || !ENTRY_DATE_KEYS.has(event.key) || !ISO_DATE.test(draft.date)) return;
+    event.preventDefault();
+    try {
+      draft.date = await entryDate(event.key, draft.date);
+      dateInput.value = draft.date; touch();
+    } catch (error) { say(error.message, "error"); }
+  });
+  dateInput.addEventListener("change", () => { settleDate(); });
+  numInput.addEventListener("keydown", async (event) => {
+    if (!plainKey(event) || !"+=-_".includes(event.key)) return;
+    if (draft.num.trim() && !/\d$/.test(draft.num.trim())) return;
+    event.preventDefault();
+    try {
+      const query = new URLSearchParams({ account:state.account, text:draft.num,
+        step:"+=".includes(event.key) ? "1" : "-1" });
+      const { num } = await get(`/api/entry/num?${query}`);
+      if (num !== draft.num) { draft.num = num; numInput.value = num; touch(); }
+    } catch (error) { say(error.message, "error"); }
+  });
   const description = input("description", { placeholder:"Description", label:"description" });
   const transfer = accountSelect(draft.transfer, transfers, `${noun} transfer account`,
     (value) => { draft.transfer = value; draft.transferTouched = true; });
@@ -179,7 +281,15 @@ function registerEntry(data, usable, row) {
   }
 
   async function commit() {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date || "")) return fail("Enter the date.", dateInput);
+    if (!(await settleDate())) {
+      return fail("Enter a date such as 2026-03-15, 3/15, 15, or t.", dateInput);
+    }
+    try {
+      if (draft.split) for (const line of draft.lines) await settleAmount(line, null, null);
+      else await settleAmount(draft, increase, decrease);
+    } catch (error) {
+      return fail("Enter an amount, or arithmetic such as 12.50+3.", draft.split ? null : increase);
+    }
     if (!draft.description.trim()) return fail("Enter a description.", description);
     let splits;
     if (draft.split) {

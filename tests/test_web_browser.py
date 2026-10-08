@@ -279,6 +279,54 @@ def test_the_blank_row_posts_on_enter_and_proposes_the_latest_match(page, served
     assert len(list(db.iter_transactions())) == before
 
 
+def test_the_blank_row_reads_shortcuts_arithmetic_and_account_paths(page, served):
+    """Register typing goes through the same shared rules as the desktop register."""
+    from breadsched.gen.services.entry_input import complete_entry_account
+
+    db, _httpd = served
+    _open_register(page)
+    register = page.locator("select").first.input_value()
+    target = next(
+        a
+        for a in sorted(db.iter_accounts(), key=db.full_name)
+        if not (a.placeholder or a.hidden or a.is_root) and a.handle != register
+    )
+    typed = ":".join(segment[:2] for segment in db.full_name(target).split(":"))
+    found = complete_entry_account(db, typed).value
+    expected = next(item for item in found if item.handle != register)
+
+    date_field = _blank(page, "date")
+    date_field.fill("2026-01-31")
+    date_field.press("+")
+    page.wait_for_function(
+        "() => document.querySelector(\"[aria-label='New transaction date']\").value"
+        " === '2026-02-01'"
+    )
+    date_field.press("]")
+    page.wait_for_function(
+        "() => document.querySelector(\"[aria-label='New transaction date']\").value"
+        " === '2026-03-01'"
+    )
+    _blank(page, "description").fill("Browser arithmetic")
+    transfer = _blank(page, "transfer account")
+    transfer.focus()
+    for key in typed:
+        transfer.press(key)
+    page.wait_for_selector(f"text={expected.full_name}")
+    assert transfer.input_value() == expected.handle
+    amount = page.locator("tr.entry-row input.num").nth(1)
+    amount.fill("100/3")
+    amount.press("Enter")
+    page.wait_for_selector("text=Posted Browser arithmetic.")
+    posted = next(t for t in db.iter_transactions() if t.description == "Browser arithmetic")
+    assert posted.post_date == date(2026, 3, 1)
+    assert sorted(str(split.value.to_decimal()) for split in posted.splits) == [
+        "-33.33",
+        "33.33",
+    ]
+    assert {split.account for split in posted.splits} == {register, expected.handle}
+
+
 def test_the_blank_row_enters_balanced_split_lines(page, served):
     db, _httpd = served
     _open_register(page)

@@ -73,7 +73,10 @@ lines with an imbalance line, and **Edit** on any row to change it in place, wit
 proposal from an earlier matching transaction (see
 [Transactions and registers](../USER_GUIDE.md#transactions-and-registers)). Choosing
 another account, or editing another row, while something is typed asks before
-discarding it.
+discarding it. The date, amounts, account choices, and **Num** take the same
+[typing shortcuts](../USER_GUIDE.md#typing-shortcuts-in-the-register) as the
+desktop register; the date is a text field, so type it rather than picking it
+from a calendar.
 
 ### Tags and linked documents
 

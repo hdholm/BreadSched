@@ -179,6 +179,11 @@ into it:
 4. Press **Enter** to save it. The row empties for the next entry, keeping the
    date.
 
+Dates, amounts, the **Transfer** account, and **Num** take the shortcuts in
+[Typing shortcuts in the register](../USER_GUIDE.md#typing-shortcuts-in-the-register):
+for example `+` for the next day, `100/3` for an amount, or `Ex:Gr` typed while
+**Transfer** has the focus.
+
 **Tab** and **Shift+Tab** move between the row's fields, and **Escape** clears
 the row. If something is missing or wrong, the line under the register says
 what. Your typing stays in place, and the cursor moves to that field. The row is
