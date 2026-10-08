@@ -56,6 +56,12 @@ messages or pull requests.
   Cover a rejected request with a before/after persistence assertion.
   Scenario schedule changes require that same assertion against the saved scenario,
   including its override list.
+- Keep `gen/` (domain, storage, engines, services) standard-library only. A
+  third-party package may be used in an adapter or presentation only after a
+  decision record under `docs/design/decisions/` gives its reason, licence,
+  packaging (wheel, Flatpak, Windows, RPM, DEB), and behavior when it is missing;
+  make network-facing packages optional extras and add each package to the
+  architecture test's allowlist for that layer only.
 - Preserve exact monetary arithmetic and double-entry invariants. Do not
   introduce binary floating-point calculations for money.
 - Valuation presentation must disclose the selected quote's date and source, or

@@ -146,6 +146,7 @@ class TestLayering:
             "pathlib",
             "sqlite3",
             "statistics",
+            "subprocess",
             "sys",
             "time",
             "typing",

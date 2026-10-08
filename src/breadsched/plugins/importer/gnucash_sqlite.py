@@ -286,12 +286,17 @@ def _import_commodities(conn: sqlite3.Connection, sink: ImportSink) -> None:
     if not _table_exists(conn, "commodities"):
         return
     for row in conn.execute("SELECT * FROM commodities"):
+        columns = row.keys()
+        quoted = "quote_flag" in columns and bool(row["quote_flag"])
         sink.commodity(
             namespace=row["namespace"],
             mnemonic=row["mnemonic"],
             fullname=row["fullname"] or "",
             fraction=row["fraction"] or 100,
             source_guid=row["guid"],
+            quote_source=(row["quote_source"] or "")
+            if quoted and "quote_source" in columns
+            else "",
         )
 
 

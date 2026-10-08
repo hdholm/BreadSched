@@ -105,6 +105,25 @@ rational rate, date, source, and quote handle. An ambiguous currency code requir
 its exact handle. JSON output also carries the signed number of days since each
 quote (`quote_age_days`), with negative days identifying a future-dated quote.
 
+## Online quotes
+
+```bash
+breadsched quote-source household.breadsched G tsp        # fetch G Fund prices
+breadsched quote-source household.breadsched VTSAX alphavantage
+breadsched quote-source household.breadsched GBP currency
+breadsched quotes household.breadsched --list             # what would be fetched
+breadsched quotes household.breadsched --dry-run          # fetch, show, store nothing
+breadsched quotes household.breadsched                    # fetch and store
+```
+
+`quote-source` with no source turns online quotes off for that commodity. Any
+source other than `tsp`, `alphavantage`, or `currency` is a Finance::Quote method
+and needs Finance::Quote installed outside the Flatpak; `--list` says whether it
+is. Set the Alpha Vantage key as `alphavantage_api_key` in the `[quotes]` section of
+`settings.ini`, or in `ALPHAVANTAGE_API_KEY`. `quotes` exits with status 1 when
+every source failed. See
+[Online quotes](../USER_GUIDE.md#online-quotes) for the rules.
+
 ## Estimates and schedules
 
 ```bash

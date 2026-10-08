@@ -30,8 +30,13 @@ class Commodity(PrimaryObject):
         fullname: str = "",
         fraction: int = 100,
         symbol: str = "",
+        quote_source: str = "",
     ) -> None:
         super().__init__(handle)
+        #: Where online quotes come from: a native source (``tsp``, ``alphavantage``,
+        #: ``currency``) or a Finance::Quote method; empty means no online quotes.
+        #: GnuCash import carries its ``quote_source`` here.
+        self.quote_source = quote_source
         self.namespace = namespace
         self.mnemonic = mnemonic
         self.fullname = fullname or mnemonic
@@ -49,6 +54,8 @@ class Commodity(PrimaryObject):
             "fullname": self.fullname,
             "fraction": self.fraction,
             "symbol": self.symbol,
+            # Written only when set, so existing commodities are stored as before.
+            **({"quote_source": self.quote_source} if self.quote_source else {}),
         }
 
     def _unserialize(self, data: dict[str, Any]) -> None:
@@ -57,6 +64,7 @@ class Commodity(PrimaryObject):
         self.fullname = data.get("fullname", "")
         self.fraction = data.get("fraction", 100)
         self.symbol = data.get("symbol", "")
+        self.quote_source = str(data.get("quote_source") or "")
 
     def __repr__(self) -> str:
         return f"<Commodity {self.namespace}:{self.mnemonic}>"

@@ -29,6 +29,7 @@ Decision records under `docs/design/decisions/` keep the measurements behind
 choices that were tested before being made:
 
 - [0001: Keep transactions as JSON with a derived split index](docs/design/decisions/0001-transaction-storage.md)
+- [0002: Third-party packages outside the core, and where online quotes come from](docs/design/decisions/0002-dependencies-and-online-quotes.md)
 
 ## Product boundary
 

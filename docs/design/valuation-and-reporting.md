@@ -113,6 +113,19 @@ Accounts views in GTK and web show that evidence or the ledger-value fallback.
 This does not establish a stale-price threshold or convert foreign-currency ledger
 amounts; quote selection still uses the latest applicable reporting-currency price.
 
+### Online quotes
+
+`gen/services/quotes.update_quotes` asks the fetcher passed to it for every
+commodity whose `quote_source` is set, except the reporting currency. It stores each
+answer as a `CommodityPrice` whose `source` is `Online: <origin>` (`tsp.gov`, `ECB`,
+`Alpha Vantage`, `Finance::Quote <method>`) and whose `quote_type` is `last`, so
+valuation discloses it like any other quote. A price for the same commodity,
+currency, date, and source is updated in place. A quote in a currency the book
+lacks, or with no positive price, is reported and not stored. ECB rates are crossed
+through the euro into the reporting currency and rounded to 10 decimal places. The
+network code lives in `plugins/quotes` (see
+[decision 0002](decisions/0002-dependencies-and-online-quotes.md)).
+
 ## Valuation completeness
 
 `engine/completeness` gives every reporting-currency result one structured

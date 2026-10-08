@@ -27,6 +27,7 @@ from . import (
     ledger_commands,
     plan_commands,
     projection_commands,
+    quote_commands,
 )
 from .common import CommandError
 
@@ -44,6 +45,7 @@ COMMAND_MODULES = (
     benefit_commands,
     projection_commands,
     investment_commands,
+    quote_commands,
 )
 
 

@@ -553,7 +553,14 @@ class ImportSink:
         fullname: str = "",
         fraction: int = 100,
         source_guid: str | None = None,
+        quote_source: str = "",
     ) -> str:
+        """The commodity's handle, creating it, or refreshing its quote source.
+
+        ``quote_source`` is GnuCash's online quote source for a commodity it
+        retrieves quotes for (empty otherwise); it is source-owned, so a re-import
+        refreshes it.
+        """
         key = f"{namespace}:{mnemonic}"
         if key in self._commodities:
             handle = self._commodities[key]
@@ -568,12 +575,16 @@ class ImportSink:
             self._commodities[key] = existing.handle
             if source_guid:
                 self._commodity_guids[source_guid] = existing.handle
+            if existing.quote_source != quote_source:
+                existing.quote_source = quote_source
+                self.db.commit_commodity(existing, self.txn)
             return existing.handle
         obj = Commodity(
             namespace=namespace or "CURRENCY",
             mnemonic=mnemonic,
             fullname=fullname or mnemonic,
             fraction=fraction or 100,
+            quote_source=quote_source,
         )
         self.db.add_commodity(obj, self.txn)
         self._commodities[key] = obj.handle
