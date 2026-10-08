@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import gzip
 import logging
+import os
 import sqlite3
 from datetime import date
 from decimal import Decimal
@@ -717,3 +718,21 @@ def gnucash_xml_path(tmp_path):
     with gzip.open(path, "wb") as handle:
         handle.write(body.encode("utf-8"))
     return SimpleNamespace(path=str(path), ids=ids, plain=body)
+
+
+# Tests that reach live outside services (online quote sources) are complete tests,
+# not optional ones: they are skipped, with this reason, only where the environment
+# cannot run them. Set BREADSCHED_NETWORK_TESTS=1 on a machine with open internet
+# access to run them, as the weekly "Live quote sources" workflow does.
+NETWORK_TESTS = os.environ.get("BREADSCHED_NETWORK_TESTS") == "1"
+
+
+def pytest_collection_modifyitems(config, items):
+    if NETWORK_TESTS:
+        return
+    skip = pytest.mark.skip(
+        reason="reaches live services; set BREADSCHED_NETWORK_TESTS=1 where internet access is open"
+    )
+    for item in items:
+        if "network" in item.keywords:
+            item.add_marker(skip)

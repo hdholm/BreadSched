@@ -111,6 +111,19 @@ as a new executable example, packaged file, or cross-document link. Never write 
 test that asserts preferred wording, and never edit a test file only to satisfy a
 rule.
 
+Build the complete tests even when the environment at hand cannot run them. A
+sandbox without internet access, a CI runner without a display or a desktop
+library, or a host without Perl is a reason to gate a test, never to leave it
+unwritten, weaken its assertions, or replace it with only a mocked double. Keep
+the fast, deterministic tests that fake the outside world, and also write the tests
+that exercise the real thing: live services, the real external tool, the installed
+package. Gate each with a marker or a skip whose reason names the missing
+capability and how to supply it (for example `@pytest.mark.network`, which runs
+only with `BREADSCHED_NETWORK_TESTS=1`, or a skip when Finance::Quote is not
+installed), so a less constrained machine or a scheduled workflow runs them as
+written. Each pull request reports which of its tests ran, and which were skipped
+or failed only for a missing capability and where they are expected to run.
+
 Tests must be generic. Do not copy names, account identifiers, transaction labels,
 amounts, dates, memos, institutions, or other user-specific data into fixtures just
 because real user data exposed a defect. Reduce the case to the smallest neutral

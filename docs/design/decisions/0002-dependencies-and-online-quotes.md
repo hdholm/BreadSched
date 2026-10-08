@@ -71,3 +71,8 @@ have Finance::Quote installed.
 - A source that changes format breaks only its own commodities, with a reason
   shown per commodity. Finance::Quote's maintainers keep its long tail working.
 - Packaging grows by two native Linux formats; their build and smoke tests join CI.
+- Unit tests fake every download and the Perl run. The live tests in
+  `tests/test_online_quotes_live.py` (marked `network`) fetch from each real source,
+  through Finance::Quote, the service, CLI, web route, and an installed package;
+  they run with `BREADSCHED_NETWORK_TESTS=1` and in the weekly *Live quote sources*
+  workflow, so a provider's format change is caught without blocking pull requests.

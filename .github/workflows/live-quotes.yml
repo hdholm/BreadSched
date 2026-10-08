@@ -1,0 +1,38 @@
+name: Live quote sources
+
+# The online quote tests reach tsp.gov, the ECB, Alpha Vantage, and Finance::Quote's
+# sources. Those services change and fail on their own schedule, so the tests run
+# here weekly and on demand instead of gating pull requests; a failure here means a
+# source changed its format or address, or BreadSched broke reading it.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: Fetch from every quote source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Finance::Quote and BreadSched
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libfinance-quote-perl
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run the live quote tests
+        env:
+          BREADSCHED_NETWORK_TESTS: "1"
+          # Optional: without it Alpha Vantage uses its demo key (IBM only).
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+        run: pytest -m network tests/test_online_quotes_live.py -rs
