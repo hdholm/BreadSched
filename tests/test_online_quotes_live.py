@@ -45,6 +45,18 @@ def _finance_quote_installed() -> bool:
     return finance_quote_status()[0]
 
 
+#: Keyless Finance::Quote sources for a US stock, tried in order. The ``usa`` and
+#: ``nasdaq`` failover groups come last: Finance::Quote 1.59 aborts them with
+#: "IEXCloud API_KEY not defined" instead of moving on to the next provider.
+FINANCE_QUOTE_CANDIDATES = (
+    "marketwatch",
+    "stooq",
+    "googleweb",
+    "yahoo_json",
+    "usa",
+    "nasdaq",
+)
+
 needs_finance_quote = pytest.mark.skipif(
     not _finance_quote_installed(), reason="Finance::Quote is not installed outside a Flatpak"
 )
@@ -139,18 +151,27 @@ class TestFinanceQuote:
     def test_other_sources_are_fetched_through_finance_quote(self):
         """A source BreadSched does not fetch itself goes to Finance::Quote and back.
 
-        Yahoo's JSON source by default; set ``BREADSCHED_FQ_METHOD`` and
-        ``BREADSCHED_FQ_SYMBOL`` to check another (a source you rely on, for example).
+        Single providers come and go (Yahoo began answering Finance::Quote 1.59
+        with 401 Unauthorized in October 2026), so this tries keyless sources in
+        turn and passes on the first that answers; it fails, listing every
+        reason, only if none does. Set ``BREADSCHED_FQ_METHOD`` (and
+        ``BREADSCHED_FQ_SYMBOL``) to check exactly one source you rely on.
         """
-        method = os.environ.get("BREADSCHED_FQ_METHOD", "yahoo_json")
         symbol = os.environ.get("BREADSCHED_FQ_SYMBOL", "IBM")
-        quotes, failures = OnlineQuotes().fetch([QuoteRequest("x", symbol, method)], "USD")
-        if failures and "has no" in failures[0].reason:
-            pytest.skip(failures[0].reason)
-        assert failures == [], failures
-        [quote] = quotes
-        _recent(quote.when)
-        assert quote.origin == f"Finance::Quote {method}" and quote.value > 0
+        chosen = os.environ.get("BREADSCHED_FQ_METHOD")
+        methods = [chosen] if chosen else list(FINANCE_QUOTE_CANDIDATES)
+        reasons = []
+        for method in methods:
+            quotes, failures = OnlineQuotes().fetch([QuoteRequest("x", symbol, method)], "USD")
+            if quotes:
+                [quote] = quotes
+                _recent(quote.when)
+                assert quote.origin == f"Finance::Quote {method}" and quote.value > 0
+                return
+            reasons.append(f"{method}: {failures[0].reason}")
+        if chosen and "has no" in reasons[0]:
+            pytest.skip(reasons[0])
+        pytest.fail("no Finance::Quote source answered:\n" + "\n".join(reasons))
 
     def test_an_unknown_method_is_reported_not_raised(self):
         quotes, failures = OnlineQuotes().fetch([QuoteRequest("x", "X", "no_such_method")], "USD")

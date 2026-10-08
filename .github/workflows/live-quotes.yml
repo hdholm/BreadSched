@@ -14,8 +14,17 @@ permissions:
 
 jobs:
   live:
-    name: Fetch from every quote source
+    # Finance::Quote's current CPAN release decides the result. Ubuntu's package
+    # (1.59 on 24.04) runs too, so its state stays visible, but cannot fail the
+    # run: in October 2026 every keyless US stock source refused it while 1.71
+    # passed, and the guide tells users of old packages to update.
+    name: Fetch from every quote source (Finance::Quote ${{ matrix.finance-quote }})
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.finance-quote == 'distribution' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        finance-quote: [distribution, cpan]
     steps:
       - uses: actions/checkout@v7
 
@@ -27,6 +36,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libfinance-quote-perl
+          if [ "${{ matrix.finance-quote }}" = cpan ]; then
+            sudo apt-get install -y --no-install-recommends cpanminus libssl-dev zlib1g-dev
+            sudo cpanm --notest --quiet Finance::Quote
+          fi
+          perl -MFinance::Quote -e 'print "Finance::Quote $Finance::Quote::VERSION\n"'
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 

@@ -65,13 +65,17 @@ every test marked `network` unless `BREADSCHED_NETWORK_TESTS=1`, with a reason t
 says so; `tests/test_online_quotes_live.py` holds the quote tests (each tsp.gov fund,
 ECB rates crossed into several reporting currencies, Alpha Vantage with
 `ALPHAVANTAGE_API_KEY` or its `demo` key, Finance::Quote's TSP agreeing with the
-native reader and another of its sources through `BREADSCHED_FQ_METHOD` and
-`BREADSCHED_FQ_SYMBOL`, then the service, CLI, web route, and an installed
+native reader, keyless Finance::Quote sources tried in turn until one answers (or
+exactly the one named by `BREADSCHED_FQ_METHOD` and `BREADSCHED_FQ_SYMBOL`, for a
+source you rely on), then the service, CLI, web route, and an installed
 `breadsched`), and `tests/test_gui.py` fetches live TSP prices through the dialog.
 Assertions hold for any trading day: positive prices in a plausible range, dated
 recently, from the expected source, and stored once. The *Live quote sources*
-workflow (`.github/workflows/live-quotes.yml`) runs them weekly and on demand with
-Finance::Quote installed, so a provider's format change is reported without making
+workflow (`.github/workflows/live-quotes.yml`) runs them weekly and on demand
+against both Ubuntu's packaged Finance::Quote and its current CPAN release; the
+CPAN job decides the result, and the packaged one reports without failing the run
+(in October 2026, 1.59 could no longer fetch keyless US stock quotes while 1.71
+could), so a provider's format change is reported without making
 pull requests depend on outside services. Run them locally with
 `BREADSCHED_NETWORK_TESTS=1 pytest -m network -rs`.
 

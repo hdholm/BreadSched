@@ -86,7 +86,11 @@ def save_alphavantage_key(settings, value: str) -> bool:
 
 
 def finance_quote_status() -> tuple[bool, str]:
-    """Whether Finance::Quote can be used here, and if not, why."""
+    """Whether Finance::Quote can be used here, and if not, why.
+
+    When it can, the text names the installed version: quote websites change
+    often, and an old Finance::Quote is the usual reason its sources fail.
+    """
     if os.environ.get("FLATPAK_ID"):
         return False, "Finance::Quote is not available in the Flatpak"
     perl = shutil.which("perl")
@@ -94,8 +98,9 @@ def finance_quote_status() -> tuple[bool, str]:
         return False, "Finance::Quote needs Perl, which is not installed"
     try:
         found = subprocess.run(  # noqa: S603 - fixed arguments
-            [perl, "-MFinance::Quote", "-MJSON::PP", "-e", "1"],
+            [perl, "-MFinance::Quote", "-MJSON::PP", "-e", "print $Finance::Quote::VERSION"],
             capture_output=True,
+            text=True,
             timeout=30,
             check=False,
         )
@@ -103,6 +108,9 @@ def finance_quote_status() -> tuple[bool, str]:
         return False, "Finance::Quote could not be started"
     if found.returncode != 0:
         return False, "Finance::Quote is not installed"
+    version = found.stdout.strip()
+    if version and all(part.isdigit() for part in version.split(".")):
+        return True, f"Finance::Quote {version} is installed"
     return True, "Finance::Quote is installed"
 
 
