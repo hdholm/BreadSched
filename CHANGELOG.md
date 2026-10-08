@@ -10,6 +10,20 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a252 - 2026-10-08
+
+- **GnuCash stock splits import.** A GnuCash share split (one split that changes
+  shares with no value) was skipped as "only one split, with no value", so its
+  shares were missing. It now imports with an importer-added zero-value leg in
+  `Equity:Share splits` (created on first use), and cost basis scales the lots as a
+  share split. The leg is marked `importer_added` (stored only when set), keeps its
+  handle on re-import, and GnuCash write-back never sends or compares it.
+  `breadsched import` reports `share_splits`.
+- **Print in Browser leaves the desktop File menu** on Linux and Windows, which
+  print natively. It stays on macOS as the placeholder for native macOS printing;
+  the dialog reports still fall back to the browser when GTK printing fails, and
+  the web interface keeps its own printing.
+
 ## 0.2.0a251 - 2026-10-08
 
 - **Register typing shared by both registers.** `engine/entry_input` and

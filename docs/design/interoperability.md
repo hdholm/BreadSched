@@ -70,6 +70,18 @@ same source split GUID still exists, so a materially replaced source split canno
 inherit stale BreadSched state. Transactions with a split reconciled in BreadSched
 follow the narrower rule in *Locally reconciled imported transactions* below.
 
+GnuCash records a share split as one split that changes shares with no value. A
+BreadSched transaction needs two splits, so the importer adds a zero-value,
+zero-quantity leg in `Equity:Share splits` (creating it, and a placeholder
+`Equity` if the book has none) with `Split.importer_added` set and a handle derived
+from the source GUID, kept on re-import, so a refresh compares equal. Write-back
+leaves importer-added splits out of the target transaction and out of its
+round-trip comparison (`written_facts`), so GnuCash keeps its one split, and an
+edit to the transaction's other facts still writes back. `importer_added` is
+serialized only when set, so every other split's stored form is unchanged.
+`ImportResult.share_splits` counts them. A lone split with neither value nor
+shares is still skipped as "only one split, with no value".
+
 Import reporting follows that ownership boundary. A successfully read source
 transaction is **new** when its stable identity is absent, **refreshed** when any
 source-owned ledger fact differs, and **unchanged** otherwise; split classifications
@@ -180,6 +192,8 @@ commodity and SCU, currencies, and every real transaction with its splits, lots,
 and reconcile state; XML template transactions are excluded). Planning compares
 BreadSched with that view and produces one operation per transaction:
 
+- Importer-added splits (a share split's balancing leg) are never written or
+  compared.
 - **new**: a transaction not from GnuCash (not in this book's import inventory)
   whose every account maps to GnuCash (`Account.source_guid`), in a currency the
   book has, with at least two splits. Values use the currency's fraction; a split

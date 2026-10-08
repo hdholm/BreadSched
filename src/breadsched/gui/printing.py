@@ -9,9 +9,10 @@ to include it. The desktop print portal a sandboxed (Flatpak) BreadSched prints
 through cannot show that tab, so there BreadSched asks first (:func:`print_report`).
 :func:`export_pdf` draws the same pages straight to a PDF file.
 
-The older route, a private self-contained HTML page opened in the default browser,
-stays available as **File → Print in Browser…**; the dialog reports
-(:func:`print_document`) fall back to it when GTK printing fails.
+The older route, a private self-contained HTML page opened in the default browser
+(:func:`open_print_preview`), is the placeholder for native macOS printing: only
+there does the File menu offer **Print in Browser…**. The dialog reports
+(:func:`print_document`) fall back to it on any platform when GTK printing fails.
 """
 
 from __future__ import annotations

@@ -119,6 +119,8 @@ class ImportResult:
     #: Statement rows held back because the account already has a transaction from
     #: elsewhere on the same date for the same amount (also counted as skipped).
     possible_duplicates: int = 0
+    #: GnuCash share splits imported with a zero-value leg in Equity:Share splits.
+    share_splits: int = 0
     splits_new: int = 0
     splits_refreshed: int = 0
     splits_unchanged: int = 0
@@ -955,6 +957,22 @@ class ImportSink:
         )
 
         residual = txn_obj.imbalance()
+        if len(txn_obj.splits) == 1 and not residual and txn_obj.splits[0].quantity:
+            # GnuCash records a share split as one split that changes shares and
+            # carries no value. A BreadSched transaction needs two splits, so the
+            # importer adds a zero-value leg in Equity:Share splits, marked as its
+            # own so write-back never sends it to GnuCash.
+            txn_obj.add_split(
+                Split(
+                    self._share_split_account(txn_obj.currency),
+                    Money(0),
+                    quantity=Money(0),
+                    memo="Share split",
+                    handle=self._share_split_handle(guid, existing),
+                    importer_added=True,
+                )
+            )
+            self.result.share_splits += 1
         if len(txn_obj.splits) == 1 and not residual:
             # A lone zero-value split carries no information and cannot be balanced
             # into anything meaningful.
@@ -1066,6 +1084,46 @@ class ImportSink:
             changes=import_review.describe_changes(existing, incoming, account_name),
             incoming=incoming.serialize(),
         )
+
+    @staticmethod
+    def _share_split_handle(guid: str, existing: Transaction | None) -> str:
+        """The balancing leg's handle: kept from before, else derived from the source."""
+        if existing is not None:
+            for split in existing.splits:
+                if split.importer_added:
+                    return split.handle
+        return hashlib.sha256(f"share-split:{guid}".encode()).hexdigest()[:32]
+
+    def _share_split_account(self, currency: str | None) -> str:
+        """``Equity:Share splits``, created (with ``Equity``) on first use."""
+        existing = self.db.get_account_by_name("Equity:Share splits")
+        if existing is not None:
+            return existing.handle
+        root = self.db.root_account()
+        equity = self.db.get_account_by_name("Equity")
+        if equity is None:
+            equity = Account(
+                name="Equity",
+                atype=AccountType.EQUITY,
+                parent=root.handle if root else None,
+                commodity=currency,
+                placeholder=True,
+            )
+            self.db.add_account(equity, self.txn)
+            self._known_accounts.add(equity.handle)
+            self.result.accounts += 1
+        account = Account(
+            name="Share splits",
+            atype=AccountType.EQUITY,
+            parent=equity.handle,
+            commodity=currency,
+            description="Balances share splits imported from GnuCash; always zero",
+        )
+        self.db.add_account(account, self.txn)
+        self._known_accounts.add(account.handle)
+        self.result.accounts += 1
+        LOG.info("created Equity:Share splits to balance imported share splits")
+        return account.handle
 
     def _imbalance_account(self, currency: str | None) -> str:
         existing = self.db.get_account_by_name("Imbalance")

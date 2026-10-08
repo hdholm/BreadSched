@@ -231,6 +231,8 @@ def _target(
         raise _Refused("its currency changed; only GnuCash can change that")
     splits: list[TargetSplit] = []
     for split in transaction.splits:
+        if split.importer_added:
+            continue  # BreadSched's own bookkeeping, such as a share split's balancing leg
         account_guid = source_guid.get(split.account)
         if account_guid is None:
             raise _Refused("an account is not in the GnuCash book")

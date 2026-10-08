@@ -142,6 +142,7 @@ class Split:
         "planning_flow",
         "investment_activity",
         "fsa_year_start",
+        "importer_added",
     )
 
     def __init__(
@@ -156,9 +157,13 @@ class Split:
         planning_flow: PlanningFlowKind | str | None = None,
         investment_activity: InvestmentActivityKind | str | None = None,
         fsa_year_start: date | str | None = None,
+        importer_added: bool = False,
     ) -> None:
         self.handle = handle or create_handle()
         self.account = account
+        #: A split the importer added for BreadSched's own bookkeeping (a share
+        #: split's zero-value balancing leg); GnuCash write-back never sends it.
+        self.importer_added = importer_added
         #: Amount in the *transaction's* currency. Splits must sum to zero on this.
         self.value = value if isinstance(value, Money) else Money(value)
         #: Amount in the *account's* commodity (shares, foreign currency units).
@@ -206,6 +211,8 @@ class Split:
                 self.investment_activity.value if self.investment_activity else None
             ),
             "fsa_year_start": (self.fsa_year_start.isoformat() if self.fsa_year_start else None),
+            # Written only when set, so every other split's stored form is unchanged.
+            **({"importer_added": True} if self.importer_added else {}),
         }
 
     @classmethod
@@ -221,6 +228,7 @@ class Split:
             planning_flow=data.get("planning_flow"),
             investment_activity=data.get("investment_activity"),
             fsa_year_start=data.get("fsa_year_start"),
+            importer_added=bool(data.get("importer_added", False)),
         )
         raw = data.get("reconcile_date")
         split.reconcile_date = date.fromisoformat(raw) if raw else None

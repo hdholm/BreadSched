@@ -462,8 +462,9 @@ Flatpak prints through your desktop's own print dialog, which has no **Report**
 tab, so there BreadSched first asks **Summary only** or **Include category
 detail**.
 
-**File → Print in Browser…** opens the same report as a page in your web browser
-instead, for its own print dialog. The **Print…** buttons in Expense Explorer and
+On macOS, **File → Print in Browser…** opens the same report as a page in your
+web browser instead, for its own print dialog, until BreadSched prints natively
+there. The **Print…** buttons in Expense Explorer and
 Net Worth History use the system print dialog too: Expense Explorer prints
 spending and income over time, the selected category and period with merchant
 detail, and the chosen Income detail. If the system print dialog cannot be used,

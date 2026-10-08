@@ -962,8 +962,11 @@ split, fewer) shares at the same cost. Each transfer and split is listed with th
 holding's lots and sales. On a single day, shares received count before shares sent
 or sold; shares moved both ways between the same two accounts on one day cannot be
 traced to lots, so they count as a sale and a purchase at their recorded values and
-are named. A GnuCash stock split recorded as a single split is
-skipped on import and named in the import report; enter it in BreadSched as above.
+are named. GnuCash records a stock split as a single split that changes shares
+with no value; importing adds the zero-value balancing leg in **Equity:Share
+splits** (created when first needed), so the shares arrive and the lots scale. That
+leg is BreadSched's own: GnuCash write-back never sends it, and re-importing keeps
+it.
 Nothing is stored: the figures come from the security account's transactions
 each time, so correcting a transaction corrects them.
 
