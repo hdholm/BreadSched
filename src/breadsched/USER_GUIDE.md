@@ -369,6 +369,32 @@ already in your book (matched by symbol). A price for a security the book doesn'
 have is listed as skipped rather than creating a new security. Imported prices never
 replace one you entered yourself.
 
+### Online quotes
+
+BreadSched can fetch prices and exchange rates for you, but only when you ask, and
+only for commodities that have a quote source:
+
+- **`tsp`**: Thrift Savings Plan funds (G, F, C, S, I, and the L funds such as
+  `L2050`), from tsp.gov.
+- **`currency`**: a foreign currency's rate into your reporting currency, from the
+  European Central Bank's daily reference rates.
+- **`alphavantage`**: stocks and funds, from Alpha Vantage. It needs your free
+  Alpha Vantage API key, set in BreadSched's settings or in the
+  `ALPHAVANTAGE_API_KEY` environment variable (the one GnuCash's Finance::Quote
+  reads).
+- **Any other source name**, such as `vanguard` or `europe`: fetched by
+  Finance::Quote, the Perl library GnuCash uses, when it is installed on your
+  computer. The Flatpak cannot use it; the native Linux packages and installs from
+  the Python package can.
+
+Importing a GnuCash book carries over the quote source of every commodity GnuCash
+fetches quotes for. Each fetched price is stored like any other dated price, with
+its source shown as, for example, *Online: tsp.gov*. Fetching again on the same
+day replaces that day's online price rather than adding another. A source that
+fails is listed with its reason and changes nothing, so the prices you already
+have stay in use. The command line fetches quotes now
+([command line](guide/cli.md#online-quotes)); the desktop and browser follow.
+
 ## Transactions and registers
 
 A register lists one account's entries oldest first, like a check register, with a

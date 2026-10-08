@@ -10,6 +10,32 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a256 - 2026-10-08
+
+- **Online quotes (service, sources, and command line).** A commodity's
+  `quote_source` asks for online prices:
+  - `tsp`: Thrift Savings Plan funds from tsp.gov.
+  - `currency`: ECB reference rates crossed into the reporting currency.
+  - `alphavantage`: Alpha Vantage, with the key from settings or
+    `ALPHAVANTAGE_API_KEY`.
+  - Any other name: a Finance::Quote method, run through an installed Perl
+    Finance::Quote outside the Flatpak.
+
+  `gen/services/quotes.update_quotes` stores each answer as a dated `last` price
+  with source `Online: <origin>`, updating rather than duplicating the same day's
+  price and reporting each failed source per commodity. `breadsched quotes`
+  (`--list`, `--dry-run`, `--json`) fetches, and `breadsched quote-source` sets or
+  clears a source. GnuCash import carries each commodity's quote source (only when
+  GnuCash fetches quotes for it) and refreshes it on re-import. The source is stored
+  only when set, so there is no schema change.
+- **Dependency policy.** [Decision 0002](docs/design/decisions/0002-dependencies-and-online-quotes.md)
+  keeps `gen/` standard-library only and lets adapters and presentations use a
+  third-party package once a decision record justifies it. CONTRIBUTING and the
+  architecture design part record the rule; quotes needed no new package.
+- The roadmap adds Fedora RPM and Ubuntu DEB packages, which can use Finance::Quote
+  where the Flatpak cannot, and narrows online quotes to the desktop and browser
+  surfaces.
+
 ## 0.2.0a255 - 2026-10-08
 
 - **Storage normalization measured and declined.**

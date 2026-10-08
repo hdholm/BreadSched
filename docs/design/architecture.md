@@ -22,12 +22,18 @@ Presentations: GTK4, web, CLI, print  gui/, web/, cli/, plugins/export/
 | Calculations: ledger, valuation, conversion, completeness, planning, activity, projection, dashboard, FSA, receivables, goals | `gen/engine` | recalculate a total in an adapter |
 | Every financial or domain write, with validation and its complete database transaction | `gen/services` (typed requests, `ServiceResult`, stable error codes) | assemble splits, claim objects, or schedules themselves |
 | Import and export formats | `plugins/importer`, `plugins/export` | bypass the import service's preflight and ownership rules |
+| Online quote sources (network, Finance::Quote bridge) | `plugins/quotes`, called through `gen/services/quotes` | fetch from the network in an engine or service, or store prices themselves |
 | Wording of service errors and shared report sentences | `presentation/` (by area: `messages`, `notices`, `benefits`, `planning`, `investments`; the package re-exports every name) and its gettext catalog | invent their own financial wording |
 | GTK windows, dialogs, printing, background jobs | `gui/` | touch widgets from a worker thread |
 | HTTP routes, query parsing, response shape | `web/resources.py` and the `web/*_resource.py` adapters | perform validation or writes the service owns |
 | HTTP authentication, framing, limits, static files | `web/transport.py` | import financial engines |
 | Command-line parsing and text/JSON output | `cli/*_commands.py`, dispatched by `cli/main.py` | keep its own copy of a financial rule |
 | Report layout shared by GTK printing and the browser | `plugins/export/report_layout.py` | recompute values from the view |
+
+`gen/` is standard-library only. Adapters and presentations may use a third-party
+package once a decision record justifies it, and network-facing ones are optional
+extras ([decision 0002](decisions/0002-dependencies-and-online-quotes.md)).
+`tests/test_architecture.py` names what each layer may import.
 
 Background work: a Projection or other long calculation runs in a worker with its
 own read-only snapshot and hands an immutable result back to the GTK main loop;

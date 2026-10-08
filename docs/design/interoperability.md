@@ -70,6 +70,11 @@ same source split GUID still exists, so a materially replaced source split canno
 inherit stale BreadSched state. Transactions with a split reconciled in BreadSched
 follow the narrower rule in *Locally reconciled imported transactions* below.
 
+A GnuCash commodity with quote retrieval turned on (`quote_flag`, or
+`cmdty:get_quotes` in XML) brings its `quote_source` into `Commodity.quote_source`.
+The source is source-owned: a re-import sets it, or clears it when GnuCash no longer
+fetches quotes for that commodity. It is stored only when set.
+
 GnuCash records a share split as one split that changes shares with no value. A
 BreadSched transaction needs two splits, so the importer adds a zero-value,
 zero-quantity leg in `Equity:Share splits` (creating it, and a placeholder

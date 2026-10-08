@@ -225,11 +225,13 @@ def _read_commodity(element: ET.Element, sink: ImportSink) -> None:
     if not mnemonic:
         return
     fraction = _text(element, "cmdty:fraction", "100")
+    quoted = element.find("cmdty:get_quotes", NS) is not None
     sink.commodity(
         namespace=space or "CURRENCY",
         mnemonic=mnemonic,
         fullname=_text(element, "cmdty:name"),
         fraction=int(fraction) if fraction.isdigit() else 100,
+        quote_source=_text(element, "cmdty:quote_source") if quoted else "",
     )
 
 
