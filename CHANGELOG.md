@@ -10,6 +10,22 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a248 - 2026-10-08
+
+- **Wording split by area.** `presentation.py` (808 lines) is now the
+  `presentation` package: `messages` (service-error wording and the gettext
+  catalog), `notices` (book-open, Review, and post-import notices), `benefits`
+  (FSA, claims, shared costs, reimbursements), `planning` (goals, Plan, Projection,
+  runway), and `investments` (holdings, lots). The package re-exports every public
+  name, so no caller changed; an architecture test checks that the modules import
+  no interface code and that every public name stays re-exported.
+- **Design split by topic.** `DESIGN.md` keeps the overview, product boundary, and
+  an index; each other part (architecture, domain model, storage, planning,
+  valuation and reporting, household workflows, interoperability, user interfaces,
+  security, validation and releases) is its own document under `docs/design/`,
+  with cross-part links rewritten and checked by the documentation link test.
+  CONTRIBUTING's document review covers the parts with `DESIGN.md`.
+
 ## 0.2.0a247 - 2026-10-06
 
 - **Cost basis follows transfers and share splits.** Shares moved between two of

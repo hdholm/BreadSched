@@ -22,11 +22,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    completion, dates must be typed in full, and there is no reconcile column.
    `Gtk.ColumnView` has no editable cells and recycles row widgets, so the GTK
    register becomes a custom grid. Delivered in this order:
-   1. **Preparation.** Split `presentation.py` by area and `DESIGN.md` into
-      per-topic documents, so the large changes below do not all edit two shared
-      files; add focused tests for the book lock, backups, and change verification
-      (currently the least covered storage-safety code), which protect the
-      book-format migrations that follow.
+   1. **Preparation.** Add focused tests for the book lock, backups, and change
+      verification (currently the least covered storage-safety code), which
+      protect the book-format migrations that follow.
    2. **Remove payees.** Description becomes the only name, as in GnuCash: remove
       the payee model, table (a schema migration; existing books hold no payees
       worth keeping, so names are not carried over), service, screens, register

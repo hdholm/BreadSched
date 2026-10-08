@@ -82,8 +82,9 @@ messages or pull requests.
     `guide/cli.md` give each interface's steps. Put what a feature does and its
     rules in the overview and the steps in the matching part, and link between
     them;
-  - `DESIGN.md` records the implemented architecture, ownership, invariants, and
-    rationale, not development history or future work;
+  - `DESIGN.md` and its parts under `docs/design/` record the implemented
+    architecture, ownership, invariants, and rationale, not development history or
+    future work; put a topic in the part that owns it;
   - `ROADMAP.md` is the only future-work list; and
   - `CHANGELOG.md` records completed changes concisely. Recent versions keep their
     full entries; older versions are condensed to one line each that names their
@@ -205,9 +206,9 @@ Before opening or updating a pull request:
 Every pull request **reviews** each of these documents against its changes and
 records a **disposition** for each one in the pull-request description:
 
-- `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `DESIGN.md`, `ROADMAP.md`,
-  `CHANGELOG.md`, `src/breadsched/USER_GUIDE.md`, and each part in
-  `src/breadsched/guide/` (`desktop.md`, `web.md`, `cli.md`).
+- `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `DESIGN.md` (with its parts under
+  `docs/design/`), `ROADMAP.md`, `CHANGELOG.md`, `src/breadsched/USER_GUIDE.md`,
+  and each part in `src/breadsched/guide/` (`desktop.md`, `web.md`, `cli.md`).
 
 A disposition is one of:
 
