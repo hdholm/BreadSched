@@ -1593,7 +1593,9 @@ Flatpak reaches only through the file chooser, in BreadSched's data folder; see
 [Install on Linux](guide/desktop.md#install-on-linux)), and the desktop
 application says where. A large book can take several seconds to upgrade; the
 desktop window says that it is upgrading the book while it works, and the notice
-that follows comes up in front of the window. Read-only commands never migrate; they ask you to migrate
+that follows comes up in front of the window. Anything else waiting at start-up,
+such as GnuCash changes to review or schedules that are due, follows once you close
+the notice, one window at a time. Read-only commands never migrate; they ask you to migrate
 instead.
 
 See [desktop](guide/desktop.md#protect-and-recover-a-book) and

@@ -256,12 +256,14 @@ class BreadSchedApplication(Gtk.Application):
             "new-transaction",
         ):
             self.set_action_enabled(name, True)
-        for window in self.get_windows():
-            if isinstance(window, ViewManager):
-                window.book_opened(self.db, path)
+        # The notice says what opening did (an upgrade, where backups go), so it
+        # is queued before the reviews book_opened queues behind it.
         notice = book_open_notice(path, migration_backup=self.db.migration_backup)
         if notice is not None:
             self._report(notice)
+        for window in self.get_windows():
+            if isinstance(window, ViewManager):
+                window.book_opened(self.db, path)
 
     def require_db(self) -> DbSQLite | None:
         return self.db
@@ -622,11 +624,30 @@ class BreadSchedApplication(Gtk.Application):
         if window is None:
             print(message, file=sys.stderr)
             return
-        when_presented(window, lambda: self._show_alert(window, message))
+        if isinstance(window, ViewManager):
+            # Over the main window, alerts take their turn with its other modal
+            # dialogs, so an alert and a review never wait on each other.
+            def show(done) -> bool:
+                self._show_alert(window, message, done)
+                return True
+
+            window.queue_modal(show)
+            return
+        when_presented(window, lambda: self._show_alert(window, message, lambda: None))
 
     @staticmethod
-    def _show_alert(window: Gtk.Window, message: str) -> None:
-        Gtk.AlertDialog(message=message, modal=True).show(window)
+    def _show_alert(window: Gtk.Window, message: str, done) -> None:
+        """Show ``message`` modally over ``window``; ``done`` runs when it is dismissed."""
+        alert = Gtk.AlertDialog(message=message, modal=True, buttons=["OK"])
+
+        def dismissed(dialog, result) -> None:
+            try:
+                dialog.choose_finish(result)
+            except GLib.Error:
+                pass  # Escape or closing the alert dismisses it too.
+            done()
+
+        alert.choose(window, None, dismissed)
 
 
 class ActionsMenu:

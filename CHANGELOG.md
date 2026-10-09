@@ -10,6 +10,18 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a263 - 2026-10-09
+
+- **Start-up dialogs take turns (#295 follow-up).** Opening a book that needed an
+  upgrade and also had schedules due showed the upgrade notice and the due review
+  together; the notice, hidden behind the review, took every input, so the
+  review's buttons did nothing and the main window stayed greyed out. The main
+  window now queues its own modal dialogs (`ViewManager.queue_modal`): the notice
+  first, then the GnuCash change review, then the due review, each once the window
+  is on screen and the one before has closed. Alerts over the main window join the
+  same queue and report their dismissal. GTK tests cover the order, two alerts in
+  turn, a real alert's dismissal, and a superseded review schedule.
+
 ## 0.2.0a262 - 2026-10-08
 
 - **First live quote runs.** Against the real services, the live tests fetched
