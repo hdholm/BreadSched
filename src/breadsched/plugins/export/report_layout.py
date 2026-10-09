@@ -20,6 +20,7 @@ from ...gen.engine.completeness import Completeness, combine
 from ...gen.engine.dashboard import Dashboard, MissedGroup
 from ...gen.engine.projection_result import Projection
 from ...gen.engine.realized_gains import RealizedGainsReport
+from ...gen.engine.tax_year import TaxYearReport
 from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
 from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer, SpendingPoint
@@ -57,6 +58,7 @@ __all__ = [
     "plan_layout",
     "projection_layout",
     "realized_gains_layout",
+    "tax_year_layout",
     "signed_money_text",
 ]
 
@@ -1208,4 +1210,124 @@ def realized_gains_layout(
     )
     return ReportDocument(
         "Realized gains", subtitle, (Section(tuple(blocks)),), kind="realized-gains"
+    )
+
+
+def tax_year_layout(report: TaxYearReport, currencies: dict[str | None, str]) -> ReportDocument:
+    """One calendar year: gains by term, tax-relevant accounts and tags, income by source."""
+    from ...gen.engine.cost_basis import shares_text
+
+    def label(handle: str | None) -> str:
+        return currencies.get(handle, handle or "")
+
+    gain_totals = tuple(
+        TableRow(
+            (
+                Cell(total.term.label),
+                Cell(label(total.currency)),
+                Cell(str(total.lines), numeric=True),
+                _amount(total.proceeds),
+                _amount(total.cost),
+                _amount(total.gain, signed=True),
+            )
+        )
+        for total in report.gain_totals
+    )
+    gains = tuple(
+        TableRow(
+            (
+                Cell(line.account_name),
+                Cell(shares_text(line.quantity), numeric=True),
+                Cell(line.acquired.isoformat() if line.acquired else "Various"),
+                Cell(line.sold.isoformat()),
+                Cell(line.term.label),
+                _amount(line.proceeds),
+                _amount(line.cost),
+                _amount(line.gain, signed=True),
+            )
+        )
+        for line in report.gains
+    )
+    accounts = tuple(
+        TableRow(
+            (
+                Cell(item.full_name),
+                Cell(label(item.currency)),
+                Cell(str(item.transactions), numeric=True),
+                _amount(item.amount, signed=True),
+                Cell(item.marked_by),
+            )
+        )
+        for item in report.accounts
+    )
+    tags = tuple(
+        TableRow(
+            (
+                Cell(item.tag),
+                Cell(label(item.currency)),
+                Cell(str(item.transactions), numeric=True),
+                _amount(item.spent),
+                _amount(item.received),
+            )
+        )
+        for item in report.tags
+    )
+    income = tuple(
+        TableRow(
+            (
+                Cell(item.full_name),
+                Cell(label(item.currency)),
+                Cell(str(item.transactions), numeric=True),
+                _amount(item.amount, signed=True),
+            )
+        )
+        for item in report.income
+    ) + tuple(
+        TableRow(
+            (Cell("Total"), Cell(label(currency)), Cell(""), _amount(total, signed=True)),
+            style="total",
+        )
+        for currency, total in report.income_totals
+    )
+    blocks: list[Block] = [
+        Paragraph(
+            "Calendar year, US rules: a lot is long-term when sold more than a year after "
+            "its purchase. Amounts in different currencies are totalled separately. This "
+            "summarizes the book; it is not tax advice or a tax form."
+        ),
+        Heading("Realized gains by term"),
+        Table(
+            _columns("Term", "Currency", "#Lines", "#Proceeds", "#Cost", "#Gain"),
+            gain_totals,
+            empty="No sales this year.",
+        ),
+        Table(
+            _columns(
+                "Security", "#Shares", "Acquired", "Sold", "Term", "#Proceeds", "#Cost", "#Gain"
+            ),
+            gains,
+            empty="No sales this year.",
+        ),
+        Heading("Tax-relevant accounts"),
+        Table(
+            _columns("Account", "Currency", "#Transactions", "#Total", "Marked by"),
+            accounts,
+            empty="No account is marked tax-relevant.",
+        ),
+        Heading("Tax-relevant tags"),
+        Table(
+            _columns("Tag", "Currency", "#Transactions", "#Spent", "#Received"),
+            tags,
+            empty="No tag is marked tax-relevant.",
+        ),
+        Heading("Income by source"),
+        Table(
+            _columns("Source", "Currency", "#Transactions", "#Amount"),
+            income,
+            empty="No income this year.",
+        ),
+        *_notes(report.problems, warning=True),
+    ]
+    return ReportDocument(
+        f"Tax year {report.year}", "Calendar year", (Section(tuple(blocks)),), kind="tax-year"
     )

@@ -344,6 +344,134 @@ async function openRealizedGains(year) {
   document.body.append(backdrop);
 }
 
+// One calendar year: gains by term, tax-relevant accounts and tags, income by source.
+async function openTaxYear(year) {
+  const data = await get(year ? `/api/tax-year?year=${year}` : "/api/tax-year");
+  document.querySelector(".tax-backdrop")?.remove();
+  const backdrop = el("div", {
+    class:"detail-backdrop tax-backdrop printable-dialog",
+    onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
+  });
+  const years = data.available_years.includes(data.year)
+    ? data.available_years : [data.year, ...data.available_years];
+  const choice = el("select", { "aria-label":"Tax year",
+    onchange:()=>openTaxYear(choice.value).catch((error)=>say(error.message, "error")) },
+    ...years.map((value) => el("option", { value:String(value) }, String(value))));
+  choice.value = String(data.year);
+  const reopen = () => openTaxYear(data.year).catch((error) => say(error.message, "error"));
+  const gainTotals = data.gain_totals.map((total) => el("tr", {},
+    el("td", {}, total.label), el("td", {}, total.currency),
+    el("td", { class:"num" }, String(total.lines)),
+    el("td", { class:"num" }, money(total.proceeds)), el("td", { class:"num" }, money(total.cost)),
+    el("td", { class:cls(total.gain) }, money(total.gain))));
+  const gains = data.gains.map((line) => el("tr", {},
+    el("td", {}, line.account_name), el("td", { class:"num" }, line.quantity),
+    el("td", {}, line.acquired || "Various"), el("td", {}, line.sold), el("td", {}, line.label),
+    el("td", { class:"num" }, money(line.proceeds)), el("td", { class:"num" }, money(line.cost)),
+    el("td", { class:cls(line.gain) }, money(line.gain))));
+  const accounts = data.accounts.map((item) => el("tr", {},
+    el("td", {}, item.name), el("td", {}, item.currency),
+    el("td", { class:"num" }, String(item.transactions)),
+    el("td", { class:cls(item.amount) }, money(item.amount)), el("td", {}, item.marked_by)));
+  const tags = data.tags.map((item) => el("tr", {},
+    el("td", {}, item.tag), el("td", {}, item.currency),
+    el("td", { class:"num" }, String(item.transactions)),
+    el("td", { class:"num" }, money(item.spent)), el("td", { class:"num" }, money(item.received))));
+  const income = [
+    ...data.income.map((item) => el("tr", {},
+      el("td", {}, item.name), el("td", {}, item.currency),
+      el("td", { class:"num" }, String(item.transactions)),
+      el("td", { class:cls(item.amount) }, money(item.amount)))),
+    ...data.income_totals.map((total) => el("tr", { class:"total" },
+      el("td", {}, "Total"), el("td", {}, total.currency), el("td", {}),
+      el("td", { class:cls(total.amount) }, money(total.amount)))),
+  ];
+  const printDialog = () => {
+    document.body.classList.add("printing-dialog");
+    const done = () => {
+      document.body.classList.remove("printing-dialog");
+      window.removeEventListener("afterprint", done);
+    };
+    window.addEventListener("afterprint", done);
+    window.print();
+  };
+  const num = (label) => ({ label, num:true });
+  backdrop.append(el("section", { class:"detail-dialog tax-dialog" },
+    helpHeading(`Tax year ${data.year}`, "tax-year"),
+    el("p", { class:"note" }, "Calendar year, US rules: a lot is long-term when sold more than "
+      + "a year after its purchase. Amounts in different currencies are totalled separately. "
+      + "This summarizes the book; it is not tax advice or a tax form."),
+    el("div", { class:"toolbar screen-only" }, el("label", {}, "Year ", choice),
+      el("button", { class:"action", type:"button",
+        onclick:()=>openTaxMarks(reopen).catch((error)=>say(error.message, "error")) },
+      "Tax-relevant accounts and tags…")),
+    el("h3", {}, "Realized gains by term"),
+    gainTotals.length ? table(["Term", "Currency", num("Lines"), num("Proceeds"), num("Cost"),
+      num("Gain")], gainTotals) : el("p", { class:"note" }, "No sales this year."),
+    gains.length ? table(["Security", num("Shares"), "Acquired", "Sold", "Term", num("Proceeds"),
+      num("Cost"), num("Gain")], gains) : null,
+    el("h3", {}, "Tax-relevant accounts"),
+    accounts.length ? table(["Account", "Currency", num("Transactions"), num("Total"),
+      "Marked by"], accounts) : el("p", { class:"note" }, "No account is marked tax-relevant."),
+    el("h3", {}, "Tax-relevant tags"),
+    tags.length ? table(["Tag", "Currency", num("Transactions"), num("Spent"), num("Received")],
+      tags) : el("p", { class:"note" }, "No tag is marked tax-relevant."),
+    el("h3", {}, "Income by source"),
+    income.length ? table(["Source", "Currency", num("Transactions"), num("Amount")], income)
+      : el("p", { class:"note" }, "No income this year."),
+    ...data.problems.map((problem) => el("p", { class:"note neg" }, problem)),
+    el("div", { class:"toolbar screen-only" }, el("span", { class:"spacer" }),
+      el("button", { class:"action", type:"button", onclick:printDialog }, "Print"),
+      el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Close"))));
+  document.body.append(backdrop);
+}
+
+// Choose the accounts (with those beneath them) and tags the tax year totals.
+async function openTaxMarks(onSaved) {
+  const data = await get("/api/tax-marks");
+  const backdrop = el("div", {
+    class:"detail-backdrop tax-marks-backdrop",
+    onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
+  });
+  const accountBoxes = data.accounts.map((item) => ({ item, box: el("input", {
+    type:"checkbox", checked:item.relevant ? "" : null, "aria-label":`${item.name} is tax-relevant` }) }));
+  const tagBoxes = data.tags.map((item) => ({ item, box: el("input", {
+    type:"checkbox", checked:item.relevant ? "" : null, "aria-label":`Tag ${item.tag} is tax-relevant` }) }));
+  const message = el("p", { class:"note neg", role:"alert" });
+  const save = async () => {
+    const accounts = {};
+    for (const { item, box } of accountBoxes) {
+      if (box.checked !== item.relevant) accounts[item.account] = box.checked;
+    }
+    const tags = {};
+    for (const { item, box } of tagBoxes) {
+      if (box.checked !== item.relevant) tags[item.tag] = box.checked;
+    }
+    try {
+      await post("/api/tax-marks", { accounts, tags });
+    } catch (error) { message.textContent = error.message; return; }
+    backdrop.remove();
+    if (onSaved) onSaved();
+  };
+  const origin = (item) => item.breadsched === null
+    ? (item.gnucash ? "GnuCash" : "") : (item.gnucash !== item.breadsched ? "BreadSched" : "");
+  backdrop.append(el("section", { class:"detail-dialog" },
+    helpHeading("Tax-relevant accounts and tags", "tax-year"),
+    el("p", { class:"note" }, "A marked account counts with the accounts beneath it. Until you "
+      + "change it here, an account follows GnuCash's \"tax related\" mark."),
+    el("h3", {}, "Tags"),
+    tagBoxes.length ? table(["", "Tag"], tagBoxes.map(({ item, box }) => [box, item.tag]))
+      : el("p", { class:"note" }, "The book has no tags yet."),
+    el("h3", {}, "Accounts"),
+    table(["", "Account", "Marked by"], accountBoxes.map(({ item, box }) =>
+      [box, item.name, origin(item)])),
+    message,
+    el("div", { class:"toolbar" }, el("span", { class:"spacer" }),
+      el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Cancel"),
+      el("button", { class:"action primary", type:"button", onclick:save }, "Save"))));
+  document.body.append(backdrop);
+}
+
 async function openSecurityPriceEditor() {
   const data = await get("/api/commodities");
   const backdrop = el("div", {
@@ -1055,6 +1183,9 @@ async function showAccounts() {
       el("button", { class:"action", type:"button",
         onclick:()=>openHoldings().catch((error)=>say(error.message,"error")) },
       "Holdings and cost basis…"),
+      el("button", { class:"action", type:"button",
+        onclick:()=>openTaxYear(null).catch((error)=>say(error.message,"error")) },
+      "Tax year…"),
       el("button", { class:"action", type:"button",
         onclick:()=>openOnlineQuotes().catch((error)=>say(error.message,"error")) },
       "Online quotes…")),

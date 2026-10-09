@@ -106,6 +106,25 @@ its lots and totals by year and currency, never adding currencies together;
 `SaleLotsDialog`, the browser (`/api/realized-gains`, `/api/holdings/sale-lots`),
 and `breadsched realized-gains` and `sale-lots` show and change it.
 
+`engine.tax_year` derives one calendar year (US-oriented) for tax preparation, and
+stores nothing but the marks. Each sale's lots split into short-term and long-term
+parts: a lot is long-term when sold after the anniversary of its purchase
+(`holding_term`; a 29 February purchase's anniversary is 28 February), and a
+transferred lot keeps its purchase date. A mixed sale's proceeds are shared by
+shares, the short-term part rounded to the cent and the long-term part taking the
+rest, so the parts add to the sale; shares sold beyond the recorded purchases are a
+named problem and left out. Tax-relevant accounts total the year's change in each
+marked account and those beneath it, as the account shows it, per commodity; an
+account is marked by `Account.tax_relevant_override`, or without it by GnuCash's
+`tax-related` slot as imported into `source_fields`. Tax-relevant tags (book
+metadata `tax.tags`) total their transactions' expense splits as spent and income
+splits as received, per currency. Income by source is every income account's year
+total. `services.tax.set_tax_marks` changes account and tag marks as one undo step,
+editing copies so a rejected request changes nothing. `report_layout.tax_year_layout`
+prints it; the GTK `TaxYearDialog` and `TaxMarksDialog`, the browser
+(`/api/tax-year`, `/api/tax-marks`), and `breadsched tax-year` and `tax-marks` show
+and change it.
+
 Ordinary foreign-currency account valuation uses the latest direct quote on or
 before the as-of date, then the latest eligible reverse pair if no direct applies,
 retaining the exact converted amount until presentation. Its result carries quote
@@ -457,7 +476,7 @@ The browser route, a private, owner-readable HTML preview opened in the default
 browser and removed when the application exits, is the placeholder for native macOS
 printing: only on macOS does the File menu offer **Print in Browser…** (Linux and
 Windows print natively). The dialog reports (Net Worth History, its change detail,
-Expense Explorer, and Realized Gains) have layouts of their own and print through
+Expense Explorer, Realized Gains, and Tax Year) have layouts of their own and print through
 `printing.print_document`, which opens the browser preview only when GTK printing
 fails. A cell may span columns (`Cell.span`, used by the net worth change totals)
 and hold line breaks (merchant transactions, top-level account values).
@@ -474,7 +493,7 @@ the browser print dialog.
 The web interface prints its current rendered view directly. Print-specific CSS
 removes navigation and editing actions, restores tables hidden by screen scroll
 regions, and preserves text, tables, and SVG charts as scalable output. A report
-dialog marked `printable-dialog` (Realized gains) prints on its own: its **Print**
+dialog marked `printable-dialog` (Realized gains, Tax year) prints on its own: its **Print**
 button sets `body.printing-dialog` for the print, which hides the page and shows only
 that dialog, and `screen-only` controls are left out. Both paths
 keep formatting and pagination in presentation code while all monetary values,

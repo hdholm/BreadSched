@@ -376,6 +376,9 @@ class Account(PrimaryObject):
         #: eligible type. Ineligible types are always excluded regardless of this
         #: retained preference.
         self.emergency_fund_override: bool | None = None
+        #: BreadSched's choice of whether the account is tax-relevant. None follows
+        #: GnuCash's "tax related" mark (see ``engine.tax_year.is_tax_relevant``).
+        self.tax_relevant_override: bool | None = None
 
     # -------------------------------------------------------------- convenience
 
@@ -449,6 +452,12 @@ class Account(PrimaryObject):
             "payment_day": self.payment_day,
             "card_payment_account": self.card_payment_account,
             "emergency_fund": self.emergency_fund_override,
+            # Written only when set, so every other account's stored form is unchanged.
+            **(
+                {"tax_relevant": self.tax_relevant_override}
+                if self.tax_relevant_override is not None
+                else {}
+            ),
         }
 
     def _unserialize(self, data: dict[str, Any]) -> None:
@@ -507,6 +516,8 @@ class Account(PrimaryObject):
         self.card_payment_account = str(payment_account) if payment_account else None
         raw_emergency = data.get("emergency_fund")
         self.emergency_fund_override = bool(raw_emergency) if raw_emergency is not None else None
+        raw_tax = data.get("tax_relevant")
+        self.tax_relevant_override = bool(raw_tax) if raw_tax is not None else None
 
     def __repr__(self) -> str:
         return f"<Account {self.name!r} {self.atype.value}>"

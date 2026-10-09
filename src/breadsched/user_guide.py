@@ -77,6 +77,7 @@ HELP_TOPICS: dict[str, str] = {
     "reconcile": "Reconcile a statement",
     "online-quotes": "Online quotes",
     "specific-lots": "Choose the lots a sale sells",
+    "tax-year": "Tax year",
     "scheduled": "Scheduled activity",
     "due-review": "Review due transactions",
     "payroll": "Paychecks and pay changes",

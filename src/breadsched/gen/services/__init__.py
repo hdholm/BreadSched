@@ -182,6 +182,7 @@ from .schedules import (
     save_scenario_schedule,
     save_schedule,
 )
+from .tax import SetTaxMarks, TaxAccountMark, TaxMarks, set_tax_marks, tax_marks
 from .transactions import (
     ClaimAttachment,
     DeleteTransaction,
@@ -200,6 +201,11 @@ __all__ = [
     "SetSaleLots",
     "sale_lots",
     "set_sale_lots",
+    "SetTaxMarks",
+    "TaxAccountMark",
+    "TaxMarks",
+    "set_tax_marks",
+    "tax_marks",
     "COST_BASIS_METHODS",
     "AcceptedClaimLinks",
     "accept_claim_links",

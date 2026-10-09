@@ -40,6 +40,9 @@ breadsched realized-gains household.breadsched --year 2026   # sales, lots, tota
 breadsched sale-lots household.breadsched 3f2a91c0 # lots a sale could sell
 breadsched sale-lots household.breadsched 3f2a91c0 --lot 9be41d07=5   # name lots
 breadsched sale-lots household.breadsched 3f2a91c0 --clear   # the account's method
+breadsched tax-year household.breadsched --year 2026   # gains by term, totals, income
+breadsched tax-marks household.breadsched --account "Expenses:Medical=on" \
+    --tag "Charity=on"                            # off, or gnucash for an account
 breadsched account household.breadsched edit --name "Assets:Brokerage" \
     --cost-basis average                          # or fifo (the default)
 ```

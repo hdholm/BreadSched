@@ -1150,3 +1150,48 @@ def test_a_sale_names_its_lots_and_the_gains_report_prints_alone(page, served):
     assert page.locator("main").is_hidden()
     assert dialog.is_visible()
     page.emulate_media(media="screen")
+
+
+def test_the_tax_year_marks_accounts_and_tags_and_prints_alone(page, served):
+    from breadsched.gen.lib import AccountType, Money, Split, Transaction
+
+    db, _httpd = served
+    checking = next(item for item in db.iter_accounts() if item.atype is AccountType.BANK)
+    expense = next(item for item in db.iter_accounts() if item.atype is AccountType.EXPENSE)
+    expense_name = db.full_name(expense)
+    gift = Transaction(post_date=date(2025, 4, 1), description="Gift")
+    gift.currency = checking.commodity
+    gift.splits = [Split(expense.handle, Money(80)), Split(checking.handle, Money(-80))]
+    gift.tags = ["Charity"]
+    with db.transaction("Gift") as txn:
+        db.add_transaction(gift, txn)
+
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Accounts", exact=True).first.click()
+    page.get_by_role("button", name="Tax year…").click()
+    dialog = page.locator(".tax-dialog")
+    dialog.wait_for()
+    dialog.get_by_label("Tax year").select_option("2025")
+    dialog = page.locator(".tax-dialog")
+    page.wait_for_selector(".tax-dialog h2:has-text('Tax year 2025')")
+    assert "No account is marked tax-relevant." in dialog.inner_text()
+    assert "Income by source" in dialog.inner_text()
+
+    dialog.get_by_role("button", name="Tax-relevant accounts and tags…").click()
+    page.get_by_label("Tag Charity is tax-relevant").check()
+    page.get_by_label(f"{expense_name} is tax-relevant").check()
+    page.locator(".tax-marks-backdrop").get_by_role("button", name="Save", exact=True).click()
+    page.wait_for_selector(".tax-dialog >> text=BreadSched")
+    dialog = page.locator(".tax-dialog")
+    text = dialog.inner_text()
+    assert expense_name in text and "Charity" in text and "80.00" in text
+    assert db.get_account(expense.handle).tax_relevant_override is True
+    assert db.get_metadata("tax.tags") == ["Charity"]
+
+    page.evaluate("window.print = () => { window.__printed = document.body.className; }")
+    dialog.get_by_role("button", name="Print").click()
+    assert "printing-dialog" in page.evaluate("window.__printed")
+    page.emulate_media(media="print")
+    assert page.locator("main").is_hidden()
+    assert dialog.is_visible()
+    page.emulate_media(media="screen")
