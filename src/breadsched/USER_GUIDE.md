@@ -466,7 +466,8 @@ descriptions, numbers, notes, tags, split memos, and account names without
 changing the running balance. A transaction cannot be saved unless its exact splits
 balance.
 
-Both the desktop and browser registers end in a blank row for typing a new entry,
+Both the desktop and browser registers end in a blank row for typing a new entry
+(the desktop register opens there, scrolled to the newest entries),
 with split lines for entries of more than two splits, and let you edit an existing
 entry in place ([desktop](guide/desktop.md#enter-transactions-in-a-register),
 [browser](guide/web.md#enter-transactions-in-the-register)).
@@ -486,11 +487,16 @@ The desktop and browser registers read what you type the same way:
   field shows the result. The result is rounded half up to the currency's smallest
   unit (cents), and a negative result moves to the other column. A single number is
   kept exactly as typed. Only numbers, `+ - * /`, and parentheses are accepted.
-- **Accounts.** Typing into an account choice picks the first account whose name
-  matches segment by segment: `Ex:Gr` picks **Expenses:Groceries**, because `Ex`
-  begins `Expenses` and `Gr` begins `Groceries`. Accounts exactly as deep as what
-  you typed come first. The line under the register says which account was picked
-  and how many others match.
+- **Accounts.** Account names match segment by segment: `Ex:Gr` matches
+  **Expenses:Groceries**, because `Ex` begins `Expenses` and `Gr` begins
+  `Groceries`. Accounts exactly as deep as what you typed come first. The desktop
+  register completes the account as you type, GnuCash style: the rest of the best
+  match appears selected so the next letter replaces it, `:` accepts the segment
+  shown and moves on to its subaccounts, and the matching accounts are listed under
+  the cell (Up/Down choose one, Tab or Enter accepts it). The browser register lists
+  the matches and the line under the register says which account was picked.
+- **Descriptions.** In the desktop register a description also completes from
+  earlier descriptions in the account when you type a new entry, most recent first.
 - **Numbers.** In **Num**, `+` and `-` step a number up or down, keeping leading
   zeros (`0099` → `0100`). In an empty field they continue from the register's last
   numbered transaction.

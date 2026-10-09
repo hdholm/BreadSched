@@ -45,14 +45,15 @@ or scenario in its query string.
 
 ## Tables, dialogs, and bounded sizes
 
-Every table is built with `_base.table_section()`: a heading row with the table's
+Every table except the register grid (below) is built with `_base.table_section()`: a heading row with the table's
 own column chooser (never in the view toolbar, where identical icons could not be
 told apart) above a scrolled `Gtk.ColumnView` carrying the `data-table` class, which
 stripes rows so they are distinguishable at rest. Numeric cells carry `numeric` for
 tabular figures and a small right padding. Tables never scroll sideways: a narrowing
 window gives each column between its minimum and natural width, text cells ellipsize,
 and amount cells never do, so figures are never truncated. The appearance corrects
-concrete overlap and legibility problems; reproducing GnuCash's look is not a goal.
+concrete overlap and legibility problems; outside the register, reproducing
+GnuCash's look is not a goal.
 
 A modal dialog is never shown behind the window it blocks (#295), and never two at
 once. The main window's own modal dialogs (alerts from `_report`, the GnuCash change
@@ -102,21 +103,33 @@ reconcile state, source identity, notes, planning purpose, investment activity, 
 claims), fills only fields the user has not touched, names its source, and never
 writes. The web route is `GET /api/entry/suggest`.
 
-### Blank entry row
+### Register grid and blank entry row
 
 GTK and web registers take new entries in a blank row at the bottom, modelled on
-GnuCash's interaction rather than its appearance. The row is a narrow adapter to
-the shared transaction service, not a parallel transaction model:
+GnuCash's interaction. The GTK register is a custom grid closer to GnuCash's
+appearance too; both are narrow adapters to the shared transaction service, not
+parallel transaction models:
 
-- **Model.** The last row is a sentinel payload (`gui/views/blank_entry.py`), not a
-  database object, kept after the sorted transactions in a flattened list model, so
-  it stays last under any sort or filter and never enters balances or exports. Its
-  entry widgets are created once per register and moved into cells, so typed values
-  survive repaints.
+- **Model.** `gui/register_sheet.py` is a toolkit-free sheet: the ledger rows, the
+  expanded split lines of the cursor's transaction, and a blank row that is not a
+  database object, so it never enters balances or exports. It owns the cursor (row
+  and column), the one `Draft` being edited, Tab order, Enter/Escape, saving, and
+  the split toggle, and is tested without GTK (`tests/test_register_sheet.py`).
+  Opening a register puts the cursor on the blank row, scrolled to the bottom.
+- **Drawing.** `gui/widgets/register_grid.py` draws only the visible rows on a
+  `Gtk.DrawingArea` with Cairo and PangoCairo (plain ruled rows, a tinted cursor
+  row, split lines, a rule before future-dated rows) and moves one frameless
+  `Gtk.Entry` over the cursor's cell, so no other cell looks like an input. A
+  vertical scrollbar drives the first drawn row; nothing is recycled, so the
+  cursor cannot jump when a split transaction expands (the regression that a
+  `Gtk.ColumnView` with hosted editors showed). There is no column chooser or
+  sorting: a register is always in ledger order.
 - **Cells and keys.** Date (defaulting to the last date entered), Num, Description,
-  Transfer (visible, postable accounts), and Increase/Decrease entries titled
-  with the account's headings. Tab moves in column order, Enter commits, Escape
-  resets, and typing never changes the selection.
+  Transfer (visible, postable accounts), R, and Increase/Decrease titled with the
+  account's headings. Tab and Shift+Tab move in column order, Enter saves and moves
+  down, Escape restores the transaction, Up/Down/Page Up/Page Down move the cursor
+  (saving the row being left; a refused save keeps it), and Ctrl+End/Home go to the
+  blank row and the first row.
 - **Typing.** `engine/entry_input` holds the pure rules for dates (GnuCash's
   `+`/`-`, `[`/`]`, `t`, `m`/`h`, `y`/`r`, and short forms relative to the date
   shown), amount arithmetic (each number read in the entry's decimal convention,
@@ -125,39 +138,33 @@ the shared transaction service, not a parallel transaction model:
   completion, and Num stepping. `services/entry_input` adds what only the book
   knows: postable visible accounts, the register's last number, and the
   currency's fraction. GTK calls them directly (a shortcut applies only while the
-  date field holds a whole date, so typing an ISO date is never intercepted, and a
-  picker accumulates typed text until focus moves); the browser sends the text
+  date field holds a whole date, so typing an ISO date is never intercepted); the
+  browser sends the text
   to `GET /api/entry/date`, `/amount`, `/accounts`, and `/num`, so neither
   register has its own parser.
+- **Quickfill.** `quickfill_account` completes the segment being typed from the
+  best match, and the grid selects the added text so the next key replaces it; `:`
+  accepts the segments shown and prefers a deeper account. The matches are listed
+  in a `Gtk.ListBox` under the cell. `quickfill_description` completes a new
+  entry's description from the register's earlier descriptions, most recent first;
+  leaving the description then asks `suggest_entry` for the rest.
 - **Commit.** Two balancing `TransactionSplitInput`s with a positive exact amount
   (direction from the cell typed in), or one per split line, go through
   `save_transaction` as one atomic change and one undo step. Fewer than two splits,
   an imbalance, an incomplete line, or no split in the register's account is refused
-  with the typed values kept and focus on the offending field.
-- **Split lines.** The Split toggle expands the row into lines with a memo, account,
-  and amount each, a trailing empty line, and a running imbalance. Collapsing back
-  is refused while more than two lines hold a split.
-- **Grid behavior.** A single click (a `Gtk.GestureClick` on the column view, acting
-  after the row's own selection) or F2 edits a transaction in place. Up/Down in an
-  edit row move between split lines, then call `RegisterView.move_edit`, which
-  takes the neighbor from the displayed order (`transaction_order`, so sorting and
-  filtering are respected) before committing the row being left through
-  `save_transaction`; a refused commit keeps the user on that row. Below the last
-  transaction is the blank row. A typed account path lists its matches in a
-  `Gtk.ListBox` under the table (not a popover, which would need a parent that
-  outlives every recycled picker). The **R** column calls
+  with the typed values kept and the cursor on the offending cell.
+- **Split lines.** A transaction of more than two splits opens with its split lines
+  (memo, account, and amount each) and a trailing empty line; the Split button
+  toggles them for a two-split one. Viewing the lines is not an edit. Collapsing is
+  refused while more than two lines hold a split.
+- **Editing in place.** Moving the cursor onto a transaction loads it as the draft:
+  split lines record their stored split handles, and saving passes
+  `existing_handle` and `source`, so handles, planning purposes, investment
+  activity, and notes the row does not show are kept; an emptied line removes its
+  split. Autocomplete never runs over a stored transaction. The **R** column calls
   `services.toggle_cleared`, which flips only `n`↔`c`, refuses `y`/frozen/void,
   and in the same database change adds a newly cleared candidate to (or removes
-  it from) the account's open statement. These behaviors are built on the existing
-  `Gtk.ColumnView` with persistent editor widgets hosted in its cells rather than a
-  separate grid widget: the hosting already survives row recycling, and sorting,
-  filtering, the column chooser, and printing keep working unchanged.
-- **Editing in place.** F2 or a click loads the transaction into an edit-mode row: a
-  two-split transaction edits as one row, any other shape as split lines that record
-  their stored split handles. Saving passes `existing_handle` and `source`, so
-  handles, planning purposes, investment activity, and notes the row does not show
-  are kept; an emptied line removes its split. Autocomplete never runs over a stored
-  transaction.
+  it from) the account's open statement.
 - **Leaving.** Switching accounts, opening another transaction, or closing a
   register window with unsaved typing asks Save / Discard / Cancel first.
 - **Web.** The browser register has the same row, split lines, and in-place editing

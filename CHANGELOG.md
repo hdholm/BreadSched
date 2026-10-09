@@ -10,6 +10,23 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a274 - 2026-10-09
+
+- **A GnuCash-like desktop register.** The GTK register is now a custom grid
+  (`gui/widgets/register_grid.py`) over a toolkit-free sheet model
+  (`gui/register_sheet.py`): plain ruled rows, a tinted cursor row, and a single
+  frameless editor over the cursor's cell instead of an entry box in every column.
+  A register opens on the blank row, scrolled to the newest entries. Transfer
+  accounts complete as you type (`entry_input.quickfill_account`: the rest of the
+  best match is selected, `:` accepts a level, and the matches are listed under the
+  cell), and a new entry's description completes from earlier ones
+  (`quickfill_description`). Up/Down, Page Up/Down, and Ctrl+End/Home move the
+  cursor, saving the row left. Fixes clicking a split transaction, which showed its
+  lines for a moment and then jumped to the first row (regression test). The
+  register no longer has a column chooser or sorting. The desktop guide, User
+  Guide, and design part describe the grid; `tests/test_register_sheet.py` covers
+  the sheet without GTK and `TestRegisterGrid` the drawn grid and keys.
+
 ## 0.2.0a273 - 2026-10-09
 
 - **Goals and holdings on the shared charts; Visualizations complete.**

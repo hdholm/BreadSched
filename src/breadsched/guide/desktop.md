@@ -134,6 +134,7 @@ postings behind it below the table; that section has its own **Print…** and
 
 Each table has its own column chooser (the "⋯" button at the right of that table's
 heading); its tooltip names the table, and the columns you hide are remembered.
+The register is a ledger grid with GnuCash's fixed columns, so it has no chooser.
 When you make the window narrower, text columns such as descriptions shorten (with
 "…") so every column, including every amount, stays visible. On a small screen, a
 long dialog scrolls its form, and its Save and Cancel buttons stay at the bottom.
@@ -158,8 +159,8 @@ Each book remembers its tabs: opening it again brings back the same views,
 registers, and scenario tabs, with the same tab selected. A tab for an account or
 scenario deleted since is left out. Another book has its own tabs.
 
-Registers can also open in independent windows; their account, filter, selection,
-and expanded row do not replace the main window's register state.
+Registers can also open in independent windows; their account, filter, and cursor
+do not replace the main window's register state.
 
 ## Exchange rates and security prices
 
@@ -220,65 +221,66 @@ line under Finance::Quote says whether it can be used here; the Flatpak cannot. 
 
 ## Enter transactions in a register
 
-Select an account to open its register. It opens scrolled to the most recent entry
-at the bottom; posting a new entry keeps you there, and changes made elsewhere leave
-your place alone.
+The register is a ledger grid laid out like GnuCash's: each transaction is one
+ruled line of plain text, the transaction you are on is shaded, and the cell you
+are typing in is outlined. Select an account to open its register. It opens at
+the bottom, on the blank transaction after the most recent entry, with the cursor
+in its date ready for the next entry; posting keeps you there, and changes made
+elsewhere leave your place alone.
 
-The last row of every register is a blank transaction. Type a new entry straight
-into it:
+Type a new entry straight into the blank transaction:
 
 1. Enter the date (it starts as the date you last entered, or today), an optional
    number, and a description.
-2. Choose the other visible account under **Transfer**.
+2. Type the other account under **Transfer**.
 3. Type a positive amount under the heading that describes the effect on this
    account, such as **Deposit** or **Withdrawal**. Typing in one clears the other.
-4. Press **Enter** to save it. The row empties for the next entry, keeping the
-   date.
+4. Press **Enter** to save it. A new blank transaction waits for the next entry,
+   keeping the date.
 
-Dates, amounts, the **Transfer** account, and **Num** take the shortcuts in
+**Tab** and **Shift+Tab** move between cells; **Tab** past the last cell saves
+the transaction, like **Enter**. **Escape** puts the transaction back as it was
+(the blank one empties). Dates, amounts, and **Num** take the shortcuts in
 [Typing shortcuts in the register](../USER_GUIDE.md#typing-shortcuts-in-the-register):
-for example `+` for the next day, `100/3` for an amount, or `Ex:Gr` typed while
-**Transfer** has the focus.
+for example `+` for the next day or `100/3` for an amount.
 
-**Tab** and **Shift+Tab** move between the row's fields, and **Escape** clears
-the row. If something is missing or wrong, the line under the register says
-what. Your typing stays in place, and the cursor moves to that field. The row is
-greyed out, with the reason shown in its Description cell, for a hidden or
-placeholder account. When you leave the description, the proposal from an earlier
-matching transaction is filled in, and the line under the register says where it
-came from (see [Transactions and registers](../USER_GUIDE.md#transactions-and-registers)).
+The **Transfer** cell completes as you type, as GnuCash does. `Ex` fills in
+`Expenses` with the added letters selected, so you can keep typing over them; `:`
+accepts that level and moves to the next, so `Ex:Gr` reaches
+`Expenses:Groceries`. The accounts that still match are listed under the cell:
+**Up** and **Down** choose one, and **Tab** or **Enter** takes it (clicking one
+does too). The description completes the same way from earlier entries in this
+register; when you leave it, the earlier transaction's account and amount are
+filled in, and the line under the register says where they came from (see
+[Transactions and registers](../USER_GUIDE.md#transactions-and-registers)).
 
-For more than two splits, choose **Split** at the end of the row. The row opens
-into one line per split, each with a memo, an account, and an amount under the
-account's own Increase or Decrease heading. What you had typed carries into the
-first two lines, and an empty line waits at the bottom for the next split. An
-**Imbalance** line shows how far the splits are from balancing. Enter saves the
-transaction only once it reads **Balanced** and one split is in this register's
-account. Choose **Split** again to fold two lines back into a single row.
+If something is missing or wrong, the line under the register says what; your
+typing stays, and the cursor moves to that cell. A hidden or placeholder account
+takes no new entries, and the line under the register says why.
 
-The pencil icon beside **Split** opens the full transaction editor filled in with
-what you typed, including every split line. Saving there empties the row, and
-cancelling leaves it as it was. If you switch accounts, open another
-transaction, or close a register window while the row holds typing, BreadSched
-asks whether to save it, discard it, or stay.
+To change an existing transaction, click any of its cells or move to it with
+**Up** and **Down**; type, then press **Enter** to save it (the cursor moves on)
+or **Escape** to put it back. As in GnuCash, **Up**, **Down**, **Page Up**, and
+**Page Down** save the transaction you are leaving if you changed it; if it cannot
+be saved, you stay on it and the line under the register says why. **Ctrl+End**
+returns to the blank transaction.
 
-To change an existing transaction, click it (or select it and press **F2**, or
-choose **Actions → Edit Transaction in Place**). Its row turns into the same fields
-as the blank row, and a transaction with more than two splits opens its split lines
-underneath. Edit anything, then press **Enter** to save, or **Escape** to put the
-row back as it was. The pencil icon opens the same transaction in the full editor,
-as does **Enter** on a selected row that is not being edited.
+A transaction with more than two splits shows **-- Split Transaction --** as its
+transfer; when you move onto it, its split lines open beneath it, each with a
+memo, an account (completed the same way), and an amount under the account's own
+Increase or Decrease heading, and an empty line waits for another split. Choose
+**Split** in the toolbar to open an ordinary transaction (or the one you are
+typing) the same way, or to fold two lines back into one. An **Imbalance** line
+shows how far the splits are from balancing; **Enter** saves only once they
+balance and one split is in this register's account.
 
-As in GnuCash, **Up** and **Down** move from row to row while you type: they save the
-transaction you are leaving if you changed it, then edit the one above or below.
-In a split transaction they first move between its split lines. Below the last
-transaction is the blank row. If the transaction you are leaving cannot be saved,
-you stay on it and the line under the register says why. Clicking another
-transaction does the same.
-
-While you type an account path into **Transfer** or a split line's account, the
-matching accounts are listed under the register, and the first is chosen; click
-another to choose it instead.
+The pencil icon opens the transaction under the cursor in the full transaction
+editor, for notes, a claim, or other details; on the blank transaction it opens a
+new one filled in with what you typed, including every split line. Saving there
+empties the blank transaction, and cancelling leaves it as it was. If you switch
+accounts, open another transaction, or close a register window while a
+transaction holds unsaved typing, BreadSched asks whether to save it, discard it,
+or stay.
 
 The **R** column shows each entry's reconcile state in this account: **n** (not
 cleared), **c** (cleared), or **y** (reconciled). Click **n** or **c** to switch

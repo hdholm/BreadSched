@@ -17,7 +17,10 @@ expression is evaluated, and a computed result is rounded half up to the
 currency's smallest unit. A plain amount is read exactly as before.
 
 Accounts complete segment by segment: ``Ex:Gr`` matches ``Expenses:Groceries``
-because each typed segment begins the account's segment at the same depth.
+because each typed segment begins the account's segment at the same depth. As in
+GnuCash's register, typing quick-fills the segment being typed from the best match
+(``Ex`` shows ``Expenses``, the added letters selected) and ``:`` accepts it and
+moves to the next level. Descriptions quick-fill from earlier ones the same way.
 """
 
 from __future__ import annotations
@@ -38,6 +41,8 @@ __all__ = [
     "complete_account",
     "is_arithmetic",
     "parse_entry_amount",
+    "quickfill_account",
+    "quickfill_description",
     "parse_entry_date",
     "step_num",
 ]
@@ -213,6 +218,46 @@ def complete_account(text: str, names: Iterable[str]) -> list[str]:
         if all(segments[index].casefold().startswith(part) for index, part in enumerate(typed)):
             found.append((len(segments) != len(typed), name.casefold(), name))
     return [name for *_key, name in sorted(found)]
+
+
+def quickfill_account(text: str, names: Iterable[str]) -> tuple[str, list[str]]:
+    """What an account cell shows for ``text``, and every account it may mean.
+
+    The shown text completes the segment being typed to the best match's segment
+    (earlier segments take the match's spelling), so the caller can select what
+    was added. A trailing ``:`` accepts the segments typed so far and lists the
+    accounts below them; it stays only when such an account exists. With no
+    match the text is returned as typed.
+    """
+    accepting = text.endswith(_ACCOUNT_SEPARATOR)
+    typed = text.split(_ACCOUNT_SEPARATOR)
+    matches = complete_account(text[:-1] if accepting else text, names)
+    if not matches:
+        return text, []
+    if accepting:
+        depth = len(typed) - 1
+        deeper = [name for name in matches if name.count(_ACCOUNT_SEPARATOR) >= depth]
+        if deeper:
+            accepted = deeper[0].split(_ACCOUNT_SEPARATOR)[:depth]
+            return _ACCOUNT_SEPARATOR.join(accepted) + _ACCOUNT_SEPARATOR, deeper
+        return _ACCOUNT_SEPARATOR.join(matches[0].split(_ACCOUNT_SEPARATOR)[:depth]), matches
+    best = matches[0].split(_ACCOUNT_SEPARATOR)
+    return _ACCOUNT_SEPARATOR.join(best[: len(typed)]), matches
+
+
+def quickfill_description(text: str, descriptions: Iterable[str]) -> str | None:
+    """The first of ``descriptions`` (most recent first) that ``text`` begins.
+
+    Matching ignores case; the result keeps the earlier description's spelling.
+    ``None`` when nothing longer than the text matches.
+    """
+    key = text.casefold()
+    if not key.strip():
+        return None
+    for description in descriptions:
+        if len(description) > len(text) and description.casefold().startswith(key):
+            return description
+    return None
 
 
 def step_num(text: str, step: int, latest: str = "") -> str:

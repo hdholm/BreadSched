@@ -1,85 +1,38 @@
-"""The register: one account's transactions, in GnuCash's ledger layout.
+"""The register: one account's transactions in a GnuCash-style ledger grid.
 
-Columns follow GnuCash's basic ledger — date, number, description, transfer, then
-separate debit and credit columns whose headings change with the account type
-(``Deposit``/``Withdrawal`` for a bank account, ``Charge``/``Payment`` for a credit
-card).  Those labels are not decoration: "debit" and "credit" are the single most
-common source of data-entry errors in a household ledger, and naming the columns
-after what the account actually does removes the translation step.
+Columns follow GnuCash's basic ledger — date, number, description, transfer,
+reconcile state, then separate debit and credit columns whose headings change
+with the account type (``Deposit``/``Withdrawal`` for a bank account,
+``Charge``/``Payment`` for a credit card). Those labels are not decoration:
+"debit" and "credit" are the single most common source of data-entry errors in a
+household ledger, and naming the columns after what the account actually does
+removes the translation step.
 
-The running balance is computed by the engine, not accumulated in the widget, so a
-back-dated entry re-sorts and re-totals correctly.
+The grid (``widgets/register_grid``) draws ruled plain-text rows with one editor
+at the cursor, and the sheet behind it (``register_sheet``) holds the cursor and
+the transaction being typed. A register opens on the blank transaction at the
+end, ready for the next entry, as a check register does. The running balance is
+computed by the engine, not accumulated in the widget, so a back-dated entry
+re-sorts and re-totals correctly.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 
-from ...gen.engine import ledger  # noqa: E402
-from ...gen.lib.account import AccountClass, AccountType  # noqa: E402
-from ...gen.lib.transaction import ReconcileState
-from ...gen.services import ToggleCleared, toggle_cleared
-from ...presentation import service_error_message
-from ..gi_setup import Gdk, Gio, GLib, Gtk, Pango
+from ...gen.engine import ledger
+from ...gen.lib.account import AccountClass, AccountType
+from ..gi_setup import GLib, Gtk
+from ..register_sheet import RegisterSheet
 from ..widgets.choice import bounded_dropdown
-from ._base import (  # noqa: E402
-    BaseView,
-    Row,
-    column,
-    host_widget,
-    sorted_model,
-    table_section,
-    unwrap,
-)
-from .blank_entry import BLANK, BLANK_PAYLOADS, BlankEntryRow, ImbalanceLine, SplitLine
+from ..widgets.register_grid import RegisterGrid
+from ._base import BaseView
 
 __all__ = ["RegisterView", "column_headings"]
 
-_RECONCILE_TIPS = {
-    ReconcileState.NOT_RECONCILED: "Not cleared: click to mark it cleared",
-    ReconcileState.CLEARED: "Cleared: click to mark it not cleared",
-    ReconcileState.RECONCILED: "Reconciled: reopen its statement to change it",
-    ReconcileState.FROZEN: "Frozen: changes only through its statement",
-    ReconcileState.VOID: "Void",
-}
-
-
-def _is_parent(payload) -> bool:
-    return not isinstance(payload, (SplitRow, *BLANK_PAYLOADS))
-
-
-class SplitRow:
-    """One leg of a transaction, shown as a child row beneath it."""
-
-    __slots__ = ("split", "transaction", "is_this_account", "db")
-
-    def __init__(self, split, transaction, is_this_account: bool, db) -> None:
-        self.split = split
-        self.transaction = transaction
-        self.is_this_account = is_this_account
-        self.db = db
-
-    @property
-    def account_name(self) -> str:
-        return self.db.full_name(self.split.account) or "(unknown account)"
-
-    @property
-    def description(self) -> str:
-        return self.split.memo or self.account_name
-
-    @property
-    def debit(self):
-        return self.split.value if self.split.value > 0 else None
-
-    @property
-    def credit(self):
-        return -self.split.value if self.split.value < 0 else None
-
-
-def _amount(value) -> Gtk.Label:
-    label = Gtk.Label(label=value.format() if value is not None else "", xalign=1)
-    label.add_css_class("numeric")
-    return label
+#: Answers to the unsaved-input question, in AlertDialog button order.
+CANCEL, DISCARD, SAVE = 0, 1, 2
 
 
 def column_headings(atype: AccountType) -> tuple[str, str]:
@@ -88,7 +41,7 @@ def column_headings(atype: AccountType) -> tuple[str, str]:
 
 
 class RegisterView(BaseView):
-    """A scrollable ledger for one account at a time."""
+    """A ledger grid for one account at a time."""
 
     WATCHES = (
         "database-changed",
@@ -101,14 +54,12 @@ class RegisterView(BaseView):
     def __init__(self, manager) -> None:
         super().__init__(manager)
         self.account_handle: str | None = None
-        self._rows: list = []
+        self.sheet: RegisterSheet | None = None
         self._pickable: list = []
         # Repopulating the picker resets its selection, which fires
         # notify::selected and would otherwise overwrite the account the caller
         # just asked for.
         self._updating = False
-        #: Set when the register should open on its most recent entry (#157).
-        self._scroll_to_end = False
         self._build()
 
     def _build(self) -> None:
@@ -125,7 +76,7 @@ class RegisterView(BaseView):
         self.filter_entry.set_tooltip_text(
             "Filter by description, number, notes, tag, memo, or account"
         )
-        self.filter_entry.connect("search-changed", lambda *_: self.schedule_refresh())
+        self.filter_entry.connect("search-changed", lambda *_: self._apply_filter())
         bar.append(self.filter_entry)
 
         self.balance_label = Gtk.Label(xalign=1)
@@ -133,12 +84,23 @@ class RegisterView(BaseView):
         self.balance_label.add_css_class("numeric")
         bar.append(self.balance_label)
 
-        add_button = Gtk.Button(icon_name="list-add-symbolic")
-        # The blank row at the bottom takes an ordinary two-split transaction
-        # directly (#158); this opens the full editor for anything it cannot do.
-        add_button.set_tooltip_text(
-            "Open the full transaction editor (extra splits, notes, reconciliation)"
+        self.split_button = Gtk.Button(label="Split")
+        self.split_button.set_tooltip_text(
+            "Show the transaction under the cursor split by split, or join it again"
         )
+        self.split_button.connect("clicked", lambda *_: self.toggle_split())
+        bar.append(self.split_button)
+
+        self.editor_button = Gtk.Button(icon_name="document-edit-symbolic")
+        self.editor_button.set_tooltip_text(
+            "Open the transaction under the cursor in the full editor "
+            "(notes, a claim, and other details)"
+        )
+        self.editor_button.connect("clicked", lambda *_: self.open_full_editor())
+        bar.append(self.editor_button)
+
+        add_button = Gtk.Button(icon_name="list-add-symbolic")
+        add_button.set_tooltip_text("New transaction in the full editor")
         add_button.connect("clicked", self._on_add_clicked)
         bar.append(add_button)
 
@@ -152,105 +114,15 @@ class RegisterView(BaseView):
         self.reconcile_button.connect("clicked", self._on_reconcile_clicked)
         bar.append(self.reconcile_button)
 
-        # The blank entry row's widgets live as long as the view, so typing in
-        # them survives the register repainting around them (#158).
-        self.blank = BlankEntryRow(self)
-        #: The stored transaction being edited in place (#158 slice 3), if any, and
-        #: the child store holding its split lines.
-        self.editor: BlankEntryRow | None = None
-        self._edit_children = Gio.ListStore.new(Row)
-        cell = self._blank_cell
-
-        self.column_view = Gtk.ColumnView()
-        self.column_view.add_css_class("data-table")
-        self.column_view.set_show_row_separators(True)
-        self.column_view.connect("activate", self._on_activated)
-        # F2 edits the selected transaction in place; double-click and Enter keep
-        # opening the full editor.
-        keys = Gtk.EventControllerKey()
-        keys.connect("key-pressed", self._on_register_key)
-        self.column_view.add_controller(keys)
-        # A single click on a transaction edits it where it is, as in GnuCash.
-        click = Gtk.GestureClick()
-        click.connect("released", self._on_row_clicked)
-        self.column_view.add_controller(click)
-        self.column_view.append_column(
-            column(
-                "Date",
-                lambda r: r.post_date.isoformat() if _is_parent(r) else "",
-                sort_key=lambda r: r.transaction.post_date,
-                cell=cell("Date"),
-            )
-        )
-        self.column_view.append_column(
-            column("Num", lambda r: r.transaction.num if _is_parent(r) else "", cell=cell("Num"))
-        )
-        # The description carries the expander, so splits appear indented directly
-        # beneath the transaction they belong to.
-        self.column_view.append_column(self._description_column())
-        self.column_view.append_column(
-            column(
-                "Transfer",
-                lambda r: r.transfer_label(self.db) if _is_parent(r) else r.account_name,
-                expand=True,
-                cell=cell("Transfer"),
-            )
-        )
-        self.column_view.append_column(self._reconcile_column())
-        self.debit_column = column(
-            "Increase",
-            lambda r: r.debit.format() if r.debit else "",
-            numeric=True,
-            cell=cell("Increase"),
-        )
-        self.credit_column = column(
-            "Decrease",
-            lambda r: r.credit.format() if r.credit else "",
-            numeric=True,
-            cell=cell("Decrease"),
-        )
-        self.column_view.append_column(self.debit_column)
-        self.column_view.append_column(self.credit_column)
-        self.column_view.append_column(
-            column(
-                "Balance",
-                lambda r: r.running.format(parens_negative=True) if _is_parent(r) else "",
-                numeric=True,
-                cell=cell("Balance"),
-            )
-        )
-
         self.append_toolbar(bar)
 
-        # The column chooser sits in the table's own header, not the toolbar (#153).
-        self.table = table_section(
-            self.column_view,
-            "register",
-            getattr(self.manager.get_application(), "view_settings", None),
-            table_label="register",
-        )
+        self.grid = RegisterGrid(on_change=self._show_message)
         for side in ("start", "end"):
-            getattr(self.table, f"set_margin_{side}")(8)
-        self.table.scroller.set_vexpand(True)
-        self.table.set_vexpand(True)
-        self.append(self.table)
+            getattr(self.grid, f"set_margin_{side}")(8)
+        self.grid.set_vexpand(True)
+        self.append(self.grid)
 
-        # While an account path is typed into a picker, its matches list here;
-        # the first is the one chosen, and clicking another picks it.
-        self.completion_list = Gtk.ListBox()
-        self.completion_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
-        self.completion_list.set_can_focus(False)
-        self.completion_list.add_css_class("boxed-list")
-        self.completion_list.update_property(
-            [Gtk.AccessibleProperty.LABEL], ["Accounts matching what you typed"]
-        )
-        self.completion_list.connect("row-activated", lambda _box, row: row.pick())
-        self.completion_list.set_visible(False)
-        for side in ("start", "end"):
-            getattr(self.completion_list, f"set_margin_{side}")(8)
-        self.append(self.completion_list)
-
-        # One line under the register reports what the blank row did or why not.
+        # One line under the register reports what was saved, or why not.
         self.entry_status = Gtk.Label(xalign=0, wrap=True)
         self.entry_status.add_css_class("dim")
         for side in ("start", "end"):
@@ -258,207 +130,140 @@ class RegisterView(BaseView):
         self.entry_status.set_margin_bottom(4)
         self.append(self.entry_status)
 
-    def _blank_cell(self, title: str):
-        """A cell hook that shows the blank row's widget for ``title`` (#158)."""
-        return lambda payload: self._blank_widget(payload, title)
+    # ------------------------------------------------------------------ model
 
-    def _blank_widget(self, payload, title: str):
-        """The blank row's, or one of its split lines', widget for a column.
-
-        The row of a transaction being edited in place hosts the editor's
-        widgets the same way.
-        """
-        if payload is BLANK:
-            return self.blank.cells.get(title)
-        if self._is_edited(payload):
-            assert self.editor is not None
-            return self.editor.cells.get(title)
-        if isinstance(payload, (SplitLine, ImbalanceLine)):
-            # A column a split line does not use shows its (empty) label.
-            return payload.blank_cells.get(title)
-        return None
-
-    def _is_edited(self, payload) -> bool:
-        editor = self.editor
-        return (
-            editor is not None
-            and isinstance(payload, ledger.RegisterRow)
-            and payload.split.handle == editor.edit_split
-        )
-
-    def update_blank_rows(self, row: BlankEntryRow | None = None) -> None:
-        """Show a blank or edited row's current lines without rebuilding the register."""
-        if row is not None and row is self.editor:
-            lines = [Row(payload) for payload in row.rows()[1:]]
-            self._edit_children.splice(0, self._edit_children.get_n_items(), lines)
+    def refresh(self) -> None:
+        if self.db is None:
             return
-        store = getattr(self, "blank_store", None)
-        if store is None:
+        self._updating = True
+        try:
+            self._populate_picker()
+        finally:
+            self._updating = False
+        if self.account_handle is None:
             return
-        rows = [Row(payload) for payload in self.blank.rows()]
-        store.splice(0, store.get_n_items(), rows)
-
-    # ------------------------------------------------------- reconcile column
-
-    def _reconcile_column(self) -> Gtk.ColumnViewColumn:
-        """``R``: n, c, or y for this account's split; clicking toggles n and c."""
-        factory = Gtk.SignalListItemFactory()
-
-        def on_setup(_factory, item) -> None:
-            button = Gtk.Button()
-            button.set_has_frame(False)
-            button.add_css_class("numeric")
-            button.payload = None
-            button.connect("clicked", lambda widget: self.toggle_cleared(widget.payload))
-            item.set_child(button)
-
-        def on_bind(_factory, item) -> None:
-            button = item.get_child()
-            payload = unwrap(item.get_item())
-            shown = isinstance(payload, ledger.RegisterRow)
-            button.payload = payload if shown else None
-            button.set_visible(shown)
-            if shown:
-                state = payload.split.reconcile
-                button.set_label(state.value)
-                button.set_tooltip_text(_RECONCILE_TIPS.get(state, ""))
-                button.update_property(
-                    [Gtk.AccessibleProperty.LABEL],
-                    [f"Reconcile state {state.value} for {payload.description}"],
-                )
-
-        factory.connect("setup", on_setup)
-        factory.connect("bind", on_bind)
-        col = Gtk.ColumnViewColumn(title="R", factory=factory)
-        col.set_resizable(True)
-        return col
-
-    def toggle_cleared(self, payload) -> bool:
-        """Mark the row's split cleared, or not cleared, through the reconciliation service."""
-        if self.db is None or not isinstance(payload, ledger.RegisterRow):
-            return False
-        result = toggle_cleared(
-            self.db, ToggleCleared(payload.transaction.handle, payload.split.handle)
+        account = self.db.get_account(self.account_handle)
+        if account is None:
+            return
+        self.reconcile_button.set_sensitive(
+            not account.placeholder
+            and account.account_class in {AccountClass.ASSET, AccountClass.LIABILITY}
         )
-        if result.value is None:
-            self.set_entry_status(service_error_message(result.errors[0]), error=True)
-            return False
-        state = "cleared" if result.value is ReconcileState.CLEARED else "not cleared"
-        self.set_entry_status(f"Marked {payload.description} {state}.")
-        return True
-
-    # ------------------------------------------------------ in-place editing
-
-    def _on_row_clicked(self, _gesture, presses: int, _x: float, _y: float) -> None:
-        if presses == 1:
-            # The row's own click selects it first; edit what it selected.
-            GLib.idle_add(lambda: self.edit_selected_row() and GLib.SOURCE_REMOVE)
-
-    def edit_selected_row(self) -> bool:
-        """Edit the selected transaction in place, committing any edit being left."""
-        selection = self.column_view.get_model()
-        item = selection.get_selected_item() if selection is not None else None
-        payload = unwrap(item) if item is not None else None
-        if not isinstance(payload, (ledger.RegisterRow, SplitRow)) or self._is_edited(payload):
-            return False
-        return self.edit_handle(payload.transaction.handle)
-
-    def transaction_order(self) -> list[str]:
-        """Transactions as the register shows them, top to bottom."""
-        selection = self.column_view.get_model()
-        order: list[str] = []
-        if selection is None:
-            return order
-        for index in range(selection.get_n_items()):
-            payload = unwrap(selection.get_item(index))
-            if isinstance(payload, ledger.RegisterRow):
-                order.append(payload.transaction.handle)
-        return order
-
-    def _leave(self, row: BlankEntryRow) -> bool:
-        """Commit what ``row`` holds before moving on; False keeps the user there."""
-        if row is self.editor:
-            if row.has_input():
-                return row.commit()
-            self.stop_editing()
-            return True
-        return not row.has_input() or row.commit()
-
-    def edit_handle(self, handle: str | None) -> bool:
-        """Leave the current row (committing it) and edit ``handle``, or the blank row."""
-        current = self.editor if self.editor is not None else self.blank
-        if not self._leave(current):
-            return False
-        if handle is None:
-            GLib.idle_add(lambda: self.blank.date.grab_focus() and GLib.SOURCE_REMOVE)
-            return True
-        transaction = self.db.get_transaction(handle) if self.db is not None else None
-        if transaction is None:
-            return False
-        split = next(
-            (item for item in transaction.splits if item.account == self.account_handle), None
-        )
-        if split is None:
-            return False
-        self.start_editing(transaction, split.handle)
-        return True
-
-    def move_edit(self, row: BlankEntryRow, step: int) -> bool:
-        """Up/Down: commit ``row`` and edit the transaction above or below it.
-
-        Below the last transaction is the blank row; above the first, nothing moves.
-        """
-        order = self.transaction_order()
-        if row is self.blank:
-            index = len(order)
-        elif row.editing is not None and row.editing.handle in order:
-            index = order.index(row.editing.handle)
+        if (
+            self.sheet is None
+            or self.sheet.db is not self.db
+            or self.sheet.account != account.handle
+        ):
+            self.sheet = RegisterSheet(self.db, account.handle)
         else:
-            return False
-        target = index + step
-        if target < 0 or (row is self.blank and target >= len(order)):
-            return True
-        # A row that cannot commit keeps the user there, with the reason shown.
-        self.edit_handle(order[target] if target < len(order) else None)
-        return True
+            # A change made elsewhere: re-read, keeping the cursor and any typing.
+            self.sheet.reload()
+        self.sheet.set_filter(self.filter_entry.get_text())
+        self.grid.set_sheet(self.sheet)
+        self._show_balance()
 
-    def _on_register_key(self, _controller, keyval: int, _keycode: int, _state) -> bool:
-        if keyval == Gdk.KEY_F2:
-            self.edit_selected_in_place()
-            return True
-        return False
+    def _show_balance(self) -> None:
+        closing = self.sheet.closing_balance() if self.sheet is not None else None
+        self.balance_label.set_text(closing.format(parens_negative=True) if closing else "0.00")
+        if closing is not None and closing < 0:
+            self.balance_label.add_css_class("negative")
+        else:
+            self.balance_label.remove_css_class("negative")
+
+    def _apply_filter(self) -> None:
+        if self.sheet is not None:
+            self.sheet.set_filter(self.filter_entry.get_text())
+            self.grid.sync(focus=False)
+
+    def _show_message(self) -> None:
+        sheet = self.sheet
+        if sheet is None:
+            return
+        self.set_entry_status(sheet.message, error=sheet.error)
+        self._show_balance()
+
+    def _populate_picker(self) -> None:
+        db = self.db
+        if db is None:
+            return
+        accounts = sorted(
+            (a for a in db.iter_accounts() if not a.is_root and not a.placeholder),
+            key=db.full_name,
+        )
+        self._pickable = accounts
+        model = Gtk.StringList()
+        for account in accounts:
+            model.append(db.full_name(account))
+        self.account_picker.set_model(model)
+        if self.account_handle is None and accounts:
+            self.account_handle = accounts[0].handle
+        self._select_in_picker(self.account_handle)
+
+    def _select_in_picker(self, handle: str | None) -> None:
+        previous = self._updating
+        self._updating = True
+        try:
+            for index, account in enumerate(self._pickable):
+                if account.handle == handle:
+                    self.account_picker.set_selected(index)
+                    break
+        finally:
+            self._updating = previous
+
+    # ----------------------------------------------------------- the cursor
+
+    def show_account(self, handle: str) -> None:
+        """Show ``handle``'s register, on its blank transaction ready for input."""
+
+        def switch() -> None:
+            self.account_handle = handle
+            self.sheet = None
+            self.set_entry_status("")
+            self.refresh()
+            self.focus_entry()
+
+        if handle == self.account_handle and self.sheet is not None:
+            if self.sheet.to_blank():
+                self.grid.sync()
+            return
+        self.confirm_leave(switch)
+
+    def focus_entry(self) -> None:
+        """Put keyboard focus in the cell under the cursor, once the grid is shown."""
+
+        def focus() -> bool:
+            self.grid.sync()
+            return GLib.SOURCE_REMOVE
+
+        GLib.idle_add(focus)
 
     def edit_selected_in_place(self, *_args) -> bool:
-        """Edit the selected transaction in its own row (#158 slice 3)."""
-        selection = self.column_view.get_model()
-        if selection is None or self.db is None:
+        """Typing goes into the transaction under the cursor; this puts focus there."""
+        if self.sheet is None:
             return False
-        payload = unwrap(selection.get_selected_item()) if selection.get_selected_item() else None
-        if payload is None or isinstance(payload, BLANK_PAYLOADS):
-            return False
-        transaction = self.db.get_transaction(payload.transaction.handle)
-        if transaction is None:
-            return False
-        split = payload.split if isinstance(payload, ledger.RegisterRow) else None
-        if split is None:
-            split = next(
-                (item for item in transaction.splits if item.account == self.account_handle),
-                None,
-            )
-        if split is None:
-            return False
-        self.start_editing(transaction, split.handle)
+        self.grid.sync()
         return True
 
+    def toggle_split(self) -> bool:
+        if self.sheet is None:
+            return False
+        done = self.sheet.toggle_split()
+        self.grid.sync()
+        return done
+
+    def cursor_transaction(self):
+        """The stored transaction under the cursor, or None on the blank one."""
+        return self.sheet.draft.source if self.sheet is not None else None
+
     def track_selected_reimbursable(self, *_args):
-        """Open reimbursable expenses to track the selected transaction's cost."""
-        selection = self.column_view.get_model()
-        item = selection.get_selected_item() if selection is not None else None
-        payload = unwrap(item) if item is not None else None
-        if self.db is None or payload is None or isinstance(payload, BLANK_PAYLOADS):
-            self.set_entry_status("Select a transaction to track as reimbursable.", error=True)
+        """Open reimbursable expenses to track the cursor transaction's cost."""
+        transaction = self.cursor_transaction()
+        if self.db is None or transaction is None:
+            self.set_entry_status(
+                "Put the cursor on a transaction to track as reimbursable.", error=True
+            )
             return None
-        transaction = self.db.get_transaction(payload.transaction.handle)
+        transaction = self.db.get_transaction(transaction.handle)
         accounts = {account.handle: account for account in self.db.iter_accounts()}
         cost = next(
             (
@@ -481,56 +286,59 @@ class RegisterView(BaseView):
             return None
         return opener(expense=(transaction.handle, cost.handle))
 
-    def start_editing(self, transaction, split_handle: str) -> None:
-        """Turn one transaction's row into editable cells, after any pending edit."""
+    def open_in_new_tab(self) -> None:
+        """Open another register tab beside this one (#228)."""
+        opener = getattr(self.manager, "open_register_tab", None)
+        if opener is not None and self.db is not None:
+            opener()
 
-        def begin() -> None:
-            if self.db is None or self.account_handle is None:
-                return
-            editor = BlankEntryRow(self, editing=transaction, split=split_handle)
-            account = self.db.get_account(self.account_handle)
-            if account is not None:
-                editor.set_headings(*column_headings(account.atype))
-            editor.populate(self.db, self.account_handle)
-            self.editor = editor
-            editor.load()
-            self.set_entry_status(
-                "Editing in place: Enter saves, Escape cancels; the pencil opens the editor."
-            )
-            self.refresh()
-            GLib.idle_add(lambda: editor.description.grab_focus() and GLib.SOURCE_REMOVE)
-
-        if self.editor is not None:
-            self.editor.confirm_leave(begin)
-        else:
-            begin()
-
-    def stop_editing(self) -> None:
-        """End an in-place edit without saving; the row shows its stored values."""
-        if self.editor is None:
-            return
-        self.editor = None
-        self._edit_children.splice(0, self._edit_children.get_n_items(), [])
-        self.schedule_refresh()
+    # ------------------------------------------------------- unsaved typing
 
     def has_unsaved(self) -> bool:
-        return self.blank.has_input() or (self.editor is not None and self.editor.has_input())
+        return self.sheet is not None and self.sheet.draft.dirty()
 
-    def confirm_leave(self, proceed) -> None:
-        """Ask about an unsaved in-place edit, then the blank row, then proceed."""
-        editor = self.editor
+    def confirm_leave(self, proceed: Callable[[], None]) -> None:
+        """Run ``proceed`` now, or after Save/Discard when typing would be lost."""
+        sheet = self.sheet
+        if sheet is None or not sheet.draft.dirty():
+            proceed()
+            return
 
-        def then_blank() -> None:
-            self.blank.confirm_leave(proceed)
+        def answered(choice: int) -> None:
+            if choice == SAVE:
+                if sheet.save():
+                    proceed()
+                else:
+                    self.grid.sync()
+            elif choice == DISCARD:
+                sheet.escape()
+                self.set_entry_status("")
+                proceed()
 
-        def after_edit() -> None:
-            self.stop_editing()
-            then_blank()
+        self.ask_unsaved(answered)
 
-        if editor is not None:
-            editor.confirm_leave(after_edit)
-        else:
-            then_blank()
+    def ask_unsaved(self, answered: Callable[[int], None]) -> None:
+        editing = self.cursor_transaction() is not None
+        alert = Gtk.AlertDialog(
+            message=(
+                "Save your changes to this transaction?"
+                if editing
+                else "Save the transaction you were entering?"
+            ),
+            detail="The register has typing that has not been saved.",
+            buttons=["Cancel", "Discard", "Save"],
+            cancel_button=CANCEL,
+            default_button=SAVE,
+        )
+
+        def finished(dialog, result) -> None:
+            try:
+                choice = dialog.choose_finish(result)
+            except GLib.Error:
+                choice = CANCEL
+            answered(choice)
+
+        alert.choose(self.get_root(), None, finished)
 
     def set_entry_status(self, text: str, *, error: bool = False) -> None:
         self.entry_status.set_text(text)
@@ -538,245 +346,6 @@ class RegisterView(BaseView):
             self.entry_status.add_css_class("negative")
         else:
             self.entry_status.remove_css_class("negative")
-
-    def scroll_to_end_on_refresh(self) -> None:
-        self._scroll_to_end = True
-
-    def cancel_scroll_to_end(self) -> None:
-        self._scroll_to_end = False
-
-    # ------------------------------------------------------------------ model
-
-    def refresh(self) -> None:
-        if self.db is None:
-            return
-        self._updating = True
-        try:
-            self._populate_picker()
-        finally:
-            self._updating = False
-        if self.account_handle is None:
-            return
-
-        account = self.db.get_account(self.account_handle)
-        if account is None:
-            return
-        self.reconcile_button.set_sensitive(
-            not account.placeholder
-            and account.account_class in {AccountClass.ASSET, AccountClass.LIABILITY}
-        )
-        debit, credit = column_headings(account.atype)
-        self.debit_column.set_title(debit)
-        self.credit_column.set_title(credit)
-        self.blank.set_headings(debit, credit)
-        self.blank.populate(self.db, account.handle)
-        if account.hidden:
-            self.blank.set_enabled(False, "Hidden accounts take no new transactions")
-        elif account.placeholder:
-            self.blank.set_enabled(False, "Placeholder accounts take no transactions")
-        elif not self.blank.transfers:
-            self.blank.set_enabled(False, "No other visible account to transfer to")
-        else:
-            self.blank.set_enabled(True)
-
-        if self.editor is not None:
-            fresh = self.db.get_transaction(self.editor.editing.handle)
-            if fresh is None or self.editor.edit_split not in {s.handle for s in fresh.splits}:
-                self.editor = None
-                self._edit_children.splice(0, self._edit_children.get_n_items(), [])
-            else:
-                self.editor.set_headings(debit, credit)
-                self.editor.populate(self.db, account.handle)
-                self.update_blank_rows(self.editor)
-
-        self._rows = ledger.register(self.db, self.account_handle)
-        store = Gio.ListStore.new(Row)
-        for row in self._rows:
-            if not self._matches_filter(row):
-                continue
-            store.append(Row(row))
-        tree = Gtk.TreeListModel.new(store, False, False, self._children_of)
-        # The blank row joins after sorting and filtering, so it stays last (#158).
-        self.blank_store = Gio.ListStore.new(Row)
-        for payload in self.blank.rows():
-            self.blank_store.append(Row(payload))
-        parts = Gio.ListStore.new(Gio.ListModel)
-        parts.append(sorted_model(self.column_view, tree))
-        parts.append(self.blank_store)
-        selection = Gtk.SingleSelection(model=Gtk.FlattenListModel.new(parts))
-        selection.set_autoselect(False)
-        selection.set_selected(Gtk.INVALID_LIST_POSITION)
-        selection.connect("notify::selected", self._on_selection_changed)
-        adjustment = self.table.scroller.get_vadjustment()
-        previous = adjustment.get_value()
-        self.column_view.set_model(selection)
-        self._expand_edited(selection)
-        # Like a check register, a newly shown account opens on its most recent
-        # entry at the bottom; any other repaint keeps the reader's place (#157).
-        if self._scroll_to_end:
-            self._scroll_to_end = False
-            count = selection.get_n_items()
-            if count and hasattr(self.column_view, "scroll_to"):  # GTK 4.12+
-                self.column_view.scroll_to(count - 1, None, Gtk.ListScrollFlags.NONE, None)
-            elif count:
-
-                def to_end() -> bool:
-                    adjustment.set_value(adjustment.get_upper() - adjustment.get_page_size())
-                    return GLib.SOURCE_REMOVE
-
-                GLib.idle_add(to_end)
-        else:
-            GLib.idle_add(lambda: adjustment.set_value(previous) or GLib.SOURCE_REMOVE)
-
-        closing = self._rows[-1].running if self._rows else None
-        self.balance_label.set_text(closing.format(parens_negative=True) if closing else "0.00")
-        if closing is not None and closing < 0:
-            self.balance_label.add_css_class("negative")
-        else:
-            self.balance_label.remove_css_class("negative")
-
-    def _matches_filter(self, row) -> bool:
-        needle = self.filter_entry.get_text().strip().casefold()
-        if not needle or self.db is None:
-            return True
-        transaction = row.transaction
-        text = " ".join(
-            [
-                transaction.description,
-                transaction.num,
-                transaction.notes,
-                transaction.source_notes,
-                *transaction.tags,
-                *(split.memo for split in transaction.splits),
-                *(self.db.full_name(split.account) for split in transaction.splits),
-            ]
-        ).casefold()
-        return needle in text
-
-    def _populate_picker(self) -> None:
-        db = self.db
-        if db is None:
-            return
-        accounts = sorted(
-            (a for a in db.iter_accounts() if not a.is_root and not a.placeholder),
-            key=db.full_name,
-        )
-        self._pickable = accounts
-        model = Gtk.StringList()
-        for account in accounts:
-            model.append(db.full_name(account))
-        self.account_picker.set_model(model)
-
-        if self.account_handle is None and accounts:
-            self.account_handle = accounts[0].handle
-        for index, account in enumerate(accounts):
-            if account.handle == self.account_handle:
-                self.account_picker.set_selected(index)
-                break
-
-    def _description_column(self) -> Gtk.ColumnViewColumn:
-        factory = Gtk.SignalListItemFactory()
-
-        def on_setup(_factory, item) -> None:
-            expander = Gtk.TreeExpander()
-            expander.set_hexpand(True)
-            label = Gtk.Label(xalign=0)
-            label.set_ellipsize(Pango.EllipsizeMode.END)
-            expander.set_child(label)
-            host = Gtk.Box()
-            host.label = expander
-            host.append(expander)
-            item.set_child(host)
-
-        def on_bind(_factory, item) -> None:
-            tree_row = item.get_item()
-            host = item.get_child()
-            expander = host.label
-            payload = unwrap(tree_row)
-            hosted = self._blank_widget(payload, "Description")
-            if hosted is not None:
-                expander.set_list_row(None)
-                host_widget(host, hosted)
-                return
-            host_widget(host, None)
-            expander.set_list_row(tree_row)
-            label = expander.get_child()
-            label.set_text(payload.description or "(no description)")
-            if _is_parent(payload):
-                label.remove_css_class("dim")
-            else:
-                label.add_css_class("dim")
-
-        factory.connect("setup", on_setup)
-        factory.connect("bind", on_bind)
-        col = Gtk.ColumnViewColumn(title="Description", factory=factory)
-        col.set_expand(True)
-        col.set_resizable(True)
-        return col
-
-    def _expand_edited(self, selection) -> None:
-        """Keep the row being edited open, so its split lines stay in view."""
-        if self.editor is None:
-            return
-        for index in range(selection.get_n_items()):
-            tree_row = selection.get_item(index)
-            if isinstance(tree_row, Gtk.TreeListRow) and self._is_edited(unwrap(tree_row)):
-                tree_row.set_expanded(True)
-                return
-
-    def _children_of(self, item):
-        """The splits of a transaction row, or None for a split row itself.
-
-        A transaction being edited in place shows its editable split lines instead.
-        """
-        payload = item.payload if isinstance(item, Row) else item
-        if not isinstance(payload, ledger.RegisterRow) or self.db is None:
-            return None
-        if self._is_edited(payload):
-            return self._edit_children
-        txn = payload.transaction
-        store = Gio.ListStore.new(Row)
-        for split in txn.splits:
-            store.append(Row(SplitRow(split, txn, split.handle == payload.split.handle, self.db)))
-        return store
-
-    def _on_selection_changed(self, selection, _param) -> None:
-        """Expand the selected transaction in place, collapsing the last one.
-
-        The splits belong underneath the transaction they came from, where the
-        surrounding ledger stays visible — which is usually why the split was
-        opened. Only one is expanded at a time; leaving them open pushes the
-        register apart until the running balance is unreadable.
-        """
-        position = selection.get_selected()
-        model = selection.get_model()
-        for index in range(model.get_n_items()):
-            tree_row = model.get_item(index)
-            if not isinstance(tree_row, Gtk.TreeListRow) or tree_row.get_depth() != 0:
-                continue
-            if self._is_edited(unwrap(tree_row)):
-                continue  # the row being edited keeps its lines open
-            tree_row.set_expanded(index == position)
-
-    def open_in_new_tab(self) -> None:
-        """Open another register tab beside this one (#228)."""
-        opener = getattr(self.manager, "open_register_tab", None)
-        if opener is not None and self.db is not None:
-            opener()
-
-    def show_account(self, handle: str) -> None:
-        if handle == self.account_handle:
-            self._scroll_to_end = True
-            self.refresh()
-            return
-
-        def switch() -> None:
-            self.account_handle = handle
-            self._scroll_to_end = True
-            self.set_entry_status("")
-            self.refresh()
-
-        self.confirm_leave(switch)
 
     # ---------------------------------------------------------------- actions
 
@@ -791,40 +360,23 @@ class RegisterView(BaseView):
                 self._select_in_picker(self.account_handle)
                 self.show_account(handle)
 
-    def _select_in_picker(self, handle: str | None) -> None:
-        self._updating = True
-        try:
-            for index, account in enumerate(self._pickable):
-                if account.handle == handle:
-                    self.account_picker.set_selected(index)
-                    break
-        finally:
-            self._updating = False
-
-    def _on_activated(self, _view, position: int) -> None:
-        """Double-clicking a row opens that transaction for editing.
-
-        Activating one of a transaction's split rows opens the transaction it
-        belongs to: the splits are part of the same record, and editing them
-        separately is what would let a ledger drift out of balance.
-        """
-        selection = self.column_view.get_model()
-        tree_row = selection.get_item(position)
-        if tree_row is None:
-            return
-        payload = unwrap(tree_row)
-        if isinstance(payload, BLANK_PAYLOADS):
-            return
-        self.edit_transaction(payload.transaction)
-
     def edit_transaction(self, transaction) -> None:
         if self.db is None:
             return
         self.confirm_leave(lambda: self._open_editor(transaction))
 
-    def _open_editor(self, transaction) -> None:
+    def open_full_editor(self):
+        """The full editor for the transaction under the cursor, or for a new one
+        prefilled with whatever the blank transaction holds."""
+        transaction = self.cursor_transaction()
+        if transaction is not None:
+            self.edit_transaction(transaction)
+            return None
+        return self._new_in_editor()
+
+    def _open_editor(self, transaction):
         if self.db is None:
-            return
+            return None
         from ..dialogs.transaction_dialog import TransactionDialog
 
         dialog = TransactionDialog(
@@ -835,10 +387,70 @@ class RegisterView(BaseView):
         )
         dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
+        return dialog
 
-    def _on_add_clicked(self, _button) -> None:
+    def _new_in_editor(self):
+        sheet = self.sheet
+        if self.db is None or self.account_handle is None or sheet is None:
+            return None
+        from ..dialogs.transaction_dialog import TransactionDialog
+
+        draft = sheet.draft
+        try:
+            when = date.fromisoformat(draft.date.strip())
+        except ValueError:
+            when = date.today()
+        dialog = TransactionDialog(
+            self.get_root(), self.db, default_account=self.account_handle, default_date=when
+        )
+        amount = None
+        if not draft.expanded:
+            try:
+                amount = sheet._simple_amount()
+            except ValueError:
+                amount = None
+        transfer = sheet.transfer_names.get(draft.transfer.strip())
+        lines = None
+        if draft.expanded:
+            lines = []
+            for line in draft.lines:
+                if not line.has_input():
+                    continue
+                text, sign = line.amount_text()
+                try:
+                    value = sheet.read_amount(text) if text else None
+                except ValueError:
+                    value = None
+                lines.append(
+                    (
+                        sheet.account_names.get(line.account.strip()),
+                        value if value is None or sign > 0 else -value,
+                        line.memo.strip(),
+                    )
+                )
+        dialog.prefill(
+            description=draft.description.strip(),
+            num=draft.num.strip(),
+            transfer=transfer,
+            amount=amount,
+            splits=lines,
+        )
+
+        def on_close(*_args) -> bool:
+            # Saving in the editor used the blank row's typing, so it empties;
+            # cancelling leaves it exactly as it was.
+            if dialog.saved:
+                sheet.escape()
+            self.refresh_on_close()
+            return False
+
+        dialog.connect("close-request", on_close)
+        dialog.present()
+        return dialog
+
+    def _on_add_clicked(self, *_args):
         if self.db is None or self.account_handle is None:
-            return
+            return None
         from ..dialogs.transaction_dialog import TransactionDialog
 
         dialog = TransactionDialog(
@@ -849,15 +461,16 @@ class RegisterView(BaseView):
         )
         dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
+        return dialog
 
-    def _on_open_window_clicked(self, _button) -> None:
+    def _on_open_window_clicked(self, *_args) -> None:
         if self.account_handle is None:
             return
         opener = getattr(self.manager, "open_register_window", None)
         if callable(opener):
             opener(self.account_handle)
 
-    def _on_reconcile_clicked(self, _button) -> None:
+    def _on_reconcile_clicked(self, *_args) -> None:
         if self.db is None or self.account_handle is None:
             return
         account = self.db.get_account(self.account_handle)
