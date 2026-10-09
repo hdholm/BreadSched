@@ -114,6 +114,7 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             True,
         ),
         ViewAction("holdings", "Holdings and _Cost Basis…", "_on_holdings"),
+        ViewAction("tax-year", "_Tax Year…", "_on_tax_year"),
         ViewAction("online-quotes", "Online _Quotes…", "_on_online_quotes"),
         ViewAction("hide-empty", "_Hide Empty Accounts", "set_hide_empty", toggle=True),
         ViewAction("show-hidden", "Show Hi_dden Accounts", "set_show_hidden", toggle=True),

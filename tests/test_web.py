@@ -6690,3 +6690,109 @@ class TestSaleLotsAndRealizedGains:
             client.get("/api/realized-gains?year=soon")
         assert caught.value.code == 400
         assert client.database.get_transaction(sale.handle).serialize() == before
+
+
+class TestTaxYear:
+    """The tax-year report and the tax marks through gen/services/tax."""
+
+    @pytest.fixture
+    def year(self, client):
+        from breadsched.gen.lib import Account, AccountType, Commodity, Split, Transaction
+
+        db = client.database
+        accounts = {item.name: item for item in db.iter_accounts()}
+        checking = accounts["Checking"]
+        assets = accounts["Assets"]
+        income = next(item for item in db.iter_accounts() if item.atype is AccountType.INCOME)
+        expense = next(item for item in db.iter_accounts() if item.atype is AccountType.EXPENSE)
+        fund = Commodity(namespace="FUND", mnemonic="IDX", fullname="Index", fraction=1000)
+        holding = Account(
+            name="Index",
+            atype=AccountType.INVESTMENT,
+            parent=assets.handle,
+            commodity=fund.handle,
+            commodity_scu=1000,
+        )
+        with db.transaction("Year") as txn:
+            db.add_commodity(fund, txn)
+            db.add_account(holding, txn)
+            for when, quantity, value in (
+                (date(2024, 1, 10), "10", "1000"),
+                (date(2025, 6, 10), "10", "1500"),
+                (date(2025, 9, 1), "-15", "-2400"),
+            ):
+                trade = Transaction(post_date=when, description="Trade")
+                trade.currency = checking.commodity
+                trade.splits = [
+                    Split(holding.handle, Money(value), quantity=Money(quantity)),
+                    Split(checking.handle, -Money(value)),
+                ]
+                db.add_transaction(trade, txn)
+            pay = Transaction(post_date=date(2025, 3, 1), description="Pay")
+            pay.currency = checking.commodity
+            pay.splits = [Split(income.handle, Money(-3000)), Split(checking.handle, Money(3000))]
+            db.add_transaction(pay, txn)
+            gift = Transaction(post_date=date(2025, 4, 1), description="Gift")
+            gift.currency = checking.commodity
+            gift.splits = [Split(expense.handle, Money(80)), Split(checking.handle, Money(-80))]
+            gift.tags = ["Charity"]
+            db.add_transaction(gift, txn)
+        return income, expense
+
+    def test_the_report_and_marks_follow_each_other(self, client, year):
+        income, expense = year
+        status, report = client.get("/api/tax-year?year=2025")
+        assert status == 200 and report["year"] == 2025
+        assert 2025 in report["available_years"]
+        terms = {total["term"]: total for total in report["gain_totals"]}
+        # 10 old shares long-term, 5 new ones short-term; 2400 shared 1600 / 800.
+        assert (terms["long"]["proceeds"], terms["long"]["cost"]) == ("1600.00", "1000.00")
+        assert (terms["short"]["proceeds"], terms["short"]["cost"]) == ("800.00", "750.00")
+        assert [line["label"] for line in report["gains"]] == ["Long-term", "Short-term"]
+        assert report["accounts"] == [] and report["tags"] == []
+        assert any(item["account"] == income.handle for item in report["income"])
+
+        status, marks = client.get("/api/tax-marks")
+        assert status == 200 and {"tag": "Charity", "relevant": False} in marks["tags"]
+        status, saved = client.post(
+            "/api/tax-marks",
+            {"accounts": {expense.handle: True}, "tags": {"Charity": True}},
+        )
+        assert status == 200
+        assert {"tag": "Charity", "relevant": True} in saved["tags"]
+        [mark] = [item for item in saved["accounts"] if item["account"] == expense.handle]
+        assert (mark["relevant"], mark["breadsched"], mark["gnucash"]) == (True, True, False)
+
+        report = client.get("/api/tax-year?year=2025")[1]
+        [account] = [item for item in report["accounts"] if item["account"] == expense.handle]
+        assert (account["amount"], account["marked_by"]) == ("80.00", "BreadSched")
+        [tag] = report["tags"]
+        assert (tag["tag"], tag["spent"], tag["transactions"]) == ("Charity", "80.00", 1)
+
+        status, cleared = client.post("/api/tax-marks", {"accounts": {expense.handle: None}})
+        assert status == 200
+        assert client.get("/api/tax-year?year=2025")[1]["accounts"] == []
+        latest = client.get("/api/tax-year")[1]
+        assert latest["year"] == latest["available_years"][0]
+
+    def test_rejected_marks_change_nothing(self, client, year):
+        _income, expense = year
+        before = client.database.get_account(expense.handle).serialize()
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/tax-marks", {"accounts": {expense.handle: True, "missing": True}})
+        assert json.loads(caught.value.read())["code"] == "tax.account.not_found"
+        for payload in ({"accounts": {expense.handle: "yes"}}, {"tags": {"Charity": 1}}):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post("/api/tax-marks", payload)
+            assert caught.value.code == 400
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/tax-marks", {"tags": {"a,b": True}})
+        assert json.loads(caught.value.read())["code"] == "tag.invalid"
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get("/api/tax-year?year=soon")
+        assert caught.value.code == 400
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get("/api/tax-marks?extra=1")
+        assert caught.value.code == 400
+        assert client.database.get_account(expense.handle).serialize() == before
+        assert client.database.get_metadata("tax.tags", []) == []

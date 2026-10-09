@@ -100,6 +100,8 @@ _SERVICE_MESSAGES = {
     "lots.quantity.invalid": "Enter a positive number of shares for each lot",
     "lots.quantity.exceeds_lot": "A lot cannot give more shares than it holds at the sale",
     "lots.quantity.exceeds_sale": "The named lots add up to more shares than the sale sold",
+    "tax.account.not_found": "The account no longer exists",
+    "tax.mark.invalid": "A tax mark is on, off, or follows GnuCash",
     "quotes.currency.not_found": "The book's reporting currency is missing",
     "quotes.commodity.not_found": "The commodity no longer exists",
     "quotes.source.invalid": "A quote source is one word, such as tsp or alphavantage",

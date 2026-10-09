@@ -139,6 +139,7 @@ from .schedule_resource import (
     scheduled_occurrence_options,
     scheduled_save,
 )
+from .tax_resource import tax_marks_save, tax_marks_view, tax_year_report
 
 if TYPE_CHECKING:
     from .context import Api
@@ -336,6 +337,8 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/holdings": holdings,
     "/api/holdings/sale-lots": sale_lots_view,
     "/api/realized-gains": realized_gains_report,
+    "/api/tax-year": tax_year_report,
+    "/api/tax-marks": tax_marks_view,
     "/api/net-worth-change": net_worth_change,
     "/api/review": _review,
     "/api/scenarios": _without_query(scenarios),
@@ -382,6 +385,7 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/quotes/key": quote_key_save,
     "/api/quotes/update": quotes_update,
     "/api/holdings/sale-lots": sale_lots_save,
+    "/api/tax-marks": tax_marks_save,
     "/api/plan/settings": plan_settings_save,
     "/api/account/fsa-years": account_fsa_years_save,
     "/api/fsa/claim/save": fsa_claim_save,

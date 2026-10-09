@@ -1044,6 +1044,33 @@ browser the same buttons in
 command line `breadsched sale-lots` and `breadsched realized-gains`
 ([Command line](guide/cli.md)).
 
+### Tax year
+
+**Tax year** gathers what a calendar year's US return draws on from the book. It
+is a summary of your records, not tax advice or a tax form.
+
+- **Realized gains by term.** Each sale's lots are split into short-term and
+  long-term: a lot is long-term when it was sold more than a year after it was
+  bought (a lot bought on 5 January 2025 is long-term from 6 January 2026). Shares
+  moved from another of your accounts keep their purchase date, and a sale that
+  [names its lots](#specific-lots-and-realized-gains) uses those lots. A sale with
+  both kinds is shown as two lines; its proceeds are shared by shares, to the cent.
+  A part whose lots were bought on several dates shows *Various*. Shares sold beyond
+  the recorded purchases are named as a problem and left out.
+- **Tax-relevant accounts.** Mark the accounts the year should total, such as
+  medical expenses or charitable giving; a marked account counts with the accounts
+  beneath it. An account GnuCash marks *tax related* is tax-relevant until you change
+  it in BreadSched; your choice is kept when you re-import and is not written back.
+- **Tax-relevant tags.** Mark tags (for example *Charity*) to total what their
+  transactions spent on expenses and received as income.
+- **Income by source.** Every income account with activity in the year, with a
+  total.
+
+Amounts in different currencies are totalled separately. Open it from **Actions →
+Tax Year…** in the desktop [Accounts view](guide/desktop.md#tax-year), **Tax year…**
+in the [browser](guide/web.md#tax-year), or `breadsched tax-year` and
+`breadsched tax-marks` on the [command line](guide/cli.md).
+
 ### Escrow
 
 Funding an Escrow account from cash or income is the household expense. A later tax

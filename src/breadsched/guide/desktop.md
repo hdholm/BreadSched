@@ -187,6 +187,15 @@ sale with the lots it took and totals by year; choose a year, open a sale to cho
 its lots, or **Print…** the report. See
 [Specific lots and realized gains](../USER_GUIDE.md#specific-lots-and-realized-gains).
 
+## Tax year
+
+In Accounts, choose **Actions → Tax Year…** and pick a **Year**. It lists the year's
+realized gains as short-term and long-term (by sale, with each part's purchase date
+or *Various*), the totals of the tax-relevant accounts and tags, and income by
+source. **Tax-Relevant Accounts and Tags…** lists every tag and account with a check
+box; an account checked by GnuCash's *tax related* mark says so until you change it.
+**Print…** prints the report. See [Tax year](../USER_GUIDE.md#tax-year).
+
 ## Online quotes
 
 In Accounts, choose **Actions → Online Quotes…**. Each security and foreign currency

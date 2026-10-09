@@ -809,6 +809,7 @@ class ImportSink:
         imported.payment_day = existing.payment_day
         imported.card_payment_account = existing.card_payment_account
         imported.emergency_fund_override = existing.emergency_fund_override
+        imported.tax_relevant_override = existing.tax_relevant_override
 
     def _existing_sibling(
         self,

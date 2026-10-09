@@ -10,6 +10,26 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a265 - 2026-10-09
+
+- **Tax-year outputs (calendar year, US-oriented).** `engine/tax_year` derives one
+  year's realized gains split into short-term and long-term parts (long-term when a
+  lot is sold after the anniversary of its purchase; transferred lots keep their
+  purchase date; a mixed sale's proceeds are shared by shares to the cent), the
+  totals of tax-relevant accounts (with the accounts beneath them) and tags (spent
+  and received), and income by source, per currency. Shares sold beyond the
+  recorded purchases are a named problem and left out.
+- An account is tax-relevant by BreadSched's mark (`Account.tax_relevant_override`,
+  stored only when set, kept on re-import, never written back) or, without one, by
+  GnuCash's imported *tax related* slot. Tags are marked in book metadata
+  (`tax.tags`). `gen/services/tax` changes any marks as one undo step and leaves
+  everything unchanged when a request is rejected.
+- **Tax Year** in GTK (Accounts → **Tax Year…**, with **Tax-Relevant Accounts and
+  Tags…** and native printing) and the browser (**Tax year…**, printing just the
+  report), `breadsched tax-year` and `breadsched tax-marks`, and the routes
+  `GET /api/tax-year`, `GET/POST /api/tax-marks`. Engine, service, layout, CLI,
+  route, GTK, and browser tests cover them.
+
 ## 0.2.0a264 - 2026-10-09
 
 - **Specific lots and realized gains.** A sale can name the lots it sells

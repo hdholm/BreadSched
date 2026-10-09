@@ -3547,6 +3547,47 @@ class TestDerivedPlanView:
         finally:
             dialog.destroy()
 
+    def test_tax_year_marks_and_prints(self, app, window, populated_book, monkeypatch):
+        from breadsched.gen.lib import AccountType
+        from breadsched.gui import printing
+        from breadsched.gui.dialogs.tax_year_dialog import TaxYearDialog
+
+        db, account, (first, second, sale) = self._lots_book(app, populated_book)
+        expense = next(item for item in db.iter_accounts() if item.atype is AccountType.EXPENSE)
+        printed = []
+        monkeypatch.setattr(printing, "print_document", lambda parent, doc: printed.append(doc))
+        window.activate_action("win.view-accounts", None)
+        dialog = TaxYearDialog(window, db, year=2026)
+        try:
+            assert dialog.year == 2026 and 2026 in dialog.years
+            assert self._grid_texts(dialog.gain_totals)[1][:2] == ["Long-term", "USD"]
+            # The 2024 lot is sold after its anniversary: long-term.
+            [line] = dialog.report.gains
+            assert (line.term.value, line.acquired) == ("long", date(2024, 1, 10))
+            assert dialog.accounts is None
+            marks = dialog.open_marks()
+            marks.account_checks[expense.handle].set_active(True)
+            assert marks.save()
+            assert db.get_account(expense.handle).tax_relevant_override is True
+            names = [row[0] for row in self._grid_texts(dialog.accounts)[1:]]
+            assert db.full_name(expense) in names
+            dialog.print_report()
+            [document] = printed
+            assert document.title == "Tax year 2026" and document.kind == "tax-year"
+            assert db.full_name(expense) in document.text()
+        finally:
+            dialog.destroy()
+
+    @staticmethod
+    def _grid_texts(grid) -> list[list[str]]:
+        rows: dict[int, dict[int, str]] = {}
+        child = grid.get_first_child()
+        while child is not None:
+            column, row, _w, _h = grid.query_child(child)
+            rows.setdefault(row, {})[column] = child.get_label()
+            child = child.get_next_sibling()
+        return [[cells[index] for index in sorted(cells)] for _row, cells in sorted(rows.items())]
+
     def test_retirement_drawdowns_are_added_edited_and_removed(self, app, window, populated_book):
         from breadsched.gen.lib import Account, AccountType, Money, Scenario
         from breadsched.gen.services import drawdown_accounts
@@ -7893,6 +7934,8 @@ class TestDialogsFitTheScreen:
         ("historical_estimates_dialog", "HistoricalEstimatesDialog", None),
         ("holdings_dialog", "HoldingsDialog", None),
         ("realized_gains_dialog", "RealizedGainsDialog", None),
+        ("tax_year_dialog", "TaxYearDialog", None),
+        ("tax_year_dialog", "TaxMarksDialog", None),
         ("import_dialog", "ImportDialog", None),
         ("loan_dialog", "LoanDialog", None),
         ("net_worth_history_dialog", "NetWorthHistoryDialog", None),

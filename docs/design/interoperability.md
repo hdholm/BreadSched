@@ -28,7 +28,10 @@ GnuCash account GUID, source-owned chart fields (name, source type, parent,
 commodity, code, description, source notes, placeholder/hidden state, and commodity SCU)
 may refresh from the source, while the BreadSched account type, FSA funding years,
 local account notes, projection-rate overrides, projection exclusion, dashboard grouping,
-linked-asset/card behavior, usual payment, and payment day are retained. A source
+linked-asset/card behavior, usual payment, payment day, and BreadSched's tax-relevant
+mark are retained. GnuCash's own *tax related* slot stays a read-only source field;
+it decides tax relevance only while BreadSched has no mark of its own, and the
+BreadSched mark is never written back. A source
 type change is reported. If its accounting class conflicts with the retained
 BreadSched type, the conflict requires review rather than silently changing local
 semantics or display signs.

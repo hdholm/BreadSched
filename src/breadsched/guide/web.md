@@ -75,6 +75,14 @@ every sale with the lots it took and totals by year, filtered by year, and **Pri
 prints just the report (`/api/realized-gains`). See
 [Specific lots and realized gains](../USER_GUIDE.md#specific-lots-and-realized-gains).
 
+## Tax year
+
+In **Accounts**, choose **Tax year…** and pick a **Year**: realized gains short- and
+long-term, the tax-relevant accounts and tags, and income by source
+(`/api/tax-year`). **Tax-relevant accounts and tags…** checks the accounts and tags
+the year totals (`/api/tax-marks`), and **Print** prints just the report. See
+[Tax year](../USER_GUIDE.md#tax-year).
+
 ## Online quotes
 
 In **Accounts**, choose **Online quotes…**. Type each security's or currency's

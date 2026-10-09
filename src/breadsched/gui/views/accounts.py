@@ -310,6 +310,13 @@ class AccountTreeView(BaseView):
 
         HoldingsDialog(self.get_root(), self.db).present()
 
+    def _on_tax_year(self, _button) -> None:
+        if self.db is None:
+            return
+        from ..dialogs.tax_year_dialog import TaxYearDialog
+
+        TaxYearDialog(self.get_root(), self.db).present()
+
     def _on_exchange_rate(self, _button) -> None:
         if self.db is None:
             return
