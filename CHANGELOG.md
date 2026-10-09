@@ -10,6 +10,72 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a274 - 2026-10-09
+
+- **A GnuCash-like desktop register.** The GTK register is now a custom grid
+  (`gui/widgets/register_grid.py`) over a toolkit-free sheet model
+  (`gui/register_sheet.py`): plain ruled rows, a tinted cursor row, and a single
+  frameless editor over the cursor's cell instead of an entry box in every column.
+  A register opens on the blank row, scrolled to the newest entries. Transfer
+  accounts complete as you type (`entry_input.quickfill_account`: the rest of the
+  best match is selected, `:` accepts a level, and the matches are listed under the
+  cell), and a new entry's description completes from earlier ones
+  (`quickfill_description`). Up/Down, Page Up/Down, and Ctrl+End/Home move the
+  cursor, saving the row left. Fixes clicking a split transaction, which showed its
+  lines for a moment and then jumped to the first row (regression test). The
+  register no longer has a column chooser or sorting. The desktop guide, User
+  Guide, and design part describe the grid; `tests/test_register_sheet.py` covers
+  the sheet without GTK and `TestRegisterGrid` the drawn grid and keys.
+
+## 0.2.0a273 - 2026-10-09
+
+- **Goals and holdings on the shared charts; Visualizations complete.**
+  `savings_goals.goals_chart` stacks each open goal's set-aside under what is still
+  to save, labelled with its target month, so each column reaches the goal's target
+  (asserted, and carried as the chart's totals). `cost_basis.holdings_charts` draws
+  each holding's cost, market value, and unrealized gain side by side, one chart
+  per cost currency; a value that cannot be compared is not drawn. The GTK Savings
+  Goals and Holdings dialogs and the browser goals page and holdings dialog show
+  them (the web responses add `chart` and `charts`). With this, the roadmap's
+  Visualizations item is delivered and removed; the User Guide and design part
+  describe the charts, and tests cover the values, totals, closed goals, the web
+  responses, and the GTK and browser screens.
+
+## 0.2.0a272 - 2026-10-09
+
+- **Projection balances by account.** `projection_result.projection_balances_chart`
+  stacks each projection year's last month by account from the month ledger's
+  closing balances: the cash pool, each investment account above zero, and each
+  debt below, so every column sums exactly to that month's net worth (asserted, and
+  carried as the chart's totals); accounts past the seventh balance series are
+  combined as Other, and partial years are shaded. `projection.projected_account_names`
+  names the accounts. The GTK Projection view shows it beside the totals chart
+  behind a Totals by month / Balances by account switcher (keeping the view within
+  its small-screen size),
+  the browser page beside its own Chart values toggle (the web response adds
+  `balances_chart`), and the printout after the totals chart with its table in the
+  optional Projection chart values section. The User Guide and design part
+  describe it; tests cover the values, reconciliation, Other, printing, the web
+  response, and the GTK and browser screens.
+
+## 0.2.0a271 - 2026-10-09
+
+- **Net worth history on the shared charts, with its composition.** Each history
+  point now also breaks its totals down by group (`NetWorthPoint.groups`): a
+  top-level account tree, or, where one tree holds every asset (or every debt)
+  account, that tree's children; each top-level line is the exact sum of its
+  groups. `net_worth.net_worth_charts` draws assets, debts, and net worth as lines
+  (a withheld point breaks each line and the chart names it) and the groups
+  stacked, assets above zero and debts below, with net worth as each column's
+  total; the seven largest groups are named and the rest combined as Other. The
+  GTK dialog, the browser Dashboard section, and the printout show both charts and
+  list each point's groups; the web response adds `groups`, `charts`, and
+  `currency`. The older GTK `LineChart` is removed, so every chart is drawn from
+  a model. The design part, User Guide, and desktop and browser guides describe
+  the charts (and the design part's stale Expense Explorer chart paragraph is
+  corrected); tests cover the groups, the charts' reconciliation, Other, withheld
+  points, the web response, and the GTK and browser screens.
+
 ## 0.2.0a270 - 2026-10-09
 
 - **Spending on the shared charts.** The chart model gains stacked and share forms:

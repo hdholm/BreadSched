@@ -200,6 +200,7 @@ async function showProjection() {
     el("h2", {}, "Projection"),
     form, cards, completenessDetails(data.completeness, "Projection"),
     modelChart(data.chart, { collapseTable: true }),
+    modelChart(data.balances_chart, { collapseTable: true }),
     comparisonView, runwayNotes, goalNotes, reimbursementNotes, warnings,
     (data.bridges || []).length ? el("details", { class: "projection-bridge" },
       el("summary", {}, "How the projection reconciles"),

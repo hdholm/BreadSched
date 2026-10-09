@@ -133,6 +133,7 @@ async function showGoals() {
           "Scenario changes", ""], rows)
         : el("p", { class:"note" }, "No savings goals yet."),
       totals ? el("p", { class:"note" }, totals) : null,
+      modelChart(data.chart, { collapseTable: true }),
       form, overrideForm));
 }
 

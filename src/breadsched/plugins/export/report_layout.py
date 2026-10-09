@@ -10,7 +10,7 @@ words and numbers. Layouts never query the database or recalculate.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import zip_longest
 
@@ -669,15 +669,18 @@ def projection_layout(
     comparison: Projection | None = None,
     book_name: str = "",
     currency: str = "",
+    names: Mapping[str, str] | None = None,
 ) -> ReportDocument:
     """The current Projection result, comparison, and annual assumptions.
 
-    The chart's monthly values print in an optional section ("Projection chart
-    values"); the year-end table is always printed.
+    The charts' values (monthly totals, and each account's year-end balance, named
+    by ``names``) print in an optional section ("Projection chart values"); the
+    year-end table is always printed.
     """
-    from ...gen.engine.projection_result import projection_chart
+    from ...gen.engine.projection_result import projection_balances_chart, projection_chart
 
     chart = projection_chart(result, comparison, currency)
+    balances = projection_balances_chart(result, names or {}, currency) if result.rows else None
     shortfall = result.first_shortfall()
     cards = Cards(
         (
@@ -767,6 +770,11 @@ def projection_layout(
         Heading("Projection chart"),
         ModelChart(chart),
         *_notes((chart.partial_note,) if chart.partial_note else ()),
+        *(
+            (Heading(balances.title), ModelChart(balances))
+            if balances is not None and not balances.empty
+            else ()
+        ),
         Heading("Annual assumptions"),
         assumption_table,
     ]
@@ -778,6 +786,8 @@ def projection_layout(
     prefix = f"{book_name} · " if book_name else ""
     subtitle = f"{prefix}{result.scenario.name} · {start} through {end}"
     values = chart_blocks(chart)[1:]
+    if values and balances is not None and not balances.empty:
+        values = (*values, Heading(balances.title), chart_table(balances))
     sections = [Section(tuple(blocks))]
     if values:
         sections.append(
@@ -1038,8 +1048,10 @@ def expense_explorer_layout(
 # -------------------------------------------------------------- Net worth
 
 
-def net_worth_history_layout(history: NetWorthHistory) -> ReportDocument:
-    """Net worth at each period end, with each point's top-level breakdown."""
+def net_worth_history_layout(history: NetWorthHistory, currency: str = "") -> ReportDocument:
+    """Net worth at each period end, its charts, and each point's breakdown by group."""
+    from ...gen.services.net_worth import net_worth_charts
+
     rows = []
     for point in history.points:
         notes = [
@@ -1052,7 +1064,7 @@ def net_worth_history_layout(history: NetWorthHistory) -> ReportDocument:
             if text
         ]
         breakdown = "\n".join(
-            f"{line.name} ({line.kind}): {money_text(line.value)}" for line in point.lines
+            f"{line.name} ({line.kind}): {money_text(line.value)}" for line in point.groups
         )
         rows.append(
             TableRow(
@@ -1068,11 +1080,14 @@ def net_worth_history_layout(history: NetWorthHistory) -> ReportDocument:
                 )
             )
         )
+    charts = net_worth_charts(history, currency)
     blocks: tuple[Block, ...] = (
         Paragraph(
             "Assets less debts, market-valued at each period end. A point with a missing "
             "quote shows — and names the account rather than guessing a conversion."
         ),
+        *(ModelChart(chart) for chart in charts[:1] if not chart.empty),
+        *_notes((charts[0].partial_note,) if charts and charts[0].partial_note else ()),
         Table(
             _columns(
                 "Period",
@@ -1082,10 +1097,11 @@ def net_worth_history_layout(history: NetWorthHistory) -> ReportDocument:
                 "#Net worth",
                 "#Change",
                 "Note",
-                "Top-level accounts",
+                "Groups",
             ),
             tuple(rows),
         ),
+        *(block for chart in charts[1:] for block in (Heading(chart.title), *chart_blocks(chart))),
     )
     subtitle = (
         f"{history.start.isoformat()} through {history.end.isoformat()} · "

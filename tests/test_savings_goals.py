@@ -648,3 +648,43 @@ def test_a_goal_in_an_account_left_out_of_the_projection_is_not_compared(db, boo
     assert goal_milestone_text(item).endswith(
         "held in Assets:Brokerage, which this projection does not project, so it is not compared"
     )
+
+
+def test_goals_chart_stacks_set_aside_under_what_is_still_to_save(db, book):
+    from breadsched.gen.engine.chart_model import STACKED
+
+    _monthly_pay(db, book, last_posted=date(2026, 6, 1))
+    roof = _goal(db, book)
+    car = SavingsGoal(
+        name="Car",
+        account=book.savings,
+        target_amount=Money(5000),
+        start_date=date(2026, 1, 1),
+        target_date=date(2027, 6, 30),
+        closed_on=date(2026, 3, 1),
+    )
+    with db.transaction("Closed goal") as txn:
+        db.add_savings_goal(car, txn)
+    progress = savings_goals.goals_progress(db, date(2026, 6, 15))
+    chart = savings_goals.goals_chart(progress, "USD")
+    assert (chart.kind, chart.currency) == (STACKED, "USD")
+    # The closed goal is left out; the label carries the target month.
+    assert chart.categories == (f"{roof.name} (Dec 2026)",)
+    assert [series.name for series in chart.series] == ["Set aside", "Still to save"]
+    assert chart.series[0].values == (Money(600),)
+    assert chart.series[1].values == (Money(600),)
+    assert chart.totals == (Money(1200),)
+
+
+def test_the_web_goals_page_carries_the_chart(db, book):
+    from breadsched.web.context import Api
+    from breadsched.web.resources import QueryParams
+    from breadsched.web.savings_goal_resource import savings_goals as goals_resource
+
+    _goal(db, book)
+    payload = goals_resource(Api(db), QueryParams(""))
+    chart = payload["chart"]
+    assert (chart["key"], chart["kind"]) == ("goals", "stacked")
+    [goal] = payload["goals"]
+    assert chart["totals"] == [goal["target"]]
+    assert chart["series"][0]["values"] == [goal["set_aside"]]

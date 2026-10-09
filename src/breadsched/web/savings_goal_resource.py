@@ -11,6 +11,8 @@ from collections.abc import Mapping
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
+from ..gen.engine.currency import reporting_currency_label
+from ..gen.engine.savings_goals import goals_chart
 from ..gen.services.savings_goals import (
     AllocateToGoal,
     SaveSavingsGoal,
@@ -110,6 +112,7 @@ def savings_goals(api: Api, query: QueryParams) -> dict[str, object]:
         ]
         goals.append(entry)
     return {
+        "chart": goals_chart(report.goals, reporting_currency_label(api.db)).as_dict(),
         "as_of": report.as_of,
         "set_aside": report.set_aside,
         "held": report.held,

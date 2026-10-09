@@ -610,17 +610,18 @@ class TestRegister:
         handle = app.db.get_account_by_name("Assets:Checking Account").handle
         window.open_register(handle)
         view = window._views["register"]
-        # Three transactions, then the blank entry row (#158).
-        assert view.column_view.get_model().get_n_items() == 4
+        # Three transactions, then the blank transaction at the end (#158).
+        assert len(view.sheet.rows) == 4
+        assert view.sheet.rows[-1].kind == "blank"
 
     def test_column_headings_follow_the_account_type(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("register")
         view = window._views["register"]
         view.show_account(app.db.get_account_by_name("Assets:Checking Account").handle)
-        assert view.debit_column.get_title() == "Deposit"
+        assert view.sheet.headings()["increase"] == "Deposit"
         view.show_account(app.db.get_account_by_name("Credit Card").handle)
-        assert view.debit_column.get_title() == "Payment"
+        assert view.sheet.headings()["increase"] == "Payment"
 
     def test_reconciliation_is_available_for_statement_accounts(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -641,14 +642,18 @@ class TestRegister:
         assert checking is not None and rent is not None
         window.open_register(checking.handle)
         view = window._views["register"]
-        blank = view.blank
-        assert blank.select_transfer(rent.handle)
-        blank.date.set_text("2026-04-01")
-        blank.num.set_text("101")
-        blank.description.set_text("Blank-row rent")
-        blank.decrease.set_text("25.50")
-
-        assert blank.commit() is True
+        grid = view.grid
+        for column, text in (
+            ("date", "2026-04-01"),
+            ("num", "101"),
+            ("description", "Blank-row rent"),
+            ("transfer", "Expenses:Rent"),
+            ("decrease", "25.50"),
+        ):
+            view.sheet.column = column
+            grid.sync()
+            grid.editor.set_text(text)
+        assert grid.key(Gdk.KEY_Return, 0)
 
         posted = next(
             transaction
@@ -659,11 +664,10 @@ class TestRegister:
         assert posted.num == "101"
         assert posted.split_for(checking.handle).value == Money("-25.50")
         assert posted.split_for(rent.handle).value == Money("25.50")
-        assert blank.description.get_text() == ""
-        assert blank.decrease.get_text() == ""
-        assert blank.num.get_text() == ""
+        draft = view.sheet.draft
+        assert (draft.description, draft.decrease, draft.num) == ("", "", "")
         # A run of same-day entries needs no retyping.
-        assert blank.date.get_text() == "2026-04-01"
+        assert draft.date == "2026-04-01"
         assert "Posted Blank-row rent" in view.entry_status.get_text()
 
     def test_separate_register_windows_keep_independent_accounts(self, app, window, populated_book):
@@ -712,13 +716,331 @@ class TestRegisterSelection:
         assert view._pickable[view.account_picker.get_selected()].handle == card
 
 
+def _grid_register(app, window, populated_book, *, extra=0, split=False):
+    """The checking register drawn at 900x320, optionally with more history."""
+    from breadsched.gen.lib import Split
+
+    app.open_book(populated_book)
+    db = app.db
+    checking = db.get_account_by_name("Assets:Checking Account").handle
+    rent = db.get_account_by_name("Expenses:Rent").handle
+    with db.transaction("History") as txn:
+        for day in range(extra):
+            db.add_transaction(
+                Transaction.simple(
+                    date(2025, 1, 1) + timedelta(days=day), f"Filler {day}", rent, checking, "1"
+                ),
+                txn,
+            )
+        if split:
+            three = Transaction(
+                post_date=date(2025, 1, 1) + timedelta(days=extra // 2), description="Three-way"
+            )
+            savings = db.get_account_by_name("Assets:Savings Account") or db.get_account_by_name(
+                "Credit Card"
+            )
+            three.splits = [
+                Split(checking, Money(-70), memo="From checking"),
+                Split(rent, Money(50)),
+                Split(savings.handle, Money(20)),
+            ]
+            db.add_transaction(three, txn)
+    window.open_register(checking)
+    view = window._views["register"]
+    view.grid.paint(900, 320)
+    return view
+
+
+def _row_y(grid, index):
+    return grid.row_height * (index - grid.first_row + 1) + grid.row_height / 2
+
+
+def _type(grid, text):
+    """Type ``text`` key by key, as GTK would insert what the grid does not take."""
+    for character in text:
+        if grid.key(Gdk.unicode_to_keyval(ord(character)), 0):
+            continue
+        editor = grid.editor
+        bounds = editor.get_selection_bounds()
+        current = editor.get_text()
+        start, end = bounds if bounds else (editor.get_position(), editor.get_position())
+        editor.set_text(current[:start] + character + current[end:])
+        editor.set_position(start + 1)
+
+
+class TestRegisterGrid:
+    """The GnuCash-style grid: plain ruled rows, one editor at the cursor."""
+
+    def test_a_register_opens_on_the_blank_entry_at_the_bottom(self, app, window, populated_book):
+        view = _grid_register(app, window, populated_book, extra=80)
+        grid, sheet = view.grid, view.sheet
+        # The cursor waits on the blank transaction, the last row, ready for input.
+        assert sheet.cursor == len(sheet.rows) - 1 and sheet.rows[-1].kind == "blank"
+        assert sheet.column == "date"
+        assert grid.first_row == len(sheet.rows) - grid.visible_rows
+        assert grid.editor.get_visible()
+        assert grid.editor.get_text() == sheet.draft.date
+        assert grid.editor.get_margin_top() == grid.row_height * (grid.visible_rows)
+
+    def test_rows_are_drawn_text_with_one_editor_and_no_entry_boxes(
+        self, app, window, populated_book
+    ):
+        view = _grid_register(app, window, populated_book)
+        grid = view.grid
+        # One frameless editor over the cursor cell; every other cell is drawn text.
+        entries = [w for w in _descendants(grid) if isinstance(w, Gtk.Entry)]
+        assert entries == [grid.editor]
+        assert grid.editor.get_has_frame() is False
+        assert grid.editor.has_css_class("register-editor")
+        surface = grid.paint(900, 320)
+        assert surface.get_width() == 900
+        assert grid.cell_at(10, 2) is None  # the header row
+        assert grid.cell_at(10, _row_y(grid, 0)) == (0, "date")
+
+    def test_typing_an_account_path_completes_each_segment(self, app, window, populated_book):
+        view = _grid_register(app, window, populated_book)
+        grid, sheet = view.grid, view.sheet
+        sheet.column = "transfer"
+        grid.sync()
+        _type(grid, "ex")
+        # The segment completes, the added letters selected, and the list narrows.
+        assert grid.editor.get_text() == "Expenses"
+        assert grid.editor.get_selection_bounds() == (2, 8)
+        listed = grid.match_names()
+        assert listed and all(name.startswith("Expenses") for name in listed)
+        assert grid.match_frame.get_visible()
+        _type(grid, ":")
+        assert grid.editor.get_text() == "Expenses:"
+        _type(grid, "r")
+        assert grid.editor.get_text().startswith("Expenses:R")
+        assert grid.match_names()[0] == "Expenses:Rent"
+        # Down chooses within the list without leaving the cell; Tab takes the choice.
+        grid.key(Gdk.KEY_Down, 0)
+        assert sheet.column == "transfer"
+        grid.key(Gdk.KEY_Up, 0)
+        assert grid.key(Gdk.KEY_Tab, 0)
+        assert sheet.draft.transfer == "Expenses:Rent"
+        assert sheet.column == "increase" and not grid.match_frame.get_visible()
+
+    def test_a_whole_entry_by_keyboard(self, app, window, populated_book):
+        view = _grid_register(app, window, populated_book)
+        grid, sheet, db = view.grid, view.sheet, app.db
+        grid.editor.set_text("2026-04-02")
+        _type(grid, "+")  # a date key moves the day
+        assert grid.editor.get_text() == "2026-04-03"
+        grid.key(Gdk.KEY_Tab, 0)
+        _type(grid, "+")  # Num continues from the register's last number
+        grid.key(Gdk.KEY_Tab, 0)
+        _type(grid, "Keyboard entry")
+        grid.key(Gdk.KEY_Tab, 0)
+        _type(grid, "ex:re")
+        grid.key(Gdk.KEY_Tab, 0)
+        grid.key(Gdk.KEY_Tab, 0)  # to the decrease column
+        _type(grid, "20+5")
+        assert grid.key(Gdk.KEY_Return, 0)
+        posted = next(t for t in db.iter_transactions() if t.description == "Keyboard entry")
+        checking = db.get_account_by_name("Assets:Checking Account").handle
+        assert posted.post_date == date(2026, 4, 3)
+        assert posted.split_for(checking).value == Money(-25)
+        assert sheet.rows[sheet.cursor].kind == "blank" and grid.editor.get_visible()
+        assert "Posted Keyboard entry" in view.entry_status.get_text()
+
+    def test_a_description_quickfills_and_proposes_the_last_entry(
+        self, app, window, populated_book
+    ):
+        view = _grid_register(app, window, populated_book)
+        grid, sheet = view.grid, view.sheet
+        earlier = sheet.descriptions[0]
+        sheet.column = "description"
+        grid.sync()
+        _type(grid, earlier[:2].lower())
+        assert grid.editor.get_text() == earlier
+        assert grid.editor.get_selection_bounds() == (2, len(earlier))
+        grid.key(Gdk.KEY_Tab, 0)
+        assert sheet.draft.transfer and (sheet.draft.increase or sheet.draft.decrease)
+        assert "Proposed from" in view.entry_status.get_text()
+
+    def test_escape_puts_the_entry_back(self, app, window, populated_book):
+        view = _grid_register(app, window, populated_book)
+        grid, sheet = view.grid, view.sheet
+        sheet.column = "description"
+        grid.sync()
+        _type(grid, "Never mind")
+        grid.key(Gdk.KEY_Escape, 0)
+        assert sheet.draft.description == "" and not view.has_unsaved()
+
+    def test_up_and_down_save_and_move_between_transactions(self, app, window, populated_book):
+        view = _grid_register(app, window, populated_book)
+        grid, sheet, db = view.grid, view.sheet, app.db
+        grid.key(Gdk.KEY_Up, 0)
+        above = sheet.rows[sheet.cursor]
+        assert above.kind == "transaction" and sheet.draft.source is not None
+        sheet.column = "description"
+        grid.sync()
+        grid.editor.set_text("Edited by grid")
+        grid.key(Gdk.KEY_Down, 0)
+        assert db.get_transaction(above.handle).description == "Edited by grid"
+        assert sheet.rows[sheet.cursor].kind == "blank"
+
+    def test_an_edit_that_cannot_be_saved_stays_and_says_why(self, app, window, populated_book):
+        view = _grid_register(app, window, populated_book)
+        grid, sheet = view.grid, view.sheet
+        grid.key(Gdk.KEY_Up, 0)
+        here = sheet.cursor
+        sheet.column = "description"
+        grid.sync()
+        grid.editor.set_text("")
+        grid.key(Gdk.KEY_Up, 0)
+        assert sheet.cursor == here
+        assert view.entry_status.get_text() == "Enter a description."
+        assert view.entry_status.has_css_class("negative")
+
+    def test_clicking_a_cell_moves_the_cursor_there(self, app, window, populated_book):
+        view = _grid_register(app, window, populated_book)
+        grid, sheet = view.grid, view.sheet
+        x, width = grid.column_x("description")
+        assert grid.click(x + width / 2, _row_y(grid, 0))
+        assert sheet.header_index() == 0 and sheet.column == "description"
+        assert grid.editor.get_text() == sheet.ledger_rows[0].description
+
+    def test_clicking_a_split_transaction_keeps_it_in_view(self, app, window, populated_book):
+        """Regression: choosing a split entry must not jump to the top of the register."""
+        view = _grid_register(app, window, populated_book, extra=60, split=True)
+        grid, sheet = view.grid, view.sheet
+        index = next(
+            i
+            for i, row in enumerate(sheet.rows)
+            if row.kind == "transaction" and row.register_row.description == "Three-way"
+        )
+        grid.adjustment.set_value(max(0, index - 3))
+        first = grid.first_row
+        x, width = grid.column_x("description")
+        assert grid.click(x + width / 2, _row_y(grid, index))
+        header = sheet.header_index()
+        assert sheet.rows[header].register_row.description == "Three-way"
+        assert sheet.cursor == header and header > 0
+        # The view stays where it was, the split lines open beneath, the editor is on it.
+        assert grid.first_row == first
+        lines = [row for row in sheet.rows[header + 1 : header + 5] if row.kind == "split"]
+        assert len(lines) == 4
+        assert grid.editor.get_visible()
+        assert grid.editor.get_margin_top() == grid.row_height * (header - first + 1)
+        # Every split line is drawn with its memo; only the cursor's own cell is
+        # left to the editor.
+        assert sheet.column == "description"
+        assert grid.under_editor(header, "description")
+        assert not grid.under_editor(header + 1, "description")
+        assert sheet.text(header + 1, "description") == "From checking"
+        # Moving down walks its lines; the cursor stays inside the transaction.
+        grid.key(Gdk.KEY_Down, 0)
+        assert sheet.rows[sheet.cursor].kind == "split" and sheet.cursor == header + 1
+
+    def test_the_r_column_marks_a_split_cleared(self, app, window, populated_book):
+        view = _grid_register(app, window, populated_book)
+        grid, sheet = view.grid, view.sheet
+        x, width = grid.column_x("reconcile")
+        before = sheet.text(0, "reconcile")
+        assert grid.click(x + width / 2, _row_y(grid, 0))
+        assert sheet.text(0, "reconcile") != before
+        assert "Marked" in view.entry_status.get_text()
+
+    def test_the_split_button_opens_lines_for_the_entry(self, app, window, populated_book):
+        view = _grid_register(app, window, populated_book)
+        sheet = view.sheet
+        sheet.column = "decrease"
+        sheet.set_text("30")
+        assert view.toggle_split()
+        assert sheet.rows[sheet.cursor].kind == "split"
+        assert sheet.text(sheet.header_index() + 1, "decrease") == "30.00"
+
+    def test_a_hidden_account_takes_no_typing_and_says_why(self, app, window, populated_book):
+        app.open_book(populated_book)
+        account = app.db.get_account_by_name("Credit Card")
+        account.hidden = True
+        with app.db.transaction("Hide") as txn:
+            app.db.commit_account(account, txn)
+        window.open_register(account.handle)
+        view = window._views["register"]
+        view.grid.paint(900, 320)
+        assert not view.grid.editor.get_visible()
+        assert view.sheet.disabled_reason == "Hidden accounts take no new transactions"
+
+    @pytest.mark.parametrize(
+        ("answer", "switches", "saved"),
+        [("cancel", False, False), ("discard", True, False), ("save", True, True)],
+    )
+    def test_switching_accounts_with_unsaved_typing_asks_first(
+        self, app, window, populated_book, answer, switches, saved
+    ):
+        from breadsched.gui.views import register as register_module
+
+        view = _grid_register(app, window, populated_book)
+        sheet = view.sheet
+        checking = view.account_handle
+        for column, text in (
+            ("description", "Unsaved entry"),
+            ("transfer", "Expenses:Rent"),
+            ("decrease", "5"),
+        ):
+            sheet.column = column
+            sheet.set_text(text)
+        choice = {"cancel": register_module.CANCEL, "discard": register_module.DISCARD}.get(
+            answer, register_module.SAVE
+        )
+        view.ask_unsaved = lambda done: done(choice)
+        card = app.db.get_account_by_name("Credit Card").handle
+        view.show_account(card)
+        assert (view.account_handle == card) is switches
+        assert any(t.description == "Unsaved entry" for t in app.db.iter_transactions()) is saved
+        if not switches:
+            assert (
+                view.account_handle == checking and view.sheet.draft.description == "Unsaved entry"
+            )
+
+    def test_the_pencil_prefills_the_full_editor_from_the_entry(self, app, window, populated_book):
+        view = _grid_register(app, window, populated_book)
+        sheet = view.sheet
+        for column, text in (
+            ("description", "Needs notes"),
+            ("transfer", "Expenses:Rent"),
+            ("decrease", "9"),
+        ):
+            sheet.column = column
+            sheet.set_text(text)
+        dialog = view.open_full_editor()
+        try:
+            assert dialog.description_entry.get_text() == "Needs notes"
+        finally:
+            dialog.destroy()
+        # Cancelling the editor keeps the typing.
+        assert sheet.draft.description == "Needs notes"
+
+    def test_the_filter_keeps_the_blank_entry_last(self, app, window, populated_book):
+        view = _grid_register(app, window, populated_book)
+        view.filter_entry.set_text("zzz-no-such-thing")
+        view.filter_entry.emit("search-changed")
+        assert [row.kind for row in view.sheet.rows] == ["blank"]
+        view.filter_entry.set_text("")
+        view.filter_entry.emit("search-changed")
+        assert len(view.sheet.rows) > 1
+
+    def test_only_the_visible_rows_are_drawn(self, app, window, populated_book, monkeypatch):
+        view = _grid_register(app, window, populated_book, extra=500)
+        grid = view.grid
+        drawn = []
+        original = view.sheet.text
+        monkeypatch.setattr(view.sheet, "text", lambda i, c: drawn.append(i) or original(i, c))
+        grid.paint(900, 320)
+        assert drawn and len(set(drawn)) <= grid.visible_rows + 1
+
+
 class TestLiveUpdates:
     def test_posting_a_transaction_repaints_the_open_view(self, app, window, populated_book):
         app.open_book(populated_book)
         handle = app.db.get_account_by_name("Assets:Checking Account").handle
         window.open_register(handle)
         view = window._views["register"]
-        before = view.column_view.get_model().get_n_items()
+        before = len(view.sheet.rows)
 
         other = app.db.get_account_by_name("Expenses:Rent").handle
         with app.db.transaction("New rent") as txn:
@@ -726,7 +1048,7 @@ class TestLiveUpdates:
                 Transaction.simple(date(2026, 4, 1), "April rent", other, handle, Money("1800.00")),
                 txn,
             )
-        assert view.column_view.get_model().get_n_items() == before + 1
+        assert len(view.sheet.rows) == before + 1
 
     def test_undo_action_follows_availability(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -806,6 +1128,13 @@ class TestProjectionView:
         assert view.chart.tooltip_at(1, 120) is None
         document = view.printable_report()
         assert "Projected cash, investments, and net worth" in document.text()
+        # Each account's year-end balance, stacked, sums to that year end's net worth.
+        balances = view.balances_chart.model
+        assert balances.kind == "stacked" and balances.series[0].name == "Cash"
+        assert len(balances.categories) == view.scenario.years
+        last = view._result.rows[-1]
+        assert balances.totals[-1] == last.net_worth
+        assert "Year-end balances by account" in document.text()
 
     def test_changing_an_assumption_recomputes(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -1630,69 +1959,6 @@ class TestReplacingABook:
         assert list(tmp_path.glob("book.breadsched*")) == []
 
 
-class TestRegisterSplitDetail:
-    """Item 5: splits expand into rows beneath the transaction, not a side pane."""
-
-    @pytest.fixture
-    def register(self, app, window, populated_book):
-        app.open_book(populated_book)
-        window.show_category("register")
-        handle = app.db.get_account_by_name("Assets:Checking Account").handle
-        view = window._views["register"]
-        view.show_account(handle)
-        return view
-
-    def test_there_is_no_separate_detail_pane(self, register):
-        assert not hasattr(register, "detail_frame")
-
-    def test_a_transaction_row_has_its_splits_as_children(self, register):
-        model = register.column_view.get_model().get_model()
-        parent = model.get_item(0)
-        parent.set_expanded(True)
-        transaction = parent.get_item().payload.transaction
-        children = parent.get_children()
-        assert children is not None
-        assert children.get_n_items() == len(transaction.splits)
-
-    def test_expanding_inserts_rows_immediately_below(self, register):
-        model = register.column_view.get_model().get_model()
-        before = model.get_n_items()
-        parent = model.get_item(0)
-        splits = len(parent.get_item().payload.transaction.splits)
-        parent.set_expanded(True)
-        assert model.get_n_items() == before + splits
-        # The first child sits directly after its parent.
-        assert model.get_item(1).get_depth() == 1
-
-    def test_child_rows_name_their_accounts(self, register):
-        model = register.column_view.get_model().get_model()
-        parent = model.get_item(0)
-        parent.set_expanded(True)
-        transaction = parent.get_item().payload.transaction
-        names = {
-            model.get_item(index + 1).get_item().payload.account_name
-            for index in range(len(transaction.splits))
-        }
-        assert names == {register.db.full_name(s.account) for s in transaction.splits}
-
-    def test_selecting_one_collapses_the_previous(self, register):
-        selection = register.column_view.get_model()
-        selection.set_selected(0)
-        register._on_selection_changed(selection, None)
-        model = selection.get_model()
-        assert model.get_item(0).get_expanded() is True
-
-        # Select a later top-level row; the first must close again.
-        position = next(
-            index
-            for index in range(model.get_n_items())
-            if model.get_item(index).get_depth() == 0 and index != 0
-        )
-        selection.set_selected(position)
-        register._on_selection_changed(selection, None)
-        assert model.get_item(0).get_expanded() is False
-
-
 class TestColumnBehaviour:
     """Item 9 (part): every column resizes and sorts."""
 
@@ -1700,11 +1966,20 @@ class TestColumnBehaviour:
         columns = view.column_view.get_columns()
         return [columns.get_item(i) for i in range(columns.get_n_items())]
 
-    def test_register_columns_resize_and_sort(self, app, window, populated_book):
+    def test_register_columns_share_the_width_like_gnucash(self, app, window, populated_book):
+        """Dates and amounts keep their width; description and transfer take the rest."""
         app.open_book(populated_book)
         window.show_category("register")
-        for column in self._columns(window._views["register"]):
-            assert column.get_resizable() is True
+        grid = window._views["register"].grid
+        grid.paint(900, 400)
+        narrow = dict(grid._widths)
+        grid.paint(1400, 400)
+        wide = dict(grid._widths)
+        assert sum(wide.values()) == pytest.approx(1400, abs=1)
+        for column in ("date", "num", "reconcile", "increase", "decrease", "balance"):
+            assert wide[column] == narrow[column]
+        assert wide["description"] > narrow["description"] > 0
+        assert wide["description"] > wide["transfer"] > 0
 
     def test_account_columns_resize_and_sort(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -2604,31 +2879,31 @@ class TestScheduledIsSplitInTwo:
 class TestColumnHiding:
     """Item 2: a menu at the end of the header row hides and shows columns."""
 
-    def test_the_register_offers_a_column_menu(self, app, window, populated_book):
+    def test_a_table_offers_a_column_menu(self, app, window, populated_book):
         app.open_book(populated_book)
-        window.show_category("register")
-        view = window._views["register"]
+        window.show_category("accounts")
+        view = window._views["accounts"]
         found = _find_menu_button(view)
-        assert found is not None, "no column menu in the register toolbar"
+        assert found is not None, "no column menu beside the accounts table"
 
     def test_hiding_a_column_is_remembered(self, app, window, populated_book, tmp_path):
         from breadsched.gen.utils.settings import Settings
         from breadsched.gui.views._base import column_menu
 
         app.open_book(populated_book)
-        window.show_category("register")
-        view = window._views["register"]
+        window.show_category("accounts")
+        view = window._views["accounts"]
         settings = Settings("views", directory=tmp_path)
 
-        column_menu("register", view.column_view, settings)
+        column_menu("accounts", view.column_view, settings)
         columns = view.column_view.get_columns()
         target = columns.get_item(2)
         target.set_visible(False)
-        settings.set("columns:register", "hidden", [target.get_title()])
+        settings.set("columns:accounts", "hidden", [target.get_title()])
         settings.save()
 
         reloaded = Settings("views", directory=tmp_path)
-        assert target.get_title() in reloaded.get_list("columns:register", "hidden")
+        assert target.get_title() in reloaded.get_list("columns:accounts", "hidden")
 
     def test_a_hidden_column_is_restored_on_the_next_build(
         self, app, window, populated_book, tmp_path
@@ -2637,23 +2912,23 @@ class TestColumnHiding:
         from breadsched.gui.views._base import column_menu
 
         app.open_book(populated_book)
-        window.show_category("register")
-        view = window._views["register"]
+        window.show_category("accounts")
+        view = window._views["accounts"]
         columns = view.column_view.get_columns()
         title = columns.get_item(2).get_title()
 
         settings = Settings("views", directory=tmp_path)
-        settings.set("columns:register", "hidden", [title])
+        settings.set("columns:accounts", "hidden", [title])
         settings.save()
 
-        column_menu("register", view.column_view, settings)
+        column_menu("accounts", view.column_view, settings)
         assert columns.get_item(2).get_visible() is False
 
     def test_the_first_column_cannot_be_hidden(self, app, window, populated_book):
         """It carries the expander; hiding it leaves nothing to read or expand."""
         app.open_book(populated_book)
-        window.show_category("register")
-        button = _find_menu_button(window._views["register"])
+        window.show_category("accounts")
+        button = _find_menu_button(window._views["accounts"])
         box = button.get_popover().get_child()
         checks = []
         child = box.get_first_child()
@@ -2691,7 +2966,7 @@ class TestEditingFromTheRegister:
     def _dialog_for(self, register, index=0):
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
-        transaction = register._rows[index].transaction
+        transaction = register.sheet.ledger_rows[index].transaction
         return TransactionDialog(
             register.get_root(), register.db, transaction=transaction
         ), transaction
@@ -2789,16 +3064,22 @@ class TestEditingFromTheRegister:
     def test_the_register_offers_editing_on_activation(self, register):
         assert hasattr(register, "edit_transaction")
 
-    def test_activating_a_split_row_edits_its_parent(self, register, app):
-        """The splits are one record; editing them separately would unbalance it."""
-        from breadsched.gui.views.register import SplitRow
+    def test_the_pencil_opens_the_transaction_under_the_cursor(self, register, app):
+        """A split line belongs to its transaction: the full editor opens the whole of it."""
+        from breadsched.gui.views import register as register_module
 
-        model = register.column_view.get_model().get_model()
-        parent = model.get_item(0)
-        parent.set_expanded(True)
-        child = model.get_item(1).get_item().payload
-        assert isinstance(child, SplitRow)
-        assert child.transaction is register._rows[0].transaction
+        sheet = register.sheet
+        first = sheet.ledger_rows[0].transaction
+        assert sheet.move_to(0)
+        if not sheet.draft.expanded:
+            assert sheet.toggle_split()
+        assert sheet.rows[sheet.cursor].kind == "split"
+        # Opening the editor puts back the split view first (nothing was typed).
+        register.ask_unsaved = lambda done: done(register_module.DISCARD)
+        opened = []
+        register._open_editor = lambda transaction: opened.append(transaction)
+        register.open_full_editor()
+        assert [item.handle for item in opened] == [first.handle]
 
 
 class TestLastBookIsRemembered:
@@ -2858,61 +3139,35 @@ class TestLastBookIsRemembered:
         assert app.book_path == str(default)
 
 
-class TestSortingReordersRows:
-    """Item 2: clicking a header must move the rows, not just draw an arrow."""
+class TestRegisterOrder:
+    """Like a checkbook, the register is in date order and a back-dated entry re-sorts."""
 
-    def test_the_register_model_is_sorted_by_the_view(self, app, window, populated_book):
+    def test_a_back_dated_entry_takes_its_place_and_re_totals(self, app, window, populated_book):
         app.open_book(populated_book)
-        window.show_category("register")
-        view = window._views["register"]
-        # Transactions are sorted; the blank entry row is appended after (#158).
-        flat = view.column_view.get_model().get_model()
-        assert isinstance(flat, Gtk.FlattenListModel)
-        assert isinstance(flat.get_model().get_item(0), Gtk.SortListModel)
-
-    def test_sorting_a_column_changes_the_order(self, app, window, populated_book):
-        app.open_book(populated_book)
-        window.show_category("register")
-        view = window._views["register"]
-        model = view.column_view.get_model()
-
-        def descriptions():
-            return [
-                unwrap(model.get_item(i)).description
-                for i in range(model.get_n_items())
-                if isinstance(model.get_item(i), Gtk.TreeListRow)
-                and model.get_item(i).get_depth() == 0
-            ]
-
-        before = descriptions()
-        columns = view.column_view.get_columns()
-        description_column = next(
-            columns.get_item(i)
-            for i in range(columns.get_n_items())
-            if columns.get_item(i).get_title() == "Transfer"
+        checking = app.db.get_account_by_name("Assets:Checking Account").handle
+        window.open_register(checking)
+        sheet = window._views["register"].sheet
+        dates = [row.post_date for row in sheet.ledger_rows]
+        assert dates == sorted(dates)
+        earliest = dates[0]
+        sheet.column = "date"
+        sheet.set_text(
+            date(earliest.year, earliest.month, 1).replace(year=earliest.year - 1).isoformat()
         )
-        view.column_view.sort_by_column(description_column, Gtk.SortType.ASCENDING)
-        ascending = descriptions()
-        view.column_view.sort_by_column(description_column, Gtk.SortType.DESCENDING)
-
-        assert ascending == sorted(ascending) or ascending != before
-        assert descriptions() == list(reversed(ascending))
-
-    def test_a_tree_keeps_children_with_their_parents(self, app, window, populated_book):
-        """Sorting the flattened list would tear splits away from their transaction."""
-        app.open_book(populated_book)
-        window.show_category("register")
-        view = window._views["register"]
-        model = view.column_view.get_model()
-        model.get_item(0).set_expanded(True)
-
-        rows = [model.get_item(i) for i in range(model.get_n_items())]
-        depths = [row.get_depth() for row in rows if isinstance(row, Gtk.TreeListRow)]
-        assert len(depths) == len(rows) - 1  # only the blank entry row is not a tree row
-        # A depth-1 row may only follow a depth-0 or another depth-1 row.
-        for index, depth in enumerate(depths[1:], start=1):
-            if depth == 1:
-                assert depths[index - 1] in (0, 1)
+        for column, text in (
+            ("description", "Back-dated deposit"),
+            ("transfer", "Income"),
+            ("increase", "10"),
+        ):
+            sheet.column = column
+            sheet.set_text(text)
+        assert sheet.enter(), sheet.message
+        first = sheet.ledger_rows[0]
+        assert first.description == "Back-dated deposit"
+        assert first.running == Money(10)
+        assert [row.post_date for row in sheet.ledger_rows] == sorted(
+            row.post_date for row in sheet.ledger_rows
+        )
 
 
 class TestNavigationHighlight:
@@ -2956,18 +3211,6 @@ class TestPlanToolbarIcon:
 
 
 class TestDerivedPlanView:
-    def test_line_chart_maps_a_click_to_the_nearest_period(self):
-        from breadsched.gui.widgets.chart import LineChart, Series
-
-        class Sized(LineChart):
-            def get_width(self):
-                return 494  # 400 px of plot between the 78/16 px margins
-
-        chart = Sized()
-        assert chart.index_at(200) is None
-        chart.set_data([Series("Actual", [1.0, 2.0, 3.0])])
-        assert [chart.index_at(x) for x in (10, 170, 290, 470, 900)] == [0, 0, 1, 2, 2]
-
     def test_net_worth_history_dialog_charts_complete_points(
         self, app, window, populated_book, monkeypatch, tmp_path
     ):
@@ -2981,8 +3224,17 @@ class TestDerivedPlanView:
         try:
             history = dialog.history
             assert history is not None and history.points
-            complete = [point for point in history.points if point.net_worth is not None]
-            assert [len(series.values) for series in dialog.chart.series] == [len(complete)]
+            # Shared-model charts: assets, debts, and net worth by point, then groups
+            # stacked so each column sums to that point's net worth.
+            assert [view.model.key for view in dialog.charts] == [
+                "net_worth",
+                "net_worth_composition",
+            ]
+            assert [len(series.values) for series in dialog.chart.series] == [
+                len(history.points)
+            ] * 3
+            composition = dialog.charts[1].model
+            assert composition.totals == tuple(point.net_worth for point in history.points)
             assert dialog.table.get_child_at(0, 1).get_label() == history.points[0].label
             first = history.points[0].net_worth
             assert dialog.table.get_child_at(4, 1).get_label() == (
@@ -3471,6 +3723,14 @@ class TestDerivedPlanView:
         try:
             [holding] = dialog.holdings
             assert (holding.quantity, holding.cost) == (Money(4), Money(200))
+            # Cost, market value, and unrealized gain, charted from the holding's values.
+            [chart] = dialog.charts
+            assert [series.name for series in chart.series] == [
+                "Cost",
+                "Market value",
+                "Unrealized gain",
+            ]
+            assert chart.series[0].values == (holding.cost,)
             [detail] = dialog.details
             assert "realized 2025: 50.00" in detail.get_label()
             assert detail.get_label().startswith("Assets:Index: 4 shares cost 200.00")
@@ -4938,6 +5198,12 @@ class TestDashboardView:
             [row] = dialog.report.goals
             assert row.allocated == Money(250) and row.set_aside >= Money(250)
             assert dialog.goal_rows.get_child_at(0, 1).get_label() == "Holiday"
+            # The chart stacks what is set aside under what is still to save.
+            model = dialog.chart.model
+            assert model.kind == "stacked" and dialog.chart.get_visible()
+            assert model.categories[0].startswith("Holiday (")
+            assert model.series[0].values == (row.set_aside,)
+            assert model.totals == (Money(1200),)
 
             assert dialog.toggle_closed(goal.handle, closed=False) is not None
             assert dialog.report.goals == ()
@@ -6453,64 +6719,6 @@ class TestPayrollDialog:
             opened.destroy()
 
 
-class TestBlankRowAutocomplete:
-    """Leaving the description proposes the latest matching entry; nothing posts."""
-
-    def _register(self, app, window, populated_book):
-        app.open_book(populated_book)
-        handle = app.db.get_account_by_name("Assets:Checking Account").handle
-        window.open_register(handle)
-        return window._views["register"]
-
-    def _post(self, view, description, amount, transfer_index=1):
-        blank = view.blank
-        blank.transfer.set_selected(transfer_index)
-        blank.description.set_text(description)
-        blank.decrease.set_text(amount)
-        assert blank.commit() is True
-        return blank.transfers[transfer_index].handle
-
-    def test_a_matching_description_fills_transfer_and_amount(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        expected = self._post(view, "Corner Grocer #12", "42.10")
-        blank = view.blank
-        assert blank.transfer.get_selected() == 0  # reset after posting
-        before = len(list(app.db.iter_transactions()))
-
-        blank.description.set_text("CORNER GROCER #99")
-        suggestion = blank.propose()
-
-        assert suggestion is not None
-        assert blank.transfer_handle() == expected
-        assert blank.decrease.get_text() == "42.10"
-        assert blank.increase.get_text() == ""
-        assert "Proposed from" in view.entry_status.get_text()
-        assert len(list(app.db.iter_transactions())) == before
-
-    def test_typed_input_is_never_overwritten(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        self._post(view, "Corner Grocer", "42.10")
-        blank = view.blank
-        blank.description.set_text("Corner Grocer")
-        blank.transfer.set_selected(2)
-        chosen = blank.transfer_handle()
-        blank.increase.set_text("7.00")
-
-        blank.propose()
-
-        assert blank.increase.get_text() == "7.00"
-        assert blank.decrease.get_text() == ""
-        assert blank.transfer_handle() == chosen
-
-    def test_no_match_leaves_the_row_alone(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        view.blank.description.set_text("Something never entered before")
-
-        assert view.blank.propose() is None
-        assert view.blank.increase.get_text() == ""
-        assert view.blank.decrease.get_text() == ""
-
-
 class TestEditorAutocomplete:
     """A new transaction's untouched splits are proposed from the latest match."""
 
@@ -6652,7 +6860,8 @@ class TestChromeCleanup:
         window.show_category("scheduled")
         window.show_category("upcoming")
         window.show_category("accounts")
-        assert window._views["register"].column_view.has_css_class("data-table")
+        # The register draws its own banded ledger grid instead.
+        assert window._views["register"].grid.area.has_css_class("register-grid")
         assert window._views["dashboard"].bills_view.has_css_class("data-table")
         assert window._views["dashboard"].income_view.has_css_class("data-table")
         assert window._views["scheduled"].definitions_view.has_css_class("data-table")
@@ -6683,28 +6892,18 @@ class TestChromeCleanup:
     def test_the_register_add_button_is_distinguished_from_the_blank_row(
         self, app, window, populated_book
     ):
-        """The dialog is for extra splits/notes/reconciliation; the blank row is
-        the direct, no-dialog way to add an ordinary two-split transaction."""
+        """The dialog is for extra splits, notes, or a claim; the blank transaction at
+        the end of the grid takes an ordinary entry directly, with no dialog."""
         app.open_book(populated_book)
         window.show_category("register")
         view = window._views["register"]
-        assert view.blank.description is not None  # direct entry needs no dialog
-        # Walk to the "+" button in the toolbar row and check its tooltip text
-        # distinguishes it from quick entry rather than saying only "Add".
-        bar = view.get_first_child()
-        found = []
-
-        def walk(widget):
-            child = widget.get_first_child()
-            while child is not None:
-                tooltip = child.get_tooltip_text()
-                if tooltip:
-                    found.append(tooltip)
-                walk(child)
-                child = child.get_next_sibling()
-
-        walk(bar)
-        assert any("full transaction editor" in text for text in found)
+        assert view.sheet.rows[-1].kind == "blank"
+        tooltips = [
+            widget.get_tooltip_text()
+            for widget in _descendants(view.get_first_child())
+            if widget.get_tooltip_text()
+        ]
+        assert any("full editor" in text for text in tooltips)
 
 
 def _descendants(widget):
@@ -6716,7 +6915,8 @@ def _descendants(widget):
 class TestTableSections:
     """#152/#153: each table owns its column chooser; Dashboard sections are sized."""
 
-    VIEWS = ("dashboard", "register", "accounts", "scheduled", "upcoming")
+    # The register draws its own grid, with no column chooser.
+    VIEWS = ("dashboard", "accounts", "scheduled", "upcoming")
 
     def test_every_chooser_sits_with_its_own_table(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -6759,13 +6959,13 @@ class TestTablesShrink:
     def test_tables_shrink_instead_of_scrolling_sideways(self, app, window, populated_book):
         app.open_book(populated_book)
         tables = []
-        for key in ("dashboard", "register", "accounts", "scheduled", "upcoming"):
+        for key in ("dashboard", "accounts", "scheduled", "upcoming"):
             window.show_category(key)
             view = window._views[key]
             tables.extend(
                 widget for widget in _descendants(view) if isinstance(widget, Gtk.ColumnView)
             )
-        assert len(tables) >= 6
+        assert len(tables) >= 5
         for table in tables:
             scroller = table.get_parent()
             while not isinstance(scroller, Gtk.ScrolledWindow):
@@ -6789,9 +6989,10 @@ class TestTablesShrink:
         app.open_book(populated_book)
         handle = app.db.get_account_by_name("Assets:Checking Account").handle
         window.open_register(handle)
-        table = window._views["register"].column_view
-        minimum, natural = table.measure(Gtk.Orientation.HORIZONTAL, -1)[:2]
-        assert minimum < natural
+        grid = window._views["register"].grid
+        minimum = grid.measure(Gtk.Orientation.HORIZONTAL, -1)[0]
+        # The grid narrows with the window: amounts keep their width, text ellipsizes.
+        assert minimum < 400
 
 
 class TestViewActions:
@@ -6919,417 +7120,6 @@ class TestViewActions:
         assert opened == [()]
 
 
-class TestRegisterOpensAtTheEnd:
-    """#157: like a check register, open on the most recent entry."""
-
-    def _register(self, app, window, populated_book, monkeypatch):
-        app.open_book(populated_book)
-        window.show_category("register")
-        view = window._views["register"]
-        calls = []
-        original = view.column_view.scroll_to
-
-        def record(position, *args):
-            calls.append(position)
-            return original(position, *args)
-
-        monkeypatch.setattr(view.column_view, "scroll_to", record)
-        return view, calls
-
-    def test_showing_an_account_scrolls_to_its_last_entry(
-        self, app, window, populated_book, monkeypatch
-    ):
-        view, calls = self._register(app, window, populated_book, monkeypatch)
-        handle = app.db.get_account_by_name("Assets:Checking Account").handle
-        view.show_account(handle)
-        count = view.column_view.get_model().get_n_items()
-        assert count > 1
-        assert calls == [count - 1]
-        # Rows stay in date order, oldest first.
-        dates = [row.transaction.post_date for row in view._rows]
-        assert dates == sorted(dates)
-
-    def test_an_unrelated_repaint_keeps_the_readers_place(
-        self, app, window, populated_book, monkeypatch
-    ):
-        view, calls = self._register(app, window, populated_book, monkeypatch)
-        handle = app.db.get_account_by_name("Assets:Checking Account").handle
-        view.show_account(handle)
-        calls.clear()
-        view.refresh()
-        assert calls == []
-
-    def test_a_blank_row_entry_scrolls_to_the_new_end(
-        self, app, window, populated_book, monkeypatch
-    ):
-        view, calls = self._register(app, window, populated_book, monkeypatch)
-        handle = app.db.get_account_by_name("Assets:Checking Account").handle
-        view.show_account(handle)
-        calls.clear()
-        view.blank.description.set_text("New entry")
-        view.blank.transfer.set_selected(1)
-        view.blank.decrease.set_text("5.00")
-        assert view.blank.commit() is True
-        view.flush_refresh()
-        assert calls == [view.column_view.get_model().get_n_items() - 1]
-
-
-class TestBlankEntryRow:
-    """#158: a GnuCash-style blank row at the bottom replaces quick entry."""
-
-    def _register(self, app, window, populated_book, name="Assets:Checking Account"):
-        app.open_book(populated_book)
-        window.open_register(app.db.get_account_by_name(name).handle)
-        return window._views["register"]
-
-    @staticmethod
-    def _last_payload(view):
-        from breadsched.gui.views._base import unwrap
-
-        model = view.column_view.get_model()
-        return unwrap(model.get_item(model.get_n_items() - 1))
-
-    def test_the_blank_row_is_last_under_any_sort_or_filter(self, app, window, populated_book):
-        from breadsched.gui.views.blank_entry import BLANK
-
-        view = self._register(app, window, populated_book)
-        assert self._last_payload(view) is BLANK
-        date_column = view.column_view.get_columns().get_item(0)
-        view.column_view.sort_by_column(date_column, Gtk.SortType.DESCENDING)
-        view.refresh()
-        assert self._last_payload(view) is BLANK
-        view.filter_entry.set_text("no transaction matches this")
-        view.refresh()
-        model = view.column_view.get_model()
-        assert model.get_n_items() == 1
-        assert self._last_payload(view) is BLANK
-
-    def test_the_register_filter_matches_tags(self, app, window, populated_book):
-        from breadsched.gen.services import set_tags
-
-        view = self._register(app, window, populated_book)
-        view.filter_entry.set_text("roofing-project")
-        view.refresh()
-        assert view.column_view.get_model().get_n_items() == 1
-        transaction = next(iter(app.db.iter_transactions()))
-        assert set_tags(app.db, transaction.handle, ["Roofing-Project"]).ok
-        view.refresh()
-        assert view.column_view.get_model().get_n_items() == 2
-
-    def test_the_blank_cells_host_the_persistent_entry_widgets(self):
-        from breadsched.gui.views._base import host_widget
-
-        entry = Gtk.Entry(text="typed")
-        first, second = Gtk.Box(), Gtk.Box()
-        for host in (first, second):
-            host.label = Gtk.Label()
-            host.append(host.label)
-        assert host_widget(first, entry) is True
-        assert entry.get_parent() is first
-        assert not first.label.get_visible()
-        # A repaint binds the blank row to another cell: the widget moves, text intact.
-        assert host_widget(second, entry) is True
-        assert entry.get_parent() is second
-        assert host_widget(first, None) is False
-        assert first.label.get_visible()
-        assert entry.get_text() == "typed"
-
-    def test_typing_one_amount_clears_the_other(self, app, window, populated_book):
-        blank = self._register(app, window, populated_book).blank
-        blank.increase.set_text("5.00")
-        blank.decrease.set_text("3.00")
-        assert blank.increase.get_text() == ""
-        blank.increase.set_text("4.00")
-        assert blank.decrease.get_text() == ""
-
-    def test_an_increase_moves_the_register_account_up(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        checking = app.db.get_account_by_name("Assets:Checking Account")
-        blank = view.blank
-        blank.description.set_text("Paycheck")
-        blank.increase.set_text("100")
-        assert blank.commit() is True
-        posted = next(t for t in app.db.iter_transactions() if t.description == "Paycheck")
-        assert posted.split_for(checking.handle).value == Money("100")
-
-    def test_an_error_keeps_what_was_typed_and_names_it(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        before = len(list(app.db.iter_transactions()))
-        blank.num.set_text("7")
-        blank.decrease.set_text("12.00")
-        assert blank.commit() is False
-        assert "description" in view.entry_status.get_text()
-        assert view.entry_status.has_css_class("negative")
-        assert blank.num.get_text() == "7"
-        assert blank.decrease.get_text() == "12.00"
-        blank.description.set_text("Coffee")
-        blank.decrease.set_text("-2")
-        assert blank.commit() is False
-        assert "greater than zero" in view.entry_status.get_text()
-        assert len(list(app.db.iter_transactions())) == before
-
-    def test_enter_commits_escape_clears_and_tab_moves_in_column_order(
-        self, app, window, populated_book, monkeypatch
-    ):
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        focused = []
-        for widget in blank.fields:
-            monkeypatch.setattr(widget, "grab_focus", lambda w=widget: focused.append(w) or True)
-        assert blank.handle_key(blank.date, Gdk.KEY_Tab) is True
-        assert focused[-1] is blank.num
-        assert blank.handle_key(blank.num, Gdk.KEY_ISO_Left_Tab) is True
-        assert focused[-1] is blank.date
-        assert blank.handle_key(blank.editor_button, Gdk.KEY_Tab) is True
-        assert focused[-1] is blank.date  # wraps around
-
-        blank.description.set_text("Typed then abandoned")
-        blank.decrease.set_text("1.00")
-        assert blank.handle_key(blank.decrease, Gdk.KEY_Escape) is True
-        assert not blank.has_input()
-
-        blank.description.set_text("Entered by keyboard")
-        blank.decrease.set_text("3.00")
-        assert blank.handle_key(blank.decrease, Gdk.KEY_Return) is True
-        assert any(t.description == "Entered by keyboard" for t in app.db.iter_transactions())
-
-    def test_date_shortcuts_apply_to_a_whole_date_and_type_otherwise(
-        self, app, window, populated_book
-    ):
-        blank = self._register(app, window, populated_book).blank
-        blank.date.set_text("2026-01-31")
-        assert blank.handle_key(blank.date, Gdk.KEY_plus) is True
-        assert blank.date.get_text() == "2026-02-01"
-        assert blank.handle_key(blank.date, Gdk.KEY_bracketleft) is True
-        assert blank.date.get_text() == "2026-01-01"
-        assert blank.handle_key(blank.date, Gdk.KEY_minus) is True
-        assert blank.date.get_text() == "2025-12-31"
-        assert blank.handle_key(blank.date, Gdk.KEY_t) is True
-        assert blank.date.get_text() == date.today().isoformat()
-        # Half-typed text is not a date yet, so "-" is typed rather than applied.
-        blank.date.set_text("2026")
-        assert blank.handle_key(blank.date, Gdk.KEY_minus) is False
-        # Ctrl+T is not the "today" shortcut.
-        blank.date.set_text("2026-01-31")
-        assert blank.handle_key(blank.date, Gdk.KEY_t, Gdk.ModifierType.CONTROL_MASK) is False
-        # Leaving a short form shows the whole date.
-        blank.date.set_text("3/15")
-        blank.settle(blank.date)
-        assert blank.date.get_text() == f"{date.today().year}-03-15"
-
-    def test_a_short_date_and_arithmetic_amount_post(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        checking = app.db.get_account_by_name("Assets:Checking Account")
-        blank = view.blank
-        blank.last_date = date(2026, 1, 20)
-        blank.date.set_text("15")
-        blank.description.set_text("Shared groceries")
-        blank.decrease.set_text("100/3")
-        assert blank.commit() is True
-        posted = next(t for t in app.db.iter_transactions() if t.description == "Shared groceries")
-        assert posted.post_date == date(2026, 1, 15)
-        assert posted.split_for(checking.handle).value == Money("-33.33")
-
-    def test_leaving_a_calculation_shows_its_result_in_the_right_column(
-        self, app, window, populated_book
-    ):
-        blank = self._register(app, window, populated_book).blank
-        blank.increase.set_text("12.50+3*2")
-        blank.settle(blank.increase)
-        assert blank.increase.get_text() == "18.50"
-        blank.increase.set_text("5-12")
-        blank.settle(blank.increase)
-        assert (blank.increase.get_text(), blank.decrease.get_text()) == ("", "7.00")
-        # A single number is left exactly as typed.
-        blank.decrease.set_text("1.005")
-        blank.settle(blank.decrease)
-        assert blank.decrease.get_text() == "1.005"
-        blank.description.set_text("Bad sum")
-        blank.decrease.set_text("1/0")
-        assert blank.commit() is False
-        assert "arithmetic" in window._views["register"].entry_status.get_text()
-
-    def test_num_steps_from_the_field_or_the_registers_last_number(
-        self, app, window, populated_book
-    ):
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        blank.num.set_text("0099")
-        assert blank.handle_key(blank.num, Gdk.KEY_plus) is True
-        assert blank.num.get_text() == "0100"
-        assert blank.handle_key(blank.num, Gdk.KEY_minus) is True
-        assert blank.num.get_text() == "0099"
-        blank.num.set_text("ATM")
-        assert blank.handle_key(blank.num, Gdk.KEY_plus) is False
-        blank.description.set_text("Check")
-        blank.num.set_text("1041")
-        blank.decrease.set_text("5")
-        assert blank.commit() is True
-        assert blank.num.get_text() == ""
-        assert blank.handle_key(blank.num, Gdk.KEY_plus) is True
-        assert blank.num.get_text() == "1042"
-
-    def test_typing_into_the_transfer_picker_completes_account_paths(
-        self, app, window, populated_book
-    ):
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        rent = app.db.get_account_by_name("Expenses:Rent").handle
-        for keyval in (Gdk.KEY_E, Gdk.KEY_x, Gdk.KEY_colon, Gdk.KEY_R):
-            assert blank.handle_key(blank.transfer, keyval) is True
-        assert blank.transfer_handle() == rent
-        assert "Expenses:Rent" in view.entry_status.get_text()
-        assert blank.handle_key(blank.transfer, Gdk.KEY_z) is True
-        assert "No account matches" in view.entry_status.get_text()
-        assert blank.transfer_handle() == rent
-        assert blank.handle_key(blank.transfer, Gdk.KEY_BackSpace) is True
-        assert blank._typed_account[1] == "Ex:R"
-        # Moving on starts the next picker's text afresh.
-        blank.handle_key(blank.transfer, Gdk.KEY_Tab)
-        assert blank._typed_account == (None, "")
-
-    def test_split_line_pickers_complete_too(self, app, window, populated_book):
-        blank = self._register(app, window, populated_book).blank
-        assert blank.set_split_mode(True)
-        line = blank.lines[-1]
-        for keyval in (Gdk.KEY_e, Gdk.KEY_colon, Gdk.KEY_r):
-            assert blank.handle_key(line.account, keyval) is True
-        assert blank.line_account(line) == app.db.get_account_by_name("Expenses:Rent").handle
-
-    def test_hidden_accounts_show_the_row_insensitive_with_a_reason(
-        self, app, window, populated_book
-    ):
-        from breadsched.gen.lib import Account, AccountType
-
-        app.open_book(populated_book)
-        archived = Account(name="Archived savings", atype=AccountType.BANK, hidden=True)
-        archived.parent = app.db.root_account().handle
-        with app.db.transaction("Add hidden-account example") as txn:
-            app.db.add_account(archived, txn)
-        window.open_register(archived.handle)
-        blank = window._views["register"].blank
-        assert blank.enabled is False
-        assert not blank.description.get_sensitive()
-        assert "Hidden" in blank.description.get_placeholder_text()
-        assert blank.commit() is False
-
-    @pytest.mark.parametrize(
-        ("answer", "switched", "posted"),
-        (("cancel", False, False), ("discard", True, False), ("save", True, True)),
-    )
-    def test_switching_accounts_with_unsaved_input_asks_first(
-        self, app, window, populated_book, monkeypatch, answer, switched, posted
-    ):
-        from breadsched.gui.views import blank_entry
-
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        start = view.account_handle
-        other = app.db.get_account_by_name("Expenses:Rent").handle
-        blank.description.set_text("Half typed")
-        blank.decrease.set_text("4.00")
-        asked = []
-        choice = {"cancel": blank_entry.CANCEL, "discard": blank_entry.DISCARD}.get(
-            answer, blank_entry.SAVE
-        )
-        monkeypatch.setattr(blank, "ask_unsaved", lambda done: (asked.append(1), done(choice)))
-
-        view.show_account(other)
-
-        assert asked == [1]
-        assert view.account_handle == (other if switched else start)
-        assert blank.has_input() is (not switched)
-        assert any(t.description == "Half typed" for t in app.db.iter_transactions()) is posted
-
-    def test_an_untouched_row_switches_without_asking(
-        self, app, window, populated_book, monkeypatch
-    ):
-        view = self._register(app, window, populated_book)
-        monkeypatch.setattr(view.blank, "ask_unsaved", lambda done: pytest.fail("asked"))
-        other = app.db.get_account_by_name("Expenses:Rent").handle
-        view.show_account(other)
-        assert view.account_handle == other
-
-    def test_split_opens_the_editor_prefilled_and_cancel_keeps_the_row(
-        self, app, window, populated_book
-    ):
-        view = self._register(app, window, populated_book)
-        checking = app.db.get_account_by_name("Assets:Checking Account").handle
-        blank = view.blank
-        transfer = blank.transfers[1].handle
-        blank.transfer.set_selected(1)
-        blank.num.set_text("55")
-        blank.description.set_text("Needs three splits")
-        blank.decrease.set_text("30.00")
-
-        dialog = blank.open_split_editor()
-        try:
-            assert dialog.description_entry.get_text() == "Needs three splits"
-            assert dialog.num_entry.get_text() == "55"
-            by_account = {editor.account_handle: editor.value() for editor in dialog.splits}
-            assert by_account == {checking: Money("-30.00"), transfer: Money("30.00")}
-        finally:
-            dialog.close()
-        assert blank.description.get_text() == "Needs three splits"
-        assert blank.decrease.get_text() == "30.00"
-
-    def test_saving_in_the_split_editor_clears_the_row(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        blank.transfer.set_selected(1)
-        blank.description.set_text("Saved from the editor")
-        blank.decrease.set_text("8.00")
-        dialog = blank.open_split_editor()
-        dialog._on_save(None)
-        assert dialog.saved is True
-        assert any(t.description == "Saved from the editor" for t in app.db.iter_transactions())
-        assert not blank.has_input()
-
-    def test_activating_the_blank_row_opens_no_editor(
-        self, app, window, populated_book, monkeypatch
-    ):
-        view = self._register(app, window, populated_book)
-        monkeypatch.setattr(view, "_open_editor", lambda *_: pytest.fail("opened"))
-        last = view.column_view.get_model().get_n_items() - 1
-        view._on_activated(view.column_view, last)
-
-    def test_a_shown_register_binds_the_blank_widgets_into_its_last_row(
-        self, app, window, populated_book
-    ):
-        """Realized for real: the persistent widgets land inside the column view."""
-        view = self._register(app, window, populated_book)
-        window.set_default_size(1200, 700)
-        window.present()
-        context = GLib.MainContext.default()
-        try:
-            for _ in range(200):
-                context.iteration(False)
-                if view.blank.description.get_ancestor(Gtk.ColumnView) is view.column_view:
-                    break
-            for widget in view.blank.cells.values():
-                assert widget.get_ancestor(Gtk.ColumnView) is view.column_view
-            view.blank.description.set_text("Survives a repaint")
-            view.refresh()
-            for _ in range(200):
-                context.iteration(False)
-            assert view.blank.description.get_ancestor(Gtk.ColumnView) is view.column_view
-            assert view.blank.description.get_text() == "Survives a repaint"
-            # Tab skips a column the user has hidden.
-            num_column = next(
-                column for column in view.column_view.get_columns() if column.get_title() == "Num"
-            )
-            num_column.set_visible(False)
-            for _ in range(200):
-                context.iteration(False)
-            focused = []
-            view.blank.description.grab_focus = lambda: focused.append("description") or True
-            view.blank.handle_key(view.blank.date, Gdk.KEY_Tab)
-            assert focused == ["description"]
-        finally:
-            window.set_visible(False)
-
-
 class TestOnlineQuotesDialog:
     def test_sources_are_saved_and_quotes_fetched_in_the_background(
         self, app, window, populated_book, tmp_path, monkeypatch
@@ -7412,331 +7202,6 @@ class TestOnlineQuotesDialog:
             dialog.destroy()
 
 
-class TestRegisterGrid:
-    """Every row edits in place; Up/Down commit and move; R toggles cleared."""
-
-    def _register(self, app, window, populated_book):
-        app.open_book(populated_book)
-        checking = app.db.get_account_by_name("Assets:Checking Account")
-        window.open_register(checking.handle)
-        return window._views["register"], checking
-
-    @staticmethod
-    def _select(view, handle):
-        from breadsched.gen.engine import ledger
-        from breadsched.gui.views._base import unwrap
-
-        selection = view.column_view.get_model()
-        for index in range(selection.get_n_items()):
-            payload = unwrap(selection.get_item(index))
-            if isinstance(payload, ledger.RegisterRow) and payload.transaction.handle == handle:
-                selection.set_selected(index)
-                return
-        raise AssertionError("row not shown")
-
-    def test_selecting_a_row_by_click_edits_it_in_place(self, app, window, populated_book):
-        view, _checking = self._register(app, window, populated_book)
-        order = view.transaction_order()
-        self._select(view, order[0])
-        assert view.edit_selected_row() is True
-        assert view.editor is not None and view.editor.editing.handle == order[0]
-        # Clicking the row already being edited changes nothing.
-        self._select(view, order[0])
-        assert view.edit_selected_row() is False
-
-    def test_up_and_down_commit_and_move_between_transactions(self, app, window, populated_book):
-        view, _checking = self._register(app, window, populated_book)
-        order = view.transaction_order()
-        assert len(order) >= 2
-        # From the blank row, Up edits the last transaction.
-        assert view.blank.handle_key(view.blank.description, Gdk.KEY_Up) is True
-        assert view.editor.editing.handle == order[-1]
-        editor = view.editor
-        editor.description.set_text("Changed while moving")
-        assert editor.handle_key(editor.description, Gdk.KEY_Up) is True
-        assert app.db.get_transaction(order[-1]).description == "Changed while moving"
-        assert view.editor.editing.handle == order[-2]
-        # Down past the last transaction returns to the blank row.
-        editor = view.editor
-        assert editor.split_mode  # the fixture's middle transaction has three splits
-        # Down goes into its split lines first, then past the last line onward.
-        assert editor.handle_key(editor.description, Gdk.KEY_Down) is True
-        assert view.editor is editor
-        assert editor.handle_key(editor.lines[-1].memo, Gdk.KEY_Down) is True
-        assert view.editor.editing.handle == view.transaction_order()[-1]
-        editor = view.editor
-        assert editor.handle_key(editor.date, Gdk.KEY_Down) is True
-        assert view.editor is None
-
-    def test_a_move_that_cannot_commit_stays_and_says_why(self, app, window, populated_book):
-        view, _checking = self._register(app, window, populated_book)
-        order = view.transaction_order()
-        view.edit_handle(order[-1])
-        editor = view.editor
-        before = app.db.get_transaction(order[-1]).serialize()
-        editor.description.set_text("")
-        assert editor.handle_key(editor.description, Gdk.KEY_Up) is True
-        assert view.editor is editor
-        assert "description" in view.entry_status.get_text()
-        assert app.db.get_transaction(order[-1]).serialize() == before
-
-    def test_the_r_column_toggles_cleared(self, app, window, populated_book):
-        from breadsched.gen.lib import ReconcileState
-
-        view, checking = self._register(app, window, populated_book)
-        titles = [
-            view.column_view.get_columns().get_item(i).get_title()
-            for i in range(view.column_view.get_columns().get_n_items())
-        ]
-        assert titles.index("R") == titles.index("Transfer") + 1
-        row = view._rows[0]
-        assert view.toggle_cleared(row) is True
-        stored = app.db.get_transaction(row.transaction.handle).split_for(checking.handle)
-        assert stored.reconcile is ReconcileState.CLEARED
-        assert "cleared" in view.entry_status.get_text()
-        stored_txn = app.db.get_transaction(row.transaction.handle)
-        stored_txn.split_for(checking.handle).reconcile = ReconcileState.RECONCILED
-        with app.db.transaction("Reconcile") as txn:
-            app.db.commit_transaction(stored_txn, txn)
-        view.refresh()
-        assert view.toggle_cleared(view._rows[0]) is False
-        assert "statement" in view.entry_status.get_text()
-
-    def test_matching_accounts_list_while_a_path_is_typed(self, app, window, populated_book):
-        view, _checking = self._register(app, window, populated_book)
-        blank = view.blank
-        for keyval in (Gdk.KEY_E, Gdk.KEY_colon):
-            blank.handle_key(blank.transfer, keyval)
-        listed = blank.completions()
-        assert listed and all(name.startswith("Expenses:") for name in listed)
-        assert view.completion_list.get_visible()
-        first = view.completion_list.get_row_at_index(0)
-        assert first.get_child().get_label() == listed[0]
-        # Clicking another match picks it.
-        second = view.completion_list.get_row_at_index(len(listed) - 1)
-        second.pick()
-        assert app.db.full_name(blank.transfer_handle()) == listed[-1]
-        assert not view.completion_list.get_visible()
-        blank.handle_key(blank.transfer, Gdk.KEY_E)
-        blank.handle_key(blank.transfer, Gdk.KEY_Tab)
-        assert blank.completions() == [] and not view.completion_list.get_visible()
-
-
-class TestBlankRowSplits:
-    """#158 slice 2: "Split" expands the blank row into editable split lines."""
-
-    def _register(self, app, window, populated_book):
-        app.open_book(populated_book)
-        window.open_register(app.db.get_account_by_name("Assets:Checking Account").handle)
-        return window._views["register"]
-
-    @staticmethod
-    def _handle(app, name):
-        return app.db.get_account_by_name(name).handle
-
-    def _fill(self, blank, line, account, increase="", decrease="", memo=""):
-        handles = [account.handle for account in blank.accounts]
-        line.account.set_selected(handles.index(account) + 1)
-        line.memo.set_text(memo)
-        if increase:
-            line.increase.set_text(increase)
-        if decrease:
-            line.decrease.set_text(decrease)
-
-    def test_split_expands_the_row_into_lines_with_an_imbalance_line(
-        self, app, window, populated_book
-    ):
-        from breadsched.gui.views.blank_entry import BLANK, ImbalanceLine, SplitLine
-
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        rent = self._handle(app, "Expenses:Rent")
-        blank.select_transfer(rent)
-        blank.decrease.set_text("100.00")
-        before = view.column_view.get_model().get_n_items()
-
-        blank.split_toggle.set_active(True)
-
-        assert blank.split_mode is True
-        rows = blank.rows()
-        assert rows[0] is BLANK and isinstance(rows[-1], ImbalanceLine)
-        assert all(isinstance(row, SplitLine) for row in rows[1:-1])
-        # The row's two sides carry over, plus a trailing empty line.
-        assert len(blank.lines) == 3
-        assert blank.line_account(blank.lines[0]) == view.account_handle
-        assert blank.lines[0].decrease.get_text() == "100.00"
-        assert blank.line_account(blank.lines[1]) == rent
-        assert blank.lines[1].increase.get_text() == "100.00"
-        assert blank.imbalance.amount.get_text() == "Balanced"
-        assert view.column_view.get_model().get_n_items() == before + 4
-        assert not blank.transfer.get_visible()
-
-    def test_typing_in_the_last_line_adds_another(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        blank.split_toggle.set_active(True)
-        count = len(blank.lines)
-        blank.lines[-1].memo.set_text("more")
-        assert len(blank.lines) == count + 1
-        assert view.column_view.get_model().get_n_items() > count
-
-    def test_an_unbalanced_entry_is_refused_and_kept(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        blank.description.set_text("Unbalanced")
-        blank.split_toggle.set_active(True)
-        self._fill(blank, blank.lines[0], view.account_handle, decrease="100.00")
-        self._fill(blank, blank.lines[1], self._handle(app, "Expenses:Rent"), increase="60.00")
-        assert "(40.00)" in blank.imbalance.amount.get_text()
-        before = len(list(app.db.iter_transactions()))
-
-        assert blank.commit() is False
-
-        assert "out of balance by (40.00)" in view.entry_status.get_text()
-        assert blank.lines[1].increase.get_text() == "60.00"
-        assert len(list(app.db.iter_transactions())) == before
-
-    def test_three_balanced_splits_post_with_memos(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        rent = self._handle(app, "Expenses:Rent")
-        groceries = self._handle(app, "Income:Salary")
-        blank.description.set_text("Shared bill")
-        blank.split_toggle.set_active(True)
-        self._fill(blank, blank.lines[0], view.account_handle, decrease="100.00")
-        self._fill(blank, blank.lines[1], rent, increase="60.00", memo="rent part")
-        self._fill(blank, blank.lines[2], groceries, increase="40.00", memo="food part")
-        assert blank.imbalance.amount.get_text() == "Balanced"
-
-        assert blank.commit() is True
-
-        posted = next(t for t in app.db.iter_transactions() if t.description == "Shared bill")
-        assert posted.imbalance() == Money(0)
-        values = {split.account: (split.value, split.memo) for split in posted.splits}
-        assert values == {
-            view.account_handle: (Money("-100.00"), ""),
-            rent: (Money("60.00"), "rent part"),
-            groceries: (Money("40.00"), "food part"),
-        }
-        assert blank.split_mode is False
-        assert blank.lines == []
-        assert not blank.has_input()
-
-    def test_splits_must_touch_this_register(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        blank.description.set_text("Elsewhere")
-        blank.split_toggle.set_active(True)
-        self._fill(blank, blank.lines[0], self._handle(app, "Expenses:Rent"), decrease="5")
-        self._fill(blank, blank.lines[1], self._handle(app, "Income:Salary"), increase="5")
-        assert blank.commit() is False
-        assert "this register's account" in view.entry_status.get_text()
-
-    def test_collapsing_keeps_two_splits_and_refuses_more(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        rent = self._handle(app, "Expenses:Rent")
-        blank.split_toggle.set_active(True)
-        self._fill(blank, blank.lines[0], view.account_handle, decrease="30.00")
-        self._fill(blank, blank.lines[1], rent, increase="30.00")
-
-        blank.split_toggle.set_active(False)
-
-        assert blank.split_mode is False
-        assert blank.decrease.get_text() == "30.00"
-        assert blank.transfer_handle() == rent
-
-        blank.split_toggle.set_active(True)
-        self._fill(blank, blank.lines[2], self._handle(app, "Income:Salary"), increase="1")
-        blank.split_toggle.set_active(False)
-        assert blank.split_mode is True
-        assert blank.split_toggle.get_active() is True
-        assert "two remain" in view.entry_status.get_text()
-
-    def test_a_multi_split_match_is_proposed_as_lines(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        rent = self._handle(app, "Expenses:Rent")
-        groceries = self._handle(app, "Income:Salary")
-        blank.description.set_text("Warehouse club")
-        blank.split_toggle.set_active(True)
-        self._fill(blank, blank.lines[0], view.account_handle, decrease="90.00")
-        self._fill(blank, blank.lines[1], rent, increase="50.00")
-        self._fill(blank, blank.lines[2], groceries, increase="40.00")
-        assert blank.commit() is True
-
-        blank.description.set_text("Warehouse club")
-        suggestion = blank.propose()
-
-        assert suggestion is not None
-        assert blank.split_mode is True
-        accounts = [blank.line_account(line) for line in blank.lines if line.has_input()]
-        assert sorted(accounts) == sorted([view.account_handle, rent, groceries])
-        assert blank.imbalance.amount.get_text() == "Balanced"
-        assert "3 splits" in view.entry_status.get_text()
-
-    def test_tab_walks_the_split_lines_in_order(self, app, window, populated_book, monkeypatch):
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        blank.split_toggle.set_active(True)
-        first = blank.lines[0]
-        focused = []
-        monkeypatch.setattr(first.account, "grab_focus", lambda: focused.append(1) or True)
-        assert blank.handle_key(first.memo, Gdk.KEY_Tab) is True
-        assert focused == [1]
-        assert first.memo in blank.fields and blank.transfer not in blank.fields
-
-    def test_the_editor_receives_every_split_line(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        rent = self._handle(app, "Expenses:Rent")
-        groceries = self._handle(app, "Income:Salary")
-        blank.description.set_text("Into the editor")
-        blank.split_toggle.set_active(True)
-        self._fill(blank, blank.lines[0], view.account_handle, decrease="10.00")
-        self._fill(blank, blank.lines[1], rent, increase="6.00", memo="six")
-        self._fill(blank, blank.lines[2], groceries, increase="4.00")
-        dialog = blank.open_split_editor()
-        try:
-            got = {
-                editor.account_handle: (editor.value(), editor.memo.get_text())
-                for editor in dialog.splits
-            }
-            assert got == {
-                view.account_handle: (Money("-10.00"), ""),
-                rent: (Money("6.00"), "six"),
-                groceries: (Money("4.00"), ""),
-            }
-        finally:
-            dialog.close()
-
-    def test_escape_clears_split_mode(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        blank = view.blank
-        blank.split_toggle.set_active(True)
-        blank.lines[0].memo.set_text("typed")
-        assert blank.handle_key(blank.lines[0].memo, Gdk.KEY_Escape) is True
-        assert blank.split_mode is False
-        assert not blank.has_input()
-        assert view.blank.rows() == [view.blank.rows()[0]]
-
-    def test_shown_split_lines_are_bound_into_the_register(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        window.set_default_size(1200, 700)
-        window.present()
-        context = GLib.MainContext.default()
-        try:
-            view.blank.split_toggle.set_active(True)
-            for _ in range(300):
-                context.iteration(False)
-            for line in view.blank.lines:
-                for widget in line.fields:
-                    assert widget.get_ancestor(Gtk.ColumnView) is view.column_view
-            assert view.blank.imbalance.amount.get_ancestor(Gtk.ColumnView) is view.column_view
-        finally:
-            window.set_visible(False)
-
-
 class TestEditorKeepsQuantity:
     """#166: changing an amount in the editor keeps quantity equal to value."""
 
@@ -7757,171 +7222,6 @@ class TestEditorKeepsQuantity:
         assert {split.value for split in stored.splits} == {Money("1900"), Money("-1900")}
         for split in stored.splits:
             assert split.quantity == split.value
-
-
-class TestEditInPlace:
-    """#158 slice 3: edit an existing transaction in its own register row."""
-
-    def _register(self, app, window, populated_book):
-        app.open_book(populated_book)
-        window.open_register(app.db.get_account_by_name("Assets:Checking Account").handle)
-        return window._views["register"]
-
-    @staticmethod
-    def _select(view, description):
-        from breadsched.gui.views._base import unwrap
-
-        selection = view.column_view.get_model()
-        for index in range(selection.get_n_items()):
-            item = selection.get_item(index)
-            if isinstance(item, Gtk.TreeListRow) and item.get_depth() == 0:
-                if unwrap(item).transaction.description == description:
-                    selection.set_selected(index)
-                    return unwrap(item)
-        raise AssertionError(description)
-
-    def _edit(self, view, description):
-        row = self._select(view, description)
-        assert view.edit_selected_in_place() is True
-        return row
-
-    def test_f2_loads_a_two_split_transaction_into_its_row(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        row = self._edit(view, "Rent")
-        editor = view.editor
-        assert editor is not None and editor.split_mode is False
-        assert editor.description.get_text() == "Rent"
-        assert editor.date.get_text() == row.transaction.post_date.isoformat()
-        assert editor.decrease.get_text() == "1,800.00" or editor.decrease.get_text() == "1800.00"
-        assert editor.transfer_handle() == app.db.get_account_by_name("Expenses:Rent").handle
-        assert view._blank_widget(row, "Description") is editor.description
-        assert editor.has_input() is False  # nothing changed yet
-
-    def test_saving_keeps_handles_notes_memos_and_purposes(self, app, window, populated_book):
-        from breadsched.gen.lib.transaction import PlanningFlowKind
-
-        app.open_book(populated_book)
-        rent = next(t for t in app.db.iter_transactions() if t.description == "Rent")
-        rent.notes = "Lease 12B"
-        expense = app.db.get_account_by_name("Expenses:Rent").handle
-        for split in rent.splits:
-            split.memo = "kept memo" if split.account == expense else split.memo
-            if split.account == expense:
-                split.planning_flow = PlanningFlowKind.RETIREMENT_SAVING
-        with app.db.transaction("Fixture") as txn:
-            app.db.commit_transaction(rent, txn)
-        view = self._register(app, window, populated_book)
-        self._edit(view, "Rent")
-        editor = view.editor
-        editor.description.set_text("Rent, corrected")
-        editor.decrease.set_text("1850.00")
-
-        assert editor.commit() is True
-
-        stored = app.db.get_transaction(rent.handle)
-        assert stored.description == "Rent, corrected"
-        assert stored.notes == "Lease 12B"
-        assert {s.handle for s in stored.splits} == {s.handle for s in rent.splits}
-        mine = next(s for s in stored.splits if s.account == expense)
-        assert mine.value == Money("1850")
-        assert mine.quantity == Money("1850")
-        assert mine.memo == "kept memo"
-        assert mine.planning_flow is PlanningFlowKind.RETIREMENT_SAVING
-        assert view.editor is None
-        assert "Saved changes" in view.entry_status.get_text()
-
-    def test_escape_cancels_without_writing(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        row = self._edit(view, "Rent")
-        editor = view.editor
-        editor.description.set_text("Never saved")
-        assert editor.handle_key(editor.description, Gdk.KEY_Escape) is True
-        assert view.editor is None
-        assert app.db.get_transaction(row.transaction.handle).description == "Rent"
-
-    def test_a_split_transaction_edits_as_lines_and_keeps_split_handles(
-        self, app, window, populated_book
-    ):
-        view = self._register(app, window, populated_book)
-        row = self._edit(view, "Supermarket")
-        editor = view.editor
-        assert editor.split_mode is True
-        stored = app.db.get_transaction(row.transaction.handle)
-        filled = [line for line in editor.lines if line.handle is not None]
-        assert {line.handle for line in filled} == {s.handle for s in stored.splits}
-        assert filled[0].handle == row.split.handle  # this register's split first
-        view.flush_refresh()
-        assert list(view._edit_children)  # the lines sit under the row
-        # Move 5.00 from one expense line to the other.
-        others = filled[1:]
-        first, second = others[0], others[1]
-        first_value = editor.line_value(first)
-        second_value = editor.line_value(second)
-        target = first.increase if first_value > 0 else first.decrease
-        target.set_text(abs(first_value + Money("5")).format())
-        target = second.increase if second_value > 0 else second.decrease
-        target.set_text(abs(second_value - Money("5")).format())
-        assert editor.imbalance.amount.get_text() == "Balanced"
-
-        assert editor.commit() is True
-
-        after = app.db.get_transaction(row.transaction.handle)
-        assert {s.handle for s in after.splits} == {s.handle for s in stored.splits}
-        values = {s.handle: s.value for s in after.splits}
-        assert values[first.handle] == first_value + Money("5")
-        assert values[second.handle] == second_value - Money("5")
-
-    def test_switching_accounts_with_an_unsaved_edit_asks_first(
-        self, app, window, populated_book, monkeypatch
-    ):
-        from breadsched.gui.views import blank_entry
-
-        view = self._register(app, window, populated_book)
-        self._edit(view, "Rent")
-        editor = view.editor
-        editor.description.set_text("Changed")
-        asked = []
-        monkeypatch.setattr(
-            editor, "ask_unsaved", lambda done: (asked.append(1), done(blank_entry.CANCEL))
-        )
-        start = view.account_handle
-        view.show_account(app.db.get_account_by_name("Expenses:Rent").handle)
-        assert asked == [1]
-        assert view.account_handle == start
-        assert view.editor is editor
-
-    def test_the_pencil_hands_the_edit_to_the_full_editor(
-        self, app, window, populated_book, monkeypatch
-    ):
-        view = self._register(app, window, populated_book)
-        row = self._edit(view, "Rent")
-        opened = []
-        monkeypatch.setattr(view, "_open_editor", lambda transaction: opened.append(transaction))
-        view.editor.open_split_editor()
-        assert [t.handle for t in opened] == [row.transaction.handle]
-        assert view.editor is None
-
-    def test_edit_in_place_is_a_register_action(self, app, window, populated_book):
-        app.open_book(populated_book)
-        assert window.lookup_action("register-edit-in-place") is not None
-
-    def test_a_shown_edit_hosts_its_widgets_in_the_row(self, app, window, populated_book):
-        view = self._register(app, window, populated_book)
-        window.set_default_size(1200, 700)
-        window.present()
-        context = GLib.MainContext.default()
-        try:
-            self._edit(view, "Supermarket")
-            for _ in range(300):
-                context.iteration(False)
-            editor = view.editor
-            assert editor.description.get_ancestor(Gtk.ColumnView) is view.column_view
-            for line in editor.lines:
-                assert line.memo.get_ancestor(Gtk.ColumnView) is view.column_view
-            # The blank row is still its own, separate row.
-            assert view.blank.description.get_ancestor(Gtk.ColumnView) is view.column_view
-        finally:
-            window.set_visible(False)
 
 
 class TestGnuCashWritebackDialog:
@@ -8126,17 +7426,11 @@ class TestReceivablesDialog:
         return refund
 
     def test_tracking_a_register_transaction_links_its_expense(self, app, window, populated_book):
-        from breadsched.gui.views._base import unwrap
-
         db, rent_txn, _rent, cost = self._book(app, populated_book)
         window.open_register(db.get_account_by_name("Assets:Checking Account").handle)
         view = window._views["register"]
-        selection = view.column_view.get_model()
-        for index in range(selection.get_n_items()):
-            item = selection.get_item(index)
-            if isinstance(item, Gtk.TreeListRow) and item.get_depth() == 0:
-                if unwrap(item).transaction.description == "Rent":
-                    selection.set_selected(index)
+        rent = next(row for row in view.sheet.ledger_rows if row.description == "Rent")
+        assert view.sheet.select_transaction(rent.transaction.handle)
         dialog = view.track_selected_reimbursable()
         try:
             assert dialog.description_entry.get_text() == "Rent"
@@ -8530,12 +7824,13 @@ class TestTabs:
         checking, card = self._accounts(app)
         window.open_register(checking)
         first = window._views["register"]
-        first.blank.description.set_text("Half typed")
+        first.sheet.column = "description"
+        first.sheet.set_text("Half typed")
         window.open_register(card)
         # Switching tabs never discards another register's typing.
         window._on_tab_clicked(window._tabs[-2])
         assert window._views["register"] is first
-        assert first.blank.description.get_text() == "Half typed"
+        assert first.sheet.draft.description == "Half typed"
 
     def test_closing_tabs_selects_a_neighbour_and_asks_about_typing(
         self, app, window, populated_book, monkeypatch
@@ -8547,7 +7842,8 @@ class TestTabs:
         card_tab = window._tabs[-1]
         asked = []
         register = card_tab.register
-        register.blank.description.set_text("Unsaved")
+        register.sheet.column = "description"
+        register.sheet.set_text("Unsaved")
         monkeypatch.setattr(register, "confirm_leave", lambda proceed: asked.append(proceed))
         window.close_tab(card_tab)
         assert len(asked) == 1 and card_tab in window._tabs

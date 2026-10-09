@@ -43,8 +43,9 @@ money aside, a **Set aside for goals** tile shows the total (see
 ### Net worth history
 
 **Net worth history** is the last section of the Dashboard page. **Group by**
-switches between months, quarters, and years, and expanding a period lists its
-top-level account values. Choose a period's **Change** (or **Explain**) to list the
+switches between months, quarters, and years. Two charts show assets, debts, and
+net worth, and net worth's composition by group, each with its exact values under
+**Chart values**; expanding a period lists its group values. Choose a period's **Change** (or **Explain**) to list the
 postings behind it; **Download CSV** saves them with their totals, and printing the
 page includes them. See [Net worth history](../USER_GUIDE.md#net-worth-history).
 

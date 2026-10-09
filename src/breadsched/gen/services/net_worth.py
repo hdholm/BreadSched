@@ -8,6 +8,7 @@ from datetime import date, timedelta
 from ..db.sqlite import DbSQLite
 from ..engine import ledger, valuation
 from ..engine.activity import ReportingPeriod, reporting_periods
+from ..engine.chart_model import LINE, STACKED, ChartMarker, ChartModel, ChartSeries
 from ..engine.completeness import Completeness, Excluded, Policy
 from ..engine.currency import reporting_currency_handle
 from ..lib.account import Account, AccountClass
@@ -53,6 +54,7 @@ class NetWorthPoint:
     lines: tuple[NetWorthLine, ...]
     #: Withheld (unavailable) with the excluded balances when ``missing`` (#236).
     completeness: Completeness = field(default_factory=Completeness)
+    groups: tuple[NetWorthLine, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +128,35 @@ def _top_level(db: DbSQLite, account: Account, cache: dict[str, str]) -> str:
     for item in chain:
         cache[item.handle] = top
     return top
+
+
+def _groups(db: DbSQLite, accounts: list[Account], tops: dict[str, str]) -> dict[str, str]:
+    """Each account's group: its top-level tree, or a child of a tree holding a whole kind.
+
+    A book usually keeps every asset under one "Assets" account and every debt under
+    one "Liabilities" account, so a top-level breakdown says nothing; there the
+    group is the top-level account's child that holds the account (or the top-level
+    account itself, for anything posted to it directly).
+    """
+    by_kind: dict[bool, set[str]] = {}
+    for account in accounts:
+        by_kind.setdefault(account.account_class is AccountClass.ASSET, set()).add(
+            tops[account.handle]
+        )
+    sole = {next(iter(found)) for found in by_kind.values() if len(found) == 1}
+    groups: dict[str, str] = {}
+    for account in accounts:
+        top = tops[account.handle]
+        current = account
+        if top in sole:
+            # Climb to the top-level account's child that holds this account.
+            while current.handle != top and current.parent is not None and current.parent != top:
+                parent = db.get_account(current.parent)
+                if parent is None:
+                    break
+                current = parent
+        groups[account.handle] = current.handle if top in sole else top
+    return groups
 
 
 def _value_on(
@@ -326,7 +357,8 @@ def query_net_worth_history(
     A period containing ``today`` is valued on ``today`` and marked partial;
     later periods are left out, since a ledger has no future balances (Projection
     forecasts those). Debts are liabilities as positive amounts, so net worth is
-    assets less debts, exactly as on the Dashboard.
+    assets less debts, exactly as on the Dashboard. Each point breaks its totals
+    down by top-level account (``lines``) and by group (``groups``, see ``_groups``).
     """
     if end < start:
         return ServiceResult.failure(ServiceError("net_worth.range.invalid", ("start", "end")))
@@ -339,7 +371,8 @@ def query_net_worth_history(
     accounts = _balance_sheet_accounts(db)
     cache: dict[str, str] = {}
     tops = {account.handle: _top_level(db, account, cache) for account in accounts}
-    names = {handle: db.full_name(handle) for handle in set(tops.values())}
+    groups = _groups(db, accounts, tops)
+    names = {handle: db.full_name(handle) for handle in {*tops.values(), *groups.values()}}
     points: list[NetWorthPoint] = []
     previous: Money | None = None
     # Each account's ledger balance is carried forward from the previous date by
@@ -358,14 +391,25 @@ def query_net_worth_history(
                 change if earlier is None else ledger._accumulate(earlier, change)
             )
         last_valued = valued_on
-        sums, missing = _value_on(db, accounts, tops, valued_on, reporting, ledgers)
-        lines = tuple(
-            NetWorthLine(handle, names[handle], kind, value)
-            for (handle, kind), value in sorted(
-                sums.items(), key=lambda item: (item[0][1], names[item[0][0]].casefold())
+        by_group, missing = _value_on(db, accounts, groups, valued_on, reporting, ledgers)
+        # Each top-level line is the exact sum of its groups (None if any is).
+        sums: dict[tuple[str, str], Money | None] = {}
+        group_top = {groups[handle]: tops[handle] for handle in groups}
+        for (group, kind), value in by_group.items():
+            key = (group_top[group], kind)
+            current = sums.get(key, Money(0))
+            sums[key] = None if current is None or value is None else current + value
+
+        def breakdown(values: dict[tuple[str, str], Money | None]) -> tuple[NetWorthLine, ...]:
+            return tuple(
+                NetWorthLine(handle, names[handle], kind, value)
+                for (handle, kind), value in sorted(
+                    values.items(), key=lambda item: (item[0][1], names[item[0][0]].casefold())
+                )
+                if value != Money(0)
             )
-            if value != Money(0)
-        )
+
+        lines = breakdown(sums)
         complete = not missing
         assets = (
             sum((line.value or Money(0) for line in lines if line.kind == "asset"), Money(0))
@@ -392,7 +436,111 @@ def query_net_worth_history(
                 tuple(dict.fromkeys(_missing_names(missing))),
                 lines,
                 Completeness.of(dict.fromkeys(missing), policy=Policy.WITHHOLD, as_of=valued_on),
+                breakdown(by_group),
             )
         )
         previous = net
     return ServiceResult.success(NetWorthHistory(start, end, grouping, as_of, tuple(points)))
+
+
+#: The most groups a composition chart names; the rest share one "Other".
+_NAMED_GROUPS = 7
+
+
+def net_worth_charts(history: NetWorthHistory, currency: str = "") -> tuple[ChartModel, ...]:
+    """Net worth over the history and its composition, from the points' own values.
+
+    The first chart draws assets, debts, and net worth as lines (slots 1 to 3); a
+    point with a missing quote breaks each line rather than being drawn. The second
+    stacks each group's value for every point, assets up from zero and debts down,
+    so a column's segments sum to that point's net worth (its ``totals``). Groups
+    are ranked by their largest value; past the seventh, the rest are combined as
+    "Other". A partial point (valued to date) is marked with an as-of rule.
+    """
+    points = history.points
+    if not points:
+        return ()
+    labels = tuple(point.label for point in points)
+    markers = tuple(
+        ChartMarker(index, f"As of {point.valued_on.isoformat()}")
+        for index, point in enumerate(points)
+        if point.partial
+    )
+    withheld = [point.label for point in points if point.net_worth is None]
+    note = (
+        f"Missing quote, so left out: {', '.join(withheld)}. The table names the accounts."
+        if withheld
+        else ""
+    )
+    lines = ChartModel(
+        "net_worth",
+        "Assets, debts, and net worth",
+        LINE,
+        labels,
+        (
+            ChartSeries("assets", "Assets", tuple(point.assets for point in points), 1),
+            ChartSeries("debts", "Debts", tuple(point.debts for point in points), 2),
+            ChartSeries("net_worth", "Net worth", tuple(point.net_worth for point in points), 3),
+        ),
+        currency,
+        markers,
+        partial_note=note,
+    )
+    # A group's signed value per point: assets up, debts down; None where withheld.
+    keys: dict[tuple[str, str], str] = {}
+    signed: dict[tuple[str, str], list[Money | None]] = {}
+    for index, point in enumerate(points):
+        for line in point.groups:
+            key = (line.account, line.kind)
+            keys[key] = line.name if line.kind == "asset" else f"{line.name} (debt)"
+            values = signed.setdefault(key, [Money(0)] * len(points))
+            values[index] = (
+                None if line.value is None else line.value if line.kind == "asset" else -line.value
+            )
+    for values in signed.values():
+        for index, point in enumerate(points):
+            if point.net_worth is None:
+                values[index] = None
+    largest = {
+        key: max((abs(value) for value in values if value is not None), default=Money(0))
+        for key, values in signed.items()
+    }
+    ranked = sorted(signed, key=lambda key: (key[1] != "asset", -largest[key], keys[key]))
+    ordered = sorted(ranked, key=lambda key: -largest[key])
+    named = set(ordered if len(ordered) <= _NAMED_GROUPS + 1 else ordered[:_NAMED_GROUPS])
+    series = [
+        ChartSeries(f"{key[1]}:{key[0]}", keys[key], tuple(signed[key]), slot)
+        for slot, key in enumerate((key for key in ranked if key in named), start=1)
+    ]
+    rest = [key for key in ranked if key not in named]
+    if rest:
+        series.append(
+            ChartSeries(
+                "other",
+                "Other",
+                tuple(
+                    None
+                    if point.net_worth is None
+                    else sum((signed[key][index] or Money(0) for key in rest), Money(0))
+                    for index, point in enumerate(points)
+                ),
+                _NAMED_GROUPS + 1,
+            )
+        )
+    for index, point in enumerate(points):
+        if point.net_worth is not None and point.net_worth != sum(
+            (item.values[index] or Money(0) for item in series), Money(0)
+        ):
+            raise AssertionError("net worth groups do not reconcile to net worth")
+    composition = ChartModel(
+        "net_worth_composition",
+        "Net worth by group",
+        STACKED,
+        labels,
+        tuple(series),
+        currency,
+        markers=(),
+        partial_note=note,
+        totals=tuple(point.net_worth for point in points),
+    )
+    return lines, composition

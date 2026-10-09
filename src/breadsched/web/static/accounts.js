@@ -233,6 +233,7 @@ async function openHoldings(expanded = null) {
       ? table(["Holding", { label:"Shares", num:true }, { label:"Cost", num:true },
           { label:"Market value", num:true }, { label:"Unrealized", num:true }], rows)
       : el("p", { class:"note" }, "No security holdings."),
+    ...(data.charts || []).map((chart) => modelChart(chart, { collapseTable: true })),
     ...details,
     el("div", { class:"toolbar" }, el("span", { class:"spacer" }),
       el("button", { class:"action", type:"button",

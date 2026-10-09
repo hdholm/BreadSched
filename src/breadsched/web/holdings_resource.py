@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from datetime import date
 from typing import TYPE_CHECKING, Any, cast
 
-from ..gen.engine.cost_basis import holdings_cost_basis
+from ..gen.engine.cost_basis import holdings_charts, holdings_cost_basis
 from ..presentation import holding_cost_text, lot_move_text
 
 if TYPE_CHECKING:
@@ -39,6 +39,7 @@ def holdings(api: Api, query: QueryParams) -> dict[str, object]:
 
     return {
         "as_of": as_of,
+        "charts": [chart.as_dict() for chart in holdings_charts(db, found)],
         "holdings": [
             {
                 **item.as_dict(),

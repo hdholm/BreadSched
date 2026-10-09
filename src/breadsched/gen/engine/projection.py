@@ -41,6 +41,7 @@ from .projection_result import (
     ProjectionMonthDetail,
     ProjectionProgress,
     compare,
+    projection_balances_chart,
     projection_chart,
 )
 from .reimbursement_outlook import reimbursement_outlook
@@ -57,8 +58,21 @@ __all__ = [
     "compare",
     "explain_month",
     "project",
+    "projected_account_names",
+    "projection_balances_chart",
     "projection_chart",
 ]
+
+
+def projected_account_names(db: DbSQLite, result: Projection) -> dict[str, str]:
+    """Each projected investment and debt account's full name, for charts and tables."""
+    handles = {
+        handle
+        for row in result.rows
+        for handle in (*row.ledger.closing_holdings, *row.ledger.closing_liabilities)
+    }
+    return {handle: db.full_name(handle) for handle in handles}
+
 
 _ONE = Decimal(1)
 # Projection growth rates originate as finite-precision Decimals. Converting them

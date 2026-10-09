@@ -10,8 +10,9 @@ from calendar import monthrange
 from datetime import date
 from typing import TYPE_CHECKING
 
+from ..gen.engine.currency import reporting_currency_label
 from ..gen.lib.recurrence import add_months
-from ..gen.services import query_net_worth_change, query_net_worth_history
+from ..gen.services import net_worth_charts, query_net_worth_change, query_net_worth_history
 from ..plugins.export.csv_export import net_worth_change_csv
 from .controls import service_error
 
@@ -92,7 +93,10 @@ def net_worth_history(api: Api, query: QueryParams) -> dict[str, object]:
     if result.value is None:
         raise service_error(result.errors[0])
     history = result.value
+    currency = reporting_currency_label(api.db)
     return {
+        "currency": currency,
+        "charts": [chart.as_dict() for chart in net_worth_charts(history, currency)],
         "start": history.start,
         "end": history.end,
         "period": history.period.value,
@@ -118,6 +122,15 @@ def net_worth_history(api: Api, query: QueryParams) -> dict[str, object]:
                         "value": line.value,
                     }
                     for line in point.lines
+                ],
+                "groups": [
+                    {
+                        "account": line.account,
+                        "name": line.name,
+                        "kind": line.kind,
+                        "value": line.value,
+                    }
+                    for line in point.groups
                 ],
             }
             for point in history.points

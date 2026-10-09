@@ -382,7 +382,7 @@ Each report applies one policy:
 | Projection and its chart | Partial from the first month that leaves out a balance or event; the chart shades those months |
 | Scenario comparisons (Plan and Projection) | As complete as both scenarios together: a difference between partial values is partial |
 | Accounts rollups, Dashboard net worth and liquid cash, Dashboard groups | Unavailable |
-| Net worth history and net worth change | Unavailable for that point or change; the chart marks it **n/a** rather than drawing zero |
+| Net worth history and net worth change | Unavailable for that point or change; the charts leave it out and say so rather than drawing zero |
 
 A partial or unavailable value comes with a list of what it leaves out. The browser
 shows the list when you expand the label, the desktop application shows it in the
@@ -466,7 +466,8 @@ descriptions, numbers, notes, tags, split memos, and account names without
 changing the running balance. A transaction cannot be saved unless its exact splits
 balance.
 
-Both the desktop and browser registers end in a blank row for typing a new entry,
+Both the desktop and browser registers end in a blank row for typing a new entry
+(the desktop register opens there, scrolled to the newest entries),
 with split lines for entries of more than two splits, and let you edit an existing
 entry in place ([desktop](guide/desktop.md#enter-transactions-in-a-register),
 [browser](guide/web.md#enter-transactions-in-the-register)).
@@ -486,11 +487,16 @@ The desktop and browser registers read what you type the same way:
   field shows the result. The result is rounded half up to the currency's smallest
   unit (cents), and a negative result moves to the other column. A single number is
   kept exactly as typed. Only numbers, `+ - * /`, and parentheses are accepted.
-- **Accounts.** Typing into an account choice picks the first account whose name
-  matches segment by segment: `Ex:Gr` picks **Expenses:Groceries**, because `Ex`
-  begins `Expenses` and `Gr` begins `Groceries`. Accounts exactly as deep as what
-  you typed come first. The line under the register says which account was picked
-  and how many others match.
+- **Accounts.** Account names match segment by segment: `Ex:Gr` matches
+  **Expenses:Groceries**, because `Ex` begins `Expenses` and `Gr` begins
+  `Groceries`. Accounts exactly as deep as what you typed come first. The desktop
+  register completes the account as you type, GnuCash style: the rest of the best
+  match appears selected so the next letter replaces it, `:` accepts the segment
+  shown and moves on to its subaccounts, and the matching accounts are listed under
+  the cell (Up/Down choose one, Tab or Enter accepts it). The browser register lists
+  the matches and the line under the register says which account was picked.
+- **Descriptions.** In the desktop register a description also completes from
+  earlier descriptions in the account when you type a new entry, most recent first.
 - **Numbers.** In **Num**, `+` and `-` step a number up or down, keeping leading
   zeros (`0099` → `0100`). In an empty field they continue from the register's last
   numbered transaction.
@@ -738,11 +744,18 @@ each date. The period containing today is valued on today and marked **to date**
 later periods are not shown, because the ledger has no future balances (use
 Projection for those). If an account needs a quote that did not exist on a date,
 that point shows no totals and names the account instead of guessing a
-conversion, the chart marks it **n/a** instead of drawing zero, and the change on
-either side of it is left blank (see
-[Complete, partial, and unavailable values](#complete-partial-and-unavailable-values)). Each point also
-lists the value of each top-level account tree, such as **Assets** and
-**Liabilities**. Open it from the Dashboard
+conversion, the charts leave it out and say so instead of drawing zero, and the
+change on either side of it is left blank (see
+[Complete, partial, and unavailable values](#complete-partial-and-unavailable-values)).
+
+Two charts sit above the table: assets, debts, and net worth as lines, and net
+worth's composition, with each group of accounts stacked (assets above zero, debts
+below) so every column adds up to that period's net worth. A group is a top-level
+account tree; when all your assets sit under one **Assets** account (or all your
+debts under one **Liabilities** account), its subaccounts are the groups instead,
+such as **Assets:Current Assets** and **Assets:Investments**. The seven largest
+groups are named and the rest combined as **Other**. Each point also lists the
+value of each group. Hover over a chart for exact amounts. Open it from the Dashboard
 ([desktop](guide/desktop.md#net-worth-history), [browser](guide/web.md#net-worth-history),
 [command line](guide/cli.md#net-worth-history)).
 
@@ -949,6 +962,13 @@ currency without an exchange rate are shaded and named under the chart. Hover ov
 the chart to see every line's exact amount for that month; in the browser, **Chart
 values** lists every month, and printing can include them as the optional
 **Projection chart values** section.
+
+A second chart, **Year-end balances by account**, shows each projection year's
+last month as one column: cash and each investment account stacked above zero,
+each debt below, so the column adds up to that year's net worth. The seven
+largest balances are named (cash always is) and the rest combined as **Other**.
+Hover for each account's exact balance; its values print in the same optional
+section. On the desktop, choose **Balances by account** above the chart to see it.
 5. Inspect warnings and detail rather than relying only on the chart.
 
 To keep several scenarios in view, open each one's Projection in a tab of its own:
@@ -1072,7 +1092,9 @@ not calculate tax.
 cost, their market value at the latest price, and the unrealized gain or loss. Open a
 holding to see its lots (each purchase still held, with its cost) and each sale with
 what it brought, what the shares sold had cost, and the realized gain; realized gains
-are also totalled by year. A sale takes the oldest shares first ("first in, first
+are also totalled by year. A chart above the list shows each holding's cost, market
+value, and unrealized gain side by side (one chart per currency the holdings cost
+in), with the same values in the table. A sale takes the oldest shares first ("first in, first
 out") unless the account is set to **Average cost**, where each share sold costs the
 average of every share held and each lot gives up the same fraction of itself.
 Choose the method in the account's settings (**Cost of shares sold** in the desktop
@@ -1267,6 +1289,10 @@ the whole target is set aside. Twelve equal monthly paychecks toward a 1,200 goa
 set aside 100 each. Income that was scheduled but never arrived sets nothing aside.
 If no income is scheduled before the target date, the gap is set aside evenly by
 day instead.
+
+The goal list is charted too: one column per open goal, labelled with its target
+month, with what is set aside stacked under what is still to save, so each column
+reaches the goal's target.
 
 You can allocate extra money to a goal at any time, for example a bonus. It is set
 aside in full on its date, and later income spreads only what is still missing.

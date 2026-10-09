@@ -23,7 +23,8 @@ from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import projection
 from ...gen.engine.completeness import combine
 from ...gen.engine.currency import reporting_currency_label
-from ...gen.engine.projection_result import projection_chart
+from ...gen.engine.projection import projected_account_names
+from ...gen.engine.projection_result import projection_balances_chart, projection_chart
 from ...gen.lib import Assumptions, Scenario  # noqa: E402
 from ...gen.services import (
     SaveScenarioAssumptions,
@@ -121,9 +122,19 @@ class ProjectionView(BaseView):
 
         self.chart = ModelChartView(height=300)
         self.chart.set_vexpand(True)
+        # Each account's year-end balance stacked, debts below zero; it shares the
+        # chart's space, chosen with the switcher above it.
+        self.balances_chart = ModelChartView(height=300)
+        self.balances_chart.set_vexpand(True)
+        self.chart_stack = Gtk.Stack()
+        self.chart_stack.add_titled(self.chart, "totals", "Totals by month")
+        self.chart_stack.add_titled(self.balances_chart, "balances", "Balances by account")
         for side in ("start", "end", "bottom"):
-            getattr(self.chart, f"set_margin_{side}")(12)
-        left.append(self.chart)
+            getattr(self.chart_stack, f"set_margin_{side}")(12)
+        switcher = Gtk.StackSwitcher(stack=self.chart_stack, halign=Gtk.Align.START)
+        switcher.set_margin_start(12)
+        left.append(switcher)
+        left.append(self.chart_stack)
 
         self.warning_label = Gtk.Label(xalign=0)
         self.warning_label.add_css_class("dim")
@@ -445,6 +456,7 @@ class ProjectionView(BaseView):
         self._result = None
         self.explain_button.set_sensitive(False)
         self.chart.set_model(None)
+        self.balances_chart.set_model(None)
         self._show_projection_notes([f"The projection could not be calculated: {exc}"])
         self.warning_label.add_css_class("negative")
 
@@ -497,6 +509,9 @@ class ProjectionView(BaseView):
         """Wait for the current calculation; deterministic support for GUI tests."""
         return self._job is None or self._job.wait(timeout)
 
+    def _account_names(self, result: projection.Projection) -> dict[str, str]:
+        return projected_account_names(self.db, result) if self.db is not None else {}
+
     def _currency_label(self) -> str:
         if self.db is None:
             return ""
@@ -506,6 +521,11 @@ class ProjectionView(BaseView):
         self._result = result
         self.explain_button.set_sensitive(bool(result.rows))
         self.chart.set_model(projection_chart(result, self._comparison, self._currency_label()))
+        self.balances_chart.set_model(
+            projection_balances_chart(result, self._account_names(result), self._currency_label())
+            if result.rows
+            else None
+        )
 
         shortfall = result.first_shortfall()
         # A projection that leaves out an unconverted balance or event is a
@@ -574,6 +594,7 @@ class ProjectionView(BaseView):
             comparison=self._comparison,
             book_name=self.book_name(),
             currency=self._currency_label(),
+            names=self._account_names(self._result),
         )
 
     def printable_html(self) -> str | None:

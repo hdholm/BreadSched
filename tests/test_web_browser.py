@@ -567,17 +567,26 @@ def test_a_proposed_reimbursement_is_accepted_on_the_page(page, served):
 def test_dashboard_shows_net_worth_history_and_regroups_it(page):
     page.wait_for_selector("text=Pending bills")
     page.wait_for_selector("h2:has-text('Net worth history')")
-    rows = page.locator(".net-worth-history tbody tr")
+    rows = page.locator(".net-worth-points tbody tr")
     assert rows.count() >= 1
-    assert page.locator("svg.net-worth-chart path").count() == 1
+    # Shared-model charts: assets, debts, and net worth lines, then the groups stacked.
+    charts = page.locator(".net-worth-history figure.model-chart")
+    assert [charts.nth(i).get_attribute("data-key") for i in range(charts.count())] == [
+        "net_worth",
+        "net_worth_composition",
+    ]
+    assert charts.nth(0).locator("svg path[stroke]").count() == 3
+    assert charts.nth(1).locator("svg path[fill^='var(--series-']").count() >= 1
+    assert "Total" in charts.nth(1).locator("details.chart-values").text_content()
     months = rows.count()
     page.locator(".net-worth-history select").select_option("year")
+    page.wait_for_selector(".net-worth-points tbody tr >> nth=0")
     page.wait_for_function(
-        "(count) => document.querySelectorAll('.net-worth-history tbody tr').length < count"
-        " || document.querySelectorAll('.net-worth-history tbody tr').length <= 2",
+        "(count) => document.querySelectorAll('.net-worth-points tbody tr').length < count"
+        " || document.querySelectorAll('.net-worth-points tbody tr').length <= 2",
         arg=months,
     )
-    assert "20" in page.locator(".net-worth-history tbody tr").first.inner_text()
+    assert "20" in page.locator(".net-worth-points tbody tr").first.inner_text()
 
 
 def test_dashboard_explains_a_net_worth_change_and_downloads_it(page):
@@ -778,6 +787,10 @@ def test_goals_page_adds_funds_and_closes_a_goal(page, served):
 
     page.get_by_role("button", name="Goals", exact=True).first.click()
     page.wait_for_selector("text=Set aside for goals")
+    # The goal's set-aside is charted under what is still to save toward its target.
+    chart = page.locator(".savings-goals figure.model-chart[data-key='goals']")
+    assert chart.count() == 1
+    assert "Roof (" in chart.locator("details.chart-values").text_content()
     page.get_by_role("button", name="Close", exact=True).click()
     page.wait_for_selector("text=Closed Roof.")
     assert db.get_savings_goal(goal.handle).closed_on == today
@@ -1021,7 +1034,11 @@ def test_a_withheld_net_worth_names_what_it_leaves_out(page, served):
     assert detail.startswith("Assets:Euro cash 25.00 EUR")
     assert detail.endswith("no exchange rate")
     page.wait_for_selector("h2:has-text('Net worth history')")
-    assert page.locator("svg.net-worth-chart text.chart-unavailable").count() >= 1
+    # The withheld point is left out of the charts, which say so, never drawn as zero.
+    page.wait_for_selector(".net-worth-history .chart-partial-note")
+    assert "Missing quote, so left out" in (
+        page.locator(".net-worth-history .chart-partial-note").first.inner_text()
+    )
 
 
 def test_a_scenario_drawdown_is_added_from_manage_scenarios(page, served):
@@ -1311,3 +1328,8 @@ def test_the_projection_chart_is_the_shared_line_chart_with_its_values(page):
     assert values.locator("tbody tr").count() >= 12
     values.locator("summary").click()
     assert values.locator("table").is_visible()
+    # Year-end balances by account, stacked, with each year's net worth as its total.
+    balances = page.locator("figure.model-chart[data-key='projection_balances']")
+    assert balances.count() == 1
+    assert balances.locator("svg path[fill^='var(--series-']").count() >= 1
+    assert "Total" in balances.locator("details.chart-values thead").text_content()

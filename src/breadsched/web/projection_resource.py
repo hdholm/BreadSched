@@ -8,8 +8,9 @@ from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import projection
 from ..gen.engine.completeness import combine
 from ..gen.engine.currency import reporting_currency_label
+from ..gen.engine.projection import projected_account_names
 from ..gen.engine.projection_bridge import month_bridges, projection_bridges
-from ..gen.engine.projection_result import projection_chart
+from ..gen.engine.projection_result import projection_balances_chart, projection_chart
 from ..gen.lib import Scenario
 from ..gen.services import (
     SaveBaseAssumptions,
@@ -127,6 +128,11 @@ def projection_report(
         "goal_milestones": [item.as_dict() for item in result.goal_milestones],
         "runway": result.runway().as_dict(),
         "chart": projection_chart(result, None, reporting_currency_label(db)).as_dict(),
+        "balances_chart": projection_balances_chart(
+            result, projected_account_names(db, result), reporting_currency_label(db)
+        ).as_dict()
+        if result.rows
+        else None,
         "runway_notes": runway_lines(result.runway()),
         "reimbursements": [item.as_dict() for item in result.reimbursements],
         "reimbursement_notes": [reimbursement_outlook_text(item) for item in result.reimbursements],

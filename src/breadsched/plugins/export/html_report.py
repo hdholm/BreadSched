@@ -9,7 +9,7 @@ that layout as HTML, and the desktop's native printing draws the same layout.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from html import escape
 
 from ...gen.engine.activity import PlanMeasure
@@ -136,9 +136,9 @@ def expense_explorer_report(
     return render_html(expense_explorer_layout(explorer, income_detail, currency))
 
 
-def net_worth_history_report(history: NetWorthHistory) -> str:
-    """Print net worth at each period end, with each point's top-level breakdown."""
-    return render_html(net_worth_history_layout(history))
+def net_worth_history_report(history: NetWorthHistory, currency: str = "") -> str:
+    """Print net worth at each period end, its charts, and each point's groups."""
+    return render_html(net_worth_history_layout(history, currency))
 
 
 def net_worth_change_report(change: NetWorthChange) -> str:
@@ -176,9 +176,12 @@ def projection_report(
     *,
     comparison: Projection | None = None,
     book_name: str = "",
+    names: Mapping[str, str] | None = None,
 ) -> str:
     """Render the current Projection result, comparison, and annual assumptions."""
-    return render_html(projection_layout(result, comparison=comparison, book_name=book_name))
+    return render_html(
+        projection_layout(result, comparison=comparison, book_name=book_name, names=names)
+    )
 
 
 # ------------------------------------------------------- layout rendering

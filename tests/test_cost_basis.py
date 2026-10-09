@@ -470,3 +470,37 @@ def test_moves_are_worded_for_every_interface(db, book, tmp_path, capsys):
     reopened = DbSQLite()
     reopened.load(str(path), mode="r")
     reopened.close()
+
+
+def test_holdings_chart_draws_each_holdings_own_cost_market_and_gain(db, book):
+    from breadsched.gen.engine.chart_model import BARS
+    from breadsched.gen.engine.cost_basis import holdings_charts
+    from breadsched.web.context import Api
+    from breadsched.web.holdings_resource import holdings
+    from breadsched.web.resources import QueryParams
+
+    account, fund, usd = _fund(db, book)
+    _trade(db, account, usd, book.checking, date(2025, 1, 1), "4", "400")
+    _price(db, fund, usd, date(2025, 6, 1), "110")
+    other = _second_holding(db, book, fund)
+    _trade(db, other, usd, book.checking, date(2025, 2, 1), "2", "260")
+
+    found = holdings_cost_basis(db, as_of=date(2025, 12, 31))
+    [chart] = holdings_charts(db, found)
+    assert (chart.kind, chart.currency) == (BARS, "USD")
+    assert [series.name for series in chart.series] == ["Cost", "Market value", "Unrealized gain"]
+    assert [series.slot for series in chart.series] == [1, 2, 3]
+    assert chart.categories == tuple(db.full_name(item.account) for item in found)
+    for index, item in enumerate(found):
+        cost, market, gain = (series.values[index] for series in chart.series)
+        assert (cost, market, gain) == (item.cost, item.market_value, item.unrealized_gain)
+        assert gain is None or market - cost == gain
+    payload = holdings(Api(db), QueryParams("as_of=2025-12-31"))
+    assert [item["key"] for item in payload["charts"]] == [chart.key]
+    assert payload["charts"][0]["series"][2]["values"][0] == chart.series[2].values[0]
+
+
+def test_no_holdings_means_no_holdings_chart(db, book):
+    from breadsched.gen.engine.cost_basis import holdings_charts
+
+    assert holdings_charts(db, []) == ()

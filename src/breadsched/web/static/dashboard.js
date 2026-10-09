@@ -147,30 +147,6 @@ async function netWorthHistory() {
   const period = state.netWorthPeriod || "month";
   const data = await get(`/api/net-worth-history?period=${period}`);
   const points = data.points;
-  const known = points.filter((item) => item.net_worth !== null);
-  const values = known.map((item) => Number(item.net_worth));
-  const low = Math.min(0, ...values), high = Math.max(1, ...values);
-  const step = 560 / Math.max(1, points.length - 1);
-  const x = (i) => 20 + i * step;
-  const y = (value) => 120 - 110 * (Number(value) - low) / (high - low || 1);
-  const svg = svgEl("svg", { viewBox: "0 0 600 150", role: "img", class: "net-worth-chart",
-    "aria-label": "Net worth at each period end" });
-  let path = "";
-  points.forEach((item, i) => {
-    if (item.net_worth === null) return;
-    path += `${path ? "L" : "M"}${x(i)},${y(item.net_worth)}`;
-  });
-  if (path) {
-    svg.append(svgEl("path", { d: path, fill: "none", stroke: "#2563a4", "stroke-width": "3" }));
-  }
-  // A withheld point is marked, never drawn as zero (#236).
-  points.forEach((item, i) => {
-    if (item.net_worth !== null) return;
-    const mark = svgEl("text", { x: x(i), y: 140, "text-anchor": "middle", "font-size": 11,
-      fill: "#b3261e", class: "chart-unavailable" }, "n/a");
-    mark.append(svgEl("title", {}, `${item.label}: ${item.completeness?.label || "unavailable"}`));
-    svg.append(mark);
-  });
   const choose = el("select", { onchange: (event) => {
     state.netWorthPeriod = event.target.value; render();
   } }, [["month", "Month"], ["quarter", "Quarter"], ["year", "Year"]].map(([value, label]) =>
@@ -188,21 +164,22 @@ async function netWorthHistory() {
   return el("section", { class: "net-worth-history" },
     helpHeading("Net worth history", "net-worth"),
     el("p", { class: "note" }, "Assets less debts, market-valued at each period end "
-      + `(the last one on ${data.as_of}). A missing quote leaves that point blank `
-      + "rather than guessing a conversion."),
+      + `(the last one on ${data.as_of}). A missing quote leaves that point out of the `
+      + "charts rather than guessing a conversion. The second chart stacks each group "
+      + "of accounts, assets above zero and debts below, so each column adds up to net worth."),
     el("div", { class: "toolbar" }, el("label", {}, "Group by ", choose)),
-    svg,
-    table(["Period", "Valued on", { label: "Assets", num: true }, { label: "Debts", num: true },
+    ...(data.charts || []).map((chart) => modelChart(chart, { collapseTable: true })),
+    el("div", { class: "net-worth-points" }, table(["Period", "Valued on", { label: "Assets", num: true }, { label: "Debts", num: true },
       { label: "Net worth", num: true }, { label: "Change", num: true }, "Note"],
       points.map((item) => [
         el("details", {}, el("summary", {}, item.label),
-          el("ul", {}, ...item.lines.map((line) => el("li", {},
+          el("ul", {}, ...item.groups.map((line) => el("li", {},
             `${line.name} (${line.kind}): ${amount(line.value)}`)))),
         item.valued_on, amount(item.assets), amount(item.debts), amount(item.net_worth),
         el("button", { class: "action net-worth-explain", type: "button",
           title: "Show the postings behind this change",
           onclick: () => netWorthChange(item, slot) },
-          item.change === null ? "Explain" : money(item.change)), note(item)])),
+          item.change === null ? "Explain" : money(item.change)), note(item)]))),
     slot);
 }
 

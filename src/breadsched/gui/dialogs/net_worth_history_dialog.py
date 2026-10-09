@@ -6,20 +6,22 @@ from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.activity import ReportingPeriod
+from ...gen.engine.currency import reporting_currency_label
 from ...gen.lib.money import Money
 from ...gen.lib.recurrence import add_months
 from ...gen.services.net_worth import (
     NetWorthChange,
     NetWorthHistory,
     NetWorthPoint,
+    net_worth_charts,
     query_net_worth_change,
     query_net_worth_history,
 )
 from ..gi_setup import GLib, Gtk
 from ..widgets.bounded import BoundedWindow
-from ..widgets.chart import LineChart, Series
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
+from ..widgets.model_chart import ModelChartView
 
 #: Grouping choices and how far back each looks from the current period.
 GROUPINGS = (
@@ -41,6 +43,7 @@ class NetWorthHistoryDialog(BoundedWindow):
         self.set_default_size(820, 600)
         self._db = db
         self._today = today or date.today()
+        self._currency = reporting_currency_label(db)
         self.history: NetWorthHistory | None = None
         self.change: NetWorthChange | None = None
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -93,33 +96,28 @@ class NetWorthHistoryDialog(BoundedWindow):
             self.content.append(self._label(result.errors[0].code))
             return
         self.history = history = result.value
-        self.content.append(
-            self._label(
-                "Assets less debts, market-valued at each period end (the last on "
-                f"{history.as_of.isoformat()}). A point with a missing quote is left out "
-                "of the chart and names the account instead of guessing a conversion."
-            )
+        explanation = self._label(
+            "Assets less debts, market-valued at each period end (the last on "
+            f"{history.as_of.isoformat()}). A point with a missing quote is left out "
+            "of the charts and names the account instead of guessing a conversion. "
+            "The second chart stacks each group of accounts, assets above zero and "
+            "debts below, so each column adds up to net worth."
         )
-        complete = [point for point in history.points if point.net_worth is not None]
-        chart = LineChart()
-        chart.set_content_height(200)
-        chart.set_vexpand(False)
-        chart.empty_message = "A trend needs at least two valued periods"
-        chart.set_data(
-            [
-                Series(
-                    "Net worth",
-                    [
-                        float(point.net_worth.to_decimal())
-                        for point in complete
-                        if point.net_worth is not None
-                    ],
-                )
-            ],
-            [point.label for point in complete],
-        )
-        self.chart = chart
-        self.content.append(chart)
+        explanation.set_wrap(True)
+        self.content.append(explanation)
+        self.charts: list[ModelChartView] = []
+        for model in net_worth_charts(history, self._currency):
+            if model.empty:
+                continue
+            view = ModelChartView(model, height=240)
+            self.content.append(view)
+            self.charts.append(view)
+        if self.charts and self.charts[0].model is not None and self.charts[0].model.partial_note:
+            note = self._label(self.charts[0].model.partial_note)
+            note.set_wrap(True)
+            note.add_css_class("negative")
+            self.content.append(note)
+        self.chart = self.charts[0] if self.charts else None
         grid = Gtk.Grid(column_spacing=14, row_spacing=3)
         headings = ["Period", "Valued on", "Assets", "Debts", "Net worth", "Change", "Note"]
         for column, heading in enumerate(headings):
@@ -155,7 +153,7 @@ class NetWorthHistoryDialog(BoundedWindow):
                     label.set_tooltip_text(
                         "\n".join(
                             f"{line.name} ({line.kind}): {self._money(line.value)}"
-                            for line in point.lines
+                            for line in point.groups
                         )
                         or None
                     )
@@ -277,4 +275,4 @@ class NetWorthHistoryDialog(BoundedWindow):
         from .. import printing
 
         if self.history is not None:
-            printing.print_document(self, net_worth_history_layout(self.history))
+            printing.print_document(self, net_worth_history_layout(self.history, self._currency))
