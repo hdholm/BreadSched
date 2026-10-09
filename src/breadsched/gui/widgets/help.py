@@ -28,7 +28,8 @@ def show_help(widget: Gtk.Widget, topic: str) -> bool:
     show_guide = getattr(application, "show_guide", None)
     if show_guide is None:
         return False
-    show_guide(topic)
+    root = widget.get_root()
+    show_guide(topic, root if isinstance(root, Gtk.Window) else None)
     return True
 
 

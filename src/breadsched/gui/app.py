@@ -600,14 +600,23 @@ class BreadSchedApplication(Gtk.Application):
         """Present the packaged guide, reusing its window when it is already open."""
         self.show_guide()
 
-    def show_guide(self, topic: str | None = None) -> UserGuideWindow:
-        """Present the guide; with ``topic``, at that workflow's desktop section."""
+    def show_guide(
+        self, topic: str | None = None, parent: Gtk.Window | None = None
+    ) -> UserGuideWindow:
+        """Present the guide; with ``topic``, at that workflow's desktop section.
+
+        ``parent`` is the window that asked (a dialog's Help button); the guide
+        stays above it.
+        """
         guide = next(
             (window for window in self.get_windows() if isinstance(window, UserGuideWindow)),
             None,
         )
+        parent = parent or self.props.active_window
         if guide is None:
-            guide = UserGuideWindow(self, self.props.active_window)
+            guide = UserGuideWindow(self, parent)
+        elif parent is not None and parent is not guide:
+            guide.set_transient_for(parent)
         if topic is not None:
             guide.show_part(*help_target(topic, "desktop"))
         guide.present()

@@ -1836,10 +1836,70 @@ class TestMenuBarAndToolbar:
                 guides = [w for w in app.get_windows() if isinstance(w, UserGuideWindow)]
                 assert len(guides) == 1 and guides[0].part == "desktop"
                 assert guides[0].text_view.get_buffer().get_mark(heading) is not None
+                # Above the dialog, and outside any modal grab it holds (#314).
+                assert guides[0].get_transient_for() is dialog
+                assert guides[0].get_group() is not dialog.get_group()
             finally:
                 dialog.destroy()
         for guide in [w for w in app.get_windows() if isinstance(w, UserGuideWindow)]:
             guide.destroy()
+
+    def test_help_from_a_modal_dialog_opens_a_usable_guide_at_its_topic(
+        self, app, window, populated_book
+    ):
+        # #314: the import dialog is modal, and a guide in the same window group
+        # shared its grab, so no control in the guide took input until the dialog
+        # closed; the guide also opened at the part's beginning, not the topic.
+        from breadsched.gui.dialogs.import_dialog import ImportDialog
+        from breadsched.gui.gi_setup import Gtk
+        from breadsched.gui.user_guide import UserGuideWindow
+
+        app.open_book(populated_book)
+        window.present()
+        dialog = ImportDialog(window, app.db)
+        dialog.present()
+        guide = None
+        try:
+            assert _spin(dialog.get_mapped)
+            assert dialog.get_modal()
+            [button] = [
+                widget
+                for widget in _descendants(dialog)
+                if isinstance(widget, Gtk.Button) and widget.get_label() == "Help"
+            ]
+            button.emit("clicked")
+            [guide] = [w for w in app.get_windows() if isinstance(w, UserGuideWindow)]
+            # Its own window group: the dialog's modal grab cannot hold it.
+            assert guide.get_group() is not dialog.get_group()
+            assert guide.get_group() is not window.get_group()
+            # Stacked over the dialog that asked for it.
+            assert guide.get_transient_for() is dialog
+            buffer = guide.text_view.get_buffer()
+            mark = buffer.get_mark("h:import-files")
+            assert mark is not None
+
+            def shows_topic() -> bool:
+                if not guide.get_mapped():
+                    return False
+                where = guide.text_view.get_iter_location(buffer.get_iter_at_mark(mark))
+                seen = guide.text_view.get_visible_rect()
+                return seen.y <= where.y < seen.y + seen.height and seen.y > 0
+
+            assert _spin(shows_topic), "the guide did not scroll to the import heading"
+            # A second topic, with the guide already open, scrolls there too.
+            guide.show_part("desktop", "categorization-rules")
+            rules = buffer.get_mark("h:categorization-rules")
+
+            def shows_rules() -> bool:
+                where = guide.text_view.get_iter_location(buffer.get_iter_at_mark(rules))
+                seen = guide.text_view.get_visible_rect()
+                return seen.y <= where.y < seen.y + seen.height
+
+            assert _spin(shows_rules)
+        finally:
+            dialog.destroy()
+            if guide is not None:
+                guide.destroy()
 
     def test_there_is_a_separate_icon_toolbar(self, window):
         children = []

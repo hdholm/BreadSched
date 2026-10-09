@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 from ..user_guide import GUIDE_PARTS, GuideLink, heading_slug, read_guide, resolve_link
-from .gi_setup import Gtk, Pango
+from .gi_setup import GLib, Gtk, Pango
 from .widgets.bounded import BoundedWindow
 
 __all__ = ["UserGuideWindow", "read_user_guide"]
@@ -125,6 +125,14 @@ class UserGuideWindow(BoundedWindow):
             title="BreadSched User Guide",
         )
         self.set_default_size(860, 700)
+        # A window group of its own: a modal dialog's grab covers only the windows
+        # of its group, so Help from a modal dialog opens a guide that still takes
+        # input while the dialog stays open (#314).
+        self.group = Gtk.WindowGroup()
+        self.group.add_window(self)
+        #: A heading still to scroll to once the window is shown and laid out.
+        self._pending: str | None = None
+        self.connect("map", self._on_map)
         #: The part shown, and the target of each link tag in the buffer.
         self.part = GUIDE_PARTS[0].id
         self._links: dict[Gtk.TextTag, str] = {}
@@ -186,11 +194,24 @@ class UserGuideWindow(BoundedWindow):
             self._render(read_guide(part_id))
             if not self.part_buttons[part_id].get_active():
                 self.part_buttons[part_id].set_active(True)
+        self._pending = anchor
+        if self.get_mapped():
+            GLib.idle_add(self._scroll_pending)
+
+    def _on_map(self, *_args) -> None:
+        # Before the window is laid out there is nothing to scroll, so a topic
+        # asked for while opening is scrolled to once the text has its size.
+        GLib.idle_add(self._scroll_pending)
+
+    def _scroll_pending(self) -> bool:
+        buffer = self.text_view.get_buffer()
+        anchor = self._pending
         mark = buffer.get_mark(f"h:{anchor}") if anchor else None
         if mark is not None:
             self.text_view.scroll_to_mark(mark, 0.0, True, 0.0, 0.0)
-        elif anchor is None:
+        else:
             self.text_view.scroll_to_iter(buffer.get_start_iter(), 0.0, True, 0.0, 0.0)
+        return GLib.SOURCE_REMOVE
 
     def follow(self, href: str) -> GuideLink:
         """Open a link as the reader would by clicking it."""

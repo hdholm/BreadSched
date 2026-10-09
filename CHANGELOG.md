@@ -10,6 +10,19 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a276 - 2026-10-09
+
+- **Help from a dialog opens a usable guide at its topic (#314).** The import
+  dialog (like most workflow dialogs) is modal, and the guide window shared its
+  window group, so the dialog's modal grab blocked every control in the guide until
+  the dialog closed; the guide also opened at the start of the desktop part rather
+  than the topic, because it scrolled before it was laid out. The guide window now
+  has its own `Gtk.WindowGroup`, stays above the dialog that asked for it, and
+  scrolls to the topic once shown. Every dialog's Help button goes through the same
+  `show_help`, so all of them are fixed; a GTK test opens Help from the modal
+  import dialog and checks the guide's group, stacking, and scroll position, and
+  the dialog Help test checks the group and stacking for other dialogs.
+
 ## 0.2.0a275 - 2026-10-09
 
 - **Budget jars count every actual transaction (#312).** A jar was drawn only by a
