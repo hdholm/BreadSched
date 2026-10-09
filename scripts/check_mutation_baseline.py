@@ -12,8 +12,8 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BASELINE_KILLED = 118
-BASELINE_ELIGIBLE = 122
+BASELINE_KILLED = 125
+BASELINE_ELIGIBLE = 129
 EQUIVALENT = {
     "breadsched.gen.engine.currency.x_reporting_fraction__mutmut_2": (
         "commodity_fraction(db, None) selects book_currency(db), the same currency "
@@ -57,7 +57,7 @@ def main() -> int:
         raise AssertionError(f"unexpected mutation result statuses: {stats}")
     print(f"Mutation baseline: {killed}/{eligible} eligible killed ({stats['total']} generated)")
     if eligible <= 0 or killed * BASELINE_ELIGIBLE < BASELINE_KILLED * eligible:
-        raise AssertionError("mutation score fell below measured baseline 118/122")
+        raise AssertionError("mutation score fell below measured baseline 125/129")
     return 0
 
 

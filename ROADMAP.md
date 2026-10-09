@@ -16,18 +16,15 @@ wherever that behavior is exposed, and preserves imported source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
 1. **Visualizations.** The shared chart model (`gen/engine/chart_model`), palette and
-   bar geometry (`presentation.charts`), and their GTK, browser, and print renderers
-   exist with bar and line forms; Budget jars and the Projection (cash,
-   investments, and net worth with the first shortfall marked and a scenario
-   overlay) are charted with them. The other views still draw their own charts:
-   the older GTK line chart (Expense Explorer, Net worth history) and the Expense
-   Explorer's own browser SVG. Move them to the shared model, adding stacked and
-   share forms as needed:
+   geometry (`presentation.charts`), and their GTK, browser, and print renderers
+   exist with grouped, stacked, share, and line forms; Budget jars, the Projection
+   (cash, investments, and net worth with the first shortfall marked and a scenario
+   overlay), and the Expense Explorer's spending and income over time and category
+   trend are charted with them. Net worth history still draws the older GTK line
+   chart. Move the remaining views to the shared model:
    - **Cash and Projection:** stacked account balances over the projection.
-   - **Spending:** category spending over time and its share of the total, from
-     the Expense Explorer's data.
    - **Net worth:** history with its composition (assets and liabilities by
-     group).
+     group), retiring the older GTK line chart.
    - **Goals and holdings:** goal progress toward target and date; holdings by
      cost and market value with unrealized gain.
 

@@ -469,7 +469,7 @@ the table of those values beside the chart (`ModelChart` then a `Table`).
 order, validated for colour-blind separation; a dark step of each hue for dark
 themes) and the shared geometry (`chart_bar_layout`: round ticks including zero,
 columns at most 24 units wide with a 2-unit gap, a rounded data end and a square
-foot on the baseline). GTK draws a model with `widgets.bar_chart` (`paint_bars`,
+foot on the baseline). GTK draws a model with `widgets.model_chart` (`paint_chart`,
 also used by the native printer; the dark steps when the theme's ink is light;
 hover shows a column's exact amount), the HTML export with `model_chart_svg`, and the
 browser with `modelChart` in `core.js` (SVG with a `<title>` per column and the table
@@ -478,7 +478,7 @@ colours, never a series colour. Budget jars is the first report charted this way
 per account, planned against actual draws by period (slots 1 and 2) and each jar's
 level beside its target (slots 3 and 4).
 
-A model's `kind` is `BARS` or `LINE`. A line chart may carry `ChartMarker`s (a
+A model's `kind` is `BARS`, `LINE`, `STACKED`, or `SHARE`. A line chart may carry `ChartMarker`s (a
 labelled vertical rule at one category) and `partial_from`, the first category whose
 values leave something out, shaded with `partial_note` beside it.
 `chart_line_layout` places lines edge to edge; `chart_label_indices` keeps a long
@@ -493,6 +493,27 @@ Projection view, the browser Projection page (including its comparison overlay),
 the printed Projection use it; the browser keeps the monthly values in a **Chart
 values** toggle beside the chart, and printing puts them in the optional
 **Projection chart values** section, since the year-end table is always printed.
+
+`STACKED` draws one column per category with its series stacked in order, positive
+values up from zero and negative ones down; only the outermost segment in each
+direction has the rounded end, and segments that continue are separated by a
+1-unit gap. `SHARE` is the same column with each value drawn as its percentage of
+the category's `totals` entry, the total the engine reported (a percent scale; a
+category without a positive total draws nothing), so a share chart never sums its
+own series. Each layout reports every category's band (`bands`) for hit testing:
+a view created with `on_select` (GTK) or `onSelect` (browser) shades the selected
+band and makes each band a target (in the browser, a focusable button whose
+`<title>` lists every series' value), so a chart can choose the period a screen
+shows. A column chart shades `partial_from` from that category's band. The table
+beside a chart with totals adds a **Total** column; a share chart's cells are
+percentages. `expense_explorer.spending_charts` draws the Expense Explorer's
+spending (and income) from its own `SpendingPoint`s: plan and actual lines (slots
+1 and 2, a rule at the as-of date's period), actual stacked by top-level category,
+and each category's share, the categories ranked by actual over the range with
+those past the seventh combined as **Other** (slot 8), still reconciling to each
+period's actual exactly. `category_trend_chart` draws one category's plan and
+period actual. GTK, the browser, and the printed explorer use them; the period
+comparison's paired bars remain the explorer's own.
 
 **Print** (`Ctrl+P`) runs a `Gtk.PrintOperation` in points, landscape by default,
 with the page setup and settings chosen earlier in the session. Its dialog offers

@@ -381,8 +381,8 @@ drawdown and **Remove** deletes it; a refused entry explains why and changes not
 ### Explore expenses
 
 Apply the Plan controls first, then choose the **Explore** toolbar icon while Plan
-is shown. Click a period on the **Spending over time** or **Income over time** chart
-to make it the comparison period (choose an **Income detail** category to list that
+is shown. Click a period on any **Spending over time** or **Income over time**
+chart, or on the **Category trend** chart, to make it the comparison period (choose an **Income detail** category to list that
 period's dated income), use **Sort categories** to order the category rows, and choose a
 **Category trend**. **Carry prior periods** turns rollover on. See
 [Explore expenses](../USER_GUIDE.md#explore-expenses).
@@ -537,8 +537,8 @@ On macOS, **File → Print in Browser…** opens the same report as a page in yo
 web browser instead, for its own print dialog, until BreadSched prints natively
 there. The **Print…** buttons in Expense Explorer and
 Net Worth History use the system print dialog too: Expense Explorer prints
-spending and income over time, the selected category and period with merchant
-detail, and the chosen Income detail. If the system print dialog cannot be used,
+spending and income over time with their charts, the selected category's trend
+chart and the period with merchant detail, and the chosen Income detail. If the system print dialog cannot be used,
 these open in your web browser instead. Use **File → Export Transactions** for
 transaction data.
 

@@ -1932,6 +1932,21 @@ class TestPlanApi:
         assert sum((Money(part["actual"]) for part in point["categories"]), Money(0)) == Money(1800)
         assert {part["name"] for part in point["categories"]} >= {"Expenses:Rent"}
         assert point["currency_incomplete"] is False
+        # The charts draw these values: plan/actual lines, stacked categories, shares.
+        lines, stacked, share = report["charts"]["spending"]
+        assert [lines["kind"], stacked["kind"], share["kind"]] == ["line", "stacked", "share"]
+        assert Money(lines["series"][1]["values"][0]) == Money(point["actual"])
+        assert [Money(value) for value in stacked["totals"]] == [Money(point["actual"])]
+        assert sum((Money(series["values"][0]) for series in stacked["series"]), Money(0)) == Money(
+            point["actual"]
+        )
+        assert stacked["currency"] == report["currency"]
+        assert [chart["key"] for chart in report["charts"]["income"]] == [
+            "income",
+            "income_categories",
+            "income_share",
+        ]
+        assert report["charts"]["category_trend"] is None
         # Income over time uses the same periods and reconciles to its own total.
         [earned] = report["income"]
         assert earned["label"] == point["label"]
@@ -1963,6 +1978,9 @@ class TestPlanApi:
         )
         status, detail = client.get(f"/api/expense-explorer?{params}")
         assert status == 200
+        trend = detail["charts"]["category_trend"]
+        assert trend["title"] == "Expenses:Rent: plan and actual"
+        assert Money(trend["series"][1]["values"][0]) == Money(1800)
         merchants = detail["drilldown"]["merchants"]
         assert [(item["name"], Money(item["amount"])) for item in merchants] == [
             ("Rent", Money(1800))

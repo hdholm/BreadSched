@@ -7,6 +7,7 @@ from datetime import date
 
 from ..db.sqlite import DbSQLite
 from ..engine.activity import PeriodActivity, PlanMeasure
+from ..engine.chart_model import LINE, SHARE, STACKED, ChartMarker, ChartModel, ChartSeries
 from ..engine.completeness import Completeness
 from ..engine.plan_detail import (
     CategoryActualDetail,
@@ -459,4 +460,131 @@ def query_expense_explorer(
         ExpenseExplorer(
             plan, categories, totals, drilldown, rollover, spending, income, income_categories
         )
+    )
+
+
+#: The most top-level categories a category chart names; the rest share one "Other".
+_NAMED_CATEGORIES = 7
+
+
+def _as_of_marker(starts_ends: list[tuple[date, date]], as_of: date) -> tuple[ChartMarker, ...]:
+    """A rule at the period holding the as-of date, or the first period after it."""
+    index = next(
+        (i for i, (start, end) in enumerate(starts_ends) if start <= as_of < end or start > as_of),
+        None,
+    )
+    if index is None:
+        return ()
+    return (ChartMarker(index, f"As of {as_of.isoformat()}"),)
+
+
+def _partial(points: tuple[SpendingPoint, ...]) -> tuple[int | None, str]:
+    index = next((i for i, point in enumerate(points) if point.currency_incomplete), None)
+    if index is None:
+        return None, ""
+    point = points[index]
+    reason = (point.completeness.label or "missing quote").removeprefix("Partial: ")
+    return index, f"Partial from {point.label} (shaded): {reason}"
+
+
+def spending_charts(
+    explorer: ExpenseExplorer, *, income: bool = False, currency: str = ""
+) -> tuple[ChartModel, ...]:
+    """Spending (or income) over the Plan's periods, from the explorer's own values.
+
+    Three charts: total plan and actual as lines, actual stacked by top-level
+    category, and each category's share of the period's actual. Categories are
+    ranked by actual over the range; past the seventh, the rest are combined as
+    "Other", so every period's segments still sum to its actual exactly. No
+    charts without periods; without activity, each chart is ``empty``.
+    """
+    points = explorer.income if income else explorer.spending
+    if not points:
+        return ()
+    what = "income" if income else "spending"
+    title = "Income" if income else "Spending"
+    names = {
+        row.account: row.full_name
+        for row in (explorer.income_categories if income else explorer.categories)
+    }
+    as_of = explorer.plan.report.as_of
+    labels = tuple(point.label for point in points)
+    actual = tuple(point.actual for point in points)
+    partial_from, partial_note = _partial(points)
+    markers = _as_of_marker([(point.start, point.end) for point in points], as_of)
+    totals = ChartModel(
+        what,
+        f"{title}: total plan and actual",
+        LINE,
+        labels,
+        (
+            ChartSeries("planned", "Plan", tuple(point.planned for point in points), 1),
+            ChartSeries("actual", "Actual", actual, 2),
+        ),
+        currency,
+        markers,
+        partial_from,
+        partial_note,
+    )
+    handles = [handle for handle, _amount in points[0].categories]
+    by_handle = {
+        handle: tuple(dict(point.categories)[handle] for point in points) for handle in handles
+    }
+    ranked = sorted(
+        handles,
+        key=lambda handle: (
+            -sum((abs(v) for v in by_handle[handle]), Money(0)),
+            names.get(handle, handle),
+        ),
+    )
+    named = ranked if len(ranked) <= _NAMED_CATEGORIES + 1 else ranked[:_NAMED_CATEGORIES]
+    series = [
+        ChartSeries(handle, names.get(handle, handle), by_handle[handle], slot)
+        for slot, handle in enumerate(named, start=1)
+    ]
+    rest = [handle for handle in ranked if handle not in named]
+    if rest:
+        series.append(
+            ChartSeries(
+                "other",
+                "Other",
+                tuple(
+                    sum((by_handle[handle][index] for handle in rest), Money(0))
+                    for index in range(len(points))
+                ),
+                _NAMED_CATEGORIES + 1,
+            )
+        )
+    for index, point in enumerate(points):
+        if sum((item.values[index] or Money(0) for item in series), Money(0)) != point.actual:
+            raise AssertionError(f"{what} chart categories do not reconcile to Plan")
+    stacked = ChartModel(
+        f"{what}_categories",
+        f"{title} by category",
+        STACKED,
+        labels,
+        tuple(series),
+        currency,
+        markers=(),
+        partial_from=partial_from,
+        partial_note=partial_note,
+        totals=actual,
+    )
+    share = replace(stacked, key=f"{what}_share", title=f"Share of {what} by category", kind=SHARE)
+    return totals, stacked, share
+
+
+def category_trend_chart(category: ExpenseCategory, as_of: date, currency: str = "") -> ChartModel:
+    """One category's plan and period actual across the Plan's periods."""
+    return ChartModel(
+        "category_trend",
+        f"{category.full_name}: plan and actual",
+        LINE,
+        tuple(period.label for period in category.periods),
+        (
+            ChartSeries("planned", "Plan", tuple(p.planned for p in category.periods), 1),
+            ChartSeries("actual", "Period actual", tuple(p.actual for p in category.periods), 2),
+        ),
+        currency,
+        _as_of_marker([(p.start, p.end) for p in category.periods], as_of),
     )

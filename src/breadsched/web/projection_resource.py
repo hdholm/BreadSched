@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import projection
 from ..gen.engine.completeness import combine
-from ..gen.engine.currency import reporting_currency_handle
+from ..gen.engine.currency import reporting_currency_label
 from ..gen.engine.projection_bridge import month_bridges, projection_bridges
 from ..gen.engine.projection_result import projection_chart
 from ..gen.lib import Scenario
@@ -89,11 +89,6 @@ def projection_month_report(db: DbSQLite, scenario: Scenario, month_index: int) 
     }
 
 
-def _currency_label(db: DbSQLite) -> str:
-    commodity = db.get_commodity(reporting_currency_handle(db))
-    return commodity.mnemonic if commodity is not None else ""
-
-
 def projection_report(
     db: DbSQLite,
     scenario: Scenario,
@@ -131,7 +126,7 @@ def projection_report(
         "goal_notes": projection_goal_notes(result),
         "goal_milestones": [item.as_dict() for item in result.goal_milestones],
         "runway": result.runway().as_dict(),
-        "chart": projection_chart(result, None, _currency_label(db)).as_dict(),
+        "chart": projection_chart(result, None, reporting_currency_label(db)).as_dict(),
         "runway_notes": runway_lines(result.runway()),
         "reimbursements": [item.as_dict() for item in result.reimbursements],
         "reimbursement_notes": [reimbursement_outlook_text(item) for item in result.reimbursements],
@@ -173,7 +168,7 @@ def projection_comparison_report(
     shown = projection_report(db, primary, base=primary_base, result=primary_result)
     # The chart overlays the compared scenario's net worth, as on the desktop.
     shown["chart"] = projection_chart(
-        primary_result, comparison_result, _currency_label(db)
+        primary_result, comparison_result, reporting_currency_label(db)
     ).as_dict()
     return {
         "primary": shown,

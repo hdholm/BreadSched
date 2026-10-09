@@ -4,6 +4,7 @@ from breadsched.gen.engine.currency import (
     book_currency,
     commodity_fraction,
     reporting_currency_handle,
+    reporting_currency_label,
     reporting_fraction,
 )
 from breadsched.gen.lib.commodity import DEFAULT_CURRENCY, Commodity
@@ -65,3 +66,30 @@ def test_invalid_fraction_uses_default_without_changing_book(db):
     with db.transaction("currency") as txn:
         db.add_commodity(currency, txn)
     assert commodity_fraction(db, currency.handle) == DEFAULT_CURRENCY.fraction
+
+
+def test_reporting_currency_label_is_the_code_or_empty(db):
+    # A chart is labelled with the reporting currency's code.
+    assert reporting_currency_label(db) == "USD"
+    alternative = Commodity(mnemonic="ALT", fraction=1000)
+    with db.transaction("currency") as txn:
+        db.add_commodity(alternative, txn)
+    db.set_metadata("default_currency", alternative.handle)
+    assert reporting_currency_label(db) == "ALT"
+
+    class EmptyBook:
+        """A legacy book with no commodities: there is no code to show."""
+
+        def get_metadata(self, _key):
+            return None
+
+        def get_commodity_by_mnemonic(self, _mnemonic):
+            return None
+
+        def iter_commodities(self):
+            return iter(())
+
+        def get_commodity(self, _handle):
+            return None
+
+    assert reporting_currency_label(EmptyBook()) == ""

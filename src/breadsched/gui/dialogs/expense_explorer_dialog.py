@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 from ...gen.db.sqlite import DbSQLite
+from ...gen.engine.currency import reporting_currency_label
 from ...gen.lib.money import Money
-from ...gen.services.expense_explorer import ExpenseExplorer, query_expense_explorer
+from ...gen.services.expense_explorer import (
+    ExpenseExplorer,
+    category_trend_chart,
+    query_expense_explorer,
+    spending_charts,
+)
 from ...gen.services.plan import PlanQuery
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
-from ..widgets.chart import LineChart, Series
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
+from ..widgets.model_chart import ModelChartView
 
 
 class ExpenseExplorerDialog(BoundedWindow):
@@ -19,6 +25,7 @@ class ExpenseExplorerDialog(BoundedWindow):
         self.set_default_size(1000, 720)
         self._db = db
         self._request = request
+        self._currency = reporting_currency_label(db)
         result = query_expense_explorer(db, request)
         if result.value is None:
             raise ValueError(result.errors[0].code)
@@ -101,7 +108,9 @@ class ExpenseExplorerDialog(BoundedWindow):
                 rollover=self.rollover.get_active(),
             )
             income_detail = income.value.drilldown if income.value is not None else None
-        printing.print_document(self, expense_explorer_layout(result.value, income_detail))
+        printing.print_document(
+            self, expense_explorer_layout(result.value, income_detail, self._currency)
+        )
 
     @staticmethod
     def _label(text: str, *, heading: bool = False) -> Gtk.Label:
@@ -118,52 +127,48 @@ class ExpenseExplorerDialog(BoundedWindow):
         bar.set_hexpand(True)
         return bar
 
+    def _charts(self, models, index: int) -> list[ModelChartView]:
+        """Shared-model charts of the Plan's periods; clicking one selects its period."""
+        views = []
+        for model in models:
+            if model.empty:
+                continue
+            view = ModelChartView(model, height=220, on_select=self.period.set_selected)
+            view.set_selected(index)
+            self.content.append(view)
+            if model.partial_note:
+                note = self._label(model.partial_note)
+                note.set_wrap(True)
+                note.add_css_class("negative")
+                self.content.append(note)
+            views.append(view)
+        return views
+
     def _append_spending(self, index: int, *, income: bool = False) -> None:
-        """Total plan and actual by period; clicking a period selects it."""
+        """Total plan and actual, actual by category, and shares, by period."""
         points = self._report.income if income else self._report.spending
         self.content.append(
             self._label("Income over time" if income else "Spending over time", heading=True)
         )
-        self.content.append(
-            self._label(
-                f"Total plan and actual. Actual is posted through "
-                f"{self._report.plan.report.as_of.isoformat()}; the dashed line marks the "
-                "first future period. "
-                + (
-                    "Income is split by top-level income category; clicking a period "
-                    "also selects it for the expense comparison."
-                    if income
-                    else "Click a period to compare its categories."
-                )
+        explanation = self._label(
+            f"Actual is posted through {self._report.plan.report.as_of.isoformat()}; "
+            "the rule marks that date's period. Categories past the seventh are "
+            "combined as Other. "
+            + (
+                "Clicking a period also selects it for the expense comparison."
+                if income
+                else "Click a period to compare its categories."
             )
         )
-        chart = LineChart()
-        chart.set_content_height(180)
-        chart.set_vexpand(False)
-        chart.empty_message = "A trend needs at least two periods"
-        chart.set_data(
-            [
-                Series("Plan", [float(point.planned.to_decimal()) for point in points]),
-                Series("Actual", [float(point.actual.to_decimal()) for point in points]),
-            ],
-            [point.label for point in points],
+        explanation.set_wrap(True)
+        self.content.append(explanation)
+        charts = self._charts(
+            spending_charts(self._report, income=income, currency=self._currency), index
         )
-        chart.marker_index = next((i for i, point in enumerate(points) if point.future), None)
-        chart.selected_index = index
-        click = Gtk.GestureClick()
-
-        def pressed(_gesture, _count, x, _y) -> None:
-            chosen = chart.index_at(x)
-            if chosen is not None:
-                self.period.set_selected(chosen)
-
-        click.connect("pressed", pressed)
-        chart.add_controller(click)
         if income:
-            self.income_chart = chart
+            self.income_charts = charts
         else:
-            self.spending_chart = chart
-        self.content.append(chart)
+            self.spending_charts = charts
         rows = self._report.income_categories if income else self._report.categories
         names = {row.account: row.full_name for row in rows}
         grid = Gtk.Grid(column_spacing=12, row_spacing=3)
@@ -321,33 +326,39 @@ class ExpenseExplorerDialog(BoundedWindow):
                 1,
             )
         self.content.append(self._label(f"{selected.full_name} trend", heading=True))
-        trend_scale = max(
-            1.0,
-            *(
-                abs(value.numerator / value.denominator)
-                for period in selected.periods
-                for value in (period.planned, period.actual)
-            ),
+        trend = self._charts(
+            (category_trend_chart(selected, self._report.plan.report.as_of, self._currency),),
+            index,
         )
-        for period in selected.periods:
-            line = Gtk.Box(spacing=8)
+        self.trend_chart = trend[0] if trend else None
+        grid = Gtk.Grid(column_spacing=12, row_spacing=3)
+        for column, heading in enumerate(
+            ("Period", "Plan", "Period actual", "Period variance", "Carry in", "Remaining")
+        ):
+            grid.attach(self._label(heading, heading=True), column, 0, 1, 1)
+        for line, period in enumerate(selected.periods, 1):
             remaining = (
                 period.remaining.format()
                 if period.remaining is not None
                 else period.remaining_reason or "—"
             )
-            carry = period.carry_in.format() if period.carry_in is not None else "—"
-            line.append(self._label(period.label))
-            line.append(self._bar(period.planned, trend_scale))
-            line.append(self._bar(period.actual, trend_scale))
-            line.append(
-                self._label(
-                    f"{period.planned.format()} / {period.actual.format()} / "
-                    f"{period.variance.format() if period.variance is not None else '—'} · "
-                    f"Carry {carry} · Remaining {remaining}"
+            for column, text in enumerate(
+                (
+                    f"{'▸ ' if line - 1 == index else ''}{period.label}",
+                    period.planned.format(),
+                    period.actual.format(),
+                    period.variance.format() if period.variance is not None else "—",
+                    period.carry_in.format() if period.carry_in is not None else "—",
+                    remaining,
                 )
-            )
-            self.content.append(line)
+            ):
+                label = self._label(text)
+                if column:
+                    label.set_xalign(1)
+                    label.add_css_class("numeric")
+                grid.attach(label, column, line, 1, 1)
+        self.trend_table = grid
+        self.content.append(grid)
         detail = query_expense_explorer(
             self._db,
             self._request,

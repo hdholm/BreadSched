@@ -10,6 +10,27 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a270 - 2026-10-09
+
+- **Spending on the shared charts.** The chart model gains stacked and share forms:
+  one column per period with its series stacked up and down from zero, or each
+  value drawn as its percentage of the total the engine reported with it (`totals`),
+  so a share chart never sums its own series. `expense_explorer.spending_charts`
+  draws the Expense Explorer's spending and income over time three ways from its
+  own values: plan against actual lines with a rule at the as-of date's period,
+  actual stacked by top-level category, and each category's share; the seven
+  categories with the most actual are named and the rest combined as Other, still
+  reconciling to each period's actual. `category_trend_chart` draws one category's
+  plan and period actual. GTK, the browser (with a Chart values table per chart),
+  and the printed explorer use them, retiring the explorer's older GTK line chart
+  and its browser SVGs. Charts can select: clicking a period's band, or in the
+  browser pressing Enter on it, chooses the comparison period. Column charts shade
+  partial periods; a share chart's table shows percentages beside a Total column.
+  `currency.reporting_currency_label` replaces two private copies. The design part,
+  User Guide, and both interface guides describe the charts; tests cover the
+  values, Other grouping, stacking and share geometry, selection, printing, the
+  web response, and the browser and GTK screens.
+
 ## 0.2.0a269 - 2026-10-09
 
 - **Budget jar levels carry in everything earlier.** A jar's level now accounts for

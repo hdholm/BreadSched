@@ -29,6 +29,7 @@ from .charts import (
     chart_line_layout,
     chart_nice_ticks,
     chart_series_colour,
+    chart_tick_label,
 )
 from .investments import (
     holding_cost_text,
@@ -78,6 +79,7 @@ __all__ = [
     "chart_chrome",
     "chart_nice_ticks",
     "chart_series_colour",
+    "chart_tick_label",
     "CLAIM_ROLE_LABELS",
     "PLAN_REIMBURSABLE_HEADING",
     "REVIEW_ACTION_HELP",

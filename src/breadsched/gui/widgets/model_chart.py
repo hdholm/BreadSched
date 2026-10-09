@@ -1,20 +1,23 @@
-"""Engine charts (``ChartModel``) drawn with Cairo: grouped columns or lines.
+"""Engine charts (``ChartModel``) drawn with Cairo: grouped or stacked columns, or lines.
 
 ``paint_chart`` draws on any Cairo context, so the on-screen ``ModelChartView`` and
 native printing (``report_printer``) draw the same marks from the same layout
 (``presentation.chart_bar_layout`` and ``chart_line_layout``). Colours come from the
 shared palette, stepped for a dark theme on screen; the legend and axis text use
-ink colours, never a series colour. Hovering shows exact amounts: a column's own,
-or every line's value at the nearest category.
+ink colours, never a series colour. Hovering shows exact amounts: a column's own
+(with its share in a share chart), or every line's value at the nearest category.
+A view made ``selectable`` shades its selected category and reports a click on
+another one, so a chart can pick the period the rest of a screen shows.
 """
 
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 import cairo
 
-from ...gen.engine.chart_model import BARS, ChartModel
+from ...gen.engine.chart_model import COLUMN_KINDS, LINE, ChartModel
 from ...presentation import (
     ChartBarLayout,
     ChartLineLayout,
@@ -23,6 +26,7 @@ from ...presentation import (
     chart_label_indices,
     chart_line_layout,
     chart_series_colour,
+    chart_tick_label,
 )
 from ..gi_setup import Gtk
 
@@ -36,8 +40,13 @@ def _rgb(colour: str) -> tuple[float, float, float]:
     return tuple(int(colour[index : index + 2], 16) / 255 for index in (0, 2, 4))  # type: ignore[return-value]
 
 
-def _column(cr, x: float, y: float, width: float, height: float, negative: bool) -> None:
+def _column(
+    cr, x: float, y: float, width: float, height: float, negative: bool, rounded: bool = True
+) -> None:
     """A column with a 4-unit rounded data end and a square foot on the baseline."""
+    if not rounded:
+        cr.rectangle(x, y, width, height)
+        return
     r = min(4.0, width / 2, height)
     if negative:
         cr.move_to(x, y)
@@ -56,8 +65,26 @@ def _column(cr, x: float, y: float, width: float, height: float, negative: bool)
     cr.close_path()
 
 
+def _shade(cr, x: float, extent: float, plot_height: float, colour: str, alpha: float) -> None:
+    cr.set_source_rgba(*_rgb(colour), alpha)
+    cr.rectangle(x, _TOP, extent, plot_height)
+    cr.fill()
+
+
+def _selection(cr, layout, selected: int | None, dark: bool) -> None:
+    if selected is not None and 0 <= selected < len(layout.bands):
+        x, extent = layout.bands[selected]
+        _shade(cr, x, extent, layout.height, chart_series_colour(1, dark=dark), 0.12)
+
+
 def paint_bars(
-    cr, model: ChartModel, width: float, height: float, *, dark: bool = False
+    cr,
+    model: ChartModel,
+    width: float,
+    height: float,
+    *,
+    dark: bool = False,
+    selected: int | None = None,
 ) -> ChartBarLayout:
     """Draw ``model`` into a ``width`` by ``height`` area; returns where the bars went."""
     layout = chart_bar_layout(
@@ -65,10 +92,20 @@ def paint_bars(
     )
     cr.select_font_face("Sans")
     cr.set_font_size(11)
-    _gridlines(cr, layout.ticks, width, dark)
+    if layout.partial_x is not None:
+        _shade(
+            cr,
+            layout.partial_x,
+            width - _RIGHT - layout.partial_x,
+            layout.height,
+            chart_chrome("muted", dark=dark),
+            0.12,
+        )
+    _selection(cr, layout, selected, dark)
+    _gridlines(cr, layout.ticks, width, dark, percent=layout.percent)
     for bar in layout.bars:
         cr.set_source_rgb(*_rgb(chart_series_colour(model.series[bar.series].slot, dark=dark)))
-        _column(cr, bar.x, bar.y, bar.width, bar.height, bar.negative)
+        _column(cr, bar.x, bar.y, bar.width, bar.height, bar.negative, bar.rounded)
         cr.fill()
     _category_labels(cr, model, layout.centres, height, dark)
     _legend(cr, model, dark)
@@ -77,7 +114,7 @@ def paint_bars(
 
 def _category_labels(cr, model: ChartModel, xs, height: float, dark: bool) -> None:
     cr.set_source_rgb(*_rgb(chart_chrome("muted", dark=dark)))
-    right = xs[-1] if model.kind != BARS and xs else None
+    right = xs[-1] if model.kind == LINE and xs else None
     for index in chart_label_indices(len(model.categories)):
         label = model.categories[index]
         extents = cr.text_extents(label)
@@ -93,7 +130,7 @@ def _legend(cr, model: ChartModel, dark: bool) -> None:
     x = _LEFT
     for series in model.series:
         cr.set_source_rgb(*_rgb(chart_series_colour(series.slot, dark=dark)))
-        if model.kind == BARS:
+        if model.kind in COLUMN_KINDS:
             cr.rectangle(x, 10, 12, 12)
             cr.fill()
         else:
@@ -107,14 +144,14 @@ def _legend(cr, model: ChartModel, dark: bool) -> None:
         x += 18 + cr.text_extents(series.name).x_advance + 18
 
 
-def _gridlines(cr, ticks, width: float, dark: bool) -> None:
+def _gridlines(cr, ticks, width: float, dark: bool, *, percent: bool = False) -> None:
     for value, y in ticks:
         cr.set_source_rgb(*_rgb(chart_chrome("axis" if value == 0 else "grid", dark=dark)))
         cr.set_line_width(1)
         cr.move_to(_LEFT, round(y) + 0.5)
         cr.line_to(width - _RIGHT, round(y) + 0.5)
         cr.stroke()
-        text = f"{value:,.0f}"
+        text = chart_tick_label(value, percent=percent)
         extents = cr.text_extents(text)
         cr.set_source_rgb(*_rgb(chart_chrome("muted", dark=dark)))
         cr.move_to(_LEFT - 8 - extents.width, y + 4)
@@ -122,7 +159,13 @@ def _gridlines(cr, ticks, width: float, dark: bool) -> None:
 
 
 def paint_lines(
-    cr, model: ChartModel, width: float, height: float, *, dark: bool = False
+    cr,
+    model: ChartModel,
+    width: float,
+    height: float,
+    *,
+    dark: bool = False,
+    selected: int | None = None,
 ) -> ChartLineLayout:
     """Draw ``model`` as lines, with its markers and partial shading."""
     layout = chart_line_layout(
@@ -134,6 +177,7 @@ def paint_lines(
         cr.set_source_rgba(*_rgb(chart_chrome("muted", dark=dark)), 0.12)
         cr.rectangle(layout.partial_x, _TOP, width - _RIGHT - layout.partial_x, layout.height)
         cr.fill()
+    _selection(cr, layout, selected, dark)
     _gridlines(cr, layout.ticks, width, dark)
     for (x, label), _marker in zip(layout.markers, model.markers, strict=True):
         cr.set_source_rgb(*_rgb(chart_chrome("secondary", dark=dark)))
@@ -166,21 +210,40 @@ def paint_lines(
 
 
 def paint_chart(
-    cr, model: ChartModel, width: float, height: float, *, dark: bool = False
+    cr,
+    model: ChartModel,
+    width: float,
+    height: float,
+    *,
+    dark: bool = False,
+    selected: int | None = None,
 ) -> ChartBarLayout | ChartLineLayout:
-    """Draw ``model`` in its own form."""
-    if model.kind == BARS:
-        return paint_bars(cr, model, width, height, dark=dark)
-    return paint_lines(cr, model, width, height, dark=dark)
+    """Draw ``model`` in its own form, shading the ``selected`` category if any."""
+    if model.kind in COLUMN_KINDS:
+        return paint_bars(cr, model, width, height, dark=dark, selected=selected)
+    return paint_lines(cr, model, width, height, dark=dark, selected=selected)
 
 
 class ModelChartView(Gtk.DrawingArea):
     """An engine chart on screen, with exact amounts on hover."""
 
-    def __init__(self, model: ChartModel | None = None, *, height: int = 240) -> None:
+    def __init__(
+        self,
+        model: ChartModel | None = None,
+        *,
+        height: int = 240,
+        on_select: Callable[[int], None] | None = None,
+    ) -> None:
         super().__init__()
         self.model = model
         self.layout: ChartBarLayout | ChartLineLayout | None = None
+        #: The shaded category, when the chart picks one for the rest of a screen.
+        self.selected: int | None = None
+        self.on_select = on_select
+        if on_select is not None:
+            click = Gtk.GestureClick()
+            click.connect("pressed", lambda _gesture, _count, x, _y: self.choose_at(x))
+            self.add_controller(click)
         self.set_content_height(height)
         self.set_hexpand(True)
         self.set_has_tooltip(True)
@@ -196,6 +259,27 @@ class ModelChartView(Gtk.DrawingArea):
             self.update_property([Gtk.AccessibleProperty.LABEL], [label])
         self.queue_draw()
 
+    def set_selected(self, index: int | None) -> None:
+        self.selected = index
+        self.queue_draw()
+
+    def category_at(self, x: float) -> int | None:
+        """The category whose band contains ``x``, if any."""
+        if self.layout is None:
+            return None
+        for index, (start, extent) in enumerate(self.layout.bands):
+            if start <= x < start + extent:
+                return index
+        return None
+
+    def choose_at(self, x: float) -> int | None:
+        """Select the category under ``x`` and report it to ``on_select``."""
+        index = self.category_at(x)
+        if index is not None and self.on_select is not None:
+            self.set_selected(index)
+            self.on_select(index)
+        return index
+
     @property
     def series(self):
         return self.model.series if self.model is not None else ()
@@ -208,7 +292,9 @@ class ModelChartView(Gtk.DrawingArea):
         if self.model is None or self.model.empty:
             self.layout = None
             return
-        self.layout = paint_chart(cr, self.model, width, height, dark=self._dark())
+        self.layout = paint_chart(
+            cr, self.model, width, height, dark=self._dark(), selected=self.selected
+        )
 
     def _amount(self, series_index: int, category: int) -> str:
         assert self.model is not None
@@ -229,6 +315,8 @@ class ModelChartView(Gtk.DrawingArea):
                     series = self.model.series[bar.series]
                     name = self.model.categories[bar.category]
                     amount = self._amount(bar.series, bar.category)
+                    if bar.share is not None:
+                        return f"{name}, {series.name}: {bar.share:.0f}% ({amount}{currency})"
                     return f"{name}, {series.name}: {amount}{currency}"
             return None
         xs = self.layout.xs
