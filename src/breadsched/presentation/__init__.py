@@ -15,6 +15,18 @@ from .benefits import (
     reimbursement_override_text,
     shared_cost_text,
 )
+from .charts import (
+    CHART_CHROME_DARK,
+    CHART_CHROME_LIGHT,
+    CHART_SERIES_DARK,
+    CHART_SERIES_LIGHT,
+    ChartBar,
+    ChartBarLayout,
+    chart_bar_layout,
+    chart_chrome,
+    chart_nice_ticks,
+    chart_series_colour,
+)
 from .investments import (
     holding_cost_text,
     lot_move_text,
@@ -50,6 +62,16 @@ from .planning import (
 )
 
 __all__ = [
+    "CHART_CHROME_DARK",
+    "CHART_CHROME_LIGHT",
+    "CHART_SERIES_DARK",
+    "CHART_SERIES_LIGHT",
+    "ChartBar",
+    "ChartBarLayout",
+    "chart_bar_layout",
+    "chart_chrome",
+    "chart_nice_ticks",
+    "chart_series_colour",
     "CLAIM_ROLE_LABELS",
     "PLAN_REIMBURSABLE_HEADING",
     "REVIEW_ACTION_HELP",

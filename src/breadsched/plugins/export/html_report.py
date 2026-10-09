@@ -14,6 +14,7 @@ from html import escape
 
 from ...gen.engine.activity import PlanMeasure
 from ...gen.engine.category_report import CategoryReport
+from ...gen.engine.chart_model import ChartModel
 from ...gen.engine.dashboard import Dashboard
 from ...gen.engine.projection_result import Projection
 from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer
@@ -24,6 +25,7 @@ from .report_layout import (
     Cell,
     Chart,
     Heading,
+    ModelChart,
     Paragraph,
     ReportDocument,
     Table,
@@ -213,6 +215,8 @@ def _block_html(block) -> str:
         return _cards([(card.label, card.value, card.alarm) for card in block.items])
     if isinstance(block, Chart):
         return _chart_svg(block)
+    if isinstance(block, ModelChart):
+        return model_chart_svg(block.model)
     return _table_html(block)
 
 
@@ -308,4 +312,68 @@ def _chart_svg(chart: Chart) -> str:
         f'<line x1="{left}" y1="{height - bottom}" x2="{width - right}" '
         f'y2="{height - bottom}" stroke="#aeb3ba"/>{zero}{"".join(lines)}'
         f"{''.join(legend)}{''.join(labels)}</svg>"
+    )
+
+
+def _bar_path(x: float, y: float, width: float, height: float, negative: bool) -> str:
+    """A column with a 4-unit rounded data end and a square foot on the baseline."""
+    r = min(4.0, width / 2, height)
+    if negative:
+        return (
+            f"M{x:.1f},{y:.1f}h{width:.1f}v{height - r:.1f}"
+            f"a{r},{r} 0 0 1 {-r:.1f},{r:.1f}h{-(width - 2 * r):.1f}"
+            f"a{r},{r} 0 0 1 {-r:.1f},{-r:.1f}z"
+        )
+    return (
+        f"M{x:.1f},{y + height:.1f}v{-(height - r):.1f}"
+        f"a{r},{r} 0 0 1 {r:.1f},{-r:.1f}h{width - 2 * r:.1f}"
+        f"a{r},{r} 0 0 1 {r:.1f},{r:.1f}v{height - r:.1f}z"
+    )
+
+
+def model_chart_svg(model: ChartModel, *, dark: bool = False) -> str:
+    """Grouped columns for an engine chart, with a legend and exact-value tooltips."""
+    from ...presentation import chart_bar_layout, chart_chrome, chart_series_colour
+
+    width, height = 1000, 300
+    left, top, right, bottom = 84, 40, 16, 40
+    layout = chart_bar_layout(model, left, top, width - left - right, height - top - bottom)
+    ink, muted = chart_chrome("ink", dark=dark), chart_chrome("muted", dark=dark)
+    grid, axis = chart_chrome("grid", dark=dark), chart_chrome("axis", dark=dark)
+    parts: list[str] = []
+    for value, y in layout.ticks:
+        parts.append(
+            f'<line x1="{left}" y1="{y:.1f}" x2="{width - right}" y2="{y:.1f}" '
+            f'stroke="{axis if value == 0 else grid}" stroke-width="1"/>'
+            f'<text x="{left - 8}" y="{y + 4:.1f}" text-anchor="end" font-size="11" '
+            f'fill="{muted}">{value:,.0f}</text>'
+        )
+    for bar in layout.bars:
+        series = model.series[bar.series]
+        exact = series.values[bar.category]
+        amount = exact.format(parens_negative=True) if exact is not None else ""
+        tip = f"{model.categories[bar.category]}, {series.name}: {amount} {model.currency}".strip()
+        parts.append(
+            f'<path d="{_bar_path(bar.x, bar.y, bar.width, bar.height, bar.negative)}" '
+            f'fill="{chart_series_colour(series.slot, dark=dark)}">'
+            f"<title>{escape(tip)}</title></path>"
+        )
+    for centre, label in zip(layout.centres, model.categories, strict=True):
+        parts.append(
+            f'<text x="{centre:.1f}" y="{height - bottom + 16}" text-anchor="middle" '
+            f'font-size="11" fill="{muted}">{escape(label)}</text>'
+        )
+    x = left
+    for series in model.series:
+        parts.append(
+            f'<rect x="{x}" y="10" width="12" height="12" rx="2" '
+            f'fill="{chart_series_colour(series.slot, dark=dark)}"/>'
+            f'<text x="{x + 18}" y="20" font-size="12" fill="{ink}">{escape(series.name)}</text>'
+        )
+        x += 30 + 8 * len(series.name)
+    label = f"{model.title} ({model.currency})" if model.currency else model.title
+    return (
+        f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="{escape(label)}" '
+        "font-family=\"system-ui, -apple-system, 'Segoe UI', sans-serif\">"
+        f"{''.join(parts)}</svg>"
     )

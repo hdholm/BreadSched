@@ -200,8 +200,9 @@ box; an account checked by GnuCash's *tax related* mark says so until you change
 
 In Plan, choose **Actions → Budget Jars…**. It covers the Plan's From and Through
 range and starts with its Group by, which you can change. It lists all jars by
-period, then each account; open an account to see each jar. **Print…** prints the
-report. See [Budget jars](../USER_GUIDE.md#budget-jars).
+period, then each account; open an account to see its charts (planned against
+actual, and jar levels against their targets; hover over a column for its amount)
+and each jar. **Print…** prints the report with its charts. See [Budget jars](../USER_GUIDE.md#budget-jars).
 
 ## Online quotes
 

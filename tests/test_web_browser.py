@@ -1233,6 +1233,11 @@ def test_budget_jars_open_from_the_plan_and_print_alone(page, served):
     dialog.wait_for()
     assert "Market estimate (estimate)" in dialog.inner_text()
     assert db.full_name(expense) in dialog.inner_text()
+    # Each account's charts are drawn with their tables; a column names its amount.
+    figure = dialog.locator(".model-chart").first
+    assert figure.locator("svg path").count() >= 1
+    assert "Planned" in figure.locator("svg path title").first.text_content()
+    assert figure.locator("table").count() == 1
     dialog.get_by_label("Group by").select_option("year")
     page.wait_for_selector(".jars-dialog >> text=Market estimate (estimate)")
     dialog = page.locator(".jars-dialog")

@@ -15,13 +15,12 @@ slice uses shared calculations and covers GTK, web, CLI, and printable output
 wherever that behavior is exposed, and preserves imported source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **Visualizations.** Today GTK has one Cairo line chart (Projection, Expense
-   Explorer, Net worth history) and the browser has none. Build a chart model in
-   non-GUI code (series, periods, exact values, labels) produced by the engines,
-   drawn by the GTK Cairo widget and by inline SVG in the browser, and included in
-   the shared print layout:
-   - **Budget jars:** planned against actual by period for each jar and account
-     (paired bars), and current jar fill levels with targets.
+1. **Visualizations.** The shared chart model (`gen/engine/chart_model`), palette and
+   bar geometry (`presentation.charts`), and their GTK, browser, and print renderers
+   exist, and Budget jars is charted with them. The other views still draw their
+   own charts: the older GTK line chart (Projection, Expense Explorer, Net worth
+   history) and the Expense Explorer's own browser SVG. Move them to the shared
+   model, adding line, stacked, and share forms as needed:
    - **Cash and Projection:** projected cash with the runway and first shortfall
      marked, scenario comparison overlays, and stacked account balances.
    - **Spending:** category spending over time and its share of the total, from

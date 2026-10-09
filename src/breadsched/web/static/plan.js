@@ -673,6 +673,7 @@ async function openBudgetJars(from, through, period) {
     el("p", { class: "note" }, "Jars: " + bundle.jars.map((jar) =>
       `${jar.name} (${jar.kind_label.toLowerCase()})`).join("; ")),
     periodTable(bundle.periods),
+    ...(bundle.charts || []).map(modelChart),
     el("details", { class: "screen-only" }, el("summary", {}, "Each jar"),
       ...bundle.jars.map((jar) => el("div", {},
         el("h4", {}, `${jar.name} — ${jar.kind_label}`), periodTable(jar.periods))))));

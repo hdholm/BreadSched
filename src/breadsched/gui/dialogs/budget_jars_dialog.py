@@ -11,11 +11,13 @@ from ...gen.engine.budget_jars import (
     JarsReport,
     budget_jars,
     currency_labels,
+    jar_charts,
     jar_kind_label,
 )
 from ...plugins.export.report_layout import budget_jars_layout
 from .. import printing
 from ..gi_setup import Gtk
+from ..widgets.bar_chart import BarChart
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -130,6 +132,8 @@ class BudgetJarsDialog(BoundedWindow):
             self.body.remove(child)
             child = following
         labels = currency_labels(self.db, report)
+        charts = jar_charts(report, labels)
+        self.charts: list[BarChart] = []
         self.account_rows: list[Gtk.Expander] = []
         for total in report.totals:
             label = labels.get(total.currency, "")
@@ -137,11 +141,18 @@ class BudgetJarsDialog(BoundedWindow):
             heading.add_css_class("heading")
             self.body.append(heading)
             self.body.append(_grid(total.periods))
-        for bundle in report.accounts:
+        for index, bundle in enumerate(report.accounts):
             label = labels.get(bundle.currency, "")
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
             box.set_margin_start(18)
             box.append(_grid(bundle.periods))
+            for model in charts[index * 2 : index * 2 + 2]:
+                title = _cell(model.title)
+                title.add_css_class("dim")
+                box.append(title)
+                chart = BarChart(model)
+                box.append(chart)
+                self.charts.append(chart)
             for jar in bundle.jars:
                 title = _cell(f"{jar.name} — {jar_kind_label(jar.kind)}")
                 title.add_css_class("dim")

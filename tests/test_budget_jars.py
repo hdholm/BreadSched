@@ -365,3 +365,78 @@ def test_the_command_line_lists_jars(tmp_path, capsys):
     text = capsys.readouterr().out
     assert "Groceries (estimate)" in text and expense_name in text
     assert cli(["jars", str(path), "--start", "2026-07-01", "--end", "2026-06-01"]) == 2
+
+
+def test_jar_charts_pair_planned_with_actual_and_level_with_target(db, book):
+    from breadsched.gen.engine.budget_jars import currency_labels, jar_charts
+    from breadsched.gen.engine.chart_model import BARS
+
+    _pay(db, book)
+    groceries = _groceries(db, book)
+    _actual(db, book, groceries, date(2026, 6, 20), date(2026, 6, 21), "550")
+    report = budget_jars(db, date(2026, 6, 1), date(2026, 7, 31), today=TODAY)
+    draws, levels = jar_charts(report, currency_labels(db, report))
+    assert (draws.kind, draws.categories) == (BARS, tuple(label for *_x, label in report.labels))
+    planned, actual = draws.series
+    assert (planned.name, planned.slot, actual.name, actual.slot) == ("Planned", 1, "Actual", 2)
+    assert planned.values == (Money(600), Money(600))
+    assert actual.values == (Money(550), Money(0))
+    # The chart's values are the report's own: the table beside it repeats them.
+    assert draws.rows()[0] == (report.labels[0][2], (Money(600), Money(550)))
+    level, target = levels.series
+    assert levels.categories == ("Groceries",)
+    # 650 left at the end of July, filling toward August's 600.
+    assert (level.values, target.values, level.slot, target.slot) == (
+        (Money(650),),
+        (Money(600),),
+        3,
+        4,
+    )
+    data = draws.as_dict()
+    assert data["series"][0]["values"] == [Money(600), Money(600)]
+
+
+def test_chart_geometry_scales_from_zero_with_capped_columns():
+    from breadsched.gen.engine.chart_model import BARS, ChartModel, ChartSeries
+    from breadsched.presentation import chart_bar_layout, chart_nice_ticks
+
+    assert chart_nice_ticks(0, 650) == [0, 200, 400, 600, 800]
+    assert chart_nice_ticks(-120, 650)[0] < 0 and 0 in chart_nice_ticks(-120, 650)
+    model = ChartModel(
+        "k",
+        "Groceries",
+        BARS,
+        ("Jun", "Jul"),
+        (
+            ChartSeries("planned", "Planned", (Money(600), Money(600)), 1),
+            ChartSeries("actual", "Actual", (Money(550), Money(-50)), 2),
+        ),
+        "USD",
+    )
+    layout = chart_bar_layout(model, 0, 0, 400, 200)
+    assert len(layout.bars) == 4 and all(bar.width <= 24 for bar in layout.bars)
+    negative = next(bar for bar in layout.bars if bar.negative)
+    assert negative.y == layout.baseline
+    planned, actual = (bar for bar in layout.bars if bar.category == 0)
+    assert actual.x - (planned.x + planned.width) == 2
+    assert planned.height > actual.height
+
+
+def test_charts_print_beside_their_tables(db, book):
+    from breadsched.gen.engine.budget_jars import currency_labels
+    from breadsched.plugins.export.html_report import model_chart_svg
+    from breadsched.plugins.export.report_layout import ModelChart, Table, budget_jars_layout
+
+    _pay(db, book)
+    _groceries(db, book)
+    report = budget_jars(db, date(2026, 6, 1), date(2026, 7, 31), today=TODAY)
+    document = budget_jars_layout(report, currency_labels(db, report))
+    blocks = document.sections[0].blocks
+    charts = [index for index, block in enumerate(blocks) if isinstance(block, ModelChart)]
+    assert len(charts) == 2
+    assert all(isinstance(blocks[index + 1], Table) for index in charts)
+    svg = model_chart_svg(blocks[charts[0]].model)
+    # Nothing was spent, so only the two planned columns are drawn; the legend has both.
+    assert svg.count("<path") == 2 and "#2a78d6" in svg and "#eb6834" in svg
+    assert "<title>" in svg and "Planned: 600.00" in svg
+    assert "planned and actual" in document.text()

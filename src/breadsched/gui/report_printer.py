@@ -19,6 +19,7 @@ from ..plugins.export.report_layout import (
     Cell,
     Chart,
     Heading,
+    ModelChart,
     Paragraph,
     ReportDocument,
     Table,
@@ -221,6 +222,8 @@ class ReportPrinter:
             return self._cards(block)
         if isinstance(block, Chart):
             return [self._chart(block)]
+        if isinstance(block, ModelChart):
+            return [self._model_chart(block)]
         return self._table(block)
 
     def _cards(self, block: Cards) -> list[_Item]:
@@ -441,6 +444,20 @@ class ReportPrinter:
         return _Item(height, draw, text=text)
 
     # ----------------------------------------------------------------- chart
+
+    def _model_chart(self, block: ModelChart) -> _Item:
+        from .widgets.bar_chart import paint_bars
+
+        height = min(220.0, self.width * 0.36)
+        model = block.model
+
+        def draw(cr) -> None:
+            cr.save()
+            paint_bars(cr, model, self.width, height)
+            cr.restore()
+
+        title = f"{model.title} ({model.currency})" if model.currency else model.title
+        return _Item(height + _GAP, draw, text=title)
 
     def _chart(self, chart: Chart) -> _Item:
         height = min(240.0, self.width * 0.34)
