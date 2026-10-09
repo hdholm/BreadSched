@@ -475,3 +475,75 @@ def test_earlier_occurrences_are_carried_in(db, book):
     # The same months reported from March show the same end.
     from_march = budget_jars(db, date(2026, 3, 1), date(2026, 6, 30), today=TODAY)
     assert from_march.jars[0].periods[-1].level == june.level
+
+
+def _spend(db, book, when, amount, account=None):
+    """An ordinary purchase nobody matched to a planned occurrence."""
+    txn = Transaction(post_date=when, description="Market")
+    txn.splits = [
+        Split(account or book.groceries, Money(amount)),
+        Split(book.checking, -Money(amount)),
+    ]
+    with db.transaction("Market") as handle:
+        db.add_transaction(txn, handle)
+    return txn
+
+
+def test_unmatched_spending_draws_the_accounts_jar_like_the_plan(db, book):
+    # #312: real purchases in an estimate's account are actuals even when nobody
+    # matched them in Review, as the Plan's category row already counts them.
+    from breadsched.gen.engine import category_report
+
+    _pay(db, book)
+    groceries = _groceries(db, book)
+    _actual(db, book, groceries, date(2026, 6, 20), date(2026, 6, 21), "550")
+    _spend(db, book, date(2026, 6, 25), "40")
+    _spend(db, book, date(2026, 7, 3), "120")
+    _spend(db, book, date(2026, 7, 6), "-20")  # a refund puts money back
+    _spend(db, book, date(2026, 5, 2), "75")  # before the jar's first cycle began
+
+    report = budget_jars(db, date(2026, 6, 1), date(2026, 7, 31), today=TODAY)
+    [bundle] = report.accounts
+    [jar] = bundle.jars
+    june, july = jar.periods
+    assert (june.actual, june.level) == (Money(590), Money(10))
+    assert (july.actual, july.level) == (Money(100), Money(510))
+    unmatched = [e for e in jar.events if e.kind == "actual" and not e.occurrence]
+    assert [(e.when, e.amount) for e in unmatched] == [
+        (date(2026, 6, 25), Money(40)),
+        (date(2026, 7, 3), Money(120)),
+        (date(2026, 7, 6), Money(-20)),
+    ]
+    plan = category_report.build_category_report(
+        db, date(2026, 6, 1), date(2026, 7, 31), as_of=TODAY
+    )
+    row = next(row for row in plan.categories if row.account == book.groceries)
+    assert [period.actual for period in bundle.periods] == row.actual
+
+
+def test_unmatched_spending_with_several_jars_has_its_own_line(db, book):
+    _pay(db, book)
+    _groceries(db, book)
+    _schedule(
+        db,
+        "Market box",
+        Recurrence(PeriodType.MONTH, interval=1, start=date(2026, 6, 5)),
+        [ScheduledSplit(book.groceries, Money(80)), ScheduledSplit(book.checking, Money(-80))],
+        placeholder=True,
+    )
+    _spend(db, book, date(2026, 6, 25), "40")
+
+    report = budget_jars(db, date(2026, 6, 1), date(2026, 6, 30), today=TODAY)
+    [bundle] = report.accounts
+    assert [jar.kind for jar in bundle.jars] == [
+        JarKind.ESTIMATE,
+        JarKind.ESTIMATE,
+        JarKind.UNMATCHED,
+    ]
+    other = bundle.jars[-1]
+    assert (other.name, other.periods[0].actual, other.periods[0].level) == (
+        "Unmatched spending",
+        Money(40),
+        Money(-40),
+    )
+    assert bundle.periods[0].actual == Money(40)

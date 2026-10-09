@@ -567,7 +567,12 @@ income, exactly the Dashboard's bill reserve; the shares are rounded to the
 reporting fraction with the last taking the remainder. With no income in the cycle
 the whole amount fills on the cycle's first day. The occurrence's planned draw is on
 its planned date, and the actual draw is the matched transaction's legs in that
-account on its posting date (`planning.scheduled_events`). Occurrences up to
+account on its posting date (`planning.scheduled_events`). Every other posting to a
+jar account in the jar's currency, from the account's first cycle start, is an
+actual draw too (`_unmatched_draws`, #312), so a bundle's actual equals the Plan's
+category actual for that account: it joins the account's only jar, or its only
+estimate, and otherwise a `JarKind.UNMATCHED` "Unmatched spending" jar with no fills.
+A matched transaction's leg is drawn once, by its occurrence. Occurrences up to
 `_HORIZON_DAYS` after the range are read so a later-due occurrence still fills inside
 it. A goal's fills are the changes in `savings_goals.goal_progress(...).set_aside` on
 income, allocation, target, and period-end dates; closing it draws the whole earmark.

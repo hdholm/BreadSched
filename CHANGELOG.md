@@ -10,6 +10,19 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a275 - 2026-10-09
+
+- **Budget jars count every actual transaction (#312).** A jar was drawn only by a
+  transaction matched to one of its occurrences in Review, so ordinary purchases in
+  an estimate's account (groceries nobody matched) never appeared as actuals, though
+  the Plan's category row counted them. Now every posting to a jar's account, in its
+  currency and from its first cycle on, is an actual draw on its own date (a refund
+  draws a negative amount): it joins the account's only jar or only estimate, and
+  otherwise an **Unmatched spending** line in the account, so each account's actual
+  equals the Plan's. A matched transaction is still drawn once, by its occurrence.
+  Acceptance tests compare the jar account's actuals with the Plan's category row;
+  the User Guide and the planning design part describe the rule.
+
 ## 0.2.0a274 - 2026-10-09
 
 - **A GnuCash-like desktop register.** The GTK register is now a custom grid

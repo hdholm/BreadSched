@@ -15,7 +15,12 @@ every savings goal is a jar for its account.
   income share and its allocations), measured on real dates.
 * **Drawing.** An occurrence is drawn by the actual transaction the Plan matched to
   it, on that transaction's date, for that transaction's amount in the jar's
-  account; an unmatched occurrence draws nothing, so its money stays in the jar. A
+  account; an unmatched occurrence draws nothing, so its money stays in the jar.
+  Every other posting to a jar's account since its first cycle began is spending
+  too, as the Plan's category row counts it (#312): it draws the account's jar
+  when that is unambiguous (the only jar, or the only estimate, in the account and
+  currency), and otherwise an "Unmatched spending" line in the account, so the
+  account's actual always equals the Plan's. A refund draws a negative amount. A
   goal is drawn when it is closed (its earmark is released, usually because the
   money was spent).
 * **Reporting.** Every fill, planned draw, and actual draw is dated. Periods
@@ -73,6 +78,8 @@ class JarKind:
     BILL = "bill"
     ESTIMATE = "estimate"
     GOAL = "goal"
+    #: Spending in an account with several jars that no Review match assigns.
+    UNMATCHED = "unmatched"
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +232,7 @@ def _scheduled_jars(
     today: date,
     accounts: dict[str, Account],
 ) -> dict[tuple[str, str], tuple[ScheduledTransaction, str | None, list[JarEvent]]]:
+    """Each schedule's jars by (schedule, account), with fills and matched draws."""
     reporting = reporting_currency_handle(db)
     fraction = reporting_fraction(db)
     incomes = income_schedules(db, today)
@@ -269,6 +277,54 @@ def _scheduled_jars(
                     )
                 )
     return jars
+
+
+def _unmatched_draws(
+    db: DbSQLite,
+    jars: dict[tuple[str, str], tuple[ScheduledTransaction, str | None, list[JarEvent]]],
+    end: date,
+) -> dict[tuple[str, str | None], list[JarEvent]]:
+    """Postings to jar accounts that no matched occurrence drew, by account and currency.
+
+    Only postings since the account's first jar cycle began count, and only in the
+    jar's currency; a matched transaction's leg in an account is drawn by its
+    occurrence instead.
+    """
+    reporting = reporting_currency_handle(db)
+    begins: dict[tuple[str, str | None], date] = {}
+    drawn: set[tuple[str, str]] = set()
+    for (_handle, account), (_schedule, currency, events) in jars.items():
+        fills = [event.when for event in events if event.kind == "fill"]
+        if fills:
+            key = (account, currency)
+            begins[key] = min(min(fills), begins.get(key, fills[0]))
+        drawn.update(
+            (event.transaction, account)
+            for event in events
+            if event.kind == "actual" and event.transaction
+        )
+    if not begins:
+        return {}
+    found: dict[tuple[str, str | None], list[JarEvent]] = defaultdict(list)
+    first = min(begins.values())
+    for transaction in db.iter_transactions(start=first, end=end):
+        currency = transaction.currency or reporting
+        amounts: dict[str, Money] = defaultdict(lambda: Money(0))
+        for split in transaction.splits:
+            amounts[split.account] += split.value
+        for account, amount in amounts.items():
+            begin = begins.get((account, currency))
+            if (
+                begin is None
+                or transaction.post_date < begin
+                or not amount
+                or (transaction.handle, account) in drawn
+            ):
+                continue
+            found[(account, currency)].append(
+                JarEvent(transaction.post_date, "actual", amount, "", transaction.handle)
+            )
+    return found
 
 
 # ----------------------------------------------------------------------- goals
@@ -344,6 +400,12 @@ def _periods(
     return tuple(found)
 
 
+def _jar_order(jar: Jar) -> tuple[int, str]:
+    """Goals first, then scheduled jars by name, and unmatched spending last."""
+    rank = {JarKind.GOAL: 0, JarKind.UNMATCHED: 2}.get(jar.kind, 1)
+    return rank, jar.name.casefold()
+
+
 def _add(periods: Iterable[tuple[JarPeriod, ...]], labels) -> tuple[JarPeriod, ...]:
     rows = list(periods)
     found: list[JarPeriod] = []
@@ -377,9 +439,36 @@ def budget_jars(
     jars: list[Jar] = []
     problems: list[str] = []
 
-    for (handle, account), (schedule, currency, events) in _scheduled_jars(
-        db, start, end, today, accounts
-    ).items():
+    scheduled = _scheduled_jars(db, start, end, today, accounts)
+    unmatched = _unmatched_draws(db, scheduled, end)
+    for (account, currency), draws in unmatched.items():
+        members = [
+            (key, item)
+            for key, item in scheduled.items()
+            if key[1] == account and item[1] == currency
+        ]
+        estimates = [(key, item) for key, item in members if item[0].placeholder]
+        owner = members if len(members) == 1 else estimates if len(estimates) == 1 else []
+        if owner:
+            owner[0][1][2].extend(draws)
+            continue
+        opening = -sum((event.amount for event in draws if event.when < start), Money(0))
+        draws.sort(key=lambda item: item.when)
+        jars.append(
+            Jar(
+                f"unmatched:{account}:{currency}",
+                JarKind.UNMATCHED,
+                "Unmatched spending",
+                account,
+                db.full_name(account),
+                currency,
+                opening,
+                tuple(draws),
+                _periods(opening, draws, labels),
+            )
+        )
+
+    for (handle, account), (schedule, currency, events) in scheduled.items():
         opening = sum(
             (event.amount for event in events if event.when < start and event.kind == "fill"),
             Money(0),
@@ -443,7 +532,7 @@ def budget_jars(
             account,
             members[0].account_name,
             currency,
-            tuple(sorted(members, key=lambda jar: (jar.kind != JarKind.GOAL, jar.name.casefold()))),
+            tuple(sorted(members, key=_jar_order)),
             _add((jar.periods for jar in members), labels),
         )
         for (account, currency), members in grouped.items()
@@ -461,7 +550,12 @@ def budget_jars(
     )
 
 
-_KIND_LABELS = {JarKind.BILL: "Bill", JarKind.ESTIMATE: "Estimate", JarKind.GOAL: "Goal"}
+_KIND_LABELS = {
+    JarKind.BILL: "Bill",
+    JarKind.ESTIMATE: "Estimate",
+    JarKind.GOAL: "Goal",
+    JarKind.UNMATCHED: "Unmatched",
+}
 
 
 def jar_kind_label(kind: str) -> str:
