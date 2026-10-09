@@ -171,3 +171,74 @@ def test_budget_jars_carry_in_years_of_history_quickly(realistic_book):
     assert filled > Money(150 * 250) and drawn > Money(0)
     assert jar.opening == filled - drawn
     assert elapsed < 5.0, f"budget jars over five weekly years took {elapsed:.3f}s"
+
+
+@pytest.mark.performance
+def test_expense_explorer_on_a_household_book_stays_interactive():
+    """Two years of daily spending in 40 categories: open, then pick a category (#310)."""
+    import random
+    from datetime import timedelta
+
+    from breadsched.gen.lib import Money, PeriodType, Recurrence, ScheduledSplit
+    from breadsched.gen.lib import ScheduledTransaction as Scheduled
+    from breadsched.gen.services.expense_explorer import (
+        expense_drilldown,
+        query_expense_explorer,
+    )
+    from breadsched.gen.services.plan import PlanQuery
+
+    picks = random.Random(310)
+    db = DbSQLite.create_memory()
+    try:
+        with db.transaction("chart") as txn:
+            checking = Account(name="Checking", atype=AccountType.BANK)
+            expenses = Account(name="Expenses", atype=AccountType.EXPENSE)
+            db.add_account(checking, txn)
+            db.add_account(expenses, txn)
+            categories = []
+            for number in range(40):
+                account = Account(
+                    name=f"Category {number}", atype=AccountType.EXPENSE, parent=expenses.handle
+                )
+                db.add_account(account, txn)
+                categories.append(account.handle)
+            for number, handle in enumerate(categories[:10]):
+                estimate = Scheduled(
+                    name=f"Estimate {number}",
+                    recurrence=Recurrence(PeriodType.MONTH, start=date(2025, 1, 1 + number)),
+                    splits=[
+                        ScheduledSplit(handle, Money(100)),
+                        ScheduledSplit(checking.handle, Money(-100)),
+                    ],
+                )
+                estimate.placeholder = True
+                db.add_scheduled(estimate, txn)
+        with db.transaction("history") as txn:
+            day = date(2024, 10, 1)
+            while day <= date(2026, 10, 9):
+                for _ in range(8):
+                    db.add_transaction(
+                        Transaction.simple(
+                            day,
+                            f"Store {picks.randint(1, 200)}",
+                            picks.choice(categories),
+                            checking.handle,
+                            f"{picks.randint(1, 150)}.00",
+                        ),
+                        txn,
+                    )
+                day += timedelta(days=1)
+        request = PlanQuery(today=date(2026, 10, 9))
+        start = perf_counter()
+        explorer = query_expense_explorer(db, request).value
+        opened = perf_counter() - start
+        assert explorer is not None and len(explorer.categories) > 40
+        start = perf_counter()
+        detail = expense_drilldown(db, explorer, categories[3], len(explorer.totals) - 1)
+        chosen = perf_counter() - start
+        assert detail.value is not None and detail.value.drilldown is not None
+    finally:
+        db.close()
+    # Before #310 opening took about eighteen seconds here, and each choice as long.
+    assert opened < 6.0, f"the Expense Explorer took {opened:.2f}s to calculate"
+    assert chosen < 1.0, f"choosing a category took {chosen:.2f}s"

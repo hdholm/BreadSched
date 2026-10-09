@@ -60,7 +60,8 @@ classification helpers both need (`split_totals`, `economic_planning_flow_amount
 boundary; an architecture test checks both.
 
 Plan detail lives in `engine/plan_detail`, beside the grid it explains: `explain_category_period`, `explain_planning_flow_period`, and
-`explain_mortgage_payment_period` rebuild one cell from `build_activity_report` and
+`explain_mortgage_payment_period` rebuild one cell from `build_activity_report` (or,
+for categories, `category_period_detail` explains one from activity already built) and
 the same public classification helpers the grid uses (`planning_flow_decision`,
 `escrow_planning_flows`, `mortgage_payment`), so a drill-down cannot disagree with
 its cell. `activity` never imports the explanations, and an architecture test keeps

@@ -9,15 +9,19 @@ from ..db.sqlite import DbSQLite
 from ..engine.activity import PeriodActivity, PlanMeasure
 from ..engine.chart_model import LINE, SHARE, STACKED, ChartMarker, ChartModel, ChartSeries
 from ..engine.completeness import Completeness
+from ..engine.conversion import ReportingConverter
 from ..engine.plan_detail import (
     CategoryActualDetail,
+    CategoryPeriodDetail,
     CategoryPlannedDetail,
-    explain_category_period,
+    category_period_detail,
 )
-from ..lib.account import AccountClass
+from ..engine.planning import linked_actuals
+from ..lib.account import Account, AccountClass
 from ..lib.money import Money
+from ..lib.transaction import Transaction
 from .contracts import ServiceError, ServiceResult
-from .plan import PlanQuery, PlanQueryResult, _baseline, query_plan
+from .plan import PlanQuery, PlanQueryResult, query_plan
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,11 +280,7 @@ def query_expense_explorer(
     # missing an applicable quote cannot show Remaining.
     expense_accounts = {row.account for row in plan.report.expenses}
     foreign = [accounts & expense_accounts for accounts in plan.report.unconverted_accounts]
-    scenario = (
-        next((item for item in db.iter_scenarios() if item.handle == plan.scenario.handle), None)
-        if plan.scenario.handle is not None
-        else (request.baseline or _baseline(db, plan.start, plan.end))
-    )
+    details = _Details(db, plan)
 
     def to_date(account_handle: str, index: int, actual: Money) -> Money | None:
         bucket = buckets[index]
@@ -288,18 +288,10 @@ def query_expense_explorer(
             return None
         if bucket.end <= plan.report.as_of:
             return actual
-        detail = explain_category_period(
-            db,
-            account_handle,
-            bucket.start,
-            bucket.end,
-            scenario=scenario,
-            as_of=plan.report.as_of,
-        )
         return sum(
             (
                 item.amount
-                for item in detail.actual_transactions
+                for item in details.explain(account_handle, index).actual_transactions
                 if item.post_date <= plan.report.as_of
             ),
             Money(0),
@@ -403,64 +395,102 @@ def query_expense_explorer(
         as_of,
         "income",
     )
-    drilldown = None
-    if account is not None or period_index is not None:
-        selected = next(
-            (item for item in (*categories, *income_categories) if item.account == account),
-            None,
-        )
-        if selected is None or period_index is None or not 0 <= period_index < len(buckets):
-            return ServiceResult.failure(
-                ServiceError("expense.selection.invalid", ("account", "period_index"))
-            )
-        bucket = buckets[period_index]
-        detail = explain_category_period(
-            db,
-            selected.account,
+    explorer = ExpenseExplorer(
+        plan, categories, totals, None, rollover, spending, income, income_categories
+    )
+    if account is None and period_index is None:
+        return ServiceResult.success(explorer)
+    return expense_drilldown(db, explorer, account, period_index, details=details)
+
+
+class _Details:
+    """Category explanations over the Plan's own activity buckets.
+
+    The Plan has already built every bucket's dated activity, so each category is
+    explained from it; the accounts, matched actuals, and currency converter are
+    read once and shared (#310).
+    """
+
+    def __init__(self, db: DbSQLite, plan: PlanQueryResult) -> None:
+        self.db = db
+        self.plan = plan
+        self.accounts: dict[str, Account] = {item.handle: item for item in db.iter_accounts()}
+        self.converter = ReportingConverter(db, plan.report.as_of)
+        self._linked: dict[str, Transaction] | None = None
+
+    def explain(self, account: str, index: int) -> CategoryPeriodDetail:
+        bucket = self.plan.report.activity.periods[index]
+        if self._linked is None:
+            self._linked = linked_actuals(self.db)
+        return category_period_detail(
+            self.db,
+            account,
             bucket.start,
             bucket.end,
-            scenario=scenario,
-            as_of=plan.report.as_of,
+            (bucket,),
+            as_of=self.plan.report.as_of,
+            accounts=self.accounts,
+            linked=self._linked,
+            converter=self.converter,
         )
-        is_income = selected in income_categories
-        grouped: dict[str, list[CategoryActualDetail]] = {}
-        for actual in detail.actual_transactions:
-            key = _merchant_name(actual.description, is_income).casefold()
-            grouped.setdefault(key, []).append(actual)
-        merchants = tuple(
-            MerchantGroup(
-                min(_merchant_name(item.description, is_income) for item in items),
-                sum((item.amount for item in items), Money(0)),
-                tuple(
-                    MerchantActual(item.transaction, item.post_date, item.description, item.amount)
-                    for item in items
-                ),
-            )
-            for _, items in sorted(grouped.items())
-        )
-        if (
-            sum((item.amount for item in merchants), Money(0))
-            != selected.periods[period_index].actual
-        ):
-            raise AssertionError("merchant actuals do not reconcile to Plan")
-        if (detail.planned, detail.actual) != (
-            selected.periods[period_index].planned,
-            selected.periods[period_index].actual,
-        ):
-            raise AssertionError("expense detail does not reconcile to Plan")
-        drilldown = ExpenseDrilldown(
-            selected.account,
-            selected.periods[period_index],
-            detail.planned_events,
-            detail.actual_transactions,
-            merchants,
-            income=is_income,
-        )
-    return ServiceResult.success(
-        ExpenseExplorer(
-            plan, categories, totals, drilldown, rollover, spending, income, income_categories
-        )
+
+
+def expense_drilldown(
+    db: DbSQLite,
+    explorer: ExpenseExplorer,
+    account: str | None,
+    period_index: int | None,
+    *,
+    details: _Details | None = None,
+) -> ServiceResult[ExpenseExplorer]:
+    """``explorer`` with one category-period explained, without recomputing the Plan.
+
+    Changing the selected category or period in an open Expense Explorer needs
+    only this, so it costs one category's activity rather than a whole Plan.
+    """
+    categories, income_categories = explorer.categories, explorer.income_categories
+    buckets = explorer.plan.report.activity.periods
+    selected = next(
+        (item for item in (*categories, *income_categories) if item.account == account),
+        None,
     )
+    if selected is None or period_index is None or not 0 <= period_index < len(buckets):
+        return ServiceResult.failure(
+            ServiceError("expense.selection.invalid", ("account", "period_index"))
+        )
+    detail = (details or _Details(db, explorer.plan)).explain(selected.account, period_index)
+    is_income = selected in income_categories
+    grouped: dict[str, list[CategoryActualDetail]] = {}
+    for actual in detail.actual_transactions:
+        key = _merchant_name(actual.description, is_income).casefold()
+        grouped.setdefault(key, []).append(actual)
+    merchants = tuple(
+        MerchantGroup(
+            min(_merchant_name(item.description, is_income) for item in items),
+            sum((item.amount for item in items), Money(0)),
+            tuple(
+                MerchantActual(item.transaction, item.post_date, item.description, item.amount)
+                for item in items
+            ),
+        )
+        for _, items in sorted(grouped.items())
+    )
+    if sum((item.amount for item in merchants), Money(0)) != selected.periods[period_index].actual:
+        raise AssertionError("merchant actuals do not reconcile to Plan")
+    if (detail.planned, detail.actual) != (
+        selected.periods[period_index].planned,
+        selected.periods[period_index].actual,
+    ):
+        raise AssertionError("expense detail does not reconcile to Plan")
+    drilldown = ExpenseDrilldown(
+        selected.account,
+        selected.periods[period_index],
+        detail.planned_events,
+        detail.actual_transactions,
+        merchants,
+        income=is_income,
+    )
+    return ServiceResult.success(replace(explorer, drilldown=drilldown))
 
 
 #: The most top-level categories a category chart names; the rest share one "Other".

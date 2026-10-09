@@ -889,6 +889,32 @@ class DbSQLite(ChangeVerification):
         data = self._read("txn", handle)
         return Transaction.from_dict(data) if data else None
 
+    def iter_plan_linked_transactions(self) -> Iterator[Transaction]:
+        """Transactions that name a scheduled occurrence or schedule, in ledger order.
+
+        Plan, Projection, and the Expense Explorer look these up on every build;
+        filtering in SQL decodes only them instead of the whole ledger (#310).
+        Without SQLite's JSON functions every transaction is read and filtered here.
+        """
+        conn = self._require()
+        sql = (
+            "SELECT t.handle, t.post_date, t.blob FROM txn t"
+            " WHERE json_extract(t.blob, '$.planned_occurrence') IS NOT NULL"
+            " OR json_extract(t.blob, '$.scheduled_from') IS NOT NULL"
+            " ORDER BY t.post_date, t.handle"
+        )
+        try:
+            rows = conn.execute(sql).fetchall()
+        except sqlite3.OperationalError:
+            for transaction in self.iter_transactions():
+                if transaction.planned_occurrence or transaction.scheduled_from:
+                    yield transaction
+            return
+        for row in rows:
+            obj = self._decode_row("transaction", row["handle"], row["blob"], Transaction)
+            if obj is not None:
+                yield obj
+
     def iter_transactions(
         self,
         account: str | None = None,

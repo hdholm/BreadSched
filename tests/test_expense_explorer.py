@@ -445,3 +445,124 @@ def test_printout_adds_the_selected_income_detail(db, book):
     # Without an income selection, or with an expense drilldown, nothing is added.
     assert "Income detail" not in expense_explorer_report(expense.value)
     assert "Income detail" not in expense_explorer_report(expense.value, expense.value.drilldown)
+
+
+def _busy_book(db, book, categories=12, days=120):
+    """Several categories with daily spending, one matched to a planned occurrence."""
+    from breadsched.gen.lib import PlanningResolution
+
+    with db.transaction("Categories") as txn:
+        handles = []
+        for number in range(categories):
+            account = Account(
+                name=f"Category {number}", atype=AccountType.EXPENSE, parent=book.expenses
+            )
+            db.add_account(account, txn)
+            handles.append(account.handle)
+        estimate = ScheduledTransaction(
+            name="Monthly market",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 20)),
+            splits=[
+                ScheduledSplit(handles[0], Money(300)),
+                ScheduledSplit(book.checking, Money(-300)),
+            ],
+        )
+        estimate.placeholder = True
+        db.add_scheduled(estimate, txn)
+    with db.transaction("Spending") as txn:
+        for day in range(days):
+            when = date(2026, 1, 1).fromordinal(date(2026, 1, 1).toordinal() + day)
+            for number, handle in enumerate(handles):
+                db.add_transaction(
+                    Transaction.simple(when, f"Store {number}", handle, book.checking, "3"), txn
+                )
+        matched = Transaction.simple(date(2026, 3, 21), "Market", handles[0], book.checking, "280")
+        matched.planned_occurrence = estimate.occurrence_key(date(2026, 3, 20))
+        matched.planned_for = date(2026, 3, 20)
+        matched.planning_resolution = PlanningResolution.MATCHED
+        db.add_transaction(matched, txn)
+    return handles
+
+
+def test_the_explorer_reads_the_ledger_a_bounded_number_of_times(db, book, monkeypatch):
+    # #310: each category's actual-to-date rebuilt the Plan's activity, and each
+    # matched actual rescanned the ledger, so one query decoded every transaction
+    # about a hundred times on a household book.
+    handles = _busy_book(db, book)
+    ledger = sum(1 for _ in db.iter_transactions())
+    decoded = []
+    real = db._decode_row
+
+    def counting(table, handle, blob, cls):
+        if table == "transaction":
+            decoded.append(handle)
+        return real(table, handle, blob, cls)
+
+    monkeypatch.setattr(db, "_decode_row", counting)
+    request = PlanQuery(start=date(2026, 1, 1), end=date(2026, 4, 30), today=date(2026, 3, 25))
+    result = query_expense_explorer(db, request, account=handles[0], period_index=2)
+    assert result.value is not None and result.value.drilldown is not None
+    # The Plan reads its range's ledger twice (activity and cash position); matched
+    # actuals are read on their own, and categories reuse the Plan's activity.
+    assert len(decoded) < 3 * ledger, (len(decoded), ledger)
+    # The partial period's actual-to-date agrees with the Plan-detail explanation.
+    from breadsched.gen.engine.plan_detail import explain_category_period
+
+    march = result.value.categories[[c.account for c in result.value.categories].index(handles[0])]
+    explained = explain_category_period(
+        db, handles[0], date(2026, 3, 1), date(2026, 3, 31), as_of=date(2026, 3, 25)
+    )
+    assert march.periods[2].actual_to_date == sum(
+        (
+            item.amount
+            for item in explained.actual_transactions
+            if item.post_date <= date(2026, 3, 25)
+        ),
+        Money(0),
+    )
+    matched = [item for item in result.value.drilldown.actual_transactions if item.expected]
+    assert [item.expected for item in matched] == [Money(300)]
+
+
+def test_a_drilldown_reuses_the_loaded_explorer(db, book, monkeypatch):
+    from breadsched.gen.services import expense_explorer
+
+    handles = _busy_book(db, book, categories=3, days=40)
+    request = PlanQuery(start=date(2026, 1, 1), end=date(2026, 3, 31), today=date(2026, 3, 25))
+    explorer = query_expense_explorer(db, request).value
+    assert explorer is not None and explorer.drilldown is None
+    monkeypatch.setattr(
+        expense_explorer, "query_plan", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError)
+    )
+    detail = expense_explorer.expense_drilldown(db, explorer, handles[1], 1)
+    assert detail.value is not None and detail.value.drilldown is not None
+    assert (
+        detail.value.drilldown.period
+        == explorer.categories[[c.account for c in explorer.categories].index(handles[1])].periods[
+            1
+        ]
+    )
+    assert detail.value.categories is explorer.categories
+    bad = expense_explorer.expense_drilldown(db, explorer, handles[1], 9)
+    assert [error.code for error in bad.errors] == ["expense.selection.invalid"]
+
+
+def test_linked_transactions_are_read_without_the_rest_of_the_ledger(db, book, monkeypatch):
+    _busy_book(db, book, categories=2, days=10)
+    linked = list(db.iter_plan_linked_transactions())
+    expected = [t for t in db.iter_transactions() if t.planned_occurrence or t.scheduled_from]
+    assert [t.handle for t in linked] == [t.handle for t in expected] and len(linked) == 1
+
+    # Without SQLite's JSON functions the ledger is filtered in Python instead.
+    import sqlite3
+
+    real = db._conn
+
+    class NoJson:
+        def execute(self, sql, *args):
+            if "json_extract" in sql:
+                raise sqlite3.OperationalError("no such function: json_extract")
+            return real.execute(sql, *args)
+
+    monkeypatch.setattr(db, "_conn", NoJson())
+    assert [t.handle for t in db.iter_plan_linked_transactions()] == [t.handle for t in expected]

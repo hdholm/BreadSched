@@ -385,10 +385,14 @@ drawdown and **Remove** deletes it; a refused entry explains why and changes not
 ### Explore expenses
 
 Apply the Plan controls first, then choose the **Explore** toolbar icon while Plan
-is shown. Click a period on any **Spending over time** or **Income over time**
+is shown. The window opens at once and says it is calculating while it works out the
+Plan behind it; **Cancel** closes it. The choices sit two to a row above the
+results, and **Print…** and **Close** are at the bottom. Click a period on any **Spending over time** or **Income over time**
 chart, or on the **Category trend** chart, to make it the comparison period (choose an **Income detail** category to list that
 period's dated income), use **Sort categories** to order the category rows, and choose a
-**Category trend**. **Carry prior periods** turns rollover on. See
+**Category trend**. Changing these uses what was already calculated, so the window
+updates straight away. **Carry prior periods** turns rollover on, which calculates
+again. See
 [Explore expenses](../USER_GUIDE.md#explore-expenses).
 
 ## Savings goals
