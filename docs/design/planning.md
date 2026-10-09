@@ -571,9 +571,11 @@ account on its posting date (`planning.scheduled_events`). Occurrences up to
 `_HORIZON_DAYS` after the range are read so a later-due occurrence still fills inside
 it. A goal's fills are the changes in `savings_goals.goal_progress(...).set_aside` on
 income, allocation, target, and period-end dates; closing it draws the whole earmark.
-`reporting_periods` only groups those dated events. A scheduled jar's level starts
-from the fills (less draws) before the range for occurrences due in it; a goal's
-level is its earmark. Jars bundle by account and currency, and totals never add
+`reporting_periods` only groups those dated events. A scheduled jar's level carries
+in every earlier event: occurrences are read from the earliest schedule's start, and
+the opening level is every fill less every actual draw dated before the range, so
+earlier leftovers and overspending count and an unmatched occurrence's money stays in
+the jar until matched or skipped; a goal's level is its earmark. Jars bundle by account and currency, and totals never add
 currencies together. `report_layout.budget_jars_layout` prints the report; the GTK
 `BudgetJarsDialog` (Plan → Budget Jars), the browser (`/api/budget-jars`), and
 `breadsched jars` show it.

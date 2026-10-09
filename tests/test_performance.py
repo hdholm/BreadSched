@@ -111,3 +111,58 @@ def test_net_worth_change_stays_interactive(realistic_book):
     assert change.posted is not None and change.revaluation is not None
     assert change.posted + change.revaluation == change.change
     assert elapsed < 1.5, f"a month's net worth change took {elapsed:.3f}s on a 30k book"
+
+
+@pytest.mark.performance
+def test_budget_jars_carry_in_years_of_history_quickly(realistic_book):
+    """Levels carry in every earlier occurrence; five weekly years must stay interactive."""
+    from breadsched.gen.engine.budget_jars import budget_jars
+    from breadsched.gen.lib import (
+        Money,
+        PeriodType,
+        Recurrence,
+        ScheduledSplit,
+        ScheduledTransaction,
+    )
+
+    db, checking, expense = realistic_book
+    income = Account(name="Pay", atype=AccountType.INCOME)
+    with db.transaction("Jar schedules") as txn:
+        db.add_account(income, txn)
+        pay = ScheduledTransaction(
+            name="Weekly pay",
+            recurrence=Recurrence(PeriodType.WEEK, interval=1, start=date(2021, 9, 3)),
+            splits=[
+                ScheduledSplit(checking.handle, Money(800)),
+                ScheduledSplit(income.handle, Money(-800)),
+            ],
+        )
+        pay.last_posted = date(2026, 9, 1)
+        groceries = ScheduledTransaction(
+            name="Weekly groceries",
+            recurrence=Recurrence(PeriodType.WEEK, interval=1, start=date(2021, 9, 6)),
+            splits=[
+                ScheduledSplit(expense.handle, Money(150)),
+                ScheduledSplit(checking.handle, Money(-150)),
+            ],
+        )
+        groceries.placeholder = True
+        db.add_scheduled(pay, txn)
+        db.add_scheduled(groceries, txn)
+    try:
+        start = perf_counter()
+        report = budget_jars(db, date(2026, 7, 1), date(2026, 9, 30), today=date(2026, 9, 15))
+        elapsed = perf_counter() - start
+    finally:
+        # The book is shared by the module's tests, which run in random order: a
+        # projection after this test must not also project five years of weekly
+        # schedules.
+        with db.transaction("Remove jar schedules") as txn:
+            db.remove_scheduled(pay.handle, txn)
+            db.remove_scheduled(groceries.handle, txn)
+            db.remove_account(income.handle, txn)
+
+    [jar] = report.jars
+    # About 260 earlier weeks were filled and never matched: all still set aside.
+    assert jar.opening > Money(150 * 250)
+    assert elapsed < 5.0, f"budget jars over five weekly years took {elapsed:.3f}s"
