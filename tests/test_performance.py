@@ -149,9 +149,18 @@ def test_budget_jars_carry_in_years_of_history_quickly(realistic_book):
         groceries.placeholder = True
         db.add_scheduled(pay, txn)
         db.add_scheduled(groceries, txn)
-    start = perf_counter()
-    report = budget_jars(db, date(2026, 7, 1), date(2026, 9, 30), today=date(2026, 9, 15))
-    elapsed = perf_counter() - start
+    try:
+        start = perf_counter()
+        report = budget_jars(db, date(2026, 7, 1), date(2026, 9, 30), today=date(2026, 9, 15))
+        elapsed = perf_counter() - start
+    finally:
+        # The book is shared by the module's tests, which run in random order: a
+        # projection after this test must not also project five years of weekly
+        # schedules.
+        with db.transaction("Remove jar schedules") as txn:
+            db.remove_scheduled(pay.handle, txn)
+            db.remove_scheduled(groceries.handle, txn)
+            db.remove_account(income.handle, txn)
 
     [jar] = report.jars
     # About 260 earlier weeks were filled and never matched: all still set aside.
