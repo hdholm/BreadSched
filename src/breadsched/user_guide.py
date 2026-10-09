@@ -76,6 +76,7 @@ HELP_TOPICS: dict[str, str] = {
     "writeback": "Write changes back to GnuCash",
     "reconcile": "Reconcile a statement",
     "online-quotes": "Online quotes",
+    "specific-lots": "Choose the lots a sale sells",
     "scheduled": "Scheduled activity",
     "due-review": "Review due transactions",
     "payroll": "Paychecks and pay changes",

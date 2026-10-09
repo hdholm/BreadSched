@@ -8,6 +8,7 @@ atomic and always balances" enforceable: the whole thing is written or none of i
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
 from typing import Any
@@ -17,6 +18,7 @@ from .money import Money
 
 __all__ = [
     "InvestmentActivityKind",
+    "LotPick",
     "PlanningFlowKind",
     "PlanningResolution",
     "ReconcileState",
@@ -127,6 +129,26 @@ class InvestmentActivityKind(str, Enum):
         return 0
 
 
+@dataclass(frozen=True, slots=True)
+class LotPick:
+    """Shares a sale takes from one named lot (specific identification).
+
+    A lot is named by the transaction that acquired it, which it keeps through
+    later sales, share splits, and transfers between accounts. The quantity is in
+    shares as held at the sale, after any share split.
+    """
+
+    lot: str
+    quantity: Money
+
+    def serialize(self) -> dict[str, Any]:
+        return {"lot": self.lot, "quantity": [self.quantity.numerator, self.quantity.denominator]}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> LotPick:
+        return cls(str(data["lot"]), Money(*data["quantity"]))
+
+
 class Split:
     """One leg of a transaction: an amount posted against one account."""
 
@@ -143,6 +165,7 @@ class Split:
         "investment_activity",
         "fsa_year_start",
         "importer_added",
+        "lot_picks",
     )
 
     def __init__(
@@ -158,8 +181,12 @@ class Split:
         investment_activity: InvestmentActivityKind | str | None = None,
         fsa_year_start: date | str | None = None,
         importer_added: bool = False,
+        lot_picks: Iterable[LotPick] = (),
     ) -> None:
         self.handle = handle or create_handle()
+        #: For a sale of shares: the lots it sells, instead of the account's
+        #: first-in, first-out or average-cost method. BreadSched-owned.
+        self.lot_picks: tuple[LotPick, ...] = tuple(lot_picks)
         self.account = account
         #: A split the importer added for BreadSched's own bookkeeping (a share
         #: split's zero-value balancing leg); GnuCash write-back never sends it.
@@ -213,6 +240,11 @@ class Split:
             "fsa_year_start": (self.fsa_year_start.isoformat() if self.fsa_year_start else None),
             # Written only when set, so every other split's stored form is unchanged.
             **({"importer_added": True} if self.importer_added else {}),
+            **(
+                {"lot_picks": [pick.serialize() for pick in self.lot_picks]}
+                if self.lot_picks
+                else {}
+            ),
         }
 
     @classmethod
@@ -229,6 +261,7 @@ class Split:
             investment_activity=data.get("investment_activity"),
             fsa_year_start=data.get("fsa_year_start"),
             importer_added=bool(data.get("importer_added", False)),
+            lot_picks=[LotPick.from_dict(item) for item in data.get("lot_picks", ())],
         )
         raw = data.get("reconcile_date")
         split.reconcile_date = date.fromisoformat(raw) if raw else None

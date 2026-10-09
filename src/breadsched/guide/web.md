@@ -65,6 +65,16 @@ account's settings choose **Cost of shares sold** (first in, first out, or avera
 cost; `/api/account/cost-basis`). See
 [Holdings and cost basis](../USER_GUIDE.md#holdings-and-cost-basis).
 
+## Choose the lots a sale sells
+
+In **Holdings and cost basis…**, open a holding and choose **Choose lots…** beside a
+sale. Enter the shares to sell from each lot held before the sale and choose
+**Save**; unassigned shares sell by the account's method, and **Use the account's
+method** clears the choice (`/api/holdings/sale-lots`). **Realized gains…** lists
+every sale with the lots it took and totals by year, filtered by year, and **Print**
+prints just the report (`/api/realized-gains`). See
+[Specific lots and realized gains](../USER_GUIDE.md#specific-lots-and-realized-gains).
+
 ## Online quotes
 
 In **Accounts**, choose **Online quotes…**. Type each security's or currency's

@@ -3,9 +3,12 @@
 Lots are never stored: like a receivable's status, they are recomputed from the
 splits of each investment or retirement account that holds a security. Each split
 that adds shares opens a lot at its value (what was paid, in the transaction's
-currency); each split that removes shares sells first-in, first-out from the open
-lots (or, for an account set to average cost, the same fraction of every lot), and
-the gain realized is the proceeds less the cost of the shares it took. Shares that
+currency); each split that removes shares sells the lots it names (specific
+identification, ``Split.lot_picks``), and otherwise, or for any shares beyond those
+named, first-in, first-out from the open lots (or, for an account set to average
+cost, the same fraction of every lot). The gain realized is the proceeds less the
+cost of the shares it took, and each sale keeps the lot parts it took, with their
+purchase dates. Shares that
 move to another security account of the same commodity are not sold: their lots,
 with their purchase dates and cost, move with them. A change of shares in a
 transaction where nothing carries value (any other leg is zero) is a share split:
@@ -30,7 +33,7 @@ from datetime import date
 from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountType
 from ..lib.money import Money
-from ..lib.transaction import Transaction
+from ..lib.transaction import LotPick, Transaction
 from .currency import reporting_currency_handle
 from .valuation import AccountValuation, account_value
 
@@ -41,6 +44,7 @@ __all__ = [
     "RealizedGain",
     "cost_basis",
     "holdings_cost_basis",
+    "lots_before_sale",
     "shares_text",
 ]
 
@@ -74,6 +78,12 @@ class RealizedGain:
     transaction: str
     #: Shares sold beyond the recorded purchases; their cost and gain are unknown.
     uncovered: Money = field(default_factory=lambda: Money(0))
+    #: The lot parts this sale took, with their purchase dates and cost.
+    lots: tuple[Lot, ...] = ()
+    #: True when the sale named its lots (specific identification).
+    specific: bool = False
+    #: The selling split, which carries the lot choice.
+    split: str = ""
 
     @property
     def gain(self) -> Money:
@@ -177,6 +187,17 @@ class HoldingCostBasis:
                     "gain": sale.gain,
                     "uncovered": shares_text(sale.uncovered),
                     "transaction": sale.transaction,
+                    "split": sale.split,
+                    "specific": sale.specific,
+                    "lots": [
+                        {
+                            "acquired": lot.acquired,
+                            "quantity": shares_text(lot.quantity),
+                            "cost": lot.cost,
+                            "lot": lot.transaction,
+                        }
+                        for lot in sale.lots
+                    ],
                 }
                 for sale in self.sales
             ],
@@ -242,6 +263,49 @@ def _take(open_lots: list[Lot], wanted: Money, method: str) -> tuple[list[Lot], 
     return left, taken, wanted - covered
 
 
+def _take_named(
+    open_lots: list[Lot], picks: tuple[LotPick, ...], wanted: Money, method: str
+) -> tuple[list[Lot], list[Lot], Money, list[str]]:
+    """Take the named lots first, then any remaining shares by ``method``.
+
+    Returns the lots left, the parts taken, the shares uncovered, and a description
+    of each pick that could not be honoured in full (a lot already sold, or fewer
+    shares left in it than named).
+    """
+    left = list(open_lots)
+    taken: list[Lot] = []
+    problems: list[str] = []
+    remaining = wanted
+    for pick in picks:
+        want = min(pick.quantity, remaining)
+        if want <= 0:
+            if pick.quantity > 0:
+                problems.append(f"lot {pick.lot[:8]} was named beyond the shares sold")
+            continue
+        got = Money(0)
+        for index, lot in enumerate(left):
+            if lot.transaction != pick.lot or got >= want:
+                continue
+            part = min(lot.quantity, want - got)
+            cost = lot.cost if part == lot.quantity else lot.cost * (part / lot.quantity)
+            taken.append(Lot(lot.acquired, part, cost, lot.transaction))
+            left[index] = Lot(lot.acquired, lot.quantity - part, lot.cost - cost, lot.transaction)
+            got = got + part
+        left = [lot for lot in left if lot.quantity > 0]
+        if got < want:
+            problems.append(
+                f"lot {pick.lot[:8]} had {shares_text(got)} of the {shares_text(want)} "
+                "shares named; the rest were taken by the account's method"
+            )
+        remaining = remaining - got
+    if remaining > 0:
+        left, rest, uncovered = _take(left, remaining, method)
+        taken.extend(rest)
+    else:
+        uncovered = Money(0)
+    return left, taken, uncovered, problems
+
+
 def _transfer_partner(
     db: DbSQLite, account: Account, txn: Transaction, quantity: Money
 ) -> Account | None:
@@ -269,6 +333,8 @@ def cost_basis(
     *,
     as_of: date | None = None,
     _visiting: frozenset[tuple[str, date | None]] = frozenset(),
+    _before_split: str | None = None,
+    _snapshot: list[tuple[Lot, ...]] | None = None,
 ) -> HoldingCostBasis | None:
     """The lots of one security account, by its method; ``None`` if it holds cash."""
     obj = db.get_account(account) if isinstance(account, str) else account
@@ -308,6 +374,8 @@ def cost_basis(
         currencies.add(row["currency"] or book)
         if not quantity:
             continue
+        if _snapshot is not None and row["handle"] == _before_split:
+            _snapshot.append(tuple(open_lots))
         txn = txns[row["txn"]]
         held = sum((lot.quantity for lot in open_lots), Money(0))
         if txn is not None and _is_share_split(obj, txn, value) and held and held + quantity > 0:
@@ -380,11 +448,30 @@ def cost_basis(
             open_lots.append(Lot(when, quantity, value, row["txn"]))
         else:
             sold = -quantity
-            open_lots, taken, remaining = _take(open_lots, sold, method)
+            picks = _lot_picks(txn, row["handle"])
+            if picks:
+                open_lots, taken, remaining, pick_problems = _take_named(
+                    open_lots, picks, sold, method
+                )
+                problems.extend(f"sale on {when.isoformat()}: {text}" for text in pick_problems)
+            else:
+                open_lots, taken, remaining = _take(open_lots, sold, method)
             cost = sum((lot.cost for lot in taken), Money(0))
             proceeds = -value * ((sold - remaining) / sold)
             uncovered_total = uncovered_total + remaining
-            sales.append(RealizedGain(when, sold, proceeds, cost, row["txn"], remaining))
+            sales.append(
+                RealizedGain(
+                    when,
+                    sold,
+                    proceeds,
+                    cost,
+                    row["txn"],
+                    remaining,
+                    tuple(taken),
+                    bool(picks),
+                    row["handle"],
+                )
+            )
     if zero_cost:
         problems.append(
             f"{shares_text(zero_cost)} shares arrived with no recorded cost (a transfer in "
@@ -418,6 +505,27 @@ def cost_basis(
         tuple(problems),
         tuple(moves),
     )
+
+
+def _lot_picks(txn: Transaction | None, split_handle: str) -> tuple[LotPick, ...]:
+    if txn is None:
+        return ()
+    for split in txn.splits:
+        if split.handle == split_handle:
+            return split.lot_picks
+    return ()
+
+
+def lots_before_sale(db: DbSQLite, account: Account | str, split_handle: str) -> tuple[Lot, ...]:
+    """The lots open in ``account`` just before the sale made by ``split_handle``.
+
+    These are the lots a sale may name. Shares bought earlier the same day count,
+    as they do when the sale is computed. Empty when the split is not in the
+    account's history.
+    """
+    snapshot: list[tuple[Lot, ...]] = []
+    cost_basis(db, account, _before_split=split_handle, _snapshot=snapshot)
+    return snapshot[0] if snapshot else ()
 
 
 def holdings_cost_basis(db: DbSQLite, *, as_of: date | None = None) -> list[HoldingCostBasis]:

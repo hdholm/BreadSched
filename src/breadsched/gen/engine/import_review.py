@@ -267,6 +267,9 @@ def merge_local_state(incoming: Transaction, existing: Transaction) -> None:
         split.planning_flow = prior.planning_flow
         split.investment_activity = prior.investment_activity
         split.fsa_year_start = prior.fsa_year_start
+        if split.account == prior.account:
+            # Which lots a sale sells is BreadSched's choice; GnuCash keeps its own.
+            split.lot_picks = prior.lot_picks
         if prior.reconcile is ReconcileState.RECONCILED and (
             split.account,
             split.value,

@@ -10,6 +10,27 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a264 - 2026-10-09
+
+- **Specific lots and realized gains.** A sale can name the lots it sells
+  (`Split.lot_picks`: the acquiring transaction and the shares taken from it)
+  instead of the account's first-in, first-out or average-cost method. The cost
+  basis engine takes the named shares first and the rest by the method; a lot that
+  no longer has the shares is a named problem, not an error. The choice is
+  BreadSched-owned: kept on re-import while the split stays in its account, copied
+  by edits, never a held source change, and never written back to GnuCash. Older
+  books need no migration; the field is stored only on sales that name lots.
+- `gen/services/lots` validates and saves a choice as one undo step (unknown or
+  repeated lot, a quantity above the lot or the sale), and `engine/realized_gains`
+  lists every sale with the lots it took and totals proceeds, cost, and gain by
+  year and currency.
+- Holdings and Cost Basis gains **Choose Lots…** on each sale and a **Realized
+  Gains…** report with a year filter and printing, in GTK (native print layout)
+  and the browser (the report prints alone). The CLI adds `breadsched sale-lots`
+  and `breadsched realized-gains`; the web adds `GET/POST /api/holdings/sale-lots`
+  and `GET /api/realized-gains`. Engine, service, CLI, route, GTK, and browser
+  tests cover them.
+
 ## 0.2.0a263 - 2026-10-09
 
 - **Start-up dialogs take turns (#295 follow-up).** Opening a book that needed an

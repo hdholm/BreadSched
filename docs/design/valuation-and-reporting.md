@@ -86,6 +86,26 @@ of approximating. `presentation.holding_cost_text` words it for the GTK
 `HoldingsDialog`, the browser (`/api/holdings`, shares as exact decimal text), and
 `breadsched holdings`.
 
+A sale may name its lots instead (specific identification). The choice is the
+only stored part: `Split.lot_picks`, a tuple of `LotPick(lot, quantity)` on the
+selling split, serialized only when set, where `lot` is the handle of the
+transaction that opened the lot (a lot keeps it through sales, share splits, and
+transfers) and `quantity` is shares as held at the sale. `cost_basis` takes the
+named parts first and sells any remainder by the account's method; a pick the lot
+can no longer honour is a named problem, never an error. Each `RealizedGain` keeps
+the lot parts it took (`lots`), whether it named them (`specific`), and its
+`split`. `lots_before_sale` re-derives the open lots just before a sale for
+choosers, and `services.lots.set_sale_lots` validates picks against them (known
+lot, positive shares, no more than the lot holds or the sale sold, each lot once)
+and stores them as one undo step; rejected input changes nothing. The choice is
+BreadSched-owned: `import_review.merge_local_state` keeps it on re-import, edits
+copy it with the split, and it is not among the source facts write-back compares.
+`engine.realized_gains` gathers every sale (optionally one year or account) with
+its lots and totals by year and currency, never adding currencies together;
+`report_layout.realized_gains_layout` prints it, the GTK `RealizedGainsDialog` and
+`SaleLotsDialog`, the browser (`/api/realized-gains`, `/api/holdings/sale-lots`),
+and `breadsched realized-gains` and `sale-lots` show and change it.
+
 Ordinary foreign-currency account valuation uses the latest direct quote on or
 before the as-of date, then the latest eligible reverse pair if no direct applies,
 retaining the exact converted amount until presentation. Its result carries quote
@@ -436,8 +456,8 @@ straight to a PDF 1.4 file, which tests and the Windows installer check use.
 The browser route, a private, owner-readable HTML preview opened in the default
 browser and removed when the application exits, is the placeholder for native macOS
 printing: only on macOS does the File menu offer **Print in Browser…** (Linux and
-Windows print natively). The dialog reports (Net Worth History, its change detail, and
-Expense Explorer) have layouts of their own and print through
+Windows print natively). The dialog reports (Net Worth History, its change detail,
+Expense Explorer, and Realized Gains) have layouts of their own and print through
 `printing.print_document`, which opens the browser preview only when GTK printing
 fails. A cell may span columns (`Cell.span`, used by the net worth change totals)
 and hold line breaks (merchant transactions, top-level account values).
@@ -453,7 +473,10 @@ the browser print dialog.
 
 The web interface prints its current rendered view directly. Print-specific CSS
 removes navigation and editing actions, restores tables hidden by screen scroll
-regions, and preserves text, tables, and SVG charts as scalable output. Both paths
+regions, and preserves text, tables, and SVG charts as scalable output. A report
+dialog marked `printable-dialog` (Realized gains) prints on its own: its **Print**
+button sets `body.printing-dialog` for the print, which hides the page and shows only
+that dialog, and `screen-only` controls are left out. Both paths
 keep formatting and pagination in presentation code while all monetary values,
 totals, classifications, and comparisons remain engine-owned.
 

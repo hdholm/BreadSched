@@ -1019,6 +1019,31 @@ is no unrealized gain. Open it from **Actions → Holdings and Cost Basis…** i
 desktop Accounts view, **Holdings and cost basis…** in the browser's Accounts page,
 or `breadsched holdings` (with `--lots` for the detail).
 
+### Specific lots and realized gains
+
+A sale can name the lots it sells instead of using the account's method ("specific
+identification"), for example to sell the shares that cost the most. Choose the
+shares to take from each lot held just before the sale; shares you do not assign
+are still sold by the account's method, and clearing the choice returns the whole
+sale to it. A lot is named by the purchase that opened it, so the choice still
+holds after a share split (enter the shares as held at the sale) or after the
+shares moved from another of your accounts. If a named lot no longer has the
+shares (because an earlier sale took them, for instance), the rest is sold by the
+method and the holding names the shortfall. The choice is BreadSched's own: it
+survives editing the sale and re-importing it from GnuCash, and it is not written
+back to GnuCash.
+
+**Realized gains** lists every sale with what it brought, what the lots it took had
+cost (each with its purchase date), the gain, and whether it sold named lots or
+used the account's method, with totals by year. Amounts in different currencies are
+totalled separately. Choose a year to see only that year's sales, and print the
+report. On the desktop use **Choose Lots…** and **Realized Gains…** in
+[Holdings and Cost Basis](guide/desktop.md#choose-the-lots-a-sale-sells), in the
+browser the same buttons in
+[Holdings and cost basis](guide/web.md#choose-the-lots-a-sale-sells), and on the
+command line `breadsched sale-lots` and `breadsched realized-gains`
+([Command line](guide/cli.md)).
+
 ### Escrow
 
 Funding an Escrow account from cash or income is the household expense. A later tax

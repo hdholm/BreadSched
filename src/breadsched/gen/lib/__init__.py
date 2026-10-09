@@ -46,6 +46,7 @@ from .scheduled import (
 )
 from .transaction import (
     InvestmentActivityKind,
+    LotPick,
     PlanningFlowKind,
     PlanningResolution,
     ReconcileState,
@@ -104,6 +105,7 @@ __all__ = [
     "ScheduledSplit",
     "ScheduledSplitAmountChange",
     "ScheduledTransaction",
+    "LotPick",
     "Split",
     "scheduled_occurrence_preview",
     "Transaction",
