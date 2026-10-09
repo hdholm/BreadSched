@@ -1086,7 +1086,9 @@ not calculate tax.
 cost, their market value at the latest price, and the unrealized gain or loss. Open a
 holding to see its lots (each purchase still held, with its cost) and each sale with
 what it brought, what the shares sold had cost, and the realized gain; realized gains
-are also totalled by year. A sale takes the oldest shares first ("first in, first
+are also totalled by year. A chart above the list shows each holding's cost, market
+value, and unrealized gain side by side (one chart per currency the holdings cost
+in), with the same values in the table. A sale takes the oldest shares first ("first in, first
 out") unless the account is set to **Average cost**, where each share sold costs the
 average of every share held and each lot gives up the same fraction of itself.
 Choose the method in the account's settings (**Cost of shares sold** in the desktop
@@ -1281,6 +1283,10 @@ the whole target is set aside. Twelve equal monthly paychecks toward a 1,200 goa
 set aside 100 each. Income that was scheduled but never arrived sets nothing aside.
 If no income is scheduled before the target date, the gap is set aside evenly by
 day instead.
+
+The goal list is charted too: one column per open goal, labelled with its target
+month, with what is set aside stacked under what is still to save, so each column
+reaches the goal's target.
 
 You can allocate extra money to a goal at any time, for example a bonus. It is set
 aside in full on its date, and later income spreads only what is still missing.

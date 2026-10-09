@@ -11,6 +11,8 @@ from __future__ import annotations
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
+from ...gen.engine.currency import reporting_currency_label
+from ...gen.engine.savings_goals import goals_chart
 from ...gen.lib.money import Money
 from ...gen.lib.savings_goal import SavingsGoal
 from ...gen.services.savings_goals import (
@@ -35,6 +37,7 @@ from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
+from ..widgets.model_chart import ModelChartView
 
 __all__ = ["SavingsGoalsDialog"]
 
@@ -79,6 +82,9 @@ class SavingsGoalsDialog(BoundedWindow):
         box.append(scroller)
         self.totals = Gtk.Label(xalign=0, wrap=True)
         box.append(self.totals)
+        # Each open goal's set-aside against its target; the table above has the values.
+        self.chart = ModelChartView(height=200)
+        box.append(self.chart)
 
         box.append(Gtk.Label(label="Goal", xalign=0, css_classes=["heading"]))
         form = Gtk.Grid(column_spacing=10, row_spacing=6)
@@ -247,6 +253,9 @@ class SavingsGoalsDialog(BoundedWindow):
             delete.connect("clicked", lambda _b, h=handle: self.delete(h))
             for offset, button in enumerate((edit, toggle, delete)):
                 self.goal_rows.attach(button, 8 + offset, row, 1, 1)
+        model = goals_chart(goals, reporting_currency_label(self.db))
+        self.chart.set_model(model)
+        self.chart.set_visible(not model.empty)
         if report is not None and goals:
             text = f"Set aside for goals: {report.set_aside.format()}"
             if report.held != report.set_aside:

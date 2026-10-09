@@ -10,25 +10,8 @@ merge without new notes publishes nothing.
 
 ## Before the first Beta
 
-Everything in this section is required before the first Beta, in this order. Each
-slice uses shared calculations and covers GTK, web, CLI, and printable output
-wherever that behavior is exposed, and preserves imported source ownership and
-round-trip limits, exact money, and explicit missing-currency valuations.
-
-1. **Visualizations.** The shared chart model (`gen/engine/chart_model`), palette and
-   geometry (`presentation.charts`), and their GTK, browser, and print renderers
-   exist with grouped, stacked, share, and line forms, and every chart is drawn
-   with them: Budget jars, the Projection (cash, investments, and net worth with
-   the first shortfall marked and a scenario overlay), the Expense Explorer's
-   spending and income over time and category trend, and Net worth history with
-   its composition by group, and the Projection's year-end balances by account.
-   Chart the remaining views:
-   - **Goals and holdings:** goal progress toward target and date; holdings by
-     cost and market value with unrealized gain.
-
-   Every chart has a table of its exact values beside it (for accuracy and
-   screen readers), colors that keep contrast in light and dark themes, and
-   tooltips with exact amounts; charts never compute their own totals.
+Every item planned for this stage is delivered; see `CHANGELOG.md` through
+0.2.0a273. New defects and requests found before the first Beta are added here.
 
 ## At the first Beta
 

@@ -3475,6 +3475,14 @@ class TestDerivedPlanView:
         try:
             [holding] = dialog.holdings
             assert (holding.quantity, holding.cost) == (Money(4), Money(200))
+            # Cost, market value, and unrealized gain, charted from the holding's values.
+            [chart] = dialog.charts
+            assert [series.name for series in chart.series] == [
+                "Cost",
+                "Market value",
+                "Unrealized gain",
+            ]
+            assert chart.series[0].values == (holding.cost,)
             [detail] = dialog.details
             assert "realized 2025: 50.00" in detail.get_label()
             assert detail.get_label().startswith("Assets:Index: 4 shares cost 200.00")
@@ -4942,6 +4950,12 @@ class TestDashboardView:
             [row] = dialog.report.goals
             assert row.allocated == Money(250) and row.set_aside >= Money(250)
             assert dialog.goal_rows.get_child_at(0, 1).get_label() == "Holiday"
+            # The chart stacks what is set aside under what is still to save.
+            model = dialog.chart.model
+            assert model.kind == "stacked" and dialog.chart.get_visible()
+            assert model.categories[0].startswith("Holiday (")
+            assert model.series[0].values == (row.set_aside,)
+            assert model.totals == (Money(1200),)
 
             assert dialog.toggle_closed(goal.handle, closed=False) is not None
             assert dialog.report.goals == ()

@@ -787,6 +787,10 @@ def test_goals_page_adds_funds_and_closes_a_goal(page, served):
 
     page.get_by_role("button", name="Goals", exact=True).first.click()
     page.wait_for_selector("text=Set aside for goals")
+    # The goal's set-aside is charted under what is still to save toward its target.
+    chart = page.locator(".savings-goals figure.model-chart[data-key='goals']")
+    assert chart.count() == 1
+    assert "Roof (" in chart.locator("details.chart-values").text_content()
     page.get_by_role("button", name="Close", exact=True).click()
     page.wait_for_selector("text=Closed Roof.")
     assert db.get_savings_goal(goal.handle).closed_on == today

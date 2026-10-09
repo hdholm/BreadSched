@@ -26,9 +26,10 @@ from ..lib.savings_goal import SavingsGoal
 from ..lib.scheduled import ScheduledTransaction
 from . import ledger
 from .cash_flow import income_occurrences, income_schedules
+from .chart_model import ChartModel
 from .currency import reporting_fraction
 
-__all__ = ["GoalProgress", "goal_progress", "goals_progress", "spendable_hold"]
+__all__ = ["GoalProgress", "goal_progress", "goals_chart", "goals_progress", "spendable_hold"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,3 +179,30 @@ def spendable_hold(progress: Iterable[GoalProgress]) -> Money:
         covered = max(Money(0), min(total, balance))
         held = held + (total - covered)
     return held
+
+
+def goals_chart(progress: Iterable[GoalProgress], currency: str = "") -> ChartModel:
+    """Each open goal's progress toward its target by its target date.
+
+    One column per goal, labelled with its target month: what is set aside (slot 1)
+    below what is still to save (slot 2). The two are the goal's own values and sum
+    exactly to its target (the chart's ``totals``). Closed goals are left out.
+    """
+    from .chart_model import STACKED, ChartSeries
+
+    shown = [item for item in progress if item.status != "closed"]
+    for item in shown:
+        if item.set_aside + item.remaining != item.target:
+            raise AssertionError("a goal's set-aside and remaining do not make its target")
+    return ChartModel(
+        "goals",
+        "Savings goals: set aside toward each target",
+        STACKED,
+        tuple(f"{item.goal.name} ({item.goal.target_date:%b %Y})" for item in shown),
+        (
+            ChartSeries("set_aside", "Set aside", tuple(item.set_aside for item in shown), 1),
+            ChartSeries("remaining", "Still to save", tuple(item.remaining for item in shown), 2),
+        ),
+        currency,
+        totals=tuple(item.target for item in shown),
+    )

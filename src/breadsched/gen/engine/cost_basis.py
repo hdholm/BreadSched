@@ -34,6 +34,7 @@ from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountType
 from ..lib.money import Money
 from ..lib.transaction import LotPick, Transaction
+from .chart_model import ChartModel
 from .currency import reporting_currency_handle
 from .valuation import AccountValuation, account_value
 
@@ -43,6 +44,7 @@ __all__ = [
     "LotMove",
     "RealizedGain",
     "cost_basis",
+    "holdings_charts",
     "holdings_cost_basis",
     "lots_before_sale",
     "shares_text",
@@ -537,3 +539,46 @@ def holdings_cost_basis(db: DbSQLite, *, as_of: date | None = None) -> list[Hold
         and (result.lots or result.sales)
     ]
     return sorted(found, key=lambda item: db.full_name(item.account).casefold())
+
+
+def holdings_charts(db: DbSQLite, holdings: list[HoldingCostBasis]) -> tuple[ChartModel, ...]:
+    """Each holding's cost, market value, and unrealized gain, one chart per currency.
+
+    The values are the holdings' own (``cost``, ``market_value``, ``unrealized_gain``);
+    a holding whose market value cannot be compared with its cost shows its cost
+    alone. A holding without shares or a cost currency is left out.
+    """
+    from .chart_model import BARS, ChartModel, ChartSeries
+
+    by_currency: dict[str, list[HoldingCostBasis]] = {}
+    for item in holdings:
+        if item.currency is not None and (item.lots or item.market_value):
+            by_currency.setdefault(item.currency, []).append(item)
+    labels: dict[str, str] = {}
+    for handle in by_currency:
+        commodity = db.get_commodity(handle)
+        labels[handle] = commodity.mnemonic if commodity is not None else handle
+    charts = []
+    for handle, items in by_currency.items():
+        charts.append(
+            ChartModel(
+                f"holdings:{handle}",
+                "Holdings: cost, market value, and unrealized gain",
+                BARS,
+                tuple(db.full_name(item.account) for item in items),
+                (
+                    ChartSeries("cost", "Cost", tuple(item.cost for item in items), 1),
+                    ChartSeries(
+                        "market", "Market value", tuple(item.market_value for item in items), 2
+                    ),
+                    ChartSeries(
+                        "gain",
+                        "Unrealized gain",
+                        tuple(item.unrealized_gain for item in items),
+                        3,
+                    ),
+                ),
+                labels[handle],
+            )
+        )
+    return tuple(charts)

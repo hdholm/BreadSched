@@ -10,6 +10,20 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a273 - 2026-10-09
+
+- **Goals and holdings on the shared charts; Visualizations complete.**
+  `savings_goals.goals_chart` stacks each open goal's set-aside under what is still
+  to save, labelled with its target month, so each column reaches the goal's target
+  (asserted, and carried as the chart's totals). `cost_basis.holdings_charts` draws
+  each holding's cost, market value, and unrealized gain side by side, one chart
+  per cost currency; a value that cannot be compared is not drawn. The GTK Savings
+  Goals and Holdings dialogs and the browser goals page and holdings dialog show
+  them (the web responses add `chart` and `charts`). With this, the roadmap's
+  Visualizations item is delivered and removed; the User Guide and design part
+  describe the charts, and tests cover the values, totals, closed goals, the web
+  responses, and the GTK and browser screens.
+
 ## 0.2.0a272 - 2026-10-09
 
 - **Projection balances by account.** `projection_result.projection_balances_chart`

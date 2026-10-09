@@ -515,6 +515,14 @@ height), the browser page beside its own values
 toggle, and the printout after the totals chart with its table in the optional
 section.
 
+`savings_goals.goals_chart` stacks each open goal's `set_aside` under its
+`remaining` (slots 1 and 2) with its `target` as the column total (the two always
+make the target; the builder asserts it), labelled with the target month.
+`cost_basis.holdings_charts` groups each holding's `cost`, `market_value`, and
+`unrealized_gain` (slots 1 to 3), one chart per cost currency; a value that cannot
+be compared stays `None` and is not drawn. The GTK goals and holdings dialogs and
+the browser goals page and holdings dialog show them; neither report prints.
+
 `STACKED` draws one column per category with its series stacked in order, positive
 values up from zero and negative ones down; only the outermost segment in each
 direction has the rounded end, and segments that continue are separated by a

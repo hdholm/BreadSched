@@ -5,11 +5,17 @@ from __future__ import annotations
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.cost_basis import HoldingCostBasis, holdings_cost_basis, shares_text
+from ...gen.engine.cost_basis import (
+    HoldingCostBasis,
+    holdings_charts,
+    holdings_cost_basis,
+    shares_text,
+)
 from ...gen.lib.money import Money
 from ...presentation import holding_cost_text, lot_move_text, lot_text, sale_text
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
+from ..widgets.model_chart import ModelChartView
 
 __all__ = ["HoldingsDialog"]
 
@@ -88,6 +94,14 @@ class HoldingsDialog(BoundedWindow):
             self.body.remove(child)
             child = following
 
+        # Cost, market value, and unrealized gain per holding, one chart per currency.
+        self.charts: list[ModelChartView] = []
+        for model in holdings_charts(db, self.holdings):
+            if model.empty:
+                continue
+            chart = ModelChartView(model, height=220)
+            self.body.append(chart)
+            self.charts.append(chart)
         self.summary = Gtk.Grid(column_spacing=16, row_spacing=4)
         self.body.append(self.summary)
         headings = ("Holding", "Shares", "Cost", "Market value", "Unrealized")
