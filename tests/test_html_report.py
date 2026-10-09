@@ -179,7 +179,10 @@ def test_projection_report_includes_chart_assumptions_year_end_values_and_compar
     document = projection_report(primary, comparison=compared)
 
     assert "Projection chart" in document
-    assert 'aria-label="Projection chart"' in document
+    assert 'aria-label="Projected cash, investments, and net worth' in document
+    # The comparison scenario's net worth is overlaid, and every month has a hover title.
+    assert "Alternative net worth" in document and "<polyline" in document
+    assert document.count("<title>") >= len(primary.rows)
     assert "Annual assumptions" in document
     assert "Year-end values" in document
     assert "Base &lt;draft&gt; versus Alternative" in document

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from ..lib.money import Money
 
-__all__ = ["BARS", "LINE", "ChartModel", "ChartSeries"]
+__all__ = ["BARS", "LINE", "ChartMarker", "ChartModel", "ChartSeries"]
 
 #: Grouped columns, one group per category, one column per series.
 BARS = "bars"
@@ -35,6 +35,14 @@ class ChartSeries:
 
 
 @dataclass(frozen=True, slots=True)
+class ChartMarker:
+    """A labelled vertical rule at one category, such as the first cash shortfall."""
+
+    index: int
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
 class ChartModel:
     key: str
     title: str
@@ -43,6 +51,10 @@ class ChartModel:
     series: tuple[ChartSeries, ...]
     #: The currency every value is in ("" when the book's commodity has no code).
     currency: str = ""
+    markers: tuple[ChartMarker, ...] = ()
+    #: From this category on, values leave something out (shaded, with ``partial_note``).
+    partial_from: int | None = None
+    partial_note: str = ""
 
     @property
     def empty(self) -> bool:
@@ -61,6 +73,9 @@ class ChartModel:
                 {"key": item.key, "name": item.name, "slot": item.slot, "values": list(item.values)}
                 for item in self.series
             ],
+            "markers": [{"index": item.index, "label": item.label} for item in self.markers],
+            "partial_from": self.partial_from,
+            "partial_note": self.partial_note,
         }
 
     def rows(self) -> tuple[tuple[str, tuple[Money | None, ...]], ...]:

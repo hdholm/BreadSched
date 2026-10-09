@@ -1651,6 +1651,9 @@ class TestItServes:
         assert status == 200
         assert actual == json.loads(json.dumps(expected, default=str))
         assert actual["comparison"]["rows"][-1]["net_worth_delta"] == "0.00"
+        # The primary chart overlays the compared scenario's net worth (slot 4).
+        overlay = actual["primary"]["chart"]["series"][-1]
+        assert (overlay["slot"], overlay["name"]) == (4, f"{clone['name']} net worth")
 
     def test_a_projection_month_can_be_explained(self, client):
         status, payload = client.post(

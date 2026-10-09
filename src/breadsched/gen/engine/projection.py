@@ -41,6 +41,7 @@ from .projection_result import (
     ProjectionMonthDetail,
     ProjectionProgress,
     compare,
+    projection_chart,
 )
 from .reimbursement_outlook import reimbursement_outlook
 
@@ -56,6 +57,7 @@ __all__ = [
     "compare",
     "explain_month",
     "project",
+    "projection_chart",
 ]
 
 _ONE = Decimal(1)

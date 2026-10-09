@@ -18,11 +18,13 @@ from ..lib.money import Money
 from ..lib.recurrence import add_months
 from ..lib.scenario import Assumptions, Scenario
 from . import planning
+from .chart_model import ChartModel
 from .completeness import Completeness, Excluded, Policy, combine
 from .goal_projection import GoalMilestone
 from .reimbursement_outlook import ReimbursementOutlook
 
 __all__ = [
+    "projection_chart",
     "CashRunway",
     "ComparisonRow",
     "MonthLedger",
@@ -508,3 +510,63 @@ def compare(base: Projection, other: Projection) -> list[ComparisonRow]:
             }
         )
     return rows
+
+
+def projection_chart(
+    result: Projection, comparison: Projection | None = None, currency: str = ""
+) -> ChartModel:
+    """Projected cash, investments, and net worth by month, as a line chart.
+
+    The first cash shortfall and the first month goals' earmarks exceed cash are
+    marked; with a comparison, its net worth is overlaid (slot 4). Months whose
+    values leave out an unconverted amount are flagged as partial from the first.
+    """
+    from .chart_model import LINE, ChartMarker, ChartModel, ChartSeries
+
+    rows = result.rows
+    series = [
+        ChartSeries("cash", "Cash", tuple(row.cash_close for row in rows), 1),
+        ChartSeries("holdings", "Investments", tuple(row.holdings for row in rows), 2),
+        ChartSeries("net_worth", "Net worth", tuple(row.net_worth for row in rows), 3),
+    ]
+    if comparison is not None:
+        compared = [row.net_worth for row in comparison.rows]
+        series.append(
+            ChartSeries(
+                "comparison_net_worth",
+                f"{comparison.scenario.name} net worth",
+                tuple(
+                    compared[index] if index < len(compared) else None for index in range(len(rows))
+                ),
+                4,
+            )
+        )
+    markers = []
+    shortfall = result.first_shortfall()
+    if shortfall is not None:
+        markers.append(ChartMarker(shortfall.index, f"First shortfall: {shortfall.label}"))
+    goal_shortfall = result.first_goal_shortfall()
+    if goal_shortfall is not None and (shortfall is None or goal_shortfall.index < shortfall.index):
+        markers.append(
+            ChartMarker(goal_shortfall.index, f"Goals exceed cash: {goal_shortfall.label}")
+        )
+    partial = next(
+        (index for index in range(len(rows)) if not result.month_completeness(index).complete),
+        None,
+    )
+    return ChartModel(
+        "projection",
+        "Projected cash, investments, and net worth",
+        LINE,
+        tuple(row.label for row in rows),
+        tuple(series),
+        currency,
+        tuple(markers),
+        partial,
+        (
+            f"Partial from {rows[partial].label} (shaded): "
+            + result.month_completeness(partial).label.removeprefix("Partial: ")
+            if partial is not None
+            else ""
+        ),
+    )

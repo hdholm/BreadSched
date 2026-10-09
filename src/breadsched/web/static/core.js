@@ -158,62 +158,126 @@ function columnPath(x, y, width, height, negative) {
     + `h${width - 2 * r}a${r},${r} 0 0 1 ${r},${r}v${height - r}z`;
 }
 
-function modelChart(model) {
+function chartLabelIndices(count, most = 8) {
+  if (count <= most) return [...Array(count).keys()];
+  const stride = Math.ceil(count / most);
+  const chosen = [];
+  for (let index = 0; index < count; index += stride) chosen.push(index);
+  if (chosen[chosen.length - 1] !== count - 1) {
+    if (count - 1 - chosen[chosen.length - 1] < stride) chosen[chosen.length - 1] = count - 1;
+    else chosen.push(count - 1);
+  }
+  return chosen;
+}
+
+function modelChart(model, { collapseTable = false } = {}) {
+  if (!model) return null;
   const values = model.series.flatMap((series) => series.values)
-    .filter((value) => value !== null && Number(value) !== 0).map(Number);
+    .filter((value) => value !== null && (model.kind !== "bars" || Number(value) !== 0))
+    .map(Number);
   if (!model.categories.length || !values.length) return null;
   const width = 900, height = 280, left = 78, top = 34, right = 12, bottom = 30;
   const plotWidth = width - left - right, plotHeight = height - top - bottom;
   const ticks = chartTicks(Math.min(...values), Math.max(...values));
   const low = ticks[0], high = ticks[ticks.length - 1];
   const y = (value) => top + plotHeight * (high - value) / (high - low);
-  const baseline = y(0);
-  const band = plotWidth / model.categories.length;
-  const count = model.series.length;
-  const bar = Math.min(24, Math.max(1, (band * 0.7 - 2 * (count - 1)) / count));
-  const group = bar * count + 2 * (count - 1);
+  const count = model.categories.length;
+  const currency = model.currency ? ` ${model.currency}` : "";
   const label = model.currency ? `${model.title} (${model.currency})` : model.title;
   const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img",
     "aria-label": label });
+  const lines = model.kind !== "bars";
+  const xs = lines
+    ? model.categories.map((_c, index) => left + (count > 1 ? plotWidth * index / (count - 1) : plotWidth / 2))
+    : model.categories.map((_c, index) => left + plotWidth / count * (index + 0.5));
+  if (lines && model.partial_from !== null && model.partial_from !== undefined) {
+    svg.append(svgEl("rect", { x: xs[model.partial_from], y: top, class: "chart-partial",
+      width: Math.max(width - right - xs[model.partial_from], 2), height: plotHeight }));
+  }
   for (const value of ticks) {
     svg.append(svgEl("line", { x1: left, x2: width - right, y1: y(value), y2: y(value),
       class: value === 0 ? "chart-axis" : "chart-grid", "stroke-width": 1 }));
     svg.append(svgEl("text", { x: left - 8, y: y(value) + 4, "text-anchor": "end" },
       value.toLocaleString(undefined, { maximumFractionDigits: 0 })));
   }
-  model.categories.forEach((category, index) => {
-    const centre = left + band * (index + 0.5);
-    model.series.forEach((series, position) => {
-      const value = series.values[index];
-      if (value === null || Number(value) === 0) return;
-      const number = Number(value);
-      const [topY, bottomY] = [y(number), baseline].sort((a, b) => a - b);
-      const path = svgEl("path", {
-        d: columnPath(centre - group / 2 + position * (bar + 2), topY, bar,
-          Math.max(bottomY - topY, 1), number < 0),
-        fill: `var(--series-${series.slot})`,
+  if (lines) {
+    for (const marker of model.markers || []) {
+      const x = xs[marker.index];
+      if (x === undefined) continue;
+      svg.append(svgEl("line", { x1: x, x2: x, y1: top, y2: top + plotHeight,
+        class: "chart-marker", "stroke-width": 1 }));
+      svg.append(svgEl("text", { x: x + 4, y: top + 12, class: "chart-marker-label" },
+        marker.label));
+    }
+    for (const series of model.series) {
+      let path = "", drawing = false;
+      series.values.forEach((value, index) => {
+        if (value === null) { drawing = false; return; }
+        path += `${drawing ? "L" : "M"}${xs[index].toFixed(1)},${y(Number(value)).toFixed(1)}`;
+        drawing = true;
       });
-      path.append(svgEl("title", {},
-        `${category}, ${series.name}: ${money(value)}${model.currency ? ` ${model.currency}` : ""}`));
-      svg.append(path);
+      svg.append(svgEl("path", { d: path, fill: "none", stroke: `var(--series-${series.slot})`,
+        "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    }
+    const step = plotWidth / Math.max(count - 1, 1);
+    model.categories.forEach((category, index) => {
+      const hit = svgEl("rect", { x: xs[index] - step / 2, y: top, width: step,
+        height: plotHeight, fill: "transparent", class: "chart-hit" });
+      hit.append(svgEl("title", {}, [category, ...model.series.map((series) =>
+        `${series.name}: ${series.values[index] === null ? "—" : money(series.values[index])}${currency}`)]
+        .join("\n")));
+      svg.append(hit);
     });
-    svg.append(svgEl("text", { x: centre, y: height - bottom + 16, "text-anchor": "middle" },
-      category));
-  });
+  } else {
+    const baseline = y(0);
+    const band = plotWidth / count;
+    const columns = model.series.length;
+    const bar = Math.min(24, Math.max(1, (band * 0.7 - 2 * (columns - 1)) / columns));
+    const group = bar * columns + 2 * (columns - 1);
+    model.categories.forEach((category, index) => {
+      model.series.forEach((series, position) => {
+        const value = series.values[index];
+        if (value === null || Number(value) === 0) return;
+        const number = Number(value);
+        const [topY, bottomY] = [y(number), baseline].sort((a, b) => a - b);
+        const path = svgEl("path", {
+          d: columnPath(xs[index] - group / 2 + position * (bar + 2), topY, bar,
+            Math.max(bottomY - topY, 1), number < 0),
+          fill: `var(--series-${series.slot})`,
+        });
+        path.append(svgEl("title", {}, `${category}, ${series.name}: ${money(value)}${currency}`));
+        svg.append(path);
+      });
+    });
+  }
+  for (const index of chartLabelIndices(count)) {
+    // A line's end points sit on the plot's edges: keep their labels inside.
+    const anchor = !lines || (index > 0 && index < count - 1) ? "middle"
+      : index === 0 ? "start" : "end";
+    svg.append(svgEl("text", { x: xs[index], y: height - bottom + 16, "text-anchor": anchor },
+      model.categories[index]));
+  }
   const legend = svgEl("g", { class: "chart-legend" });
   let x = left;
   for (const series of model.series) {
-    legend.append(svgEl("rect", { x, y: 10, width: 12, height: 12, rx: 2,
-      fill: `var(--series-${series.slot})` }));
+    legend.append(lines
+      ? svgEl("line", { x1: x, y1: 16, x2: x + 14, y2: 16, stroke: `var(--series-${series.slot})`,
+        "stroke-width": 2, "stroke-linecap": "round" })
+      : svgEl("rect", { x, y: 10, width: 12, height: 12, rx: 2,
+        fill: `var(--series-${series.slot})` }));
     legend.append(svgEl("text", { x: x + 18, y: 20 }, series.name));
     x += 36 + 7 * series.name.length;
   }
   svg.append(legend);
+  const valuesTable = table(["", ...model.series.map((series) => ({ label: series.name, num: true }))],
+    model.categories.map((category, index) => el("tr", {},
+      el("td", {}, category),
+      ...model.series.map((series) => el("td", { class: cls(series.values[index]) },
+        series.values[index] === null ? "—" : money(series.values[index]))))));
   return el("figure", { class: "model-chart" },
     el("figcaption", { class: "note" }, label), svg,
-    table(["", ...model.series.map((series) => ({ label: series.name, num: true }))],
-      model.categories.map((category, index) => el("tr", {},
-        el("td", {}, category),
-        ...model.series.map((series) => el("td", { class: cls(series.values[index]) },
-          series.values[index] === null ? "—" : money(series.values[index])))))));
+    model.partial_note ? el("p", { class: "note neg chart-partial-note" }, model.partial_note) : null,
+    collapseTable
+      ? el("details", { class: "chart-values" }, el("summary", {}, "Chart values"), valuesTable)
+      : valuesTable);
 }

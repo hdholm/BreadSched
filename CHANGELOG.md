@@ -10,6 +10,22 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a268 - 2026-10-09
+
+- **Projection on the shared charts.** The chart model gains a line form with
+  markers and partial shading, and `projection_result.projection_chart` charts
+  projected cash, investments, and net worth by month, marking the first cash
+  shortfall (or, when it comes first, the month goals' earmarks exceed cash),
+  overlaying a compared scenario's net worth, and shading partial months. The GTK
+  Projection view, the browser Projection page (now with the comparison overlay
+  too), the HTML export, and native printing draw it; hovering lists every line's
+  exact amount for a month. The browser shows the monthly values under **Chart
+  values**, and printing offers them as the optional **Projection chart values**
+  section. The old print chart block and its two renderers are removed.
+- Long chart axes show at most eight labels, always including the last, and a
+  line's first and last labels stay inside the plot. Engine, geometry, HTML, GTK,
+  route, and browser tests cover the chart.
+
 ## 0.2.0a267 - 2026-10-09
 
 - **Shared charts.** Engines describe a chart as data (`gen/engine/chart_model`):

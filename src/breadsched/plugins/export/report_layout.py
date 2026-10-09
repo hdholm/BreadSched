@@ -43,8 +43,6 @@ __all__ = [
     "Card",
     "Cards",
     "Cell",
-    "Chart",
-    "ChartSeries",
     "Column",
     "Heading",
     "Paragraph",
@@ -144,28 +142,13 @@ class Table:
 
 
 @dataclass(frozen=True)
-class ChartSeries:
-    name: str
-    values: tuple[float, ...]
-    colour: str
-
-
-@dataclass(frozen=True)
-class Chart:
-    label: str
-    series: tuple[ChartSeries, ...]
-    #: (point index, label) for the horizontal axis.
-    ticks: tuple[tuple[int, str], ...] = ()
-
-
-@dataclass(frozen=True)
 class ModelChart:
     """A chart drawn from an engine's ``ChartModel``; ``chart_blocks`` adds its table."""
 
     model: ChartModel
 
 
-Block = Heading | Paragraph | Cards | Table | Chart | ModelChart
+Block = Heading | Paragraph | Cards | Table | ModelChart
 
 
 @dataclass(frozen=True)
@@ -209,8 +192,6 @@ def _block_text(block: Block) -> list[str]:
         return [block.text]
     if isinstance(block, Cards):
         return [f"{card.label} {card.value}" for card in block.items]
-    if isinstance(block, Chart):
-        return [block.label, *(series.name for series in block.series)]
     if isinstance(block, ModelChart):
         return [block.model.title, *(series.name for series in block.model.series)]
     if not block.rows:
@@ -680,16 +661,22 @@ def plan_layout(
 
 # ------------------------------------------------------------- Projection
 
-_CHART_COLOURS = ("#2f6fd0", "#1c7a4a", "#8b4ab8", "#d47817")
-
 
 def projection_layout(
     result: Projection,
     *,
     comparison: Projection | None = None,
     book_name: str = "",
+    currency: str = "",
 ) -> ReportDocument:
-    """The current Projection result, comparison, and annual assumptions."""
+    """The current Projection result, comparison, and annual assumptions.
+
+    The chart's monthly values print in an optional section ("Projection chart
+    values"); the year-end table is always printed.
+    """
+    from ...gen.engine.projection_result import projection_chart
+
+    chart = projection_chart(result, comparison, currency)
     shortfall = result.first_shortfall()
     cards = Cards(
         (
@@ -777,7 +764,8 @@ def projection_layout(
         blocks += [Heading("Escrow treatment"), *(Paragraph(item, bullet=True) for item in escrow)]
     blocks += [
         Heading("Projection chart"),
-        _projection_chart(result, comparison),
+        ModelChart(chart),
+        *_notes((chart.partial_note,) if chart.partial_note else ()),
         Heading("Annual assumptions"),
         assumption_table,
     ]
@@ -788,31 +776,17 @@ def projection_layout(
     end = result.rows[-1].month.isoformat() if result.rows else ""
     prefix = f"{book_name} · " if book_name else ""
     subtitle = f"{prefix}{result.scenario.name} · {start} through {end}"
-    return ReportDocument("Projection", subtitle, (Section(tuple(blocks)),), kind="projection")
-
-
-def _projection_chart(result: Projection, comparison: Projection | None) -> Chart:
-    series = [
-        ("Cash", [row.cash_close for row in result.rows]),
-        ("Investments", [row.holdings for row in result.rows]),
-        ("Net worth", [row.net_worth for row in result.rows]),
-    ]
-    if comparison is not None:
-        series.append(
-            (f"{comparison.scenario.name} net worth", [row.net_worth for row in comparison.rows])
+    values = chart_blocks(chart)[1:]
+    sections = [Section(tuple(blocks))]
+    if values:
+        sections.append(
+            Section(
+                (Heading("Projection chart values"), *values),
+                name="Projection chart values",
+                optional=True,
+            )
         )
-    ticks: tuple[tuple[int, str], ...] = ()
-    if result.rows:
-        indices = sorted({0, len(result.rows) // 2, len(result.rows) - 1})
-        ticks = tuple((index, result.rows[index].label) for index in indices)
-    return Chart(
-        "Projection chart",
-        tuple(
-            ChartSeries(name, tuple(float(value.to_decimal()) for value in values), colour)
-            for (name, values), colour in zip(series, _CHART_COLOURS, strict=False)
-        ),
-        ticks,
-    )
+    return ReportDocument("Projection", subtitle, tuple(sections), kind="projection")
 
 
 def _projection_comparison(result: Projection, comparison: Projection) -> list[Block]:

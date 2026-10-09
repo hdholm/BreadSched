@@ -17,7 +17,6 @@ from typing import Any
 from ..plugins.export.report_layout import (
     Cards,
     Cell,
-    Chart,
     Heading,
     ModelChart,
     Paragraph,
@@ -220,8 +219,6 @@ class ReportPrinter:
             return [self._text_item(text, _BODY, _ALARM if block.warning else _DIM, gap=2)]
         if isinstance(block, Cards):
             return self._cards(block)
-        if isinstance(block, Chart):
-            return [self._chart(block)]
         if isinstance(block, ModelChart):
             return [self._model_chart(block)]
         return self._table(block)
@@ -446,76 +443,15 @@ class ReportPrinter:
     # ----------------------------------------------------------------- chart
 
     def _model_chart(self, block: ModelChart) -> _Item:
-        from .widgets.bar_chart import paint_bars
+        from .widgets.model_chart import paint_chart
 
         height = min(220.0, self.width * 0.36)
         model = block.model
 
         def draw(cr) -> None:
             cr.save()
-            paint_bars(cr, model, self.width, height)
+            paint_chart(cr, model, self.width, height)
             cr.restore()
 
         title = f"{model.title} ({model.currency})" if model.currency else model.title
         return _Item(height + _GAP, draw, text=title)
-
-    def _chart(self, chart: Chart) -> _Item:
-        height = min(240.0, self.width * 0.34)
-        values = [value for series in chart.series for value in series.values]
-        legend = [self._layout(series.name, _SMALL) for series in chart.series]
-        ticks = [(index, self._layout(label, _SMALL)) for index, label in chart.ticks]
-        if not values:
-            return self._text_item("No projected values.", _BODY, _DIM)
-        low, high = min(values), max(values)
-        if low == high:
-            low, high = low - 1, high + 1
-        count = max(len(series.values) for series in chart.series)
-        left, top, bottom = 8.0, 16.0, 16.0
-        plot_width = self.width - left
-        plot_height = height - top - bottom
-
-        def at(index: int, value: float) -> tuple[float, float]:
-            x = left + plot_width * index / max(1, count - 1)
-            return x, top + plot_height * (high - value) / (high - low)
-
-        def draw(cr) -> None:
-            cr.set_source_rgb(*_RULE)
-            cr.set_line_width(0.75)
-            cr.move_to(left, top)
-            cr.line_to(left, top + plot_height)
-            cr.line_to(self.width, top + plot_height)
-            cr.stroke()
-            if low <= 0 <= high:
-                zero = at(0, 0.0)[1]
-                cr.set_dash([3.0, 3.0])
-                cr.move_to(left, zero)
-                cr.line_to(self.width, zero)
-                cr.stroke()
-                cr.set_dash([])
-            x = left
-            for series, label in zip(chart.series, legend, strict=True):
-                cr.set_source_rgb(*_rgb(series.colour))
-                cr.set_line_width(1.5)
-                for index, value in enumerate(series.values):
-                    point = at(index, value)
-                    if index:
-                        cr.line_to(*point)
-                    else:
-                        cr.move_to(*point)
-                cr.stroke()
-                cr.move_to(x, 6)
-                cr.line_to(x + 14, 6)
-                cr.stroke()
-                cr.set_source_rgb(*_INK)
-                cr.move_to(x + 18, 0)
-                PangoCairo.show_layout(cr, label)
-                x += 18 + label.get_pixel_extents()[1].width + 16
-            cr.set_source_rgb(*_DIM)
-            for index, label in ticks:
-                width = label.get_pixel_extents()[1].width
-                tick_x = at(index, low)[0]
-                tick_x = min(max(tick_x - width / 2, left), self.width - width)
-                cr.move_to(tick_x, top + plot_height + 3)
-                PangoCairo.show_layout(cr, label)
-
-        return _Item(height + _GAP, draw, text=chart.label)
