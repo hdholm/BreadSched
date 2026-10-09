@@ -73,7 +73,13 @@ class ViewManager(Gtk.ApplicationWindow):
         # binding views to a book. Tests and embedded windows can suppress it so
         # presenting a modal window does not pump the GLib main context.
         self._prompt_due_on_open = prompt_due_on_open
-        self._due_prompt_cancel: Callable[[], None] | None = None
+        # Modal dialogs this window shows on its own (start-up notices, the
+        # GnuCash change review, the due review) wait in one queue and open one
+        # at a time; see queue_modal.
+        self._modal_queue: list[Callable[[Callable[[], None]], bool]] = []
+        self._modal_active = False
+        self._modal_cancel: Callable[[], None] | None = None
+        self._review_generation = 0
 
         self._install_window_actions()
         self._build_header()
@@ -318,9 +324,6 @@ class ViewManager(Gtk.ApplicationWindow):
 
     def _detach_views(self) -> None:
         """Disconnect views and cancel work that belongs to the current book."""
-        if self._due_prompt_cancel is not None:
-            self._due_prompt_cancel()
-            self._due_prompt_cancel = None
         for view in self._all_views():
             view.set_db(None)
         # Tabs name accounts of this book; the next book starts with its own.
@@ -382,34 +385,78 @@ class ViewManager(Gtk.ApplicationWindow):
         if self._prompt_due_on_open:
             self._schedule_due_prompt()
 
-    def _schedule_due_prompt(self) -> None:
-        """Present the due review after the main window has reached the screen.
+    def queue_modal(self, show: Callable[[Callable[[], None]], bool]) -> None:
+        """Show a modal dialog after this window is on screen and every earlier one closed.
 
-        During application activation a remembered book can be opened before the
-        main window is presented. Presenting a modal transient in that interval
-        lets the later parent presentation cover the dialog on some window
-        managers (#295), so the review waits until this window is mapped.
+        ``show(done)`` presents its dialog and returns True, calling ``done`` once
+        the dialog is gone, or returns False when it has nothing to show. Two
+        modal dialogs open at once over the same window let the later one take
+        every input while the earlier one sits on top of it, so neither answers
+        and the window looks frozen (#295 follow-up); the queue prevents that, and
+        waiting for the window to be mapped keeps the window from covering them.
         """
-        if self._due_prompt_cancel is not None:
-            self._due_prompt_cancel()
+        self._modal_queue.append(show)
+        if not self._modal_active:
+            self._modal_active = True
+            self._modal_cancel = when_presented(self, self._show_next_modal)
+
+    def _show_next_modal(self) -> None:
+        self._modal_cancel = None
+        while self._modal_queue:
+            show = self._modal_queue.pop(0)
+            finished = False
+
+            def done() -> None:
+                nonlocal finished
+                if not finished:
+                    finished = True
+                    GLib.idle_add(self._show_next_modal_once)
+
+            if show(done):
+                return
+        self._modal_active = False
+
+    def _show_next_modal_once(self) -> bool:
+        self._show_next_modal()
+        return GLib.SOURCE_REMOVE
+
+    @staticmethod
+    def when_closed(dialog: Gtk.Window, done: Callable[[], None]) -> None:
+        """Call ``done`` once ``dialog`` has closed, however it closes.
+
+        GTK 4 does not emit ``hide`` when a window closes; it unmaps and
+        unrealizes it, and destroys it later. ``unrealize`` is the dependable
+        signal, and ``destroy`` covers a dialog destroyed before it was shown.
+        """
+        dialog.connect("unrealize", lambda *_: done())
+        dialog.connect("destroy", lambda *_: done())
+
+    def _schedule_due_prompt(self) -> None:
+        """Queue the GnuCash change review, then the due review, for this book.
+
+        Scheduling again (the book reopened, or opened twice before the window
+        appeared) supersedes reviews queued earlier that have not been shown.
+        """
         expected_db = self.db
+        self._review_generation += 1
+        generation = self._review_generation
 
-        def present_when_ready() -> None:
-            self._due_prompt_cancel = None
-            if self.db is expected_db and self.db is not None:
-                held = self.prompt_for_held_imports()
-                if held is None:
-                    self.prompt_for_due()
-                else:
-                    # One modal review at a time: due schedules follow the
-                    # GnuCash review rather than stacking over it.
-                    def due_after_review(*_args) -> bool:
-                        self.prompt_for_due()
-                        return False
+        def review(prompt: Callable[[], Gtk.Window | None]):
+            def show(done: Callable[[], None]) -> bool:
+                if generation != self._review_generation:
+                    return False
+                if self.db is not expected_db or self.db is None:
+                    return False
+                dialog = prompt()
+                if dialog is None:
+                    return False
+                self.when_closed(dialog, done)
+                return True
 
-                    held.connect("close-request", due_after_review)
+            return show
 
-        self._due_prompt_cancel = when_presented(self, present_when_ready)
+        self.queue_modal(review(self.prompt_for_held_imports))
+        self.queue_modal(review(self.prompt_for_due))
 
     def prompt_for_held_imports(self) -> Gtk.Window | None:
         """Ask about GnuCash changes held back from reconciled transactions."""
@@ -426,19 +473,20 @@ class ViewManager(Gtk.ApplicationWindow):
         dialog.present()
         return dialog
 
-    def prompt_for_due(self) -> None:
-        """Ask about anything due, once, on opening the book."""
+    def prompt_for_due(self) -> Gtk.Window | None:
+        """Ask about anything due, once, on opening the book; the dialog, if any."""
         if self.db is None:
-            return
+            return None
         from ..gen.engine import schedule as schedule_engine
         from .dialogs.due_dialog import DueDialog
 
         due = schedule_engine.due_occurrences(self.db, horizon_days=0)
         if not due:
-            return
+            return None
         dialog = DueDialog(self, self.db, due)
         dialog.connect("close-request", lambda *_: (self._refresh_views(), False)[1])
         dialog.present()
+        return dialog
 
     def _all_views(self) -> list[Gtk.Widget]:
         """Every view in this window, including every register tab's register."""

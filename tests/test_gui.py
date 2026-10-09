@@ -254,7 +254,9 @@ class TestDialogsStayInFront:
     def test_an_alert_waits_until_its_window_is_on_screen(self, app, window, monkeypatch):
         shown = []
         monkeypatch.setattr(
-            app, "_show_alert", lambda parent, message: shown.append((parent.get_mapped(), message))
+            app,
+            "_show_alert",
+            lambda parent, message, done: shown.append((parent.get_mapped(), message)),
         )
         app._report("Something to say")
         _spin(lambda: False, seconds=0.3)
@@ -283,7 +285,7 @@ class TestDialogsStayInFront:
         monkeypatch.setattr(
             app,
             "_show_alert",
-            lambda parent, message: alerts.append((parent.get_mapped(), message)),
+            lambda parent, message, done: alerts.append((parent.get_mapped(), message)),
         )
 
         app.do_activate()
@@ -337,6 +339,99 @@ class TestDialogsStayInFront:
         assert _spin(lambda: bool(reported))
         assert reported == ["Could not open the book: disk full"]
         assert window.stack.get_visible_child_name() == "empty"
+
+
+class TestStartupDialogsTakeTurns:
+    """One modal dialog at a time over the main window.
+
+    Upgrading a book that also had schedules due opened the upgrade notice and the
+    due review together: the notice, hidden behind the review, took every input,
+    so the review's buttons did nothing and the main window stayed greyed out.
+    """
+
+    def _recording_alerts(self, app, monkeypatch):
+        alerts: list[tuple[str, object]] = []
+        monkeypatch.setattr(
+            app,
+            "_show_alert",
+            lambda parent, message, done: alerts.append((message, done)),
+        )
+        return alerts
+
+    def test_the_upgrade_notice_comes_first_and_the_due_review_waits_for_it(
+        self, app, populated_book, monkeypatch
+    ):
+        from breadsched.gui import app as app_module
+
+        monkeypatch.setattr(app_module, "book_open_notice", lambda *_a, **_k: "Upgraded.")
+        alerts = self._recording_alerts(app, monkeypatch)
+        window = ViewManager(app)
+        reviews = []
+
+        def due():
+            review = Gtk.Window(transient_for=window, modal=True, title="Due")
+            review.present()
+            reviews.append(review)
+            return review
+
+        monkeypatch.setattr(window, "prompt_for_due", due)
+        monkeypatch.setattr(window, "prompt_for_held_imports", lambda: None)
+        try:
+            app.open_book(populated_book)
+            window.present()
+            assert _spin(lambda: bool(alerts))
+            assert [message for message, _done in alerts] == ["Upgraded."]
+            _spin(lambda: False, seconds=0.3)
+            assert reviews == []  # the review waits while the notice is open
+            alerts[0][1]()  # dismiss the notice
+            assert _spin(lambda: bool(reviews))
+            reviews[0].close()
+            assert _spin(lambda: not window._modal_active)
+        finally:
+            for review in reviews:
+                review.destroy()
+            window.destroy()
+
+    def test_alerts_over_the_main_window_open_one_after_another(self, app, monkeypatch):
+        alerts = self._recording_alerts(app, monkeypatch)
+        window = ViewManager(app, prompt_due_on_open=False)
+        try:
+            window.present()
+            app._report("first")
+            app._report("second")
+            assert _spin(lambda: bool(alerts))
+            _spin(lambda: False, seconds=0.3)
+            assert [message for message, _done in alerts] == ["first"]
+            alerts[0][1]()
+            assert _spin(lambda: len(alerts) == 2)
+            assert alerts[1][0] == "second"
+            alerts[1][1]()
+            assert _spin(lambda: not window._modal_active)
+        finally:
+            window.destroy()
+
+    def test_a_real_alert_reports_its_dismissal(self, app, monkeypatch):
+        """The production alert calls back when dismissed, so the queue moves on."""
+        window = ViewManager(app, prompt_due_on_open=False)
+        dismissed = []
+        try:
+            window.present()
+            assert _spin(window.get_mapped)
+            app._show_alert(window, "Dismiss me", lambda: dismissed.append(True))
+
+            def shown_dialogs():
+                return [
+                    w
+                    for w in Gtk.Window.list_toplevels()
+                    if w is not window and w.get_transient_for() is window and w.get_visible()
+                ]
+
+            assert _spin(lambda: bool(shown_dialogs()))
+            for dialog in shown_dialogs():
+                dialog.close()
+            assert _spin(lambda: dismissed == [True])
+        finally:
+            window.destroy()
 
 
 class TestOpeningABook:
@@ -3921,6 +4016,7 @@ class TestImportReview:
             [review] = shown
             assert type(review).__name__ == "ImportReviewDialog"
             review.close()
+            assert _spin(lambda: len(calls) == 2)  # the next dialog takes its turn
             assert calls == ["held", "due"]
         finally:
             production_window.destroy()
