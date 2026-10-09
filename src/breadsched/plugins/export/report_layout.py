@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from itertools import zip_longest
 
 from ...gen.engine.activity import PlanMeasure
+from ...gen.engine.budget_jars import JarsReport
 from ...gen.engine.category_report import CategoryReport
 from ...gen.engine.completeness import Completeness, combine
 from ...gen.engine.dashboard import Dashboard, MissedGroup
@@ -59,6 +60,7 @@ __all__ = [
     "projection_layout",
     "realized_gains_layout",
     "tax_year_layout",
+    "budget_jars_layout",
     "signed_money_text",
 ]
 
@@ -1331,3 +1333,57 @@ def tax_year_layout(report: TaxYearReport, currencies: dict[str | None, str]) ->
     return ReportDocument(
         f"Tax year {report.year}", "Calendar year", (Section(tuple(blocks)),), kind="tax-year"
     )
+
+
+def budget_jars_layout(report: JarsReport, currencies: dict[str | None, str]) -> ReportDocument:
+    """Jars by account and period: filled, planned and actual draws, and the level."""
+    from ...gen.engine.budget_jars import jar_kind_label
+
+    def periods_table(periods, empty: str) -> Table:
+        return Table(
+            _columns("Period", "#Filled", "#Planned", "#Actual", "#Variance", "#Level"),
+            tuple(
+                TableRow(
+                    (
+                        Cell(item.label),
+                        _amount(item.filled),
+                        _amount(item.planned),
+                        _amount(item.actual),
+                        _amount(item.variance, signed=True),
+                        _amount(item.level, signed=True),
+                    )
+                )
+                for item in periods
+            ),
+            empty=empty,
+        )
+
+    blocks: list[Block] = [
+        Paragraph(
+            "Each scheduled payment and estimate, and each savings goal, is a jar. It "
+            "fills from each income in its cycle by that income's share, and is drawn "
+            "by the actual transaction matched to it. Periods only group dated events. "
+            "A level counts the occurrences due from the first day shown."
+        )
+    ]
+    for total in report.totals:
+        label = currencies.get(total.currency, "")
+        blocks.append(Heading("All jars" + (f" ({label})" if label else "")))
+        blocks.append(periods_table(total.periods, "No jars."))
+    for bundle in report.accounts:
+        label = currencies.get(bundle.currency, "")
+        blocks.append(Heading(f"{bundle.account_name}{f' ({label})' if label else ''}"))
+        blocks.append(
+            Paragraph(
+                "Jars: "
+                + "; ".join(
+                    f"{jar.name} ({jar_kind_label(jar.kind).lower()})" for jar in bundle.jars
+                )
+            )
+        )
+        blocks.append(periods_table(bundle.periods, "No activity."))
+    if not report.accounts:
+        blocks.append(Paragraph("No scheduled payments, estimates, or goals in this range."))
+    blocks.extend(_notes(report.problems, warning=True))
+    subtitle = f"{report.start.isoformat()} to {report.end.isoformat()} by {report.period.value}"
+    return ReportDocument("Budget jars", subtitle, (Section(tuple(blocks)),), kind="budget-jars")

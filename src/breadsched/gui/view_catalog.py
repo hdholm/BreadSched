@@ -197,6 +197,7 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             True,
             caption="Explore",
         ),
+        ViewAction("budget-jars", "_Budget Jars…", "_open_budget_jars"),
     ),
     "projection": (
         ViewAction(

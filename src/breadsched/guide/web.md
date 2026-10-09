@@ -83,6 +83,13 @@ long-term, the tax-relevant accounts and tags, and income by source
 the year totals (`/api/tax-marks`), and **Print** prints just the report. See
 [Tax year](../USER_GUIDE.md#tax-year).
 
+## Budget jars
+
+In **Plan**, choose **Budget jars…** below the controls: all jars by period, then
+each account, with **Each jar** to open them one by one (`/api/budget-jars`).
+Change **Group by** in the dialog; **Print** prints just the report. See
+[Budget jars](../USER_GUIDE.md#budget-jars).
+
 ## Online quotes
 
 In **Accounts**, choose **Online quotes…**. Type each security's or currency's

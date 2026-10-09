@@ -555,6 +555,29 @@ undo step); allocations cannot exceed the target, and deleting a goal's account 
 refused by reference verification. `presentation` gives GTK, web, CLI, and print the
 same status and milestone wording.
 
+## Budget jars
+
+`engine.budget_jars` treats every scheduled outflow and every savings goal as a jar
+and reports dated fills and draws; nothing is stored. A schedule's jar is per account
+it spends into: its expense legs, or, with none, its non-cash asset or liability
+legs (a loan payment). Each occurrence is filled by the dated income occurrences of
+its cycle (`cash_flow.income_occurrences`, so missed past income fills nothing and
+future income is expected), in proportion to each income's share of the cycle's
+income, exactly the Dashboard's bill reserve; the shares are rounded to the
+reporting fraction with the last taking the remainder. With no income in the cycle
+the whole amount fills on the cycle's first day. The occurrence's planned draw is on
+its planned date, and the actual draw is the matched transaction's legs in that
+account on its posting date (`planning.scheduled_events`). Occurrences up to
+`_HORIZON_DAYS` after the range are read so a later-due occurrence still fills inside
+it. A goal's fills are the changes in `savings_goals.goal_progress(...).set_aside` on
+income, allocation, target, and period-end dates; closing it draws the whole earmark.
+`reporting_periods` only groups those dated events. A scheduled jar's level starts
+from the fills (less draws) before the range for occurrences due in it; a goal's
+level is its earmark. Jars bundle by account and currency, and totals never add
+currencies together. `report_layout.budget_jars_layout` prints the report; the GTK
+`BudgetJarsDialog` (Plan → Budget Jars), the browser (`/api/budget-jars`), and
+`breadsched jars` show it.
+
 ## Retirement drawdown
 
 `Scenario.drawdowns` holds `Drawdown` rules: monthly withdrawals from a holding

@@ -1195,3 +1195,51 @@ def test_the_tax_year_marks_accounts_and_tags_and_prints_alone(page, served):
     assert page.locator("main").is_hidden()
     assert dialog.is_visible()
     page.emulate_media(media="screen")
+
+
+def test_budget_jars_open_from_the_plan_and_print_alone(page, served):
+    from breadsched.gen.lib import (
+        AccountType,
+        Money,
+        PeriodType,
+        Recurrence,
+        ScheduledSplit,
+        ScheduledTransaction,
+    )
+
+    db, _httpd = served
+    checking = next(item for item in db.iter_accounts() if item.atype is AccountType.BANK)
+    expense = next(
+        item
+        for item in db.iter_accounts()
+        if item.atype is AccountType.EXPENSE and not item.placeholder
+    )
+    estimate = ScheduledTransaction(
+        name="Market estimate",
+        recurrence=Recurrence(PeriodType.MONTH, interval=1, start=date(2026, 1, 20)),
+        splits=[
+            ScheduledSplit(expense.handle, Money(600)),
+            ScheduledSplit(checking.handle, Money(-600)),
+        ],
+    )
+    estimate.placeholder = True
+    with db.transaction("Estimate") as txn:
+        db.add_scheduled(estimate, txn)
+
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Plan", exact=True).first.click()
+    page.get_by_role("button", name="Budget jars…").click()
+    dialog = page.locator(".jars-dialog")
+    dialog.wait_for()
+    assert "Market estimate (estimate)" in dialog.inner_text()
+    assert db.full_name(expense) in dialog.inner_text()
+    dialog.get_by_label("Group by").select_option("year")
+    page.wait_for_selector(".jars-dialog >> text=Market estimate (estimate)")
+    dialog = page.locator(".jars-dialog")
+    page.evaluate("window.print = () => { window.__printed = document.body.className; }")
+    dialog.get_by_role("button", name="Print").click()
+    assert "printing-dialog" in page.evaluate("window.__printed")
+    page.emulate_media(media="print")
+    assert page.locator("main").is_hidden()
+    assert dialog.is_visible()
+    page.emulate_media(media="screen")

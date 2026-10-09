@@ -552,6 +552,11 @@ async function showPlan() {
       `${comparison.name} inherits ${comparedInheritedAssumptions} annual assumption(s) through its parent chain.`)
       : null,
     detailOption,
+    el("div", { class: "toolbar screen-only" },
+      el("button", { class: "action", type: "button",
+        onclick: () => openBudgetJars(data.controls.from, data.controls.through,
+          data.controls.period).catch((error) => say(error.message, "error")) },
+      "Budget jars…")),
     el("h2", { class: "plan-summary-heading" }, "Cash outlook"),
     summaryTable, await expenseExplorerPanel(currentPlan), detailSection);
 }
@@ -627,4 +632,68 @@ async function openPlanDetail(
         : el("p", { class: "note" }, "No actual transactions contribute to this cell.")));
     document.body.append(backdrop);
   } catch (error) { say(error.message, "error"); }
+}
+
+// Budget jars: each schedule and goal filled from income and drawn by actuals,
+// bundled by account; dated events grouped by period; prints on its own.
+async function openBudgetJars(from, through, period) {
+  const query = new URLSearchParams({ from, through, period });
+  const data = await get(`/api/budget-jars?${query}`);
+  document.querySelector(".jars-backdrop")?.remove();
+  const backdrop = el("div", {
+    class: "detail-backdrop jars-backdrop printable-dialog",
+    onclick: (event) => { if (event.target === backdrop) backdrop.remove(); },
+  });
+  const choice = el("select", { "aria-label": "Group by",
+    onchange: () => openBudgetJars(data.from, data.through, choice.value)
+      .catch((error) => say(error.message, "error")) },
+    ...["month", "quarter", "year"].map((value) => el("option", { value }, value)));
+  choice.value = data.period;
+  const num = (label) => ({ label, num: true });
+  const periodTable = (periods) => table(
+    ["Period", num("Filled"), num("Planned"), num("Actual"), num("Variance"), num("Level")],
+    periods.map((item) => el("tr", {},
+      el("td", {}, item.label),
+      el("td", { class: "num" }, money(item.filled)),
+      el("td", { class: "num" }, money(item.planned)),
+      el("td", { class: "num" }, money(item.actual)),
+      el("td", { class: cls(item.variance) }, money(item.variance)),
+      el("td", { class: cls(item.level) }, money(item.level)))));
+  const printDialog = () => {
+    document.body.classList.add("printing-dialog");
+    const done = () => {
+      document.body.classList.remove("printing-dialog");
+      window.removeEventListener("afterprint", done);
+    };
+    window.addEventListener("afterprint", done);
+    window.print();
+  };
+  const sections = data.accounts.map((bundle) => el("section", { class: "jar-account" },
+    el("h3", {}, bundle.currency ? `${bundle.name} (${bundle.currency})` : bundle.name),
+    el("p", { class: "note" }, "Jars: " + bundle.jars.map((jar) =>
+      `${jar.name} (${jar.kind_label.toLowerCase()})`).join("; ")),
+    periodTable(bundle.periods),
+    el("details", { class: "screen-only" }, el("summary", {}, "Each jar"),
+      ...bundle.jars.map((jar) => el("div", {},
+        el("h4", {}, `${jar.name} — ${jar.kind_label}`), periodTable(jar.periods))))));
+  backdrop.append(el("section", { class: "detail-dialog jars-dialog" },
+    helpHeading("Budget jars", "jars"),
+    el("p", { class: "note" }, "Each scheduled payment and estimate, and each savings goal, "
+      + "is a jar. It fills from each income in its cycle by that income's share, and is "
+      + "drawn by the actual transaction matched to it. Periods only group dated events; "
+      + "a level counts the occurrences due from the first day shown."),
+    el("div", { class: "toolbar screen-only" },
+      el("span", {}, `${data.from} through ${data.through}`),
+      el("label", {}, " Group by ", choice)),
+    ...data.totals.map((total) => el("section", {},
+      el("h3", {}, total.currency ? `All jars (${total.currency})` : "All jars"),
+      periodTable(total.periods))),
+    ...(sections.length ? sections : [el("p", { class: "note" },
+      "No scheduled payments, estimates, or goals in this range.")]),
+    ...data.problems.map((problem) => el("p", { class: "note neg" }, problem)),
+    el("div", { class: "toolbar screen-only" }, el("span", { class: "spacer" }),
+      el("button", { class: "action", type: "button", onclick: printDialog }, "Print"),
+      el("button", { class: "action", type: "button", onclick: () => backdrop.remove() },
+        "Close"))));
+  document.body.append(backdrop);
 }

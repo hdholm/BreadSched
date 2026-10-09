@@ -208,6 +208,58 @@ transaction that moves FSA money also says which FSA flow it is (payroll funding
 payment from the FSA card, a reimbursement, or a provider refund) and whether and how
 to attach it to a claim.
 
+### Jars: how the pieces fit together
+
+BreadSched plans with **jars**. Every scheduled payment (a bill such as rent) and
+every scheduled estimate (such as groceries) is a jar, and so is every
+[savings goal](#savings-goals). Money flows through them in three steps:
+
+1. **Planned income fills the jars.** Each occurrence of a scheduled payment or
+   estimate is filled by the income that arrives in its cycle, the time since its
+   previous occurrence. Each income sets aside the occurrence's amount times that
+   income's share of the cycle's income, so the whole amount is ready on the due
+   date. Income that was scheduled but never arrived fills nothing; future income is
+   expected to. A goal fills the same way from its start date to its target date,
+   plus any extra money you allocate to it. A goal stays a shadow sub-account: the
+   money really sits in the goal's account, and the jar says how much of it is
+   spoken for.
+2. **Actual transactions draw the jars.** When Review (or posting a due item)
+   matches a real transaction to a planned occurrence, that transaction draws the
+   jar on its own date for its own amount. Spending less leaves money in the jar;
+   spending more shows as a variance. An occurrence nothing was matched to draws
+   nothing. Closing a goal releases its money.
+3. **Views read the same dated events.** The Dashboard holds the jars of
+   commitments that are filling now; the Plan compares planned and actual amounts
+   by category; [Budget jars](#budget-jars) shows each jar's fills, planned and
+   actual draws, and level by period and account; and the Projection carries
+   scheduled payments, estimates, and goals forward. Grouping by month, quarter, or
+   year only gathers dated events; nothing is spread into monthly cells.
+
+**Worked example.** A paycheck of 1,000 arrives on the 1st and the 15th, and an
+estimate plans about 600 of groceries on the 20th of each month.
+
+- *Scheduled.* Both appear in the scheduled list: the paycheck as a commitment you
+  post, the groceries as an estimate that is never posted for you.
+- *Filling.* The June 20 groceries occurrence's cycle runs from May 20 to June 20.
+  It contains the June 1 and June 15 paychecks, each half of the cycle's income, so
+  each sets aside 300. If the June 15 paycheck never arrives, the June 1 paycheck
+  alone is the cycle's income that counts and sets aside the whole 600.
+- *Dashboard.* The paycheck appears as next income. The groceries estimate is not
+  a bill, so the Dashboard does not hold it; a commitment such as rent would be
+  held there by exactly this rule (300 after June 1, 600 after June 15).
+- *Actual.* On June 21 you spend 550 at the market. Review offers the June 20
+  groceries occurrence as a match; choose **Match**. The transaction keeps the
+  planned date and amount.
+- *Plan.* June's Groceries row shows 600 planned and 550 actual, a variance of 50
+  under plan.
+- *Budget jars.* The Groceries jar in Expenses:Groceries shows June filled 600,
+  planned 600, actual 550, and a level of 50. In July nothing has been matched yet,
+  so it is filled and planned 600 with no actual, and its level is 650: the money
+  set aside is still there.
+- *Projection.* The paycheck and the groceries estimate continue as dated events
+  in every future month; a matched actual takes the place of its planned
+  occurrence.
+
 ## Work areas
 
 The desktop application and the browser offer the same work areas:
@@ -728,6 +780,21 @@ expenses. Balance-sheet classifications are informational and deliberately have 
 mixed grand total. Mortgage cash requirements show the whole payment while the
 interest, escrow, principal, and fee components retain their classifications; never
 add the whole-payment row to its components.
+
+### Budget jars
+
+**Budget jars** (**Actions → Budget Jars…** in the desktop Plan, **Budget jars…**
+in the browser Plan, or `breadsched jars` on the command line) shows every jar in
+the Plan's range, bundled by account: the expense account of a scheduled payment or
+estimate (or, for a payment with no expense, the loan or asset it pays into), and
+the account of a savings goal. For each period it lists what was **Filled** from
+income, the **Planned** and **Actual** draws, their **Variance** (actual less
+planned), and the jar's **Level** at the period's end. Open an account to see each
+jar on its own. A level counts the occurrences due from the first day shown,
+including what income set aside for them before that day; what earlier occurrences
+left over is not carried in. Amounts in different currencies are kept apart. Print
+the report from either interface. See
+[Jars: how the pieces fit together](#jars-how-the-pieces-fit-together).
 
 ### Reporting terms
 

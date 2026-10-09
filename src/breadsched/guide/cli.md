@@ -40,6 +40,8 @@ breadsched realized-gains household.breadsched --year 2026   # sales, lots, tota
 breadsched sale-lots household.breadsched 3f2a91c0 # lots a sale could sell
 breadsched sale-lots household.breadsched 3f2a91c0 --lot 9be41d07=5   # name lots
 breadsched sale-lots household.breadsched 3f2a91c0 --clear   # the account's method
+breadsched jars household.breadsched --start 2026-01-01 --end 2026-06-30 \
+    --period quarter                              # fills, draws, and levels
 breadsched tax-year household.breadsched --year 2026   # gains by term, totals, income
 breadsched tax-marks household.breadsched --account "Expenses:Medical=on" \
     --tag "Charity=on"                            # off, or gnucash for an account

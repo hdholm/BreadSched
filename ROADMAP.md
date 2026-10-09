@@ -15,20 +15,7 @@ slice uses shared calculations and covers GTK, web, CLI, and printable output
 wherever that behavior is exposed, and preserves imported source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **Budget jars.** Every savings goal and every scheduled estimate is a jar filled
-   from planned income, as Dashboard reserves are today, and drawn down by the
-   actual transactions it plans for. Reporting bundles jars by period (month,
-   quarter, year) and account rather than by individual transaction or estimate,
-   comparing what each period planned with what happened. Time periods only group
-   dated events; nothing is converted into fictional monthly cells. A goal remains
-   a shadow sub-account holding real money plus the scheduled contributions toward
-   it.
-   The User Guide gains one coherent explanation of the whole model, from
-   scheduled transactions, estimates, and goals (the jars), through the actual
-   transactions that settle or draw on them, to how both feed the Plan and
-   Projection, with a worked example that follows one paycheck and one estimate
-   through every view.
-2. **Visualizations.** Today GTK has one Cairo line chart (Projection, Expense
+1. **Visualizations.** Today GTK has one Cairo line chart (Projection, Expense
    Explorer, Net worth history) and the browser has none. Build a chart model in
    non-GUI code (series, periods, exact values, labels) produced by the engines,
    drawn by the GTK Cairo widget and by inline SVG in the browser, and included in
