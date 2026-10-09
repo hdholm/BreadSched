@@ -208,8 +208,12 @@ fails on any link to a missing part or heading.
 - Contextual help: `user_guide.HELP_TOPICS` maps each workflow topic to a heading
   present in both the desktop and browser parts, and `help_target(topic, interface)`
   gives the part and anchor. GTK dialogs place `widgets.help.help_row(topic)` at
-  their top; its button calls the application's `show_guide(topic)`, which reuses
-  the guide window. Browser views (`VIEW_HELP` in `app.js`) and sections
+  their top; its button calls the application's `show_guide(topic, dialog)`, which
+  reuses the guide window and keeps it transient for the asking dialog. The guide
+  window has its own `Gtk.WindowGroup`, because a modal dialog's grab covers every
+  window in its group and would otherwise leave the guide unresponsive until the
+  dialog closed (#314); it scrolls to the topic's heading once it is mapped, since
+  a text view not yet laid out cannot scroll. Browser views (`VIEW_HELP` in `app.js`) and sections
   (`helpHeading` in `core.js`) open `?view=Guide&help=<topic>` in a new tab, which
   reads `GET /api/guide?topic=` for the browser part and its `anchor`, so an open
   dialog or form keeps its contents. Tests require every heading to exist in both
