@@ -18,9 +18,10 @@ from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
 from ..lib.scenario import Scenario
-from ..lib.transaction import PlanningFlowKind, PlanningResolution
+from ..lib.transaction import PlanningFlowKind, PlanningResolution, Transaction
 from .activity import (
     ActualActivity,
+    PeriodActivity,
     ReportingPeriod,
     build_activity_report,
     escrow_planning_flows,
@@ -37,6 +38,7 @@ from .planning import (
     PlannedEvent,
     PlannedSplit,
     event_by_key,
+    linked_actuals,
 )
 
 __all__ = [
@@ -45,6 +47,7 @@ __all__ = [
     "CategoryPlannedDetail",
     "MortgagePaymentPeriodDetail",
     "PlanningFlowPeriodDetail",
+    "category_period_detail",
     "explain_category_period",
     "explain_mortgage_payment_period",
     "explain_planning_flow_period",
@@ -181,13 +184,39 @@ def explain_category_period(
     """Explain one category-period value from the same exact-dated activity stream."""
     if end < start:
         raise ValueError("Plan detail end date precedes its start date.")
+    report = build_activity_report(
+        db, start, end, period=ReportingPeriod.MONTH, scenario=scenario, as_of=as_of
+    )
+    return category_period_detail(db, account_handle, start, end, report.periods, as_of=as_of)
+
+
+def category_period_detail(
+    db: DbSQLite,
+    account_handle: str,
+    start: date,
+    end: date,
+    periods: Iterable[PeriodActivity],
+    *,
+    as_of: date | None = None,
+    accounts: dict[str, Account] | None = None,
+    linked: dict[str, Transaction] | None = None,
+    converter: ReportingConverter | None = None,
+) -> CategoryPeriodDetail:
+    """Explain one category over activity already built (a Plan period's buckets).
+
+    The Expense Explorer explains every category of a period from the Plan's own
+    activity instead of rebuilding it per category (#310). ``accounts``,
+    ``linked`` (:func:`planning.linked_actuals`), and ``converter`` may be shared
+    across calls; each is read from the book when omitted.
+    """
     account = db.get_account(account_handle)
     if account is None:
         raise KeyError(account_handle)
     if account.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
         raise ValueError("Plan detail requires an income or expense account.")
 
-    accounts = {item.handle: item for item in db.iter_accounts()}
+    if accounts is None:
+        accounts = {item.handle: item for item in db.iter_accounts()}
     children: dict[str, list[str]] = {}
     for item in accounts.values():
         if item.parent is not None:
@@ -226,17 +255,25 @@ def explain_category_period(
             )
         return total
 
-    report = build_activity_report(
-        db, start, end, period=ReportingPeriod.MONTH, scenario=scenario, as_of=as_of
-    )
-    converter = ReportingConverter(db, as_of or date.today())
+    if converter is None:
+        converter = ReportingConverter(db, as_of or date.today())
+    shared = linked
+
+    def resolve(key: str) -> PlannedEvent | None:
+        # The ledger is scanned for matches at most once per detail, and only when
+        # some actual in the period was matched to an occurrence.
+        nonlocal shared
+        if shared is None:
+            shared = linked_actuals(db)
+        return event_by_key(db, key, shared)
+
     planned_rows: list[CategoryPlannedDetail] = []
     actual_rows: list[CategoryActualDetail] = []
     planned_total = Money(0)
     actual_total = Money(0)
     reimbursable_total = Money(0)
 
-    for bucket in report.periods:
+    for bucket in periods:
         for event in bucket.planned_events:
             expected = category_amount(event.expected_splits)
             if expected == Money(0):
@@ -290,7 +327,7 @@ def explain_category_period(
             actual_total = actual_total + value
             matched_expected: Money | None = None
             if actual.planned_occurrence:
-                matched_event = converter.event(event_by_key(db, actual.planned_occurrence))
+                matched_event = converter.event(resolve(actual.planned_occurrence))
                 if matched_event is not None:
                     matched_expected = category_amount(matched_event.expected_splits)
             actual_rows.append(

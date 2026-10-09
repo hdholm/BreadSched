@@ -3342,6 +3342,12 @@ class TestDerivedPlanView:
             PlanQuery(start=view._start_date, end=view._end_date, period=view._grouping()),
         )
         try:
+            # The Plan is calculated in the background (#310): the window opens
+            # at once showing that it is working, then fills in.
+            assert dialog.busy_calculating and dialog.busy.get_parent() is dialog.content
+            assert not dialog.controls.get_sensitive()
+            assert dialog.wait_loaded()
+            assert dialog.controls.get_sensitive()
             assert dialog._report.categories
             assert dialog.content.get_first_child() is not None
             assert dialog.period.get_selected() == 0
@@ -3405,9 +3411,58 @@ class TestDerivedPlanView:
                 assert dialog.period.get_selected() == 0
                 assert dialog.spending_charts[0].selected == 0
             dialog.rollover.set_active(True)
+            assert dialog.busy_calculating
+            assert dialog.wait_loaded()
             assert dialog._report.rollover
             dialog.sort.set_selected(3)
             assert dialog.content.get_first_child() is not None
+        finally:
+            dialog.destroy()
+
+    def test_expense_explorer_choices_are_readable_at_its_default_size(
+        self, app, window, populated_book, monkeypatch
+    ):
+        # #311: every control shared one row, so the window's width squeezed each
+        # choice to about four characters.
+        from breadsched.gen.services import expense_explorer
+        from breadsched.gen.services.plan import PlanQuery
+        from breadsched.gui.dialogs.expense_explorer_dialog import (
+            ACCOUNT_CHOICE_WIDTH,
+            CHOICE_WIDTH,
+            ExpenseExplorerDialog,
+        )
+
+        app.open_book(populated_book)
+        window.present()
+        dialog = ExpenseExplorerDialog(window, app.db, PlanQuery())
+        try:
+            assert dialog.wait_loaded()
+            dialog.present()
+            assert _spin(lambda: dialog.get_mapped() and dialog.period.get_width() > 0)
+            _spin(lambda: False, 0.3)
+            for choice, least in (
+                (dialog.period, CHOICE_WIDTH),
+                (dialog.sort, CHOICE_WIDTH),
+                (dialog.category, ACCOUNT_CHOICE_WIDTH),
+                (dialog.income_category, ACCOUNT_CHOICE_WIDTH),
+            ):
+                assert choice.get_width() >= least
+            # Close and Print sit in their own row and are never cut short.
+            text = dialog.print_button.get_child()
+            assert text.get_width() >= text.measure(Gtk.Orientation.HORIZONTAL, -1)[1]
+            # Nothing in the window demands more width than it opens with.
+            minimum = dialog.get_child().measure(Gtk.Orientation.HORIZONTAL, -1)[0]
+            assert minimum <= dialog.get_width()
+            # Choosing a category explains it from the loaded result, never a new Plan.
+            calls = []
+            real = expense_explorer.query_plan
+            monkeypatch.setattr(
+                expense_explorer, "query_plan", lambda *a, **k: calls.append(1) or real(*a, **k)
+            )
+            if len(dialog._report.categories) > 1:
+                dialog.category.set_selected(1)
+            dialog.sort.set_selected(3)
+            assert calls == [] and not dialog.busy_calculating
         finally:
             dialog.destroy()
 

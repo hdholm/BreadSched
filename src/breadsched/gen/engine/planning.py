@@ -36,6 +36,7 @@ __all__ = [
     "PlannedSplit",
     "actualize_transaction",
     "event_by_key",
+    "linked_actuals",
     "mark_unexpected",
     "match_candidates",
     "reject_candidate",
@@ -212,7 +213,7 @@ def _transaction_splits(transaction: Transaction) -> tuple[PlannedSplit, ...]:
 def _linked_actuals(db: DbSQLite) -> dict[str, Transaction]:
     """Return occurrence key -> actual, including transactions from older books."""
     linked: dict[str, Transaction] = {}
-    for transaction in db.iter_transactions():
+    for transaction in db.iter_plan_linked_transactions():
         key = transaction.planned_occurrence
         if key is None and transaction.scheduled_from is not None:
             key = ScheduledTransaction.occurrence_key_for(
@@ -511,8 +512,23 @@ def goal_purchase_events(
     return found
 
 
-def event_by_key(db: DbSQLite, key: str) -> PlannedEvent | None:
-    """Resolve a stable scheduled-occurrence key without scanning an arbitrary horizon."""
+def linked_actuals(db: DbSQLite) -> dict[str, Transaction]:
+    """Every transaction matched to a scheduled occurrence, by occurrence key.
+
+    Reading them scans the ledger, so a caller resolving many keys reads them once
+    and passes the result to :func:`event_by_key`.
+    """
+    return _linked_actuals(db)
+
+
+def event_by_key(
+    db: DbSQLite, key: str, linked: dict[str, Transaction] | None = None
+) -> PlannedEvent | None:
+    """Resolve a stable scheduled-occurrence key without scanning an arbitrary horizon.
+
+    ``linked`` is :func:`linked_actuals` already read; without it the ledger is
+    scanned for this one key.
+    """
     prefix = "scheduled:"
     if not key.startswith(prefix):
         return None
@@ -527,7 +543,7 @@ def event_by_key(db: DbSQLite, key: str) -> PlannedEvent | None:
         return None
     if when not in schedule.recurrence.occurrences(when, since=when):
         return None
-    actual = _linked_actuals(db).get(key)
+    actual = (linked if linked is not None else _linked_actuals(db)).get(key)
     return _scheduled_event(schedule, when, actual, reporting_currency_handle(db))
 
 

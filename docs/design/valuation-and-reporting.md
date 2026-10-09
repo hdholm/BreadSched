@@ -356,7 +356,24 @@ groups fold trimmed transaction descriptions case-insensitively in memory and su
 those actual contributions. The category's plan is never allocated to merchants.
 The service checks merchant and detail totals against the Plan cell before returning.
 
+Every explanation comes from the Plan's own activity buckets
+(`plan_detail.category_period_detail` over `plan.report.activity.periods[i]`),
+with the accounts, the matched actuals (`planning.linked_actuals`), and the
+reporting converter read once per query and shared. Before #310 each category's
+actual-to-date in the partial period rebuilt the whole activity report and each
+matched actual rescanned the ledger, about a hundred ledger decodes per query on
+a household book; a core test now bounds the decodes and a performance test bounds
+the time. `expense_drilldown(db, explorer, account, period)` explains one more
+cell of an explorer already calculated, without a new Plan, so changing the
+selection costs one category. `DbSQLite.iter_plan_linked_transactions` filters
+matched and posted-from-schedule transactions in SQL (`json_extract`), falling back
+to a full scan when SQLite lacks JSON functions.
+
 GTK's Explorer dialog and the web Plan explorer use the same read-only service.
+The GTK dialog calculates in a `BackgroundJob` on its own read-only connection
+(file books), showing a spinner with **Cancel** (which closes it), and lays its
+choices out in a two-column grid with a minimum width each and **Print…**/**Close**
+in a bottom row, so no choice is squeezed to a few characters (#311).
 The web API exposes its typed values and one selected category cell; presentation
 code draws comparison and trend charts without calculating financial totals.
 Web printing includes the applied explorer state with the Plan page. GTK prints

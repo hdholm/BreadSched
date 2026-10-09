@@ -10,6 +10,27 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a277 - 2026-10-09
+
+- **Expense Explorer opens quickly and stays responsive (#310).** Each category's
+  actual-to-date in the current period rebuilt the Plan's whole activity report, and
+  each matched actual rescanned the ledger, so on a 17,000-transaction book one
+  calculation took about 43 seconds; the desktop window ran two on opening and one
+  for every choice, all while frozen. Categories are now explained from the Plan's
+  own activity (`plan_detail.category_period_detail`) with the accounts, matched
+  actuals, and converter read once; matched actuals are read with a SQL filter
+  (`DbSQLite.iter_plan_linked_transactions`); and `expense_drilldown` explains a new
+  selection from the calculation already made. The same book now takes about three
+  seconds to open and a few hundredths of a second per choice, in the desktop, the
+  browser, and printing. The desktop window calculates in the background with a
+  note and **Cancel**. A core test bounds ledger reads (58,539 decodes before,
+  2,887 after on its book), and a performance test bounds the time.
+- **Expense Explorer's choices are readable (#311).** All its controls shared one
+  row, so each choice was squeezed to about four characters. They now sit two to a
+  row beside their labels with a minimum width, **Print…** and **Close** are at the
+  bottom, the comparison lines wrap, and the window opens larger. A GTK test checks
+  every choice's width at the default size.
+
 ## 0.2.0a276 - 2026-10-09
 
 - **Help from a dialog opens a usable guide at its topic (#314).** The import
