@@ -86,7 +86,7 @@ class BudgetJarsDialog(BoundedWindow):
                 "Each scheduled payment and estimate, and each savings goal, is a jar. It "
                 "fills from each income in its cycle by that income's share, and is drawn "
                 "by the actual transaction matched to it. Periods only group dated events; "
-                "a level counts the occurrences due from the first day shown."
+                "a level carries in every earlier fill and draw."
             ),
             xalign=0,
             wrap=True,

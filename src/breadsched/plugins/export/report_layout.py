@@ -1352,7 +1352,7 @@ def budget_jars_layout(report: JarsReport, currencies: dict[str | None, str]) ->
             "Each scheduled payment and estimate, and each savings goal, is a jar. It "
             "fills from each income in its cycle by that income's share, and is drawn "
             "by the actual transaction matched to it. Periods only group dated events. "
-            "A level counts the occurrences due from the first day shown."
+            "A level carries in every earlier fill and draw."
         )
     ]
     for total in report.totals:

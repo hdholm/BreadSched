@@ -682,7 +682,7 @@ async function openBudgetJars(from, through, period) {
     el("p", { class: "note" }, "Each scheduled payment and estimate, and each savings goal, "
       + "is a jar. It fills from each income in its cycle by that income's share, and is "
       + "drawn by the actual transaction matched to it. Periods only group dated events; "
-      + "a level counts the occurrences due from the first day shown."),
+      + "a level carries in every earlier fill and draw."),
     el("div", { class: "toolbar screen-only" },
       el("span", {}, `${data.from} through ${data.through}`),
       el("label", {}, " Group by ", choice)),

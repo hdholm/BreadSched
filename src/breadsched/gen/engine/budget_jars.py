@@ -21,10 +21,10 @@ every savings goal is a jar for its account.
 * **Reporting.** Every fill, planned draw, and actual draw is dated. Periods
   (month, quarter, year) only gather those dated events; nothing is spread into
   monthly cells. Jars are bundled by account, and a jar's level at a period's end
-  is what it holds then: fills less actual draws. A scheduled jar's level counts
-  the occurrences due on or after the report's first day (and so the fills made
-  before it for them); what earlier occurrences left over or overspent is not
-  carried in. A goal's level is its whole earmark.
+  is what it holds then: every fill less every actual draw since the schedule
+  began, so what earlier occurrences left over or overspent is carried in, and an
+  occurrence never matched to an actual keeps its money in the jar until it is
+  matched or skipped. A goal's level is its whole earmark.
 
 Amounts are in each jar's currency (the schedule's currency or the reporting
 currency, and the goal account's commodity); totals never add currencies together.
@@ -230,9 +230,14 @@ def _scheduled_jars(
     incomes = income_schedules(db, today)
     schedules = {schedule.handle: schedule for schedule in db.iter_scheduled()}
     jars: dict[tuple[str, str], tuple[ScheduledTransaction, str | None, list[JarEvent]]] = {}
-    # An occurrence due after the range still fills its jar inside it (a quarterly
-    # bill fills from every paycheck of its quarter), so look one year further.
-    events: list[PlannedEvent] = scheduled_events(db, start, end + timedelta(days=_HORIZON_DAYS))
+    # Every earlier occurrence counts toward the level the range opens with, so read
+    # from the first schedule's start; an occurrence due after the range still fills
+    # its jar inside it (a quarterly bill fills from every paycheck of its quarter),
+    # so look one year further.
+    first = min((schedule.recurrence.start for schedule in schedules.values()), default=start)
+    events: list[PlannedEvent] = scheduled_events(
+        db, min(first, start), end + timedelta(days=_HORIZON_DAYS)
+    )
     for event in events:
         schedule = schedules.get(event.source_handle or "")
         if schedule is None:

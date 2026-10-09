@@ -236,7 +236,7 @@ every scheduled estimate (such as groceries) is a jar, and so is every
    year only gathers dated events; nothing is spread into monthly cells.
 
 **Worked example.** A paycheck of 1,000 arrives on the 1st and the 15th, and an
-estimate plans about 600 of groceries on the 20th of each month.
+estimate, starting in June, plans about 600 of groceries on the 20th of each month.
 
 - *Scheduled.* Both appear in the scheduled list: the paycheck as a commitment you
   post, the groceries as an estimate that is never posted for you.
@@ -794,9 +794,11 @@ jar on its own. Each account also has two charts, each with a table of its exact
 values beside it: **planned and actual** draws side by side for every period, and
 **jar levels**, each jar's level at the end of the range beside its target (the next
 planned payment, or a goal's target amount). Hover over a column to see its exact
-amount. A level counts the occurrences due from the first day shown,
-including what income set aside for them before that day; what earlier occurrences
-left over is not carried in. Amounts in different currencies are kept apart. Print
+amount. A level accounts for everything before the range too: every fill and every
+actual draw since the schedule began, so money an earlier month left over (or
+overspent) is carried in. An occurrence never matched to an actual keeps its money
+in the jar until you match it or skip it in Review. Amounts in different currencies
+are kept apart. Print
 the report from either interface. See
 [Jars: how the pieces fit together](#jars-how-the-pieces-fit-together).
 

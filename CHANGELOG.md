@@ -10,6 +10,18 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a269 - 2026-10-09
+
+- **Budget jar levels carry in everything earlier.** A jar's level now accounts for
+  every fill and every actual draw since its schedule began, not only the
+  occurrences due in the report's range: what an earlier month left over or
+  overspent is carried in, and an occurrence never matched to an actual keeps its
+  money in the jar until it is matched or skipped in Review. Reporting the same
+  months from an earlier start ends at the same level. The User Guide, the report's
+  notes in GTK, the browser, and print, and the planning design part say so; a test
+  covers leftovers, overspending, an unmatched month, and agreement between ranges,
+  and a performance test keeps five weekly years of history interactive.
+
 ## 0.2.0a268 - 2026-10-09
 
 - **Projection on the shared charts.** The chart model gains a line form with

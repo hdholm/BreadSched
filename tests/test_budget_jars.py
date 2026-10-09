@@ -42,11 +42,11 @@ def _pay(db, book, last_posted=date(2026, 7, 1)):
 
 
 def _groceries(db, book):
-    """An estimate: about 600 of groceries on the 20th of each month."""
+    """An estimate: about 600 of groceries on the 20th of each month, from June."""
     return _schedule(
         db,
         "Groceries",
-        Recurrence(PeriodType.MONTH, interval=1, start=date(2026, 1, 20)),
+        Recurrence(PeriodType.MONTH, interval=1, start=date(2026, 6, 20)),
         [ScheduledSplit(book.groceries, Money(600)), ScheduledSplit(book.checking, Money(-600))],
         placeholder=True,
     )
@@ -124,9 +124,10 @@ def test_without_income_the_whole_amount_is_set_aside_when_the_cycle_starts(db, 
     _groceries(db, book)
     report = budget_jars(db, date(2026, 6, 1), date(2026, 6, 30), today=TODAY)
     [jar] = report.jars
-    # June's occurrence fills on May 20, July's on June 20.
+    # June's is the first occurrence: its cycle is the month before it (from May 21).
+    # July's fills on June 20.
     assert [(e.when, e.amount) for e in jar.events if e.kind == "fill"] == [
-        (date(2026, 5, 20), Money(600)),
+        (date(2026, 5, 21), Money(600)),
         (date(2026, 6, 20), Money(600)),
     ]
     # Filled before the range: it is the opening level.
@@ -137,12 +138,20 @@ def test_without_income_the_whole_amount_is_set_aside_when_the_cycle_starts(db, 
 
 def test_a_quarterly_bill_due_after_the_range_fills_inside_it(db, book):
     _pay(db, book)
-    _schedule(
+    water = _schedule(
         db,
         "Water",
         Recurrence(PeriodType.MONTH, interval=3, start=date(2026, 3, 31)),
         [ScheduledSplit(book.utilities, Money(300)), ScheduledSplit(book.checking, Money(-300))],
     )
+    # The March and June bills were paid exactly, so nothing is carried in.
+    for due in (date(2026, 3, 31), date(2026, 6, 30)):
+        paid = Transaction(post_date=due, description="Water")
+        paid.splits = [Split(book.utilities, Money(300)), Split(book.checking, Money(-300))]
+        paid.planned_occurrence = water.occurrence_key(due)
+        paid.planning_resolution = PlanningResolution.MATCHED
+        with db.transaction("Water") as handle:
+            db.add_transaction(paid, handle)
     report = budget_jars(db, date(2026, 7, 1), date(2026, 7, 31), today=date(2026, 6, 1))
     [jar] = report.jars
     assert jar.kind == JarKind.BILL
@@ -440,3 +449,29 @@ def test_charts_print_beside_their_tables(db, book):
     assert svg.count("<path") == 2 and "#2a78d6" in svg and "#eb6834" in svg
     assert "<title>" in svg and "Planned: 600.00" in svg
     assert "planned and actual" in document.text()
+
+
+def test_earlier_occurrences_are_carried_in(db, book):
+    """A level accounts for every earlier fill and draw, not only the range's."""
+    _pay(db, book)
+    groceries = _schedule(
+        db,
+        "Groceries",
+        Recurrence(PeriodType.MONTH, interval=1, start=date(2026, 3, 20)),
+        [ScheduledSplit(book.groceries, Money(600)), ScheduledSplit(book.checking, Money(-600))],
+        placeholder=True,
+    )
+    # March under plan by 100, April over plan by 50, May never matched.
+    _actual(db, book, groceries, date(2026, 3, 20), date(2026, 3, 21), "500")
+    _actual(db, book, groceries, date(2026, 4, 20), date(2026, 4, 20), "650")
+    report = budget_jars(db, date(2026, 6, 1), date(2026, 6, 30), today=TODAY)
+    [jar] = report.jars
+    # 100 left in March, 50 overspent in April, and May's 600 still set aside; June's
+    # own fills are inside the range.
+    assert jar.opening == Money(100) - Money(50) + Money(600)
+    [june] = jar.periods
+    assert (june.filled, june.planned, june.actual) == (Money(600), Money(600), Money(0))
+    assert june.level == jar.opening + Money(600)
+    # The same months reported from March show the same end.
+    from_march = budget_jars(db, date(2026, 3, 1), date(2026, 6, 30), today=TODAY)
+    assert from_march.jars[0].periods[-1].level == june.level
