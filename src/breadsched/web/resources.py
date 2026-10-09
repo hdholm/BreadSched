@@ -52,6 +52,7 @@ from .holdings_resource import (
     sale_lots_view,
 )
 from .import_resource import import_defaults, import_local, import_review, import_review_resolve
+from .jars_resource import jars_report
 from .loan_resource import loan_options, loan_preview, loan_save
 from .net_worth_resource import net_worth_change, net_worth_history
 from .payroll_resource import (
@@ -338,6 +339,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/holdings/sale-lots": sale_lots_view,
     "/api/realized-gains": realized_gains_report,
     "/api/tax-year": tax_year_report,
+    "/api/budget-jars": jars_report,
     "/api/tax-marks": tax_marks_view,
     "/api/net-worth-change": net_worth_change,
     "/api/review": _review,

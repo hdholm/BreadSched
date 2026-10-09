@@ -10,6 +10,26 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a266 - 2026-10-09
+
+- **Budget jars.** `engine/budget_jars` treats every scheduled payment and estimate
+  (per account it spends into) and every savings goal as a jar. An occurrence fills
+  from the income of its cycle by each income's share, the Dashboard's reserve rule
+  (missed income fills nothing; with no income the whole amount fills when the
+  cycle starts), and is drawn by the actual transaction the Plan matched to it, on
+  that transaction's date. A goal fills as its earmark grows and is drawn when it is
+  closed. Reports bundle jars by account and group the dated fills and planned and
+  actual draws by month, quarter, or year, with each period's level; nothing is
+  spread into monthly cells and currencies are never added together.
+- **Budget Jars** in GTK (Plan → **Budget Jars…**, native printing) and the browser
+  (**Budget jars…** in Plan, printing just the report), `breadsched jars`, and
+  `GET /api/budget-jars`.
+- The User Guide explains the whole model in *Jars: how the pieces fit together*,
+  with a worked example that follows one paycheck and one grocery estimate through
+  Scheduled, the Dashboard, Review, Plan, Budget jars, and the Projection; a test
+  executes the example. Engine, layout, CLI, route, GTK, and browser tests cover
+  the report.
+
 ## 0.2.0a265 - 2026-10-09
 
 - **Tax-year outputs (calendar year, US-oriented).** `engine/tax_year` derives one

@@ -196,6 +196,13 @@ source. **Tax-Relevant Accounts and Tags…** lists every tag and account with a
 box; an account checked by GnuCash's *tax related* mark says so until you change it.
 **Print…** prints the report. See [Tax year](../USER_GUIDE.md#tax-year).
 
+## Budget jars
+
+In Plan, choose **Actions → Budget Jars…**. It covers the Plan's From and Through
+range and starts with its Group by, which you can change. It lists all jars by
+period, then each account; open an account to see each jar. **Print…** prints the
+report. See [Budget jars](../USER_GUIDE.md#budget-jars).
+
 ## Online quotes
 
 In Accounts, choose **Actions → Online Quotes…**. Each security and foreign currency

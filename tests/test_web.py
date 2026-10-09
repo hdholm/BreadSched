@@ -6796,3 +6796,55 @@ class TestTaxYear:
         assert caught.value.code == 400
         assert client.database.get_account(expense.handle).serialize() == before
         assert client.database.get_metadata("tax.tags", []) == []
+
+
+class TestBudgetJars:
+    """Budget jars through gen/engine/budget_jars."""
+
+    def test_jars_by_account_and_period(self, client):
+        from breadsched.gen.lib import (
+            AccountType,
+            PeriodType,
+            Recurrence,
+            ScheduledSplit,
+            ScheduledTransaction,
+        )
+
+        db = client.database
+        checking = next(a for a in db.iter_accounts() if a.name == "Checking")
+        expense = next(
+            a for a in db.iter_accounts() if a.atype is AccountType.EXPENSE and not a.placeholder
+        )
+        groceries = ScheduledTransaction(
+            name="Market estimate",
+            recurrence=Recurrence(PeriodType.MONTH, interval=1, start=date(2026, 1, 20)),
+            splits=[
+                ScheduledSplit(expense.handle, Money(600)),
+                ScheduledSplit(checking.handle, Money(-600)),
+            ],
+        )
+        groceries.placeholder = True
+        with db.transaction("Jars") as txn:
+            db.add_scheduled(groceries, txn)
+        status, data = client.get("/api/budget-jars?from=2026-06&through=2026-08&period=month")
+        assert status == 200
+        assert (data["from"], data["through"], data["period"]) == ("2026-06", "2026-08", "month")
+        assert len(data["labels"]) == 3
+        [bundle] = [item for item in data["accounts"] if item["account"] == expense.handle]
+        [jar] = [jar for jar in bundle["jars"] if jar["name"] == "Market estimate"]
+        assert (jar["kind"], jar["kind_label"]) == ("estimate", "Estimate")
+        assert [period["planned"] for period in jar["periods"]] == ["600.00"] * 3
+        quarter = client.get("/api/budget-jars?from=2026-07&through=2026-09&period=quarter")[1]
+        assert len(quarter["labels"]) == 1
+        assert data["totals"] and "problems" in data
+
+    def test_rejected_queries(self, client):
+        for query in (
+            "from=June",
+            "period=week",
+            "from=2026-08&through=2026-06",
+            "extra=1",
+        ):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.get(f"/api/budget-jars?{query}")
+            assert caught.value.code == 400, query

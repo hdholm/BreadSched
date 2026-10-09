@@ -3578,6 +3578,54 @@ class TestDerivedPlanView:
         finally:
             dialog.destroy()
 
+    def test_budget_jars_group_and_print(self, app, window, populated_book, monkeypatch):
+        from breadsched.gen.engine.activity import ReportingPeriod
+        from breadsched.gen.lib import (
+            AccountType,
+            PeriodType,
+            Recurrence,
+            ScheduledSplit,
+            ScheduledTransaction,
+        )
+        from breadsched.gui import printing
+        from breadsched.gui.dialogs.budget_jars_dialog import BudgetJarsDialog
+
+        app.open_book(populated_book)
+        db = app.db
+        checking = next(a for a in db.iter_accounts() if a.atype is AccountType.BANK)
+        expense = next(
+            a for a in db.iter_accounts() if a.atype is AccountType.EXPENSE and not a.placeholder
+        )
+        estimate = ScheduledTransaction(
+            name="Market estimate",
+            recurrence=Recurrence(PeriodType.MONTH, interval=1, start=date(2026, 1, 20)),
+            splits=[
+                ScheduledSplit(expense.handle, Money(600)),
+                ScheduledSplit(checking.handle, Money(-600)),
+            ],
+        )
+        estimate.placeholder = True
+        with db.transaction("Estimate") as txn:
+            db.add_scheduled(estimate, txn)
+        printed = []
+        monkeypatch.setattr(printing, "print_document", lambda parent, doc: printed.append(doc))
+        window.activate_action("win.view-plan", None)
+        dialog = BudgetJarsDialog(window, db, date(2026, 7, 1), date(2026, 9, 30))
+        try:
+            names = [row.get_label() for row in dialog.account_rows]
+            assert any(
+                db.full_name(expense) in name and "Market estimate" in name for name in names
+            )
+            assert len(dialog.report.labels) == 3
+            dialog.period_choice.set_selected(1)
+            assert dialog.period is ReportingPeriod.QUARTER and len(dialog.report.labels) == 1
+            dialog.print_report()
+            [document] = printed
+            assert document.kind == "budget-jars" and "by quarter" in document.subtitle
+            assert db.full_name(expense) in document.text()
+        finally:
+            dialog.destroy()
+
     @staticmethod
     def _grid_texts(grid) -> list[list[str]]:
         rows: dict[int, dict[int, str]] = {}
@@ -7935,6 +7983,7 @@ class TestDialogsFitTheScreen:
         ("holdings_dialog", "HoldingsDialog", None),
         ("realized_gains_dialog", "RealizedGainsDialog", None),
         ("tax_year_dialog", "TaxYearDialog", None),
+        ("budget_jars_dialog", "BudgetJarsDialog", None),
         ("tax_year_dialog", "TaxMarksDialog", None),
         ("import_dialog", "ImportDialog", None),
         ("loan_dialog", "LoanDialog", None),

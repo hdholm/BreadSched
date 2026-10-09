@@ -78,6 +78,7 @@ HELP_TOPICS: dict[str, str] = {
     "online-quotes": "Online quotes",
     "specific-lots": "Choose the lots a sale sells",
     "tax-year": "Tax year",
+    "jars": "Budget jars",
     "scheduled": "Scheduled activity",
     "due-review": "Review due transactions",
     "payroll": "Paychecks and pay changes",

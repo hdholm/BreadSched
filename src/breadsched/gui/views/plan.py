@@ -629,6 +629,15 @@ class PlanView(BaseView):
         self._update_scenario_actions()
         self._render()
 
+    def _open_budget_jars(self, _button) -> None:
+        if self.db is None:
+            return
+        from ..dialogs.budget_jars_dialog import BudgetJarsDialog
+
+        BudgetJarsDialog(
+            self.get_root(), self.db, self._start_date, self._end_date, self._grouping()
+        ).present()
+
     def _open_expense_explorer(self, _button) -> None:
         if self.db is None:
             return

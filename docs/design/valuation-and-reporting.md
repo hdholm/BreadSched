@@ -476,7 +476,7 @@ The browser route, a private, owner-readable HTML preview opened in the default
 browser and removed when the application exits, is the placeholder for native macOS
 printing: only on macOS does the File menu offer **Print in Browser…** (Linux and
 Windows print natively). The dialog reports (Net Worth History, its change detail,
-Expense Explorer, Realized Gains, and Tax Year) have layouts of their own and print through
+Expense Explorer, Realized Gains, Tax Year, and Budget Jars) have layouts of their own and print through
 `printing.print_document`, which opens the browser preview only when GTK printing
 fails. A cell may span columns (`Cell.span`, used by the net worth change totals)
 and hold line breaks (merchant transactions, top-level account values).
@@ -493,7 +493,7 @@ the browser print dialog.
 The web interface prints its current rendered view directly. Print-specific CSS
 removes navigation and editing actions, restores tables hidden by screen scroll
 regions, and preserves text, tables, and SVG charts as scalable output. A report
-dialog marked `printable-dialog` (Realized gains, Tax year) prints on its own: its **Print**
+dialog marked `printable-dialog` (Realized gains, Tax year, Budget jars) prints on its own: its **Print**
 button sets `body.printing-dialog` for the print, which hides the page and shows only
 that dialog, and `screen-only` controls are left out. Both paths
 keep formatting and pagination in presentation code while all monetary values,

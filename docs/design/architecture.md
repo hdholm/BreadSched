@@ -120,13 +120,14 @@ entry points. The
 transport never returns unexpected exception text: it logs the exception with a
 correlation identifier and returns only that identifier with a stable error code.
 Each resource module (`web/*_resource.py`: book summary and verification, accounts
-and securities, Plan, Plan detail, Expense Explorer, Dashboard, Projection, scenarios,
-schedules and due review, loans, Review, registers, reconciliation, FSA, claims,
-receivables, goals, payroll, rules, tags and documents, imports, write-back,
-net worth, holdings and gains, tax year, guide) is a thin adapter. Controls several
-adapters share have one parser: ``web.controls`` turns a browser amount into `Money` and a `ServiceError` into a
-resource error with presentation-owned wording, and ``web.schedule_controls`` parses
-the recurrence, exception, and split controls of the baseline and scenario schedule
+and securities, Plan, Plan detail, Expense Explorer, Dashboard, Projection,
+scenarios, schedules and due review, loans, Review, registers, reconciliation, FSA,
+claims, receivables, goals, payroll, rules, tags and documents, imports, write-back,
+net worth, holdings and gains, tax year, budget jars, guide) is a thin adapter.
+Controls several adapters share have one parser: ``web.controls`` turns a browser
+amount into `Money` and a `ServiceError` into a resource error with
+presentation-owned wording, and ``web.schedule_controls`` parses the recurrence,
+exception, and split controls of the baseline and scenario schedule
 editors. A read translates typed query values into a shared service
 or engine call and serializes the typed result; a write parses JSON into the
 service's typed request and maps its `ServiceResult` to a response. Neither
@@ -181,7 +182,7 @@ write-back, inference), `ledger_commands` (accounts, registers, balances, rates,
 transactions), `categorization_commands` (rules, tags, attachments),
 `investment_commands` (holdings, cost basis, sale lots, and realized gains),
 `tax_commands` (the tax year and its marks), `plan_commands` (schedules,
-Review, due review, Plan matches, activity, estimates, paychecks),
+Review, due review, Plan matches, activity, budget jars, estimates, paychecks),
 `benefit_commands` (FSA claims, receivables, goals), and `projection_commands`
 (projections, scenarios, comparison, net worth, Dashboard). `cli.common` holds the
 helpers they share (date parsing, JSON and table output, book and account lookup)

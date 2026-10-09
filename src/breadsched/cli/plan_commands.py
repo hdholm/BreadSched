@@ -779,6 +779,111 @@ def cmd_estimate(args: argparse.Namespace) -> int:
         db.close()
 
 
+def cmd_jars(args: argparse.Namespace) -> int:
+    from ..gen.engine.budget_jars import budget_jars, currency_labels, jar_kind_label
+
+    start = parse_date(args.start)
+    end = parse_date(args.end)
+    if start is None or end is None or end < start:
+        raise CommandError("--start and --end are dates, and --end is not before --start")
+    db = open_book(args.book, "r")
+    try:
+        report = budget_jars(
+            db,
+            start,
+            end,
+            period=activity.ReportingPeriod(args.period),
+            today=parse_date(args.as_of) or date.today(),
+        )
+        labels = currency_labels(db, report)
+
+        def period_data(item) -> dict[str, object]:
+            return {
+                "start": item.start,
+                "end": item.end,
+                "label": item.label,
+                "filled": item.filled,
+                "planned": item.planned,
+                "actual": item.actual,
+                "variance": item.variance,
+                "level": item.level,
+            }
+
+        payload = {
+            "start": report.start,
+            "end": report.end,
+            "period": report.period.value,
+            "accounts": [
+                {
+                    "account": bundle.account,
+                    "name": bundle.account_name,
+                    "currency": labels.get(bundle.currency, ""),
+                    "periods": [period_data(item) for item in bundle.periods],
+                    "jars": [
+                        {
+                            "key": jar.key,
+                            "kind": jar.kind,
+                            "name": jar.name,
+                            "opening": jar.opening,
+                            "periods": [period_data(item) for item in jar.periods],
+                            "events": [
+                                {
+                                    "when": event.when,
+                                    "kind": event.kind,
+                                    "amount": event.amount,
+                                    "transaction": event.transaction,
+                                }
+                                for event in jar.events
+                            ],
+                        }
+                        for jar in bundle.jars
+                    ],
+                }
+                for bundle in report.accounts
+            ],
+            "totals": [
+                {
+                    "currency": labels.get(total.currency, ""),
+                    "periods": [period_data(item) for item in total.periods],
+                }
+                for total in report.totals
+            ],
+            "problems": list(report.problems),
+        }
+        lines: list[str] = []
+        for bundle in report.accounts:
+            label = labels.get(bundle.currency, "")
+            lines.append(f"{bundle.account_name}{f' ({label})' if label else ''}")
+            lines.append(
+                "  jars: "
+                + "; ".join(
+                    f"{jar.name} ({jar_kind_label(jar.kind).lower()})" for jar in bundle.jars
+                )
+            )
+            lines.append(
+                table(
+                    [
+                        [
+                            item.label,
+                            item.filled.format(),
+                            item.planned.format(),
+                            item.actual.format(),
+                            item.variance.format(parens_negative=True),
+                            item.level.format(parens_negative=True),
+                        ]
+                        for item in bundle.periods
+                    ],
+                    ["period", "filled", "planned", "actual", "variance", "level"],
+                    right={1, 2, 3, 4, 5},
+                )
+            )
+        lines.extend(f"note: {problem}" for problem in report.problems)
+        emit(payload, args, "\n".join(lines) if lines else "No jars in this range.")
+        return 0
+    finally:
+        db.close()
+
+
 def register(add: AddCommand) -> None:
     """Add the plan subcommands."""
     sched = add("scheduled", "List due scheduled transactions, or post them")
@@ -850,6 +955,18 @@ def register(add: AddCommand) -> None:
     )
     plan_unexpected.add_argument("transaction", help="transaction handle, or a unique prefix")
     plan_unexpected.set_defaults(func=cmd_plan_unexpected)
+
+    jars = add("jars", "Budget jars: each schedule and goal filled from income and drawn")
+    jars.add_argument("--start", required=True, help="first date (YYYY-MM-DD)")
+    jars.add_argument("--end", required=True, help="last date (YYYY-MM-DD)")
+    jars.add_argument(
+        "--period",
+        default="month",
+        choices=[period.value for period in activity.ReportingPeriod],
+        help="display grouping; does not change event dates",
+    )
+    jars.add_argument("--as-of", help="income after this date is expected (default today)")
+    jars.set_defaults(func=cmd_jars)
 
     activity_cmd = add(
         "activity",
