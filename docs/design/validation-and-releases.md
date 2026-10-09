@@ -176,8 +176,10 @@ rather than asking users to assemble Python and GTK: `build-installer.sh` instal
 the wheel into an MSYS2 UCRT64 prefix beside Python, GTK 4, PyGObject, and cairo,
 stages that prefix under `runtime\` without development files, adds launchers and
 the icon, and compiles `breadsched.nsi`, naming the x86-unicode NSIS plugin directory
-(nsDialogs, nsExec) with `!addplugindir`. MSYS2's NSIS 3.13 ships no plugins, so CI
-and release install the official NSIS build with Chocolatey, and the script compiles
+(nsDialogs, nsExec) with `!addplugindir`. MSYS2's NSIS ships no x86-unicode plugins
+(only amd64-unicode ones), so CI and release install the official NSIS build with
+Chocolatey, checking that the plugins arrived and retrying, since Chocolatey reports
+success when its feed is unreachable; the script compiles
 with that release's own `makensis.exe` so the stubs and plugins match (mixing
 MSYS2's makensis with the official plugins produced an installer that hung in a
 silent upgrade). MSYS2's makensis is used only with plugins of its own; otherwise

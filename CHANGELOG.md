@@ -30,6 +30,10 @@ section. Commits and pull requests hold the complete history.
   and `breadsched realized-gains`; the web adds `GET/POST /api/holdings/sale-lots`
   and `GET /api/realized-gains`. Engine, service, CLI, route, GTK, and browser
   tests cover them.
+- The Windows installer jobs check that Chocolatey actually installed NSIS with its
+  x86-unicode plugins and retry up to four times: Chocolatey exits successfully when
+  its feed is unreachable, which left the build without plugins. MSYS2's NSIS now
+  ships only amd64-unicode plugins, which the installer does not use.
 
 ## 0.2.0a263 - 2026-10-09
 
