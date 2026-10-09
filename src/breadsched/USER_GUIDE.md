@@ -226,8 +226,12 @@ every scheduled estimate (such as groceries) is a jar, and so is every
 2. **Actual transactions draw the jars.** When Review (or posting a due item)
    matches a real transaction to a planned occurrence, that transaction draws the
    jar on its own date for its own amount. Spending less leaves money in the jar;
-   spending more shows as a variance. An occurrence nothing was matched to draws
-   nothing. Closing a goal releases its money.
+   spending more shows as a variance. Spending you never match is still spending:
+   every transaction posted to a jar's account draws that account's jar on its own
+   date (a refund puts money back), just as the Plan counts it. When the account
+   has several jars and the spending could belong to any of them, it shows as
+   **Unmatched spending** in that account instead. Closing a goal releases its
+   money.
 3. **Views read the same dated events.** The Dashboard holds the jars of
    commitments that are filling now; the Plan compares planned and actual amounts
    by category; [Budget jars](#budget-jars) shows each jar's fills, planned and
@@ -253,9 +257,10 @@ estimate, starting in June, plans about 600 of groceries on the 20th of each mon
 - *Plan.* June's Groceries row shows 600 planned and 550 actual, a variance of 50
   under plan.
 - *Budget jars.* The Groceries jar in Expenses:Groceries shows June filled 600,
-  planned 600, actual 550, and a level of 50. In July nothing has been matched yet,
+  planned 600, actual 550, and a level of 50. In July nothing has been spent yet,
   so it is filled and planned 600 with no actual, and its level is 650: the money
-  set aside is still there.
+  set aside is still there. Had you skipped **Match**, the 550 would still be
+  June's actual, because it was posted to Expenses:Groceries.
 - *Projection.* The paycheck and the groceries estimate continue as dated events
   in every future month; a matched actual takes the place of its planned
   occurrence.
@@ -809,8 +814,10 @@ values beside it: **planned and actual** draws side by side for every period, an
 planned payment, or a goal's target amount). Hover over a column to see its exact
 amount. A level accounts for everything before the range too: every fill and every
 actual draw since the schedule began, so money an earlier month left over (or
-overspent) is carried in. An occurrence never matched to an actual keeps its money
-in the jar until you match it or skip it in Review. Amounts in different currencies
+overspent) is carried in. Every transaction posted to the account counts as an actual
+draw, matched or not, so an account's actual is the same as its Plan row; spending
+that could belong to more than one jar in the account is listed as **Unmatched
+spending**. Amounts in different currencies
 are kept apart. Print
 the report from either interface. See
 [Jars: how the pieces fit together](#jars-how-the-pieces-fit-together).
