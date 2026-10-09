@@ -117,3 +117,52 @@ def test_web_and_print_show_the_runway(db, book):
     assert "Cash runway" in html
     assert "Cash runs out in Apr 2026, after 3 months." in html
     assert "the same runway." in html
+
+
+def test_the_projection_chart_marks_the_first_shortfall_and_overlays_a_comparison(db, book):
+    from breadsched.gen.engine.chart_model import LINE
+    from breadsched.gen.engine.projection_result import projection_chart
+    from breadsched.plugins.export.html_report import model_chart_svg
+    from breadsched.presentation import chart_line_layout
+
+    _spend(db, book, "1000")
+    result = projection.project(db, _scenario())
+    calmer = projection.project(db, _scenario("Calmer"))
+    chart = projection_chart(result, calmer, "USD")
+    assert (chart.kind, len(chart.categories), chart.currency) == (LINE, 12, "USD")
+    assert [series.name for series in chart.series] == [
+        "Cash",
+        "Investments",
+        "Net worth",
+        "Calmer net worth",
+    ]
+    assert [series.slot for series in chart.series] == [1, 2, 3, 4]
+    # The chart's values are the projection's own.
+    assert chart.series[0].values == tuple(row.cash_close for row in result.rows)
+    [marker] = chart.markers
+    assert (marker.index, marker.label) == (3, "First shortfall: Apr 2026")
+    assert chart.partial_from is None and chart.partial_note == ""
+
+    layout = chart_line_layout(chart, 0, 0, 1100, 200)
+    assert layout.xs[0] == 0 and layout.xs[-1] == 1100
+    assert layout.markers == ((layout.xs[3], "First shortfall: Apr 2026"),)
+    svg = model_chart_svg(chart)
+    assert svg.count("<polyline") == 4 and "First shortfall: Apr 2026" in svg
+    assert "Apr 2026\nCash: (1,000.00) USD" in svg.replace("&#x27;", "'")
+
+    plain = projection_chart(result)
+    assert len(plain.series) == 3
+
+
+def test_projection_prints_its_chart_and_optionally_every_value(db, book):
+    from breadsched.plugins.export.report_layout import ModelChart, Table, projection_layout
+
+    _spend(db, book, "1000")
+    result = projection.project(db, _scenario())
+    document = projection_layout(result, currency="USD")
+    main, values = document.sections
+    assert any(isinstance(block, ModelChart) for block in main.blocks)
+    assert values.optional and values.name == "Projection chart values"
+    [table] = [block for block in values.blocks if isinstance(block, Table)]
+    assert len(table.rows) == 12
+    assert "Apr 2026 | (1,000.00)" in document.text(include_optional=True)

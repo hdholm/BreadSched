@@ -14,7 +14,7 @@ from html import escape
 
 from ...gen.engine.activity import PlanMeasure
 from ...gen.engine.category_report import CategoryReport
-from ...gen.engine.chart_model import ChartModel
+from ...gen.engine.chart_model import BARS, ChartModel
 from ...gen.engine.dashboard import Dashboard
 from ...gen.engine.projection_result import Projection
 from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer
@@ -23,7 +23,6 @@ from ...gen.services.plan import PlanGoalMilestone
 from .report_layout import (
     Cards,
     Cell,
-    Chart,
     Heading,
     ModelChart,
     Paragraph,
@@ -213,8 +212,6 @@ def _block_html(block) -> str:
         return f'<p class="{css}">{escape(block.text)}</p>'
     if isinstance(block, Cards):
         return _cards([(card.label, card.value, card.alarm) for card in block.items])
-    if isinstance(block, Chart):
-        return _chart_svg(block)
     if isinstance(block, ModelChart):
         return model_chart_svg(block.model)
     return _table_html(block)
@@ -259,62 +256,6 @@ def _table_html(table: Table) -> str:
     return f"<table><thead><tr>{header}</tr></thead><tbody>{''.join(rows)}</tbody></table>"
 
 
-def _chart_svg(chart: Chart) -> str:
-    values = [value for series in chart.series for value in series.values]
-    if not values:
-        return '<p class="note">No projected values.</p>'
-    low, high = min(values), max(values)
-    if low == high:
-        low -= 1
-        high += 1
-    width, height = 1000, 340
-    left, top, right, bottom = 72, 28, 18, 42
-    usable_width = width - left - right
-    usable_height = height - top - bottom
-    count = max((len(series.values) for series in chart.series), default=1)
-
-    def point(index: int, value: float) -> str:
-        x = left + usable_width * index / max(1, count - 1)
-        y = top + usable_height * (high - value) / (high - low)
-        return f"{x:.1f},{y:.1f}"
-
-    lines = []
-    legend = []
-    for index, series in enumerate(chart.series):
-        coords = " ".join(point(i, value) for i, value in enumerate(series.values))
-        lines.append(
-            f'<polyline fill="none" stroke="{series.colour}" stroke-width="2" points="{coords}"/>'
-        )
-        legend.append(
-            f'<line x1="{left + index * 210}" y1="12" x2="{left + index * 210 + 18}" '
-            f'y2="12" stroke="{series.colour}" stroke-width="3"/>'
-            f'<text x="{left + index * 210 + 24}" y="16" font-size="12">'
-            f"{escape(series.name)}</text>"
-        )
-    zero = ""
-    if low <= 0 <= high:
-        zero_y = top + usable_height * high / (high - low)
-        zero = (
-            f'<line x1="{left}" y1="{zero_y:.1f}" x2="{width - right}" '
-            f'y2="{zero_y:.1f}" stroke="#aeb3ba" stroke-dasharray="4 4"/>'
-        )
-    labels = []
-    for index, label in chart.ticks:
-        x = left + usable_width * index / max(1, count - 1)
-        labels.append(
-            f'<text x="{x:.1f}" y="{height - 10}" text-anchor="middle" '
-            f'font-size="11">{escape(label)}</text>'
-        )
-    return (
-        f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="{escape(chart.label)}">'
-        f'<line x1="{left}" y1="{top}" x2="{left}" y2="{height - bottom}" '
-        'stroke="#aeb3ba"/>'
-        f'<line x1="{left}" y1="{height - bottom}" x2="{width - right}" '
-        f'y2="{height - bottom}" stroke="#aeb3ba"/>{zero}{"".join(lines)}'
-        f"{''.join(legend)}{''.join(labels)}</svg>"
-    )
-
-
 def _bar_path(x: float, y: float, width: float, height: float, negative: bool) -> str:
     """A column with a 4-unit rounded data end and a square foot on the baseline."""
     r = min(4.0, width / 2, height)
@@ -337,6 +278,8 @@ def model_chart_svg(model: ChartModel, *, dark: bool = False) -> str:
 
     width, height = 1000, 300
     left, top, right, bottom = 84, 40, 16, 40
+    if model.kind != BARS:
+        return _line_chart_svg(model, width, height, (left, top, right, bottom), dark)
     layout = chart_bar_layout(model, left, top, width - left - right, height - top - bottom)
     ink, muted = chart_chrome("ink", dark=dark), chart_chrome("muted", dark=dark)
     grid, axis = chart_chrome("grid", dark=dark), chart_chrome("axis", dark=dark)
@@ -358,22 +301,122 @@ def model_chart_svg(model: ChartModel, *, dark: bool = False) -> str:
             f'fill="{chart_series_colour(series.slot, dark=dark)}">'
             f"<title>{escape(tip)}</title></path>"
         )
-    for centre, label in zip(layout.centres, model.categories, strict=True):
-        parts.append(
-            f'<text x="{centre:.1f}" y="{height - bottom + 16}" text-anchor="middle" '
-            f'font-size="11" fill="{muted}">{escape(label)}</text>'
-        )
+    parts.extend(_category_labels(model, layout.centres, height - bottom + 16, muted))
+    parts.extend(_legend(model, left, ink, dark))
+    return _svg(model, width, height, parts)
+
+
+def _category_labels(model: ChartModel, xs, y: float, colour: str) -> list[str]:
+    from ...presentation import chart_label_indices
+
+    last = len(model.categories) - 1
+
+    def anchor(index: int) -> str:
+        # A line's first and last points sit on the plot's edges: keep their labels inside.
+        if model.kind == BARS or 0 < index < last:
+            return "middle"
+        return "start" if index == 0 else "end"
+
+    return [
+        f'<text x="{xs[index]:.1f}" y="{y}" text-anchor="{anchor(index)}" font-size="11" '
+        f'fill="{colour}">{escape(model.categories[index])}</text>'
+        for index in chart_label_indices(len(model.categories))
+    ]
+
+
+def _legend(model: ChartModel, left: float, ink: str, dark: bool) -> list[str]:
+    from ...presentation import chart_series_colour
+
+    parts = []
     x = left
     for series in model.series:
+        colour = chart_series_colour(series.slot, dark=dark)
+        swatch = (
+            f'<rect x="{x}" y="10" width="12" height="12" rx="2" fill="{colour}"/>'
+            if model.kind == BARS
+            else f'<line x1="{x}" y1="16" x2="{x + 14}" y2="16" stroke="{colour}" '
+            'stroke-width="2" stroke-linecap="round"/>'
+        )
         parts.append(
-            f'<rect x="{x}" y="10" width="12" height="12" rx="2" '
-            f'fill="{chart_series_colour(series.slot, dark=dark)}"/>'
-            f'<text x="{x + 18}" y="20" font-size="12" fill="{ink}">{escape(series.name)}</text>'
+            f'{swatch}<text x="{x + 18}" y="20" font-size="12" fill="{ink}">'
+            f"{escape(series.name)}</text>"
         )
         x += 30 + 8 * len(series.name)
+    return parts
+
+
+def _svg(model: ChartModel, width: int, height: int, parts: list[str]) -> str:
     label = f"{model.title} ({model.currency})" if model.currency else model.title
     return (
         f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="{escape(label)}" '
         "font-family=\"system-ui, -apple-system, 'Segoe UI', sans-serif\">"
         f"{''.join(parts)}</svg>"
     )
+
+
+def _amount_text(value) -> str:
+    return value.format(parens_negative=True) if value is not None else "—"
+
+
+def _line_chart_svg(
+    model: ChartModel, width: int, height: int, margins: tuple[int, int, int, int], dark: bool
+) -> str:
+    """Lines for an engine chart, its markers, partial shading, and a hover title per point."""
+    from ...presentation import chart_chrome, chart_line_layout, chart_series_colour
+
+    left, top, right, bottom = margins
+    layout = chart_line_layout(model, left, top, width - left - right, height - top - bottom)
+    ink, muted = chart_chrome("ink", dark=dark), chart_chrome("muted", dark=dark)
+    grid, axis = chart_chrome("grid", dark=dark), chart_chrome("axis", dark=dark)
+    secondary = chart_chrome("secondary", dark=dark)
+    parts: list[str] = []
+    if layout.partial_x is not None:
+        parts.append(
+            f'<rect x="{layout.partial_x:.1f}" y="{top}" '
+            f'width="{width - right - layout.partial_x:.1f}" height="{layout.height:.1f}" '
+            f'fill="{muted}" opacity="0.12"/>'
+        )
+    for value, y in layout.ticks:
+        parts.append(
+            f'<line x1="{left}" y1="{y:.1f}" x2="{width - right}" y2="{y:.1f}" '
+            f'stroke="{axis if value == 0 else grid}" stroke-width="1"/>'
+            f'<text x="{left - 8}" y="{y + 4:.1f}" text-anchor="end" font-size="11" '
+            f'fill="{muted}">{value:,.0f}</text>'
+        )
+    for x, label in layout.markers:
+        parts.append(
+            f'<line x1="{x:.1f}" y1="{top}" x2="{x:.1f}" y2="{top + layout.height:.1f}" '
+            f'stroke="{secondary}" stroke-width="1"/>'
+            f'<text x="{x + 4:.1f}" y="{top + 12}" font-size="11" fill="{secondary}">'
+            f"{escape(label)}</text>"
+        )
+    for series, points in zip(model.series, layout.points, strict=True):
+        runs: list[list[tuple[float, float]]] = [[]]
+        for point in points:
+            if point is None:
+                runs.append([])
+            else:
+                runs[-1].append(point)
+        colour = chart_series_colour(series.slot, dark=dark)
+        for run in runs:
+            if len(run) > 1:
+                coords = " ".join(f"{x:.1f},{y:.1f}" for x, y in run)
+                parts.append(
+                    f'<polyline fill="none" stroke="{colour}" stroke-width="2" '
+                    f'stroke-linejoin="round" stroke-linecap="round" points="{coords}"/>'
+                )
+    step = layout.width / max(len(layout.xs) - 1, 1)
+    currency = f" {model.currency}" if model.currency else ""
+    for index, x in enumerate(layout.xs):
+        lines = [model.categories[index]] + [
+            f"{series.name}: {_amount_text(series.values[index])}{currency}"
+            for series in model.series
+        ]
+        parts.append(
+            f'<rect x="{x - step / 2:.1f}" y="{top}" width="{step:.1f}" '
+            f'height="{layout.height:.1f}" fill="transparent">'
+            f"<title>{escape(chr(10).join(lines))}</title></rect>"
+        )
+    parts.extend(_category_labels(model, layout.xs, height - bottom + 16, muted))
+    parts.extend(_legend(model, left, ink, dark))
+    return _svg(model, width, height, parts)

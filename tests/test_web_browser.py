@@ -1248,3 +1248,19 @@ def test_budget_jars_open_from_the_plan_and_print_alone(page, served):
     assert page.locator("main").is_hidden()
     assert dialog.is_visible()
     page.emulate_media(media="screen")
+
+
+def test_the_projection_chart_is_the_shared_line_chart_with_its_values(page):
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Projection", exact=True).first.click()
+    figure = page.locator(".model-chart").first
+    figure.wait_for()
+    assert "Projected cash, investments, and net worth" in figure.locator("figcaption").inner_text()
+    # One line per series, a hover title per month, and the exact values behind a toggle.
+    assert figure.locator("svg path").count() >= 3
+    hit = figure.locator("svg rect.chart-hit title").first.text_content()
+    assert hit.splitlines()[1].startswith("Cash: ")
+    values = figure.locator("details.chart-values")
+    assert values.locator("tbody tr").count() >= 12
+    values.locator("summary").click()
+    assert values.locator("table").is_visible()

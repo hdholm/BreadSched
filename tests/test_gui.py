@@ -791,6 +791,21 @@ class TestProjectionView:
         view = _projection(window)
         assert len(view.chart.series) >= 3
         assert len(view.chart.series[0].values) == view.scenario.years * 12
+        # The shared chart: hovering a month lists every line's exact amount there.
+        import cairo
+
+        model = view.chart.model
+        assert model.kind == "line" and model.series[0].name == "Cash"
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 800, 300)
+        view.chart._draw(None, cairo.Context(surface), 800, 300)
+        x = view.chart.layout.xs[0]
+        tip = view.chart.tooltip_at(x, 120)
+        first = model.series[0].values[0].format(parens_negative=True)
+        assert tip.splitlines()[0] == model.categories[0]
+        assert tip.splitlines()[1].startswith(f"Cash: {first}")
+        assert view.chart.tooltip_at(1, 120) is None
+        document = view.printable_report()
+        assert "Projected cash, investments, and net worth" in document.text()
 
     def test_changing_an_assumption_recomputes(self, app, window, populated_book):
         app.open_book(populated_book)

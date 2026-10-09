@@ -256,3 +256,7 @@ button.reconcile { min-width: 2em; font-family: monospace; }
 .model-chart .chart-axis { stroke: var(--chart-axis); }
 .model-chart text { fill: var(--chart-muted); font-size: 11px; }
 .model-chart .chart-legend text { fill: var(--chart-ink); font-size: 12px; }
+.model-chart .chart-marker { stroke: var(--chart-ink); opacity: .55; }
+.model-chart .chart-marker-label { fill: var(--chart-ink); }
+.model-chart .chart-partial { fill: var(--chart-muted); opacity: .12; }
+@media print { .model-chart details.chart-values > :not(summary) { display: block; } }

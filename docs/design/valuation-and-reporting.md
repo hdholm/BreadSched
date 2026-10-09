@@ -381,7 +381,7 @@ unconverted foreign activity), and the actual split across top-level categories.
 A lone root category, normally the book's `Expenses` account, is replaced by its
 immediate children, with anything posted to the root itself kept under the root's
 handle; the service asserts that the split sums exactly to the period actual. GTK
-draws it with the shared `LineChart` (a dashed as-of marker, the selected period
+draws it with the older `LineChart` (a dashed as-of marker, the selected period
 shaded, `index_at` mapping a click to a period), the web page with an SVG whose
 period hit areas are keyboard-focusable buttons, and the printable report as a
 table. Selecting a period drives the existing comparison and merchant drill-down,
@@ -477,6 +477,22 @@ in the same figure; the browser has one light theme). Legends and axis text use 
 colours, never a series colour. Budget jars is the first report charted this way:
 per account, planned against actual draws by period (slots 1 and 2) and each jar's
 level beside its target (slots 3 and 4).
+
+A model's `kind` is `BARS` or `LINE`. A line chart may carry `ChartMarker`s (a
+labelled vertical rule at one category) and `partial_from`, the first category whose
+values leave something out, shaded with `partial_note` beside it.
+`chart_line_layout` places lines edge to edge; `chart_label_indices` keeps a long
+axis to at most eight labels, always including the last, and the first and last
+labels of a line stay inside the plot. Hovering a line chart lists every series'
+exact value at the nearest category (GTK tooltip; a transparent hit area with a
+`<title>` per category in SVG). `projection_result.projection_chart` charts cash,
+investments, and net worth by month (slots 1 to 3), marks the first cash shortfall
+and, when it comes first, the month goals' earmarks exceed cash, overlays a compared
+scenario's net worth (slot 4), and shades months whose values are partial. The GTK
+Projection view, the browser Projection page (including its comparison overlay), and
+the printed Projection use it; the browser keeps the monthly values in a **Chart
+values** toggle beside the chart, and printing puts them in the optional
+**Projection chart values** section, since the year-end table is always printed.
 
 **Print** (`Ctrl+P`) runs a `Gtk.PrintOperation` in points, landscape by default,
 with the page setup and settings chosen earlier in the session. Its dialog offers

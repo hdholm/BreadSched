@@ -22,6 +22,8 @@ from time import monotonic
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import projection
 from ...gen.engine.completeness import combine
+from ...gen.engine.currency import reporting_currency_handle
+from ...gen.engine.projection_result import projection_chart
 from ...gen.lib import Assumptions, Scenario  # noqa: E402
 from ...gen.services import (
     SaveScenarioAssumptions,
@@ -40,8 +42,8 @@ from ..planning_context import (
     selected_scenario_handle,
 )
 from ..widgets.bounded import BoundedWindow
-from ..widgets.chart import LineChart, Series  # noqa: E402
 from ..widgets.choice import bounded_dropdown
+from ..widgets.model_chart import ModelChartView  # noqa: E402
 from ._base import BaseView  # noqa: E402
 
 __all__ = ["ProjectionView"]
@@ -117,7 +119,8 @@ class ProjectionView(BaseView):
             getattr(self.summary, f"set_margin_{side}")(12)
         left.append(self.summary)
 
-        self.chart = LineChart()
+        self.chart = ModelChartView(height=300)
+        self.chart.set_vexpand(True)
         for side in ("start", "end", "bottom"):
             getattr(self.chart, f"set_margin_{side}")(12)
         left.append(self.chart)
@@ -441,7 +444,7 @@ class ProjectionView(BaseView):
         LOG.error("projection failed", exc_info=(type(exc), exc, exc.__traceback__))
         self._result = None
         self.explain_button.set_sensitive(False)
-        self.chart.set_data([], [])
+        self.chart.set_model(None)
         self._show_projection_notes([f"The projection could not be calculated: {exc}"])
         self.warning_label.add_css_class("negative")
 
@@ -494,23 +497,16 @@ class ProjectionView(BaseView):
         """Wait for the current calculation; deterministic support for GUI tests."""
         return self._job is None or self._job.wait(timeout)
 
+    def _currency_label(self) -> str:
+        if self.db is None:
+            return ""
+        commodity = self.db.get_commodity(reporting_currency_handle(self.db))
+        return commodity.mnemonic if commodity is not None else ""
+
     def _render(self, result: projection.Projection) -> None:
         self._result = result
         self.explain_button.set_sensitive(bool(result.rows))
-        labels = [row.label for row in result.rows]
-        series = [
-            Series("Cash", [float(r.cash_close.to_decimal()) for r in result.rows], fill=True),
-            Series("Investments", [float(r.holdings.to_decimal()) for r in result.rows]),
-            Series("Net worth", [float(r.net_worth.to_decimal()) for r in result.rows]),
-        ]
-        if self._comparison is not None:
-            series.append(
-                Series(
-                    f"{self._comparison.scenario.name} net worth",
-                    [float(r.net_worth.to_decimal()) for r in self._comparison.rows],
-                )
-            )
-        self.chart.set_data(series, labels)
+        self.chart.set_model(projection_chart(result, self._comparison, self._currency_label()))
 
         shortfall = result.first_shortfall()
         # A projection that leaves out an unconverted balance or event is a
@@ -575,7 +571,10 @@ class ProjectionView(BaseView):
         from ...plugins.export.report_layout import projection_layout
 
         return projection_layout(
-            self._result, comparison=self._comparison, book_name=self.book_name()
+            self._result,
+            comparison=self._comparison,
+            book_name=self.book_name(),
+            currency=self._currency_label(),
         )
 
     def printable_html(self) -> str | None:

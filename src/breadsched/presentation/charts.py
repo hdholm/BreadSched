@@ -30,7 +30,10 @@ __all__ = [
     "CHART_SERIES_LIGHT",
     "ChartBar",
     "ChartBarLayout",
+    "ChartLineLayout",
     "chart_bar_layout",
+    "chart_label_indices",
+    "chart_line_layout",
     "chart_chrome",
     "chart_nice_ticks",
     "chart_series_colour",
@@ -180,6 +183,80 @@ def chart_bar_layout(
         tuple((value, y_for(value)) for value in ticks),
         baseline,
         tuple(centres),
+        left,
+        top,
+        width,
+        height,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ChartLineLayout:
+    #: Per series, a point per category, or None where the value is unavailable.
+    points: tuple[tuple[tuple[float, float] | None, ...], ...]
+    ticks: tuple[tuple[float, float], ...]
+    #: The x of each category.
+    xs: tuple[float, ...]
+    #: (x, label) for each marker, in the model's order.
+    markers: tuple[tuple[float, str], ...]
+    #: The x where partial values begin, if any.
+    partial_x: float | None
+    left: float
+    top: float
+    width: float
+    height: float
+
+
+def chart_label_indices(count: int, most: int = 8) -> tuple[int, ...]:
+    """Which category labels to draw on a long axis: evenly spaced, the last included."""
+    if count <= most:
+        return tuple(range(count))
+    stride = math.ceil(count / most)
+    chosen = list(range(0, count, stride))
+    if chosen[-1] != count - 1:
+        if count - 1 - chosen[-1] < stride:
+            chosen[-1] = count - 1
+        else:
+            chosen.append(count - 1)
+    return tuple(chosen)
+
+
+def chart_line_layout(
+    model: ChartModel, left: float, top: float, width: float, height: float
+) -> ChartLineLayout:
+    """Place one line per series across the categories, first to last edge to edge."""
+    values = [
+        float(value.to_decimal())
+        for series in model.series
+        for value in series.values
+        if value is not None
+    ]
+    ticks = chart_nice_ticks(min(values, default=0.0), max(values, default=1.0))
+    low, high = ticks[0], ticks[-1]
+    count = len(model.categories)
+
+    def x_for(index: int) -> float:
+        return left + (width * index / (count - 1) if count > 1 else width / 2)
+
+    def y_for(value: float) -> float:
+        return top + height * (high - value) / (high - low)
+
+    xs = tuple(x_for(index) for index in range(count))
+    points = tuple(
+        tuple(
+            (xs[index], y_for(float(value.to_decimal()))) if value is not None else None
+            for index, value in enumerate(series.values)
+        )
+        for series in model.series
+    )
+    return ChartLineLayout(
+        points,
+        tuple((value, y_for(value)) for value in ticks),
+        xs,
+        tuple((xs[marker.index], marker.label) for marker in model.markers if marker.index < count),
+        xs[model.partial_from]
+        if model.partial_from is not None and model.partial_from < count
+        else None,
         left,
         top,
         width,

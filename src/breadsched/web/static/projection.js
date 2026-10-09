@@ -1,77 +1,5 @@
 // The Projection view, its chart, conservation bridges, and month detail.
 
-function chart(rows) {
-  const width = 900, height = 300, pad = { l: 70, r: 12, t: 12, b: 28 };
-  const series = [
-    { key: "cash", colour: "#2f6fd0" },
-    { key: "holdings", colour: "#1c7a4a" },
-    { key: "net_worth", colour: "#a04ec4" },
-  ];
-  const values = series.flatMap((s) => rows.map((r) => Number(r[s.key])));
-  const low = Math.min(0, ...values), high = Math.max(...values, 1);
-  const x = (i) => pad.l + (width - pad.l - pad.r) * i / Math.max(rows.length - 1, 1);
-  const y = (v) => pad.t + (height - pad.t - pad.b) * (1 - (v - low) / (high - low));
-
-  const parts = [];
-  for (let step = 0; step <= 4; step++) {
-    const value = low + (high - low) * step / 4;
-    parts.push(svgEl("line", {
-      x1: pad.l, y1: y(value), x2: width - pad.r, y2: y(value), stroke: "#e2e5ea",
-    }));
-    parts.push(svgEl("text", {
-      x: pad.l - 8, y: y(value) + 4, "text-anchor": "end", "font-size": 11,
-      fill: "#6b7280",
-    }, Math.round(value).toLocaleString()));
-  }
-  if (low < 0) {
-    parts.push(svgEl("line", {
-      x1: pad.l, y1: y(0), x2: width - pad.r, y2: y(0), stroke: "#b3261e",
-      "stroke-width": 1.4, opacity: 0.6,
-    }));
-  }
-  // Months that leave out an unconverted balance or event are shaded and named
-  // in the caption: the lines there are subtotals, not complete values (#236).
-  const firstPartial = rows.findIndex((row) => row.completeness?.status === "partial");
-  if (firstPartial >= 0) {
-    parts.push(svgEl("rect", {
-      x: x(firstPartial), y: pad.t, width: Math.max(width - pad.r - x(firstPartial), 2),
-      height: height - pad.t - pad.b, fill: "#b3261e", opacity: 0.07,
-      class: "chart-partial",
-    }));
-  }
-  for (const s of series) {
-    const path = rows.map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(Number(r[s.key])).toFixed(1)}`).join("");
-    parts.push(svgEl("path", { d: path, fill: "none", stroke: s.colour, "stroke-width": 2 }));
-  }
-  const stride = Math.max(1, Math.floor(rows.length / 8));
-  rows.forEach((row, i) => {
-    if (i % stride) return;
-    parts.push(svgEl("text", {
-      x: x(i), y: height - 8, "text-anchor": "middle", "font-size": 11,
-      fill: "#6b7280",
-    }, row.label));
-  });
-  const legend = series.flatMap((s, i) => [
-    svgEl("rect", { x: pad.l + i * 110, y: 4, width: 10, height: 3, fill: s.colour }),
-    svgEl("text", {
-      x: pad.l + i * 110 + 16, y: 8, "font-size": 11, fill: "#6b7280",
-    }, s.key.replace("_", " ")),
-  ]);
-
-  const holder = el("div", { class: "panel panel-pad-12" });
-  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height + 14}`, width: "100%" });
-  const plot = svgEl("g", { transform: "translate(0,14)" });
-  plot.append(...parts);
-  svg.append(plot, ...legend);
-  holder.append(svg);
-  if (firstPartial >= 0) {
-    holder.append(el("p", { class: "note neg chart-partial-note" },
-      `Partial from ${rows[firstPartial].label} (shaded): `
-      + `${rows[firstPartial].completeness.label.replace(/^Partial: /, "")}.`));
-  }
-  return holder;
-}
-
 async function showProjection() {
   let data = state.projectionData;
   if (!data) {
@@ -270,7 +198,8 @@ async function showProjection() {
     : null;
   return el("div", {},
     el("h2", {}, "Projection"),
-    form, cards, completenessDetails(data.completeness, "Projection"), chart(data.rows),
+    form, cards, completenessDetails(data.completeness, "Projection"),
+    modelChart(data.chart, { collapseTable: true }),
     comparisonView, runwayNotes, goalNotes, reimbursementNotes, warnings,
     (data.bridges || []).length ? el("details", { class: "projection-bridge" },
       el("summary", {}, "How the projection reconciles"),

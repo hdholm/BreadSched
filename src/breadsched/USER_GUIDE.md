@@ -931,6 +931,15 @@ To compare an alternative:
 3. Add, replace, or suppress scenario events where the alternative changes dated
    activity.
 4. Calculate the scenario and compare it with Base or another saved scenario.
+
+The Projection chart shows projected cash, investments, and net worth by month, with
+the first month cash runs short marked (and, if it comes first, the month savings
+goals' set-aside money exceeds cash). Comparing with another scenario adds that
+scenario's net worth as a fourth line. Months whose values leave out an amount in a
+currency without an exchange rate are shaded and named under the chart. Hover over
+the chart to see every line's exact amount for that month; in the browser, **Chart
+values** lists every month, and printing can include them as the optional
+**Projection chart values** section.
 5. Inspect warnings and detail rather than relying only on the chart.
 
 To keep several scenarios in view, open each one's Projection in a tab of its own:

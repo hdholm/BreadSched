@@ -17,12 +17,13 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 1. **Visualizations.** The shared chart model (`gen/engine/chart_model`), palette and
    bar geometry (`presentation.charts`), and their GTK, browser, and print renderers
-   exist, and Budget jars is charted with them. The other views still draw their
-   own charts: the older GTK line chart (Projection, Expense Explorer, Net worth
-   history) and the Expense Explorer's own browser SVG. Move them to the shared
-   model, adding line, stacked, and share forms as needed:
-   - **Cash and Projection:** projected cash with the runway and first shortfall
-     marked, scenario comparison overlays, and stacked account balances.
+   exist with bar and line forms; Budget jars and the Projection (cash,
+   investments, and net worth with the first shortfall marked and a scenario
+   overlay) are charted with them. The other views still draw their own charts:
+   the older GTK line chart (Expense Explorer, Net worth history) and the Expense
+   Explorer's own browser SVG. Move them to the shared model, adding stacked and
+   share forms as needed:
+   - **Cash and Projection:** stacked account balances over the projection.
    - **Spending:** category spending over time and its share of the total, from
      the Expense Explorer's data.
    - **Net worth:** history with its composition (assets and liabilities by

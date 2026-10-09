@@ -17,10 +17,10 @@ from ...gen.engine.budget_jars import (
 from ...plugins.export.report_layout import budget_jars_layout
 from .. import printing
 from ..gi_setup import Gtk
-from ..widgets.bar_chart import BarChart
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
+from ..widgets.model_chart import ModelChartView
 
 __all__ = ["BudgetJarsDialog"]
 
@@ -133,7 +133,7 @@ class BudgetJarsDialog(BoundedWindow):
             child = following
         labels = currency_labels(self.db, report)
         charts = jar_charts(report, labels)
-        self.charts: list[BarChart] = []
+        self.charts: list[ModelChartView] = []
         self.account_rows: list[Gtk.Expander] = []
         for total in report.totals:
             label = labels.get(total.currency, "")
@@ -150,7 +150,7 @@ class BudgetJarsDialog(BoundedWindow):
                 title = _cell(model.title)
                 title.add_css_class("dim")
                 box.append(title)
-                chart = BarChart(model)
+                chart = ModelChartView(model)
                 box.append(chart)
                 self.charts.append(chart)
             for jar in bundle.jars:
