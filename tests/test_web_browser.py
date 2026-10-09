@@ -603,25 +603,72 @@ def test_expense_explorer_shows_spending_over_time_and_selects_a_period(page):
     page.wait_for_selector("text=Pending bills")
     page.get_by_role("button", name="Plan", exact=True).first.click()
     page.wait_for_selector("h3:has-text('Spending over time')")
-    periods = page.locator(".spending-over-time tbody tr")
+    periods = page.locator(".spending-over-time .spending-periods tbody tr")
     assert periods.count() >= 2
-    assert page.locator("svg.spending-chart path").count() == 2
+    # Three shared-model charts: plan and actual lines, actual stacked by category,
+    # and each category's share, the selected period shaded in each.
+    charts = page.locator(".spending-over-time figure.model-chart")
+    assert charts.count() == 3
+    assert charts.nth(0).locator("svg path[stroke]").count() == 2
+    assert charts.nth(1).locator("svg path[fill^='var(--series-']").count() >= 1
+    assert "%" in charts.nth(2).locator("svg").text_content()
+    assert page.locator(".spending-over-time rect.chart-selected").count() == 3
     label = periods.nth(1).locator("button").inner_text()
     periods.nth(1).locator("button").click()
-    page.wait_for_selector(f".spending-over-time tbody tr.selected:has-text('{label}')")
+    page.wait_for_selector(
+        f".spending-over-time .spending-periods tbody tr.selected:has-text('{label}')"
+    )
     selected = page.locator(".expense-explorer select").first.evaluate("(node) => node.value")
     assert selected == "1"
+    # A period in a chart is a keyboard-operable button that selects it too.
+    choice = page.locator(".spending-over-time figure.model-chart").nth(1)
+    choice.locator("rect.chart-choice").nth(0).focus()
+    page.keyboard.press("Enter")
+    page.wait_for_selector(".spending-over-time .spending-periods tbody tr:first-child.selected")
+    # Clicking a drawn column selects its period: the band over it takes the click.
+    stacked = page.locator(".spending-over-time figure.model-chart").nth(1)
+    column = stacked.locator("svg path[fill^='var(--series-']").last.bounding_box()
+    x = column["x"] + column["width"] / 2
+    bands = [
+        box for box in (hit.bounding_box() for hit in stacked.locator("rect.chart-choice").all())
+    ]
+    period = next(i for i, box in enumerate(bands) if box["x"] <= x < box["x"] + box["width"])
+    page.locator(".spending-over-time .spending-periods tbody tr").nth(
+        1 if period == 0 else 0
+    ).locator("button").click()
+    page.wait_for_selector(
+        ".spending-over-time .spending-periods tbody tr:nth-child("
+        f"{2 if period == 0 else 1}).selected"
+    )
+    stacked = page.locator(".spending-over-time figure.model-chart").nth(1)
+    column = stacked.locator("svg path[fill^='var(--series-']").last.bounding_box()
+    page.mouse.click(x, column["y"] + column["height"] / 2)
+    page.wait_for_selector(
+        f".spending-over-time .spending-periods tbody tr:nth-child({period + 1}).selected"
+    )
+    page.locator(".spending-over-time .spending-periods tbody tr").nth(1).locator("button").click()
+    page.wait_for_selector(
+        f".spending-over-time .spending-periods tbody tr.selected:has-text('{label}')"
+    )
+    # The selected category's trend is drawn from the same model.
+    assert page.locator("figure.model-chart[data-key='category_trend']").count() == 1
     # Income over time has its own chart and table over the same periods, and
     # selecting a period there selects it for the whole explorer.
-    income = page.locator(".income-over-time tbody tr")
+    income = page.locator(".income-over-time .spending-periods tbody tr")
     assert income.count() == periods.count()
-    assert page.locator("svg.income-chart path").count() == 2
+    assert (
+        page.locator(".income-over-time figure.model-chart")
+        .nth(0)
+        .locator("svg path[stroke]")
+        .count()
+        == 2
+    )
     # The income detail lists the selected period's dated receipts by payer.
     page.wait_for_selector(".income-detail h3")
     assert page.locator(".income-detail select option").count() >= 1
     assert "Payer" in page.locator(".income-detail").inner_text()
     income.nth(0).locator("button").click()
-    page.wait_for_selector(".spending-over-time tbody tr.selected >> nth=0")
+    page.wait_for_selector(".spending-over-time .spending-periods tbody tr.selected >> nth=0")
     selected = page.locator(".expense-explorer select").first.evaluate("(node) => node.value")
     assert selected == "0"
 

@@ -9,6 +9,7 @@ __all__ = [
     "book_currency",
     "commodity_fraction",
     "reporting_currency_handle",
+    "reporting_currency_label",
     "reporting_fraction",
 ]
 
@@ -30,6 +31,12 @@ def reporting_currency_handle(db: DbSQLite) -> str:
     """Return the reporting tag, including the stable legacy-empty fallback."""
     currency = book_currency(db)
     return currency.handle if currency is not None else DEFAULT_CURRENCY_HANDLE
+
+
+def reporting_currency_label(db: DbSQLite) -> str:
+    """The reporting currency's code for a chart or heading, or "" when it has none."""
+    commodity = db.get_commodity(reporting_currency_handle(db))
+    return commodity.mnemonic if commodity is not None else ""
 
 
 def commodity_fraction(db: DbSQLite, commodity: str | None) -> int:

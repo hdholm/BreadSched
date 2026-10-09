@@ -61,6 +61,7 @@ __all__ = [
     "tax_year_layout",
     "budget_jars_layout",
     "chart_blocks",
+    "chart_table",
     "ModelChart",
     "signed_money_text",
 ]
@@ -838,9 +839,18 @@ def _projection_comparison(result: Projection, comparison: Projection) -> list[B
 
 
 def _over_time(
-    title: str, points: tuple[SpendingPoint, ...], names: dict[str, str], as_of: str
+    title: str,
+    points: tuple[SpendingPoint, ...],
+    names: dict[str, str],
+    as_of: str,
+    charts: tuple[ChartModel, ...] = (),
 ) -> list[Block]:
-    """Total plan and actual by period, with actual split by top-level category."""
+    """Total plan and actual by period, with actual split by top-level category.
+
+    ``charts`` (``spending_charts``) draw the table's values: the plan and actual
+    lines and the stacked categories above it, and the share chart, with its
+    percentages, below.
+    """
     parts = points[0].categories if points else ()
     rows = []
     for point in points:
@@ -870,6 +880,8 @@ def _over_time(
             "Total plan and actual by period, with actual split by top-level category. "
             f"Actual is posted through {as_of}."
         ),
+        *(ModelChart(chart) for chart in charts[:2] if not chart.empty),
+        *_notes((charts[0].partial_note,) if charts and charts[0].partial_note else ()),
         Table(
             (
                 Column("Period"),
@@ -880,6 +892,7 @@ def _over_time(
             ),
             tuple(rows),
         ),
+        *(block for chart in charts[2:] for block in chart_blocks(chart)),
     ]
 
 
@@ -920,13 +933,17 @@ def _income_detail(explorer: ExpenseExplorer, detail: ExpenseDrilldown) -> list[
 
 
 def expense_explorer_layout(
-    explorer: ExpenseExplorer, income_detail: ExpenseDrilldown | None = None
+    explorer: ExpenseExplorer,
+    income_detail: ExpenseDrilldown | None = None,
+    currency: str = "",
 ) -> ReportDocument:
-    """The selected expense cell and its shared Plan breakdown.
+    """The selected expense cell and its shared Plan breakdown, with their charts.
 
     ``income_detail``, an income category's drilldown for the same period, adds the
-    dated occurrences and receipts behind it.
+    dated occurrences and receipts behind it. ``currency`` labels the charts.
     """
+    from ...gen.services.expense_explorer import category_trend_chart, spending_charts
+
     detail = explorer.drilldown
     if detail is None:
         raise ValueError("expense printout requires a selected category and period")
@@ -959,12 +976,14 @@ def expense_explorer_layout(
             explorer.spending,
             {row.account: row.full_name for row in explorer.categories},
             as_of,
+            spending_charts(explorer, currency=currency),
         ),
         *_over_time(
             "Income over time",
             explorer.income,
             {row.account: row.full_name for row in explorer.income_categories},
             as_of,
+            spending_charts(explorer, income=True, currency=currency),
         ),
         Heading("Category comparison"),
         Paragraph(
@@ -977,6 +996,7 @@ def expense_explorer_layout(
             tuple(values(row.full_name, row.periods[index]) for row in explorer.categories),
         ),
         Heading(f"{category.full_name} trend"),
+        ModelChart(category_trend_chart(category, explorer.plan.report.as_of, currency)),
         Table(
             _columns("Period", *value_columns),
             tuple(values(item.label, item) for item in category.periods),
@@ -1381,19 +1401,41 @@ def budget_jars_layout(report: JarsReport, currencies: dict[str | None, str]) ->
 
 
 def chart_blocks(model: ChartModel) -> tuple[Block, ...]:
-    """A chart and, beside it, the table of its exact values."""
+    """A chart and, beside it, the table of its exact values.
+
+    A chart with totals adds a Total column; a share chart's cells are each value's
+    percentage of that total.
+    """
     if model.empty:
         return ()
-    return (
-        ModelChart(model),
-        Table(
-            _columns(
-                "Category",
-                *(f"#{series.name}" for series in model.series),
-            ),
-            tuple(
-                TableRow((Cell(category), *(_amount(value) for value in values)))
-                for category, values in model.rows()
-            ),
+    return (ModelChart(model), chart_table(model))
+
+
+def chart_table(model: ChartModel) -> Table:
+    """The exact values behind ``model``, one row per category."""
+    from ...gen.engine.chart_model import SHARE
+
+    def cell(series: int, category: int) -> Cell:
+        if model.kind != SHARE:
+            return _amount(model.series[series].values[category])
+        share = model.share(series, category)
+        return Cell("—" if share is None else f"{share:.1f}%", numeric=True)
+
+    totals = bool(model.totals)
+    return Table(
+        _columns(
+            "Category",
+            *(f"#{series.name}" for series in model.series),
+            *(("#Total",) if totals else ()),
+        ),
+        tuple(
+            TableRow(
+                (
+                    Cell(category),
+                    *(cell(series, index) for series in range(len(model.series))),
+                    *((_amount(model.totals[index]),) if totals else ()),
+                )
+            )
+            for index, category in enumerate(model.categories)
         ),
     )

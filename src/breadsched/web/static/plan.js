@@ -10,9 +10,9 @@ function expenseBars(items, periodIndex) {
     const bars = svgEl("svg", { viewBox: "0 0 300 26", role: "img",
       "aria-label": `${item.full_name}: plan ${value.planned}, actual ${value.actual}` });
     bars.append(svgEl("rect", { x: 0, y: 1, height: 10,
-      width: 300 * Math.abs(Number(value.planned)) / max, fill: "#2563a4" }));
+      width: 300 * Math.abs(Number(value.planned)) / max, fill: "var(--series-1)" }));
     bars.append(svgEl("rect", { x: 0, y: 14, height: 10,
-      width: 300 * Math.abs(Number(value.actual)) / max, fill: "#bd5824" }));
+      width: 300 * Math.abs(Number(value.actual)) / max, fill: "var(--series-2)" }));
     return el("div", { class: "expense-bar-row" },
       el("span", { title: item.full_name }, item.full_name),
       bars,
@@ -20,81 +20,34 @@ function expenseBars(items, periodIndex) {
   }));
 }
 
-function expenseTrend(category) {
-  const points = category.periods;
-  const values = points.flatMap((item) => [Number(item.planned), Number(item.actual)]);
-  const low = Math.min(0, ...values);
-  const high = Math.max(1, ...values);
-  const svg = svgEl("svg", { viewBox: "0 0 600 140", role: "img",
-    "aria-label": `Plan and actual expense trend for ${category.full_name}` });
-  for (const [key, color] of [["planned", "#2563a4"], ["actual", "#bd5824"]]) {
-    const path = points.map((item, index) => {
-      const x = 20 + index * 560 / Math.max(1, points.length - 1);
-      const y = 120 - 100 * (Number(item[key]) - low) / (high - low);
-      return `${index ? "L" : "M"}${x},${y}`;
-    }).join(" ");
-    svg.append(svgEl("path", { d: path, fill: "none", stroke: color, "stroke-width": "3" }));
-  }
-  return svg;
-}
-
 function spendingOverTime(data, periodIndex, kind = "spending") {
-  // Total plan and actual per period; each period is a button that selects it.
+  // Total plan and actual, actual by category, and each category's share, per
+  // period (spending_charts); each period is a button that selects it.
   const points = data[kind] || [];
   const income = kind === "income";
-  const values = points.flatMap((item) => [Number(item.planned), Number(item.actual)]);
-  const low = Math.min(0, ...values);
-  const high = Math.max(1, ...values);
-  const width = 600, top = 10, bottom = 120;
-  const step = 560 / Math.max(1, points.length - 1);
-  const x = (index) => 20 + index * step;
-  const y = (value) => bottom - (bottom - top) * (Number(value) - low) / (high - low);
-  const svg = svgEl("svg", { viewBox: `0 0 ${width} 150`, role: "img",
-    class: income ? "income-chart" : "spending-chart",
-    "aria-label": `Total ${income ? "income" : "expense"} plan and actual by period` });
-  const asOf = points.findIndex((item) => item.future);
-  if (asOf > 0) {
-    svg.append(svgEl("line", { x1: x(asOf) - step / 2, x2: x(asOf) - step / 2, y1: top,
-      y2: bottom, stroke: "#888", "stroke-dasharray": "4 3" }));
-  }
-  for (const [key, color] of [["planned", "#2563a4"], ["actual", "#bd5824"]]) {
-    svg.append(svgEl("path", { fill: "none", stroke: color, "stroke-width": "3",
-      d: points.map((item, i) => `${i ? "L" : "M"}${x(i)},${y(item[key])}`).join(" ") }));
-  }
-  points.forEach((item, i) => {
-    const hit = svgEl("rect", { x: x(i) - step / 2, y: 0, width: step, height: 150,
-      fill: i === periodIndex ? "rgba(37,99,164,0.10)" : "transparent",
-      class: "spending-period", tabindex: "0", role: "button",
-      "aria-label": `${item.label}: plan ${item.planned}, actual ${item.actual}` });
-    const choose = () => { state.expenseIndex = i; render(); };
-    hit.addEventListener("click", choose);
-    hit.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(); }
-    });
-    svg.append(hit);
-  });
+  const choose = (i) => { state.expenseIndex = i; render(); };
+  const charts = (data.charts && data.charts[kind]) || [];
   const categories = points.length ? points[0].categories : [];
-  const slot = el("div", { class: "net-worth-change-slot" });
   const note = (item) => [item.partial ? "to date" : "", item.future ? "future" : "",
     item.currency_incomplete ? (item.completeness?.label || "missing quote") : ""]
     .filter(Boolean).join(", ");
   return el("div", { class: income ? "income-over-time" : "spending-over-time" },
     el("h3", {}, income ? "Income over time" : "Spending over time"),
-    el("p", { class: "note" }, `Blue: total plan · Orange: total actual. Actual is posted `
-      + `through ${data.as_of}; the dashed line marks the first future period. `
-      + (income ? "Income is split by top-level income category; selecting a period also "
-        + "selects it for the expense comparison."
+    el("p", { class: "note" }, `Actual is posted through ${data.as_of}; the rule marks that `
+      + "date's period. Categories past the seventh are combined as Other. "
+      + (income ? "Selecting a period also selects it for the expense comparison."
         : "Select a period to compare its categories and merchants.")),
-    svg,
-    table(["Period", {label:"Plan",num:true}, {label:"Actual",num:true},
+    ...charts.map((chart) => modelChart(chart, { collapseTable: true, selected: periodIndex,
+      onSelect: choose })),
+    el("div", { class: "spending-periods" }, table(["Period", {label:"Plan",num:true}, {label:"Actual",num:true},
       ...categories.map((item) => ({label:item.name, num:true})), "Note"],
       points.map((item, i) => el("tr", { class: i === periodIndex ? "selected" : null },
         el("td", {}, el("button", { class: "action", type: "button",
-          onclick: () => { state.expenseIndex = i; render(); } }, item.label)),
+          onclick: () => choose(i) }, item.label)),
         el("td", {class:"num"}, String(item.planned)),
         el("td", {class:"num"}, String(item.actual)),
         ...item.categories.map((part) => el("td", {class:"num"}, String(part.actual))),
-        el("td", {class:"muted"}, note(item) || "—")))));
+        el("td", {class:"muted"}, note(item) || "—"))))));
 }
 
 async function incomeDetail(data, params, index) {
@@ -183,7 +136,14 @@ async function expenseExplorerPanel(currentPlan) {
         ? "—" : String(item.periods[index].carry_in)),
       el("td", {class:"num"}, item.periods[index].remaining == null
         ? item.periods[index].remaining_reason || "—" : String(item.periods[index].remaining))))));
-  panel.append(el("h3", {}, `${selected.full_name} trend`), expenseTrend(selected),
+  const detailParams = new URLSearchParams(params);
+  detailParams.set("account", selected.account);
+  detailParams.set("index", String(index));
+  const detailData = await get(`/api/expense-explorer?${detailParams}`);
+  const detail = detailData.drilldown;
+  panel.append(el("h3", {}, `${selected.full_name} trend`),
+    modelChart(detailData.charts.category_trend, { selected: index,
+      onSelect: (i) => { state.expenseIndex = i; render(); }, collapseTable: true }),
     table(["Period", {label:"Plan",num:true}, {label:"Period actual",num:true},
       {label:"Period variance",num:true}, {label:"Carry in",num:true},
       {label:"Remaining",num:true}], selected.periods.map((item) => el("tr", {},
@@ -192,10 +152,6 @@ async function expenseExplorerPanel(currentPlan) {
       el("td", {class:"num"}, item.carry_in == null ? "—" : String(item.carry_in)),
       el("td", {class:"num"}, item.remaining == null
         ? item.remaining_reason || "—" : String(item.remaining))))));
-  const detailParams = new URLSearchParams(params);
-  detailParams.set("account", selected.account);
-  detailParams.set("index", String(index));
-  const detail = (await get(`/api/expense-explorer?${detailParams}`)).drilldown;
   panel.append(el("h3", {}, `${selected.full_name} merchants — ${detail.period.label}`),
     table(["Merchant", {label:"Actual",num:true}, "Transactions"],
       detail.merchants.map((group) => el("tr", {},

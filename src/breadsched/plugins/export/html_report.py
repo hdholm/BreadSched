@@ -14,7 +14,7 @@ from html import escape
 
 from ...gen.engine.activity import PlanMeasure
 from ...gen.engine.category_report import CategoryReport
-from ...gen.engine.chart_model import BARS, ChartModel
+from ...gen.engine.chart_model import COLUMN_KINDS, LINE, ChartModel
 from ...gen.engine.dashboard import Dashboard
 from ...gen.engine.projection_result import Projection
 from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer
@@ -130,10 +130,10 @@ def _cards(items: list[tuple[str, object, bool]]) -> str:
 
 
 def expense_explorer_report(
-    explorer: ExpenseExplorer, income_detail: ExpenseDrilldown | None = None
+    explorer: ExpenseExplorer, income_detail: ExpenseDrilldown | None = None, currency: str = ""
 ) -> str:
-    """Print the selected expense cell and its shared Plan breakdown."""
-    return render_html(expense_explorer_layout(explorer, income_detail))
+    """Print the selected expense cell and its shared Plan breakdown, with their charts."""
+    return render_html(expense_explorer_layout(explorer, income_detail, currency))
 
 
 def net_worth_history_report(history: NetWorthHistory) -> str:
@@ -273,32 +273,49 @@ def _bar_path(x: float, y: float, width: float, height: float, negative: bool) -
 
 
 def model_chart_svg(model: ChartModel, *, dark: bool = False) -> str:
-    """Grouped columns for an engine chart, with a legend and exact-value tooltips."""
-    from ...presentation import chart_bar_layout, chart_chrome, chart_series_colour
+    """An engine chart in its own form, with a legend and exact-value tooltips."""
+    from ...presentation import (
+        chart_bar_layout,
+        chart_chrome,
+        chart_series_colour,
+        chart_tick_label,
+    )
 
     width, height = 1000, 300
     left, top, right, bottom = 84, 40, 16, 40
-    if model.kind != BARS:
+    if model.kind == LINE:
         return _line_chart_svg(model, width, height, (left, top, right, bottom), dark)
     layout = chart_bar_layout(model, left, top, width - left - right, height - top - bottom)
     ink, muted = chart_chrome("ink", dark=dark), chart_chrome("muted", dark=dark)
     grid, axis = chart_chrome("grid", dark=dark), chart_chrome("axis", dark=dark)
     parts: list[str] = []
+    if layout.partial_x is not None:
+        parts.append(
+            f'<rect x="{layout.partial_x:.1f}" y="{top}" '
+            f'width="{width - right - layout.partial_x:.1f}" height="{layout.height:.1f}" '
+            f'fill="{muted}" fill-opacity="0.12"/>'
+        )
     for value, y in layout.ticks:
         parts.append(
             f'<line x1="{left}" y1="{y:.1f}" x2="{width - right}" y2="{y:.1f}" '
             f'stroke="{axis if value == 0 else grid}" stroke-width="1"/>'
             f'<text x="{left - 8}" y="{y + 4:.1f}" text-anchor="end" font-size="11" '
-            f'fill="{muted}">{value:,.0f}</text>'
+            f'fill="{muted}">{chart_tick_label(value, percent=layout.percent)}</text>'
         )
     for bar in layout.bars:
         series = model.series[bar.series]
         exact = series.values[bar.category]
-        amount = exact.format(parens_negative=True) if exact is not None else ""
-        tip = f"{model.categories[bar.category]}, {series.name}: {amount} {model.currency}".strip()
+        amount = f"{exact.format(parens_negative=True)} {model.currency}".strip() if exact else ""
+        if bar.share is not None:
+            amount = f"{bar.share:.0f}% ({amount})"
+        tip = f"{model.categories[bar.category]}, {series.name}: {amount}"
+        shape = (
+            _bar_path(bar.x, bar.y, bar.width, bar.height, bar.negative)
+            if bar.rounded
+            else f"M{bar.x:.1f},{bar.y:.1f}h{bar.width:.1f}v{bar.height:.1f}h{-bar.width:.1f}z"
+        )
         parts.append(
-            f'<path d="{_bar_path(bar.x, bar.y, bar.width, bar.height, bar.negative)}" '
-            f'fill="{chart_series_colour(series.slot, dark=dark)}">'
+            f'<path d="{shape}" fill="{chart_series_colour(series.slot, dark=dark)}">'
             f"<title>{escape(tip)}</title></path>"
         )
     parts.extend(_category_labels(model, layout.centres, height - bottom + 16, muted))
@@ -313,7 +330,7 @@ def _category_labels(model: ChartModel, xs, y: float, colour: str) -> list[str]:
 
     def anchor(index: int) -> str:
         # A line's first and last points sit on the plot's edges: keep their labels inside.
-        if model.kind == BARS or 0 < index < last:
+        if model.kind != LINE or 0 < index < last:
             return "middle"
         return "start" if index == 0 else "end"
 
@@ -333,7 +350,7 @@ def _legend(model: ChartModel, left: float, ink: str, dark: bool) -> list[str]:
         colour = chart_series_colour(series.slot, dark=dark)
         swatch = (
             f'<rect x="{x}" y="10" width="12" height="12" rx="2" fill="{colour}"/>'
-            if model.kind == BARS
+            if model.kind in COLUMN_KINDS
             else f'<line x1="{x}" y1="16" x2="{x + 14}" y2="16" stroke="{colour}" '
             'stroke-width="2" stroke-linecap="round"/>'
         )

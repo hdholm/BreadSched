@@ -170,12 +170,33 @@ function chartLabelIndices(count, most = 8) {
   return chosen;
 }
 
-function modelChart(model, { collapseTable = false } = {}) {
+function chartPlotted(model) {
+  // Per category, each series' plotted value: money, or percent in a share chart.
+  return model.categories.map((_category, index) => model.series.map((series) => {
+    const value = series.values[index];
+    if (value === null || Number(value) === 0) return null;
+    if (model.kind !== "share") return Number(value);
+    const total = model.totals ? model.totals[index] : null;
+    return total === null || total === undefined || Number(total) <= 0
+      ? null : 100 * Number(value) / Number(total);
+  }));
+}
+
+function modelChart(model, { collapseTable = false, selected = null, onSelect = null } = {}) {
+  // An engine chart in its own form (presentation.charts), with exact values on hover
+  // and a table beside it. With onSelect, each category is a button that picks it.
   if (!model) return null;
-  const values = model.series.flatMap((series) => series.values)
-    .filter((value) => value !== null && (model.kind !== "bars" || Number(value) !== 0))
-    .map(Number);
-  if (!model.categories.length || !values.length) return null;
+  const stacked = model.kind === "stacked" || model.kind === "share";
+  const lines = model.kind === "line";
+  const plotted = stacked ? chartPlotted(model) : null;
+  const values = stacked
+    ? plotted.flatMap((row) => [
+      row.filter((value) => value > 0).reduce((a, b) => a + b, 0),
+      row.filter((value) => value < 0).reduce((a, b) => a + b, 0)])
+    : model.series.flatMap((series) => series.values)
+      .filter((value) => value !== null && (lines || Number(value) !== 0))
+      .map(Number);
+  if (!model.categories.length || !values.some((value) => value !== 0)) return null;
   const width = 900, height = 280, left = 78, top = 34, right = 12, bottom = 30;
   const plotWidth = width - left - right, plotHeight = height - top - bottom;
   const ticks = chartTicks(Math.min(...values), Math.max(...values));
@@ -183,31 +204,49 @@ function modelChart(model, { collapseTable = false } = {}) {
   const y = (value) => top + plotHeight * (high - value) / (high - low);
   const count = model.categories.length;
   const currency = model.currency ? ` ${model.currency}` : "";
+  const percent = model.kind === "share";
   const label = model.currency ? `${model.title} (${model.currency})` : model.title;
   const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img",
     "aria-label": label });
-  const lines = model.kind !== "bars";
   const xs = lines
     ? model.categories.map((_c, index) => left + (count > 1 ? plotWidth * index / (count - 1) : plotWidth / 2))
     : model.categories.map((_c, index) => left + plotWidth / count * (index + 0.5));
-  if (lines && model.partial_from !== null && model.partial_from !== undefined) {
-    svg.append(svgEl("rect", { x: xs[model.partial_from], y: top, class: "chart-partial",
-      width: Math.max(width - right - xs[model.partial_from], 2), height: plotHeight }));
+  const bands = lines
+    ? xs.map((x, index) => {
+      const start = index ? (xs[index - 1] + x) / 2 : left;
+      const end = index < count - 1 ? (x + xs[index + 1]) / 2 : left + plotWidth;
+      return [start, end - start];
+    })
+    : xs.map((_x, index) => [left + plotWidth / count * index, plotWidth / count]);
+  if (model.partial_from !== null && model.partial_from !== undefined && model.partial_from < count) {
+    const start = lines ? xs[model.partial_from] : bands[model.partial_from][0];
+    svg.append(svgEl("rect", { x: start, y: top, class: "chart-partial",
+      width: Math.max(width - right - start, 2), height: plotHeight }));
+  }
+  if (selected !== null && selected >= 0 && selected < count) {
+    svg.append(svgEl("rect", { x: bands[selected][0], y: top, width: bands[selected][1],
+      height: plotHeight, class: "chart-selected" }));
   }
   for (const value of ticks) {
     svg.append(svgEl("line", { x1: left, x2: width - right, y1: y(value), y2: y(value),
       class: value === 0 ? "chart-axis" : "chart-grid", "stroke-width": 1 }));
     svg.append(svgEl("text", { x: left - 8, y: y(value) + 4, "text-anchor": "end" },
-      value.toLocaleString(undefined, { maximumFractionDigits: 0 })));
+      value.toLocaleString(undefined, { maximumFractionDigits: 0 }) + (percent ? "%" : "")));
   }
+  const amount = (series, index) => series.values[index] === null ? "—"
+    : `${money(series.values[index])}${currency}`;
+  const tip = (index) => [model.categories[index], ...model.series.map((series, position) =>
+    `${series.name}: ${percent && plotted[index][position] !== null
+      ? `${plotted[index][position].toFixed(0)}% (${amount(series, index)})` : amount(series, index)}`)]
+    .join("\n");
   if (lines) {
     for (const marker of model.markers || []) {
       const x = xs[marker.index];
       if (x === undefined) continue;
       svg.append(svgEl("line", { x1: x, x2: x, y1: top, y2: top + plotHeight,
         class: "chart-marker", "stroke-width": 1 }));
-      svg.append(svgEl("text", { x: x + 4, y: top + 12, class: "chart-marker-label" },
-        marker.label));
+      svg.append(svgEl("text", { x: Math.min(x + 4, width - right - 7 * marker.label.length),
+        y: top + 12, class: "chart-marker-label" }, marker.label));
     }
     for (const series of model.series) {
       let path = "", drawing = false;
@@ -219,22 +258,41 @@ function modelChart(model, { collapseTable = false } = {}) {
       svg.append(svgEl("path", { d: path, fill: "none", stroke: `var(--series-${series.slot})`,
         "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
     }
-    const step = plotWidth / Math.max(count - 1, 1);
-    model.categories.forEach((category, index) => {
-      const hit = svgEl("rect", { x: xs[index] - step / 2, y: top, width: step,
-        height: plotHeight, fill: "transparent", class: "chart-hit" });
-      hit.append(svgEl("title", {}, [category, ...model.series.map((series) =>
-        `${series.name}: ${series.values[index] === null ? "—" : money(series.values[index])}${currency}`)]
-        .join("\n")));
-      svg.append(hit);
-    });
   } else {
     const baseline = y(0);
     const band = plotWidth / count;
-    const columns = model.series.length;
+    const columns = stacked ? 1 : model.series.length;
     const bar = Math.min(24, Math.max(1, (band * 0.7 - 2 * (columns - 1)) / columns));
     const group = bar * columns + 2 * (columns - 1);
     model.categories.forEach((category, index) => {
+      if (stacked) {
+        for (const negative of [false, true]) {
+          const chosen = plotted[index].map((value, position) => [position, value])
+            .filter(([, value]) => value !== null && (negative ? value < 0 : value > 0));
+          let level = 0;
+          chosen.forEach(([position, value], order) => {
+            const series = model.series[position];
+            const outer = order === chosen.length - 1;
+            let [topY, bottomY] = [y(level), y(level + value)].sort((a, b) => a - b);
+            level += value;
+            let extent = Math.max(bottomY - topY, 1);
+            if (!outer) {
+              extent = Math.max(extent - 1, 0.5);
+              if (!negative) topY += 1;
+            }
+            const x = xs[index] - group / 2;
+            const path = svgEl("path", {
+              d: outer ? columnPath(x, topY, bar, extent, negative)
+                : `M${x},${topY}h${bar}v${extent}h${-bar}z`,
+              fill: `var(--series-${series.slot})`,
+            });
+            const share = percent ? `${value.toFixed(0)}% (${amount(series, index)})` : amount(series, index);
+            path.append(svgEl("title", {}, `${category}, ${series.name}: ${share}`));
+            svg.append(path);
+          });
+        }
+        return;
+      }
       model.series.forEach((series, position) => {
         const value = series.values[index];
         if (value === null || Number(value) === 0) return;
@@ -248,6 +306,27 @@ function modelChart(model, { collapseTable = false } = {}) {
         path.append(svgEl("title", {}, `${category}, ${series.name}: ${money(value)}${currency}`));
         svg.append(path);
       });
+    });
+  }
+  if (lines || onSelect) {
+    // A transparent band per category: every series' value on hover, and the
+    // selection target.
+    model.categories.forEach((category, index) => {
+      const hit = svgEl("rect", { x: bands[index][0], y: top, width: bands[index][1],
+        height: plotHeight, fill: "transparent", class: "chart-hit" });
+      hit.append(svgEl("title", {}, tip(index)));
+      if (onSelect) {
+        hit.setAttribute("tabindex", "0");
+        hit.setAttribute("role", "button");
+        hit.setAttribute("aria-label", tip(index).replaceAll("\n", ", "));
+        hit.classList.add("chart-choice");
+        hit.addEventListener("click", () => onSelect(index));
+        hit.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(index); }
+        });
+      }
+      // On top, so a click on a column selects its category; its title lists every value.
+      svg.append(hit);
     });
   }
   for (const index of chartLabelIndices(count)) {
@@ -269,12 +348,23 @@ function modelChart(model, { collapseTable = false } = {}) {
     x += 36 + 7 * series.name.length;
   }
   svg.append(legend);
-  const valuesTable = table(["", ...model.series.map((series) => ({ label: series.name, num: true }))],
-    model.categories.map((category, index) => el("tr", {},
+  const totals = model.totals && model.totals.length ? model.totals : null;
+  const cell = (series, position, index) => {
+    if (percent) {
+      const share = plotted[index][position];
+      return el("td", { class: "num" }, share === null ? "—" : `${share.toFixed(1)}%`);
+    }
+    return el("td", { class: cls(series.values[index]) },
+      series.values[index] === null ? "—" : money(series.values[index]));
+  };
+  const valuesTable = table(["", ...model.series.map((series) => ({ label: series.name, num: true })),
+    ...(totals ? [{ label: "Total", num: true }] : [])],
+    model.categories.map((category, index) => el("tr", { class: index === selected ? "selected" : null },
       el("td", {}, category),
-      ...model.series.map((series) => el("td", { class: cls(series.values[index]) },
-        series.values[index] === null ? "—" : money(series.values[index]))))));
-  return el("figure", { class: "model-chart" },
+      ...model.series.map((series, position) => cell(series, position, index)),
+      ...(totals ? [el("td", { class: cls(totals[index]) },
+        totals[index] === null ? "—" : money(totals[index]))] : []))));
+  return el("figure", { class: "model-chart", "data-key": model.key },
     el("figcaption", { class: "note" }, label), svg,
     model.partial_note ? el("p", { class: "note neg chart-partial-note" }, model.partial_note) : null,
     collapseTable

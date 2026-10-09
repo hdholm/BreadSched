@@ -22,7 +22,7 @@ from time import monotonic
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import projection
 from ...gen.engine.completeness import combine
-from ...gen.engine.currency import reporting_currency_handle
+from ...gen.engine.currency import reporting_currency_label
 from ...gen.engine.projection_result import projection_chart
 from ...gen.lib import Assumptions, Scenario  # noqa: E402
 from ...gen.services import (
@@ -500,8 +500,7 @@ class ProjectionView(BaseView):
     def _currency_label(self) -> str:
         if self.db is None:
             return ""
-        commodity = self.db.get_commodity(reporting_currency_handle(self.db))
-        return commodity.mnemonic if commodity is not None else ""
+        return reporting_currency_label(self.db)
 
     def _render(self, result: projection.Projection) -> None:
         self._result = result

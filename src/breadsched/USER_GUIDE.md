@@ -864,17 +864,23 @@ refunds and other special flows as Plan. Remaining uses only actuals posted thro
 the as-of date. Open it from Plan
 ([desktop](guide/desktop.md#explore-expenses), [browser](guide/web.md#explore-expenses)).
 
-- **Spending over time** shows total plan (blue) and actual (orange) for every period
-  in the applied Plan range, with a table that splits each period's actual across
-  your top-level expense categories. A period marked **to date** contains the as-of
-  date; **future** periods show only what is already posted, and a dashed line marks
-  where they begin; **missing quote** means a foreign-currency amount could not be
-  converted and is left out. Choosing a period makes it the comparison period below.
-  If all your categories sit under one **Expenses** account, the split uses its
-  subcategories, and anything posted to **Expenses** itself gets its own column.
-- **Income over time** follows it with the same periods, markers, and notes for
-  income: total planned and actual income per period, split across your top-level
-  income categories (or the subcategories of a single **Income** account). Choosing
+- **Spending over time** charts every period in the applied Plan range three ways:
+  total plan (blue) against actual (orange), actual stacked by your top-level
+  expense categories, and each category's share of that period's actual. The
+  seven categories with the most actual over the range are named; the rest are
+  combined as **Other**, so each column still adds up to the period's actual. A
+  table below splits each period's actual across every top-level category. A
+  period marked **to date** contains the as-of date, and a rule labelled **As of**
+  marks it (or the first **future** period, which shows only what is already
+  posted); **missing quote** means a foreign-currency amount could not be converted
+  and is left out, and the charts shade from the first such period with a note.
+  Hover over a chart for exact amounts and shares. Choosing a period, in a chart or
+  the table, makes it the comparison period below. If all your categories sit under
+  one **Expenses** account, the split uses its subcategories, and anything posted
+  to **Expenses** itself gets its own column.
+- **Income over time** follows it with the same charts, periods, markers, and
+  notes for income: total planned and actual income per period, split across your
+  top-level income categories (or the subcategories of a single **Income** account). Choosing
   a period there also makes it the comparison period; the comparison, category
   trend, and merchants below cover expenses only.
 - **Income detail** lists what makes up one income category's total for the chosen
@@ -884,9 +890,10 @@ the as-of date. Open it from Plan
 - The **Period** comparison shows a plan bar and an actual bar for each category,
   plus exact Plan, Period actual, Period variance, and Remaining values, sorted by
   Period actual, Plan, Period variance, or name.
-- **Category trend** compares one category's plan and actual across all periods in
-  the applied Plan range, and stays on that category when you change the comparison
-  period or sort order.
+- **Category trend** charts one category's plan and period actual across all periods
+  in the applied Plan range, beside a table of its Plan, Period actual, Period
+  variance, Carry in, and Remaining, and stays on that category when you change the
+  comparison period or sort order.
 - **Merchants — actual only** groups that category's transactions in the comparison
   period, each group with an actual total and its dated transactions.
 

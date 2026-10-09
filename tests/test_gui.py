@@ -3033,19 +3033,26 @@ class TestDerivedPlanView:
             assert dialog._report.categories
             assert dialog.content.get_first_child() is not None
             assert dialog.period.get_selected() == 0
-            # Spending over time: one chart point per period, the selection shaded.
-            chart = dialog.spending_chart
-            assert [len(series.values) for series in chart.series] == [
-                len(dialog._report.totals)
-            ] * 2
-            assert chart.selected_index == 0
-            # Income over time: the same periods, its own chart and table.
+            # Spending over time: plan and actual lines, actual stacked by category,
+            # and shares, on the shared chart model with the selected period shaded.
+            periods = len(dialog._report.totals)
+            lines, stacked, share = dialog.spending_charts
+            assert [chart.model.kind for chart in dialog.spending_charts] == [
+                "line",
+                "stacked",
+                "share",
+            ]
+            assert [len(series.values) for series in lines.series] == [periods] * 2
+            assert stacked.model.totals == tuple(point.actual for point in dialog._report.spending)
+            assert all(chart.selected == 0 for chart in dialog.spending_charts)
+            # Income over time: the same periods, its own charts and table.
             assert dialog._report.income
-            income = dialog.income_chart
-            assert [len(series.values) for series in income.series] == [
-                len(dialog._report.totals)
-            ] * 2
-            assert income.selected_index == 0
+            income = dialog.income_charts[0]
+            assert [len(series.values) for series in income.series] == [periods] * 2
+            assert income.selected == 0
+            # The selected category's trend is a chart beside its table of values.
+            assert dialog.trend_chart.model.key == "category_trend"
+            assert dialog.trend_table.get_child_at(0, 1).get_label().startswith("▸ ")
             assert dialog.income_table.get_child_at(1, 1).get_label() == (
                 dialog._report.income[0].planned.format()
             )
@@ -3070,8 +3077,21 @@ class TestDerivedPlanView:
             assert len(printed) == 1 and "Income detail — " in printed[0].text()
             if len(dialog._report.totals) > 1:
                 dialog.period.set_selected(1)
-                assert dialog.spending_chart.selected_index == 1
-                assert dialog.income_chart.selected_index == 1
+                assert dialog.spending_charts[0].selected == 1
+                assert dialog.income_charts[0].selected == 1
+                assert dialog.trend_chart.selected == 1
+                # Clicking a period's band in a chart selects that period everywhere.
+                import cairo
+
+                chart = dialog.spending_charts[1]
+                surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 600, 220)
+                chart._draw(None, cairo.Context(surface), 600, 220)
+                segment = chart.layout.bars[0]
+                assert chart.tooltip_at(segment.x + 1, segment.y + segment.height / 2)
+                start, extent = chart.layout.bands[0]
+                assert chart.choose_at(start + extent / 2) == 0
+                assert dialog.period.get_selected() == 0
+                assert dialog.spending_charts[0].selected == 0
             dialog.rollover.set_active(True)
             assert dialog._report.rollover
             dialog.sort.set_selected(3)
@@ -8811,6 +8831,50 @@ class TestNativePrinting:
         target = tmp_path / "charts.pdf"
         assert printing.export_pdf(document, target) == 1
         assert target.stat().st_size > 1000
+
+    def test_stacked_and_share_charts_draw_hover_and_print(self, tmp_path):
+        import cairo
+
+        from breadsched.gen.engine.chart_model import SHARE, STACKED, ChartModel, ChartSeries
+        from breadsched.gui import printing
+        from breadsched.gui.widgets.model_chart import ModelChartView
+        from breadsched.plugins.export.report_layout import ReportDocument, Section, chart_blocks
+
+        stacked = ChartModel(
+            "k",
+            "Spending by category",
+            STACKED,
+            ("Jan 2026", "Feb 2026"),
+            (
+                ChartSeries("food", "Food", (Money(60), Money(30)), 1),
+                ChartSeries("rent", "Rent", (Money(40), Money(-10)), 2),
+            ),
+            "USD",
+            totals=(Money(100), Money(20)),
+        )
+        share = ChartModel(**{**{f: getattr(stacked, f) for f in stacked.__slots__}, "kind": SHARE})
+        chosen = []
+        for model, tip in ((stacked, "Jan 2026, Food: 60.00 USD"), (share, "Jan 2026, Food: 60%")):
+            view = ModelChartView(model, on_select=chosen.append)
+            view.set_selected(1)
+            surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 600, 240)
+            view._draw(None, cairo.Context(surface), 600, 240)
+            segment = next(bar for bar in view.layout.bars if bar.category == 0)
+            assert segment.rounded is False  # Food continues into Rent
+            hover = view.tooltip_at(segment.x + 1, segment.y + segment.height / 2)
+            assert hover.startswith(tip)
+            start, extent = view.layout.bands[0]
+            assert view.choose_at(start + extent / 2) == 0 and view.selected == 0
+        assert chosen == [0, 0]
+        document = ReportDocument(
+            "Charts", "", (Section((*chart_blocks(stacked), *chart_blocks(share))),)
+        )
+        printer, pages = self._printer(document)
+        text = "\n".join(printer.page_text(page) for page in range(pages))
+        assert "Jan 2026 | 60.00 | 40.00 | 100.00" in text
+        assert "Jan 2026 | 60.0% | 40.0% | 100.00" in text
+        target = tmp_path / "stacked.pdf"
+        assert printing.export_pdf(document, target) >= 1
 
     def test_spanning_cells_and_line_breaks_print(self):
         from breadsched.plugins.export.report_layout import (

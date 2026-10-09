@@ -7,7 +7,13 @@ from datetime import date
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine.activity import ReportingPeriod
-from ..gen.services import PlanQuery, query_expense_explorer
+from ..gen.engine.currency import reporting_currency_label
+from ..gen.services import (
+    PlanQuery,
+    category_trend_chart,
+    query_expense_explorer,
+    spending_charts,
+)
 from .controls import ResourceError
 
 
@@ -21,7 +27,10 @@ def expense_report(
     period_index: int | None = None,
     rollover: bool = False,
 ) -> dict:
-    """Expense categories and optional merchant drilldown from the shared service."""
+    """Expense categories, their charts, and an optional merchant drilldown.
+
+    With ``account_handle``, the charts include that category's trend.
+    """
     start = date.fromisoformat(f"{start_month}-01") if start_month else None
     through = date.fromisoformat(f"{through_month}-01") if through_month else None
     end = (
@@ -83,7 +92,27 @@ def expense_report(
 
     detail = explorer.drilldown
     names = {row.account: row.full_name for row in explorer.categories}
+    currency = reporting_currency_label(db)
+    trend = next(
+        (
+            row
+            for row in explorer.categories
+            if detail is not None and row.account == detail.account
+        ),
+        None,
+    )
     return {
+        "currency": currency,
+        "charts": {
+            "spending": [chart.as_dict() for chart in spending_charts(explorer, currency=currency)],
+            "income": [
+                chart.as_dict()
+                for chart in spending_charts(explorer, income=True, currency=currency)
+            ],
+            "category_trend": None
+            if trend is None
+            else category_trend_chart(trend, explorer.plan.report.as_of, currency).as_dict(),
+        },
         "rollover": explorer.rollover,
         "scenario": explorer.plan.scenario.name,
         "period": explorer.plan.period.value,

@@ -70,7 +70,9 @@ from .expense_explorer import (
     ExpensePeriod,
     MerchantActual,
     MerchantGroup,
+    category_trend_chart,
     query_expense_explorer,
+    spending_charts,
 )
 from .import_review import (
     HeldImportChange,
@@ -292,6 +294,8 @@ __all__ = [
     "MerchantActual",
     "MerchantGroup",
     "query_expense_explorer",
+    "spending_charts",
+    "category_trend_chart",
     "query_net_worth_change",
     "AttachmentReport",
     "TagCount",
