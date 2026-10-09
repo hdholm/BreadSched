@@ -10,7 +10,7 @@ words and numbers. Layouts never query the database or recalculate.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import zip_longest
 
@@ -669,15 +669,18 @@ def projection_layout(
     comparison: Projection | None = None,
     book_name: str = "",
     currency: str = "",
+    names: Mapping[str, str] | None = None,
 ) -> ReportDocument:
     """The current Projection result, comparison, and annual assumptions.
 
-    The chart's monthly values print in an optional section ("Projection chart
-    values"); the year-end table is always printed.
+    The charts' values (monthly totals, and each account's year-end balance, named
+    by ``names``) print in an optional section ("Projection chart values"); the
+    year-end table is always printed.
     """
-    from ...gen.engine.projection_result import projection_chart
+    from ...gen.engine.projection_result import projection_balances_chart, projection_chart
 
     chart = projection_chart(result, comparison, currency)
+    balances = projection_balances_chart(result, names or {}, currency) if result.rows else None
     shortfall = result.first_shortfall()
     cards = Cards(
         (
@@ -767,6 +770,11 @@ def projection_layout(
         Heading("Projection chart"),
         ModelChart(chart),
         *_notes((chart.partial_note,) if chart.partial_note else ()),
+        *(
+            (Heading(balances.title), ModelChart(balances))
+            if balances is not None and not balances.empty
+            else ()
+        ),
         Heading("Annual assumptions"),
         assumption_table,
     ]
@@ -778,6 +786,8 @@ def projection_layout(
     prefix = f"{book_name} · " if book_name else ""
     subtitle = f"{prefix}{result.scenario.name} · {start} through {end}"
     values = chart_blocks(chart)[1:]
+    if values and balances is not None and not balances.empty:
+        values = (*values, Heading(balances.title), chart_table(balances))
     sections = [Section(tuple(blocks))]
     if values:
         sections.append(

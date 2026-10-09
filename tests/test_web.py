@@ -1634,6 +1634,12 @@ class TestItServes:
         assert status == 200
         assert actual == json.loads(json.dumps(expected, default=str))
         assert len(actual["rows"]) == 24
+        # Year-end balances by account: one column per year, net worth as its total.
+        balances = actual["balances_chart"]
+        assert (balances["key"], balances["kind"]) == ("projection_balances", "stacked")
+        assert len(balances["categories"]) == 2
+        assert balances["series"][0]["name"] == "Cash"
+        assert Money(balances["totals"][-1]) == Money(actual["rows"][-1]["net_worth"])
 
     def test_comparison_resource_preserves_accounting_deltas(self, client):
         from breadsched.web.projection_resource import projection_draft

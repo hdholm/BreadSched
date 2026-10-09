@@ -9,6 +9,7 @@ presentation, print, and comparison can depend on them without the engine;
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
@@ -24,6 +25,7 @@ from .goal_projection import GoalMilestone
 from .reimbursement_outlook import ReimbursementOutlook
 
 __all__ = [
+    "projection_balances_chart",
     "projection_chart",
     "CashRunway",
     "ComparisonRow",
@@ -569,4 +571,94 @@ def projection_chart(
             if partial is not None
             else ""
         ),
+    )
+
+
+#: The most accounts the balances chart names; the rest share one "Other".
+_NAMED_BALANCES = 7
+
+
+def projection_balances_chart(
+    result: Projection, names: Mapping[str, str], currency: str = ""
+) -> ChartModel:
+    """Each account's projected balance at every year end, stacked.
+
+    Cash (one pool, slot 1) and each investment account stack up from zero and
+    each debt stacks down, so a column sums exactly to that year end's net worth
+    (its ``totals``). Accounts are ranked by their largest balance; past the
+    seventh, the rest are combined as "Other". Years whose values leave out an
+    unconverted amount are shaded, as in ``projection_chart``.
+    """
+    from .chart_model import STACKED, ChartModel, ChartSeries
+
+    indices = [min(i + 11, len(result.rows) - 1) for i in range(0, len(result.rows), 12)]
+    rows = [result.rows[index] for index in indices]
+    columns: dict[str, list[Money]] = {"cash": [row.ledger.closing_cash for row in rows]}
+    labels: dict[str, str] = {"cash": "Cash"}
+    for kind, sign in (("holding", 1), ("debt", -1)):
+        for position, row in enumerate(rows):
+            balances = (
+                row.ledger.closing_holdings if kind == "holding" else row.ledger.closing_liabilities
+            )
+            for handle, balance in balances.items():
+                key = f"{kind}:{handle}"
+                labels[key] = names.get(handle, handle) + (" (debt)" if kind == "debt" else "")
+                columns.setdefault(key, [Money(0)] * len(rows))[position] = balance * sign
+    largest = {
+        key: max((abs(value) for value in values), default=Money(0))
+        for key, values in columns.items()
+    }
+    accounts = [key for key in columns if key != "cash" and largest[key]]
+    ranked = sorted(accounts, key=lambda key: (-largest[key], labels[key].casefold()))
+    named = set(ranked if len(ranked) <= _NAMED_BALANCES else ranked[: _NAMED_BALANCES - 1])
+    # Cash first, then investments, then debts, each largest first.
+    order = [
+        "cash",
+        *(key for key in ranked if key in named and key.startswith("holding:")),
+        *(key for key in ranked if key in named and key.startswith("debt:")),
+    ]
+    series = [
+        ChartSeries(key, labels[key], tuple(columns[key]), slot)
+        for slot, key in enumerate(order, start=1)
+    ]
+    rest = [key for key in ranked if key not in named]
+    if rest:
+        series.append(
+            ChartSeries(
+                "other",
+                "Other",
+                tuple(
+                    sum((columns[key][position] for key in rest), Money(0))
+                    for position in range(len(rows))
+                ),
+                _NAMED_BALANCES + 1,
+            )
+        )
+    for position, row in enumerate(rows):
+        column = sum((item.values[position] or Money(0) for item in series), Money(0))
+        if column != row.net_worth:
+            raise AssertionError("projected account balances do not reconcile to net worth")
+    partial = next(
+        (
+            position
+            for position, index in enumerate(indices)
+            if not result.month_completeness(index).complete
+        ),
+        None,
+    )
+    return ChartModel(
+        "projection_balances",
+        "Year-end balances by account",
+        STACKED,
+        tuple(row.label for row in rows),
+        tuple(series),
+        currency,
+        partial_from=partial,
+        partial_note=(
+            f"Partial from {rows[partial].label} (shaded): "
+            + result.month_completeness(indices[partial]).label.removeprefix("Partial: ")
+            if partial is not None
+            else ""
+        ),
+        totals=tuple(row.net_worth for row in rows),
     )

@@ -21,8 +21,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    with them: Budget jars, the Projection (cash, investments, and net worth with
    the first shortfall marked and a scenario overlay), the Expense Explorer's
    spending and income over time and category trend, and Net worth history with
-   its composition by group. Chart the remaining views:
-   - **Cash and Projection:** stacked account balances over the projection.
+   its composition by group, and the Projection's year-end balances by account.
+   Chart the remaining views:
    - **Goals and holdings:** goal progress toward target and date; holdings by
      cost and market value with unrealized gain.
 

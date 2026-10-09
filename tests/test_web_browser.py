@@ -1324,3 +1324,8 @@ def test_the_projection_chart_is_the_shared_line_chart_with_its_values(page):
     assert values.locator("tbody tr").count() >= 12
     values.locator("summary").click()
     assert values.locator("table").is_visible()
+    # Year-end balances by account, stacked, with each year's net worth as its total.
+    balances = page.locator("figure.model-chart[data-key='projection_balances']")
+    assert balances.count() == 1
+    assert balances.locator("svg path[fill^='var(--series-']").count() >= 1
+    assert "Total" in balances.locator("details.chart-values thead").text_content()

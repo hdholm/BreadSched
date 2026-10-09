@@ -503,6 +503,17 @@ Projection view, the browser Projection page (including its comparison overlay),
 the printed Projection use it; the browser keeps the monthly values in a **Chart
 values** toggle beside the chart, and printing puts them in the optional
 **Projection chart values** section, since the year-end table is always printed.
+`projection_balances_chart` stacks each projection year's last month (the rows
+`year_end` samples) by account from the month ledger's closing balances: the cash
+pool (slot 1), each investment account up and each debt down, so a column sums
+exactly to that month's net worth (its `totals`; the builder asserts it). Accounts
+are ranked by their largest balance, and past the seventh balance series the rest
+are combined as **Other**. `projection.projected_account_names` names them. The
+GTK view shows it in a `Gtk.Stack` with the totals chart (a switcher chooses
+**Totals by month** or **Balances by account**, so the view keeps its small-screen
+height), the browser page beside its own values
+toggle, and the printout after the totals chart with its table in the optional
+section.
 
 `STACKED` draws one column per category with its series stacked in order, positive
 values up from zero and negative ones down; only the outermost segment in each

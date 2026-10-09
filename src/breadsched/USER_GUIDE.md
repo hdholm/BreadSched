@@ -956,6 +956,13 @@ currency without an exchange rate are shaded and named under the chart. Hover ov
 the chart to see every line's exact amount for that month; in the browser, **Chart
 values** lists every month, and printing can include them as the optional
 **Projection chart values** section.
+
+A second chart, **Year-end balances by account**, shows each projection year's
+last month as one column: cash and each investment account stacked above zero,
+each debt below, so the column adds up to that year's net worth. The seven
+largest balances are named (cash always is) and the rest combined as **Other**.
+Hover for each account's exact balance; its values print in the same optional
+section. On the desktop, choose **Balances by account** above the chart to see it.
 5. Inspect warnings and detail rather than relying only on the chart.
 
 To keep several scenarios in view, open each one's Projection in a tab of its own:

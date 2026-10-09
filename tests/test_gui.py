@@ -806,6 +806,13 @@ class TestProjectionView:
         assert view.chart.tooltip_at(1, 120) is None
         document = view.printable_report()
         assert "Projected cash, investments, and net worth" in document.text()
+        # Each account's year-end balance, stacked, sums to that year end's net worth.
+        balances = view.balances_chart.model
+        assert balances.kind == "stacked" and balances.series[0].name == "Cash"
+        assert len(balances.categories) == view.scenario.years
+        last = view._result.rows[-1]
+        assert balances.totals[-1] == last.net_worth
+        assert "Year-end balances by account" in document.text()
 
     def test_changing_an_assumption_recomputes(self, app, window, populated_book):
         app.open_book(populated_book)

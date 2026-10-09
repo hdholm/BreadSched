@@ -163,6 +163,89 @@ def test_projection_prints_its_chart_and_optionally_every_value(db, book):
     main, values = document.sections
     assert any(isinstance(block, ModelChart) for block in main.blocks)
     assert values.optional and values.name == "Projection chart values"
-    [table] = [block for block in values.blocks if isinstance(block, Table)]
+    # The monthly values, then each year end's account balances.
+    table, balances = [block for block in values.blocks if isinstance(block, Table)]
     assert len(table.rows) == 12
+    assert len(balances.rows) == 1
     assert "Apr 2026 | (1,000.00)" in document.text(include_optional=True)
+
+
+def test_year_end_balances_stack_each_account_and_sum_to_net_worth(db, nest_egg):  # noqa: F811
+    from breadsched.gen.engine.chart_model import STACKED
+    from breadsched.gen.engine.projection import projected_account_names
+    from breadsched.gen.engine.projection_result import projection_balances_chart
+    from breadsched.plugins.export.report_layout import ModelChart, Table, projection_layout
+
+    book = nest_egg
+    _spend(db, book, "1000")
+    with db.transaction("A card balance") as txn:
+        db.add_transaction(
+            Transaction.simple(date(2025, 12, 5), "Dinner", book.groceries, book.card, "250"),
+            txn,
+        )
+    scenario = Scenario(name="Two years", start=START, years=2, assumptions=flat())
+    result = projection.project(db, scenario)
+    names = projected_account_names(db, result)
+    assert names[book.ira] == "Assets:IRA"
+    chart = projection_balances_chart(result, names, "USD")
+    assert (chart.key, chart.kind, chart.currency) == ("projection_balances", STACKED, "USD")
+    # One column per projection year, at its last month, like the year-end table.
+    assert chart.categories == ("Dec 2026", "Dec 2027")
+    assert [series.name for series in chart.series] == [
+        "Cash",
+        "Assets:IRA",
+        "Liabilities:Credit Card (debt)",
+    ]
+    assert [series.slot for series in chart.series] == [1, 2, 3]
+    year_ends = [result.rows[11], result.rows[23]]
+    assert chart.series[0].values == tuple(row.cash_close for row in year_ends)
+    assert chart.series[1].values == (Money(120000), Money(120000))
+    # The card accrues its own interest; it stacks below zero as its projected balance.
+    assert chart.series[2].values == tuple(
+        -row.ledger.closing_liabilities[book.card] for row in year_ends
+    )
+    assert chart.series[2].values[0] < Money(-250)
+    assert chart.totals == tuple(row.net_worth for row in year_ends)
+    for index, row in enumerate(year_ends):
+        assert sum((s.values[index] for s in chart.series), Money(0)) == row.net_worth
+
+    # Printed beside the totals chart; its values join the optional section.
+    document = projection_layout(result, currency="USD", names=names)
+    main, values = document.sections
+    charts = [block.model.key for block in main.blocks if isinstance(block, ModelChart)]
+    assert charts == ["projection", "projection_balances"]
+    tables = [block for block in values.blocks if isinstance(block, Table)]
+    assert [column.label for column in tables[-1].columns][-1] == "Total"
+    assert "Assets:IRA" in document.text(include_optional=True)
+
+
+def test_accounts_past_the_seventh_combine_as_other(db, book):
+    from decimal import Decimal
+
+    from breadsched.gen.engine.projection_result import projection_balances_chart
+    from breadsched.gen.lib import Account, AccountType
+
+    _spend(db, book, "10")
+    handles = []
+    with db.transaction("Many investments") as txn:
+        for number in range(9):
+            account = Account(
+                name=f"Fund {number}", atype=AccountType.INVESTMENT, parent=book.assets
+            )
+            account.annual_return = Decimal(0)
+            db.add_account(account, txn)
+            db.add_transaction(
+                Transaction.simple(
+                    date(2025, 12, 1), "Buy", account.handle, book.opening, str(1000 * (number + 1))
+                ),
+                txn,
+            )
+            handles.append(account.handle)
+    result = projection.project(db, _scenario())
+    chart = projection_balances_chart(result, {})
+    keys = [series.key for series in chart.series]
+    # Cash, the six largest funds, then Other: eight slots.
+    assert keys[0] == "cash" and keys[-1] == "other" and len(keys) == 8
+    assert chart.series[1].key == f"holding:{handles[8]}"
+    assert chart.series[-1].values == (Money(1000 + 2000 + 3000),)
+    assert sum((s.values[0] for s in chart.series), Money(0)) == result.rows[-1].net_worth

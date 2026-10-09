@@ -10,6 +10,23 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a272 - 2026-10-09
+
+- **Projection balances by account.** `projection_result.projection_balances_chart`
+  stacks each projection year's last month by account from the month ledger's
+  closing balances: the cash pool, each investment account above zero, and each
+  debt below, so every column sums exactly to that month's net worth (asserted, and
+  carried as the chart's totals); accounts past the seventh balance series are
+  combined as Other, and partial years are shaded. `projection.projected_account_names`
+  names the accounts. The GTK Projection view shows it beside the totals chart
+  behind a Totals by month / Balances by account switcher (keeping the view within
+  its small-screen size),
+  the browser page beside its own Chart values toggle (the web response adds
+  `balances_chart`), and the printout after the totals chart with its table in the
+  optional Projection chart values section. The User Guide and design part
+  describe it; tests cover the values, reconciliation, Other, printing, the web
+  response, and the GTK and browser screens.
+
 ## 0.2.0a271 - 2026-10-09
 
 - **Net worth history on the shared charts, with its composition.** Each history

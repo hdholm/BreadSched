@@ -9,7 +9,7 @@ that layout as HTML, and the desktop's native printing draws the same layout.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from html import escape
 
 from ...gen.engine.activity import PlanMeasure
@@ -176,9 +176,12 @@ def projection_report(
     *,
     comparison: Projection | None = None,
     book_name: str = "",
+    names: Mapping[str, str] | None = None,
 ) -> str:
     """Render the current Projection result, comparison, and annual assumptions."""
-    return render_html(projection_layout(result, comparison=comparison, book_name=book_name))
+    return render_html(
+        projection_layout(result, comparison=comparison, book_name=book_name, names=names)
+    )
 
 
 # ------------------------------------------------------- layout rendering
