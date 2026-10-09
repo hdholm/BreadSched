@@ -125,8 +125,10 @@ shows the total (see [Savings goals](../USER_GUIDE.md#savings-goals)).
 
 Choose the **History** toolbar icon (or **Net Worth History…** in the menus) while
 the Dashboard is shown. **Group by** switches between months, quarters, and years;
-hover over a period to see its top-level account values, and **Print…** prints the
-table through the system print dialog. Choose a period's **Change** (or **Explain** for the first period) to list the
+the charts above the table show assets, debts, and net worth, and net worth's
+composition by group. Hover over a chart for exact amounts or over a period to see
+its group values, and **Print…** prints the charts and table through the system
+print dialog. Choose a period's **Change** (or **Explain** for the first period) to list the
 postings behind it below the table; that section has its own **Print…** and
 **Export CSV…**. See [Net worth history](../USER_GUIDE.md#net-worth-history).
 

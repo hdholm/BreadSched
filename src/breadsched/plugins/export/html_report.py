@@ -136,9 +136,9 @@ def expense_explorer_report(
     return render_html(expense_explorer_layout(explorer, income_detail, currency))
 
 
-def net_worth_history_report(history: NetWorthHistory) -> str:
-    """Print net worth at each period end, with each point's top-level breakdown."""
-    return render_html(net_worth_history_layout(history))
+def net_worth_history_report(history: NetWorthHistory, currency: str = "") -> str:
+    """Print net worth at each period end, its charts, and each point's groups."""
+    return render_html(net_worth_history_layout(history, currency))
 
 
 def net_worth_change_report(change: NetWorthChange) -> str:

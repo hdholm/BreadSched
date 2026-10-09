@@ -91,6 +91,7 @@ from .net_worth import (
     NetWorthLine,
     NetWorthPoint,
     NetWorthPosting,
+    net_worth_charts,
     query_net_worth_change,
     query_net_worth_history,
 )
@@ -325,6 +326,7 @@ __all__ = [
     "reopen_savings_goal",
     "save_savings_goal",
     "query_net_worth_history",
+    "net_worth_charts",
     "NetWorthChange",
     "NetWorthHistory",
     "NetWorthPosting",

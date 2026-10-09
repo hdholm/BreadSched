@@ -1881,6 +1881,20 @@ class TestPlanApi:
         )
         assert assets == Money(january["assets"])
         assert january["missing"] == []
+        # Groups break the same totals down; the charts draw the points' own values.
+        grouped = sum(
+            (Money(line["value"]) for line in january["groups"] if line["kind"] == "asset"),
+            Money(0),
+        )
+        assert grouped == Money(january["assets"])
+        lines, composition = report["charts"]
+        assert [lines["key"], composition["key"]] == ["net_worth", "net_worth_composition"]
+        assert Money(lines["series"][2]["values"][0]) == Money(january["net_worth"])
+        assert Money(composition["totals"][0]) == Money(january["net_worth"])
+        assert sum(
+            (Money(series["values"][0]) for series in composition["series"]), Money(0)
+        ) == Money(january["net_worth"])
+        assert lines["currency"] == report["currency"]
 
         def refused(path: str) -> tuple[int, dict]:
             with pytest.raises(urllib.error.HTTPError) as caught:

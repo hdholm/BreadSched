@@ -10,6 +10,24 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a271 - 2026-10-09
+
+- **Net worth history on the shared charts, with its composition.** Each history
+  point now also breaks its totals down by group (`NetWorthPoint.groups`): a
+  top-level account tree, or, where one tree holds every asset (or every debt)
+  account, that tree's children; each top-level line is the exact sum of its
+  groups. `net_worth.net_worth_charts` draws assets, debts, and net worth as lines
+  (a withheld point breaks each line and the chart names it) and the groups
+  stacked, assets above zero and debts below, with net worth as each column's
+  total; the seven largest groups are named and the rest combined as Other. The
+  GTK dialog, the browser Dashboard section, and the printout show both charts and
+  list each point's groups; the web response adds `groups`, `charts`, and
+  `currency`. The older GTK `LineChart` is removed, so every chart is drawn from
+  a model. The design part, User Guide, and desktop and browser guides describe
+  the charts (and the design part's stale Expense Explorer chart paragraph is
+  corrected); tests cover the groups, the charts' reconciliation, Other, withheld
+  points, the web response, and the GTK and browser screens.
+
 ## 0.2.0a270 - 2026-10-09
 
 - **Spending on the shared charts.** The chart model gains stacked and share forms:

@@ -2956,18 +2956,6 @@ class TestPlanToolbarIcon:
 
 
 class TestDerivedPlanView:
-    def test_line_chart_maps_a_click_to_the_nearest_period(self):
-        from breadsched.gui.widgets.chart import LineChart, Series
-
-        class Sized(LineChart):
-            def get_width(self):
-                return 494  # 400 px of plot between the 78/16 px margins
-
-        chart = Sized()
-        assert chart.index_at(200) is None
-        chart.set_data([Series("Actual", [1.0, 2.0, 3.0])])
-        assert [chart.index_at(x) for x in (10, 170, 290, 470, 900)] == [0, 0, 1, 2, 2]
-
     def test_net_worth_history_dialog_charts_complete_points(
         self, app, window, populated_book, monkeypatch, tmp_path
     ):
@@ -2981,8 +2969,17 @@ class TestDerivedPlanView:
         try:
             history = dialog.history
             assert history is not None and history.points
-            complete = [point for point in history.points if point.net_worth is not None]
-            assert [len(series.values) for series in dialog.chart.series] == [len(complete)]
+            # Shared-model charts: assets, debts, and net worth by point, then groups
+            # stacked so each column sums to that point's net worth.
+            assert [view.model.key for view in dialog.charts] == [
+                "net_worth",
+                "net_worth_composition",
+            ]
+            assert [len(series.values) for series in dialog.chart.series] == [
+                len(history.points)
+            ] * 3
+            composition = dialog.charts[1].model
+            assert composition.totals == tuple(point.net_worth for point in history.points)
             assert dialog.table.get_child_at(0, 1).get_label() == history.points[0].label
             first = history.points[0].net_worth
             assert dialog.table.get_child_at(4, 1).get_label() == (

@@ -382,7 +382,7 @@ Each report applies one policy:
 | Projection and its chart | Partial from the first month that leaves out a balance or event; the chart shades those months |
 | Scenario comparisons (Plan and Projection) | As complete as both scenarios together: a difference between partial values is partial |
 | Accounts rollups, Dashboard net worth and liquid cash, Dashboard groups | Unavailable |
-| Net worth history and net worth change | Unavailable for that point or change; the chart marks it **n/a** rather than drawing zero |
+| Net worth history and net worth change | Unavailable for that point or change; the charts leave it out and say so rather than drawing zero |
 
 A partial or unavailable value comes with a list of what it leaves out. The browser
 shows the list when you expand the label, the desktop application shows it in the
@@ -738,11 +738,18 @@ each date. The period containing today is valued on today and marked **to date**
 later periods are not shown, because the ledger has no future balances (use
 Projection for those). If an account needs a quote that did not exist on a date,
 that point shows no totals and names the account instead of guessing a
-conversion, the chart marks it **n/a** instead of drawing zero, and the change on
-either side of it is left blank (see
-[Complete, partial, and unavailable values](#complete-partial-and-unavailable-values)). Each point also
-lists the value of each top-level account tree, such as **Assets** and
-**Liabilities**. Open it from the Dashboard
+conversion, the charts leave it out and say so instead of drawing zero, and the
+change on either side of it is left blank (see
+[Complete, partial, and unavailable values](#complete-partial-and-unavailable-values)).
+
+Two charts sit above the table: assets, debts, and net worth as lines, and net
+worth's composition, with each group of accounts stacked (assets above zero, debts
+below) so every column adds up to that period's net worth. A group is a top-level
+account tree; when all your assets sit under one **Assets** account (or all your
+debts under one **Liabilities** account), its subaccounts are the groups instead,
+such as **Assets:Current Assets** and **Assets:Investments**. The seven largest
+groups are named and the rest combined as **Other**. Each point also lists the
+value of each group. Hover over a chart for exact amounts. Open it from the Dashboard
 ([desktop](guide/desktop.md#net-worth-history), [browser](guide/web.md#net-worth-history),
 [command line](guide/cli.md#net-worth-history)).
 

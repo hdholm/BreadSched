@@ -380,11 +380,11 @@ period: the section's total plan and actual, `future` (starts after as-of),
 unconverted foreign activity), and the actual split across top-level categories.
 A lone root category, normally the book's `Expenses` account, is replaced by its
 immediate children, with anything posted to the root itself kept under the root's
-handle; the service asserts that the split sums exactly to the period actual. GTK
-draws it with the older `LineChart` (a dashed as-of marker, the selected period
-shaded, `index_at` mapping a click to a period), the web page with an SVG whose
-period hit areas are keyboard-focusable buttons, and the printable report as a
-table. Selecting a period drives the existing comparison and merchant drill-down,
+handle; the service asserts that the split sums exactly to the period actual. GTK,
+the web page, and the printable report draw it with `spending_charts` on the shared
+chart model (see Charts as data below), each beside a table; in GTK and the browser
+a period's band selects it (a keyboard-focusable button in the browser). Selecting a
+period drives the existing comparison and merchant drill-down,
 so every drill-down stays on the shared Plan values.
 Income over time (`ExpenseExplorer.income`) is built by the same `_over_time`
 helper from the Plan report's income rows and `category_totals(INCOME, ...)`, so
@@ -409,7 +409,11 @@ asset and liability account with `valuation.account_value` on each period's end,
 using Plan's display buckets (`activity.reporting_periods`). The period containing
 the as-of date is valued on that date and marked partial; later periods are
 omitted because the ledger has no future balances (Projection forecasts them).
-Values are summed per top-level account tree and kind; any account without a
+Values are summed per group and kind, and each top-level line is the exact sum of
+its groups. A group is the top-level account tree, except where one tree holds every
+account of its kind (the usual single **Assets** or **Liabilities** account): there
+it is that tree's child holding the account, or the tree itself for anything posted
+to it directly. Any account without a
 reporting-currency value withholds that point's totals and change and is named in
 `missing`, never converted by guesswork. Each account's ledger balance is carried
 from one point to the next by adding only the splits since the previous date
@@ -420,7 +424,13 @@ test guards it). Tests assert that every complete point equals
 `valuation.net_worth` on its date, so it always matches the Dashboard's valuation. The CLI `net-worth` command, the web
 `/api/net-worth-history` resource (typed month parsing only) and Dashboard
 section, the GTK Dashboard **History** dialog, and the printable report all render
-the same points; the GTK chart plots only complete points.
+the same points. `net_worth_charts` draws them on the shared chart model: assets,
+debts, and net worth as lines (slots 1 to 3; a withheld point breaks each line and
+the chart's note names it), and the groups stacked, assets up and debts down, with
+net worth as each column's total (the seven largest groups named, the rest as
+**Other**; the service asserts each complete column sums to net worth). The GTK
+dialog, the browser section, and the printout show both charts; each point's
+breakdown lists its groups.
 `query_net_worth_change(start, end, today)` explains one change. It values net worth
 at the end of `start - 1` and on `min(end, today)` the way a history point is valued.
 It then groups every asset and liability split dated in that window by transaction,
@@ -506,7 +516,8 @@ band and makes each band a target (in the browser, a focusable button whose
 `<title>` lists every series' value), so a chart can choose the period a screen
 shows. A column chart shades `partial_from` from that category's band. The table
 beside a chart with totals adds a **Total** column; a share chart's cells are
-percentages. `expense_explorer.spending_charts` draws the Expense Explorer's
+percentages. The older GTK `LineChart` is gone; every chart is drawn from a model.
+`expense_explorer.spending_charts` draws the Expense Explorer's
 spending (and income) from its own `SpendingPoint`s: plan and actual lines (slots
 1 and 2, a rule at the as-of date's period), actual stacked by top-level category,
 and each category's share, the categories ranked by actual over the range with

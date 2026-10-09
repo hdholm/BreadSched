@@ -1038,8 +1038,10 @@ def expense_explorer_layout(
 # -------------------------------------------------------------- Net worth
 
 
-def net_worth_history_layout(history: NetWorthHistory) -> ReportDocument:
-    """Net worth at each period end, with each point's top-level breakdown."""
+def net_worth_history_layout(history: NetWorthHistory, currency: str = "") -> ReportDocument:
+    """Net worth at each period end, its charts, and each point's breakdown by group."""
+    from ...gen.services.net_worth import net_worth_charts
+
     rows = []
     for point in history.points:
         notes = [
@@ -1052,7 +1054,7 @@ def net_worth_history_layout(history: NetWorthHistory) -> ReportDocument:
             if text
         ]
         breakdown = "\n".join(
-            f"{line.name} ({line.kind}): {money_text(line.value)}" for line in point.lines
+            f"{line.name} ({line.kind}): {money_text(line.value)}" for line in point.groups
         )
         rows.append(
             TableRow(
@@ -1068,11 +1070,14 @@ def net_worth_history_layout(history: NetWorthHistory) -> ReportDocument:
                 )
             )
         )
+    charts = net_worth_charts(history, currency)
     blocks: tuple[Block, ...] = (
         Paragraph(
             "Assets less debts, market-valued at each period end. A point with a missing "
             "quote shows — and names the account rather than guessing a conversion."
         ),
+        *(ModelChart(chart) for chart in charts[:1] if not chart.empty),
+        *_notes((charts[0].partial_note,) if charts and charts[0].partial_note else ()),
         Table(
             _columns(
                 "Period",
@@ -1082,10 +1087,11 @@ def net_worth_history_layout(history: NetWorthHistory) -> ReportDocument:
                 "#Net worth",
                 "#Change",
                 "Note",
-                "Top-level accounts",
+                "Groups",
             ),
             tuple(rows),
         ),
+        *(block for chart in charts[1:] for block in (Heading(chart.title), *chart_blocks(chart))),
     )
     subtitle = (
         f"{history.start.isoformat()} through {history.end.isoformat()} · "
