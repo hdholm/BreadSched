@@ -459,6 +459,25 @@ below, and hover text; rows styled heading/section/total/grand), and a line char
 draws it natively, so both routes print the same words and numbers. A view offers
 `printable_report()` and derives `printable_html()` from it.
 
+**Charts as data.** An engine describes a chart as a `gen.engine.chart_model.ChartModel`:
+categories, series of exact `Money` values (None where unavailable), a currency
+label, and per series a categorical colour slot chosen by what the series is, so a
+series keeps its colour whatever else is shown. Charts never compute totals; their
+values are the engine's report values, and `report_layout.chart_blocks` always puts
+the table of those values beside the chart (`ModelChart` then a `Table`).
+`presentation.charts` holds the one categorical palette (eight hues in a fixed
+order, validated for colour-blind separation; a dark step of each hue for dark
+themes) and the shared geometry (`chart_bar_layout`: round ticks including zero,
+columns at most 24 units wide with a 2-unit gap, a rounded data end and a square
+foot on the baseline). GTK draws a model with `widgets.bar_chart` (`paint_bars`,
+also used by the native printer; the dark steps when the theme's ink is light;
+hover shows a column's exact amount), the HTML export with `model_chart_svg`, and the
+browser with `modelChart` in `core.js` (SVG with a `<title>` per column and the table
+in the same figure; the browser has one light theme). Legends and axis text use ink
+colours, never a series colour. Budget jars is the first report charted this way:
+per account, planned against actual draws by period (slots 1 and 2) and each jar's
+level beside its target (slots 3 and 4).
+
 **Print** (`Ctrl+P`) runs a `Gtk.PrintOperation` in points, landscape by default,
 with the page setup and settings chosen earlier in the session. Its dialog offers
 the platform's printers, preview, and printing to a PDF file; a report with an

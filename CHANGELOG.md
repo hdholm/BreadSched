@@ -10,6 +10,21 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a267 - 2026-10-09
+
+- **Shared charts.** Engines describe a chart as data (`gen/engine/chart_model`):
+  categories, series of exact amounts, and a colour slot chosen by what each series
+  is. `presentation.charts` holds one categorical palette, validated for colour-blind
+  separation and stepped for dark themes, and the shared bar geometry. GTK
+  (`widgets.bar_chart`, also used for native printing), the HTML export, and the
+  browser draw the same columns, each with the exact amount on hover, and every
+  chart is printed and shown with the table of its values; charts never compute
+  their own totals.
+- **Budget jars are charted.** Each account shows planned against actual draws by
+  period and each jar's level beside its target, in GTK, the browser, and print.
+  Engine, geometry, layout, HTML, GTK (including PDF printing), route, and browser
+  tests cover them.
+
 ## 0.2.0a266 - 2026-10-09
 
 - **Budget jars.** `engine/budget_jars` treats every scheduled payment and estimate

@@ -967,7 +967,7 @@ class TestPresentationPackage:
 
         package = SRC / "presentation"
         areas = sorted(p.stem for p in package.glob("*.py") if p.stem != "__init__")
-        assert areas == ["benefits", "investments", "messages", "notices", "planning"]
+        assert areas == ["benefits", "charts", "investments", "messages", "notices", "planning"]
         for area in areas:
             path = package / f"{area}.py"
             tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -979,7 +979,9 @@ class TestPresentationPackage:
             # Wording reads engine and service results; it never reaches an interface.
             assert not any(m.split(".")[0] in {"gui", "web", "cli"} for m in relative), area
             module = importlib.import_module(f"breadsched.presentation.{area}")
-            defined = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)} | {
+            defined = {
+                node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))
+            } | {
                 target.id
                 for node in tree.body
                 if isinstance(node, ast.Assign)

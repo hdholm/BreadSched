@@ -130,3 +130,90 @@ function table(headers, rows) {
         el("th", { class: h.num ? "num" : null }, h.label ?? h)))),
       el("tbody", {}, body)));
 }
+
+// An engine chart (gen/engine/chart_model) as grouped columns with a legend, each
+// column's exact amount on hover, and the table of its values beside it. The scale
+// and marks follow presentation.charts: round ticks including zero, columns at most
+// 24 wide with a 2-unit gap, a rounded data end and a square foot on the baseline.
+function chartTicks(low, high, count = 4) {
+  low = Math.min(low, 0); high = Math.max(high, 0);
+  if (low === high) high = low + 1;
+  const raw = (high - low) / count;
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((s) => s >= raw);
+  const ticks = [];
+  for (let value = Math.floor(low / step) * step; value < high + step * 0.999; value += step) {
+    ticks.push(Math.round(value * 1e10) / 1e10);
+  }
+  return ticks;
+}
+
+function columnPath(x, y, width, height, negative) {
+  const r = Math.min(4, width / 2, height);
+  if (negative) {
+    return `M${x},${y}h${width}v${height - r}a${r},${r} 0 0 1 ${-r},${r}`
+      + `h${-(width - 2 * r)}a${r},${r} 0 0 1 ${-r},${-r}z`;
+  }
+  return `M${x},${y + height}v${-(height - r)}a${r},${r} 0 0 1 ${r},${-r}`
+    + `h${width - 2 * r}a${r},${r} 0 0 1 ${r},${r}v${height - r}z`;
+}
+
+function modelChart(model) {
+  const values = model.series.flatMap((series) => series.values)
+    .filter((value) => value !== null && Number(value) !== 0).map(Number);
+  if (!model.categories.length || !values.length) return null;
+  const width = 900, height = 280, left = 78, top = 34, right = 12, bottom = 30;
+  const plotWidth = width - left - right, plotHeight = height - top - bottom;
+  const ticks = chartTicks(Math.min(...values), Math.max(...values));
+  const low = ticks[0], high = ticks[ticks.length - 1];
+  const y = (value) => top + plotHeight * (high - value) / (high - low);
+  const baseline = y(0);
+  const band = plotWidth / model.categories.length;
+  const count = model.series.length;
+  const bar = Math.min(24, Math.max(1, (band * 0.7 - 2 * (count - 1)) / count));
+  const group = bar * count + 2 * (count - 1);
+  const label = model.currency ? `${model.title} (${model.currency})` : model.title;
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img",
+    "aria-label": label });
+  for (const value of ticks) {
+    svg.append(svgEl("line", { x1: left, x2: width - right, y1: y(value), y2: y(value),
+      class: value === 0 ? "chart-axis" : "chart-grid", "stroke-width": 1 }));
+    svg.append(svgEl("text", { x: left - 8, y: y(value) + 4, "text-anchor": "end" },
+      value.toLocaleString(undefined, { maximumFractionDigits: 0 })));
+  }
+  model.categories.forEach((category, index) => {
+    const centre = left + band * (index + 0.5);
+    model.series.forEach((series, position) => {
+      const value = series.values[index];
+      if (value === null || Number(value) === 0) return;
+      const number = Number(value);
+      const [topY, bottomY] = [y(number), baseline].sort((a, b) => a - b);
+      const path = svgEl("path", {
+        d: columnPath(centre - group / 2 + position * (bar + 2), topY, bar,
+          Math.max(bottomY - topY, 1), number < 0),
+        fill: `var(--series-${series.slot})`,
+      });
+      path.append(svgEl("title", {},
+        `${category}, ${series.name}: ${money(value)}${model.currency ? ` ${model.currency}` : ""}`));
+      svg.append(path);
+    });
+    svg.append(svgEl("text", { x: centre, y: height - bottom + 16, "text-anchor": "middle" },
+      category));
+  });
+  const legend = svgEl("g", { class: "chart-legend" });
+  let x = left;
+  for (const series of model.series) {
+    legend.append(svgEl("rect", { x, y: 10, width: 12, height: 12, rx: 2,
+      fill: `var(--series-${series.slot})` }));
+    legend.append(svgEl("text", { x: x + 18, y: 20 }, series.name));
+    x += 36 + 7 * series.name.length;
+  }
+  svg.append(legend);
+  return el("figure", { class: "model-chart" },
+    el("figcaption", { class: "note" }, label), svg,
+    table(["", ...model.series.map((series) => ({ label: series.name, num: true }))],
+      model.categories.map((category, index) => el("tr", {},
+        el("td", {}, category),
+        ...model.series.map((series) => el("td", { class: cls(series.values[index]) },
+          series.values[index] === null ? "—" : money(series.values[index])))))));
+}

@@ -86,7 +86,9 @@ the year totals (`/api/tax-marks`), and **Print** prints just the report. See
 ## Budget jars
 
 In **Plan**, choose **Budget jars…** below the controls: all jars by period, then
-each account, with **Each jar** to open them one by one (`/api/budget-jars`).
+each account with its charts (planned against actual, and jar levels against their
+targets, each with its table; hover over a column for its amount), with **Each jar**
+to open them one by one (`/api/budget-jars`).
 Change **Group by** in the dialog; **Print** prints just the report. See
 [Budget jars](../USER_GUIDE.md#budget-jars).
 

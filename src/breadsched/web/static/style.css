@@ -7,6 +7,10 @@
   --accent: #2f6fd0;
   --bad: #b3261e;
   --good: #1c7a4a;
+  /* Chart series colours, in their fixed slot order (presentation.charts). */
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+  --series-5: #e87ba4; --series-6: #008300; --series-7: #4a3aa7; --series-8: #e34948;
+  --chart-grid: #e1e0d9; --chart-axis: #c3c2b7; --chart-muted: #898781; --chart-ink: #0b0b0b;
 }
 * { box-sizing: border-box; }
 body {
@@ -245,3 +249,10 @@ tr.editable { cursor: pointer; }
 .completion[hidden] { display: none; }
 .completion .action { text-align: left; }
 button.reconcile { min-width: 2em; font-family: monospace; }
+
+.model-chart { margin: 8px 0; }
+.model-chart svg { width: 100%; max-width: 900px; height: auto; display: block; }
+.model-chart .chart-grid { stroke: var(--chart-grid); }
+.model-chart .chart-axis { stroke: var(--chart-axis); }
+.model-chart text { fill: var(--chart-muted); font-size: 11px; }
+.model-chart .chart-legend text { fill: var(--chart-ink); font-size: 12px; }

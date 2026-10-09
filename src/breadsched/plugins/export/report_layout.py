@@ -17,6 +17,7 @@ from itertools import zip_longest
 from ...gen.engine.activity import PlanMeasure
 from ...gen.engine.budget_jars import JarsReport
 from ...gen.engine.category_report import CategoryReport
+from ...gen.engine.chart_model import ChartModel
 from ...gen.engine.completeness import Completeness, combine
 from ...gen.engine.dashboard import Dashboard, MissedGroup
 from ...gen.engine.projection_result import Projection
@@ -61,6 +62,8 @@ __all__ = [
     "realized_gains_layout",
     "tax_year_layout",
     "budget_jars_layout",
+    "chart_blocks",
+    "ModelChart",
     "signed_money_text",
 ]
 
@@ -155,7 +158,14 @@ class Chart:
     ticks: tuple[tuple[int, str], ...] = ()
 
 
-Block = Heading | Paragraph | Cards | Table | Chart
+@dataclass(frozen=True)
+class ModelChart:
+    """A chart drawn from an engine's ``ChartModel``; ``chart_blocks`` adds its table."""
+
+    model: ChartModel
+
+
+Block = Heading | Paragraph | Cards | Table | Chart | ModelChart
 
 
 @dataclass(frozen=True)
@@ -201,6 +211,8 @@ def _block_text(block: Block) -> list[str]:
         return [f"{card.label} {card.value}" for card in block.items]
     if isinstance(block, Chart):
         return [block.label, *(series.name for series in block.series)]
+    if isinstance(block, ModelChart):
+        return [block.model.title, *(series.name for series in block.model.series)]
     if not block.rows:
         return [block.empty]
     lines = [" | ".join(column.label for column in block.columns)]
@@ -1337,7 +1349,10 @@ def tax_year_layout(report: TaxYearReport, currencies: dict[str | None, str]) ->
 
 def budget_jars_layout(report: JarsReport, currencies: dict[str | None, str]) -> ReportDocument:
     """Jars by account and period: filled, planned and actual draws, and the level."""
-    from ...gen.engine.budget_jars import jar_kind_label
+    from ...gen.engine.budget_jars import jar_charts, jar_kind_label
+
+    # Two charts per account, in the report's account order.
+    charts = jar_charts(report, currencies)
 
     def periods_table(periods, empty: str) -> Table:
         return Table(
@@ -1370,7 +1385,7 @@ def budget_jars_layout(report: JarsReport, currencies: dict[str | None, str]) ->
         label = currencies.get(total.currency, "")
         blocks.append(Heading("All jars" + (f" ({label})" if label else "")))
         blocks.append(periods_table(total.periods, "No jars."))
-    for bundle in report.accounts:
+    for index, bundle in enumerate(report.accounts):
         label = currencies.get(bundle.currency, "")
         blocks.append(Heading(f"{bundle.account_name}{f' ({label})' if label else ''}"))
         blocks.append(
@@ -1382,8 +1397,29 @@ def budget_jars_layout(report: JarsReport, currencies: dict[str | None, str]) ->
             )
         )
         blocks.append(periods_table(bundle.periods, "No activity."))
+        for chart in charts[index * 2 : index * 2 + 2]:
+            blocks.extend(chart_blocks(chart))
     if not report.accounts:
         blocks.append(Paragraph("No scheduled payments, estimates, or goals in this range."))
     blocks.extend(_notes(report.problems, warning=True))
     subtitle = f"{report.start.isoformat()} to {report.end.isoformat()} by {report.period.value}"
     return ReportDocument("Budget jars", subtitle, (Section(tuple(blocks)),), kind="budget-jars")
+
+
+def chart_blocks(model: ChartModel) -> tuple[Block, ...]:
+    """A chart and, beside it, the table of its exact values."""
+    if model.empty:
+        return ()
+    return (
+        ModelChart(model),
+        Table(
+            _columns(
+                "Category",
+                *(f"#{series.name}" for series in model.series),
+            ),
+            tuple(
+                TableRow((Cell(category), *(_amount(value) for value in values)))
+                for category, values in model.rows()
+            ),
+        ),
+    )

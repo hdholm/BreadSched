@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from ..db.sqlite import DbSQLite
@@ -45,6 +45,7 @@ from ..lib.scheduled import ScheduledTransaction
 from . import savings_goals
 from .activity import ReportingPeriod, reporting_periods
 from .cash_flow import income_occurrences, income_schedules
+from .chart_model import BARS, ChartModel, ChartSeries
 from .currency import reporting_currency_handle, reporting_fraction
 from .dashboard_bills import cycle_days
 from .planning import PlannedEvent, PlannedSplit, scheduled_events
@@ -59,6 +60,7 @@ __all__ = [
     "PeriodTotal",
     "budget_jars",
     "currency_labels",
+    "jar_charts",
     "jar_kind_label",
 ]
 
@@ -115,6 +117,9 @@ class Jar:
     periods: tuple[JarPeriod, ...]
     #: The schedule or goal handle.
     source: str = ""
+    #: What the jar is filling toward: the next planned draw after the range (the
+    #: last one in it when none follows), or a goal's target amount.
+    target: Money = field(default_factory=lambda: Money(0))
 
 
 @dataclass(frozen=True, slots=True)
@@ -378,6 +383,10 @@ def budget_jars(
             Money(0),
         )
         events.sort(key=lambda item: (item.when, item.kind))
+        planned = [event for event in events if event.kind == "planned"]
+        after = [event for event in planned if event.when > end]
+        inside = [event for event in planned if event.when <= end]
+        target = after[0].amount if after else (inside[-1].amount if inside else Money(0))
         jars.append(
             Jar(
                 f"schedule:{handle}:{account}",
@@ -390,6 +399,7 @@ def budget_jars(
                 tuple(events),
                 _periods(opening, events, labels),
                 handle,
+                target,
             )
         )
 
@@ -416,6 +426,7 @@ def budget_jars(
                 tuple(events),
                 _periods(opening, events, labels),
                 goal.handle,
+                goal.target_amount,
             )
         )
 
@@ -459,3 +470,55 @@ def currency_labels(db: DbSQLite, report: JarsReport) -> dict[str | None, str]:
         commodity = db.get_commodity(handle) if handle else None
         labels[handle] = commodity.mnemonic if commodity is not None else (handle or "")
     return labels
+
+
+def jar_charts(report: JarsReport, labels: dict[str | None, str]) -> tuple[ChartModel, ...]:
+    """For each account: planned against actual draws by period, and jar levels.
+
+    Planned and actual are paired columns per period (slots 1 and 2); the levels
+    chart puts each jar's level at the range's end beside its target (slots 3 and
+    4). The values are the report's own, so the tables beside the charts agree.
+    """
+    charts: list[ChartModel] = []
+    period_labels = tuple(label for _first, _last, label in report.labels)
+    for bundle in report.accounts:
+        currency = labels.get(bundle.currency, "")
+        charts.append(
+            ChartModel(
+                f"jars:{bundle.account}:{bundle.currency}:draws",
+                f"{bundle.account_name}: planned and actual",
+                BARS,
+                period_labels,
+                (
+                    ChartSeries(
+                        "planned", "Planned", tuple(item.planned for item in bundle.periods), 1
+                    ),
+                    ChartSeries(
+                        "actual", "Actual", tuple(item.actual for item in bundle.periods), 2
+                    ),
+                ),
+                currency,
+            )
+        )
+        charts.append(
+            ChartModel(
+                f"jars:{bundle.account}:{bundle.currency}:levels",
+                f"{bundle.account_name}: jar levels",
+                BARS,
+                tuple(jar.name for jar in bundle.jars),
+                (
+                    ChartSeries(
+                        "level",
+                        "Level",
+                        tuple(
+                            jar.periods[-1].level if jar.periods else Money(0)
+                            for jar in bundle.jars
+                        ),
+                        3,
+                    ),
+                    ChartSeries("target", "Target", tuple(jar.target for jar in bundle.jars), 4),
+                ),
+                currency,
+            )
+        )
+    return tuple(charts)

@@ -3579,6 +3579,8 @@ class TestDerivedPlanView:
             dialog.destroy()
 
     def test_budget_jars_group_and_print(self, app, window, populated_book, monkeypatch):
+        import cairo
+
         from breadsched.gen.engine.activity import ReportingPeriod
         from breadsched.gen.lib import (
             AccountType,
@@ -3617,11 +3619,27 @@ class TestDerivedPlanView:
                 db.full_name(expense) in name and "Market estimate" in name for name in names
             )
             assert len(dialog.report.labels) == 3
+            # Each account shows planned against actual and its jar levels as charts.
+            assert [chart.model.title.split(": ")[1] for chart in dialog.charts[:2]] == [
+                "planned and actual",
+                "jar levels",
+            ]
+            draws = dialog.charts[0]
+            draws.set_size_request(600, 240)
+            surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 600, 240)
+            draws._draw(None, cairo.Context(surface), 600, 240)
+            bar = draws.layout.bars[0]
+            tip = draws.tooltip_at(bar.x + bar.width / 2, bar.y + bar.height / 2)
+            value = draws.model.series[bar.series].values[bar.category]
+            assert tip.startswith(f"{draws.model.categories[bar.category]}, Planned: ")
+            assert value.format(parens_negative=True) in tip
+            assert draws.tooltip_at(1, 1) is None
             dialog.period_choice.set_selected(1)
             assert dialog.period is ReportingPeriod.QUARTER and len(dialog.report.labels) == 1
             dialog.print_report()
             [document] = printed
             assert document.kind == "budget-jars" and "by quarter" in document.subtitle
+            assert "planned and actual" in document.text()
             assert db.full_name(expense) in document.text()
         finally:
             dialog.destroy()
@@ -8752,6 +8770,32 @@ class TestNativePrinting:
             document = view.printable_report()
             pages = printing.export_pdf(document, tmp_path / f"{key}.pdf", include_optional=True)
             assert pages >= 1 and (tmp_path / f"{key}.pdf").stat().st_size > 1000
+
+    def test_engine_charts_print_natively_with_their_table(self, tmp_path):
+        from breadsched.gen.engine.chart_model import BARS, ChartModel, ChartSeries
+        from breadsched.gui import printing
+        from breadsched.plugins.export.report_layout import ReportDocument, Section, chart_blocks
+
+        model = ChartModel(
+            "k",
+            "Groceries: planned and actual",
+            BARS,
+            ("Jun 2026", "Jul 2026"),
+            (
+                ChartSeries("planned", "Planned", (Money(600), Money(600)), 1),
+                ChartSeries("actual", "Actual", (Money(550), Money(-25)), 2),
+            ),
+            "USD",
+        )
+        document = ReportDocument("Charts", "", (Section(chart_blocks(model)),))
+        printer, pages = self._printer(document)
+        text = printer.page_text(0)
+        assert pages == 1
+        assert "Groceries: planned and actual (USD)" in text
+        assert "Jun 2026 | 600.00 | 550.00" in text and "(25.00)" in text
+        target = tmp_path / "charts.pdf"
+        assert printing.export_pdf(document, target) == 1
+        assert target.stat().st_size > 1000
 
     def test_spanning_cells_and_line_breaks_print(self):
         from breadsched.plugins.export.report_layout import (

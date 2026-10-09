@@ -790,7 +790,11 @@ estimate (or, for a payment with no expense, the loan or asset it pays into), an
 the account of a savings goal. For each period it lists what was **Filled** from
 income, the **Planned** and **Actual** draws, their **Variance** (actual less
 planned), and the jar's **Level** at the period's end. Open an account to see each
-jar on its own. A level counts the occurrences due from the first day shown,
+jar on its own. Each account also has two charts, each with a table of its exact
+values beside it: **planned and actual** draws side by side for every period, and
+**jar levels**, each jar's level at the end of the range beside its target (the next
+planned payment, or a goal's target amount). Hover over a column to see its exact
+amount. A level counts the occurrences due from the first day shown,
 including what income set aside for them before that day; what earlier occurrences
 left over is not carried in. Amounts in different currencies are kept apart. Print
 the report from either interface. See

@@ -6834,6 +6834,10 @@ class TestBudgetJars:
         [jar] = [jar for jar in bundle["jars"] if jar["name"] == "Market estimate"]
         assert (jar["kind"], jar["kind_label"]) == ("estimate", "Estimate")
         assert [period["planned"] for period in jar["periods"]] == ["600.00"] * 3
+        draws, levels = bundle["charts"]
+        assert (draws["kind"], [series["slot"] for series in draws["series"]]) == ("bars", [1, 2])
+        assert draws["categories"] == data["labels"]
+        assert levels["categories"] == [jar["name"] for jar in bundle["jars"]]
         quarter = client.get("/api/budget-jars?from=2026-07&through=2026-09&period=quarter")[1]
         assert len(quarter["labels"]) == 1
         assert data["totals"] and "problems" in data
