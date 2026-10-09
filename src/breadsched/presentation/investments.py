@@ -1,4 +1,4 @@
-"""Wording for holdings, cost basis, and lot transfers or share splits."""
+"""Wording for holdings, cost basis, lots, sales, and lot transfers or share splits."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from ..gen.lib.money import Money
 
 if TYPE_CHECKING:
-    from ..gen.engine.cost_basis import HoldingCostBasis, LotMove
+    from ..gen.engine.cost_basis import HoldingCostBasis, Lot, LotMove, RealizedGain
 
 
 def holding_cost_text(holding: HoldingCostBasis) -> str:
@@ -49,6 +49,28 @@ def lot_move_text(move: LotMove, other_name: str | None = None) -> str:
     if move.kind == "transfer_out":
         return f"moved out {day} to {other}: {shares} shares, cost {move.cost.format()}"
     return f"moved in {day} from {other}: {shares} shares, cost {move.cost.format()}"
+
+
+def lot_text(lot: Lot) -> str:
+    """One lot or lot part: when it was bought, how many shares, and their cost."""
+    from ..gen.engine.cost_basis import shares_text
+
+    return (
+        f"bought {lot.acquired.isoformat()}: {shares_text(lot.quantity)} shares, "
+        f"cost {lot.cost.format()}"
+    )
+
+
+def sale_text(sale: RealizedGain) -> str:
+    """One sale and how its lots were chosen (lower case, for a list)."""
+    from ..gen.engine.cost_basis import shares_text
+
+    chosen = "named lots" if sale.specific else "the account's method"
+    return (
+        f"sold {sale.sold.isoformat()}: {shares_text(sale.quantity)} shares for "
+        f"{sale.proceeds.format()}, cost {sale.cost.format()}, gain "
+        f"{sale.gain.format(parens_negative=True)} ({chosen})"
+    )
 
 
 def price_text(value: Money) -> str:

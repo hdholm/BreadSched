@@ -82,6 +82,7 @@ from .import_review import (
 )
 from .imports import ImportBook, ImportedBook, import_book
 from .loans import SavedLoan, SaveLoan, save_loan, validate_loan
+from .lots import SaleLots, SetSaleLots, sale_lots, set_sale_lots
 from .net_worth import (
     NetWorthChange,
     NetWorthHistory,
@@ -195,6 +196,10 @@ from .transactions import (
 )
 
 __all__ = [
+    "SaleLots",
+    "SetSaleLots",
+    "sale_lots",
+    "set_sale_lots",
     "COST_BASIS_METHODS",
     "AcceptedClaimLinks",
     "accept_claim_links",

@@ -36,6 +36,10 @@ breadsched dashboard household.breadsched --json
 breadsched activity household.breadsched --start 2026-06-01 --end 2026-12-31 \
     --as-of 2026-06-30
 breadsched holdings household.breadsched --lots   # lots, sales, transfers, splits
+breadsched realized-gains household.breadsched --year 2026   # sales, lots, totals
+breadsched sale-lots household.breadsched 3f2a91c0 # lots a sale could sell
+breadsched sale-lots household.breadsched 3f2a91c0 --lot 9be41d07=5   # name lots
+breadsched sale-lots household.breadsched 3f2a91c0 --clear   # the account's method
 breadsched account household.breadsched edit --name "Assets:Brokerage" \
     --cost-basis average                          # or fifo (the default)
 ```

@@ -184,11 +184,12 @@ async function openLoanEditor() {
   document.body.append(backdrop);
 }
 
-// Each security's cost basis: open lots first in, first out, sales, and gains.
-async function openHoldings() {
+// Each security's cost basis: open lots, sales (each can name its lots), and gains.
+async function openHoldings(expanded = null) {
   const data = await get("/api/holdings");
+  document.querySelector(".holdings-backdrop")?.remove();
   const backdrop = el("div", {
-    class:"detail-backdrop",
+    class:"detail-backdrop holdings-backdrop",
     onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
   });
   const optional = (value) => value === null ? "—" : money(value);
@@ -199,32 +200,146 @@ async function openHoldings() {
     el("td", { class:"num" }, optional(item.market_value)),
     el("td", { class:item.unrealized_gain === null ? "num" : cls(item.unrealized_gain) },
       optional(item.unrealized_gain))));
-  const details = data.holdings.map((item) => el("details", { class:"panel holding" },
+  const details = data.holdings.map((item) => el("details", { class:"panel holding",
+      open:item.account === expanded ? "" : null },
     el("summary", {}, `${item.name}: ${item.text}`),
     item.lots.length ? table(["Bought", { label:"Shares", num:true }, { label:"Cost", num:true }],
       item.lots.map((lot) => el("tr", {}, el("td", {}, lot.acquired),
         el("td", { class:"num" }, lot.quantity), el("td", { class:"num" }, money(lot.cost)))))
       : el("p", { class:"note" }, "No shares held."),
     item.sales.length ? table(["Sold", { label:"Shares", num:true },
-      { label:"Proceeds", num:true }, { label:"Cost", num:true }, { label:"Gain", num:true }],
+      { label:"Proceeds", num:true }, { label:"Cost", num:true }, { label:"Gain", num:true },
+      "Lots", ""],
       item.sales.map((sale) => el("tr", {}, el("td", {}, sale.sold),
         el("td", { class:"num" }, sale.quantity), el("td", { class:"num" }, money(sale.proceeds)),
         el("td", { class:"num" }, money(sale.cost)),
-        el("td", { class:cls(sale.gain) }, money(sale.gain))))) : null,
+        el("td", { class:cls(sale.gain) }, money(sale.gain)),
+        el("td", {}, sale.specific ? "named lots" : "account's method"),
+        el("td", {}, el("button", { class:"action", type:"button",
+          "aria-label":`Choose the lots sold on ${sale.sold}`,
+          onclick:()=>openSaleLots(sale.transaction, sale.split,
+            () => openHoldings(item.account).catch((error) => say(error.message, "error")))
+            .catch((error)=>say(error.message, "error")) }, "Choose lots…"))))) : null,
     item.moves.length ? el("ul", { class:"holding-moves" },
       ...item.moves.map((move) => el("li", {}, move.text))) : null,
     ...item.problems.map((problem) => el("p", { class:"note neg" }, problem))));
   backdrop.append(el("section", { class:"detail-dialog holdings-dialog" },
     el("h2", {}, "Holdings and cost basis"),
     el("p", { class:"note" },
-      "Lots come from each security account's transactions: a sale takes the oldest "
-      + "shares first, or the average cost where the account says so. Gains compare with the latest quote; nothing is stored or rewritten."),
+      "Lots come from each security account's transactions: a sale takes the lots it "
+      + "names, otherwise the oldest shares first, or the average cost where the account "
+      + "says so. Gains compare with the latest quote; the lots are never stored."),
     data.holdings.length
       ? table(["Holding", { label:"Shares", num:true }, { label:"Cost", num:true },
           { label:"Market value", num:true }, { label:"Unrealized", num:true }], rows)
       : el("p", { class:"note" }, "No security holdings."),
     ...details,
     el("div", { class:"toolbar" }, el("span", { class:"spacer" }),
+      el("button", { class:"action", type:"button",
+        onclick:()=>openRealizedGains(null).catch((error)=>say(error.message, "error")) },
+        "Realized gains…"),
+      el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Close"))));
+  document.body.append(backdrop);
+}
+
+// Name the lots one sale sells; shares left unassigned sell by the account's method.
+async function openSaleLots(transaction, split, onSaved) {
+  const query = `transaction=${encodeURIComponent(transaction)}&split=${encodeURIComponent(split)}`;
+  const data = await get(`/api/holdings/sale-lots?${query}`);
+  const backdrop = el("div", {
+    class:"detail-backdrop",
+    onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
+  });
+  const named = Object.fromEntries(data.picks.map((pick) => [pick.lot, pick.quantity]));
+  const inputs = data.offered.map((lot) => ({ lot, input: el("input", {
+    value:named[lot.lot] || "", placeholder:"0", inputmode:"decimal",
+    "aria-label":`Shares to sell from the lot bought ${lot.acquired}` }) }));
+  const message = el("p", { class:"note neg", role:"alert" });
+  const store = async (picks) => {
+    try {
+      await post("/api/holdings/sale-lots", { transaction, split, picks });
+    } catch (error) { message.textContent = error.message; return; }
+    backdrop.remove();
+    if (onSaved) onSaved();
+  };
+  const method = data.method === "average" ? "average cost" : "oldest shares first";
+  backdrop.append(el("section", { class:"detail-dialog" },
+    helpHeading("Choose the lots a sale sells", "specific-lots"),
+    el("p", {}, data.sale),
+    el("p", { class:"note" }, "Enter the shares to sell from each lot. Shares you do not "
+      + `assign are sold by the account's method (${method}).`),
+    inputs.length ? table(["Lot", "Shares to sell"], inputs.map(({ lot, input }) =>
+      [lot.text, input])) : el("p", { class:"note" }, "No lots were held before this sale."),
+    message,
+    el("div", { class:"toolbar" }, el("span", { class:"spacer" }),
+      el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Cancel"),
+      el("button", { class:"action", type:"button", onclick:()=>store([]) },
+        "Use the account's method"),
+      el("button", { class:"action primary", type:"button", onclick:()=>store(
+        inputs.filter(({ input }) => input.value.trim() && Number(input.value) !== 0)
+          .map(({ lot, input }) => ({ lot:lot.lot, quantity:input.value.trim() }))) },
+        "Save"))));
+  document.body.append(backdrop);
+}
+
+// Realized gains by year, with every sale and the lots it took; prints on its own.
+async function openRealizedGains(year) {
+  const data = await get(year ? `/api/realized-gains?year=${year}` : "/api/realized-gains");
+  document.querySelector(".gains-backdrop")?.remove();
+  const backdrop = el("div", {
+    class:"detail-backdrop gains-backdrop printable-dialog",
+    onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
+  });
+  const choice = el("select", { "aria-label":"Year",
+    onchange:()=>openRealizedGains(choice.value || null)
+      .catch((error)=>say(error.message, "error")) },
+    el("option", { value:"" }, "All years"),
+    ...data.available_years.slice().reverse().map((value) =>
+      el("option", { value:String(value) }, String(value))));
+  choice.value = data.year ? String(data.year) : "";
+  const reopen = () => openRealizedGains(data.year)
+    .catch((error) => say(error.message, "error"));
+  const totals = data.years.map((total) => el("tr", {},
+    el("td", {}, String(total.year)), el("td", {}, total.currency || "mixed"),
+    el("td", { class:"num" }, String(total.sales)),
+    el("td", { class:"num" }, money(total.proceeds)),
+    el("td", { class:"num" }, money(total.cost)),
+    el("td", { class:cls(total.gain) }, money(total.gain))));
+  const sales = data.sales.map((sale) => el("tr", {},
+    el("td", {}, sale.sold), el("td", {}, sale.account_name),
+    el("td", { class:"num" }, sale.quantity), el("td", { class:"num" }, money(sale.proceeds)),
+    el("td", { class:"num" }, money(sale.cost)), el("td", { class:cls(sale.gain) }, money(sale.gain)),
+    el("td", {}, ...sale.lots.map((lot) => el("div", {}, lot.text))),
+    el("td", {}, sale.specific ? "named lots" : "account's method"),
+    el("td", { class:"screen-only" }, el("button", { class:"action", type:"button",
+      "aria-label":`Choose the lots sold on ${sale.sold}`,
+      onclick:()=>openSaleLots(sale.transaction, sale.split, reopen)
+        .catch((error)=>say(error.message, "error")) }, "Choose lots…"))));
+  const printDialog = () => {
+    document.body.classList.add("printing-dialog");
+    const done = () => {
+      document.body.classList.remove("printing-dialog");
+      window.removeEventListener("afterprint", done);
+    };
+    window.addEventListener("afterprint", done);
+    window.print();
+  };
+  backdrop.append(el("section", { class:"detail-dialog gains-dialog" },
+    helpHeading("Realized gains", "specific-lots"),
+    el("p", { class:"note" }, "Each sale's gain is its proceeds less the cost of the lots it "
+      + "took. Amounts in different currencies are totalled separately."),
+    el("div", { class:"toolbar screen-only" }, el("label", {}, "Year ", choice)),
+    el("h3", {}, data.year ? `By year: ${data.year}` : "By year"),
+    totals.length ? table(["Year", "Currency", { label:"Sales", num:true },
+      { label:"Proceeds", num:true }, { label:"Cost", num:true }, { label:"Gain", num:true }], totals)
+      : el("p", { class:"note" }, "No sales."),
+    el("h3", {}, "Sales"),
+    sales.length ? table(["Sold", "Account", { label:"Shares", num:true },
+      { label:"Proceeds", num:true }, { label:"Cost", num:true }, { label:"Gain", num:true },
+      "Lots", "Chosen by", ""], sales) : el("p", { class:"note" }, "No sales."),
+    ...data.problems.map((problem) => el("p", { class:"note neg" }, problem)),
+    el("div", { class:"toolbar screen-only" }, el("span", { class:"spacer" }),
+      el("button", { class:"action", type:"button", onclick:printDialog }, "Print"),
       el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Close"))));
   document.body.append(backdrop);
 }

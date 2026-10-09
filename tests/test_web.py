@@ -6576,3 +6576,117 @@ class TestTransactionTagsAndDocumentRoutes:
         assert json.loads(caught.value.read())["code"] == "attachment.not_found"
         assert client.database.get_transaction(transaction.handle).serialize() == before
         assert sorted(item.name for item in folder.iterdir()) in ([], ["escape.txt"])
+
+
+class TestSaleLotsAndRealizedGains:
+    """Specific lots through gen/services/lots and the realized-gains report."""
+
+    @pytest.fixture
+    def trades(self, client):
+        from breadsched.gen.lib import Account, AccountType, Commodity, Split, Transaction
+
+        db = client.database
+        assets = next(item for item in db.iter_accounts() if item.name == "Assets")
+        checking = next(item for item in db.iter_accounts() if item.name == "Checking")
+        fund = Commodity(namespace="FUND", mnemonic="IDX", fullname="Index", fraction=1000)
+        account = Account(
+            name="Index",
+            atype=AccountType.INVESTMENT,
+            parent=assets.handle,
+            commodity=fund.handle,
+            commodity_scu=1000,
+        )
+        made = []
+        with db.transaction("Trades") as txn:
+            db.add_commodity(fund, txn)
+            db.add_account(account, txn)
+            for when, quantity, value in (
+                (date(2024, 1, 10), "10", "1000"),
+                (date(2025, 1, 10), "10", "1500"),
+                (date(2026, 2, 1), "-5", "-1000"),
+            ):
+                trade = Transaction(post_date=when, description="Trade")
+                trade.currency = checking.commodity
+                trade.splits = [
+                    Split(account.handle, Money(value), quantity=Money(quantity)),
+                    Split(checking.handle, -Money(value)),
+                ]
+                db.add_transaction(trade, txn)
+                made.append(trade)
+        return account, made
+
+    def test_a_sale_names_its_lots_and_the_report_follows(self, client, trades):
+        account, (first, second, sale) = trades
+        split = sale.splits[0].handle
+        _status, holdings = client.get("/api/holdings")
+        [holding] = [item for item in holdings["holdings"] if item["account"] == account.handle]
+        [listed] = holding["sales"]
+        assert (listed["split"], listed["specific"]) == (split, False)
+
+        query = f"transaction={sale.handle}&split={split}"
+        status, offered = client.get(f"/api/holdings/sale-lots?{query}")
+        assert status == 200 and offered["method"] == "fifo"
+        assert [lot["lot"] for lot in offered["offered"]] == [first.handle, second.handle]
+        assert offered["offered"][1]["text"] == "bought 2025-01-10: 10 shares, cost 1,500.00"
+
+        status, saved = client.post(
+            "/api/holdings/sale-lots",
+            {
+                "transaction": sale.handle,
+                "split": split,
+                "picks": [{"lot": second.handle, "quantity": "5"}],
+            },
+        )
+        assert status == 200 and saved["specific"] is True
+        assert saved["taken"][0]["lot"] == second.handle
+
+        _status, report = client.get("/api/realized-gains")
+        [row] = report["sales"]
+        assert (row["gain"], row["specific"], row["lots"][0]["lot"]) == (
+            "250.00",
+            True,
+            second.handle,
+        )
+        assert "named lots" in row["text"]
+        assert report["available_years"] == [2026]
+        assert [total["year"] for total in report["years"]] == [2026]
+        assert client.get("/api/realized-gains?year=2025")[1]["sales"] == []
+
+        status, cleared = client.post(
+            "/api/holdings/sale-lots", {"transaction": sale.handle, "split": split, "picks": []}
+        )
+        assert status == 200 and cleared["specific"] is False
+
+    def test_rejected_lots_leave_the_sale_unchanged(self, client, trades):
+        account, (first, second, sale) = trades
+        split = sale.splits[0].handle
+        before = client.database.get_transaction(sale.handle).serialize()
+        for picks, code in (
+            ([{"lot": first.handle, "quantity": "11"}], "lots.quantity.exceeds_lot"),
+            ([{"lot": "nope", "quantity": "1"}], "lots.lot.unknown"),
+            ([{"lot": first.handle, "quantity": "x"}], "lots.quantity.invalid"),
+        ):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post(
+                    "/api/holdings/sale-lots",
+                    {"transaction": sale.handle, "split": split, "picks": picks},
+                )
+            assert (caught.value.code, json.loads(caught.value.read())["code"]) == (400, code)
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/holdings/sale-lots",
+                {"transaction": sale.handle, "split": split, "picks": "all"},
+            )
+        assert caught.value.code == 400
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get(
+                f"/api/holdings/sale-lots?transaction={first.handle}&split={first.splits[0].handle}"
+            )
+        assert json.loads(caught.value.read())["code"] == "lots.split.not_sale"
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get(f"/api/holdings/sale-lots?transaction=missing&split={split}")
+        assert caught.value.code == 404
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get("/api/realized-gains?year=soon")
+        assert caught.value.code == 400
+        assert client.database.get_transaction(sale.handle).serialize() == before

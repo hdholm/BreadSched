@@ -67,7 +67,10 @@ their own read-only field because BreadSched-authored transaction notes,
 plan-resolution/link state, rejected matches, and split planning/FSA classifications
 are retained across re-import. Split-level annotations are retained only when the
 same source split GUID still exists, so a materially replaced source split cannot
-inherit stale BreadSched state. Transactions with a split reconciled in BreadSched
+inherit stale BreadSched state. A sale's named lots (`Split.lot_picks`) are kept
+only while the split stays in the same account; they are not source facts, so they
+never make a re-import withhold a change and write-back never sends them (GnuCash
+keeps its own lot assignment). Transactions with a split reconciled in BreadSched
 follow the narrower rule in *Locally reconciled imported transactions* below.
 
 A GnuCash commodity with quote retrieval turned on (`quote_flag`, or

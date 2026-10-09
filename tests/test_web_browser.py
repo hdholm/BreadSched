@@ -1095,3 +1095,58 @@ def test_online_quotes_choose_a_source_and_fetch(page, served, monkeypatch, tmp_
     fund = db.get_commodity_by_mnemonic("G")
     assert fund.quote_source == "tsp"
     assert [price.source for price in db.iter_prices(fund.handle)] == ["Online: tsp.gov"]
+
+
+def test_a_sale_names_its_lots_and_the_gains_report_prints_alone(page, served):
+    from breadsched.gen.lib import Account, AccountType, Commodity, Money, Split, Transaction
+
+    db, _httpd = served
+    assets = next(item for item in db.iter_accounts() if item.name == "Assets")
+    checking = next(item for item in db.iter_accounts() if item.atype is AccountType.BANK)
+    fund = Commodity(namespace="FUND", mnemonic="IDX", fullname="Index", fraction=1000)
+    account = Account(
+        name="Index",
+        atype=AccountType.INVESTMENT,
+        parent=assets.handle,
+        commodity=fund.handle,
+        commodity_scu=1000,
+    )
+    trades = []
+    with db.transaction("Trades") as txn:
+        db.add_commodity(fund, txn)
+        db.add_account(account, txn)
+        for when, quantity, value in (
+            (date(2024, 1, 10), "10", "1000"),
+            (date(2025, 1, 10), "10", "1500"),
+            (date(2026, 2, 1), "-5", "-1000"),
+        ):
+            trade = Transaction(post_date=when, description="Trade")
+            trade.currency = checking.commodity
+            trade.splits = [
+                Split(account.handle, Money(value), quantity=Money(quantity)),
+                Split(checking.handle, -Money(value)),
+            ]
+            db.add_transaction(trade, txn)
+            trades.append(trade)
+
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Accounts", exact=True).first.click()
+    page.get_by_role("button", name="Holdings and cost basis…").click()
+    page.locator("details.holding summary").first.click()
+    page.get_by_role("button", name="Choose the lots sold on 2026-02-01").click()
+    page.locator("[aria-label='Shares to sell from the lot bought 2025-01-10']").fill("5")
+    page.get_by_role("button", name="Save", exact=True).click()
+    page.wait_for_selector("text=named lots")
+    assert db.get_transaction(trades[2].handle).splits[0].lot_picks[0].lot == trades[1].handle
+
+    page.get_by_role("button", name="Realized gains…").click()
+    dialog = page.locator(".gains-dialog")
+    dialog.wait_for()
+    assert "bought 2025-01-10: 5 shares, cost 750.00" in dialog.inner_text()
+    page.evaluate("window.print = () => { window.__printed = document.body.className; }")
+    dialog.get_by_role("button", name="Print").click()
+    assert "printing-dialog" in page.evaluate("window.__printed")
+    page.emulate_media(media="print")
+    assert page.locator("main").is_hidden()
+    assert dialog.is_visible()
+    page.emulate_media(media="screen")

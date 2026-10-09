@@ -177,6 +177,16 @@ share splits, and notes
 Investment or Retirement account's editor chooses **Cost of shares sold**: first in,
 first out, or average cost.
 
+## Choose the lots a sale sells
+
+In **Holdings and Cost Basis**, expand a holding and choose **Choose Lots…** beside a
+sale. Enter the shares to sell from each lot listed (the lots held just before the
+sale) and choose **Save**; shares left unassigned are sold by the account's method,
+and **Use the Account's Method** clears the choice. **Realized Gains…** shows every
+sale with the lots it took and totals by year; choose a year, open a sale to choose
+its lots, or **Print…** the report. See
+[Specific lots and realized gains](../USER_GUIDE.md#specific-lots-and-realized-gains).
+
 ## Online quotes
 
 In Accounts, choose **Actions → Online Quotes…**. Each security and foreign currency

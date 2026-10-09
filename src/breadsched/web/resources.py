@@ -45,7 +45,12 @@ from .gnucash_writeback_resource import (
     gnucash_writeback_settings,
 )
 from .guide_resource import guide
-from .holdings_resource import holdings
+from .holdings_resource import (
+    holdings,
+    realized_gains_report,
+    sale_lots_save,
+    sale_lots_view,
+)
 from .import_resource import import_defaults, import_local, import_review, import_review_resolve
 from .loan_resource import loan_options, loan_preview, loan_save
 from .net_worth_resource import net_worth_change, net_worth_history
@@ -329,6 +334,8 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/expense-explorer": _expense_explorer,
     "/api/net-worth-history": net_worth_history,
     "/api/holdings": holdings,
+    "/api/holdings/sale-lots": sale_lots_view,
+    "/api/realized-gains": realized_gains_report,
     "/api/net-worth-change": net_worth_change,
     "/api/review": _review,
     "/api/scenarios": _without_query(scenarios),
@@ -374,6 +381,7 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/quotes/source": quote_source_save,
     "/api/quotes/key": quote_key_save,
     "/api/quotes/update": quotes_update,
+    "/api/holdings/sale-lots": sale_lots_save,
     "/api/plan/settings": plan_settings_save,
     "/api/account/fsa-years": account_fsa_years_save,
     "/api/fsa/claim/save": fsa_claim_save,

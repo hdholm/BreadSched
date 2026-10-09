@@ -195,6 +195,16 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
 @media (max-width: 800px) { .review-grid { grid-template-columns: 1fr; } }
 @media print {
   @page { size: landscape; margin: 12mm; }
+  /* A report dialog prints on its own (Print in the dialog), without the page. */
+  body.printing-dialog main, body.printing-dialog .print-only { display: none !important; }
+  body.printing-dialog .detail-backdrop.printable-dialog {
+    display: block !important; position: static; background: none; padding: 0;
+  }
+  body.printing-dialog .printable-dialog .detail-dialog {
+    box-shadow: none; border: 0; max-height: none; overflow: visible; width: auto;
+    max-width: none; margin: 0;
+  }
+  .screen-only { display: none !important; }
   :root { --ink: #000; --dim: #4b4b4b; --line: #bfc3c8; --bg: #fff; --panel: #fff; }
   body { background: #fff; font-size: 10pt; }
   header { display: none !important; }

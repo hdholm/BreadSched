@@ -19,6 +19,7 @@ from ...gen.engine.category_report import CategoryReport
 from ...gen.engine.completeness import Completeness, combine
 from ...gen.engine.dashboard import Dashboard, MissedGroup
 from ...gen.engine.projection_result import Projection
+from ...gen.engine.realized_gains import RealizedGainsReport
 from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
 from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer, SpendingPoint
@@ -55,6 +56,7 @@ __all__ = [
     "money_text",
     "plan_layout",
     "projection_layout",
+    "realized_gains_layout",
     "signed_money_text",
 ]
 
@@ -1138,3 +1140,72 @@ def net_worth_change_layout(change: NetWorthChange) -> ReportDocument:
         " · to date" if change.partial else ""
     )
     return ReportDocument("Net worth change", subtitle, (Section(blocks),), kind="net-worth-change")
+
+
+def realized_gains_layout(
+    report: RealizedGainsReport,
+    currencies: dict[str | None, str],
+    *,
+    year: int | None = None,
+    account_name: str = "",
+) -> ReportDocument:
+    """Realized gains by year, then every sale with the lots it took."""
+    from ...gen.engine.cost_basis import shares_text
+    from ...presentation import lot_text
+
+    totals = tuple(
+        TableRow(
+            (
+                Cell(str(total.year)),
+                Cell(currencies.get(total.currency, "mixed")),
+                Cell(str(total.sales), numeric=True),
+                _amount(total.proceeds),
+                _amount(total.cost),
+                _amount(total.gain, signed=True),
+            )
+        )
+        for total in report.years
+    )
+    sales = tuple(
+        TableRow(
+            (
+                Cell(item.sold.isoformat()),
+                Cell(item.account_name),
+                Cell(shares_text(item.sale.quantity), numeric=True),
+                _amount(item.sale.proceeds),
+                _amount(item.sale.cost),
+                _amount(item.sale.gain, signed=True),
+                Cell("\n".join(lot_text(lot) for lot in item.lots) or "—"),
+                Cell("named lots" if item.sale.specific else "account's method"),
+            )
+        )
+        for item in report.sales
+    )
+    blocks: list[Block] = [
+        Paragraph(
+            "Each sale's gain is its proceeds less the cost of the lots it took: the lots "
+            "it names, or otherwise the oldest first (or the average cost where the account "
+            "says so). Amounts in different currencies are totalled separately."
+        ),
+        Heading("By year"),
+        Table(
+            _columns("Year", "Currency", "#Sales", "#Proceeds", "#Cost", "#Gain"),
+            totals,
+            empty="No sales.",
+        ),
+        Heading("Sales"),
+        Table(
+            _columns(
+                "Sold", "Account", "#Shares", "#Proceeds", "#Cost", "#Gain", "Lots", "Chosen by"
+            ),
+            sales,
+            empty="No sales.",
+        ),
+        *_notes(report.problems, warning=True),
+    ]
+    subtitle = " · ".join(
+        part for part in (str(year) if year is not None else "All years", account_name) if part
+    )
+    return ReportDocument(
+        "Realized gains", subtitle, (Section(tuple(blocks)),), kind="realized-gains"
+    )

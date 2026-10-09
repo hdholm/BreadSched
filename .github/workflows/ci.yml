@@ -254,9 +254,22 @@ jobs:
             mingw-w64-ucrt-x86_64-nsis
 
       - name: Provide NSIS plugins
-        # MSYS2's NSIS 3.13 package carries no plugins; the official build does.
+        # MSYS2's NSIS package carries no x86-unicode plugins; the official build does.
+        # Chocolatey reports success when its feed is unreachable and nothing was
+        # installed, so check for the plugins and retry before giving up.
         shell: pwsh
-        run: choco install nsis --no-progress -y
+        run: |
+          $plugin = 'NSIS\Plugins\x86-unicode\nsDialogs.dll'
+          for ($attempt = 1; $attempt -le 4; $attempt++) {
+            choco install nsis --no-progress -y
+            foreach ($root in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+              if (Test-Path (Join-Path $root $plugin)) { exit 0 }
+            }
+            Write-Host "NSIS is not installed after attempt $attempt; retrying"
+            Start-Sleep -Seconds (20 * $attempt)
+          }
+          Write-Error 'Chocolatey did not install NSIS with its x86-unicode plugins'
+          exit 1
 
       - name: Build the installer
         run: packaging/windows/build-installer.sh dist/windows

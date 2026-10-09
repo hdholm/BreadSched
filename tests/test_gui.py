@@ -3442,9 +3442,108 @@ class TestDerivedPlanView:
             lines = []
             child = detail.get_child().get_first_child()
             while child is not None:
-                lines.append(child.get_label())
+                # A sale's row is a box: its line, then Choose Lots….
+                label = child if isinstance(child, Gtk.Label) else child.get_first_child()
+                lines.append(label.get_label())
                 child = child.get_next_sibling()
             assert "Share split 2025-07-01: 2 shares became 4" in lines
+            assert any(line.startswith("Sold 2025-06-02: 1 shares") for line in lines)
+            assert len(dialog.choose_buttons) == 1
+        finally:
+            dialog.destroy()
+
+    def _lots_book(self, app, populated_book):
+        from breadsched.gen.lib import Account, AccountType, Commodity, Split, Transaction
+
+        app.open_book(populated_book)
+        db = app.db
+        assets = next(item for item in db.iter_accounts() if item.name == "Assets")
+        checking = next(item for item in db.iter_accounts() if item.atype is AccountType.BANK)
+        fund = Commodity(namespace="FUND", mnemonic="IDX", fullname="Index", fraction=1000)
+        account = Account(
+            name="Index",
+            atype=AccountType.INVESTMENT,
+            parent=assets.handle,
+            commodity=fund.handle,
+            commodity_scu=1000,
+        )
+        trades = []
+        for when, quantity, value in (
+            (date(2024, 1, 10), "10", "1000"),
+            (date(2025, 1, 10), "10", "1500"),
+            (date(2026, 2, 1), "-5", "-1000"),
+        ):
+            trade = Transaction(post_date=when, description="Trade")
+            trade.currency = checking.commodity
+            trade.splits = [
+                Split(account.handle, Money(value), quantity=Money(quantity)),
+                Split(checking.handle, -Money(value)),
+            ]
+            trades.append(trade)
+        with db.transaction("Holding") as txn:
+            db.add_commodity(fund, txn)
+            db.add_account(account, txn)
+            for trade in trades:
+                db.add_transaction(trade, txn)
+        return db, account, trades
+
+    def test_a_sale_names_its_lots_from_holdings(self, app, window, populated_book):
+        from breadsched.gen.engine.cost_basis import cost_basis
+        from breadsched.gui.dialogs.holdings_dialog import HoldingsDialog
+
+        db, account, (first, second, sale) = self._lots_book(app, populated_book)
+        holdings = HoldingsDialog(window, db)
+        try:
+            [button] = holdings.choose_buttons
+            holdings.details[0].set_expanded(True)
+            chooser = holdings.choose_lots(sale.handle, sale.splits[0].handle)
+            assert list(chooser.entries) == [first.handle, second.handle]
+            chooser.entries[first.handle].set_text("11")
+            assert chooser.save() is False
+            assert "more shares than it holds" in chooser.message.get_text()
+            chooser.entries[first.handle].set_text("")
+            chooser.entries[second.handle].set_text("5")
+            assert chooser.save() is True
+            [sold] = cost_basis(db, account).sales
+            assert sold.specific and sold.cost == Money(750)
+            # The holdings window redrew with the new gain.
+            texts = [
+                (row if isinstance(row, Gtk.Label) else row.get_first_child()).get_label()
+                for row in _children(holdings.details[0].get_child())
+            ]
+            assert any(text.endswith("(named lots)") for text in texts)
+            assert holdings.details[0].get_expanded()  # still open after the redraw
+            again = holdings.choose_lots(sale.handle, sale.splits[0].handle)
+            assert again.entries[second.handle].get_text() == "5"
+            assert again.use_method() is True
+            assert not cost_basis(db, account).sales[0].specific
+        finally:
+            holdings.destroy()
+
+    def test_realized_gains_filter_choose_and_print(self, app, window, populated_book, monkeypatch):
+        from breadsched.gui import printing
+        from breadsched.gui.dialogs.realized_gains_dialog import RealizedGainsDialog
+
+        db, account, (first, second, sale) = self._lots_book(app, populated_book)
+        printed = []
+        monkeypatch.setattr(printing, "print_document", lambda parent, doc: printed.append(doc))
+        dialog = RealizedGainsDialog(window, db)
+        try:
+            assert dialog.years == [2026]
+            [row] = dialog.sale_rows
+            assert "gain 500.00 (the account's method)" in row.get_label()
+            chooser = dialog.choose_lots(sale.handle, sale.splits[0].handle)
+            chooser.entries[second.handle].set_text("5")
+            assert chooser.save()
+            [row] = dialog.sale_rows
+            assert "gain 250.00 (named lots)" in row.get_label()
+            dialog.year_choice.set_selected(1)
+            assert dialog.year == 2026 and len(dialog.report.sales) == 1
+            dialog.print_report()
+            [document] = printed
+            text = document.text()
+            assert document.title == "Realized gains" and document.subtitle == "2026"
+            assert "bought 2025-01-10: 5 shares, cost 750.00" in text and "named lots" in text
         finally:
             dialog.destroy()
 
@@ -7793,6 +7892,7 @@ class TestDialogsFitTheScreen:
         ("gnucash_writeback_dialog", "GnuCashWritebackDialog", None),
         ("historical_estimates_dialog", "HistoricalEstimatesDialog", None),
         ("holdings_dialog", "HoldingsDialog", None),
+        ("realized_gains_dialog", "RealizedGainsDialog", None),
         ("import_dialog", "ImportDialog", None),
         ("loan_dialog", "LoanDialog", None),
         ("net_worth_history_dialog", "NetWorthHistoryDialog", None),

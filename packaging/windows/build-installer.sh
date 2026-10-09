@@ -63,9 +63,9 @@ cp "$here/stop-helpers.ps1" "$stage/stop-helpers.ps1"
 
 # Build with one NSIS throughout: makensis, its stubs, and its x86-unicode plugins
 # (nsDialogs for the MUI pages, nsExec for the helper scripts) must come from the
-# same release. MSYS2's NSIS 3.13 ships no plugins at all, so CI installs the
-# official build and that is preferred; MSYS2's makensis is used only with plugins
-# of its own.
+# same release. MSYS2's NSIS ships no x86-unicode plugins (only amd64-unicode ones),
+# so CI installs the official build and that is preferred; MSYS2's makensis is used
+# only with x86-unicode plugins of its own.
 makensis_bin=""
 for nsis in "/c/Program Files (x86)/NSIS" "/c/Program Files/NSIS"; do
     if [ -x "$nsis/makensis.exe" ] && [ -f "$nsis/Plugins/x86-unicode/nsDialogs.dll" ]; then
