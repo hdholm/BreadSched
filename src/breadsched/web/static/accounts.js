@@ -1380,9 +1380,15 @@ async function showRegister() {
             ? ` (${row.documents.filter((item)=>item.missing).length} missing)` : "")) : null),
       el("td", { class: "muted" }, row.transfer),
       el("td", {}, reconcileButton(row)),
+      // A security's register shows each row's shares and price (#323).
+      data.security ? el("td", { class: "num" }, row.shares) : null,
+      data.security ? el("td", { class: "num" }, row.price) : null,
       el("td", { class: "num" }, amount > 0 ? money(row.amount) : ""),
       el("td", { class: "num" }, amount < 0 ? money(String(row.amount).slice(1)) : ""),
-      el("td", { class: cls(row.balance) }, money(row.balance)),
+      data.security
+        ? el("td", { class: `num ${String(row.share_balance).startsWith("-") ? "neg" : ""}` },
+          row.share_balance)
+        : el("td", { class: cls(row.balance) }, money(row.balance)),
       el("td", {}, el("div", { class:"row" },
         el("button", { class:"action", type:"button", title:"Edit this transaction in its row",
           onclick:()=>editRow(row.split) },
@@ -1409,7 +1415,9 @@ async function showRegister() {
         if (account) openReconciliation(account).catch((error)=>say(error.message,"error"));
       }}, "Reconcile…"),
       el("span", { class: "muted" }, `${data.rows.length} entries`)),
+    data.summary ? el("p", { class: "note register-summary" }, data.summary) : null,
     table(["Date", "Num", "Description", "Transfer", "R",
+           ...(data.security ? [{ label: "Shares", num: true }, { label: "Price", num: true }] : []),
            { label: data.debit_label, num: true }, { label: data.credit_label, num: true },
-           { label: "Balance", num: true }, ""], rows));
+           { label: data.security ? "Shares Held" : "Balance", num: true }, ""], rows));
 }

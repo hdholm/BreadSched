@@ -184,6 +184,24 @@ parallel transaction models:
   `services.toggle_cleared`, which flips only `n`↔`c`, refuses `y`/frozen/void,
   and in the same database change adds a newly cleared candidate to (or removes
   it from) the account's open statement.
+- **Securities (#323).** An account whose commodity is not a currency
+  (`ledger.security_of`) has GnuCash's stock-register columns: `SECURITY_COLUMNS`
+  adds Shares and Price before the amounts and puts Shares Held
+  (`RegisterRow.share_balance`, kept by `register` and `update_register`) in place
+  of the amount balance, whose sum of trade amounts is neither shares nor value.
+  Leaving a Shares, Price, or amount cell works out the third
+  (`services/entry_input.read_entry_trade` over `engine/entry_input.fill_trade`):
+  shares or a price recompute the amount, an amount recomputes the price, or the
+  shares when none are typed. Computed shares round to the account's SCU
+  (`ledger.share_fraction`) and prices to six places. The shares are saved as the
+  split's `quantity`, signed by the amount column; shares typed without an amount
+  (a share split) keep their own sign, and shares left as loaded keep the stored
+  quantity exactly. Split lines in a security take shares the same way. A buy or
+  sell without shares is refused at the Shares cell before the service, which
+  also requires them. The footer is `presentation.register_share_summary`: shares
+  held and their market value with the quote's date and source, or "no quote" and
+  the ledger amount, never an unquoted conversion. The transaction editor's
+  splits show a Shares entry for a security's split.
 - **Double Line.** The toolbar's **Double Line** toggle (remembered in view
   settings as `register.double_line`) adds a `NOTES` row under every transaction
   and the blank one. Its editable cell is the description column, drawn and edited
@@ -198,7 +216,13 @@ parallel transaction models:
   selects list the matches `GET /api/entry/accounts` returns, and the R column posts
   to `POST /api/register/cleared` (`toggle_cleared`). It keeps amounts as BigInt micro-units and
   posts exact `[numerator, denominator]` pairs, so a comma-decimal browser cannot be
-  misread, and keeps drafts across re-renders.
+  misread, and keeps drafts across re-renders. A security's register (`security` in
+  `GET /api/register`, with `shares`, `price`, and `share_balance` per row, each
+  split's exact `quantity`, `security_accounts`, and the footer `summary`) adds the
+  same Shares and Price cells; leaving one asks `GET /api/entry/trade` for the third
+  value, a fill ignores a cell typed while it ran, and Enter reads any cell not yet
+  read before saving. Shares are posted as decimal `quantity` text, which
+  `register_entry_resource` gives the service as the account's commodity.
 
 The full editor remains the place for complex metadata; the row's editor icon hands
 its contents to `TransactionDialog.prefill`.

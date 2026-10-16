@@ -5785,6 +5785,172 @@ class TestEntryInput:
         assert json.loads(caught.value.read())["code"] == code
 
 
+class TestSecurityRegister:
+    """#323: a security's register shows and takes shares through the shared rules."""
+
+    def _fund(self, client):
+        db = client.database
+        checking = db.get_account_by_name("Assets:Checking")
+        usd = next(item for item in db.iter_commodities() if item.is_currency)
+        fund = Commodity(namespace="FUND", mnemonic="VTTHX", fullname="Target 2035", fraction=1000)
+        account = Account(
+            name="VTTHX",
+            atype=AccountType.INVESTMENT,
+            parent=db.get_account_by_name("Assets").handle,
+            commodity=fund.handle,
+            commodity_scu=1000,
+        )
+        buy = Transaction(post_date=date(2026, 2, 3), description="Fund buy")
+        buy.currency = usd.handle
+        buy.splits = [
+            Split(account.handle, Money("250"), quantity=Money("10.123")),
+            Split(checking.handle, Money("-250")),
+        ]
+        with db.transaction("Fund") as txn:
+            db.add_commodity(fund, txn)
+            db.add_account(account, txn)
+            db.add_transaction(buy, txn)
+        return account, checking, buy, usd
+
+    def test_the_register_carries_shares_price_and_shares_held(self, client):
+        account, checking, buy, _usd = self._fund(client)
+        status, data = client.get(f"/api/register?account={account.handle}")
+        assert status == 200
+        assert data["security"] == {"mnemonic": "VTTHX", "share_fraction": 1000}
+        assert data["summary"] == "10.123 VTTHX shares · no quote; ledger amount 250.00"
+        assert account.handle in data["security_accounts"]
+        assert checking.handle not in data["security_accounts"]
+        [row] = data["rows"]
+        assert (row["shares"], row["price"], row["share_balance"]) == (
+            "10.123",
+            "24.696236",
+            "10.123",
+        )
+        quantities = {split["account"]: split["quantity"] for split in row["splits"]}
+        assert quantities == {account.handle: "10.123", checking.handle: None}
+
+        status, plain = client.get(f"/api/register?account={checking.handle}")
+        assert plain["security"] is None and plain["summary"] is None
+        assert all("shares" not in item for item in plain["rows"])
+
+    def test_the_trade_route_fills_the_third_value(self, client):
+        account, _checking, _buy, _usd = self._fund(client)
+        query = urllib.parse.urlencode(
+            {"account": account.handle, "shares": "8", "price": "30.25", "changed": "price"}
+        )
+        status, filled = client.get(f"/api/entry/trade?{query}")
+        assert status == 200
+        assert filled == {"shares": "8", "price": "30.25", "amount": "242.00"}
+        for params, code in (
+            (
+                {"account": account.handle, "shares": "x", "changed": "shares"},
+                "entry.shares.invalid",
+            ),
+            ({"account": _checking.handle, "shares": "1"}, "entry.account.not_security"),
+            ({"account": account.handle, "changed": "volume"}, "query.invalid"),
+        ):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.get(f"/api/entry/trade?{urllib.parse.urlencode(params)}")
+            assert json.loads(caught.value.read())["code"] == code
+
+    def test_an_entry_saves_the_shares_and_an_edit_keeps_them_exactly(self, client):
+        db = client.database
+        account, checking, buy, _usd = self._fund(client)
+        status, saved = client.post(
+            "/api/register/entry",
+            {
+                "date": "2026-03-01",
+                "description": "Fund sell",
+                "splits": [
+                    {"account": account.handle, "value": "-60.00", "quantity": "-2.5"},
+                    {"account": checking.handle, "value": "60.00"},
+                ],
+            },
+        )
+        assert status == 200
+        sold = db.get_transaction(saved["handle"]).split_for(account.handle)
+        assert (sold.value, sold.quantity) == (Money(-60), Money("-2.5"))
+
+        stored = db.get_transaction(buy.handle)
+        stored.split_for(account.handle).quantity = Money(1, 3)
+        with db.transaction("Thirds") as txn:
+            db.commit_transaction(stored, txn)
+        status, data = client.get(f"/api/register?account={account.handle}")
+        row = next(item for item in data["rows"] if item["handle"] == buy.handle)
+        mine = next(split for split in row["splits"] if split["account"] == account.handle)
+        status, _ = client.post(
+            "/api/register/entry",
+            {
+                "handle": buy.handle,
+                "date": row["date"],
+                "description": "Fund buy, renamed",
+                "splits": [
+                    {
+                        "handle": split["handle"],
+                        "account": split["account"],
+                        "value": split["value"],
+                        "quantity": split["quantity"],
+                    }
+                    for split in row["splits"]
+                ],
+            },
+        )
+        assert status == 200
+        assert mine["quantity"] == "0.33333333"
+        assert db.get_transaction(buy.handle).split_for(account.handle).quantity == Money(1, 3)
+
+    def test_rejected_share_entries_leave_the_book_unchanged(self, client):
+        db = client.database
+        account, checking, buy, _usd = self._fund(client)
+        before = sorted(txn.serialize()["handle"] for txn in db.iter_transactions())
+        stored = db.get_transaction(buy.handle).serialize()
+        for body, code in (
+            (
+                {
+                    "date": "2026-03-01",
+                    "description": "No shares",
+                    "splits": [
+                        {"account": account.handle, "value": "10.00"},
+                        {"account": checking.handle, "value": "-10.00"},
+                    ],
+                },
+                "transaction.quantity.required",
+            ),
+            (
+                {
+                    "date": "2026-03-01",
+                    "description": "Bad shares",
+                    "splits": [
+                        {"account": account.handle, "value": "10.00", "quantity": "lots"},
+                        {"account": checking.handle, "value": "-10.00"},
+                    ],
+                },
+                "request.invalid",
+            ),
+            (
+                {
+                    "handle": buy.handle,
+                    "date": "2026-02-03",
+                    "description": "Fund buy",
+                    "splits": [
+                        {
+                            "handle": split.handle,
+                            "account": split.account,
+                            "value": str(split.value.to_decimal() * 2),
+                        }
+                        for split in buy.splits
+                    ],
+                },
+                "transaction.quantity.conversion",
+            ),
+        ):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post("/api/register/entry", body)
+            assert json.loads(caught.value.read())["code"] == code
+        assert sorted(txn.serialize()["handle"] for txn in db.iter_transactions()) == before
+        assert db.get_transaction(buy.handle).serialize() == stored
+
+
 class TestRegisterEntry:
     """#158 on the web: the register's blank row and in-place edits.
 

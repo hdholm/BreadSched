@@ -1333,3 +1333,88 @@ def test_the_projection_chart_is_the_shared_line_chart_with_its_values(page):
     assert balances.count() == 1
     assert balances.locator("svg path[fill^='var(--series-']").count() >= 1
     assert "Total" in balances.locator("details.chart-values thead").text_content()
+
+
+def _add_fund(db):
+    """A security account with one imported buy, as a GnuCash book would bring it (#323)."""
+    from breadsched.gen.lib import Account, AccountType, Commodity, Money, Split, Transaction
+
+    usd = next(item for item in db.iter_commodities() if item.is_currency)
+    parent = next(a for a in db.iter_accounts() if db.full_name(a) == "Assets")
+    cash = next(
+        a
+        for a in db.iter_accounts()
+        if a.atype is AccountType.BANK and not a.hidden and not a.placeholder
+    )
+    fund = Commodity(namespace="FUND", mnemonic="VTTHX", fullname="Target 2035", fraction=1000)
+    account = Account(
+        name="VTTHX",
+        atype=AccountType.INVESTMENT,
+        parent=parent.handle,
+        commodity=fund.handle,
+        commodity_scu=1000,
+    )
+    buy = Transaction(post_date=date(2026, 2, 3), description="Fund buy")
+    buy.currency = usd.handle
+    buy.splits = [
+        Split(account.handle, Money("250"), quantity=Money("10.123")),
+        Split(cash.handle, Money("-250")),
+    ]
+    with db.transaction("Fund") as txn:
+        db.add_commodity(fund, txn)
+        db.add_account(account, txn)
+        db.add_transaction(buy, txn)
+    return account, cash
+
+
+def test_a_security_register_shows_and_takes_shares(page, served):
+    from breadsched.gen.lib import Money
+
+    db, httpd = served
+    account, cash = _add_fund(db)
+    # The page drops its token from the address once read, so open it afresh.
+    page.goto("about:blank")
+    page.goto(f"http://127.0.0.1:{httpd.server_port}/#token={httpd.token}")
+    _open_register(page)
+    page.locator("select").first.select_option(account.handle)
+    page.wait_for_selector("th:has-text('Shares Held')")
+    row = page.locator("tr:has-text('Fund buy')").first
+    assert "10.123" in row.inner_text() and "24.696236" in row.inner_text()
+    page.wait_for_selector("text=10.123 VTTHX shares · no quote; ledger amount 250.00")
+
+    _blank(page, "description").fill("Browser fund buy")
+    _blank(page, "transfer account").select_option(cash.handle)
+    _blank(page, "shares").fill("8")
+    _blank(page, "price").fill("30.25")
+    _blank(page, "price").press("Tab")
+    page.wait_for_function(
+        "() => [...document.querySelectorAll('tr.entry-row input.num')]"
+        ".some((node) => node.value === '242.00')"
+    )
+    _blank(page, "price").press("Enter")
+    page.wait_for_selector("text=Posted Browser fund buy.")
+    posted = next(t for t in db.iter_transactions() if t.description == "Browser fund buy")
+    mine = posted.split_for(account.handle)
+    assert (mine.value, mine.quantity) == (Money("242.00"), Money(8))
+    page.wait_for_selector("text=18.123 VTTHX shares")
+
+    # Enter straight from the price cell still works the amount out first.
+    _blank(page, "description").fill("Quick fund buy")
+    _blank(page, "transfer account").select_option(cash.handle)
+    _blank(page, "shares").fill("2")
+    _blank(page, "price").fill("25")
+    _blank(page, "price").press("Enter")
+    page.wait_for_selector("text=Posted Quick fund buy.")
+    quick = next(t for t in db.iter_transactions() if t.description == "Quick fund buy")
+    assert (quick.split_for(account.handle).value, quick.split_for(account.handle).quantity) == (
+        Money(50),
+        Money(2),
+    )
+
+    before = sorted(t.handle for t in db.iter_transactions())
+    _blank(page, "description").fill("No shares")
+    _blank(page, "transfer account").select_option(cash.handle)
+    page.locator("tr.entry-row [aria-label='New transaction buy']").first.fill("10")
+    page.locator("tr.entry-row [aria-label='New transaction buy']").first.press("Enter")
+    page.wait_for_selector("text=Enter the shares bought or sold, or a price and an amount.")
+    assert sorted(t.handle for t in db.iter_transactions()) == before

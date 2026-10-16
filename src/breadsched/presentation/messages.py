@@ -109,6 +109,9 @@ _SERVICE_MESSAGES = {
     "entry.account.not_found": "The account no longer exists",
     "entry.currency.not_found": "The entry's currency no longer exists",
     "entry.amount.invalid": "Enter an amount, or arithmetic such as 12.50+3",
+    "entry.shares.invalid": "Enter shares such as 12.345, or arithmetic such as 10+2.5",
+    "entry.price.invalid": "Enter a price such as 25.43, or arithmetic such as 100/4",
+    "entry.account.not_security": "This account holds no security, so it has no shares",
     "entry.date.invalid": "Enter a date such as 2026-03-15, 3/15, 15, t, +, or ]",
     "transaction.not_found": "The transaction no longer exists",
     "transaction.source.mismatch": "The transaction changed while it was being edited",
@@ -123,7 +126,9 @@ _SERVICE_MESSAGES = {
     "transaction.currency.invalid": "The transaction commodity must be a currency",
     "transaction.value.commodity": "Every split value must use the transaction currency",
     "transaction.quantity.commodity": "A split quantity must use its account commodity",
-    "transaction.quantity.required": "Enter the account-commodity quantity for this split",
+    "transaction.quantity.required": (
+        "Enter the shares (the account-commodity quantity) for this split"
+    ),
     "transaction.quantity.conversion": (
         "This split converts at its own rate; its amount cannot change without its quantity"
     ),

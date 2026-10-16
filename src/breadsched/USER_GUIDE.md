@@ -480,6 +480,11 @@ with split lines for entries of more than two splits, and let you edit an existi
 entry in place ([desktop](guide/desktop.md#enter-transactions-in-a-register),
 [browser](guide/web.md#enter-transactions-in-the-register)).
 
+An account that holds a security (a fund or stock, with shares rather than a
+currency) shows each transaction's shares and price and the shares held after it,
+and takes shares with each purchase or sale: any two of shares, price, and amount
+give the third ([desktop](guide/desktop.md#shares-in-an-investment-register)).
+
 ### Typing shortcuts in the register
 
 The desktop and browser registers read what you type the same way:

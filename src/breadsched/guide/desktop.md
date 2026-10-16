@@ -281,6 +281,29 @@ typing) the same way, or to fold two lines back into one. An **Imbalance** line
 shows how far the splits are from balancing; **Enter** saves only once they
 balance and one split is in this register's account.
 
+### Shares in an investment register
+
+The register of an account that holds a security, such as a mutual fund imported
+from GnuCash, shows **Shares** and **Price** for each transaction before the
+amounts, and **Shares Held** after each one instead of a balance. The line at the
+bottom gives the shares you hold and what they are worth at the latest price,
+with that price's date and source; with no price yet it says so and shows the
+amount in the books instead.
+
+To record a purchase or sale, type any two of **Shares**, **Price**, and the
+amount under **Buy** or **Sell**, and the third is worked out when you leave the
+cell: shares and a price give the amount (to the cent), shares and an amount give
+the price, and a price and an amount give the shares (to the fraction of a share
+the account records). Changing the shares or the price later recomputes the
+amount; changing the amount recomputes the price. Shares are entered as a number
+of shares; whether they are bought or sold follows the amount's column. A
+transaction needs its shares: without them it is not saved, and the cursor moves
+to **Shares**. A share split, which changes shares with no amount, shows its shares
+and no price.
+
+In the transaction editor, a split in such an account has a **Shares** entry
+beside its amount; a negative number means shares sold or moved out.
+
 **Double Line** in the toolbar adds a second line under every transaction, the
 blank one included, for its notes, as in GnuCash: Tab moves from the last amount to
 the notes line, and Enter saves what you typed there with the transaction. The

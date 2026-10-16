@@ -15,6 +15,7 @@ from datetime import date
 from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass, AccountType
 from ..lib.amount import Amount
+from ..lib.commodity import Commodity
 from ..lib.money import Money
 from ..lib.transaction import Split, Transaction
 from .currency import reporting_currency_handle
@@ -27,6 +28,8 @@ __all__ = [
     "register_headings",
     "register",
     "RegisterRow",
+    "security_of",
+    "share_fraction",
     "update_register",
     "totals_by_class",
     "totals_by_class_amount",
@@ -57,6 +60,28 @@ def _accumulate(total: Amount | None, item: Amount) -> Amount:
     if total is None or not total:
         return item
     return total + item
+
+
+def security_of(db: DbSQLite, account: str | Account | None) -> Commodity | None:
+    """The security an account holds, or ``None`` for an account kept in a currency.
+
+    Such an account's splits carry shares as their quantity, so its register
+    shows shares, a price, and a share balance beside the amounts (#323).
+    """
+    obj = db.get_account(account) if isinstance(account, str) else account
+    if obj is None or not obj.commodity:
+        return None
+    commodity = db.get_commodity(obj.commodity)
+    return commodity if commodity is not None and not commodity.is_currency else None
+
+
+def share_fraction(db: DbSQLite, account: str | Account) -> int:
+    """The smallest share unit an account records (its SCU, else the security's)."""
+    obj = db.get_account(account) if isinstance(account, str) else account
+    if obj is not None and obj.commodity_scu:
+        return obj.commodity_scu
+    security = security_of(db, obj)
+    return security.fraction if security is not None and security.fraction else 1
 
 
 def register_headings(atype: AccountType) -> tuple[str, str]:
@@ -140,6 +165,8 @@ class RegisterRow:
     transaction: Transaction
     split: Split
     running: Money
+    #: Shares held after this row, in an account that holds a security (#323).
+    share_balance: Money | None = None
 
     @property
     def post_date(self) -> date:
@@ -152,6 +179,11 @@ class RegisterRow:
     @property
     def amount(self) -> Money:
         return self.split.value
+
+    @property
+    def shares(self) -> Money:
+        """The shares this row adds (negative for shares sold or moved out)."""
+        return self.split.quantity
 
     @property
     def debit(self) -> Money | None:
@@ -188,6 +220,13 @@ def register(
     if start is not None:
         opening = balance_amount(db, handle, as_of=_day_before(start), natural_sign=False)
 
+    shares: Money | None = None
+    if security_of(db, obj) is not None:
+        shares = Money(0)
+        if start is not None:
+            for row in db.split_rows(handle, end=_day_before(start)):
+                shares += Money(row["quantity_num"], row["quantity_den"])
+
     rows: list[RegisterRow] = []
     running = opening
     for txn in db.iter_transactions(account=handle, start=start, end=end):
@@ -196,7 +235,16 @@ def register(
                 continue
             amount = Amount(split.value, txn.currency or currency)
             running = _accumulate(running, amount)
-            rows.append(RegisterRow(txn, split, (running * sign).value))
+            if shares is not None:
+                shares = shares + split.quantity
+            rows.append(
+                RegisterRow(
+                    txn,
+                    split,
+                    (running * sign).value,
+                    shares * sign if shares is not None else None,
+                )
+            )
     return rows
 
 
@@ -232,6 +280,7 @@ def update_register(
     sign = obj.sign() if obj else 1
     currency = reporting_currency_handle(db)
     running: Amount | None = None
+    shares: Money | None = Money(0) if security_of(db, obj) is not None else None
     for row in merged:
         amount = Amount(row.split.value, row.transaction.currency or currency)
         running = _accumulate(running, amount)
@@ -241,6 +290,13 @@ def update_register(
         # made an occasional save several times slower than the others.
         if row.running != value:
             row.running = value
+        if shares is not None:
+            shares = shares + row.split.quantity
+            held = shares * sign
+            if row.share_balance != held:
+                row.share_balance = held
+        elif row.share_balance is not None:
+            row.share_balance = None
     return merged
 
 

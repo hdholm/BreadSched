@@ -15,6 +15,7 @@ from ..gen.services.entry_input import (
     next_entry_num,
     read_entry_amount,
     read_entry_date,
+    read_entry_trade,
 )
 from .controls import service_error
 
@@ -50,6 +51,36 @@ def entry_amount(api: Api, query: QueryParams) -> dict[str, object]:
         raise service_error(result.errors[0])
     value = result.value.value
     return {"amount": None if value is None else str(value)}
+
+
+def entry_trade(api: Api, query: QueryParams) -> dict[str, object]:
+    """Shares, price, and amount of a trade with the third worked out (#323)."""
+    account = query.text("account", required=True) or ""
+    shares = query.text("shares") or ""
+    price = query.text("price") or ""
+    amount = query.text("amount") or ""
+    changed = query.choice("changed", ("shares", "price", "amount"), "amount")
+    currency = query.text("currency")
+    number_format = query.choice("number_format", _FORMATS, "auto")
+    query.finish()
+    result = read_entry_trade(
+        api.db,
+        account,
+        shares=shares,
+        price=price,
+        amount=amount,
+        changed=cast(Literal["shares", "price", "amount"], changed),
+        currency=currency,
+        number_format=cast(Literal["auto", "dot", "comma"], number_format),
+    )
+    if result.value is None:
+        raise service_error(result.errors[0])
+    filled = result.value
+    return {
+        "shares": None if filled.shares is None else f"{filled.shares:f}",
+        "price": None if filled.price is None else f"{filled.price:f}",
+        "amount": None if filled.amount is None else f"{filled.amount:f}",
+    }
 
 
 def entry_accounts(api: Api, query: QueryParams) -> dict[str, object]:

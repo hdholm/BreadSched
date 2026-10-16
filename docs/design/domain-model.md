@@ -150,6 +150,12 @@ quantity, the result depends on the account's commodity:
 An unchanged value keeps its stored quantity, so imported GnuCash detail
 survives an edit that does not touch the amount.
 
+The registers make the quantity visible and editable (#323): in an account holding
+a security (`ledger.security_of`), each row shows its shares, the price
+`value / quantity` implies (`entry_input.trade_price`, six places), and the running
+share balance (`RegisterRow.share_balance`), and an entry sends its shares as the
+split's quantity. A price shown in a register is the trade's own, never a quote.
+
 A commodity price is a first-class dated object identifying the security, quote
 currency, exact positive price, source, and quote type. As-of valuation selects the
 latest direct quote on or before the requested date and converts a commodity-tagged

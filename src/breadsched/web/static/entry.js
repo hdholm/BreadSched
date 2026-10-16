@@ -40,6 +40,28 @@ function entryValue(units) {
   return [units.toString(), ENTRY_DENOMINATOR];
 }
 
+// Shares keep every digit the security records, so they travel as decimal text
+// rather than scaled units (#323). These convert between the browser's typed
+// convention and the server's dot decimals.
+function entryDecimal(text, format = browserNumberFormat) {
+  // Undefined for unreadable text, null for blank; otherwise dot-decimal text.
+  let clean = String(text ?? "").trim().replace(/\s/g, "");
+  if (!clean) return null;
+  if (format === "comma") clean = clean.replace(/\./g, "").replace(",", ".");
+  else clean = clean.replace(/,/g, "");
+  return /^-?(\d+\.?\d*|\.\d+)$/.test(clean) ? clean : undefined;
+}
+
+function shownDecimal(text) {
+  // Dot-decimal text from the server, in the browser's convention.
+  if (text === null || text === undefined) return "";
+  return browserNumberFormat === "comma" ? String(text).replace(".", ",") : String(text);
+}
+
+function sizeText(text) {
+  return String(text ?? "").replace(/^-/, "");
+}
+
 // What typed text means comes from the server's shared entry rules
 // (gen/services/entry_input), the same ones the desktop register uses.
 const ENTRY_DATE_KEYS = new Set("+-=_[]tTmMhHyYrR");
@@ -128,6 +150,16 @@ async function editRow(split) {
   return true;
 }
 
+function blankLine() {
+  return { handle:null, account:"", memo:"", increase:"", decrease:"", shares:"", price:"",
+    settled:{} };
+}
+
+function tradeCells(holder) {
+  return { shares:(holder.shares || "").trim(), price:(holder.price || "").trim(),
+    increase:(holder.increase || "").trim(), decrease:(holder.decrease || "").trim() };
+}
+
 function registerEntry(data, usable, row) {
   const key = row ? row.split : "blank";
   const editing = Boolean(row);
@@ -135,12 +167,16 @@ function registerEntry(data, usable, row) {
   const referenced = new Set(editing ? row.splits.map((split) => split.account) : []);
   const accounts = usable.filter((item) => !item.hidden || referenced.has(item.handle));
   const transfers = accounts.filter((item) => item.handle !== state.account);
+  // An account holding a security takes shares and a price as well (#323).
+  const security = Boolean(data.security);
+  const holdsShares = new Set(data.security_accounts || []);
+  const span = security ? "11" : "9";
   if (!editing && (!selected || selected.hidden)) {
-    return [el("tr", { class:"entry-row" }, el("td", { colspan:"9", class:"note" },
+    return [el("tr", { class:"entry-row" }, el("td", { colspan:span, class:"note" },
       "Hidden accounts remain readable but take no new transactions."))];
   }
   if (!editing && !transfers.length) {
-    return [el("tr", { class:"entry-row" }, el("td", { colspan:"9", class:"note" },
+    return [el("tr", { class:"entry-row" }, el("td", { colspan:span, class:"note" },
       "No other visible account to transfer to."))];
   }
 
@@ -160,15 +196,24 @@ function registerEntry(data, usable, row) {
       increase: editing && simple && mineUnits > 0n ? entryText(mineUnits) : "",
       decrease: editing && simple && mineUnits < 0n ? entryText(-mineUnits) : "",
       handles: editing && simple ? [mine.handle, others[0].handle] : [null, null],
+      // Shares as a size beside an amount; signed only without one (a share split).
+      shares: editing && simple && mine.quantity
+        ? shownDecimal(mineUnits ? sizeText(mine.quantity) : mine.quantity) : "",
+      price: editing && simple ? shownDecimal(row.price || "") : "",
       split: editing && !simple,
       lines: editing && !simple ? [mine, ...others].filter(Boolean).map((split) => {
         const units = entryUnits(split.value, "dot");
         return { handle:split.handle, account:split.account, memo:split.memo || "",
           increase: units > 0n ? entryText(units) : "",
-          decrease: units < 0n ? entryText(-units) : "" };
+          decrease: units < 0n ? entryText(-units) : "",
+          shares: split.quantity ? shownDecimal(units ? sizeText(split.quantity) : split.quantity)
+            : "",
+          price: "" };
       }) : [],
     };
-    if (draft.split) draft.lines.push({ handle:null, account:"", memo:"", increase:"", decrease:"" });
+    if (draft.split) draft.lines.push(blankLine());
+    draft.settled = tradeCells(draft);
+    for (const line of draft.lines) line.settled = tradeCells(line);
     state.entryDrafts[key] = draft;
   }
   const touch = () => { draft.dirty = true; };
@@ -217,6 +262,78 @@ function registerEntry(data, usable, row) {
     up.addEventListener("change", settle);
     down.addEventListener("change", settle);
     return [up, down];
+  };
+  const fillTrade = async (holder, changed, nodes, account) => {
+    // Any two of shares, price, and amount give the third, by the server's
+    // shared rule (gen/services/entry_input.read_entry_trade).
+    const field = changed === "amount"
+      ? (holder.increase.trim() ? "increase" : "decrease") : changed;
+    if ((holder[field] || "").trim() === (holder.settled?.[field] ?? "")) return;
+    const amountText = holder.increase.trim() || holder.decrease.trim();
+    const selling = holder.shares.trim().startsWith("-");
+    // What this fill reads; a cell typed while it runs is read by its own fill.
+    const sent = tradeCells(holder);
+    const query = new URLSearchParams({ account, shares:holder.shares, price:holder.price,
+      amount:amountText, changed, number_format:browserNumberFormat });
+    const filled = await get(`/api/entry/trade?${query}`);
+    const written = {};
+    if (filled.shares !== null) {
+      written.shares = (selling && !amountText && !filled.amount ? "-" : "")
+        + shownDecimal(filled.shares);
+    }
+    if (filled.price !== null) written.price = shownDecimal(filled.price);
+    if (filled.amount !== null) {
+      const target = amountText ? (sent.increase ? "increase" : "decrease")
+        : (selling ? "decrease" : "increase");
+      written[target] = entryText(entryUnits(filled.amount, "dot"));
+      written[target === "increase" ? "decrease" : "increase"] = "";
+    }
+    for (const [key, value] of Object.entries(written)) {
+      if ((holder[key] || "").trim() !== sent[key]) continue;  // typed meanwhile
+      holder[key] = value;
+      if (nodes[key]) nodes[key].value = value;
+      sent[key] = value.trim();
+    }
+    holder.settled = sent;
+    touch();
+    updateImbalance();
+  };
+  const tradeInputs = (holder, label, up, down, accountOf) => {
+    // The Shares and Price cells of a security's row or split line.
+    const shares = el("input", { value:holder.shares, inputmode:"decimal", class:"num",
+      placeholder:"Shares", "aria-label":`${label} shares` });
+    const price = el("input", { value:holder.price, inputmode:"decimal", class:"num",
+      placeholder:"Price", "aria-label":`${label} price` });
+    shares.addEventListener("input", () => { holder.shares = shares.value; touch(); });
+    price.addEventListener("input", () => { holder.price = price.value; touch(); });
+    const nodes = { shares, price, increase:up, decrease:down };
+    const settle = (changed) => () => {
+      const account = accountOf();
+      if (!holdsShares.has(account)) return;
+      holder.filling = fillTrade(holder, changed, nodes, account)
+        .catch((error) => say(error.message, "error"));
+    };
+    // Enter may save before a typed cell's change event: read what is unread first.
+    holder.refill = () => {
+      const now = tradeCells(holder);
+      const unread = ["price", "shares", "increase", "decrease"]
+        .find((key) => now[key] !== (holder.settled?.[key] ?? ""));
+      if (unread) settle(unread === "increase" || unread === "decrease" ? "amount" : unread)();
+    };
+    shares.addEventListener("change", settle("shares"));
+    price.addEventListener("change", settle("price"));
+    up.addEventListener("change", settle("amount"));
+    down.addEventListener("change", settle("amount"));
+    return [shares, price];
+  };
+  const quantityOf = (holder, value) => {
+    // Signed shares as dot-decimal text, signed like the amount; undefined if unreadable.
+    const text = entryDecimal(holder.shares);
+    if (text === null || text === undefined) return text;
+    const size = sizeText(text);
+    if (value > 0n) return size;
+    if (value < 0n) return `-${size}`;
+    return text;
   };
   const accountSelect = (value, choices, label, onchange, blank) => {
     const node = el("select", { "aria-label":label },
@@ -309,6 +426,8 @@ function registerEntry(data, usable, row) {
     (value) => { draft.transfer = value; draft.transferTouched = true; });
   if (!draft.transfer) draft.transfer = transfer.value;
   const [increase, decrease] = amountPair(draft, noun);
+  const [sharesInput, priceInput] = security
+    ? tradeInputs(draft, noun, increase, decrease, () => state.account) : [null, null];
   const imbalance = el("td", { class:"num" });
   const splitButton = el("button", { class: draft.split ? "action primary" : "action",
     type:"button", "aria-pressed":String(draft.split),
@@ -341,6 +460,11 @@ function registerEntry(data, usable, row) {
   }
 
   async function commit() {
+    for (const holder of [draft, ...draft.lines]) {
+      await holder.filling;
+      holder.refill?.();
+      await holder.filling;
+    }
     if (!(await settleDate())) {
       return fail("Enter a date such as 2026-03-15, 3/15, 15, or t.", dateInput);
     }
@@ -363,9 +487,17 @@ function registerEntry(data, usable, row) {
           continue;
         }
         if (!line.account) return fail("Choose an account for this split.", null);
-        if (value === null || value === 0n) return fail("Enter an amount for this split.", null);
-        splits.push({ account:line.account, value:entryValue(value), memo:line.memo,
-          handle:line.handle });
+        let quantity = null;
+        if (holdsShares.has(line.account)) {
+          quantity = quantityOf(line, value ?? 0n);
+          if (quantity === undefined) return fail("Enter shares such as 12.345.", null);
+          if (quantity === null) return fail("Enter the shares for this split.", null);
+        }
+        if ((value === null || value === 0n) && quantity === null) {
+          return fail("Enter an amount for this split.", null);
+        }
+        splits.push({ account:line.account, value:entryValue(value ?? 0n), memo:line.memo,
+          handle:line.handle, quantity });
       }
       if (splits.length < 2) return fail("A transaction needs at least two splits.", null);
       const total = values.reduce((sum, value) => sum + (value ?? 0n), 0n);
@@ -379,15 +511,25 @@ function registerEntry(data, usable, row) {
       const up = entryUnits(draft.increase);
       const down = entryUnits(draft.decrease);
       if (up === undefined || down === undefined) return fail("Enter a valid amount.", increase);
-      const value = up ?? (down === null ? null : -down);
+      let value = up ?? (down === null ? null : -down);
+      let quantity = null;
+      if (security) {
+        quantity = quantityOf(draft, value ?? 0n);
+        if (quantity === undefined) return fail("Enter shares such as 12.345.", sharesInput);
+        if (quantity === null) {
+          return fail("Enter the shares bought or sold, or a price and an amount.", sharesInput);
+        }
+        // Shares with no amount: a share split, or shares moved in kind.
+        if (value === null) value = 0n;
+      }
       if (value === null) {
         return fail(`Enter an amount under ${data.debit_label} or ${data.credit_label}.`,
           increase);
       }
-      if ((up ?? down) <= 0n) return fail("Amount must be greater than zero.", increase);
+      if ((up ?? down ?? 1n) <= 0n) return fail("Amount must be greater than zero.", increase);
       if (!draft.transfer) return fail("Choose a visible transfer account.", transfer);
       splits = [
-        { account:state.account, value:entryValue(value), handle:draft.handles[0] },
+        { account:state.account, value:entryValue(value), handle:draft.handles[0], quantity },
         { account:draft.transfer, value:entryValue(-value), handle:draft.handles[1] },
       ];
     }
@@ -440,11 +582,11 @@ function registerEntry(data, usable, row) {
         draft.split = true;
         draft.lines = suggestion.splits.map((split) => {
           const units = entryUnits(split.value, "dot");
-          return { handle:null, account:split.account, memo:split.memo || "",
+          return { ...blankLine(), account:split.account, memo:split.memo || "",
             increase: units > 0n ? entryText(units) : "",
             decrease: units < 0n ? entryText(-units) : "" };
         });
-        draft.lines.push({ handle:null, account:"", memo:"", increase:"", decrease:"" });
+        draft.lines.push(blankLine());
         filled.push(`${suggestion.splits.length} splits`);
         state.entryFocus = { key, field:"line-0" };
       } else if (!draft.split) {
@@ -478,11 +620,12 @@ function registerEntry(data, usable, row) {
       const down = entryUnits(draft.decrease);
       const value = up ? up : (down ? -down : null);
       draft.lines = [
-        { handle:draft.handles[0], account:state.account, memo:"",
-          increase:value > 0n ? entryText(value) : "", decrease:value < 0n ? entryText(-value) : "" },
-        { handle:draft.handles[1], account:draft.transfer, memo:"",
+        { ...blankLine(), handle:draft.handles[0], account:state.account,
+          increase:value > 0n ? entryText(value) : "", decrease:value < 0n ? entryText(-value) : "",
+          shares:draft.shares, price:draft.price, settled:{ ...draft.settled } },
+        { ...blankLine(), handle:draft.handles[1], account:draft.transfer,
           increase:value < 0n ? entryText(-value) : "", decrease:value > 0n ? entryText(value) : "" },
-        { handle:null, account:"", memo:"", increase:"", decrease:"" },
+        blankLine(),
       ];
       draft.split = true;
       state.entryFocus = { key, field:"line-0" };
@@ -497,6 +640,9 @@ function registerEntry(data, usable, row) {
       const other = filled.find((line) => line !== mine);
       draft.increase = mine ? mine.increase : "";
       draft.decrease = mine ? mine.decrease : "";
+      draft.shares = mine ? mine.shares : "";
+      draft.price = mine ? mine.price : "";
+      draft.settled = mine ? { ...mine.settled } : {};
       if (other?.account) { draft.transfer = other.account; draft.transferTouched = true; }
       draft.handles = [mine?.handle ?? null, other?.handle ?? null];
       draft.split = false;
@@ -526,6 +672,8 @@ function registerEntry(data, usable, row) {
     el("td", {}, dateInput), el("td", {}, numInput), el("td", {}, description),
     el("td", {}, draft.split ? el("span", { class:"muted" }, "-- Split --") : transfer),
     el("td", { class:"muted" }, editing ? row.reconcile : ""),
+    security ? el("td", { class:"num" }, draft.split ? null : sharesInput) : null,
+    security ? el("td", { class:"num" }, draft.split ? null : priceInput) : null,
     el("td", { class:"num" }, draft.split ? null : increase),
     el("td", { class:"num" }, draft.split ? null : decrease),
     el("td", {}),
@@ -535,7 +683,8 @@ function registerEntry(data, usable, row) {
   if (draft.split) {
     const imbalanceRow = el("tr", { class:"entry-row entry-line" },
       el("td", {}), el("td", {}), el("td", { class:"muted" }, "Imbalance"),
-      el("td", {}), el("td", {}), el("td", {}), el("td", {}), imbalance, el("td", {}));
+      el("td", {}), el("td", {}), ...(security ? [el("td", {}), el("td", {})] : []),
+      el("td", {}), el("td", {}), imbalance, el("td", {}));
     const lineRow = (line, index) => {
       const label = `${editing ? "Edited" : "New"} split ${index + 1}`;
       const memo = el("input", { value:line.memo, placeholder:"Memo", "aria-label":`${label} memo` });
@@ -544,7 +693,7 @@ function registerEntry(data, usable, row) {
         // A trailing empty line is always ready for the next split; it is added
         // in place, so the field being typed in keeps the cursor.
         if (index !== draft.lines.length - 1) return;
-        const next = { handle:null, account:"", memo:"", increase:"", decrease:"" };
+        const next = blankLine();
         draft.lines.push(next);
         imbalanceRow.before(lineRow(next, draft.lines.length - 1));
       };
@@ -555,9 +704,15 @@ function registerEntry(data, usable, row) {
       const [up, down] = amountPair(line, label);
       up.addEventListener("input", grow);
       down.addEventListener("input", grow);
+      const [lineShares, linePrice] = security
+        ? tradeInputs(line, label, up, down, () => line.account) : [null, null];
+      lineShares?.addEventListener("input", grow);
       return el("tr", { class:"entry-row entry-line", onkeydown:keys },
         el("td", {}), el("td", {}), el("td", {}, memo),
-        el("td", {}, account), el("td", {}), el("td", { class:"num" }, up),
+        el("td", {}, account), el("td", {}),
+        security ? el("td", { class:"num" }, lineShares) : null,
+        security ? el("td", { class:"num" }, linePrice) : null,
+        el("td", { class:"num" }, up),
         el("td", { class:"num" }, down),
         el("td", {}), el("td", {}));
     };

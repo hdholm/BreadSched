@@ -18,6 +18,9 @@ description is left. The proposal only fills the form,
 with a visible note; nothing is saved until the user chooses Save, typed splits
 are never replaced, and a transaction being edited is never rewritten.
 
+A split in an account that holds a security also shows its shares, saved as the
+split's quantity; shares left as loaded keep the stored quantity exactly (#323).
+
 Tags are saved with the transaction. Linked documents are changed at once through
 ``services.attachments`` (each change is its own undoable step) and only on a
 transaction that has been saved; a missing file is marked, never removed.
@@ -30,7 +33,8 @@ from pathlib import Path
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import attachments as attachment_engine
-from ...gen.engine import escrow, fsa_claims
+from ...gen.engine import escrow, fsa_claims, ledger
+from ...gen.engine.cost_basis import shares_text
 from ...gen.lib import (
     Amount,
     InvestmentActivityKind,
@@ -92,6 +96,7 @@ class SplitEditor:
         self.account = bounded_dropdown(dialog.account_names or ["(none)"])
         self.account.set_hexpand(True)
         self.account.connect("notify::selected", dialog.revalidate)
+        self.account.connect("notify::selected", lambda *_: self._show_shares())
         self.box.append(self.account)
 
         self.memo = Gtk.Entry(placeholder_text="Memo")
@@ -103,6 +108,18 @@ class SplitEditor:
         self.amount.add_css_class("numeric")
         self.amount.connect("changed", dialog.revalidate)
         self.box.append(self.amount)
+
+        # Shares, for a split in an account that holds a security (#323).
+        self.shares = Gtk.Entry(placeholder_text="Shares", xalign=1)
+        self.shares.set_size_request(100, -1)
+        self.shares.add_css_class("numeric")
+        self.shares.set_tooltip_text(
+            "Shares this split adds; negative for shares sold or moved out"
+        )
+        self.shares.update_property([Gtk.AccessibleProperty.LABEL], ["Shares"])
+        self.shares.connect("changed", dialog.revalidate)
+        self.box.append(self.shares)
+        self._loaded_shares = ""
 
         self.planning_purpose = bounded_dropdown([label for label, _kind in _PLANNING_FLOWS])
         self.planning_purpose.set_size_request(180, -1)
@@ -133,6 +150,9 @@ class SplitEditor:
                     break
             self.memo.set_text(split.memo)
             self.amount.set_text(str(split.value.to_decimal()))
+            if dialog.holds_security(split.account):
+                self._loaded_shares = shares_text(split.quantity)
+                self.shares.set_text(self._loaded_shares)
             self.planning_purpose.set_selected(
                 next(
                     (
@@ -153,6 +173,32 @@ class SplitEditor:
                     0,
                 )
             )
+
+        self._show_shares()
+
+    def _show_shares(self) -> None:
+        self.shares.set_visible(self.dialog.holds_security(self.account_handle))
+
+    def quantity_amount(self) -> Amount | None:
+        """The typed shares as an amount of the account's security; None when not given.
+
+        Shares left as loaded keep the stored quantity exactly. ``ValueError`` for
+        shares that cannot be read.
+        """
+        handle = self.account_handle
+        if handle is None or not self.dialog.holds_security(handle):
+            return None
+        text = self.shares.get_text().strip()
+        if not text:
+            return None
+        account = self.dialog.db.get_account(handle)
+        assert account is not None and account.commodity
+        if text == self._loaded_shares and self.quantity is not None:
+            return Amount(self.quantity, account.commodity)
+        try:
+            return Amount(Money(parse_user_amount(text)), account.commodity)
+        except (ValueError, ArithmeticError):
+            raise ValueError("check the shares") from None
 
     @property
     def account_handle(self) -> str | None:
@@ -644,6 +690,10 @@ class TransactionDialog(BoundedWindow):
 
     # ------------------------------------------------------------------ splits
 
+    def holds_security(self, account: str | None) -> bool:
+        """Whether ``account`` holds a security, so its splits carry shares."""
+        return account is not None and ledger.security_of(self.db, account) is not None
+
     def add_split(self, split: Split | None = None) -> SplitEditor:
         editor = SplitEditor(self, split)
         self.splits.append(editor)
@@ -678,6 +728,12 @@ class TransactionDialog(BoundedWindow):
             problems.append("use at least two different accounts")
         if any(e.value() is None and not e.is_blank for e in self.splits):
             problems.append("check the amounts")
+        for editor in self.splits:
+            try:
+                editor.quantity_amount()
+            except ValueError:
+                problems.append("check the shares")
+                break
         try:
             date.fromisoformat(self.date_entry.get_text().strip())
         except ValueError:
@@ -739,6 +795,7 @@ class TransactionDialog(BoundedWindow):
                     memo=editor.memo.get_text().strip(),
                     planning_flow=editor.purpose,
                     investment_activity=editor.activity,
+                    quantity=editor.quantity_amount(),
                 )
             )
         attachment = None

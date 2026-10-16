@@ -10,6 +10,25 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a281 - 2026-10-16
+
+- **Security registers show and take shares (#323).** In an account holding a
+  security (for example a GnuCash-imported VTTHX fund) the register showed only
+  dollar amounts and a running sum of them, and a buy or sell could not be entered
+  because the service rightly requires the shares. `ledger.security_of` and
+  `share_fraction` identify such accounts; `RegisterRow.share_balance` carries the
+  shares held after each row through `register` and `update_register`. The GTK sheet
+  and grid (`SECURITY_COLUMNS`) and the browser register add Shares, Price, and
+  Shares Held; any two of shares, price, and amount give the third by one shared
+  rule (`engine/entry_input.fill_trade`, `services/entry_input.read_entry_trade`,
+  `GET /api/entry/trade`), and the shares are saved as the split quantity, kept
+  exactly when left as loaded. The footer (`presentation.register_share_summary`)
+  gives shares held and market value with the quote's date and source, or says
+  there is no quote. The transaction editor shows and edits a security split's
+  shares. The GTK account list now also hides when the cursor leaves the transfer
+  cell. Engine, service, sheet, route, GTK, and browser tests cover display, entry,
+  exact round trips, and refused entries that leave the book unchanged.
+
 ## 0.2.0a280 - 2026-10-16
 
 - **Switching views redraws only what changed.** Showing a view in the desktop
