@@ -180,7 +180,7 @@ def quote_source_warning(source: str, info: FinanceQuoteInfo) -> str | None:
         return f"“{source}” needs Finance::Quote. {info.reason}."
     if source in info.methods:
         return None
-    hint = [name for name in ("usa", "nyse", "nasdaq") if name in info.methods]
+    hint: list[str] = [name for name in ("usa", "nyse", "nasdaq") if name in info.methods]
     if len(hint) > 1:
         hint[-1] = f"or {hint[-1]}"
     listed = (", " if len(hint) > 2 else " ").join(hint)
