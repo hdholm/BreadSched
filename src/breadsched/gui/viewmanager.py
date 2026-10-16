@@ -499,9 +499,9 @@ class ViewManager(Gtk.ApplicationWindow):
         return views + list(self._projections)
 
     def refresh_views(self) -> None:
-        """Repaint every built view. Used when a book-wide setting changes."""
+        """A book-wide setting changed: redraw the shown view, the rest when shown."""
         for view in self._all_views():
-            view.refresh()
+            view.invalidate()
 
     #: Kept for callers that used the private name.
     _refresh_views = refresh_views
@@ -620,8 +620,9 @@ class ViewManager(Gtk.ApplicationWindow):
         # toolbar, menu, or a jump from another view.
         self.category_action.set_state(GLib.Variant.new_string(key))
         self._show_view_tools(key)
-        if not view.consume_map_refresh():
-            view.refresh()
+        # Showing a view redraws it only if the book changed (or the day turned)
+        # since it was last drawn; the map handler usually did that already.
+        view.ensure_current()
         self._enable_printing(view)
 
     def _enable_printing(self, view) -> None:

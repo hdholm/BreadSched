@@ -10,6 +10,18 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a280 - 2026-10-16
+
+- **Switching views redraws only what changed.** Showing a view in the desktop
+  window rebuilt it every time, so returning to Plan recalculated the whole plan and
+  returning to a register reread its whole ledger, even when nothing had changed.
+  A view is now redrawn when shown only if the book changed since it was drawn, it
+  was drawn on an earlier day, or (Projection) its calculation is pending; every
+  view hears `database-changed` for this. A setting change redraws the shown view
+  and the others when they are next shown. GTK tests check that an unchanged view
+  is not redrawn, that a change or a new day redraws it once, and that a view
+  watching few signals still catches any change.
+
 ## 0.2.0a279 - 2026-10-16
 
 - **Online quote sources come from a list (#317).** The guides suggested

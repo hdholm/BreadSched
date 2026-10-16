@@ -99,8 +99,12 @@ account, filter, selection, and expansion, while database signals refresh all of
 them after a commit. A view on screen repaints once after the current event
 (`schedule_refresh`), however many signals a burst of commits raised; a view that is
 not on screen only marks itself stale and refreshes when it is next mapped
-(`BaseView._on_change`, `_on_map`); switching to it
-skips the switcher's own refresh when mapping just did one. A register reloads only
+(`BaseView._on_change`, `_on_map`). Showing a view redraws it only when it is out of
+date (`ensure_current`): the book changed since it was drawn (every view also
+listens to `database-changed` for this, whatever it watches), it was drawn on an
+earlier day, or (Projection) its calculation is pending. Switching back to an
+unchanged view is therefore instant instead of recalculating it. A setting change
+(`ViewManager.refresh_views`) redraws the shown view and invalidates the others. A register reloads only
 the transactions a commit names (`transaction-*` signals,
 `ledger.update_register`), which keeps rows and recomputes running balances in
 memory, and ignores the `database-changed` that follows them and any signal raised

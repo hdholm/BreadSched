@@ -246,11 +246,14 @@ class ProjectionView(BaseView):
         """Return whether this is the category currently shown by the manager."""
         return self.manager.stack.get_visible_child() is self
 
-    def _on_change(self, *_args) -> None:
+    def is_current(self) -> bool:
+        # A projection waits to be calculated until it is shown.
+        return super().is_current() and not self._projection_dirty
+
+    def _on_change(self, *args) -> None:
         """Invalidate projections without eagerly rebuilding a hidden view."""
         self._projection_dirty = True
-        if self._is_visible():
-            self.schedule_refresh()
+        super()._on_change(*args)
 
     def refresh(self) -> None:
         if self.db is None:
