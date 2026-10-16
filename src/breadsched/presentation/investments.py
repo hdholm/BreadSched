@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from ..gen.lib.money import Money
@@ -78,3 +79,33 @@ def price_text(value: Money) -> str:
     text = format(value.to_decimal(10).normalize(), "f")
     whole, _, fraction = text.partition(".")
     return f"{whole}.{fraction.ljust(2, '0')}"
+
+
+def trade_price_text(price: Decimal | None) -> str:
+    """A register's price cell: every digit the price has, and at least two."""
+    if price is None:
+        return ""
+    whole, _, fraction = f"{price:f}".partition(".")
+    return f"{whole}.{fraction.ljust(2, '0')}"
+
+
+def register_share_summary(db, account) -> str | None:
+    """The shares a security account holds and what they are worth, for its register.
+
+    The market value names its quote's date and source; without a quote it says
+    so and shows the ledger amount instead, never an unquoted conversion (#323).
+    ``None`` for an account kept in a currency.
+    """
+    from ..gen.engine import ledger, valuation
+    from ..gen.engine.cost_basis import shares_text
+
+    security = ledger.security_of(db, account)
+    if security is None:
+        return None
+    held = valuation.quantity_balance(db, account)
+    text = f"{shares_text(held)} {security.mnemonic} shares"
+    valued = valuation.account_value(db, account)
+    evidence = valuation.quote_evidence(db, valued)
+    if valued.source == "market":
+        return f"{text} · worth {valued.total.format(parens_negative=True)} · {evidence}"
+    return f"{text} · no quote; ledger amount {valued.total.format(parens_negative=True)}"

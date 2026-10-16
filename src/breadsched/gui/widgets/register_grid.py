@@ -26,9 +26,19 @@ from ..register_sheet import BLANK, IMBALANCE, NOTES, SPLIT, RegisterSheet
 __all__ = ["RegisterGrid", "grid_colours"]
 
 #: Column widths in characters for the fixed columns; the rest share what is left.
-_FIXED = {"date": 11, "num": 6, "reconcile": 3, "increase": 12, "decrease": 12, "balance": 13}
+_FIXED = {
+    "date": 11,
+    "num": 6,
+    "reconcile": 3,
+    "shares": 12,
+    "price": 11,
+    "increase": 12,
+    "decrease": 12,
+    "balance": 13,
+    "share_balance": 13,
+}
 _SHARED = {"description": 0.55, "transfer": 0.45}
-_NUMERIC = {"increase", "decrease", "balance", "reconcile"}
+_NUMERIC = {"increase", "decrease", "balance", "reconcile", "shares", "price", "share_balance"}
 _PAD = 6
 #: Accounts listed beneath the transfer cell.
 _MATCH_ROWS = 8
@@ -159,6 +169,8 @@ class RegisterGrid(Gtk.Box):
 
     def set_sheet(self, sheet: RegisterSheet | None) -> None:
         self.sheet = sheet
+        # A security's register has more columns (#323).
+        self._measure()
         self.sync(focus=False)
 
     @property
@@ -181,7 +193,11 @@ class RegisterGrid(Gtk.Box):
         self.row_height = max(22, height + 8)
         self.match_frame.set_max_content_height(_MATCH_ROWS * self.row_height)
         available = max(self._width, 1)
-        fixed = {key: chars * self.char_width + 2 * _PAD for key, chars in _FIXED.items()}
+        fixed = {
+            key: chars * self.char_width + 2 * _PAD
+            for key, chars in _FIXED.items()
+            if key in self.columns
+        }
         rest = max(available - sum(fixed.values()), 160)
         widths = dict(fixed)
         for key, share in _SHARED.items():
@@ -192,7 +208,7 @@ class RegisterGrid(Gtk.Box):
     def columns(self) -> tuple[str, ...]:
         from ..register_sheet import COLUMNS
 
-        return COLUMNS
+        return self.sheet.columns if self.sheet is not None else COLUMNS
 
     def column_x(self, column: str) -> tuple[float, float]:
         """The left edge and width of ``column``."""
@@ -274,11 +290,14 @@ class RegisterGrid(Gtk.Box):
                 self.area.grab_focus()
             return
         assert sheet is not None
+        if sheet.column != "transfer":
+            # The account list belongs to the transfer cell; elsewhere Enter saves.
+            self.hide_matches()
         x, width = self.column_x(sheet.column)
         notes = sheet.rows[sheet.cursor].kind == NOTES
         if notes:
             # The notes editor spans the line, like the notes it edits.
-            width = self.column_x("balance")[0] - x
+            width = self.column_x(self.columns[-1])[0] - x
         y = self.row_height * (position + 1)
         self.editor.set_margin_start(int(x))
         self.editor.set_margin_top(int(y))
@@ -542,7 +561,7 @@ class RegisterGrid(Gtk.Box):
                 text = sheet.text(index, "description")
                 if text and not self.under_editor(index, "description"):
                     cr.set_source_rgb(*_rgb(palette["dim"]))
-                    self._text(area, cr, "description", y, text, span="balance")
+                    self._text(area, cr, "description", y, text, span=self.columns[-1])
                 columns: tuple[str, ...] = ()
             else:
                 columns = self.columns

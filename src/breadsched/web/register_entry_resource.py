@@ -14,7 +14,9 @@ from collections.abc import Mapping
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
+from ..gen.engine.cost_basis import shares_text
 from ..gen.lib.amount import Amount
+from ..gen.lib.money import Money
 from ..gen.services import (
     SaveTransaction,
     ToggleCleared,
@@ -39,6 +41,24 @@ def _text(payload: Mapping[str, Any], key: str, *, optional: bool = False) -> st
     return value
 
 
+def _quantity(db, account: str, raw: object, source) -> Amount | None:
+    """A split's typed shares as an amount of its account's security, or None."""
+    if raw is None or raw == "":
+        return None
+    if not isinstance(raw, str):
+        raise ValueError("quantity must be decimal text")
+    obj = db.get_account(account)
+    if obj is None or not obj.commodity:
+        raise ValueError("quantity is only for a split in an account that holds a security")
+    text = raw.strip()
+    if source is not None and source.account == account and text == shares_text(source.quantity):
+        return Amount(source.quantity, obj.commodity)
+    try:
+        return Amount(Money(text), obj.commodity)
+    except (ValueError, ArithmeticError):
+        raise ValueError("quantity must be decimal text") from None
+
+
 def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """Create a transaction from the blank row, or save an in-place edit.
 
@@ -46,7 +66,9 @@ def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
     entry. Each split gives its ``account`` handle, a signed ``value`` in the
     transaction currency (decimal text in the browser's number format, or an
     exact ``[numerator, denominator]`` pair of integer strings), an optional
-    ``memo``, and for an edit the stored split ``handle`` it changes.
+    ``memo``, and for an edit the stored split ``handle`` it changes. A split in
+    an account that holds a security also gives its signed share ``quantity``
+    as decimal text (#323); left as the stored split's shares, it keeps them exactly.
     """
     db = api.db
     handle = _text(payload, "handle", optional=True) or None
@@ -80,6 +102,7 @@ def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
         elif not isinstance(raw_value, str):
             raise ValueError("value must be decimal text or [numerator, denominator]")
         value = input_money(dict(payload), raw_value)
+        quantity = _quantity(db, account, item.get("quantity"), source)
         splits.append(
             TransactionSplitInput(
                 account,
@@ -88,6 +111,7 @@ def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
                 memo=(_text(item, "memo", optional=True) or "").strip(),
                 planning_flow=source.planning_flow if source is not None else None,
                 investment_activity=source.investment_activity if source is not None else None,
+                quantity=quantity,
             )
         )
     request = SaveTransaction(

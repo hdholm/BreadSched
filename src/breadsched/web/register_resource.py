@@ -10,9 +10,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import date
+from fractions import Fraction
 from typing import TYPE_CHECKING, Any
 
 from ..gen.engine import ledger
+from ..gen.engine.cost_basis import shares_text
+from ..gen.engine.entry_input import trade_price
 from ..gen.lib.amount import Amount
 from ..gen.lib.transaction import InvestmentActivityKind
 from ..gen.services import (
@@ -23,6 +26,7 @@ from ..gen.services import (
     save_transaction,
     transaction_currency,
 )
+from ..presentation.investments import register_share_summary, trade_price_text
 from .attachment_resource import document_json
 from .controls import ResourceError, input_money, service_error
 
@@ -43,11 +47,50 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
         raise KeyError(handle)
     rows = ledger.register(api.db, handle)[-limit:]
     debit_label, credit_label = ledger.register_headings(account.atype)
+    security = ledger.security_of(api.db, account)
+    holds_shares: dict[str, bool] = {}
+
+    def shares_of(split) -> str | None:
+        # Shares as exact decimal text, for a split in an account holding a security.
+        if split.account not in holds_shares:
+            holds_shares[split.account] = ledger.security_of(api.db, split.account) is not None
+        return shares_text(split.quantity) if holds_shares[split.account] else None
+
+    def trade(row: ledger.RegisterRow) -> dict[str, object]:
+        if security is None:
+            return {}
+        price = trade_price(
+            Fraction(row.split.value.numerator, row.split.value.denominator),
+            Fraction(row.shares.numerator, row.shares.denominator),
+        )
+        held = row.share_balance
+        return {
+            "shares": shares_text(row.shares) if row.shares else "",
+            "price": trade_price_text(price),
+            "share_balance": shares_text(held) if held is not None else "",
+        }
+
     return {
         "account": api.db.full_name(account),
         "type": account.atype.value,
         "debit_label": debit_label,
         "credit_label": credit_label,
+        # An account holding a security shows shares, price, and shares held (#323).
+        "security": (
+            None
+            if security is None
+            else {
+                "mnemonic": security.mnemonic,
+                "share_fraction": ledger.share_fraction(api.db, account),
+            }
+        ),
+        "summary": register_share_summary(api.db, account),
+        # Accounts whose splits take shares, for the split lines' Shares cells.
+        "security_accounts": sorted(
+            item.handle
+            for item in api.db.iter_accounts()
+            if ledger.security_of(api.db, item) is not None
+        ),
         "rows": [
             {
                 "handle": row.transaction.handle,
@@ -61,6 +104,7 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
                 "transfer": row.transfer_label(api.db),
                 "amount": row.amount,
                 "balance": row.running,
+                **trade(row),
                 # For editing the row in place (#158): this register's split
                 # and every split of the transaction.
                 "split": row.split.handle,
@@ -74,6 +118,8 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
                         "account_name": api.db.full_name(split.account),
                         "value": split.value,
                         "memo": split.memo,
+                        # Exact shares for a split in a security account, else None.
+                        "quantity": shares_of(split),
                     }
                     for split in row.transaction.splits
                 ],

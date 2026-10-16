@@ -751,6 +751,33 @@ def _grid_register(app, window, populated_book, *, extra=0, split=False):
     return view
 
 
+def _security_account(db):
+    """A fund account with one buy of 10.123 shares for 250.00, as GnuCash imports it."""
+    from breadsched.gen.lib import Account, AccountType, Commodity, Split
+
+    checking = db.get_account_by_name("Assets:Checking Account")
+    usd = next(item for item in db.iter_commodities() if item.is_currency)
+    fund = Commodity(namespace="FUND", mnemonic="VTTHX", fullname="Target 2035", fraction=1000)
+    account = Account(
+        name="VTTHX",
+        atype=AccountType.INVESTMENT,
+        parent=db.get_account_by_name("Assets").handle,
+        commodity=fund.handle,
+        commodity_scu=1000,
+    )
+    buy = Transaction(post_date=date(2026, 2, 3), description="Fund buy")
+    buy.currency = usd.handle
+    buy.splits = [
+        Split(account.handle, Money("250"), quantity=Money("10.123")),
+        Split(checking.handle, Money("-250")),
+    ]
+    with db.transaction("Fund") as txn:
+        db.add_commodity(fund, txn)
+        db.add_account(account, txn)
+        db.add_transaction(buy, txn)
+    return account, buy
+
+
 def _row_y(grid, index):
     return grid.row_height * (index - grid.first_row + 1) + grid.row_height / 2
 
@@ -818,6 +845,52 @@ class TestRegisterGrid:
         view.double_line_button.set_active(False)
         assert settings.get_bool("register", "double_line") is False
         assert NOTES not in {row.kind for row in sheet.rows}
+
+    def test_a_security_register_draws_shares_price_and_shares_held(
+        self, app, window, populated_book
+    ):
+        # #323: an imported fund showed only dollar amounts.
+        from breadsched.gui.register_sheet import SECURITY_COLUMNS
+
+        app.open_book(populated_book)
+        account, _fund = _security_account(app.db)
+        window.open_register(account.handle)
+        view = window._views["register"]
+        grid, sheet = view.grid, view.sheet
+        grid.paint(1100, 320)
+        assert grid.columns == SECURITY_COLUMNS
+        x, width = grid.column_x("share_balance")
+        assert width > 0 and x + width <= 1100 + 1
+        index = next(i for i, row in enumerate(sheet.rows) if row.register_row is not None)
+        assert [sheet.text(index, c) for c in ("shares", "price", "share_balance")] == [
+            "10.123",
+            "24.696236",
+            "10.123",
+        ]
+        assert view.balance_label.get_text() == (
+            "10.123 VTTHX shares · no quote; ledger amount 250.00"
+        )
+        # Typing shares and a price in the grid fills the amount and saves the shares.
+        sheet.to_blank()
+        for column, text in (("description", "Grid buy"), ("transfer", "Assets:Checking Account")):
+            sheet.column = column
+            sheet.set_text(text)
+            assert sheet.settle()
+        sheet.column = "shares"
+        grid.sync()
+        _type(grid, "4")
+        assert grid.key(Gdk.KEY_Tab, 0)
+        assert sheet.column == "price"
+        _type(grid, "25")
+        assert grid.key(Gdk.KEY_Tab, 0)
+        assert sheet.draft.increase == "100.00"
+        assert grid.key(Gdk.KEY_Return, 0), sheet.message
+        [saved] = [t for t in app.db.iter_transactions() if t.description == "Grid buy"]
+        assert saved.split_for(account.handle).quantity == Money(4)
+        assert view.balance_label.get_text().startswith("14.123 VTTHX shares")
+        # A register kept in a currency keeps its columns.
+        window.open_register(app.db.get_account_by_name("Assets:Checking Account").handle)
+        assert window._views["register"].grid.columns[-1] == "balance"
 
     def test_a_register_opens_on_the_blank_entry_at_the_bottom(self, app, window, populated_book):
         view = _grid_register(app, window, populated_book, extra=80)
@@ -1623,6 +1696,30 @@ class TestDialogs:
         assert preserved.planning_flow is PlanningFlowKind.BENEFIT_FUNDING
         assert preserved.investment_activity is InvestmentActivityKind.CONTRIBUTION
         assert preserved.fsa_year_start == date(2026, 1, 1)
+
+    def test_transaction_editor_shows_and_edits_shares_of_a_security_split(
+        self, app, window, populated_book
+    ):
+        # #323: the editor kept a split's shares but could not show or change them.
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        account, buy = _security_account(app.db)
+        dialog = TransactionDialog(window, app.db, transaction=buy)
+        fund_split = next(e for e in dialog.splits if e.account_handle == account.handle)
+        cash_split = next(e for e in dialog.splits if e.account_handle != account.handle)
+        assert fund_split.shares.get_visible() and fund_split.shares.get_text() == "10.123"
+        assert not cash_split.shares.get_visible()
+        assert dialog.build().split_for(account.handle).quantity == Money("10.123")
+
+        fund_split.shares.set_text("abc")
+        assert "shares" in dialog.status.get_text().lower()
+        assert not dialog.save_button.get_sensitive()
+        fund_split.shares.set_text("10.5")
+        dialog._on_save(None)
+        assert app.db.get_transaction(buy.handle).split_for(account.handle).quantity == Money(
+            "10.5"
+        )
 
     def test_transaction_editor_explains_an_escrow_balance_adjustment(
         self, app, window, populated_book

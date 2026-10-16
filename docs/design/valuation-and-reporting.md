@@ -50,8 +50,9 @@ the valuation is flagged `missing_quote`, keeps the market value in the quote
 currency (so Projection reports it as unconverted), and is left out of totals.
 `valuation.quote_evidence` produces the one evidence line (security quote date and
 source, then the exchange quote's date, source, and inverse path, or the missing
-rate) shared by the GTK and web Accounts views, CLI `accounts`, and Dashboard group
-members, so no surface implies a conversion that was not performed. Foreign-exchange graphs,
+rate) shared by the GTK and web Accounts views, CLI `accounts`, Dashboard group
+members, and a security register's footer (`presentation.register_share_summary`,
+#323), so no surface implies a conversion that was not performed. Foreign-exchange graphs,
 automatic quote retrieval, and projected market prices are separate concerns and must not be approximated by treating monetary amounts as
 prices or quantities.
 

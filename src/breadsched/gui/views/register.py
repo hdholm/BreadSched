@@ -13,7 +13,9 @@ at the cursor, and the sheet behind it (``register_sheet``) holds the cursor and
 the transaction being typed. A register opens on the blank transaction at the
 end, ready for the next entry, as a check register does. The running balance is
 computed by the engine, not accumulated in the widget, so a back-dated entry
-re-sorts and re-totals correctly.
+re-sorts and re-totals correctly. An account that holds a security shows shares,
+price, and shares held instead of the amount balance, and its footer the shares
+and their quoted value (#323).
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from datetime import date
 
 from ...gen.engine import ledger
 from ...gen.lib.account import AccountClass, AccountType
+from ...presentation.investments import register_share_summary
 from ..gi_setup import GLib, Gtk
 from ..register_sheet import RegisterSheet
 from ..widgets.choice import bounded_dropdown
@@ -239,6 +242,20 @@ class RegisterView(BaseView):
             settings.save()
 
     def _show_balance(self) -> None:
+        summary = (
+            register_share_summary(self.db, self.sheet.account)
+            if self.sheet is not None and self.sheet.security is not None
+            else None
+        )
+        if summary is not None:
+            # A security's footer is its shares and what they are worth (#323).
+            self.balance_label.set_text(summary)
+            held = self.sheet.closing_shares() if self.sheet is not None else None
+            if held is not None and held < 0:
+                self.balance_label.add_css_class("negative")
+            else:
+                self.balance_label.remove_css_class("negative")
+            return
         closing = self.sheet.closing_balance() if self.sheet is not None else None
         self.balance_label.set_text(closing.format(parens_negative=True) if closing else "0.00")
         if closing is not None and closing < 0:

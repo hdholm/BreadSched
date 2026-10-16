@@ -125,6 +125,15 @@ discarding it. The date, amounts, account choices, and **Num** take the same
 desktop register; the date is a text field, so type it rather than picking it
 from a calendar.
 
+The register of an account that holds a security, such as a fund imported from
+GnuCash, has **Shares** and **Price** columns before **Buy** and **Sell**, and
+**Shares Held** instead of a balance; above the table, a line gives the shares you
+hold and their value at the latest price, with its date and source, or says there
+is no price yet. Type any two of shares, price, and amount and the third is filled
+in when you leave the field, as in the
+[desktop register](desktop.md#shares-in-an-investment-register). A purchase or sale
+is not saved without its shares.
+
 ### Tags and linked documents
 
 A register row shows its tags and how many documents it links, in red when one is

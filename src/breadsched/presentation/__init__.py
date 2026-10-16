@@ -36,7 +36,9 @@ from .investments import (
     lot_move_text,
     lot_text,
     price_text,
+    register_share_summary,
     sale_text,
+    trade_price_text,
 )
 from .messages import (
     configure_language,
@@ -95,7 +97,9 @@ __all__ = [
     "goal_status_text",
     "holding_cost_text",
     "price_text",
+    "register_share_summary",
     "sale_text",
+    "trade_price_text",
     "lot_move_text",
     "lot_text",
     "plan_detail_cost_text",

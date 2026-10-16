@@ -16,6 +16,12 @@ language. Each number is read with the entry's decimal convention before the
 expression is evaluated, and a computed result is rounded half up to the
 currency's smallest unit. A plain amount is read exactly as before.
 
+In a security account a trade is shares, a price, and an amount, and any two give
+the third (:func:`fill_trade`): changing the shares or the price recomputes the
+amount, and changing the amount recomputes the price (or, with no shares yet,
+the shares). Computed amounts round half up to the currency's smallest unit,
+shares to the security's, and prices to :data:`PRICE_PLACES` places.
+
 Accounts complete segment by segment: ``Ex:Gr`` matches ``Expenses:Groceries``
 because each typed segment begins the account's segment at the same depth. As in
 GnuCash's register, typing quick-fills the segment being typed from the best match
@@ -28,8 +34,10 @@ from __future__ import annotations
 import calendar
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal, localcontext
+from fractions import Fraction
 from typing import Literal
 
 from ..lib.formula import FormulaError, evaluate
@@ -37,7 +45,11 @@ from ..utils.amount_input import NumberFormat, detect_number_format, parse_user_
 
 __all__ = [
     "DATE_KEYS",
+    "PRICE_PLACES",
     "EntryInputError",
+    "TradeFill",
+    "fill_trade",
+    "trade_price",
     "complete_account",
     "is_arithmetic",
     "parse_entry_amount",
@@ -273,3 +285,68 @@ def step_num(text: str, step: int, latest: str = "") -> str:
     prefix, digits = match.groups()
     value = max(0, int(digits) + step)
     return f"{prefix}{value:0{len(digits)}d}"
+
+
+#: Decimal places a computed price keeps.
+PRICE_PLACES = 6
+
+
+def _round(value: Decimal | Fraction, fraction: int) -> Decimal:
+    """``value`` rounded half up to ``1/fraction``."""
+    with localcontext() as context:
+        context.prec = 64
+        if isinstance(value, Fraction):
+            value = Decimal(value.numerator) / Decimal(value.denominator)
+        unit = Decimal(1) / Decimal(max(1, fraction))
+        return (value / unit).quantize(Decimal(1), rounding=ROUND_HALF_UP) * unit
+
+
+def trade_price(amount: Fraction | Decimal, shares: Fraction | Decimal) -> Decimal | None:
+    """The price per share a trade implies, or ``None`` when it has no shares or amount."""
+    if not shares or not amount:
+        return None
+    return _round(abs(Fraction(amount) / Fraction(shares)), 10**PRICE_PLACES).normalize()
+
+
+@dataclass(frozen=True, slots=True)
+class TradeFill:
+    """A trade's shares, price, and amount after filling the missing one (all >= 0)."""
+
+    shares: Decimal | None
+    price: Decimal | None
+    amount: Decimal | None
+
+
+def fill_trade(
+    shares: Decimal | None,
+    price: Decimal | None,
+    amount: Decimal | None,
+    changed: Literal["shares", "price", "amount"],
+    *,
+    share_fraction: int,
+    currency_fraction: int,
+) -> TradeFill:
+    """Shares, price, and amount with the third worked out from the two just typed.
+
+    ``changed`` is the field just left. Shares or a price recompute the amount
+    when the other is known; an amount recomputes the price when shares are
+    known, else the shares from the price. Signs are the caller's: every value
+    here is a size. A value that cannot be worked out (no shares to divide by)
+    is left as it was.
+    """
+    shares = abs(shares) if shares is not None else None
+    price = abs(price) if price is not None else None
+    amount = abs(amount) if amount is not None else None
+    if changed in ("shares", "price"):
+        if shares is not None and price is not None:
+            amount = _round(Fraction(shares) * Fraction(price), currency_fraction)
+        elif changed == "shares" and shares and amount is not None:
+            price = trade_price(amount, shares)
+        elif changed == "price" and price and amount is not None:
+            shares = _round(Fraction(amount) / Fraction(price), share_fraction)
+    elif amount is not None:
+        if shares:
+            price = trade_price(amount, shares)
+        elif price:
+            shares = _round(Fraction(amount) / Fraction(price), share_fraction)
+    return TradeFill(shares, price, amount)

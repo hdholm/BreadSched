@@ -15,10 +15,14 @@ from decimal import Decimal
 from typing import Literal
 
 from ..db.sqlite import DbSQLite
+from ..engine import ledger
 from ..engine.currency import reporting_currency_handle
 from ..engine.entry_input import (
+    PRICE_PLACES,
     EntryInputError,
+    TradeFill,
     complete_account,
+    fill_trade,
     parse_entry_amount,
     parse_entry_date,
     step_num,
@@ -34,6 +38,7 @@ __all__ = [
     "next_entry_num",
     "read_entry_amount",
     "read_entry_date",
+    "read_entry_trade",
 ]
 
 #: Completion offers at most this many accounts.
@@ -108,3 +113,50 @@ def read_entry_date(text: str, base: date, today: date | None = None) -> Service
         return ServiceResult.success(parse_entry_date(text, base, today))
     except EntryInputError:
         return ServiceResult.failure(ServiceError("entry.date.invalid", ("text",)))
+
+
+def read_entry_trade(
+    db: DbSQLite,
+    account: str,
+    *,
+    shares: str,
+    price: str,
+    amount: str,
+    changed: Literal["shares", "price", "amount"],
+    currency: str | None = None,
+    number_format: NumberFormat | Literal["auto"] = "auto",
+) -> ServiceResult[TradeFill]:
+    """A trade in a security account with the third of shares, price, and amount filled.
+
+    Each field may be arithmetic; a typed share count keeps its sign, and the
+    filled values are sizes (the register's columns give the direction). Shares
+    round to the account's smallest share unit, amounts to the currency's (#323).
+    """
+    if db.get_account(account) is None:
+        return ServiceResult.failure(ServiceError("entry.account.not_found", ("account",)))
+    if ledger.security_of(db, account) is None:
+        return ServiceResult.failure(ServiceError("entry.account.not_security", ("account",)))
+    commodity = db.get_commodity(currency or reporting_currency_handle(db))
+    if commodity is None:
+        return ServiceResult.failure(ServiceError("entry.currency.not_found", ("currency",)))
+    fraction = ledger.share_fraction(db, account)
+    values: dict[str, Decimal | None] = {}
+    for name, text, places in (
+        ("shares", shares, fraction),
+        ("price", price, 10**PRICE_PLACES),
+        ("amount", amount, commodity.fraction),
+    ):
+        try:
+            values[name] = parse_entry_amount(text, number_format, places)
+        except EntryInputError:
+            return ServiceResult.failure(ServiceError(f"entry.{name}.invalid", (name,)))
+    return ServiceResult.success(
+        fill_trade(
+            values["shares"],
+            values["price"],
+            values["amount"],
+            changed,
+            share_fraction=fraction,
+            currency_fraction=commodity.fraction,
+        )
+    )
