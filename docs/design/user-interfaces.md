@@ -55,6 +55,12 @@ and amount cells never do, so figures are never truncated. The appearance correc
 concrete overlap and legibility problems; outside the register, reproducing
 GnuCash's look is not a goal.
 
+Scrollbars are always shown: `app.show_scrollbars()` turns GTK's
+`gtk-overlay-scrolling` setting off at start-up, where GTK has it, so a list longer
+than its window (the due review, for example) shows a permanent scrollbar rather
+than a thin indicator that appears only while scrolling (#318); the stylesheet
+widens the slider to 10 pixels.
+
 A modal dialog is never shown behind the window it blocks (#295), and never two at
 once. The main window's own modal dialogs (alerts from `_report`, the GnuCash change
 review, the due review) go through `ViewManager.queue_modal`: each waits until the
@@ -90,7 +96,14 @@ The register lists `ledger.register` rows in date order and opens scrolled to th
 end like a check register, without selecting or expanding a row. Register windows
 are independent consumers of the one open `DbSQLite` connection: each owns its
 account, filter, selection, and expansion, while database signals refresh all of
-them after a commit. The main window detaches secondary windows before the book
+them after a commit. A view that is not on screen only marks itself stale and
+refreshes when it is next mapped (`BaseView._on_change`, `_on_map`); switching to it
+skips the switcher's own refresh when mapping just did one. A register reloads only
+the transactions a commit names (`transaction-*` signals,
+`ledger.update_register`), which keeps rows and recomputes running balances in
+memory, and ignores the `database-changed` that follows them and any signal raised
+by its own save (`RegisterSheet.saving`). Before #319 one save read the account's
+ledger four times and rebuilt every built view, seconds on a long book. The main window detaches secondary windows before the book
 closes, so no callback reaches a replaced database. Register column headings are a
 shared engine mapping, so GTK and web name the same ledger directions.
 
@@ -159,12 +172,17 @@ parallel transaction models:
   refused while more than two lines hold a split.
 - **Editing in place.** Moving the cursor onto a transaction loads it as the draft:
   split lines record their stored split handles, and saving passes
-  `existing_handle` and `source`, so handles, planning purposes, investment
-  activity, and notes the row does not show are kept; an emptied line removes its
+  `existing_handle` and `source`, so handles, planning purposes, and investment
+  activity the row does not show are kept; an emptied line removes its
   split. Autocomplete never runs over a stored transaction. The **R** column calls
   `services.toggle_cleared`, which flips only `n`↔`c`, refuses `y`/frozen/void,
   and in the same database change adds a newly cleared candidate to (or removes
   it from) the account's open statement.
+- **Double Line.** The toolbar's **Double Line** toggle (remembered in view
+  settings as `register.double_line`) adds a `NOTES` row under every transaction
+  and the blank one. Its editable cell is the description column, drawn and edited
+  across to the balance column; Tab reaches it after the transaction's last cell,
+  and `Draft.notes` is saved with the transaction. With it off, notes are kept.
 - **Leaving.** Switching accounts, opening another transaction, or closing a
   register window with unsaved typing asks Save / Discard / Cancel first.
 - **Web.** The browser register has the same row, split lines, and in-place editing

@@ -53,6 +53,11 @@ class BaseView(Gtk.Box):
         self._handlers: list[int] = []
         self._refresh_pending = False
         self._refresh_source_id: int | None = None
+        #: A change arrived while the view was hidden; it refreshes when shown.
+        self._stale = False
+        self._full_refresh_pending = False
+        self._refreshed_on_map = False
+        self.connect("map", self._on_map)
 
     def append_toolbar(self, bar: Gtk.Widget) -> Gtk.ScrolledWindow:
         """Add a row of controls that scrolls sideways on a narrow window.
@@ -93,6 +98,33 @@ class BaseView(Gtk.Box):
         self.refresh()
 
     def _on_change(self, *_args) -> None:
+        """Repaint now if the view is on screen; otherwise when it is next shown.
+
+        Rebuilding every view after each save, including those in tabs nobody
+        is looking at, made entering a transaction take seconds on a long book
+        (#319). A hidden view only notes that it is out of date.
+        """
+        if not self.get_mapped():
+            self._stale = True
+            self._full_refresh_pending = True
+            return
+        self.refresh()
+
+    def _on_map(self, *_args) -> None:
+        if not self._stale or self.db is None or not self.db.is_open:
+            return
+        self._stale = False
+        self._on_map_refresh()
+        self._full_refresh_pending = False
+        self._refreshed_on_map = True
+
+    def consume_map_refresh(self) -> bool:
+        """Whether showing the view just brought it up to date (and forget that)."""
+        refreshed, self._refreshed_on_map = self._refreshed_on_map, False
+        return refreshed
+
+    def _on_map_refresh(self) -> None:
+        """Bring a view that was hidden during changes up to date."""
         self.refresh()
 
     def schedule_refresh(self) -> None:

@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from ..gi_setup import Gdk, Gtk, Pango, PangoCairo
-from ..register_sheet import BLANK, IMBALANCE, SPLIT, RegisterSheet
+from ..register_sheet import BLANK, IMBALANCE, NOTES, SPLIT, RegisterSheet
 
 __all__ = ["RegisterGrid", "grid_colours"]
 
@@ -275,6 +275,10 @@ class RegisterGrid(Gtk.Box):
             return
         assert sheet is not None
         x, width = self.column_x(sheet.column)
+        notes = sheet.rows[sheet.cursor].kind == NOTES
+        if notes:
+            # The notes editor spans the line, like the notes it edits.
+            width = self.column_x("balance")[0] - x
         y = self.row_height * (position + 1)
         self.editor.set_margin_start(int(x))
         self.editor.set_margin_top(int(y))
@@ -287,7 +291,7 @@ class RegisterGrid(Gtk.Box):
                 self.editor.set_text(text)
             finally:
                 self._syncing = False
-        heading = sheet.headings()[sheet.column]
+        heading = "Notes" if notes else sheet.headings()[sheet.column]
         self.editor.update_property(
             [Gtk.AccessibleProperty.LABEL], [f"{heading}: {sheet.summary(sheet.cursor)}"]
         )
@@ -385,6 +389,7 @@ class RegisterGrid(Gtk.Box):
             not in (
                 SPLIT,
                 IMBALANCE,
+                NOTES,
             )
         ):
             self.sheet.toggle_reconcile(index)
@@ -442,7 +447,7 @@ class RegisterGrid(Gtk.Box):
         if control or not self.editor.get_visible() or not character.isprintable() or not character:
             return False
         text = self.editor.get_text()
-        if sheet.column == "date" and sheet.rows[sheet.cursor].kind != SPLIT:
+        if sheet.column == "date" and sheet.rows[sheet.cursor].kind not in (SPLIT, NOTES):
             shifted = sheet.date_key(text, character)
             if shifted is not None:
                 self._replace(shifted, len(shifted))
@@ -523,14 +528,25 @@ class RegisterGrid(Gtk.Box):
                     if row.kind in (SPLIT, IMBALANCE)
                     else palette["current"]
                 )
-            elif index % 2:
+            # A notes line shares its transaction's band (Double Line mode).
+            elif (index - 1 if row.kind == NOTES else index) % 2:
                 fill = palette["band"]
             else:
                 fill = palette["surface"]
             cr.set_source_rgb(*_rgb(fill))
             cr.rectangle(0, y, width, self.row_height)
             cr.fill()
-            for column in self.columns:
+            if row.kind == NOTES:
+                # Notes run on from the description across the transfer and
+                # amount columns, as in GnuCash's Double Line mode.
+                text = sheet.text(index, "description")
+                if text and not self.under_editor(index, "description"):
+                    cr.set_source_rgb(*_rgb(palette["dim"]))
+                    self._text(area, cr, "description", y, text, span="balance")
+                columns: tuple[str, ...] = ()
+            else:
+                columns = self.columns
+            for column in columns:
                 text = sheet.text(index, column)
                 if not text or self.under_editor(index, column):
                     continue
@@ -542,7 +558,11 @@ class RegisterGrid(Gtk.Box):
                     cr.set_source_rgb(*ink)
                 self._text(area, cr, column, y, text)
             # GnuCash rules off the first transaction dated after today.
-            if not future_ruled and sheet.future(index) and row.kind not in (SPLIT, IMBALANCE):
+            if (
+                not future_ruled
+                and sheet.future(index)
+                and row.kind not in (SPLIT, IMBALANCE, NOTES)
+            ):
                 future_ruled = True
                 if index == 0 or not sheet.future(index - 1):
                     cr.set_source_rgb(*_rgb(palette["future"]))
@@ -587,8 +607,21 @@ class RegisterGrid(Gtk.Box):
             cr.line_to(round(x) - 0.5, height)
             cr.stroke()
 
-    def _text(self, area, cr, column: str, y: float, text: str, *, bold: bool = False) -> None:
+    def _text(
+        self,
+        area,
+        cr,
+        column: str,
+        y: float,
+        text: str,
+        *,
+        bold: bool = False,
+        span: str | None = None,
+    ) -> None:
+        """Draw ``text`` in ``column``, or from it up to the column ``span``."""
         x, width = self.column_x(column)
+        if span is not None:
+            width = self.column_x(span)[0] - x
         layout = area.create_pango_layout(text)
         layout.set_width(int(max(width - 2 * _PAD, 1) * Pango.SCALE))
         layout.set_ellipsize(Pango.EllipsizeMode.END)

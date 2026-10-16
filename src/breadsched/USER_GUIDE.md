@@ -515,8 +515,10 @@ from. Nothing is saved until you confirm. Notes, reconciliation, planning
 links, and FSA claims are never copied, and editing an existing transaction never
 proposes anything.
 
-Editing in place keeps notes, planning purposes, investment classifications,
-reconciliation, and FSA links, which the row does not show. Changing an amount in an
+Editing in place keeps planning purposes, investment classifications,
+reconciliation, and FSA links, which the row does not show; notes are shown and
+typed on the second line of the desktop register's **Double Line** mode and are
+otherwise kept as they are. Changing an amount in an
 existing transaction updates both of the numbers BreadSched keeps for each split. A
 split in an account held in another currency or commodity is the exception:
 BreadSched refuses to change its amount without its converted quantity, rather than

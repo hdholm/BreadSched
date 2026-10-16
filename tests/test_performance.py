@@ -242,3 +242,62 @@ def test_expense_explorer_on_a_household_book_stays_interactive():
     # Before #310 opening took about eighteen seconds here, and each choice as long.
     assert opened < 6.0, f"the Expense Explorer took {opened:.2f}s to calculate"
     assert chosen < 1.0, f"choosing a category took {chosen:.2f}s"
+
+
+@pytest.mark.performance
+def test_entering_a_transaction_in_a_long_register_is_quick():
+    """#319: one save read the account's whole ledger twice (seconds on long books)."""
+    import random
+    from datetime import timedelta
+
+    from breadsched.gui.register_sheet import RegisterSheet
+
+    picks = random.Random(319)
+    db = DbSQLite.create_memory()
+    try:
+        with db.transaction("chart") as txn:
+            root = Account(name="Root", atype=AccountType.ROOT)
+            db.add_account(root, txn)
+            checking = Account(name="Checking", atype=AccountType.BANK, parent=root.handle)
+            db.add_account(checking, txn)
+            categories = []
+            for number in range(20):
+                account = Account(
+                    name=f"Category {number}", atype=AccountType.EXPENSE, parent=root.handle
+                )
+                db.add_account(account, txn)
+                categories.append(account.handle)
+        with db.transaction("history") as txn:
+            day = date(2021, 1, 1)
+            while day <= date(2026, 10, 15):
+                for _ in range(8):
+                    db.add_transaction(
+                        Transaction.simple(
+                            day,
+                            f"Store {picks.randint(1, 300)}",
+                            picks.choice(categories),
+                            checking.handle,
+                            f"{picks.randint(1, 150)}.00",
+                        ),
+                        txn,
+                    )
+                day += timedelta(days=1)
+        sheet = RegisterSheet(db, checking.handle, today=date(2026, 10, 15))
+        assert len(sheet.ledger_rows) > 16_000
+        timings = []
+        for number in range(3):
+            sheet.to_blank()
+            for column, text in (
+                ("description", f"Corner store {number}"),
+                ("transfer", "Category 3"),
+                ("decrease", "12.34"),
+            ):
+                sheet.column = column
+                sheet.set_text(text)
+            start = perf_counter()
+            assert sheet.enter(), sheet.message
+            timings.append(perf_counter() - start)
+    finally:
+        db.close()
+    # Before #319 each save took about 3.6 seconds on this book.
+    assert max(timings) < 0.75, f"saves took {[round(t, 3) for t in timings]}s"

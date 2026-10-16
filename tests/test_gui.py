@@ -771,6 +771,54 @@ def _type(grid, text):
 class TestRegisterGrid:
     """The GnuCash-style grid: plain ruled rows, one editor at the cursor."""
 
+    def test_double_line_shows_and_edits_notes_and_is_remembered(self, app, window, populated_book):
+        # #319: notes could not be typed in the register.
+        from breadsched.gui.register_sheet import NOTES
+
+        view = _grid_register(app, window, populated_book)
+        sheet, grid = view.sheet, view.grid
+        assert not view.double_line_button.get_active()
+        assert NOTES not in {row.kind for row in sheet.rows}
+        view.double_line_button.set_active(True)
+        grid.paint(900, 320)
+        assert sheet.rows[-1].kind == NOTES and sheet.rows[-2].kind == "blank"
+        # Tab from the blank transaction's last cell reaches its notes line.
+        sheet.to_blank()
+        for column, text in (
+            ("description", "Hardware"),
+            ("transfer", "Expenses:Rent"),
+            ("decrease", "5"),
+        ):
+            sheet.column = column
+            sheet.set_text(text)
+        grid.sync()
+        assert grid.key(Gdk.KEY_Tab, 0)
+        assert sheet.rows[sheet.cursor].kind == NOTES
+        # The notes editor spans the line up to the balance column.
+        x, _w = grid.column_x("description")
+        assert grid.editor.get_margin_start() == int(x)
+        assert grid.editor.get_size_request()[0] >= int(grid.column_x("balance")[0] - x - 1)
+        _type(grid, "Gate hinges")
+        assert grid.key(Gdk.KEY_Return, 0)
+        [saved] = [t for t in app.db.iter_transactions() if t.description == "Hardware"]
+        assert saved.notes == "Gate hinges"
+        # The notes line is drawn, dimmed, under its transaction.
+        index = next(
+            i
+            for i, row in enumerate(sheet.rows)
+            if row.kind == NOTES
+            and row.register_row is not None
+            and row.register_row.transaction.handle == saved.handle
+        )
+        assert sheet.text(index, "description") == "Gate hinges"
+        grid.paint(900, 320)
+        # The choice is remembered for the next register.
+        settings = app.view_settings
+        assert settings.get_bool("register", "double_line") is True
+        view.double_line_button.set_active(False)
+        assert settings.get_bool("register", "double_line") is False
+        assert NOTES not in {row.kind for row in sheet.rows}
+
     def test_a_register_opens_on_the_blank_entry_at_the_bottom(self, app, window, populated_book):
         view = _grid_register(app, window, populated_book, extra=80)
         grid, sheet = view.grid, view.sheet
@@ -1038,17 +1086,62 @@ class TestLiveUpdates:
     def test_posting_a_transaction_repaints_the_open_view(self, app, window, populated_book):
         app.open_book(populated_book)
         handle = app.db.get_account_by_name("Assets:Checking Account").handle
+        window.present()
         window.open_register(handle)
         view = window._views["register"]
+        assert _spin(view.get_mapped)
         before = len(view.sheet.rows)
 
         other = app.db.get_account_by_name("Expenses:Rent").handle
         with app.db.transaction("New rent") as txn:
-            app.db.add_transaction(
-                Transaction.simple(date(2026, 4, 1), "April rent", other, handle, Money("1800.00")),
-                txn,
+            rent = Transaction.simple(
+                date(2026, 4, 1), "April rent", other, handle, Money("1800.00")
             )
+            app.db.add_transaction(rent, txn)
         assert len(view.sheet.rows) == before + 1
+        assert rent.handle in {row.transaction.handle for row in view.sheet.ledger_rows}
+
+    def test_hidden_views_wait_until_shown_and_saves_reload_one_transaction(
+        self, app, window, populated_book, monkeypatch
+    ):
+        # #319: every built view, shown or not, rebuilt itself after each save, and
+        # the register read its whole ledger several times.
+        from breadsched.gen.engine import ledger
+
+        app.open_book(populated_book)
+        handle = app.db.get_account_by_name("Assets:Checking Account").handle
+        window.present()
+        window.show_category("dashboard")
+        dashboard = window._views["dashboard"]
+        assert _spin(dashboard.get_mapped)
+        window.open_register(handle)
+        view = window._views["register"]
+        assert _spin(lambda: view.get_mapped() and not dashboard.get_mapped())
+        repaints = []
+        monkeypatch.setattr(dashboard, "refresh", lambda: repaints.append(1))
+        full = []
+        real = ledger.register
+        monkeypatch.setattr(ledger, "register", lambda *a, **k: full.append(1) or real(*a, **k))
+        sheet = view.sheet
+        sheet.to_blank()
+        for column, text in (
+            ("description", "Corner store"),
+            ("transfer", "Expenses:Rent"),
+            ("decrease", "12"),
+        ):
+            sheet.column = column
+            sheet.set_text(text)
+        assert sheet.enter(), sheet.message
+        assert full == [] and repaints == []
+
+        def key(rows):
+            return [(r.transaction.handle, r.split.handle, r.running) for r in rows]
+
+        assert key(sheet.ledger_rows) == key(real(app.db, handle))
+        window.show_category("dashboard")
+        assert _spin(lambda: repaints == [1])
+        _spin(lambda: False, 0.3)
+        assert repaints == [1]
 
     def test_undo_action_follows_availability(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -4681,6 +4774,27 @@ class TestDueReview:
 
         due = engine.due_occurrences(app.db, horizon_days=0)[:limit]
         return DueDialog(window, app.db, due), due
+
+    def test_a_long_due_list_shows_a_permanent_scrollbar(self, due_book, window):
+        # #318: overlay scrollbars only appeared while scrolling, so a long due
+        # list did not show that more of it was out of view.
+        from breadsched.gui.app import show_scrollbars
+
+        assert show_scrollbars()
+        settings = Gtk.Settings.get_default()
+        assert settings.get_property("gtk-overlay-scrolling") is False
+        dialog, due = self._dialog(due_book, window, limit=40)
+        try:
+            dialog.set_default_size(700, 300)
+            dialog.present()
+            assert _spin(dialog.get_mapped)
+            scrollers = [w for w in _descendants(dialog) if isinstance(w, Gtk.ScrolledWindow)]
+            assert scrollers
+            for scroller in scrollers:
+                bar = scroller.get_vscrollbar()
+                assert "overlay-indicator" not in bar.get_css_classes()
+        finally:
+            dialog.destroy()
 
     def test_nothing_is_posted_without_a_decision(self, due_book, window):
         """Opening the book must not write to the ledger on its own."""

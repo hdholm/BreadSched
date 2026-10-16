@@ -43,13 +43,12 @@ def column_headings(atype: AccountType) -> tuple[str, str]:
 class RegisterView(BaseView):
     """A ledger grid for one account at a time."""
 
-    WATCHES = (
-        "database-changed",
-        "transaction-add",
-        "transaction-update",
-        "transaction-delete",
-        "account-update",
-    )
+    # Transaction signals are connected separately (``set_db``): they name the
+    # transactions that changed, so the register reloads only those (#319).
+    WATCHES = ("database-changed", "account-update")
+    TRANSACTION_SIGNALS = ("transaction-add", "transaction-update", "transaction-delete")
+    #: Where the Double Line choice is remembered.
+    SETTINGS_SECTION = "register"
 
     def __init__(self, manager) -> None:
         super().__init__(manager)
@@ -60,6 +59,11 @@ class RegisterView(BaseView):
         # notify::selected and would otherwise overwrite the account the caller
         # just asked for.
         self._updating = False
+        #: Transactions changed while the register was hidden, reloaded when shown.
+        self._pending_changes: set[str] = set()
+        #: Set when this commit's transaction signals were handled, so the
+        #: database-changed signal that follows them does not reload again.
+        self._handled_commit = False
         self._build()
 
     def _build(self) -> None:
@@ -90,6 +94,14 @@ class RegisterView(BaseView):
         )
         self.split_button.connect("clicked", lambda *_: self.toggle_split())
         bar.append(self.split_button)
+
+        self.double_line_button = Gtk.ToggleButton(label="Double Line")
+        self.double_line_button.set_tooltip_text(
+            "Show a second line under each transaction for its notes"
+        )
+        self.double_line_button.set_active(self._settings_double_line())
+        self.double_line_button.connect("toggled", self._on_double_line_toggled)
+        bar.append(self.double_line_button)
 
         self.editor_button = Gtk.Button(icon_name="document-edit-symbolic")
         self.editor_button.set_tooltip_text(
@@ -158,9 +170,73 @@ class RegisterView(BaseView):
         else:
             # A change made elsewhere: re-read, keeping the cursor and any typing.
             self.sheet.reload()
+        self._pending_changes.clear()
+        self.sheet.set_double_line(self.double_line_button.get_active())
         self.sheet.set_filter(self.filter_entry.get_text())
         self.grid.set_sheet(self.sheet)
         self._show_balance()
+
+    # ------------------------------------------------------------- updates
+
+    def set_db(self, db) -> None:
+        super().set_db(db)
+        if db is None:
+            return
+        for signal in self.TRANSACTION_SIGNALS:
+            self._handlers.append(db.connect(signal, self._on_transactions))
+
+    def _on_transactions(self, handles) -> None:
+        """Reload just the transactions a commit changed (#319)."""
+        self._handled_commit = True
+        sheet = self.sheet
+        if sheet is None or sheet.db is not self.db:
+            return
+        if sheet.saving:
+            # The sheet's own save reloads what it saved once it has finished.
+            return
+        if not self.get_mapped():
+            self._pending_changes.update(handles)
+            self._stale = True
+            return
+        sheet.reload(changed=handles)
+        self.grid.set_sheet(sheet)
+        self._show_balance()
+
+    def _on_change(self, *args) -> None:
+        if self._handled_commit:
+            # The transaction signals of this commit already updated the register.
+            self._handled_commit = False
+            return
+        super()._on_change(*args)
+
+    def _on_map_refresh(self) -> None:
+        sheet = self.sheet
+        if self._pending_changes and sheet is not None and not self._full_refresh_pending:
+            changed = set(self._pending_changes)
+            self._pending_changes.clear()
+            sheet.reload(changed=changed)
+            self.grid.set_sheet(sheet)
+            self._show_balance()
+            return
+        self.refresh()
+
+    def _settings(self):
+        application = self.manager.get_application() if self.manager is not None else None
+        return getattr(application, "view_settings", None)
+
+    def _settings_double_line(self) -> bool:
+        settings = self._settings()
+        return settings.get_bool(self.SETTINGS_SECTION, "double_line") if settings else False
+
+    def _on_double_line_toggled(self, button: Gtk.ToggleButton) -> None:
+        on = button.get_active()
+        if self.sheet is not None:
+            self.sheet.set_double_line(on)
+            self.grid.sync(focus=False)
+        settings = self._settings()
+        if settings is not None:
+            settings.set(self.SETTINGS_SECTION, "double_line", on)
+            settings.save()
 
     def _show_balance(self) -> None:
         closing = self.sheet.closing_balance() if self.sheet is not None else None

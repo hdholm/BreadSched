@@ -92,7 +92,8 @@ when it opens the book.
 BreadSched fits a small laptop screen however long your account names and notes
 are: a long name in a choice list is shortened in the middle when chosen (the list
 shows it in full), wide toolbars scroll sideways, the Dashboard's summary cards wrap
-onto more rows, and dialogs open within the screen and scroll inside.
+onto more rows, and dialogs open within the screen and scroll inside. Scrollbars are
+always shown, so a list with more out of view says so.
 
 The toolbar starts with the commands that work anywhere (open, import, undo, redo,
 new transaction, and print). Next come the name of the view you are in and that
@@ -274,8 +275,13 @@ typing) the same way, or to fold two lines back into one. An **Imbalance** line
 shows how far the splits are from balancing; **Enter** saves only once they
 balance and one split is in this register's account.
 
+**Double Line** in the toolbar adds a second line under every transaction, the
+blank one included, for its notes, as in GnuCash: Tab moves from the last amount to
+the notes line, and Enter saves what you typed there with the transaction. The
+choice is remembered. With it off, saving keeps the notes a transaction already has.
+
 The pencil icon opens the transaction under the cursor in the full transaction
-editor, for notes, a claim, or other details; on the blank transaction it opens a
+editor, for a claim or other details; on the blank transaction it opens a
 new one filled in with what you typed, including every split line. Saving there
 empties the blank transaction, and cancelling leaves it as it was. If you switch
 accounts, open another transaction, or close a register window while a
