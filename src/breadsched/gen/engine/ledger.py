@@ -27,6 +27,7 @@ __all__ = [
     "register_headings",
     "register",
     "RegisterRow",
+    "update_register",
     "totals_by_class",
     "totals_by_class_amount",
     "net_worth",
@@ -197,6 +198,46 @@ def register(
             running = _accumulate(running, amount)
             rows.append(RegisterRow(txn, split, (running * sign).value))
     return rows
+
+
+def update_register(
+    db: DbSQLite,
+    account: str | Account,
+    rows: list[RegisterRow],
+    changed: Iterable[str],
+) -> list[RegisterRow]:
+    """``register(db, account)`` after ``changed`` transactions were saved or removed.
+
+    Only the changed transactions are read from the book; the other rows are
+    kept, and every running balance is recomputed in memory. Entering one
+    transaction in a long register therefore no longer decodes the account's
+    whole history (#319). ``rows`` must be a full-range register of ``account``;
+    the result equals rebuilding it.
+    """
+    handle = account if isinstance(account, str) else account.handle
+    gone = set(changed)
+    kept = [row for row in rows if row.transaction.handle not in gone]
+    added: list[RegisterRow] = []
+    for txn_handle in sorted(gone):
+        txn = db.get_transaction(txn_handle)
+        if txn is None:
+            continue
+        added.extend(
+            RegisterRow(txn, split, Money(0)) for split in txn.splits if split.account == handle
+        )
+    merged = sorted(
+        kept + added, key=lambda row: (row.transaction.post_date, row.transaction.handle)
+    )
+    obj = db.get_account(handle)
+    sign = obj.sign() if obj else 1
+    currency = reporting_currency_handle(db)
+    running: Amount | None = None
+    result: list[RegisterRow] = []
+    for row in merged:
+        amount = Amount(row.split.value, row.transaction.currency or currency)
+        running = _accumulate(running, amount)
+        result.append(RegisterRow(row.transaction, row.split, (running * sign).value))
+    return result
 
 
 def _day_before(when: date) -> date:

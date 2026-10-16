@@ -620,7 +620,8 @@ class ViewManager(Gtk.ApplicationWindow):
         # toolbar, menu, or a jump from another view.
         self.category_action.set_state(GLib.Variant.new_string(key))
         self._show_view_tools(key)
-        view.refresh()
+        if not view.consume_map_refresh():
+            view.refresh()
         self._enable_printing(view)
 
     def _enable_printing(self, view) -> None:

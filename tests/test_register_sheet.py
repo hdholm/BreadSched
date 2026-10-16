@@ -15,6 +15,7 @@ from breadsched.gen.lib import Money, Split, Transaction
 from breadsched.gui.register_sheet import (
     BLANK,
     IMBALANCE,
+    NOTES,
     SPLIT,
     SPLIT_LABEL,
     TRANSACTION,
@@ -308,3 +309,142 @@ def test_the_blank_transaction_shows_its_date_while_the_cursor_is_elsewhere(db, 
     sheet.move(-1)
     assert sheet.rows[-1].kind == BLANK and not sheet.rows[-1].current
     assert sheet.text(len(sheet.rows) - 1, "date") == TODAY.isoformat()
+
+
+def _history(db, book, days=40):
+    with db.transaction("History") as txn:
+        for day in range(days):
+            when = date.fromordinal(date(2026, 1, 1).toordinal() + day)
+            db.add_transaction(
+                Transaction.simple(when, f"Shop {day}", book.groceries, book.checking, "4"), txn
+            )
+
+
+class TestSavingStaysQuick:
+    """#319: a save read the whole account twice, then every view reloaded it again."""
+
+    def test_the_in_place_update_equals_a_full_rebuild(self, db, book):
+        from breadsched.gen.engine import ledger
+
+        _history(db, book, days=12)
+        rows = ledger.register(db, book.checking)
+        middle = rows[5].transaction
+        with db.transaction("Edit") as txn:
+            middle.post_date = date(2026, 1, 30)
+            middle.splits[0].value = (
+                Money("-9.25")
+                if middle.splits[0].account == book.checking
+                else middle.splits[0].value
+            )
+            middle.splits[1].value = -middle.splits[0].value
+            db.commit_transaction(middle, txn)
+            late = Transaction.simple(date(2026, 1, 2), "Late", book.checking, book.salary, "100")
+            db.add_transaction(late, txn)
+            gone = rows[0].transaction
+            db.remove_transaction(gone.handle, txn)
+        updated = ledger.update_register(
+            db, book.checking, rows, {middle.handle, late.handle, gone.handle}
+        )
+        full = ledger.register(db, book.checking)
+        assert [(r.transaction.handle, r.split.handle, r.running) for r in updated] == [
+            (r.transaction.handle, r.split.handle, r.running) for r in full
+        ]
+
+    def test_a_save_reads_only_the_saved_transaction(self, db, book, monkeypatch):
+        _history(db, book)
+        sheet = _sheet(db, book)
+        decoded = []
+        real = db._decode_row
+
+        def counting(table, handle, blob, cls):
+            if table == "transaction":
+                decoded.append(handle)
+            return real(table, handle, blob, cls)
+
+        monkeypatch.setattr(db, "_decode_row", counting)
+        _type(sheet, "description", "Corner store")
+        _type(sheet, "transfer", "Expenses:Groceries")
+        _type(sheet, "decrease", "7")
+        assert sheet.enter()
+        # Before #319 this decoded every transaction in the account twice (80+).
+        assert len(decoded) <= 3, decoded
+        assert sheet.closing_balance() == sheet.ledger_rows[-1].running
+        assert sheet.ledger_rows[-1].transaction.description == "Corner store"
+
+
+class TestDoubleLine:
+    """GnuCash's Double Line mode: a notes line under every transaction (#319)."""
+
+    def test_notes_are_typed_on_the_blank_rows_second_line_and_saved(self, db, book):
+        sheet = _sheet(db, book)
+        sheet.set_double_line(True)
+        assert [row.kind for row in sheet.rows[-2:]] == [BLANK, NOTES]
+        _type(sheet, "description", "Hardware store")
+        _type(sheet, "transfer", "Expenses:Groceries")
+        _type(sheet, "decrease", "20")
+        # Tab goes from the last amount to the notes line, then saves past it.
+        sheet.column = "decrease"
+        assert sheet.tab()
+        assert sheet.rows[sheet.cursor].kind == NOTES and sheet.column == "description"
+        sheet.set_text("Hinges for the gate")
+        assert sheet.tab()
+        [txn] = [t for t in db.iter_transactions() if t.description == "Hardware store"]
+        assert txn.notes == "Hinges for the gate"
+        header = next(
+            i
+            for i, row in enumerate(sheet.rows)
+            if row.kind == TRANSACTION and row.register_row.transaction.handle == txn.handle
+        )
+        assert sheet.rows[header + 1].kind == NOTES
+        assert sheet.text(header + 1, "description") == "Hinges for the gate"
+        assert sheet.text(header + 1, "transfer") == ""
+        assert sheet.editable_columns(header + 1) == ("description",)
+
+    def test_editing_notes_of_an_existing_transaction_keeps_everything_else(self, db, book):
+        pay = Transaction.simple(date(2026, 2, 3), "Pay", book.checking, book.salary, "900")
+        pay.notes = "January"
+        with db.transaction("Pay") as txn:
+            db.add_transaction(pay, txn)
+        sheet = _sheet(db, book)
+        sheet.set_double_line(True)
+        header = next(i for i, row in enumerate(sheet.rows) if row.kind == TRANSACTION)
+        assert sheet.text(header + 1, "description") == "January"
+        # Clicking its notes line opens that transaction there.
+        assert sheet.move_to(header + 1, "description")
+        assert sheet.rows[sheet.cursor].kind == NOTES
+        assert not sheet.draft.dirty()
+        sheet.set_text("January, with bonus")
+        assert sheet.draft.dirty()
+        assert sheet.enter()
+        stored = db.get_transaction(pay.handle)
+        assert stored.notes == "January, with bonus"
+        assert {(s.account, s.value) for s in stored.splits} == {
+            (book.checking, Money(900)),
+            (book.salary, Money(-900)),
+        }
+        # Notes never quickfill or propose like a description.
+        assert sheet.quickfill("Jan") == ("Jan", [])
+
+    def test_single_line_mode_keeps_notes_on_save(self, db, book):
+        pay = Transaction.simple(date(2026, 2, 3), "Pay", book.checking, book.salary, "900")
+        pay.notes = "Kept"
+        with db.transaction("Pay") as txn:
+            db.add_transaction(pay, txn)
+        sheet = _sheet(db, book)
+        header = next(i for i, row in enumerate(sheet.rows) if row.kind == TRANSACTION)
+        assert sheet.move_to(header, "description")
+        sheet.set_text("Pay day")
+        assert sheet.enter()
+        assert db.get_transaction(pay.handle).notes == "Kept"
+        assert NOTES not in {row.kind for row in sheet.rows}
+
+    def test_turning_double_line_off_on_a_notes_line_returns_to_the_transaction(self, db, book):
+        sheet = _sheet(db, book)
+        sheet.set_double_line(True)
+        sheet.move_to(len(sheet.rows) - 1, "description")
+        assert sheet.rows[sheet.cursor].kind == NOTES
+        sheet.set_double_line(False)
+        assert sheet.rows[sheet.cursor].kind == BLANK
+        # The notes line takes no reconcile toggle.
+        sheet.set_double_line(True)
+        assert sheet.toggle_reconcile(len(sheet.rows) - 1) is False

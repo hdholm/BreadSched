@@ -32,6 +32,20 @@ LOG = get_logger(__name__)
 STYLE_RESOURCE = resources.files("breadsched.gui").joinpath("resources/style.css")
 
 
+def show_scrollbars() -> bool:
+    """Give every scrolled area a scrollbar that is always shown (#318).
+
+    GTK 4's overlay scrollbars are a thin indicator that appears only while
+    scrolling or under the pointer, so a list such as the due review gives no
+    sign that more of it is out of view. Returns whether the setting exists.
+    """
+    settings = Gtk.Settings.get_default()
+    if settings is None or settings.find_property("gtk-overlay-scrolling") is None:
+        return False
+    settings.set_property("gtk-overlay-scrolling", False)
+    return True
+
+
 class BreadSchedApplication(Gtk.Application):
     """Owns the open book and the windows looking at it."""
 
@@ -76,6 +90,7 @@ class BreadSchedApplication(Gtk.Application):
             Gtk.StyleContext.add_provider_for_display(
                 display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
             )
+        show_scrollbars()
         # The installed desktop entry, AppStream metadata, and icon share the
         # application id, so windows use the themed icon wherever it is installed.
         Gtk.Window.set_default_icon_name(APP_ID)

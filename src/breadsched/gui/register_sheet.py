@@ -20,6 +20,7 @@ transaction's transfer and amount (``services/autocomplete``).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -57,6 +58,7 @@ __all__ = [
     "TRANSACTION",
     "Draft",
     "Line",
+    "NOTES",
     "RegisterSheet",
     "SheetRow",
 ]
@@ -66,6 +68,8 @@ TRANSACTION = "transaction"
 SPLIT = "split"
 IMBALANCE = "imbalance"
 BLANK = "blank"
+#: The second line of a transaction in Double Line mode: its notes (#319).
+NOTES = "notes"
 
 #: Column keys, in display order.
 COLUMNS = ("date", "num", "description", "transfer", "reconcile", "increase", "decrease", "balance")
@@ -117,6 +121,7 @@ class Draft:
     transfer: str = ""
     increase: str = ""
     decrease: str = ""
+    notes: str = ""
     expanded: bool = False
     lines: list[Line] = field(default_factory=list)
     #: Split handles behind the register and transfer sides of a two-split entry.
@@ -140,6 +145,7 @@ class Draft:
             self.date.strip(),
             self.num.strip(),
             self.description.strip(),
+            self.notes.strip(),
             self.expanded,
             simple,
             lines,
@@ -185,6 +191,10 @@ class RegisterSheet:
         self.filter_text = ""
         self.rows: list[SheetRow] = []
         self.ledger_rows: list[ledger.RegisterRow] = []
+        #: Double Line mode: each transaction has a second line for its notes.
+        self.double_line = False
+        #: True while a save is being written, so change signals wait for it.
+        self.saving = False
         #: The cursor's row index and column.
         self.cursor = 0
         self.column = "date"
@@ -210,11 +220,14 @@ class RegisterSheet:
     def account_object(self):
         return self.db.get_account(self.account)
 
-    def reload(self, *, keep_cursor: bool = True) -> None:
+    def reload(self, *, keep_cursor: bool = True, changed: Iterable[str] | None = None) -> None:
         """Re-read the ledger, keeping the cursor on its transaction where it still is.
 
-        A draft with unsaved typing survives a reload; one whose transaction has
-        gone (deleted elsewhere) returns the cursor to the blank transaction.
+        With ``changed`` (the handles of transactions just saved or removed) only
+        those are read again and the running balances recomputed in memory, so a
+        save in a long register stays quick (#319); otherwise the whole ledger is
+        read. A draft with unsaved typing survives a reload; one whose transaction
+        has gone (deleted elsewhere) returns the cursor to the blank transaction.
         """
         account = self.account_object
         if account is None:
@@ -233,7 +246,12 @@ class RegisterSheet:
             elif not self.draft.dirty():
                 self.draft = self._load_draft(fresh, self.draft.split_handle)
         self._load_accounts()
-        self.ledger_rows = ledger.register(self.db, self.account)
+        if changed is not None and self.ledger_rows:
+            self.ledger_rows = ledger.update_register(
+                self.db, self.account, self.ledger_rows, changed
+            )
+        else:
+            self.ledger_rows = ledger.register(self.db, self.account)
         seen: dict[str, None] = {}
         for row in reversed(self.ledger_rows):
             if row.transaction.description.strip():
@@ -263,6 +281,15 @@ class RegisterSheet:
         self.transfer_names = {
             name: handle for name, handle in self.account_names.items() if handle != self.account
         }
+
+    def set_double_line(self, on: bool) -> None:
+        """Show or hide each transaction's notes line, keeping the cursor's place."""
+        if on == self.double_line:
+            return
+        if not on and 0 <= self.cursor < len(self.rows) and self.rows[self.cursor].kind == NOTES:
+            self.cursor = self.header_index()
+        self.double_line = on
+        self._rebuild()
 
     def set_filter(self, text: str) -> None:
         self.filter_text = text
@@ -300,10 +327,14 @@ class RegisterSheet:
             if not mine and not self._matches(row):
                 continue
             rows.append(SheetRow(TRANSACTION, row, current=mine))
+            if self.double_line:
+                rows.append(SheetRow(NOTES, row, current=mine))
             if mine and draft.expanded:
                 rows.extend(self._line_rows())
         blank_current = draft.source is None
         rows.append(SheetRow(BLANK, current=blank_current))
+        if self.double_line:
+            rows.append(SheetRow(NOTES, current=blank_current))
         if blank_current and draft.expanded:
             rows.extend(self._line_rows())
         self.rows = rows
@@ -321,11 +352,17 @@ class RegisterSheet:
             row = self.rows[self.cursor]
             if row.kind == SPLIT:
                 return ("split", row.line)
+            if row.kind == NOTES and row.current:
+                return ("notes", None)
         return ("header", None)
 
     def _restore(self, anchor: tuple[str, int | None]) -> None:
         header = self.header_index()
         kind, line = anchor
+        if kind == "notes" and self.double_line:
+            self.cursor = header + 1
+            self.column = "description"
+            return
         if kind == "split" and line is not None:
             for index in range(header + 1, len(self.rows)):
                 if self.rows[index].kind == SPLIT and self.rows[index].line == line:
@@ -363,6 +400,7 @@ class RegisterSheet:
             date=transaction.post_date.isoformat(),
             num=transaction.num,
             description=transaction.description,
+            notes=transaction.notes or "",
         )
         name = self.db.full_name(others[0].account) if len(others) == 1 else ""
         if mine is not None and len(others) == 1 and others[0].account != mine.account and name:
@@ -412,6 +450,12 @@ class RegisterSheet:
         if row.kind == SPLIT:
             assert row.line is not None
             return draft.lines[row.line].cell(column)
+        if row.kind == NOTES:
+            if column != "description":
+                return ""
+            if row.current:
+                return draft.notes
+            return row.register_row.transaction.notes or "" if row.register_row else ""
         if row.kind == IMBALANCE:
             if column == "description":
                 return "Imbalance"
@@ -475,6 +519,10 @@ class RegisterSheet:
             return ()
         if row.kind == SPLIT:
             return _SPLIT_FIELDS
+        if row.kind == NOTES:
+            if not self.enabled and row.register_row is None:
+                return ()
+            return ("description",)
         if self.draft.expanded and row.current:
             return ("date", "num", "description")
         return _TRANSACTION_FIELDS
@@ -515,6 +563,9 @@ class RegisterSheet:
                 setattr(line, "decrease" if self.column == "increase" else "increase", "")
             self._grow_lines()
             return
+        if row.kind == NOTES:
+            self.draft.notes = text
+            return
         self.draft.set_cell(self.column, text)
 
     def _grow_lines(self) -> None:
@@ -544,7 +595,7 @@ class RegisterSheet:
                 self.account_names if self.rows[self.cursor].kind == SPLIT else self.transfer_names
             )
             return quickfill_account(typed, names)
-        if self.column == "description" and self.rows[self.cursor].kind != SPLIT:
+        if self.column == "description" and self.rows[self.cursor].kind not in (SPLIT, NOTES):
             if self.draft.source is None:
                 found = quickfill_description(typed, self.descriptions)
                 if found is not None:
@@ -606,7 +657,7 @@ class RegisterSheet:
             self.column = column if value >= 0 else other
             self.set_text(abs(value).format())
             self.column = saved
-        elif column == "description" and row.kind != SPLIT and text:
+        elif column == "description" and row.kind not in (SPLIT, NOTES) and text:
             self.propose()
         return True
 
@@ -788,7 +839,9 @@ class RegisterSheet:
             self._load_accounts()
             self.cursor = 0
             self._rebuild()
-            index = self.header_index()
+            # Clicking another transaction's notes line opens it there.
+            index = self.header_index() + (1 if target.kind == NOTES else 0)
+            self.cursor = index
         else:
             if self.rows[self.cursor].kind == SPLIT and not self.settle():
                 return False
@@ -843,7 +896,7 @@ class RegisterSheet:
         order = [(header, column) for column in self.editable_columns(header)]
         for index in range(header + 1, len(self.rows)):
             row = self.rows[index]
-            if not row.current or row.kind not in (SPLIT, IMBALANCE):
+            if not row.current or row.kind not in (NOTES, SPLIT, IMBALANCE):
                 break
             order.extend((index, column) for column in self.editable_columns(index))
         return order
@@ -941,22 +994,11 @@ class RegisterSheet:
             if not built:
                 return False
             splits, amount = built
-        result = save_transaction(
-            self.db,
-            SaveTransaction(
-                TransactionInput(
-                    post_date=when,
-                    description=description,
-                    num=draft.num.strip(),
-                    # Notes are not shown in the register, so an edit keeps them.
-                    notes=draft.source.notes if draft.source is not None else "",
-                    currency=currency,
-                    splits=tuple(splits),
-                ),
-                existing_handle=draft.source.handle if draft.source is not None else None,
-                source=draft.source,
-            ),
-        )
+        self.saving = True
+        try:
+            result = self._save_transaction(when, description, currency, splits)
+        finally:
+            self.saving = False
         if not result.ok:
             return self._fail(service_error_message(result.errors[0]))
         if draft.source is None:
@@ -970,11 +1012,33 @@ class RegisterSheet:
         else:
             self._say(f"Saved changes to {description}.")
         self.draft = self._blank_draft()
-        self.ledger_rows = ledger.register(self.db, self.account)
-        self.reload(keep_cursor=False)
+        changed = {result.value.handle} if result.value is not None else set()
+        if draft.source is not None:
+            changed.add(draft.source.handle)
+        self.reload(keep_cursor=False, changed=changed)
         if result.value is not None and draft.source is not None:
             self.select_transaction(draft.source.handle)
         return True
+
+    def _save_transaction(self, when, description: str, currency: str, splits):
+        """Write the draft as one balanced transaction through the shared service."""
+        draft = self.draft
+        return save_transaction(
+            self.db,
+            SaveTransaction(
+                TransactionInput(
+                    post_date=when,
+                    description=description,
+                    num=draft.num.strip(),
+                    # Typed on the notes line in Double Line mode; otherwise kept.
+                    notes=draft.notes,
+                    currency=currency,
+                    splits=tuple(splits),
+                ),
+                existing_handle=draft.source.handle if draft.source is not None else None,
+                source=draft.source,
+            ),
+        )
 
     def _two_splits(self, currency: str):
         draft = self.draft
@@ -1061,7 +1125,7 @@ class RegisterSheet:
     def toggle_reconcile(self, index: int) -> bool:
         """Mark a transaction's split in this account cleared, or not cleared."""
         row = self.rows[index]
-        if row.register_row is None:
+        if row.kind != TRANSACTION or row.register_row is None:
             return False
         result = toggle_cleared(
             self.db,
@@ -1071,7 +1135,7 @@ class RegisterSheet:
             return self._fail(service_error_message(result.errors[0]))
         state = "cleared" if result.value is ReconcileState.CLEARED else "not cleared"
         self._say(f"Marked {row.register_row.description} {state}.")
-        self.reload()
+        self.reload(changed={row.register_row.transaction.handle})
         return True
 
     # ----------------------------------------------------------------- messages

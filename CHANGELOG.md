@@ -10,6 +10,27 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a278 - 2026-10-16
+
+- **Entering transactions is quick again (#319).** One save in the desktop register
+  read the account's whole ledger four times (twice in the register, twice more from
+  its own change signals) and rebuilt every view already built, shown or not; on a
+  17,000-transaction account the register alone took 3.6 seconds and the window
+  stopped responding. `ledger.update_register` now reloads only the transactions a
+  commit names and recomputes running balances in memory; the register ignores the
+  signals raised by its own save; and a view that is not on screen marks itself out
+  of date and refreshes when it is next shown. A save on that account now takes
+  about 0.2 seconds. Tests check the in-place update against a full rebuild, that a
+  save decodes only the saved transaction, that a hidden view waits until shown, and
+  the time.
+- **Notes in the register: Double Line mode (#319).** A **Double Line** toggle in
+  the register's toolbar adds a second line under every transaction, the blank one
+  included, for its notes, as in GnuCash. Tab reaches it after the last amount, and
+  the notes are saved with the transaction. The choice is remembered.
+- **Scrollbars are always visible (#318).** GTK's overlay scrollbars appeared only
+  while scrolling, so long lists such as the due review gave no sign of more below.
+  Overlay scrolling is now off at start-up and the slider is a little wider.
+
 ## 0.2.0a277 - 2026-10-09
 
 - **Expense Explorer opens quickly and stays responsive (#310).** Each category's
