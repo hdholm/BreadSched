@@ -96,8 +96,10 @@ The register lists `ledger.register` rows in date order and opens scrolled to th
 end like a check register, without selecting or expanding a row. Register windows
 are independent consumers of the one open `DbSQLite` connection: each owns its
 account, filter, selection, and expansion, while database signals refresh all of
-them after a commit. A view that is not on screen only marks itself stale and
-refreshes when it is next mapped (`BaseView._on_change`, `_on_map`); switching to it
+them after a commit. A view on screen repaints once after the current event
+(`schedule_refresh`), however many signals a burst of commits raised; a view that is
+not on screen only marks itself stale and refreshes when it is next mapped
+(`BaseView._on_change`, `_on_map`); switching to it
 skips the switcher's own refresh when mapping just did one. A register reloads only
 the transactions a commit names (`transaction-*` signals,
 `ledger.update_register`), which keeps rows and recomputes running balances in

@@ -414,11 +414,21 @@ def test_cli_lists_sets_and_fetches(tmp_path, capsys, monkeypatch):
     db.close()
     capsys.readouterr()
 
+    from breadsched.plugins.quotes import FinanceQuoteInfo
+
+    info = FinanceQuoteInfo(True, "Finance::Quote 1.71 is installed", ("nyse", "usa"))
+    monkeypatch.setattr(quote_commands, "finance_quote_info", lambda: info)
+    # #317: a source no one offers is kept, with the reason it will not fetch.
+    assert cli(["quote-source", path, "G", "vanguard"]) == 0
+    out = capsys.readouterr().out
+    assert "online quotes from vanguard" in out and "Warning: “vanguard” is not" in out
     assert cli(["quote-source", path, "G", "tsp"]) == 0
-    assert "online quotes from tsp" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "online quotes from tsp" in out and "Warning" not in out
     assert cli(["quotes", path, "--list", "--json"]) == 0
     listed = json.loads(capsys.readouterr().out)
     assert listed["requests"] == [{"symbol": "G", "source": "tsp"}]
+    assert listed["sources"] == ["tsp", "alphavantage", "currency", "nyse", "usa"]
 
     fetcher = _Fixed([FetchedQuote("G", "tsp", Decimal("18.4521"), "USD", DAY, "tsp.gov")])
     monkeypatch.setattr(quote_commands, "_fetcher", lambda: fetcher)
@@ -439,3 +449,61 @@ def test_cli_lists_sets_and_fetches(tmp_path, capsys, monkeypatch):
     )
     assert cli(["quotes", path]) == 1
     assert "G (tsp): down" in capsys.readouterr().out
+
+
+class TestFinanceQuoteMethods:
+    """#317: the sources a commodity may name come from the installed Finance::Quote."""
+
+    def _info(self, monkeypatch, returncode=0, stdout=""):
+        from breadsched.plugins.quotes import finance_quote_info
+
+        monkeypatch.delenv("FLATPAK_ID", raising=False)
+        seen = []
+
+        def run(args):
+            seen.append(args)
+            return subprocess.CompletedProcess(args, returncode, stdout=stdout, stderr="")
+
+        return finance_quote_info(run), seen
+
+    def test_the_methods_are_listed_without_helpers(self, monkeypatch):
+        from breadsched.plugins.quotes import quote_source_choices
+
+        info, seen = self._info(
+            monkeypatch, stdout="1.71\nusa\nnyse\nfetch_live_currencies\nknown_currencies\ntsp\n"
+        )
+        assert seen[0][1:3] == ["-MFinance::Quote", "-MJSON::PP"]
+        assert (info.available, info.reason) == (True, "Finance::Quote 1.71 is installed")
+        assert info.methods == ("nyse", "tsp", "usa")
+        # BreadSched fetches tsp itself, so it is listed once, with its own sources.
+        assert quote_source_choices(info) == ("tsp", "alphavantage", "currency", "nyse", "usa")
+
+    def test_a_missing_finance_quote_offers_only_breadscheds_sources(self, monkeypatch):
+        from breadsched.plugins.quotes import FinanceQuoteInfo, quote_source_choices
+
+        info, _seen = self._info(monkeypatch, returncode=2)
+        assert info == FinanceQuoteInfo(False, "Finance::Quote is not installed")
+        assert quote_source_choices(info) == ("tsp", "alphavantage", "currency")
+        monkeypatch.setenv("FLATPAK_ID", "org.breadsched.BreadSched")
+        from breadsched.plugins.quotes import finance_quote_info
+
+        assert finance_quote_info(lambda args: None).reason == (
+            "Finance::Quote is not available in the Flatpak"
+        )
+
+    def test_warnings_name_what_will_not_fetch(self):
+        from breadsched.plugins.quotes import FinanceQuoteInfo, quote_source_warning
+
+        installed = FinanceQuoteInfo(True, "Finance::Quote 1.71 is installed", ("nyse", "usa"))
+        missing = FinanceQuoteInfo(False, "Finance::Quote is not installed")
+        for source in ("", "tsp", "alphavantage", "currency"):
+            assert quote_source_warning(source, installed) is None
+            assert quote_source_warning(source, missing) is None
+        assert quote_source_warning("usa", installed) is None
+        assert quote_source_warning("vanguard", installed) == (
+            "“vanguard” is not a source BreadSched or Finance::Quote knows; choose one from "
+            "the list. For US stocks and funds try usa or nyse."
+        )
+        assert quote_source_warning("usa", missing) == (
+            "“usa” needs Finance::Quote. Finance::Quote is not installed."
+        )

@@ -96,7 +96,9 @@ Change **Group by** in the dialog; **Print** prints just the report. See
 ## Online quotes
 
 In **Accounts**, choose **Online quotes…**. Type each security's or currency's
-**Quote source** (`tsp`, `alphavantage`, `currency`, or a Finance::Quote method),
+**Quote source** (`tsp`, `alphavantage`, `currency`, or a Finance::Quote method
+such as `usa`; the field suggests every source known here, and saving one that is
+not known keeps it with a warning),
 enter your Alpha Vantage API key if you use it, and choose **Get quotes**. The
 dialog lists what was stored and what failed and why. The key is saved in your
 settings and never shown again (`/api/quotes`, `/api/quotes/source`,
