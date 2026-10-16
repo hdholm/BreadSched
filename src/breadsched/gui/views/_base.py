@@ -9,6 +9,7 @@ import fired a hundred of them.
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 from ...gen.db.sqlite import DbSQLite  # noqa: E402
@@ -40,6 +41,11 @@ class Row(GObject.Object):
         self.children = children or []
 
 
+def _today() -> date:
+    """Today's date; a view drawn on an earlier day is out of date."""
+    return date.today()
+
+
 class BaseView(Gtk.Box):
     """A category view: owns a database reference and knows how to repaint."""
 
@@ -53,10 +59,12 @@ class BaseView(Gtk.Box):
         self._handlers: list[int] = []
         self._refresh_pending = False
         self._refresh_source_id: int | None = None
-        #: A change arrived while the view was hidden; it refreshes when shown.
-        self._stale = False
+        #: The book changed while the view was hidden (or it was never drawn): it
+        #: refreshes when next shown, and only then.
+        self._stale = True
+        #: The day the view was last drawn; showing it on a later day redraws it.
+        self._drawn_on: date | None = None
         self._full_refresh_pending = False
-        self._refreshed_on_map = False
         self.connect("map", self._on_map)
 
     def append_toolbar(self, bar: Gtk.Widget) -> Gtk.ScrolledWindow:
@@ -95,7 +103,46 @@ class BaseView(Gtk.Box):
             return
         for signal in self.WATCHES:
             self._handlers.append(db.connect(signal, self._on_change))
+        if "database-changed" not in self.WATCHES:
+            # Every commit raises database-changed: whatever a hidden view does
+            # not watch for, it is still redrawn when shown after any change.
+            self._handlers.append(db.connect("database-changed", self._on_any_change))
         self.refresh()
+        self._mark_fresh()
+
+    def _mark_fresh(self) -> None:
+        self._stale = False
+        self._full_refresh_pending = False
+        self._drawn_on = _today()
+
+    def is_current(self) -> bool:
+        """Whether the view shows the book as it is, as of today."""
+        return not self._stale and self._drawn_on == _today()
+
+    def ensure_current(self) -> None:
+        """Redraw the view when shown only if something changed since it was drawn.
+
+        Switching to a view used to rebuild it every time, which on a long book
+        recalculated the whole Plan or reread a whole register for nothing.
+        """
+        if self.db is None or not self.db.is_open or self.is_current():
+            return
+        self._on_map_refresh()
+        self._mark_fresh()
+
+    def invalidate(self) -> None:
+        """Something every view shows changed (a setting): redraw now or when shown."""
+        if self.get_mapped():
+            self.refresh()
+            self._mark_fresh()
+        else:
+            self._stale = True
+            self._full_refresh_pending = True
+
+    def _on_any_change(self, *_args) -> None:
+        if not self.get_mapped():
+            self._stale = True
+            self._full_refresh_pending = True
 
     def _on_change(self, *_args) -> None:
         """Repaint now if the view is on screen; otherwise when it is next shown.
@@ -114,17 +161,7 @@ class BaseView(Gtk.Box):
         self.schedule_refresh()
 
     def _on_map(self, *_args) -> None:
-        if not self._stale or self.db is None or not self.db.is_open:
-            return
-        self._stale = False
-        self._on_map_refresh()
-        self._full_refresh_pending = False
-        self._refreshed_on_map = True
-
-    def consume_map_refresh(self) -> bool:
-        """Whether showing the view just brought it up to date (and forget that)."""
-        refreshed, self._refreshed_on_map = self._refreshed_on_map, False
-        return refreshed
+        self.ensure_current()
 
     def _on_map_refresh(self) -> None:
         """Bring a view that was hidden during changes up to date."""
@@ -160,6 +197,7 @@ class BaseView(Gtk.Box):
             # when the work is scheduled so switching books cannot retarget it.
             if scheduled_db is not None and self.db is scheduled_db and scheduled_db.is_open:
                 self.refresh()
+                self._mark_fresh()
             return GLib.SOURCE_REMOVE
 
         self._refresh_source_id = GLib.idle_add(run, priority=GLib.PRIORITY_DEFAULT_IDLE)
@@ -183,6 +221,7 @@ class BaseView(Gtk.Box):
             self.cancel_refresh()
             if self.db is not None and self.db.is_open:
                 self.refresh()
+                self._mark_fresh()
 
     def refresh_on_close(self, *_args) -> bool:
         """Refresh after a child dialog closes and allow its default close action."""

@@ -1101,6 +1101,82 @@ class TestLiveUpdates:
         assert len(view.sheet.rows) == before + 1
         assert rent.handle in {row.transaction.handle for row in view.sheet.ledger_rows}
 
+    def test_switching_back_redraws_a_view_only_when_something_changed(
+        self, app, window, populated_book, monkeypatch
+    ):
+        # Switching to a view rebuilt it every time, recalculating the whole Plan
+        # (or rereading a whole register) even when nothing had changed.
+        from breadsched.gen.lib import Commodity
+        from breadsched.gui.views import _base
+
+        app.open_book(populated_book)
+        window.present()
+        window.show_category("dashboard")
+        dashboard = window._views["dashboard"]
+        assert _spin(dashboard.get_mapped)
+        window.show_category("accounts")
+        assert _spin(lambda: not dashboard.get_mapped())
+        repaints = []
+        monkeypatch.setattr(dashboard, "refresh", lambda: repaints.append(1))
+        window.show_category("dashboard")
+        assert _spin(dashboard.get_mapped)
+        _spin(lambda: False, 0.2)
+        assert repaints == []  # nothing changed: shown as it was
+        window.show_category("accounts")
+        assert _spin(lambda: not dashboard.get_mapped())
+        with app.db.transaction("Fund") as txn:
+            app.db.add_commodity(Commodity(namespace="FUND", mnemonic="X", fullname="X"), txn)
+        assert repaints == []  # hidden: not redrawn for the change
+        window.show_category("dashboard")
+        assert _spin(lambda: repaints == [1])
+        _spin(lambda: False, 0.2)
+        assert repaints == [1]  # once, by showing it
+        # A view left open past midnight is redrawn when next shown.
+        window.show_category("accounts")
+        assert _spin(lambda: not dashboard.get_mapped())
+        tomorrow = _base._today().fromordinal(_base._today().toordinal() + 1)
+        monkeypatch.setattr(_base, "_today", lambda: tomorrow)
+        window.show_category("dashboard")
+        assert _spin(lambda: repaints == [1, 1])
+        # A setting change redraws the shown view now and the others when shown.
+        accounts = window._views["accounts"]
+        drawn = []
+        monkeypatch.setattr(accounts, "refresh", lambda: drawn.append(1))
+        assert _spin(lambda: not accounts.get_mapped())
+        window.refresh_views()
+        assert repaints == [1, 1, 1] and drawn == []
+        window.show_category("accounts")
+        assert _spin(lambda: drawn == [1])
+
+    def test_a_view_watching_few_signals_still_redraws_after_any_change(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Commodity
+        from breadsched.gui.views._base import BaseView
+
+        class Narrow(BaseView):
+            WATCHES = ("transaction-add",)
+
+            def __init__(self, manager):
+                super().__init__(manager)
+                self.drawn = 0
+
+            def refresh(self):
+                self.drawn += 1
+
+        app.open_book(populated_book)
+        view = Narrow(window)
+        view.set_db(app.db)
+        assert view.drawn == 1 and view.is_current()
+        with app.db.transaction("Fund") as txn:
+            app.db.add_commodity(Commodity(namespace="FUND", mnemonic="Y", fullname="Y"), txn)
+        assert not view.is_current() and view.drawn == 1
+        view.ensure_current()
+        assert view.drawn == 2 and view.is_current()
+        view.ensure_current()
+        assert view.drawn == 2
+        view.set_db(None)
+
     def test_a_shown_view_repaints_once_after_several_commits(
         self, app, window, populated_book, monkeypatch
     ):
