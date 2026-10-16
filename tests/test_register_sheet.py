@@ -383,10 +383,16 @@ class TestSavingStaysQuick:
         _type(sheet, "transfer", "Expenses:Groceries")
         _type(sheet, "decrease", "7")
         assert sheet.enter()
-        assert all(after is before for after, before in zip(sheet.ledger_rows, ledger_before))
+        assert all(
+            after is before
+            for after, before in zip(
+                sheet.ledger_rows[: len(ledger_before)], ledger_before, strict=True
+            )
+        )
         lines_after = [row for row in sheet.rows if row.register_row is not None]
-        assert all(after is before for after, before in zip(lines_after, lines_before))
         assert len(lines_after) == len(lines_before) + 1
+        kept = lines_after[: len(lines_before)]
+        assert all(after is before for after, before in zip(kept, lines_before, strict=True))
 
 
 class TestDoubleLine:
