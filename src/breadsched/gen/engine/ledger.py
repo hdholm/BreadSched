@@ -232,12 +232,16 @@ def update_register(
     sign = obj.sign() if obj else 1
     currency = reporting_currency_handle(db)
     running: Amount | None = None
-    result: list[RegisterRow] = []
     for row in merged:
         amount = Amount(row.split.value, row.transaction.currency or currency)
         running = _accumulate(running, amount)
-        result.append(RegisterRow(row.transaction, row.split, (running * sign).value))
-    return result
+        value = (running * sign).value
+        # Rows keep their objects and only a changed balance is written: making
+        # thousands of new rows per save set off full garbage collections, which
+        # made an occasional save several times slower than the others.
+        if row.running != value:
+            row.running = value
+    return merged
 
 
 def _day_before(when: date) -> date:

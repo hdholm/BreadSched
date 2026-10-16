@@ -371,6 +371,23 @@ class TestSavingStaysQuick:
         assert sheet.closing_balance() == sheet.ledger_rows[-1].running
         assert sheet.ledger_rows[-1].transaction.description == "Corner store"
 
+    def test_a_save_keeps_the_rows_it_did_not_change(self, db, book):
+        # Making a new object for every line of a long register on each save set
+        # off full garbage collections, so an occasional save was several times
+        # slower than the rest (seen in CI as 0.10s, 0.83s, 0.10s).
+        _history(db, book)
+        sheet = _sheet(db, book)
+        ledger_before = list(sheet.ledger_rows)
+        lines_before = [row for row in sheet.rows if row.register_row is not None]
+        _type(sheet, "description", "Corner store")
+        _type(sheet, "transfer", "Expenses:Groceries")
+        _type(sheet, "decrease", "7")
+        assert sheet.enter()
+        assert all(after is before for after, before in zip(sheet.ledger_rows, ledger_before))
+        lines_after = [row for row in sheet.rows if row.register_row is not None]
+        assert all(after is before for after, before in zip(lines_after, lines_before))
+        assert len(lines_after) == len(lines_before) + 1
+
 
 class TestDoubleLine:
     """GnuCash's Double Line mode: a notes line under every transaction (#319)."""
