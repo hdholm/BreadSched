@@ -10,6 +10,25 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a279 - 2026-10-16
+
+- **Online quote sources come from a list (#317).** The guides suggested
+  `vanguard`, which is not a Finance::Quote method, and a source was free text.
+  `plugins.quotes.finance_quote_info` now asks the installed Finance::Quote for its
+  version and methods in one call; the desktop dialog (in the background, where it
+  used to run Perl on the main thread while opening), the browser (a `<datalist>`
+  from `/api/quotes`), and `breadsched quotes --list` offer BreadSched's own
+  sources followed by those methods. A source that will not fetch here is kept with
+  a warning naming why (`quote_source_warning`), in all three interfaces. The guides
+  now suggest `usa` or `nyse`.
+- **Quote status stays in view, and dialogs stop stalling (#317).** The Online
+  quotes status line sits beside the buttons instead of at the foot of the scrolling
+  form. A view on screen now repaints once after a burst of commits rather than
+  after each, so saving several sources no longer rebuilds Accounts each time.
+- **Get online quote in the security price dialog (#317).** A security with a quote
+  source can fetch its current price into the form, in the background, to check
+  before **Save price** stores it.
+
 ## 0.2.0a278 - 2026-10-16
 
 - **Entering transactions is quick again (#319).** One save in the desktop register

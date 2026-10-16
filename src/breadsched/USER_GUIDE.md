@@ -441,9 +441,12 @@ only for commodities that have a quote source:
   Alpha Vantage API key, set in BreadSched's settings or in the
   `ALPHAVANTAGE_API_KEY` environment variable (the one GnuCash's Finance::Quote
   reads).
-- **Any other source name**, such as `vanguard` or `europe`: fetched by
-  Finance::Quote, the Perl library GnuCash uses, when it is installed on your
-  computer. The Flatpak cannot use it; the native Linux packages and installs from
+- **A Finance::Quote method**, such as `usa` or `nyse` (US stocks and funds,
+  Vanguard funds included) or `europe`: fetched by Finance::Quote, the Perl library
+  GnuCash uses, when it is installed on your computer. Online quotes lists every
+  method your Finance::Quote offers to choose from, and warns when a source you
+  type is not one of them (a fund company's name, such as `vanguard`, usually is
+  not); the source is kept, but it will not fetch. The Flatpak cannot use it; the native Linux packages and installs from
   the Python package can. Quote websites change often, so use a current
   Finance::Quote: in October 2026 version 1.71 fetched US stock quotes, while
   1.59 (the version Ubuntu 24.04 packages) was refused by every source that needs

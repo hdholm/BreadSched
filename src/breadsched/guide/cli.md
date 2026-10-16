@@ -127,8 +127,9 @@ breadsched quotes household.breadsched                    # fetch and store
 
 `quote-source` with no source turns online quotes off for that commodity. Any
 source other than `tsp`, `alphavantage`, or `currency` is a Finance::Quote method
-and needs Finance::Quote installed outside the Flatpak; `--list` says whether it
-is. Set the Alpha Vantage key as `alphavantage_api_key` in the `[quotes]` section of
+(such as `usa` or `nyse`) and needs Finance::Quote installed outside the Flatpak;
+`quotes --list` says whether it is and lists every source you can use, and
+`quote-source` warns when a source is not one of them (it is kept anyway). Set the Alpha Vantage key as `alphavantage_api_key` in the `[quotes]` section of
 `settings.ini`, or in `ALPHAVANTAGE_API_KEY`. `quotes` exits with status 1 when
 every source failed. See
 [Online quotes](../USER_GUIDE.md#online-quotes) for the rules.

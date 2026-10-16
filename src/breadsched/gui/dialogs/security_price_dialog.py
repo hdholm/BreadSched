@@ -6,8 +6,13 @@ from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import valuation
+from ...gen.engine.currency import reporting_currency_handle
 from ...gen.lib.money import Money
+from ...gen.services.quotes import QuoteRequest
 from ...gen.utils.amount_input import parse_user_amount
+from ...gen.utils.settings import Settings
+from ...plugins.quotes import OnlineQuotes, alphavantage_key
+from ..background import BackgroundJob
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
@@ -18,9 +23,20 @@ __all__ = ["SecurityPriceDialog"]
 class SecurityPriceDialog(BoundedWindow):
     """Small price editor shared conceptually with the web write boundary."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
+    def __init__(
+        self,
+        parent: Gtk.Window | None,
+        db: DbSQLite,
+        settings: Settings | None = None,
+        fetcher_factory=None,
+    ) -> None:
         super().__init__(title="Security price", transient_for=parent, modal=True)
         self.db = db
+        self.settings = settings if settings is not None else Settings()
+        self.fetcher_factory = fetcher_factory or (
+            lambda key: OnlineQuotes(alphavantage_key=key or None)
+        )
+        self.job: BackgroundJob = BackgroundJob()
         self.securities = [item for item in db.iter_commodities() if not item.is_currency]
         self.currencies = [item for item in db.iter_commodities() if item.is_currency]
         self.set_default_size(520, 430)
@@ -88,9 +104,16 @@ class SecurityPriceDialog(BoundedWindow):
         grid.attach(self.date_entry, 1, row, 1, 1)
         row += 1
 
-        self.price_entry = Gtk.Entry(placeholder_text="125.25")
+        self.price_entry = Gtk.Entry(placeholder_text="125.25", hexpand=True)
         grid.attach(Gtk.Label(label="Price per unit", xalign=0), 0, row, 1, 1)
-        grid.attach(self.price_entry, 1, row, 1, 1)
+        price_row = Gtk.Box(spacing=6)
+        price_row.append(self.price_entry)
+        # A security with a quote source can fetch its price here to review
+        # before saving it (#317).
+        self.quote_button = Gtk.Button(label="Get online quote")
+        self.quote_button.connect("clicked", lambda *_: self.get_online_quote())
+        price_row.append(self.quote_button)
+        grid.attach(price_row, 1, row, 1, 1)
 
         self.status = Gtk.Label(xalign=0, wrap=True)
         box.append(self.status)
@@ -102,6 +125,7 @@ class SecurityPriceDialog(BoundedWindow):
         self.save_button = Gtk.Button(label="Save price")
         self.save_button.add_css_class("suggested-action")
         self.save_button.connect("clicked", self._on_save)
+        self.connect("close-request", self._on_close)
         buttons.append(self.save_button)
         box.append(buttons)
         self.security_picker.connect("notify::selected", self._on_security_changed)
@@ -117,6 +141,13 @@ class SecurityPriceDialog(BoundedWindow):
             self.fraction_entry,
         ):
             widget.set_sensitive(creating)
+        source = "" if creating else self.securities[index - 1].quote_source.strip()
+        self.quote_button.set_sensitive(bool(source) and not self.job.active)
+        self.quote_button.set_tooltip_text(
+            f"Fetch today's price from {source}; it is saved only when you choose Save price"
+            if source
+            else "Give this security a quote source in Online quotes to fetch its price"
+        )
         if creating:
             self.mnemonic_entry.set_text("")
             self.fullname_entry.set_text("")
@@ -170,6 +201,63 @@ class SecurityPriceDialog(BoundedWindow):
             self._error(str(exc))
             return
         self.close()
+
+    def _on_close(self, *_args) -> bool:
+        self.job.cancel()
+        return False
+
+    def get_online_quote(self) -> None:
+        """Fetch the chosen security's price off the main thread, to review."""
+        index = self.security_picker.get_selected()
+        if not index or self.job.active:
+            return
+        security = self.securities[index - 1]
+        source = security.quote_source.strip()
+        if not source:
+            return
+        reporting = self.db.get_commodity(reporting_currency_handle(self.db))
+        currency = reporting.mnemonic if reporting is not None else "USD"
+        fetcher = self.fetcher_factory(alphavantage_key(self.settings))
+        request = QuoteRequest(security.handle, security.mnemonic, source)
+        self.quote_button.set_sensitive(False)
+        self.status.remove_css_class("negative")
+        self.status.set_text(f"Getting {security.mnemonic} from {source}…")
+        self.job = BackgroundJob()
+        self.job.start(
+            lambda _cancel, _report: fetcher.fetch([request], currency),
+            lambda _progress: None,
+            lambda fetched: self._quote_arrived(security.handle, fetched),
+            self._quote_failed,
+        )
+
+    def _quote_arrived(self, handle: str, fetched) -> None:
+        self.quote_button.set_sensitive(True)
+        index = self.security_picker.get_selected()
+        if not index or self.securities[index - 1].handle != handle:
+            return  # another security was chosen meanwhile
+        quotes, failures = fetched
+        if not quotes:
+            reason = failures[0].reason if failures else "no quote came back"
+            self._error(f"No quote: {reason}.")
+            return
+        quote = quotes[0]
+        self.price_entry.set_text(f"{quote.value}")
+        self.date_entry.set_text(quote.when.isoformat())
+        match = next(
+            (i for i, item in enumerate(self.currencies) if item.mnemonic == quote.currency),
+            None,
+        )
+        if match is not None:
+            self.currency_picker.set_selected(match)
+        self.status.remove_css_class("negative")
+        self.status.set_text(
+            f"{quote.value} {quote.currency} on {quote.when.isoformat()} from {quote.origin}. "
+            "Choose Save price to keep it."
+        )
+
+    def _quote_failed(self, error: BaseException) -> None:
+        self.quote_button.set_sensitive(True)
+        self._error(f"The quote could not be fetched: {error}")
 
     def _error(self, message: str) -> None:
         self.status.set_text(message)

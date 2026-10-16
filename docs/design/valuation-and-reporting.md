@@ -170,6 +170,21 @@ adapter (`web/quote_resource.py`) and the CLI fetch and store in one call. The A
 Vantage key lives in `settings.ini` (made owner-readable when saved), never in the
 book, and the web API reports only whether one is set.
 
+Sources a commodity may name come from `plugins.quotes.finance_quote_info()`, which
+runs Perl once to print Finance::Quote's version and `Finance::Quote->new->sources`
+(less the `fetch_live_currencies` and `known_currencies` helpers);
+`quote_source_choices` puts BreadSched's own `NATIVE_SOURCES` first, and
+`quote_source_warning` explains a source that will not fetch here (not a known
+method, or Finance::Quote unavailable). A source is stored even then: the warning is
+advice, since Finance::Quote may be installed later (#317). The GTK dialog asks in a
+`BackgroundJob` (it used to run Perl on the main thread when opening), offers the
+choices from a popover beside each source, and keeps its status in the footer
+outside the scrolled form; `/api/quotes` returns `sources` for a `<datalist>` and
+`/api/quotes/source` returns the `warning`. The GTK security price dialog's **Get
+online quote** fetches one commodity in a `BackgroundJob` and fills the form;
+nothing is stored until **Save price**. Sources are not tried in turn on their own:
+another method could price the same symbol from a different exchange or currency.
+
 ## Valuation completeness
 
 `engine/completeness` gives every reporting-currency result one structured

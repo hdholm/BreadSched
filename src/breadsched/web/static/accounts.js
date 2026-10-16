@@ -598,9 +598,13 @@ async function openOnlineQuotes() {
     onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
   });
   const hint = "tsp (Thrift Savings Plan funds), alphavantage (stocks and funds, with "
-    + "your key), currency (exchange rates, for currencies), or a Finance::Quote method";
+    + "your key), currency (exchange rates, for currencies), or a Finance::Quote method "
+    + "such as usa or nyse; choose from the list";
+  // Every source known here, BreadSched's own and the installed Finance::Quote's (#317).
+  const choices = el("datalist", { id:"quote-source-choices" },
+    ...(data.sources || []).map((name) => el("option", { value:name })));
   const entries = data.commodities.map((item) => {
-    const input = el("input", { value:item.quote_source,
+    const input = el("input", { value:item.quote_source, list:"quote-source-choices",
       placeholder:item.currency ? "currency" : "none", title:hint,
       "aria-label":`Quote source for ${item.mnemonic}` });
     return { item, input };
@@ -610,24 +614,29 @@ async function openOnlineQuotes() {
     "aria-label":"Alpha Vantage API key" });
   const results = el("div", { class:"note", role:"status" });
   const saveSources = async () => {
+    const warnings = [];
     for (const { item, input } of entries) {
       if (input.value.trim() === item.quote_source) continue;
-      await post("/api/quotes/source", { commodity:item.handle, source:input.value.trim() });
+      const saved = await post("/api/quotes/source",
+        { commodity:item.handle, source:input.value.trim() });
       item.quote_source = input.value.trim();
+      if (saved.warning) warnings.push(`${item.mnemonic}: ${saved.warning}`);
     }
     if (key.value.trim()) {
       await post("/api/quotes/key", { key:key.value.trim() });
       key.value = "";
       key.placeholder = "saved — type to replace";
     }
+    return warnings;
   };
   const fetchQuotes = async (button) => {
     button.disabled = true;
     results.textContent = "Getting quotes…";
     try {
-      await saveSources();
+      const warnings = await saveSources();
       const outcome = await post("/api/quotes/update", {});
       results.replaceChildren(
+        ...warnings.map((text) => el("div", { class:"negative" }, text)),
         ...outcome.stored.map((item) => el("div", {},
           `${item.symbol}: ${item.price} ${item.currency} on ${item.date} (${item.source})`
           + (item.changed ? "" : ", unchanged"))),
@@ -644,6 +653,7 @@ async function openOnlineQuotes() {
     .catch((error) => { results.textContent = error.message; say(error.message, "error"); }));
   backdrop.append(el("section", { class:"detail-dialog" },
     helpHeading("Online quotes", "online-quotes"),
+    choices,
     el("p", { class:"note" },
       "Give a security or currency a quote source, then choose Get quotes. Fetched "
       + "prices are stored with their source and date; nothing is fetched unless you ask."),
@@ -659,7 +669,14 @@ async function openOnlineQuotes() {
       el("span", { class:"spacer" }),
       el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Close"),
       el("button", { class:"action", type:"button", onclick:()=>saveSources()
-        .then(() => { results.textContent = "Sources saved."; })
+        .then((warnings) => {
+          if (warnings.length) {
+            results.replaceChildren(...warnings.map((text) =>
+              el("div", { class:"negative" }, text)));
+          } else {
+            results.textContent = "Sources saved.";
+          }
+        })
         .catch((error) => say(error.message, "error")) }, "Save sources"),
       getButton)));
   document.body.append(backdrop);

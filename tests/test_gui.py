@@ -1101,6 +1101,30 @@ class TestLiveUpdates:
         assert len(view.sheet.rows) == before + 1
         assert rent.handle in {row.transaction.handle for row in view.sheet.ledger_rows}
 
+    def test_a_shown_view_repaints_once_after_several_commits(
+        self, app, window, populated_book, monkeypatch
+    ):
+        # #317: saving each quote source committed separately, and the Accounts
+        # view rebuilt itself after every one of them while the dialog waited.
+        from breadsched.gen.lib import Commodity
+
+        app.open_book(populated_book)
+        window.present()
+        window.show_category("accounts")
+        accounts = window._views["accounts"]
+        assert _spin(accounts.get_mapped)
+        _spin(lambda: False, 0.2)
+        repaints = []
+        monkeypatch.setattr(accounts, "refresh", lambda: repaints.append(1))
+        for number in range(3):
+            fund = Commodity(namespace="FUND", mnemonic=f"F{number}", fullname="Fund")
+            with app.db.transaction(f"Fund {number}") as txn:
+                app.db.add_commodity(fund, txn)
+        assert repaints == []
+        assert _spin(lambda: repaints == [1])
+        _spin(lambda: False, 0.3)
+        assert repaints == [1]
+
     def test_hidden_views_wait_until_shown_and_saves_reload_one_transaction(
         self, app, window, populated_book, monkeypatch
     ):
@@ -7418,6 +7442,119 @@ class TestOnlineQuotesDialog:
                 dialog.results.get_text()
             )
             assert [p.source for p in app.db.iter_prices(fund.handle)] == ["Online: tsp.gov"]
+        finally:
+            dialog.destroy()
+
+    def test_sources_are_chosen_from_a_list_and_unknown_ones_warned(
+        self, app, window, populated_book, tmp_path, monkeypatch
+    ):
+        # #317: "vanguard" (from the guide) is not a Finance::Quote method, the
+        # source was free text, and the status could scroll out of view.
+        from breadsched.gen.lib import Commodity
+        from breadsched.gen.utils.settings import Settings
+        from breadsched.gui.dialogs import online_quotes_dialog
+        from breadsched.plugins.quotes import FinanceQuoteInfo
+
+        app.open_book(populated_book)
+        fund = Commodity(namespace="FUND", mnemonic="VFIAX", fullname="Index", fraction=10000)
+        with app.db.transaction("Fund") as txn:
+            app.db.add_commodity(fund, txn)
+        info = FinanceQuoteInfo(True, "Finance::Quote 1.71 is installed", ("nyse", "usa"))
+        monkeypatch.setattr(online_quotes_dialog, "finance_quote_info", lambda: info)
+        dialog = online_quotes_dialog.OnlineQuotesDialog(
+            window, app.db, Settings(directory=tmp_path / "config")
+        )
+        try:
+            # Finance::Quote is asked off the main thread; its methods join the list.
+            assert dialog.probe.wait(10)
+            assert dialog.finance_quote is info
+            assert "offering 2 quote methods" in dialog.finance_quote_label.get_text()
+            entry = dialog.source_entries[fund.handle]
+            assert entry.shown_choices() == ["tsp", "alphavantage", "currency", "nyse", "usa"]
+            entry.set_text("us")
+            assert entry.shown_choices() == ["usa"]
+            entry.show_choices()
+            row = entry.listing.get_row_at_index(0)
+            entry.listing.emit("row-activated", row)
+            assert entry.get_text() == "usa"
+            entry.set_text("vanguard")
+            assert dialog.save_sources() is True
+            assert app.db.get_commodity(fund.handle).quote_source == "vanguard"
+            assert "VFIAX: “vanguard” is not a source" in dialog.results.get_text()
+            # The status sits below the scrolling form, so it is never scrolled away.
+            parent = dialog.results.get_parent()
+            while parent is not None:
+                assert not isinstance(parent, Gtk.ScrolledWindow)
+                parent = parent.get_parent()
+            entry.set_text("usa")
+            assert dialog.save_sources() is True
+            assert dialog.results.get_text() == "Sources saved."
+        finally:
+            dialog.destroy()
+
+    def test_the_price_dialog_fetches_a_quote_to_review(
+        self, app, window, populated_book, tmp_path
+    ):
+        # #317: a security with a quote source can fetch its price before saving.
+        from breadsched.gen.lib import Commodity
+        from breadsched.gen.services.quotes import FetchedQuote
+        from breadsched.gen.utils.settings import Settings
+        from breadsched.gui.dialogs.security_price_dialog import SecurityPriceDialog
+
+        app.open_book(populated_book)
+        quoted = Commodity(
+            namespace="FUND",
+            mnemonic="VFIAX",
+            fullname="Index",
+            fraction=10000,
+            quote_source="usa",
+        )
+        plain = Commodity(namespace="FUND", mnemonic="PLAIN", fullname="Plain", fraction=10000)
+        with app.db.transaction("Funds") as txn:
+            app.db.add_commodity(quoted, txn)
+            app.db.add_commodity(plain, txn)
+        asked = []
+
+        class Fetcher:
+            def fetch(self, requests, reporting):
+                asked.append([(r.symbol, r.source) for r in requests])
+                return (
+                    [
+                        FetchedQuote(
+                            "VFIAX",
+                            "usa",
+                            Decimal("612.34"),
+                            "USD",
+                            date(2026, 10, 15),
+                            "Finance::Quote usa",
+                        )
+                    ],
+                    [],
+                )
+
+        dialog = SecurityPriceDialog(
+            window,
+            app.db,
+            Settings(directory=tmp_path / "config"),
+            fetcher_factory=lambda key: Fetcher(),
+        )
+        try:
+            names = [item.mnemonic for item in dialog.securities]
+            dialog.security_picker.set_selected(names.index("PLAIN") + 1)
+            assert not dialog.quote_button.get_sensitive()
+            dialog.security_picker.set_selected(names.index("VFIAX") + 1)
+            assert dialog.quote_button.get_sensitive()
+            dialog.get_online_quote()
+            assert dialog.job.wait(10)
+            assert asked == [[("VFIAX", "usa")]]
+            assert dialog.price_entry.get_text() == "612.34"
+            assert dialog.date_entry.get_text() == "2026-10-15"
+            assert "Choose Save price to keep it" in dialog.status.get_text()
+            # Nothing is stored until Save price.
+            assert list(app.db.iter_prices(commodity=quoted.handle)) == []
+            dialog._on_save(None)
+            [price] = list(app.db.iter_prices(commodity=quoted.handle))
+            assert (price.quote_date, price.value) == (date(2026, 10, 15), Money("612.34"))
         finally:
             dialog.destroy()
 

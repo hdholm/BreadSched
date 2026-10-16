@@ -6,7 +6,13 @@ import argparse
 
 from ..gen.services.quotes import SetQuoteSource, quote_requests, set_quote_source, update_quotes
 from ..gen.utils.settings import Settings
-from ..plugins.quotes import OnlineQuotes, alphavantage_key, finance_quote_status
+from ..plugins.quotes import (
+    OnlineQuotes,
+    alphavantage_key,
+    finance_quote_info,
+    quote_source_choices,
+    quote_source_warning,
+)
 from ..presentation import price_text, service_error_message
 from .common import AddCommand, CommandError, emit, open_book, table
 
@@ -20,17 +26,22 @@ def cmd_quotes(args: argparse.Namespace) -> int:
     try:
         if args.list:
             requests = quote_requests(db)
-            available, reason = finance_quote_status()
+            info = finance_quote_info()
             listed = [{"symbol": item.symbol, "source": item.source} for item in requests]
             text = (
                 table([[item.symbol, item.source] for item in requests], ["symbol", "source"])
                 if requests
                 else "No commodity has an online quote source."
             )
+            sources = list(quote_source_choices(info))
             emit(
-                {"requests": listed, "finance_quote": {"available": available, "reason": reason}},
+                {
+                    "requests": listed,
+                    "finance_quote": {"available": info.available, "reason": info.reason},
+                    "sources": sources,
+                },
                 args,
-                f"{text}\n\n{reason}.",
+                f"{text}\n\n{info.reason}.\nSources: {', '.join(sources)}",
             )
             return 0
         result = update_quotes(db, _fetcher(), dry_run=args.dry_run)
@@ -93,11 +104,13 @@ def cmd_quote_source(args: argparse.Namespace) -> int:
         result = set_quote_source(db, SetQuoteSource(matches[0].handle, args.source or ""))
         if result.value is None:
             raise CommandError(service_error_message(result.errors[0]))
+        warning = quote_source_warning(result.value, finance_quote_info())
         emit(
-            {"commodity": matches[0].mnemonic, "source": result.value},
+            {"commodity": matches[0].mnemonic, "source": result.value, "warning": warning},
             args,
             f"{matches[0].mnemonic}: "
-            + (f"online quotes from {result.value}" if result.value else "no online quotes"),
+            + (f"online quotes from {result.value}" if result.value else "no online quotes")
+            + (f"\nWarning: {warning}" if warning else ""),
         )
         return 0
     finally:

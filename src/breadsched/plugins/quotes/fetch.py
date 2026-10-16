@@ -21,6 +21,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal, localcontext
 
@@ -37,9 +38,13 @@ from .sources import (
 
 __all__ = [
     "ALPHAVANTAGE_KEY_SETTING",
+    "FinanceQuoteInfo",
     "OnlineQuotes",
     "alphavantage_key",
+    "finance_quote_info",
     "finance_quote_status",
+    "quote_source_choices",
+    "quote_source_warning",
     "save_alphavantage_key",
 ]
 
@@ -85,33 +90,105 @@ def save_alphavantage_key(settings, value: str) -> bool:
     return True
 
 
+#: Names ``Finance::Quote->sources`` lists that are helpers, not quote methods.
+_NOT_METHODS = frozenset({"fetch_live_currencies", "known_currencies"})
+
+#: Prints the version on the first line and one method per line after it.
+_METHODS_SCRIPT = (
+    "my $q = Finance::Quote->new;"
+    ' print $Finance::Quote::VERSION, "\\n", join("\\n", $q->sources), "\\n";'
+)
+
+
+@dataclass(frozen=True, slots=True)
+class FinanceQuoteInfo:
+    """Whether Finance::Quote can be used here, why not, and the methods it offers."""
+
+    available: bool
+    reason: str
+    methods: tuple[str, ...] = ()
+
+
+def finance_quote_info(
+    run: Callable[[list[str]], subprocess.CompletedProcess[str]] | None = None,
+) -> FinanceQuoteInfo:
+    """Ask the installed Finance::Quote for its version and its quote methods.
+
+    It starts Perl and loads every Finance::Quote module, which can take a second,
+    so the desktop asks off the main thread. ``run`` replaces the subprocess for
+    tests. The methods are what a quote source may name besides BreadSched's own
+    (#317).
+    """
+    if os.environ.get("FLATPAK_ID"):
+        return FinanceQuoteInfo(False, "Finance::Quote is not available in the Flatpak")
+    return _probe_finance_quote(run)
+
+
+def _probe_finance_quote(run) -> FinanceQuoteInfo:
+    perl = shutil.which("perl")
+    if perl is None and run is None:
+        return FinanceQuoteInfo(False, "Finance::Quote needs Perl, which is not installed")
+    command = [perl or "perl", "-MFinance::Quote", "-MJSON::PP", "-e", _METHODS_SCRIPT]
+    try:
+        found = (
+            run(command)
+            if run is not None
+            else subprocess.run(  # noqa: S603 - fixed arguments
+                command, capture_output=True, text=True, timeout=60, check=False
+            )
+        )
+    except (OSError, subprocess.SubprocessError):
+        return FinanceQuoteInfo(False, "Finance::Quote could not be started")
+    if found.returncode != 0:
+        return FinanceQuoteInfo(False, "Finance::Quote is not installed")
+    lines = [line.strip() for line in found.stdout.splitlines()]
+    version = lines[0] if lines else ""
+    methods = tuple(sorted({line for line in lines[1:] if line and line not in _NOT_METHODS}))
+    if version and all(part.isdigit() for part in version.split(".")):
+        reason = f"Finance::Quote {version} is installed"
+    else:
+        reason = "Finance::Quote is installed"
+    return FinanceQuoteInfo(True, reason, methods)
+
+
 def finance_quote_status() -> tuple[bool, str]:
     """Whether Finance::Quote can be used here, and if not, why.
 
     When it can, the text names the installed version: quote websites change
     often, and an old Finance::Quote is the usual reason its sources fail.
     """
-    if os.environ.get("FLATPAK_ID"):
-        return False, "Finance::Quote is not available in the Flatpak"
-    perl = shutil.which("perl")
-    if perl is None:
-        return False, "Finance::Quote needs Perl, which is not installed"
-    try:
-        found = subprocess.run(  # noqa: S603 - fixed arguments
-            [perl, "-MFinance::Quote", "-MJSON::PP", "-e", "print $Finance::Quote::VERSION"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False, "Finance::Quote could not be started"
-    if found.returncode != 0:
-        return False, "Finance::Quote is not installed"
-    version = found.stdout.strip()
-    if version and all(part.isdigit() for part in version.split(".")):
-        return True, f"Finance::Quote {version} is installed"
-    return True, "Finance::Quote is installed"
+    info = finance_quote_info()
+    return info.available, info.reason
+
+
+def quote_source_choices(info: FinanceQuoteInfo) -> tuple[str, ...]:
+    """Every source a commodity may name: BreadSched's own, then Finance::Quote's."""
+    native = tuple(NATIVE_SOURCES)
+    return native + tuple(method for method in info.methods if method not in native)
+
+
+def quote_source_warning(source: str, info: FinanceQuoteInfo) -> str | None:
+    """Why ``source`` will not fetch here, or None when it can (#317).
+
+    A source is kept even then (Finance::Quote may be installed later); the
+    warning only says so, and suggests the methods for US stocks and funds.
+    """
+    source = source.strip()
+    if not source or source in NATIVE_SOURCES:
+        return None
+    if not info.available:
+        return f"“{source}” needs Finance::Quote. {info.reason}."
+    if source in info.methods:
+        return None
+    hint: list[str] = [name for name in ("usa", "nyse", "nasdaq") if name in info.methods]
+    if len(hint) > 1:
+        hint[-1] = f"or {hint[-1]}"
+    listed = (", " if len(hint) > 2 else " ").join(hint)
+    suggestion = f" For US stocks and funds try {listed}." if hint else ""
+    return (
+        f"“{source}” is not a source BreadSched or Finance::Quote knows; choose one from "
+        f"the list.{suggestion}"
+    )
 
 
 class OnlineQuotes:

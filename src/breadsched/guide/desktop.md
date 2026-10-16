@@ -172,7 +172,9 @@ currency twice, a non-positive rate, or an invalid date without saving anything.
 
 For an Investment or Retirement account, use **Security Price** (a toolbar icon in
 Accounts, or **Actions → Security Price…** there) to define a security and record an
-exact dated price. See
+exact dated price. For a security with a quote source, **Get online quote** fetches
+its current price into the form for you to check; it is saved only when you choose
+**Save price**. See
 [Security prices and current value](../USER_GUIDE.md#security-prices-and-current-value).
 **Actions → Holdings and Cost Basis…** in Accounts lists each holding's shares, cost,
 market value, and unrealized gain; expand a holding for its lots, sales, transfers,
@@ -213,11 +215,15 @@ and each jar. **Print…** prints the report with its charts. See [Budget jars](
 In Accounts, choose **Actions → Online Quotes…**. Each security and foreign currency
 has a **Quote source**: `tsp` for Thrift Savings Plan funds, `alphavantage` for
 stocks and funds, `currency` for exchange rates, or a Finance::Quote method such as
-`vanguard`. Leave it empty for no online quotes. Enter your Alpha Vantage API key if
+`usa` or `nyse`. The arrow in each source opens the list of sources you can use
+here, Finance::Quote's methods included; typing narrows it. Saving a source that is
+not on the list keeps it but says why it will not fetch. Leave it empty for no
+online quotes. Enter your Alpha Vantage API key if
 you use that source; it is kept in your settings, readable only by you, never in the
 book. **Save sources** stores your choices, and **Get quotes** also fetches every
-quote in the background and lists what was stored and what failed and why. The
-line under Finance::Quote says whether it can be used here; the Flatpak cannot. See
+quote in the background and lists what was stored and what failed and why, beside
+the buttons so it stays in view. The line under Finance::Quote says whether it can
+be used here and how many methods it offers; the Flatpak cannot use it. See
 [Online quotes](../USER_GUIDE.md#online-quotes).
 
 ## Enter transactions in a register

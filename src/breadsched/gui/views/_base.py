@@ -108,7 +108,10 @@ class BaseView(Gtk.Box):
             self._stale = True
             self._full_refresh_pending = True
             return
-        self.refresh()
+        # One commit raises a signal per table it touched and then
+        # database-changed, and a dialog may commit several times in a row
+        # (saving each quote source): repaint once, after the event (#317).
+        self.schedule_refresh()
 
     def _on_map(self, *_args) -> None:
         if not self._stale or self.db is None or not self.db.is_open:

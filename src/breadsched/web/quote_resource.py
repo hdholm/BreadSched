@@ -22,7 +22,9 @@ from ..gen.utils.settings import Settings
 from ..plugins.quotes import (
     OnlineQuotes,
     alphavantage_key,
-    finance_quote_status,
+    finance_quote_info,
+    quote_source_choices,
+    quote_source_warning,
     save_alphavantage_key,
 )
 from ..presentation import price_text
@@ -52,7 +54,7 @@ def _text(payload: Mapping[str, Any], key: str) -> str:
 def quotes(api: Api) -> dict[str, object]:
     db = api.db
     reporting = reporting_currency_handle(db)
-    available, reason = finance_quote_status()
+    info = finance_quote_info()
     return {
         "commodities": [
             {
@@ -65,7 +67,9 @@ def quotes(api: Api) -> dict[str, object]:
             for item in sorted(db.iter_commodities(), key=lambda c: (c.is_currency, c.mnemonic))
             if item.handle != reporting
         ],
-        "finance_quote": {"available": available, "reason": reason},
+        "finance_quote": {"available": info.available, "reason": info.reason},
+        # Every source a commodity may name, offered as choices (#317).
+        "sources": list(quote_source_choices(info)),
         "alphavantage_key": bool(alphavantage_key(settings())),
     }
 
@@ -76,7 +80,10 @@ def quote_source_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]
     )
     if result.value is None:
         raise service_error(result.errors[0])
-    return {"source": result.value}
+    return {
+        "source": result.value,
+        "warning": quote_source_warning(result.value, finance_quote_info()),
+    }
 
 
 def quote_key_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:

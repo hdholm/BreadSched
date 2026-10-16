@@ -318,6 +318,21 @@ class RegisterSheet:
         anchor = self._anchor()
         rows: list[SheetRow] = []
         draft = self.draft
+        # Reuse the lines of the last layout that are unchanged: a new object for
+        # every line of a long register on every save set off full garbage
+        # collections (#319).
+        earlier = {
+            (id(row.register_row), row.kind, row.current): row
+            for row in self.rows
+            if row.register_row is not None
+        }
+
+        def line(kind: str, row: ledger.RegisterRow, mine: bool) -> SheetRow:
+            found = earlier.get((id(row), kind, mine))
+            if found is not None and found.register_row is row:
+                return found
+            return SheetRow(kind, row, current=mine)
+
         for row in self.ledger_rows:
             mine = (
                 draft.source is not None
@@ -326,9 +341,9 @@ class RegisterSheet:
             )
             if not mine and not self._matches(row):
                 continue
-            rows.append(SheetRow(TRANSACTION, row, current=mine))
+            rows.append(line(TRANSACTION, row, mine))
             if self.double_line:
-                rows.append(SheetRow(NOTES, row, current=mine))
+                rows.append(line(NOTES, row, mine))
             if mine and draft.expanded:
                 rows.extend(self._line_rows())
         blank_current = draft.source is None

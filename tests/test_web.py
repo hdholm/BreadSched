@@ -5637,6 +5637,25 @@ class TestOnlineQuotes:
             client.database.add_commodity(fund, txn)
         return fund, settings, quote_resource
 
+    def test_unknown_sources_are_kept_with_a_warning(self, client, quoting, monkeypatch):
+        # #317: the guide suggested "vanguard", which Finance::Quote does not offer.
+        from breadsched.plugins.quotes import FinanceQuoteInfo
+
+        fund, _settings, quote_resource = quoting
+        info = FinanceQuoteInfo(True, "Finance::Quote 1.71 is installed", ("nyse", "usa"))
+        monkeypatch.setattr(quote_resource, "finance_quote_info", lambda: info)
+        data = client.get("/api/quotes")[1]
+        assert data["sources"] == ["tsp", "alphavantage", "currency", "nyse", "usa"]
+        status, saved = client.post(
+            "/api/quotes/source", {"commodity": fund.handle, "source": "vanguard"}
+        )
+        assert status == 200 and saved["source"] == "vanguard"
+        assert "not a source" in saved["warning"] and "usa or nyse" in saved["warning"]
+        assert client.database.get_commodity(fund.handle).quote_source == "vanguard"
+        assert client.post("/api/quotes/source", {"commodity": fund.handle, "source": "usa"})[
+            1
+        ] == {"source": "usa", "warning": None}
+
     def test_sources_key_and_update(self, client, quoting, monkeypatch):
         from breadsched.gen.services.quotes import FetchedQuote, QuoteFailure
 
@@ -5652,10 +5671,12 @@ class TestOnlineQuotes:
             "quote_source": "",
         }
         assert set(data["finance_quote"]) == {"available", "reason"}
+        # BreadSched's own sources come first, then any Finance::Quote methods (#317).
+        assert data["sources"][:3] == ["tsp", "alphavantage", "currency"]
 
         assert client.post("/api/quotes/source", {"commodity": fund.handle, "source": "tsp"})[
             1
-        ] == {"source": "tsp"}
+        ] == {"source": "tsp", "warning": None}
         assert client.post("/api/quotes/key", {"key": "secret"})[1] == {"alphavantage_key": True}
         assert settings.get("quotes", "alphavantage_api_key") == "secret"
         assert "secret" not in json.dumps(client.get("/api/quotes")[1])
