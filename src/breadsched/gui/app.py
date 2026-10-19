@@ -588,9 +588,14 @@ class BreadSchedApplication(Gtk.Application):
         VerificationDialog(self.props.active_window, self.book_path).present()
 
     def on_post_scheduled(self, *_args) -> None:
+        """Review what is due, as on opening a book, rather than only showing it (#326)."""
         window = self.props.active_window
-        if window is not None:
-            window.show_category("scheduled")
+        if not isinstance(window, ViewManager):
+            window = next((w for w in self.get_windows() if isinstance(w, ViewManager)), None)
+        if window is None or self.db is None:
+            return
+        if window.prompt_for_due() is None:
+            self._report("No scheduled transactions are due to post.")
 
     def on_new_transaction(self, *_args) -> None:
         if self.db is None:

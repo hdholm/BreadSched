@@ -376,7 +376,10 @@ def test_typed_account_paths_list_their_matches(page, served):
     listing = page.locator("[aria-label='New transaction transfer account: matching accounts']")
     listing.locator("button").first.wait_for()
     names = listing.locator("button").all_inner_texts()
-    assert names and all(name.startswith("E") for name in names)
+    # Levels that begin with "E" first, then names holding an "e" anywhere (#325).
+    starting = [name for name in names if name.startswith("E")]
+    assert starting and names[: len(starting)] == starting
+    assert all("e" in name.casefold() for name in names)
     chosen = names[-1]
     listing.locator("button").last.click()
     expected = next(a.handle for a in db.iter_accounts() if db.full_name(a) == chosen)

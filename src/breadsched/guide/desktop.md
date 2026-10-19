@@ -308,6 +308,18 @@ beside its amount; a negative number means shares sold or moved out.
 blank one included, for its notes, as in GnuCash: Tab moves from the last amount to
 the notes line, and Enter saves what you typed there with the transaction. The
 choice is remembered. With it off, saving keeps the notes a transaction already has.
+Whether you are entering a new transaction or changing one, **Enter** (or **Tab**
+past the last cell) saves it and moves to the next transaction.
+
+The shading choice in the toolbar keeps rows apart: **Shade alternate
+transactions** (a transaction's notes and split lines share its shade), **Shade
+alternate lines**, or **No shading**. It is remembered. The toolbar's choices leave
+the keyboard in the register, so you can keep typing.
+
+Typing in **Transfer** without a `:` also lists accounts that contain what you
+typed anywhere in their name, after those whose names begin with it: `groc` lists
+`Expenses:Groceries`. Choose one from the list; the cell completes only names that
+begin with what you typed.
 
 The pencil icon opens the transaction under the cursor in the full transaction
 editor, for a claim or other details; on the blank transaction it opens a
@@ -376,8 +388,9 @@ creates a new paycheck from one. See
 
 ### Review due transactions
 
-BreadSched asks when a book opens (after any held GnuCash changes), and **Review
-due…** in Scheduled opens the same review. Choose each date's action, or one for all
+BreadSched asks when a book opens (after any held GnuCash changes), and **Post
+Scheduled Transactions** in the menu, or **Review due…** in Upcoming, opens the
+same review; if nothing is due, it says so. Choose each date's action, or one for all
 of a schedule's dates, then **Apply**. See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 

@@ -10,6 +10,29 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a282 - 2026-10-19
+
+- **Post Scheduled Transactions opens the due review (#326).** The menu action only
+  switched to the Scheduled view. `on_post_scheduled` now calls
+  `ViewManager.prompt_for_due` and reports when nothing is due.
+- **Register fixes (#325).** Saving an edited transaction with Enter (or Tab past
+  its last cell) moved to the row after its header, which in Double Line mode or
+  on a split transaction was its own notes or split line; `RegisterSheet.enter`
+  now moves to the next transaction. Row shading followed the row index, so
+  Double Line shaded every transaction alike; `RegisterSheet.ordinals` and
+  `RegisterGrid.banded` shade by transaction, by line, or not at all, a toolbar
+  choice remembered as `register.banding`. Split, Double Line, and the shading
+  choice no longer take keyboard focus, and the cursor's cell keeps it after them.
+  `complete_account` also lists accounts that hold colon-free text anywhere in their
+  full name, after segment matches, without filling them into the cell.
+- **Drop-downs show short choices whole (#327).** `bound_dropdown` let a button
+  shrink to four characters and the open list wrap words, which GTK 4.22 made
+  visible in the due review and payroll pay-change choosers. A list whose choices
+  all fit 36 characters is no longer ellipsized and is as wide as its longest
+  choice; its list rows are too. GTK tests check both dialogs show every choice
+  whole, sheet tests cover Enter and Tab after editing and shading ordinals, and
+  engine tests cover matching anywhere.
+
 ## 0.2.0a281 - 2026-10-16
 
 - **Security registers show and take shares (#323).** In an account holding a

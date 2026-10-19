@@ -80,8 +80,11 @@ Windows must stay usable on small screens whatever the book holds:
   and 40-split transactions (`TestDialogsFitTheScreen`); long forms move their body
   into a scroller (`widgets.bounded.scroll_body`) and keep the button row outside.
 - Views keep within a 1024 × 700 work area (`TestBoundedSizes`). Drop-downs come
-  from `widgets.choice.bounded_dropdown`, whose button ellipsizes in the middle at 36
-  characters (GTK's default made the longest account path the minimum width), view
+  from `widgets.choice.bounded_dropdown`, whose button ellipsizes in the middle only
+  when a choice is longer than 36 characters (GTK's default made the longest account
+  path the minimum width). A list whose choices all fit shows them whole: its button
+  is as wide as the longest choice and the open list's rows are too (#327; GTK 4.22
+  had shrunk such buttons to "Sc…oss" and wrapped "Keep" as "Ke-ep"). View
   toolbars scroll, Dashboard cards wrap in a `Gtk.FlowBox`, and the main stacks are
   not homogeneous, so the window's minimum is the shown page's.
 - Every secondary window is a `widgets.bounded.BoundedWindow`, which opens at its
@@ -146,7 +149,7 @@ parallel transaction models:
 - **Cells and keys.** Date (defaulting to the last date entered), Num, Description,
   Transfer (visible, postable accounts), R, and Increase/Decrease titled with the
   account's headings. Tab and Shift+Tab move in column order, Enter saves and moves
-  down, Escape restores the transaction, Up/Down/Page Up/Page Down move the cursor
+  to the next transaction (past the saved one's notes and split lines, #325), Escape restores the transaction, Up/Down/Page Up/Page Down move the cursor
   (saving the row being left; a refused save keeps it), and Ctrl+End/Home go to the
   blank row and the first row.
 - **Typing.** `engine/entry_input` holds the pure rules for dates (GnuCash's
@@ -207,6 +210,19 @@ parallel transaction models:
   and the blank one. Its editable cell is the description column, drawn and edited
   across to the balance column; Tab reaches it after the transaction's last cell,
   and `Draft.notes` is saved with the transaction. With it off, notes are kept.
+- **Shading.** `RegisterSheet.ordinals` numbers each row's transaction, so
+  `RegisterGrid.banded` can alternate by transaction (the default; a notes or split
+  line shares its transaction's band), by line, or not at all. The toolbar choice is
+  remembered as `register.banding`. Before #325 the band followed the row index, so
+  Double Line gave every transaction the same shade.
+- **Focus.** Split, Double Line, and the shading choice do not take focus on click,
+  and a change redraws with focus back in the cursor's cell, so typing continues
+  (#325: after Double Line the keys went to the button).
+- **Accounts anywhere.** `complete_account` lists, after the segment matches, every
+  account whose full name holds text typed without a `:` (`groc` lists
+  Expenses:Groceries); such a match is listed but never filled into the cell. With
+  a `:`, matching stays segment by segment. The browser's `/api/entry/accounts`
+  uses the same rule.
 - **Leaving.** Switching accounts, opening another transaction, or closing a
   register window with unsaved typing asks Save / Discard / Cancel first.
 - **Web.** The browser register has the same row, split lines, and in-place editing

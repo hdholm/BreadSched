@@ -474,7 +474,8 @@ class ViewManager(Gtk.ApplicationWindow):
         return dialog
 
     def prompt_for_due(self) -> Gtk.Window | None:
-        """Ask about anything due, once, on opening the book; the dialog, if any."""
+        """Ask about anything due (on opening the book, or from Post Scheduled
+        Transactions); the dialog, or None when nothing is due."""
         if self.db is None:
             return None
         from ..gen.engine import schedule as schedule_engine

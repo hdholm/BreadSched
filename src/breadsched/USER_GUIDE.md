@@ -502,7 +502,9 @@ The desktop and browser registers read what you type the same way:
   kept exactly as typed. Only numbers, `+ - * /`, and parentheses are accepted.
 - **Accounts.** Account names match segment by segment: `Ex:Gr` matches
   **Expenses:Groceries**, because `Ex` begins `Expenses` and `Gr` begins
-  `Groceries`. Accounts exactly as deep as what you typed come first. The desktop
+  `Groceries`. Accounts exactly as deep as what you typed come first. Text without
+  a `:` also finds accounts that contain it anywhere in their name, listed after
+  those: `groc` lists **Expenses:Groceries**. The desktop
   register completes the account as you type, GnuCash style: the rest of the best
   match appears selected so the next letter replaces it, `:` accepts the segment
   shown and moves on to its subaccounts, and the matching accounts are listed under

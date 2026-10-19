@@ -217,8 +217,23 @@ def complete_account(text: str, names: Iterable[str]) -> list[str]:
 
     Every ``:``-separated segment typed must begin (ignoring case) the account's
     segment at the same depth. Accounts exactly as deep as the text come first,
-    then deeper ones; each group is in name order.
+    then deeper ones; each group is in name order. Text without a ``:`` also
+    matches anywhere in the full name (``groc`` finds ``Expenses:Groceries``),
+    listed after the segment matches (#325).
     """
+    names = list(names)
+    found = _segment_matches(text, names)
+    if text.strip() and _ACCOUNT_SEPARATOR not in text:
+        needle = text.strip().casefold()
+        listed = set(found)
+        found += sorted(
+            (name for name in names if name not in listed and needle in name.casefold()),
+            key=str.casefold,
+        )
+    return found
+
+
+def _segment_matches(text: str, names: Iterable[str]) -> list[str]:
     typed = [segment.strip().casefold() for segment in text.split(_ACCOUNT_SEPARATOR)]
     if not text.strip():
         return []
@@ -239,13 +254,17 @@ def quickfill_account(text: str, names: Iterable[str]) -> tuple[str, list[str]]:
     (earlier segments take the match's spelling), so the caller can select what
     was added. A trailing ``:`` accepts the segments typed so far and lists the
     accounts below them; it stays only when such an account exists. With no
-    match the text is returned as typed.
+    match, or matches only inside names, the text is returned as typed.
     """
     accepting = text.endswith(_ACCOUNT_SEPARATOR)
     typed = text.split(_ACCOUNT_SEPARATOR)
+    names = list(names)
     matches = complete_account(text[:-1] if accepting else text, names)
     if not matches:
         return text, []
+    if not _segment_matches(text[:-1] if accepting else text, names):
+        # Found only inside names: list them, but complete nothing in the cell.
+        return text, matches
     if accepting:
         depth = len(typed) - 1
         deeper = [name for name in matches if name.count(_ACCOUNT_SEPARATOR) >= depth]

@@ -4,8 +4,14 @@ GTK's default drop-down shows the chosen string at full length, and the button's
 minimum width is that string's width: one account named with a long path made a
 register tab, and so the main window, thousands of pixels wide. A bounded
 drop-down shortens the shown choice in the middle (``Expenses:…:Groceries``, so a
-path keeps its root and leaf) and lets it shrink, while its list still shows every
-choice in full, wrapped, with a check beside the chosen one.
+path keeps its root and leaf), while its list still shows every choice in full,
+wrapped, with a check beside the chosen one.
+
+Only a choice longer than :data:`CHOICE_CHARS` is shortened: the button and the
+open list are at least as wide as the longest choice up to that limit, so short
+choices such as "Keep" or "Scale with gross" always show whole. Before #327 the
+button could shrink to four characters and the list's rows wrapped a word a few
+letters at a time.
 """
 
 from __future__ import annotations
@@ -28,19 +34,42 @@ def _text(item) -> str:
     return getter() if getter is not None else str(item or "")
 
 
+def _longest(model) -> int:
+    """Characters in the longest choice ``model`` holds."""
+    if model is None:
+        return 0
+    return max((len(_text(model.get_item(i))) for i in range(model.get_n_items())), default=0)
+
+
 def bound_dropdown(dropdown: Gtk.DropDown, chars: int = CHOICE_CHARS) -> Gtk.DropDown:
-    """Shorten ``dropdown``'s shown choice and show its list in full."""
+    """Shorten ``dropdown``'s shown choice only past ``chars``, and show its list in full."""
     button = Gtk.SignalListItemFactory()
+    # The longest choice, kept per model so a long account list is read once.
+    widest: dict[str, object] = {"model": None, "count": -1, "chars": 0}
+
+    def longest() -> int:
+        model = dropdown.get_model()
+        count = model.get_n_items() if model is not None else 0
+        if widest["model"] is not model or widest["count"] != count:
+            widest.update(model=model, count=count, chars=_longest(model))
+        return int(widest["chars"])  # type: ignore[call-overload]
 
     def setup_button(_factory, list_item) -> None:
         label = Gtk.Label(xalign=0)
         label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
         label.set_max_width_chars(chars)
-        label.set_width_chars(min(chars, 4))
         list_item.set_child(label)
 
     def bind_button(_factory, list_item) -> None:
-        list_item.get_child().set_label(_text(list_item.get_item()))
+        label = list_item.get_child()
+        label.set_label(_text(list_item.get_item()))
+        # When every choice fits the limit none is shortened, so the button is
+        # as wide as its longest choice; past it, the shown choice is shortened.
+        widest_choice = longest()
+        label.set_ellipsize(
+            Pango.EllipsizeMode.NONE if widest_choice <= chars else Pango.EllipsizeMode.MIDDLE
+        )
+        label.set_width_chars(min(chars, max(4, widest_choice)))
 
     button.connect("setup", setup_button)
     button.connect("bind", bind_button)
@@ -74,6 +103,8 @@ def bound_dropdown(dropdown: Gtk.DropDown, chars: int = CHOICE_CHARS) -> Gtk.Dro
         label = row.get_first_child()
         check = row.get_last_child()
         label.set_label(_text(list_item.get_item()))
+        # A margin over the average character width, so a short choice never wraps.
+        label.set_width_chars(min(LIST_CHARS, longest() + 2))
         shown[list_item] = check
         current = owner()
         chosen = current.get_selected_item() if current is not None else None

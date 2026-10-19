@@ -29,10 +29,17 @@ from ...presentation.investments import register_share_summary
 from ..gi_setup import GLib, Gtk
 from ..register_sheet import RegisterSheet
 from ..widgets.choice import bounded_dropdown
-from ..widgets.register_grid import RegisterGrid
+from ..widgets.register_grid import BANDING, RegisterGrid
 from ._base import BaseView
 
 __all__ = ["RegisterView", "column_headings"]
+
+#: The row shading choices, in the order the toolbar lists them.
+BANDING_CHOICES = (
+    ("transactions", "Shade alternate transactions"),
+    ("lines", "Shade alternate lines"),
+    ("none", "No shading"),
+)
 
 #: Answers to the unsaved-input question, in AlertDialog button order.
 CANCEL, DISCARD, SAVE = 0, 1, 2
@@ -96,6 +103,8 @@ class RegisterView(BaseView):
             "Show the transaction under the cursor split by split, or join it again"
         )
         self.split_button.connect("clicked", lambda *_: self.toggle_split())
+        # Toolbar choices leave the keyboard in the register (#325).
+        self.split_button.set_focus_on_click(False)
         bar.append(self.split_button)
 
         self.double_line_button = Gtk.ToggleButton(label="Double Line")
@@ -104,7 +113,17 @@ class RegisterView(BaseView):
         )
         self.double_line_button.set_active(self._settings_double_line())
         self.double_line_button.connect("toggled", self._on_double_line_toggled)
+        self.double_line_button.set_focus_on_click(False)
         bar.append(self.double_line_button)
+
+        self.banding_choice = bounded_dropdown([label for _key, label in BANDING_CHOICES])
+        self.banding_choice.set_tooltip_text("How rows are shaded to keep them apart")
+        self.banding_choice.update_property([Gtk.AccessibleProperty.LABEL], ["Row shading"])
+        self.banding_choice.set_focus_on_click(False)
+        keys = [key for key, _label in BANDING_CHOICES]
+        self.banding_choice.set_selected(keys.index(self._settings_banding()))
+        self.banding_choice.connect("notify::selected", self._on_banding_changed)
+        bar.append(self.banding_choice)
 
         self.editor_button = Gtk.Button(icon_name="document-edit-symbolic")
         self.editor_button.set_tooltip_text(
@@ -132,6 +151,7 @@ class RegisterView(BaseView):
         self.append_toolbar(bar)
 
         self.grid = RegisterGrid(on_change=self._show_message)
+        self.grid.set_banding(self._settings_banding())
         for side in ("start", "end"):
             getattr(self.grid, f"set_margin_{side}")(8)
         self.grid.set_vexpand(True)
@@ -231,11 +251,26 @@ class RegisterView(BaseView):
         settings = self._settings()
         return settings.get_bool(self.SETTINGS_SECTION, "double_line") if settings else False
 
+    def _settings_banding(self) -> str:
+        settings = self._settings()
+        chosen = settings.get(self.SETTINGS_SECTION, "banding") if settings else None
+        return chosen if chosen in BANDING else "transactions"
+
+    def _on_banding_changed(self, choice, _pspec) -> None:
+        key = BANDING_CHOICES[choice.get_selected()][0]
+        self.grid.set_banding(key)
+        settings = self._settings()
+        if settings is not None:
+            settings.set(self.SETTINGS_SECTION, "banding", key)
+            settings.save()
+        self.grid.sync(focus=self.get_mapped())
+
     def _on_double_line_toggled(self, button: Gtk.ToggleButton) -> None:
         on = button.get_active()
         if self.sheet is not None:
             self.sheet.set_double_line(on)
-            self.grid.sync(focus=False)
+            # The cursor's cell keeps the keyboard, so typing goes on (#325).
+            self.grid.sync(focus=self.get_mapped())
         settings = self._settings()
         if settings is not None:
             settings.set(self.SETTINGS_SECTION, "double_line", on)
