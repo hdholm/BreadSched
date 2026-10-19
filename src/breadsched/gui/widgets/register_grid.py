@@ -23,7 +23,11 @@ from collections.abc import Callable
 from ..gi_setup import Gdk, Gtk, Pango, PangoCairo
 from ..register_sheet import BLANK, IMBALANCE, NOTES, SPLIT, RegisterSheet
 
-__all__ = ["RegisterGrid", "grid_colours"]
+__all__ = ["BANDING", "RegisterGrid", "grid_colours"]
+
+#: How rows are shaded (#325): not at all, alternate transactions (a transaction's
+#: notes and split lines share its band), or alternate lines.
+BANDING = ("none", "transactions", "lines")
 
 #: Column widths in characters for the fixed columns; the rest share what is left.
 _FIXED = {
@@ -108,6 +112,8 @@ class RegisterGrid(Gtk.Box):
         self._width = 0
         self._height = 0
         self._dark = False
+        #: One of :data:`BANDING`.
+        self.banding = "transactions"
 
         self.adjustment = Gtk.Adjustment(lower=0, upper=1, step_increment=1, page_increment=10)
         self.adjustment.connect("value-changed", lambda *_: self._after_scroll())
@@ -547,8 +553,7 @@ class RegisterGrid(Gtk.Box):
                     if row.kind in (SPLIT, IMBALANCE)
                     else palette["current"]
                 )
-            # A notes line shares its transaction's band (Double Line mode).
-            elif (index - 1 if row.kind == NOTES else index) % 2:
+            elif self.banded(index):
                 fill = palette["band"]
             else:
                 fill = palette["surface"]
@@ -596,6 +601,19 @@ class RegisterGrid(Gtk.Box):
             cr.stroke()
         drawn = min(len(sheet.rows) - first, self.visible_rows + 1)
         self._draw_rules(cr, self.row_height * (drawn + 1), palette)
+
+    def set_banding(self, banding: str) -> None:
+        self.banding = banding if banding in BANDING else "transactions"
+        self.area.queue_draw()
+
+    def banded(self, index: int) -> bool:
+        """Whether row ``index`` takes the alternate band colour."""
+        sheet = self.sheet
+        if sheet is None or self.banding == "none":
+            return False
+        if self.banding == "lines" or index >= len(sheet.ordinals):
+            return index % 2 == 1
+        return sheet.ordinals[index] % 2 == 1
 
     def under_editor(self, index: int, column: str) -> bool:
         """Whether the editor covers this cell (so its text is not drawn twice)."""

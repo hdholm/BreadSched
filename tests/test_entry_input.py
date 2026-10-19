@@ -272,3 +272,32 @@ class TestService:
     def test_dates(self):
         assert read_entry_date("+", BASE, TODAY).value == date(2026, 2, 1)
         assert read_entry_date("x", BASE, TODAY).errors[0].code == "entry.date.invalid"
+
+
+class TestAccountsAnywhere:
+    """#325: text without a colon also finds accounts holding it anywhere."""
+
+    NAMES = ["Expenses:Groceries", "Expenses:Gas", "Assets:Checking", "Income:Grants"]
+
+    def test_level_matches_come_before_matches_inside_names(self):
+        from breadsched.gen.engine.entry_input import complete_account
+
+        assert complete_account("groc", self.NAMES) == ["Expenses:Groceries"]
+        assert complete_account("e", self.NAMES) == [
+            "Expenses:Gas",
+            "Expenses:Groceries",
+            "Assets:Checking",
+            "Income:Grants",
+        ]
+
+    def test_a_colon_keeps_matching_level_by_level(self):
+        from breadsched.gen.engine.entry_input import complete_account
+
+        assert complete_account("ex:g", self.NAMES) == ["Expenses:Gas", "Expenses:Groceries"]
+        assert complete_account("x:roc", self.NAMES) == []
+
+    def test_a_match_inside_a_name_is_listed_but_not_filled_in(self):
+        from breadsched.gen.engine.entry_input import quickfill_account
+
+        assert quickfill_account("groc", self.NAMES) == ("groc", ["Expenses:Groceries"])
+        assert quickfill_account("Ex", self.NAMES)[0] == "Expenses"

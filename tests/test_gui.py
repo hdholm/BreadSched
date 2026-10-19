@@ -37,7 +37,7 @@ except (ImportError, ValueError) as exc:
     # gi.require_version raises ValueError rather than ImportError; it is still an
     # unavailable GTK runtime, not a test-collection failure.
     pytest.skip(f"GTK 4 unavailable: {exc}", allow_module_level=True)
-Gdk, GLib, Gtk = gi_setup.Gdk, gi_setup.GLib, gi_setup.Gtk
+Gdk, GLib, Gtk, Pango = gi_setup.Gdk, gi_setup.GLib, gi_setup.Gtk, gi_setup.Pango
 
 try:
     # Gtk.init_check() reports True even with no display, so it cannot be trusted
@@ -778,6 +778,25 @@ def _security_account(db):
     return account, buy
 
 
+def _assert_choices_whole(root):
+    """Every short drop-down choice is shown whole: neither shortened nor squeezed."""
+    from breadsched.gui.widgets.choice import CHOICE_CHARS
+
+    dropdowns = [w for w in _descendants(root) if isinstance(w, Gtk.DropDown)]
+    assert dropdowns
+    for dropdown in dropdowns:
+        model = dropdown.get_model()
+        choices = [model.get_item(i).get_string() for i in range(model.get_n_items())]
+        if not choices or max(map(len, choices)) > CHOICE_CHARS:
+            continue
+        labels = [w for w in _descendants(dropdown) if isinstance(w, Gtk.Label) and w.get_mapped()]
+        assert labels, choices
+        for label in labels:
+            assert label.get_ellipsize() == Pango.EllipsizeMode.NONE, label.get_label()
+            layout = label.create_pango_layout(label.get_label())
+            assert label.get_width() >= layout.get_pixel_size()[0], label.get_label()
+
+
 def _row_y(grid, index):
     return grid.row_height * (index - grid.first_row + 1) + grid.row_height / 2
 
@@ -891,6 +910,47 @@ class TestRegisterGrid:
         # A register kept in a currency keeps its columns.
         window.open_register(app.db.get_account_by_name("Assets:Checking Account").handle)
         assert window._views["register"].grid.columns[-1] == "balance"
+
+    def test_shading_alternates_by_transaction_and_is_a_remembered_choice(
+        self, app, window, populated_book
+    ):
+        # #325: Double Line gave every transaction the same shade.
+        from breadsched.gui.register_sheet import NOTES
+        from breadsched.gui.views.register import BANDING_CHOICES
+
+        view = _grid_register(app, window, populated_book)
+        sheet, grid = view.sheet, view.grid
+        view.double_line_button.set_active(True)
+        grid.paint(900, 320)
+        assert grid.banding == "transactions"
+        bands = [grid.banded(i) for i in range(len(sheet.rows))]
+        for index, row in enumerate(sheet.rows):
+            if row.kind == NOTES:
+                assert bands[index] == bands[index - 1]
+        headers = [bands[i] for i, row in enumerate(sheet.rows) if row.kind != NOTES]
+        assert headers[:4] == [False, True, False, True]
+        keys = [key for key, _label in BANDING_CHOICES]
+        view.banding_choice.set_selected(keys.index("lines"))
+        assert grid.banding == "lines"
+        assert [grid.banded(i) for i in range(4)] == [False, True, False, True]
+        view.banding_choice.set_selected(keys.index("none"))
+        assert not any(grid.banded(i) for i in range(len(sheet.rows)))
+        grid.paint(900, 320)
+        assert app.view_settings.get("register", "banding") == "none"
+
+    def test_toolbar_choices_leave_the_keyboard_in_the_register(self, app, window, populated_book):
+        # #325: after Double Line the keys went to the toolbar button.
+        view = _grid_register(app, window, populated_book)
+        window.present()
+        assert _spin(window.get_mapped)
+        for widget in (view.double_line_button, view.split_button, view.banding_choice):
+            assert widget.get_focus_on_click() is False
+        view.grid.sync()
+        view.double_line_button.grab_focus()
+        view.double_line_button.set_active(True)
+        _spin(lambda: False, 0.2)
+        focus = window.get_focus()
+        assert focus is not None and focus.is_ancestor(view.grid.editor)
 
     def test_a_register_opens_on_the_blank_entry_at_the_bottom(self, app, window, populated_book):
         view = _grid_register(app, window, populated_book, extra=80)
@@ -4993,6 +5053,47 @@ class TestDueReview:
         finally:
             dialog.destroy()
 
+    def test_post_scheduled_opens_the_due_review(self, due_book, window, monkeypatch):
+        # #326: the action only switched to the Scheduled view.
+        from breadsched.gui.dialogs.due_dialog import DueDialog
+
+        def dialogs():
+            items = Gtk.Window.get_toplevels()
+            return [items.get_item(i) for i in range(items.get_n_items())]
+
+        before = {id(w) for w in dialogs()}
+        due_book.activate_action("post-scheduled")
+        opened = [w for w in dialogs() if isinstance(w, DueDialog) and id(w) not in before]
+        try:
+            assert len(opened) == 1 and opened[0].choosers
+        finally:
+            for dialog in opened:
+                dialog.destroy()
+        assert due_book.db.summary()["txn"] == 0
+
+    def test_post_scheduled_says_when_nothing_is_due(self, app, window, monkeypatch, tmp_path):
+        from breadsched.cli.main import main as cli
+
+        path = tmp_path / "empty.breadsched"
+        cli(["init", str(path)])
+        app.open_book(str(path))
+        reported: list[str] = []
+        monkeypatch.setattr(app, "_report", reported.append)
+        app.activate_action("post-scheduled")
+        assert reported == ["No scheduled transactions are due to post."]
+
+    def test_choices_show_whole_when_the_dialog_opens(self, due_book, window):
+        # #327: choosers opened four characters wide, and their lists wrapped
+        # "Keep" as "Ke-ep".
+        dialog, _due = self._dialog(due_book, window)
+        try:
+            dialog.present()
+            assert _spin(dialog.get_mapped)
+            _spin(lambda: False, 0.3)
+            _assert_choices_whole(dialog)
+        finally:
+            dialog.destroy()
+
     def test_nothing_is_posted_without_a_decision(self, due_book, window):
         """Opening the book must not write to the ledger on its own."""
         assert due_book.db.summary()["txn"] == 0
@@ -7075,6 +7176,14 @@ class TestPayrollDialog:
         dialog.handle = saved.value.handle
         yield dialog
         dialog.destroy()
+
+    def test_pay_change_choices_show_whole(self, dialog):
+        # #327: "Scale with gross" showed as "Sc…oss" and its list wrapped "Keep".
+        dialog.notebook.set_current_page(1)
+        dialog.present()
+        assert _spin(dialog.get_mapped)
+        _spin(lambda: False, 0.2)
+        _assert_choices_whole(dialog.notebook.get_nth_page(1))
 
     def test_breakdown_and_pay_change(self, dialog, app):
         from datetime import date, timedelta

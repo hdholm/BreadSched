@@ -260,6 +260,8 @@ class RegisterSheet:
         self.today = today
         self.filter_text = ""
         self.rows: list[SheetRow] = []
+        #: For each row, which transaction (counted from the top) it belongs to.
+        self.ordinals: list[int] = []
         self.ledger_rows: list[ledger.RegisterRow] = []
         #: Double Line mode: each transaction has a second line for its notes.
         self.double_line = False
@@ -434,6 +436,14 @@ class RegisterSheet:
         if blank_current and draft.expanded:
             rows.extend(self._line_rows())
         self.rows = rows
+        # Each row's transaction, counted from the top, so shading can alternate by
+        # transaction: a notes or split line shares its transaction's band (#325).
+        ordinal, ordinals = -1, []
+        for item in rows:
+            if item.kind in (TRANSACTION, BLANK):
+                ordinal += 1
+            ordinals.append(max(ordinal, 0))
+        self.ordinals = ordinals
         self._restore(anchor)
 
     def _line_rows(self) -> list[SheetRow]:
@@ -1173,9 +1183,18 @@ class RegisterSheet:
             self.cursor = self.header_index()
             self.column = "date"
             return True
-        # The saved transaction may have moved (a new date); go on from where it is now.
+        # The saved transaction may have moved (a new date); go on from where it is
+        # now to the next transaction, past its own notes and split lines (#325).
         header = self.header_index()
-        self.move_to(min(header + 1, len(self.rows) - 1), "date")
+        following = next(
+            (
+                index
+                for index in range(header + 1, len(self.rows))
+                if self.rows[index].kind in (TRANSACTION, BLANK)
+            ),
+            len(self.rows) - 1,
+        )
+        self.move_to(following, "date")
         return True
 
     def escape(self) -> None:

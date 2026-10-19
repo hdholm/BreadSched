@@ -471,3 +471,65 @@ class TestDoubleLine:
         # The notes line takes no reconcile toggle.
         sheet.set_double_line(True)
         assert sheet.toggle_reconcile(len(sheet.rows) - 1) is False
+
+
+class TestEnterAfterEditing:
+    """#325: saving an edit moved to the same transaction's notes or split line."""
+
+    def _first(self, sheet):
+        index = next(i for i, row in enumerate(sheet.rows) if row.kind == TRANSACTION)
+        assert sheet.move_to(index, "description")
+        return sheet.rows[sheet.header_index()].handle
+
+    def _next_handle(self, sheet, handle):
+        rows = [row.handle for row in sheet.rows if row.kind in (TRANSACTION, BLANK)]
+        return rows[rows.index(handle) + 1]
+
+    @pytest.mark.parametrize("double", [False, True])
+    def test_enter_moves_to_the_next_transaction(self, db, funded_book, double):
+        sheet = _sheet(db, funded_book)
+        sheet.set_double_line(double)
+        handle = self._first(sheet)
+        following = self._next_handle(sheet, handle)
+        _type(sheet, "description", "Renamed")
+        assert sheet.enter(), sheet.message
+        assert db.get_transaction(handle).description == "Renamed"
+        assert sheet.rows[sheet.cursor].kind == TRANSACTION
+        assert sheet.rows[sheet.cursor].handle == following
+        assert sheet.column == "date"
+
+    def test_tab_past_the_notes_line_saves_and_moves_on(self, db, funded_book):
+        sheet = _sheet(db, funded_book)
+        sheet.set_double_line(True)
+        handle = self._first(sheet)
+        following = self._next_handle(sheet, handle)
+        _type(sheet, "description", "Tabbed")
+        for _ in range(12):
+            sheet.tab()
+            if sheet.rows[sheet.header_index()].handle != handle:
+                break
+        assert db.get_transaction(handle).description == "Tabbed"
+        assert sheet.rows[sheet.header_index()].handle == following
+
+    def test_enter_on_a_split_transaction_skips_its_split_lines(self, db, funded_book):
+        pay = _three_way(db, funded_book)
+        sheet = _sheet(db, funded_book)
+        index = next(i for i, row in enumerate(sheet.rows) if row.handle == pay.handle)
+        assert sheet.move_to(index, "description")
+        assert sheet.draft.expanded
+        _type(sheet, "description", "Payday, renamed")
+        assert sheet.enter(), sheet.message
+        assert db.get_transaction(pay.handle).description == "Payday, renamed"
+        row = sheet.rows[sheet.cursor]
+        assert row.kind in (TRANSACTION, BLANK) and row.handle != pay.handle
+
+    def test_each_row_knows_its_transaction_for_shading(self, db, funded_book):
+        sheet = _sheet(db, funded_book)
+        sheet.set_double_line(True)
+        kinds = [row.kind for row in sheet.rows]
+        assert len(sheet.ordinals) == len(sheet.rows)
+        for index, kind in enumerate(kinds):
+            if kind == NOTES:
+                assert sheet.ordinals[index] == sheet.ordinals[index - 1]
+        transactions = [sheet.ordinals[i] for i, k in enumerate(kinds) if k in (TRANSACTION, BLANK)]
+        assert transactions == list(range(len(transactions)))

@@ -5751,14 +5751,22 @@ class TestEntryInput:
         rent = client.database.get_account_by_name("Rent")
         assert data == {"accounts": [{"handle": rent.handle, "full_name": "Expenses:Rent"}]}
         checking = client.database.get_account_by_name("Checking")
+        # Accounts whose levels begin with the text come first, then those that
+        # hold it anywhere in the name (#325).
         assert client.get(f"/api/entry/accounts?text=A&exclude={checking.handle}")[1][
             "accounts"
         ] == [
             {
                 "handle": client.database.get_account_by_name("401(k)").handle,
                 "full_name": "Assets:401(k)",
-            }
+            },
+            {
+                "handle": client.database.get_account_by_name("Salary").handle,
+                "full_name": "Income:Salary",
+            },
         ]
+        status, data = client.get("/api/entry/accounts?text=ent")
+        assert [item["full_name"] for item in data["accounts"]] == ["Expenses:Rent"]
         status, data = client.get(f"/api/entry/num?account={checking.handle}&text=0099&step=1")
         assert status == 200 and data == {"num": "0100"}
         assert len(list(client.database.iter_transactions())) == before
