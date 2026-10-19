@@ -391,7 +391,9 @@ creates a new paycheck from one. See
 BreadSched asks when a book opens (after any held GnuCash changes), and **Post
 Scheduled Transactions** in the menu, or **Review due…** in Upcoming, opens the
 same review; if nothing is due, it says so. Choose each date's action, or one for all
-of a schedule's dates, then **Apply**. See
+of a schedule's dates, then **Apply**. If anything was posted, **Posted
+transactions** lists it split by split; choose **Edit…** to change one in the
+transaction editor or **Delete** to remove it, then **Done**. See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
 ## Plan and projection

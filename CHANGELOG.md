@@ -10,6 +10,17 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a283 - 2026-10-19
+
+- **Review what a due review posted (#328).** Applying the GTK due review reported
+  only a count. `DueDialog` now opens `PostedTransactionsDialog` on
+  `DueResolution.transactions`: each posted transaction with every split on its own
+  line (`split_lines`, under the split account's register heading), **Edit…** in the
+  full transaction editor, and **Delete** through `delete_transaction`, after which
+  the list rereads the book; a skip-only batch still reports in an alert. GTK tests
+  cover the listing, delete, edit refresh, and a refused delete. The browser's
+  equivalent is on the roadmap.
+
 ## 0.2.0a282 - 2026-10-19
 
 - **Post Scheduled Transactions opens the due review (#326).** The menu action only

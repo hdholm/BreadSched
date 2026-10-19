@@ -634,6 +634,11 @@ elsewhere (another window, the browser, or the command line), nothing is written
 and the review says so instead of posting it twice. The whole batch is one undo
 step. Plan-only estimates are never offered for posting.
 
+In the desktop window, what was posted opens next in **Posted transactions**:
+each transaction with every split on its own line, so you can check the accounts
+and amounts. **Edit…** opens one in the transaction editor and **Delete** removes
+it; both can be undone.
+
 ### Credit-card payments
 
 Configure payment behavior on the Credit card account: paid in full or carried

@@ -198,7 +198,12 @@ occurrence that another surface already posted or skipped. Accepted posts and sk
 commit in one database transaction and one undo step; defer writes nothing. GTK's
 due dialog, the web review panel, and the `due-review` command are adapters over this
 service; the older unreviewed post-all helpers remain for callers that explicitly
-post automatic schedules.
+post automatic schedules. `DueResolution.transactions` names what was posted, and
+GTK opens it in `dialogs/posted_dialog.PostedTransactionsDialog` (#328): every split
+on its own line under its account's register heading, with **Edit…** (the full
+transaction editor) and **Delete** (`delete_transaction`), each an ordinary undoable
+change after which the list rereads the book. The browser review still reports a
+count; showing what it posted is on the roadmap.
 
 ## Payroll
 
