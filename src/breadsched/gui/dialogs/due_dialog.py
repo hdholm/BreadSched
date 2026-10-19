@@ -23,7 +23,8 @@ one of its dates at once, while each date keeps its own answer.
 
 Apply goes through the shared due-review service. It rechecks every chosen date
 against the book, so a date posted or skipped elsewhere since this window opened
-is refused rather than posted twice, and the whole batch is one undo step.
+is refused rather than posted twice, and the whole batch is one undo step. What it
+posted then opens in ``PostedTransactionsDialog`` to check, edit, or delete (#328).
 """
 
 from __future__ import annotations
@@ -184,12 +185,16 @@ class DueDialog(BoundedWindow):
         ]
 
     def apply(self) -> tuple[int, int] | None:
-        """Carry out the decisions. Returns (posted, skipped), or None if refused."""
+        """Carry out the decisions. Returns (posted, skipped), or None if refused.
+
+        The handles of the transactions posted are kept in ``posted_transactions``.
+        """
         decisions = tuple(
             (occurrence.schedule.handle, occurrence.when, _DECISIONS[chooser.get_selected()])
             for occurrence, chooser in zip(self.occurrences, self.choosers, strict=True)
             if chooser.get_selected() != LATER
         )
+        self.posted_transactions: tuple[str, ...] = ()
         if not decisions:
             return 0, 0
         result = resolve_due(self.db, ResolveDue(decisions, as_of=_today()))
@@ -198,6 +203,7 @@ class DueDialog(BoundedWindow):
             self.status.add_css_class("negative")
             return None
         assert result.value is not None
+        self.posted_transactions = result.value.transactions
         return result.value.posted, result.value.skipped
 
     def _on_apply(self, _button) -> None:
@@ -205,18 +211,22 @@ class DueDialog(BoundedWindow):
         if outcome is None:
             return
         posted, skipped = outcome
+        parent = self.get_transient_for()
         self.close()
-        if posted or skipped:
-            parts = []
-            if posted:
-                parts.append(f"posted {posted}")
-            if skipped:
-                parts.append(f"marked {skipped} as done")
+        if posted:
+            # What was just posted, split by split, to check and correct (#328).
+            from .posted_dialog import PostedTransactionsDialog
+
+            self.review = PostedTransactionsDialog(
+                parent, self.db, self.posted_transactions, skipped=skipped
+            )
+            self.review.present()
+        elif skipped:
             alert = Gtk.AlertDialog(
-                message=f"Scheduled transactions: {', '.join(parts)}.",
+                message=f"Scheduled transactions: marked {skipped} as done.",
                 detail="Undo with Ctrl+Z if that was not what you wanted.",
             )
-            alert.show(self.get_transient_for())
+            alert.show(parent)
 
 
 def _today():

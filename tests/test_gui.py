@@ -5131,6 +5131,68 @@ class TestDueReview:
         recorded = next(iter(due_book.db.iter_transactions()))
         assert recorded.post_date == due[0].when
 
+    def test_posted_transactions_open_for_review_split_by_split(self, due_book, window):
+        # #328: posting gave only a count; nothing showed what was written.
+        from breadsched.gui.dialogs.due_dialog import POST
+        from breadsched.gui.dialogs.posted_dialog import PostedTransactionsDialog, split_lines
+
+        dialog, due = self._dialog(due_book, window, limit=2)
+        dialog.set_all(POST)
+        dialog._on_apply(None)
+        review = dialog.review
+        try:
+            assert isinstance(review, PostedTransactionsDialog)
+            assert review.get_modal() and review.get_transient_for() is window
+            listed = review.transactions()
+            assert len(listed) == 2 == due_book.db.summary()["txn"]
+            assert set(review.edit_buttons) == {txn.handle for txn in listed}
+            assert split_lines(due_book.db, listed[0]) == [
+                ("Expenses", "", "Expense", "1,800.00"),
+                ("Assets", "", "Decrease", "1,800.00"),
+            ]
+            texts = {
+                w.get_label() for w in _descendants(review.journal) if isinstance(w, Gtk.Label)
+            }
+            assert {"Expenses", "Assets", "1,800.00", listed[0].post_date.isoformat()} <= texts
+
+            # Delete goes through the shared service and the list rereads the book.
+            first = listed[0].handle
+            assert review.delete(first)
+            assert due_book.db.get_transaction(first) is None
+            assert [txn.handle for txn in review.transactions()] == [listed[1].handle]
+            assert first not in review.delete_buttons
+            assert "Ctrl+Z" in review.status.get_text()
+
+            # Edit opens the full editor on the stored transaction, and closing it
+            # rereads the book (here the change is written as another window would).
+            editor = review.edit(listed[1].handle)
+            assert editor is not None and editor.transaction.handle == listed[1].handle
+            stored = due_book.db.get_transaction(listed[1].handle)
+            stored.description = "Rent, checked"
+            with due_book.db.transaction("Edit") as txn:
+                due_book.db.commit_transaction(stored, txn)
+            editor.close()
+            labels = [
+                w.get_label() for w in _descendants(review.journal) if isinstance(w, Gtk.Label)
+            ]
+            assert "Rent, checked" in labels
+
+            # A refused delete changes nothing and says why.
+            assert not review.delete("missing")
+            assert review.status.has_css_class("negative") and review.status.get_text()
+            assert due_book.db.get_transaction(listed[1].handle) is not None
+        finally:
+            review.destroy()
+
+    def test_skipping_only_reports_without_a_review(self, due_book, window):
+        from breadsched.gui.dialogs.due_dialog import NEVER
+
+        dialog, _due = self._dialog(due_book, window, limit=1)
+        dialog.set_all(NEVER)
+        dialog._on_apply(None)
+        assert getattr(dialog, "review", None) is None
+        assert due_book.db.summary()["txn"] == 0
+
     def test_never_marks_it_done_without_posting(self, due_book, window):
         from breadsched.gui.dialogs.due_dialog import NEVER
 

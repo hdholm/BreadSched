@@ -59,6 +59,9 @@ The rest of this file is unscheduled and comes after the first Beta.
 - Consider richer formula assistance only on top of the existing safe formula
   language; never add Python `eval` or a second formula dialect.
 
+- Show the browser's due review results split by split with edit and delete, as
+  the desktop's Posted transactions window does (#328).
+
 ### Investment and retirement modeling
 
 - Use per-account and dated account-specific return/rate assumptions throughout
