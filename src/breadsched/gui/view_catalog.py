@@ -133,6 +133,8 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
         ViewAction("show-hidden", "Show Hi_dden Accounts", "set_show_hidden", toggle=True),
     ),
     "register": (
+        ViewAction("enter", "_Enter Transaction", "enter_transaction"),
+        ViewAction("cancel", "_Cancel Transaction", "cancel_transaction"),
         ViewAction("edit-in-place", "Edit Transaction in _Place", "edit_selected_in_place"),
         ViewAction("track-reimbursable", "Track as Rei_mbursable…", "track_selected_reimbursable"),
         ViewAction("new-window", "Open in New _Window", "_on_open_window_clicked"),

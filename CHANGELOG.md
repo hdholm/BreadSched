@@ -10,6 +10,15 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a290 - 2026-10-20
+
+- **Enter and Cancel buttons in the register (#344).** Escape was the only way to
+  abandon an entry or change. The register toolbar has **Enter** and **Cancel**, as
+  in GnuCash, and the Actions menu has **Enter Transaction** and **Cancel
+  Transaction**; they share `RegisterGrid.enter`/`cancel` with the keys and leave the
+  keyboard in the register. GTK tests cover cancelling a new entry and an edit
+  (nothing stored changes), saving with the button, and the actions.
+
 ## 0.2.0a289 - 2026-10-20
 
 - **FSA claims and reimbursable expenses check links alike (#340).**

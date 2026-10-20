@@ -118,6 +118,20 @@ class RegisterView(BaseView):
         self.split_button.set_focus_on_click(False)
         bar.append(self.split_button)
 
+        # GnuCash's Enter and Cancel: the keys' actions as buttons (#344), so an
+        # entry can be saved or abandoned without knowing Enter and Escape.
+        self.enter_button = Gtk.Button(label="Enter")
+        self.enter_button.set_tooltip_text("Save the transaction being entered or changed (Enter)")
+        self.enter_button.connect("clicked", lambda *_: self.enter_transaction())
+        self.cancel_button = Gtk.Button(label="Cancel")
+        self.cancel_button.set_tooltip_text(
+            "Put the transaction being entered or changed back as it was (Escape)"
+        )
+        self.cancel_button.connect("clicked", lambda *_: self.cancel_transaction())
+        for button in (self.enter_button, self.cancel_button):
+            button.set_focus_on_click(False)
+            bar.append(button)
+
         # Double Line (View menu) and row shading (Preferences) are settings shared
         # by every register, not toolbar controls (#333).
         self.double_line = self._settings_double_line()
@@ -375,6 +389,15 @@ class RegisterView(BaseView):
         done = self.sheet.toggle_split()
         self.grid.sync()
         return done
+
+    def enter_transaction(self) -> bool:
+        """Save the transaction under the cursor; False, with the reason shown, if not."""
+        return self.sheet is not None and self.grid.enter()
+
+    def cancel_transaction(self) -> None:
+        """Abandon the typing in the transaction under the cursor (the blank one empties)."""
+        if self.sheet is not None:
+            self.grid.cancel()
 
     def cursor_transaction(self):
         """The stored transaction under the cursor, or None on the blank one."""
