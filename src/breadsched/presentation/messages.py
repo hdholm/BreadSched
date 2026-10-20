@@ -60,6 +60,10 @@ _SERVICE_MESSAGES = {
     "claim.not_found": "The FSA claim no longer exists",
     "claim.link.transaction.not_found": "A linked transaction no longer exists",
     "claim.link.split.not_found": "A linked transaction entry no longer exists",
+    "claim.split.owned_posting": (
+        "That is BreadSched's own receivable reclassification; link the original "
+        "transaction instead"
+    ),
     "claim.receivable.not_found": "The linked receivable no longer exists",
     "claim.receivable.taken": "Another FSA claim already covers the rest of this receivable",
     "claim.allocation.account.invalid": "A claim allocation must use an FSA account",

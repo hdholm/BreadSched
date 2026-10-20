@@ -37,13 +37,8 @@ __all__ = [
 ]
 
 
-class FsaClaimError(ValueError):
+class FsaClaimError(split_links.LinkError):
     """A stable claim failure independent of presentation wording."""
-
-    def __init__(self, code: str, fields: tuple[str, ...], message: str) -> None:
-        super().__init__(message)
-        self.code = code
-        self.fields = fields
 
 
 @dataclass(frozen=True)
@@ -318,16 +313,19 @@ def iter_claims(db: DbSQLite) -> list[FsaClaim]:
     return list(db.iter_fsa_claims())
 
 
-def _missing_link(part: str) -> FsaClaimError:
-    return FsaClaimError(
-        f"claim.link.{part}.not_found",
-        ("links",),
-        f"linked transaction{' split' if part == 'split' else ''} no longer exists",
-    )
+_missing_link = split_links.missing_link("claim", FsaClaimError)
 
 
 def _resolve_link(db: DbSQLite, link: SplitLink) -> tuple[Transaction, Split]:
     return split_links.resolve_link(db, link, _missing_link)
+
+
+def _check_links(db: DbSQLite, claim: FsaClaim) -> None:
+    """Every link resolves and none is a receivable's reclassification (#340)."""
+    owned = split_links.owned_postings(db)
+    for link in claim.links():
+        _resolve_link(db, link)
+        split_links.refuse_owned_posting(link.transaction, owned, "claim", FsaClaimError)
 
 
 def allocation_year(db: DbSQLite, allocation: FsaClaimAllocation) -> FsaFundingYear:
@@ -383,10 +381,7 @@ def save_claim(
                 ("receivable",),
                 "another FSA claim already covers the rest of this receivable",
             )
-    for link in claim.payments:
-        _resolve_link(db, link)
-    for link in claim.refunds:
-        _resolve_link(db, link)
+    _check_links(db, claim)
     for allocation in claim.allocations:
         year = _allocation_year(db, allocation)
         if allocation.target is not None and allocation.target < 0:
@@ -547,7 +542,12 @@ def _role_eligible(role: str, account, split: Split) -> bool:
 
 
 def attachment_roles(db: DbSQLite, transaction: Transaction) -> list[AttachmentRole]:
-    """Every role this transaction's splits can play, paired roles first."""
+    """Every role this transaction's splits can play, paired roles first.
+
+    A receivable's reclassification transaction plays none: BreadSched owns it.
+    """
+    if transaction.handle in split_links.owned_postings(db):
+        return []
     single: list[AttachmentRole] = []
     by_role: dict[str, list[AttachmentRole]] = {}
     for split in transaction.splits:

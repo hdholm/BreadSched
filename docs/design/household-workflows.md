@@ -225,10 +225,22 @@ movement and the cash bridge has no residual for FSA-paid expense.
 [Presentation settings and financial records](storage.md#presentation-settings-and-financial-records))
 linking payments, provider refunds, and per-funding-year allocations with their
 reimbursements, rejections, and repayments. `engine.fsa_claims.claim_summary`
-recomputes paid, refunded, reimbursed, repaid, remaining, and status. FSA claims and
-receivables share link resolution (`engine.split_links`); FSA reimbursements need no
-reclassification because the money is already in the FSA asset, which is not
+recomputes paid, refunded, reimbursed, repaid, remaining, and status. FSA reimbursements
+need no reclassification because the money is already in the FSA asset, which is not
 cash-like.
+
+- **One way to link the ledger (#340).** Claims and receivables hold the same
+  `SplitLink` and check links through `engine.split_links`: `resolve_link` and
+  `sum_links`, `missing_link` (each record's `….link.transaction|split.not_found`),
+  one error base (`LinkError`, of which `FsaClaimError` and `ReceivableError` are the
+  two kinds), and `owned_postings` with `refuse_owned_posting`. A receivable's
+  reclassification transactions are rewritten from the receivable, so a claim
+  refuses them (`claim.split.owned_posting`, as receivables already did) and
+  `attachment_roles` offers them no role; before #340 a claim could take one's
+  expense credit as a provider refund. A claim is not stored as a receivable: its
+  FSA reimbursements are FSA-asset splits rather than credits to the expense, its
+  amount comes from the EOB, and its allocations are per funding year, so it keeps
+  its own record and names a receivable (below) for another payer's share.
 
 - **Payer and FSA together.** `FsaClaim.receivable` names the receivable whose payer
   covers part of the same expense; it is set only in the claim screens, never

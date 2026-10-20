@@ -1383,8 +1383,8 @@ again; money back beyond what was owed stays a refund in the expense account. A
 write-off returns the unpaid balance to the expense. A dispute posts nothing.
 BreadSched keeps these moving transactions itself and recomputes them whenever the
 receivable or a linked transaction changes, including after an import; they are
-marked in their notes, and editing or deleting one as a transaction is refused
-(change the receivable instead). You can choose the receivable account; by default
+marked in their notes, and editing or deleting one as a transaction, or linking one
+to a receivable or an FSA claim, is refused (change the receivable instead). You can choose the receivable account; by default
 BreadSched uses, or creates, a "Reimbursements Receivable" account under Assets for
 the expense's currency. An imported GnuCash receivable is used only when you
 choose it.

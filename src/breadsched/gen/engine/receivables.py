@@ -55,13 +55,8 @@ __all__ = [
 ]
 
 
-class ReceivableError(ValueError):
+class ReceivableError(split_links.LinkError):
     """A stable receivable failure independent of presentation wording."""
-
-    def __init__(self, code: str, fields: tuple[str, ...], message: str) -> None:
-        super().__init__(message)
-        self.code = code
-        self.fields = fields
 
 
 class ReceivableStatus(str, Enum):
@@ -106,12 +101,7 @@ def iter_receivables(db: DbSQLite) -> list[Receivable]:
     return list(db.iter_receivables())
 
 
-def _missing_link(part: str) -> ReceivableError:
-    return ReceivableError(
-        f"receivable.link.{part}.not_found",
-        ("links",),
-        f"linked transaction{' split' if part == 'split' else ''} no longer exists",
-    )
+_missing_link = split_links.missing_link("receivable", ReceivableError)
 
 
 def _resolve_link(db: DbSQLite, link: SplitLink) -> tuple[Transaction, Split]:
@@ -306,9 +296,9 @@ POSTING_NOTE = (
 )
 
 
-def owned_postings(db: DbSQLite) -> set[str]:
-    """Handles of every reclassification transaction a receivable owns."""
-    return {handle for receivable in db.iter_receivables() for handle in receivable.postings}
+#: Handles of every reclassification transaction a receivable owns (shared with
+#: FSA claims, which may not link them either).
+owned_postings = split_links.owned_postings
 
 
 def plan_adjustments(db: DbSQLite) -> tuple[frozenset[str], frozenset[str]]:
