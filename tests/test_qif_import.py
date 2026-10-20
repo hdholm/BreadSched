@@ -63,9 +63,9 @@ def test_qif_imports_bank_income_and_expense_history(db, book, tmp_path):
     salary = db.get_account(book.salary)
     checking = db.get_account(book.checking)
     assert groceries is not None and salary is not None and checking is not None
-    assert ledger.balance(db, groceries.handle, natural_sign=False) == Money("45.67")
-    assert ledger.balance(db, salary.handle, natural_sign=False) == Money("-2000.00")
-    assert ledger.balance(db, checking.handle, natural_sign=False) == Money("1954.33")
+    assert ledger.balance_amount(db, groceries.handle, natural_sign=False).value == Money("45.67")
+    assert ledger.balance_amount(db, salary.handle, natural_sign=False).value == Money("-2000.00")
+    assert ledger.balance_amount(db, checking.handle, natural_sign=False).value == Money("1954.33")
 
 
 def test_qif_split_transaction_stays_balanced(db, book, tmp_path):
@@ -118,7 +118,7 @@ def test_qif_detects_comma_decimal_amounts(db, book, tmp_path):
     assert result.transactions == 2
     checking = db.get_account(book.checking)
     assert checking is not None
-    assert ledger.balance(db, checking.handle, natural_sign=False) == Money("1954.33")
+    assert ledger.balance_amount(db, checking.handle, natural_sign=False).value == Money("1954.33")
 
 
 def test_qif_explicit_number_format_resolves_ambiguous_amount(db, book, tmp_path):
@@ -132,7 +132,7 @@ def test_qif_explicit_number_format_resolves_ambiguous_amount(db, book, tmp_path
     assert result.transactions == 1
     checking = db.get_account(book.checking)
     assert checking is not None
-    assert ledger.balance(db, checking.handle, natural_sign=False) == Money("1.234")
+    assert ledger.balance_amount(db, checking.handle, natural_sign=False).value == Money("1.234")
 
 
 def test_qif_detects_day_first_dates_for_the_whole_file(db, book, tmp_path):
@@ -222,8 +222,8 @@ def test_a_transfer_in_both_registers_is_imported_once(db, book, tmp_path):
     savings = db.get_account_by_name("Assets:Savings")
     assert checking is not None and savings is not None
     # One 500 transfer paired; the unmatched 500 and 100 stand alone.
-    assert ledger.balance(db, savings.handle) == Money(1100)
-    assert ledger.balance(db, checking.handle) == Money(-1100)
+    assert ledger.balance_amount(db, savings.handle).value == Money(1100)
+    assert ledger.balance_amount(db, checking.handle).value == Money(-1100)
     assert result.transfers_paired == 1
     assert len(list(db.iter_transactions())) == 3
     assert "1 second register copy matched" in result.detail()

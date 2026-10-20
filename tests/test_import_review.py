@@ -33,7 +33,7 @@ def _reconcile_checking(db, ids):
     ]
     statement = max(item.post_date for item in transactions)
     reconciliation = reconcile_engine.start(
-        db, ids.checking, statement, ledger.balance(db, ids.checking, statement)
+        db, ids.checking, statement, ledger.balance_amount(db, ids.checking, statement).value
     )
     reconcile_engine.set_selection(
         db,
@@ -461,7 +461,8 @@ def test_a_kept_deletion_is_not_asked_again_and_a_restored_source_clears_it(
 def test_a_held_deletion_cannot_be_applied_once_something_refers_to_it(db, gnucash_sqlite_path):
     from datetime import date
 
-    from breadsched.gen.lib.receivable import Receivable, ReceivableSplitLink
+    from breadsched.gen.lib.receivable import Receivable
+    from breadsched.gen.lib.split_link import SplitLink
 
     source = gnucash_sqlite_path
     rent = _gnucash_reconciled_rent(db, source)
@@ -470,7 +471,7 @@ def test_a_held_deletion_cannot_be_applied_once_something_refers_to_it(db, gnuca
     receivable = Receivable(
         incurred_date=date(2026, 1, 2),
         payer="Landlord",
-        expenses=[ReceivableSplitLink(rent.handle, rent.splits[0].handle)],
+        expenses=[SplitLink(rent.handle, rent.splits[0].handle)],
     )
     with db.transaction("Receivable") as txn:
         db.add_receivable(receivable, txn)

@@ -21,6 +21,11 @@ _translation: gettext.NullTranslations = gettext.translation(
 
 
 _SERVICE_MESSAGES = {
+    "dashboard.group.name.empty": "Give each Dashboard group a name",
+    "dashboard.group.name.duplicate": "Two Dashboard groups have the same name",
+    "dashboard.group.kind.invalid": "Choose a valid Dashboard group kind",
+    "dashboard.group.account.not_found": "A Dashboard group names an account that no longer exists",
+    "dashboard.group.account.duplicate": "An account can be in only one Dashboard group",
     "account.not_found": "The account no longer exists",
     "account.cost_basis_method.invalid": "Choose first in, first out or average cost",
     "account.name.required": "Give the account a name",

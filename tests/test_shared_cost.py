@@ -17,7 +17,7 @@ from breadsched.gen.engine.fsa_claims import (
     claim_summary,
     shared_costs_for_receivable,
 )
-from breadsched.gen.engine.ledger import balance
+from breadsched.gen.engine.ledger import balance_amount
 from breadsched.gen.engine.receivables import receivable_summary
 from breadsched.gen.lib import Money, Transaction
 from breadsched.gen.lib.fsa_claim import FsaClaim
@@ -186,9 +186,15 @@ def test_rejected_links_leave_the_stored_claim_unchanged(db, book):
 
 def test_the_ledger_is_unchanged_by_the_allocation(db, book):
     receivable, expense = _bill(db, book)
-    before = (balance(db, book.groceries), balance(db, receivable.account))
+    before = (
+        balance_amount(db, book.groceries).value,
+        balance_amount(db, receivable.account).value,
+    )
     _claim(db, expense, receivable=receivable.handle, eob="50.00")
-    assert (balance(db, book.groceries), balance(db, receivable.account)) == before
+    assert (
+        balance_amount(db, book.groceries).value,
+        balance_amount(db, receivable.account).value,
+    ) == before
 
 
 def test_the_link_round_trips_and_older_claims_have_none():

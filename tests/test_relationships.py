@@ -131,7 +131,7 @@ class TestAccountManagement:
         capsys.readouterr()
         db = open_book(book_path)
         handle = db.get_account_by_name("Assets:Savings").handle
-        assert ledger.balance(db, handle) == Money("1500.00")
+        assert ledger.balance_amount(db, handle).value == Money("1500.00")
         db.close()
 
     def test_an_account_can_be_renamed_and_regrouped(self, book_path, capsys):

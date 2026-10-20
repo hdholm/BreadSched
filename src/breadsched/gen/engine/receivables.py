@@ -32,7 +32,8 @@ from uuid import NAMESPACE_URL, uuid5
 from ..db.sqlite import DbSQLite
 from ..lib.account import AccountType
 from ..lib.money import Money
-from ..lib.receivable import Receivable, ReceivableSplitLink, ReceivableWriteOff
+from ..lib.receivable import Receivable, ReceivableWriteOff
+from ..lib.split_link import SplitLink
 from ..lib.transaction import Split, Transaction
 from . import split_links
 from .currency import commodity_fraction, reporting_currency_handle
@@ -113,11 +114,11 @@ def _missing_link(part: str) -> ReceivableError:
     )
 
 
-def _resolve_link(db: DbSQLite, link: ReceivableSplitLink) -> tuple[Transaction, Split]:
+def _resolve_link(db: DbSQLite, link: SplitLink) -> tuple[Transaction, Split]:
     return split_links.resolve_link(db, link, _missing_link)
 
 
-def _sum_links(db: DbSQLite, links: list[ReceivableSplitLink]) -> Money:
+def _sum_links(db: DbSQLite, links: list[SplitLink]) -> Money:
     return split_links.sum_links(db, links, _missing_link)
 
 
@@ -521,7 +522,7 @@ def planned_postings(db: DbSQLite, receivable: Receivable) -> list[Transaction]:
         if outstanding <= 0:
             break
         if kind == 0:
-            assert isinstance(event, ReceivableSplitLink)
+            assert isinstance(event, SplitLink)
             _transaction, split = _resolve_link(db, event)
             amount = min(-split.value, outstanding)
             expense_account, source = split.account, split

@@ -335,8 +335,8 @@ class TestItServes:
         assert payload == {
             "ok": True,
             "application_version": __version__,
-            "native_schema_version": 11,
-            "supported_schema_versions": {"minimum": 6, "maximum": 11},
+            "native_schema_version": 12,
+            "supported_schema_versions": {"minimum": 6, "maximum": 12},
             "sqlite": [],
             "issues": [],
         }
@@ -952,7 +952,7 @@ class TestItServes:
         assert all(split.formula for split in saved.splits)
         from breadsched.gen.engine import ledger
 
-        assert ledger.balance(db, liability.handle) == Money("1200.00")
+        assert ledger.balance_amount(db, liability.handle).value == Money("1200.00")
 
     def test_web_loan_mutation_exposes_stable_service_errors(self, client):
         with pytest.raises(urllib.error.HTTPError) as caught:
@@ -2546,7 +2546,7 @@ class TestThreadSafety:
         def calculation(api, query):
             query.finish()
             name = api.db.get_account(checking["handle"]).name
-            balance = ledger.balance(api.db, checking["handle"])
+            balance = ledger.balance_amount(api.db, checking["handle"]).value
             halfway.set()
             assert written.wait(timeout=REQUEST_TIMEOUT)
             # Read again after the write committed: still the same generation.
@@ -2555,7 +2555,7 @@ class TestThreadSafety:
                     name,
                     balance,
                     api.db.get_account(checking["handle"]).name,
-                    ledger.balance(api.db, checking["handle"]),
+                    ledger.balance_amount(api.db, checking["handle"]).value,
                 )
             )
             return {}
@@ -2962,7 +2962,7 @@ class TestImportReview:
         transactions = list(db.iter_transactions())
         statement = max(item.post_date for item in transactions)
         reconciliation = reconcile_engine.start(
-            db, bank.handle, statement, ledger.balance(db, bank.handle, statement)
+            db, bank.handle, statement, ledger.balance_amount(db, bank.handle, statement).value
         )
         reconcile_engine.set_selection(
             db,
@@ -3913,7 +3913,32 @@ class TestDashboardApi:
             ("Holdings:Retirement", 1),
         ]
         assert payload["config"]["groups"][0]["name"] == "Holdings:Cash"
+        assert payload["config"]["groups"][0]["accounts"] == [checking["handle"]]
         assert payload["config"]["accounts"]
+
+    def test_an_account_in_two_groups_is_refused_and_nothing_changes(self, client):
+        _status, accounts = client.get("/api/accounts")
+        checking = next(account for account in accounts if account["name"] == "Checking")
+        _status, before = client.get("/api/dashboard")
+
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/dashboard/config",
+                {
+                    "groups": [
+                        {"name": "One", "kind": "liquid", "accounts": [checking["handle"]]},
+                        {"name": "Two", "kind": "asset", "accounts": [checking["handle"]]},
+                    ],
+                    "liquidity_days": 9,
+                },
+            )
+        error = json.loads(caught.value.read())
+
+        assert caught.value.code == 400
+        assert error["code"] == "dashboard.group.account.duplicate"
+        assert error["error"] == "An account can be in only one Dashboard group"
+        _status, after = client.get("/api/dashboard")
+        assert after["config"] == before["config"]
 
     def test_the_horizons_are_query_parameters(self, client):
         _status, six = client.get("/api/dashboard?emergency_months=6")

@@ -15,12 +15,13 @@ from datetime import date
 import pytest
 
 from breadsched.gen.engine import dashboard
-from breadsched.gen.engine.ledger import balance
+from breadsched.gen.engine.ledger import balance_amount
 from breadsched.gen.engine.receivables import POSTING_NOTE, receivable_summary
 from breadsched.gen.lib import Account, AccountType, Money, Transaction
 from breadsched.gen.lib.account import GnuCashAccountType
 from breadsched.gen.lib.commodity import Commodity
-from breadsched.gen.lib.fsa_claim import FsaClaim, FsaClaimSplitLink
+from breadsched.gen.lib.fsa_claim import FsaClaim
+from breadsched.gen.lib.split_link import SplitLink
 from breadsched.gen.services.receivables import (
     DEFAULT_ACCOUNT_NAME,
     RecordWriteOff,
@@ -82,9 +83,9 @@ def _board(db):
 
 def _balances(db, book, receivable):
     return (
-        balance(db, book.groceries),
-        balance(db, receivable.account),
-        balance(db, book.checking),
+        balance_amount(db, book.groceries).value,
+        balance_amount(db, receivable.account).value,
+        balance_amount(db, book.checking).value,
     )
 
 
@@ -139,7 +140,7 @@ def test_an_expected_amount_leaves_the_rest_as_a_real_expense(db, book):
         Money(0),
         "settled",
     )
-    assert balance(db, receivable.account) == Money(0)
+    assert balance_amount(db, receivable.account).value == Money(0)
 
 
 def test_more_money_back_than_owed_stays_a_refund_in_the_expense(db, book):
@@ -170,7 +171,7 @@ def test_a_dispute_posts_nothing(db, book):
     assert mark_disputed(db, receivable.handle, date(2026, 9, 5), "Denied").ok
     receivable = db.get_receivable(receivable.handle)
     assert receivable.postings == postings
-    assert balance(db, receivable.account) == Money("150.00")
+    assert balance_amount(db, receivable.account).value == Money("150.00")
 
 
 def test_unlinking_and_deleting_remove_the_reclassifications(db, book):
@@ -178,14 +179,14 @@ def test_unlinking_and_deleting_remove_the_reclassifications(db, book):
     [posting] = receivable.postings
     assert detach_split(db, receivable.handle, *expense).ok
     assert db.get_transaction(posting) is None
-    assert balance(db, book.groceries) == Money("150.00")
+    assert balance_amount(db, book.groceries).value == Money("150.00")
 
     assert attach_expense_split(db, receivable.handle, *expense).ok
-    assert balance(db, book.groceries) == Money(0)
+    assert balance_amount(db, book.groceries).value == Money(0)
     assert delete_receivable(db, receivable.handle).ok
-    assert balance(db, book.groceries) == Money("150.00")
+    assert balance_amount(db, book.groceries).value == Money("150.00")
     assert db.undo() is True
-    assert balance(db, book.groceries) == Money(0)
+    assert balance_amount(db, book.groceries).value == Money(0)
 
 
 def test_reclassifications_are_owned_and_never_offered_as_links(db, book):
@@ -247,8 +248,8 @@ def test_editing_a_linked_expense_follows_through_to_the_receivable(db, book):
     assert saved.ok, saved.errors
     receivable = db.get_receivable(receivable.handle)
     assert receivable_summary(db, receivable).owed == Money("200.00")
-    assert balance(db, receivable.account) == Money("200.00")
-    assert balance(db, book.groceries) == Money(0)
+    assert balance_amount(db, receivable.account).value == Money("200.00")
+    assert balance_amount(db, book.groceries).value == Money(0)
 
 
 def test_an_explicit_account_must_be_a_receivable_in_the_expense_currency(db, book):
@@ -279,23 +280,22 @@ def test_an_explicit_account_must_be_a_receivable_in_the_expense_currency(db, bo
     assert [e.code for e in refused.errors] == ["receivable.account.currency_mismatch"]
     # The refused write leaves the stored receivable and the ledger unchanged.
     assert db.get_receivable(receivable.handle).expenses == []
-    assert balance(db, book.groceries) == Money("150.00")
+    assert balance_amount(db, book.groceries).value == Money("150.00")
 
 
 def test_a_legacy_receivable_is_moved_into_an_account_on_its_next_change(db, book):
-    from breadsched.gen.lib.receivable import Receivable, ReceivableSplitLink
+    from breadsched.gen.lib.receivable import Receivable
+    from breadsched.gen.lib.split_link import SplitLink
 
     expense = _spend(db, book, date(2026, 9, 1), "150.00")
-    legacy = Receivable(
-        date(2026, 9, 1), "Acme Insurance", expenses=[ReceivableSplitLink(*expense)]
-    )
+    legacy = Receivable(date(2026, 9, 1), "Acme Insurance", expenses=[SplitLink(*expense)])
     with db.transaction("Legacy") as txn:
         db.add_receivable(legacy, txn)
-    assert balance(db, book.groceries) == Money("150.00")
+    assert balance_amount(db, book.groceries).value == Money("150.00")
     assert mark_disputed(db, legacy.handle, date(2026, 9, 5)).ok
     stored = db.get_receivable(legacy.handle)
     assert stored.account is not None
-    assert balance(db, stored.account) == Money("150.00")
+    assert balance_amount(db, stored.account).value == Money("150.00")
 
 
 def test_gnucash_receivable_accounts_are_receivables_and_never_cash():
@@ -323,7 +323,7 @@ def test_an_expense_also_claimed_from_the_fsa_is_flagged(db, book, expected):
 
     receivable, expense = _track(db, book, expected_amount=expected)
     assert receivable_summary(db, receivable).fsa_claims == ()
-    claim = FsaClaim(date(2026, 9, 1), "Clinic", payments=[FsaClaimSplitLink(*expense)])
+    claim = FsaClaim(date(2026, 9, 1), "Clinic", payments=[SplitLink(*expense)])
     save_claim(db, claim)
     summary = receivable_summary(db, db.get_receivable(receivable.handle))
     assert summary.fsa_claims == (claim.handle,)
@@ -340,7 +340,7 @@ def test_an_imported_gnucash_receivable_is_used_only_when_chosen(db, book):
 
     chosen, _other = _track(db, book, account=imported.handle)
     assert chosen.account == imported.handle
-    assert balance(db, imported.handle) == Money("150.00")
+    assert balance_amount(db, imported.handle).value == Money("150.00")
 
 
 def test_the_dashboard_shows_what_is_owed_and_what_needs_attention(db, book):
@@ -362,8 +362,8 @@ def test_an_expense_changed_outside_the_services_is_caught_up_after_import(db, b
         item.value = item.quantity = Money("175.00") if item.handle == split else Money("-175.00")
     with db.transaction("As an import would") as txn:
         db.commit_transaction(changed, txn)
-    assert balance(db, receivable.account) == Money("150.00")
+    assert balance_amount(db, receivable.account).value == Money("150.00")
     assert sync_all_receivables(db) == 1
-    assert balance(db, receivable.account) == Money("175.00")
-    assert balance(db, book.groceries) == Money(0)
+    assert balance_amount(db, receivable.account).value == Money("175.00")
+    assert balance_amount(db, book.groceries).value == Money(0)
     assert sync_all_receivables(db) == 0

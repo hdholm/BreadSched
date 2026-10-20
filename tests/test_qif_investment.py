@@ -105,15 +105,19 @@ def test_qif_investment_account_imports_trades_income_and_transfers(db, book, tm
     stock = _account(db, "Assets:Brokerage:ACME")
     # 5000 in - 2004.95 buy + 249 sale + 2.50 interest - 12 fees. The checking
     # register's copy of the 5000 transfer is matched to XIn, not added (#176).
-    assert ledger.balance(db, cash.handle) == Money("3234.55")
+    assert ledger.balance_amount(db, cash.handle).value == Money("3234.55")
     checking = _account(db, "Assets:Checking")
-    assert ledger.balance(db, checking.handle) == Money(-5040)
+    assert ledger.balance_amount(db, checking.handle).value == Money(-5040)
     assert result.transfers_paired == 1
     assert valuation.quantity_balance(db, fund) == Money("20.2913")
     assert valuation.quantity_balance(db, stock) == Money(-4)
-    assert ledger.balance(db, _account(db, "Expenses:Investment Fees").handle) == Money("5.95")
-    assert ledger.balance(db, _account(db, "Expenses:Bank Fees").handle) == Money(12)
-    assert ledger.balance(db, _account(db, "Income:Investment Income").handle) == Money("32.50")
+    assert ledger.balance_amount(
+        db, _account(db, "Expenses:Investment Fees").handle
+    ).value == Money("5.95")
+    assert ledger.balance_amount(db, _account(db, "Expenses:Bank Fees").handle).value == Money(12)
+    assert ledger.balance_amount(
+        db, _account(db, "Income:Investment Income").handle
+    ).value == Money("32.50")
     assert db.get_account_by_name("Assets:Brokerage Cash") is None
     for transaction in db.iter_transactions():
         assert not transaction.imbalance()

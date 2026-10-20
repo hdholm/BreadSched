@@ -10,9 +10,10 @@ from enum import Enum
 from ..db.base import DbTxn
 from ..db.sqlite import DbSQLite
 from ..lib.account import AccountClass, AccountType, FsaFundingYear
-from ..lib.fsa_claim import FsaClaim, FsaClaimAllocation, FsaClaimEvent, FsaClaimSplitLink
+from ..lib.fsa_claim import FsaClaim, FsaClaimAllocation, FsaClaimEvent
 from ..lib.money import Money
 from ..lib.receivable import Receivable
+from ..lib.split_link import SplitLink
 from ..lib.transaction import Split, Transaction
 from . import fsa, receivables, split_links
 
@@ -325,7 +326,7 @@ def _missing_link(part: str) -> FsaClaimError:
     )
 
 
-def _resolve_link(db: DbSQLite, link: FsaClaimSplitLink) -> tuple[Transaction, Split]:
+def _resolve_link(db: DbSQLite, link: SplitLink) -> tuple[Transaction, Split]:
     return split_links.resolve_link(db, link, _missing_link)
 
 
@@ -633,7 +634,7 @@ def _link(
     account,
     funding_year_start: date | None,
 ) -> None:
-    link = FsaClaimSplitLink(transaction.handle, split.handle)
+    link = SplitLink(transaction.handle, split.handle)
     if role == "payment":
         if link not in claim.payments:
             claim.payments.append(link)
@@ -735,7 +736,7 @@ def delete_claim(db: DbSQLite, handle: str) -> None:
         db.remove_fsa_claim(handle, txn)
 
 
-def _sum_links(db: DbSQLite, links: list[FsaClaimSplitLink]) -> Money:
+def _sum_links(db: DbSQLite, links: list[SplitLink]) -> Money:
     return split_links.sum_links(db, links, _missing_link)
 
 

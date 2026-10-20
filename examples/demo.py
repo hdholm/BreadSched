@@ -164,8 +164,8 @@ def main() -> int:
     rule("1. Import the GnuCash book")
     result = gnucash_sqlite.import_book(db, source)
     print(f"   {result}")
-    print(f"   Cash on hand:  {ledger.cash_on_hand(db).format('$')}")
-    print(f"   Net worth:     {ledger.net_worth(db).format('$')}")
+    print(f"   Cash on hand:  {ledger.cash_on_hand_amount(db).value.format('$')}")
+    print(f"   Net worth:     {ledger.net_worth_amount(db).value.format('$')}")
 
     accounts = {db.full_name(a): a.handle for a in db.iter_accounts()}
     checking = accounts["Assets:Checking Account"]

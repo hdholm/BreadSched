@@ -58,8 +58,9 @@ cost method. See [Accounts](../USER_GUIDE.md#accounts).
 ## Dashboard groups
 
 On the **Dashboard**, the group settings name the groups it shows, give each a kind,
-and choose its accounts. Groups only arrange what the Dashboard shows; its totals
-cover the whole book. See
+and choose its accounts. An account is in at most one group, the Dashboard group its
+account shows; saving with an account in two groups says so and changes nothing.
+Groups only arrange what the Dashboard shows; its totals cover the whole book. See
 [Dashboard and near-term cash](../USER_GUIDE.md#dashboard-and-near-term-cash).
 
 ## Exchange rates and security prices

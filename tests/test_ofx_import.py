@@ -62,7 +62,7 @@ def test_ofx_imports_bank_statement_as_historical_activity(db, book, tmp_path):
     assert all(item.planning_resolution is PlanningResolution.HISTORICAL for item in transactions)
     source = db.get_account_by_name("Sample Bank Checking 1234")
     assert source is not None
-    assert ledger.balance(db, source.handle, natural_sign=False) == Money("1954.33")
+    assert ledger.balance_amount(db, source.handle, natural_sign=False).value == Money("1954.33")
     expense = db.get_account_by_name("Expenses:Uncategorized OFX")
     assert expense is not None
 
@@ -102,7 +102,7 @@ def test_ofx_detects_comma_decimal_amounts(db, book, tmp_path):
     assert result.transactions == 2
     source = db.get_account_by_name("Sample Bank Checking 1234")
     assert source is not None
-    assert ledger.balance(db, source.handle, natural_sign=False) == Money("1954.33")
+    assert ledger.balance_amount(db, source.handle, natural_sign=False).value == Money("1954.33")
 
 
 def test_ofx_rejects_conflicting_number_conventions(db, tmp_path):

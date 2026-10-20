@@ -19,9 +19,9 @@ from breadsched.gen.lib import (
     AccountType,
     FsaClaim,
     FsaClaimAllocation,
-    FsaClaimSplitLink,
     FsaFundingYear,
     Money,
+    SplitLink,
     Transaction,
 )
 from breadsched.gen.services import SaveAccount, save_account
@@ -89,7 +89,7 @@ def test_a_dependent_care_claim_needs_no_eob_and_waits_for_contributions(db, boo
     claim = FsaClaim(
         service_date=date(2026, 3, 1),
         provider="Daycare",
-        payments=[FsaClaimSplitLink(bill.handle, bill.splits[0].handle)],
+        payments=[SplitLink(bill.handle, bill.splits[0].handle)],
         allocations=[FsaClaimAllocation(dependent_care.handle, YEAR)],
     )
     fsa_claims.save_claim(db, claim)

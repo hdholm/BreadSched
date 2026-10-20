@@ -68,7 +68,7 @@ def test_latest_as_of_price_marks_units_to_market(db, book):
     before = valuation.account_value(db, account, as_of=date(2026, 2, 15))
     after = valuation.account_value(db, account, as_of=date(2026, 3, 15))
 
-    assert ledger.balance(db, account) == Money("1000")
+    assert ledger.balance_amount(db, account).value == Money("1000")
     assert before.total == Money("1200")
     assert after.total == Money("1250")
     assert after.quantity == Money("10")

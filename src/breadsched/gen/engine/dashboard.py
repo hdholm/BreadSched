@@ -53,6 +53,7 @@ from .dashboard_bills import (
 
 __all__ = [
     "DashboardConfig",
+    "GROUP_KINDS",
     "GroupConfig",
     "Dashboard",
     "GroupResult",
@@ -68,9 +69,19 @@ __all__ = [
 # --------------------------------------------------------------- configuration
 
 
+#: The kinds a Dashboard group can be, in the order editors list them.
+GROUP_KINDS = ("liquid", "retirement", "asset", "property", "liability")
+
+
 @dataclass
 class GroupConfig:
-    """Accounts assigned to a colon-delimited dashboard group path."""
+    """A colon-delimited dashboard group path, its kind, and its member accounts.
+
+    Membership is stored once, as each member account's ``Account.group`` (#337);
+    the book's dashboard configuration stores only the group's name and kind, in
+    order. ``accounts`` is filled from the accounts by :meth:`DashboardConfig.load`
+    and written back to them by :meth:`DashboardConfig.save`.
+    """
 
     name: str
     accounts: list[str] = field(default_factory=list)
@@ -79,15 +90,12 @@ class GroupConfig:
     kind: str = "asset"
 
     def serialize(self) -> dict[str, Any]:
-        return {"name": self.name, "accounts": list(self.accounts), "kind": self.kind}
+        """The stored form: name and kind only, never the members."""
+        return {"name": self.name, "kind": self.kind}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> GroupConfig:
-        return cls(
-            name=data["name"],
-            accounts=list(data.get("accounts", [])),
-            kind=data.get("kind", "asset"),
-        )
+        return cls(name=data["name"], kind=data.get("kind", "asset"))
 
 
 @dataclass
@@ -136,21 +144,50 @@ class DashboardConfig:
 
     @classmethod
     def load(cls, db: DbSQLite) -> DashboardConfig:
+        """The stored settings, with each group's members read from its accounts.
+
+        Groups keep their stored order; a group named only on accounts follows,
+        taking its kind from its first account.
+        """
         stored = db.get_metadata(cls.KEY)
-        if not stored:
-            return default_config(db)
-        return cls.from_dict(stored)
+        config = cls.from_dict(stored) if stored else default_config(db)
+        by_name = {group.name: group for group in config.groups}
+        for account in db.iter_accounts():
+            if account.is_root or not account.group:
+                continue
+            group = by_name.get(account.group)
+            if group is None:
+                group = GroupConfig(account.group, kind=_kind_for(account))
+                by_name[account.group] = group
+                config.groups.append(group)
+            group.accounts.append(account.handle)
+        return config
 
     def save(self, db: DbSQLite) -> None:
-        db.set_metadata(self.KEY, self.serialize())
+        """Store the settings and each account's group in one change.
+
+        Every account listed in a group gets that group, the first listing
+        winning; every other account's group is cleared.
+        """
+        assigned: dict[str, str] = {}
+        for group in self.groups:
+            for handle in group.accounts:
+                assigned.setdefault(handle, group.name)
+        with db.transaction("Change Dashboard configuration") as txn:
+            for account in db.iter_accounts():
+                wanted = "" if account.is_root else assigned.get(account.handle, "")
+                if account.group != wanted:
+                    account.group = wanted
+                    db.commit_account(account, txn)
+            db.set_metadata(self.KEY, self.serialize(), txn)
 
 
 def default_config(db: DbSQLite) -> DashboardConfig:
     """Return an empty dashboard until accounts are explicitly assigned.
 
-    ``db`` remains in the signature for API compatibility. Account-level group
-    assignments are merged by :func:`resolve_groups`; nothing is inferred from
-    account type, balance class, or linked-loan relationships.
+    ``db`` remains in the signature for API compatibility. Members come only from
+    accounts' own groups (read by :meth:`DashboardConfig.load`); nothing is
+    inferred from account type, balance class, or linked-loan relationships.
     """
     del db
     return DashboardConfig()
@@ -687,13 +724,14 @@ def linked_pairs(db: DbSQLite) -> list[tuple[Account, Account]]:
 
 
 def resolve_groups(db: DbSQLite, config: DashboardConfig) -> list[GroupConfig]:
-    """Resolve only explicitly configured, visible account memberships.
+    """Resolve the configuration's visible account memberships.
 
-    Dashboard configuration wins over the account's own group field. An account
-    claimed by one explicit source is omitted from later sources. Stored
-    asset/loan links complete an already requested property group but never create
-    one. A selected chart parent wins over selected descendants so no ledger value
-    is counted twice. Hidden accounts are never direct dashboard members.
+    ``config`` is complete: :meth:`DashboardConfig.load` has already read each
+    account's group into it, so nothing else is merged here (#337). An account
+    listed twice stays in its first group. Stored asset/loan links complete an
+    already requested property group but never create one. A selected chart
+    parent wins over selected descendants so no ledger value is counted twice.
+    Hidden accounts are never direct dashboard members.
     """
     resolved: list[GroupConfig] = []
     claimed: set[str] = set()
@@ -702,24 +740,17 @@ def resolve_groups(db: DbSQLite, config: DashboardConfig) -> list[GroupConfig]:
         remaining = []
         for handle in group.accounts:
             account = db.get_account(handle)
-            if account is not None and not account.hidden and handle not in claimed:
+            if (
+                account is not None
+                and not account.is_root
+                and not account.hidden
+                and handle not in claimed
+            ):
                 remaining.append(handle)
         if not remaining:
             continue
         resolved.append(GroupConfig(name=group.name, accounts=remaining, kind=group.kind))
         claimed.update(remaining)
-
-    by_name = {group.name: group for group in resolved}
-    for account in db.iter_accounts():
-        if not account.group or account.handle in claimed or account.is_root or account.hidden:
-            continue
-        existing_group = by_name.get(account.group)
-        if existing_group is None:
-            existing_group = GroupConfig(name=account.group, accounts=[], kind=_kind_for(account))
-            by_name[account.group] = existing_group
-            resolved.append(existing_group)
-        existing_group.accounts.append(account.handle)
-        claimed.add(account.handle)
 
     _enrich_linked_properties(db, resolved, claimed)
     return _deduplicate_group_accounts(db, resolved)
@@ -1122,7 +1153,7 @@ def _paid_off_loans(db: DbSQLite, today: date) -> set[str]:
             continue
         if account.atype is not AccountType.LOAN and not account.linked_asset:
             continue
-        if ledger.balance_recursive(db, account.handle, as_of=today):
+        if ledger.balance_recursive_amount(db, account.handle, as_of=today).value:
             continue
         subtree = [account, *db.descendants(account.handle)]
         has_activity = any(

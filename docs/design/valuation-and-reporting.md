@@ -268,6 +268,17 @@ evidence, shown in the GTK tooltip, the web card title, and JSON. Long row label
 card text are capped and wrap, because an ellipsized GTK label still requests its full
 natural width.
 
+Dashboard group membership is stored once, as each account's `Account.group`
+(#337, schema 12). The book's `dashboard` metadata (`DashboardConfig`) keeps only
+the groups' names and kinds, in order, and the horizons; `DashboardConfig.load`
+fills each `GroupConfig.accounts` from the accounts (a group named only on accounts
+follows, its kind taken from its first account), and `DashboardConfig.save` writes
+the members back to the accounts and clears every other account's group in the same
+change. Both editors save through `services.save_dashboard_config`, which refuses a
+blank or repeated group name, an unknown kind or account, and an account in two
+groups, leaving the book unchanged. `resolve_groups` therefore merges nothing: the
+configuration it is given is complete.
+
 Dashboard group names are account-style colon-delimited paths. The engine builds
 the hierarchy and aggregate totals; GTK, web, and CLI only render the resulting
 local names, depths, headings, and values. A selected chart parent owns its entire
@@ -285,7 +296,7 @@ no remaining balance. Such a loan and stale future repayment schedules are omitt
 while its linked asset remains visible.
 
 An asset/loan link does not create an implicit Dashboard group. Once either side is
-explicitly assigned through book configuration or the account's group field, the
+explicitly assigned to a group (its account's group), the
 engine adds unassigned, visible companions from that relationship and treats the
 result as a property group. Explicit membership in another group is never stolen.
 This preserves the no-default-groups rule while making one deliberate property

@@ -194,8 +194,10 @@ needs, saying why. See [Accounts](../USER_GUIDE.md#accounts).
 On the Dashboard, **Configure Dashboard Groups** (toolbar icon or the Actions menu)
 names the groups the Dashboard shows (a `:` nests one group in another), gives each
 a kind, and chooses its accounts; **Suggest from accounts** proposes groups from the
-chart of accounts. Groups only arrange what the Dashboard shows; its totals cover
-the whole book. See
+chart of accounts. An account is in at most one group: choosing it here sets the
+Dashboard group the account editor shows, and saving with an account checked in two
+groups says so and changes nothing. Groups only arrange what the Dashboard shows; its
+totals cover the whole book. See
 [Dashboard and near-term cash](../USER_GUIDE.md#dashboard-and-near-term-cash).
 
 ## Exchange rates and security prices

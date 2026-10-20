@@ -31,7 +31,7 @@ def accounts(api: Api) -> list[dict]:
             )
             recursive = rollup.amount.value if rollup.amount is not None else None
             try:
-                book_balance = ledger.balance_recursive(api.db, account.handle)
+                book_balance = ledger.balance_recursive_amount(api.db, account.handle).value
             except TypeError as exc:
                 if "cannot combine unlike commodities" not in str(exc):
                     raise
@@ -91,7 +91,7 @@ def accounts(api: Api) -> list[dict]:
                     "balance": recursive,
                     "rollup_missing_quotes": list(rollup.missing_quotes),
                     "book_balance": book_balance,
-                    "own_balance": ledger.balance(api.db, account.handle),
+                    "own_balance": ledger.balance_amount(api.db, account.handle).value,
                     "valuation_source": valued.source,
                     "quantity": valued.quantity,
                     "price": valued.price,

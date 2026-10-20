@@ -28,7 +28,15 @@ exact dimensionless ratio.
 or comparing two amounts requires identical commodity identity; scaling retains the
 tag, and dividing like amounts produces an exact dimensionless ratio. Unlike
 commodities become comparable only after an explicit dated conversion has returned
-a new amount in the reporting currency.
+a new amount in the reporting currency. The ledger's balances are only in this form
+(`ledger.balance_amount`, `balance_recursive_amount`, `totals_by_class_amount`,
+`net_worth_amount`, `cash_on_hand_amount`); a caller that wants the scalar reads
+`.value` and so sees which commodity it is dropping (#338).
+
+A BreadSched record that points at the ledger (an FSA claim's payments, refunds,
+reimbursements, and repayments; a receivable's expenses and reimbursements) holds a
+`lib.split_link.SplitLink`, a transaction handle and a split handle, stored as
+`{"transaction": ..., "split": ...}`. One type serves both records (#338).
 
 Text becomes `Money` only at a boundary that knows its format. The core
 constructor accepts one unambiguous numeric syntax; GTK and web entry go through the

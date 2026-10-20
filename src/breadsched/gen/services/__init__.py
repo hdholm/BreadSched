@@ -54,6 +54,13 @@ from .claims import (
     save_claim,
 )
 from .contracts import ServiceError, ServiceResult
+from .dashboard_config import (
+    EMERGENCY_MONTHS_RANGE,
+    LIQUIDITY_DAYS_RANGE,
+    DashboardGroupInput,
+    SaveDashboardConfig,
+    save_dashboard_config,
+)
 from .due_review import (
     DueDecision,
     DueItem,
@@ -200,6 +207,11 @@ from .transactions import (
 )
 
 __all__ = [
+    "DashboardGroupInput",
+    "EMERGENCY_MONTHS_RANGE",
+    "LIQUIDITY_DAYS_RANGE",
+    "SaveDashboardConfig",
+    "save_dashboard_config",
     "SaleLots",
     "SetSaleLots",
     "sale_lots",

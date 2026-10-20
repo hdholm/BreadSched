@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import dashboard as engine
+from ..gen.services import DashboardGroupInput, SaveDashboardConfig, save_dashboard_config
+from .controls import service_error
 from .savings_goal_resource import goal_json
 
 if TYPE_CHECKING:
@@ -45,7 +47,7 @@ def dashboard_report(
         "config": {
             "liquidity_days": config.liquidity_days,
             "emergency_months": config.emergency_months,
-            "groups": [group.serialize() for group in config.groups],
+            "groups": [group_json(group) for group in config.groups],
             "accounts": [
                 {"handle": account.handle, "name": db.full_name(account)}
                 for account in db.iter_accounts()
@@ -179,43 +181,48 @@ def _plain(values: Mapping[str, object]) -> dict[str, str | None]:
 
 
 def dashboard_config_save(api: Api, payload: dict) -> dict:
-    """Persist the same group paths and account selections edited by GTK."""
-    allowed_kinds = {"liquid", "retirement", "asset", "property", "liability"}
-    groups: list[engine.GroupConfig] = []
+    """Save the same group paths and account selections edited by GTK.
+
+    Parsing stays here; validation and the write (each account's group plus the
+    stored names, kinds, and horizons) are ``save_dashboard_config``'s (#337).
+    """
+    groups: list[DashboardGroupInput] = []
     raw_groups = payload.get("groups", [])
     if not isinstance(raw_groups, list):
         raise ValueError("dashboard groups must be a list")
     for raw in raw_groups:
         if not isinstance(raw, dict):
             raise ValueError("each dashboard group must be an object")
-        name = str(raw.get("name", "")).strip()
-        if not name:
-            raise ValueError("dashboard group name cannot be empty")
-        kind = str(raw.get("kind", "asset"))
-        if kind not in allowed_kinds:
-            raise ValueError("choose a valid dashboard group kind")
-        handles: list[str] = []
         raw_handles = raw.get("accounts", [])
         if not isinstance(raw_handles, list):
             raise ValueError("dashboard group accounts must be a list")
-        for raw_handle in raw_handles:
-            handle = str(raw_handle)
-            account = api.db.get_account(handle)
-            if account is None or account.is_root:
-                raise ValueError("dashboard group references an unknown account")
-            if handle not in handles:
-                handles.append(handle)
-        groups.append(engine.GroupConfig(name, handles, kind))
-
-    config = engine.DashboardConfig.load(api.db)
-    config.groups = groups
-    if "liquidity_days" in payload:
-        config.liquidity_days = min(365, max(1, int(payload["liquidity_days"])))
-    if "emergency_months" in payload:
-        config.emergency_months = min(36, max(1, int(payload["emergency_months"])))
-    config.save(api.db)
+        groups.append(
+            DashboardGroupInput(
+                name=str(raw.get("name", "")),
+                kind=str(raw.get("kind", "asset")),
+                accounts=tuple(str(handle) for handle in raw_handles),
+            )
+        )
+    result = save_dashboard_config(
+        api.db,
+        SaveDashboardConfig(
+            groups=tuple(groups),
+            liquidity_days=int(payload["liquidity_days"]) if "liquidity_days" in payload else None,
+            emergency_months=(
+                int(payload["emergency_months"]) if "emergency_months" in payload else None
+            ),
+        ),
+    )
+    if result.value is None:
+        raise service_error(result.errors[0])
+    config = result.value
     return {
-        "groups": [group.serialize() for group in config.groups],
+        "groups": [group_json(group) for group in config.groups],
         "liquidity_days": config.liquidity_days,
         "emergency_months": config.emergency_months,
     }
+
+
+def group_json(group: engine.GroupConfig) -> dict:
+    """A configured group with its member accounts, as both editors show it."""
+    return {"name": group.name, "kind": group.kind, "accounts": list(group.accounts)}

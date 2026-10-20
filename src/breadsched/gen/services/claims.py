@@ -12,9 +12,9 @@ from ..lib.fsa_claim import (
     FsaClaim,
     FsaClaimAllocation,
     FsaClaimRejection,
-    FsaClaimSplitLink,
 )
 from ..lib.money import Money
+from ..lib.split_link import SplitLink
 from .contracts import ServiceError, ServiceResult
 
 
@@ -102,19 +102,19 @@ def build_claim(request: SaveClaim) -> FsaClaim:
         provider=definition.provider.strip(),
         description=definition.description.strip(),
         eob_responsibility=definition.eob_responsibility,
-        payments=[FsaClaimSplitLink(item.transaction, item.split) for item in definition.payments],
-        refunds=[FsaClaimSplitLink(item.transaction, item.split) for item in definition.refunds],
+        payments=[SplitLink(item.transaction, item.split) for item in definition.payments],
+        refunds=[SplitLink(item.transaction, item.split) for item in definition.refunds],
         allocations=[
             FsaClaimAllocation(
                 item.account,
                 item.funding_year_start,
                 item.target,
-                [FsaClaimSplitLink(link.transaction, link.split) for link in item.reimbursements],
+                [SplitLink(link.transaction, link.split) for link in item.reimbursements],
                 [
                     FsaClaimRejection(rejection.attempted_on, rejection.amount, rejection.reason)
                     for rejection in item.rejections
                 ],
-                [FsaClaimSplitLink(link.transaction, link.split) for link in item.repayments],
+                [SplitLink(link.transaction, link.split) for link in item.repayments],
             )
             for item in definition.allocations
         ],

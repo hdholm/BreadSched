@@ -10,9 +10,9 @@ from breadsched.gen.lib import (
     Account,
     AccountType,
     FsaClaim,
-    FsaClaimSplitLink,
     FsaFundingYear,
     Money,
+    SplitLink,
     Transaction,
 )
 
@@ -123,7 +123,7 @@ def test_a_grace_period_service_can_be_claimed_against_the_earlier_year(db, book
         service_date=service,
         provider="Clinic",
         eob_responsibility=Money("90.00"),
-        payments=[FsaClaimSplitLink(payment.handle, payment.splits[0].handle)],
+        payments=[SplitLink(payment.handle, payment.splits[0].handle)],
     )
     fsa_claims.save_claim(db, claim)
     # A grace-period service could draw on either year, so the year must be chosen.

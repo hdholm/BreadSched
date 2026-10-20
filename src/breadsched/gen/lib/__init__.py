@@ -17,10 +17,9 @@ from .fsa_claim import (
     FsaClaimAllocation,
     FsaClaimEvent,
     FsaClaimRejection,
-    FsaClaimSplitLink,
 )
 from .money import ZERO, Money, Rate
-from .receivable import Receivable, ReceivableSplitLink, ReceivableWriteOff
+from .receivable import Receivable, ReceivableWriteOff
 from .reconciliation import Reconciliation, ReconciliationEvent, ReconciliationStatus
 from .recurrence import PeriodType, Recurrence, WeekendAdjust, add_months
 from .savings_goal import GoalAllocation, SavingsGoal
@@ -44,6 +43,7 @@ from .scheduled import (
     ScheduleGrowthPolicy,
     scheduled_occurrence_preview,
 )
+from .split_link import SplitLink
 from .transaction import (
     InvestmentActivityKind,
     LotPick,
@@ -64,7 +64,6 @@ __all__ = [
     "FsaClaimAllocation",
     "FsaClaimEvent",
     "FsaClaimRejection",
-    "FsaClaimSplitLink",
     "FsaFundingYear",
     "GnuCashAccountField",
     "GnuCashAccountType",
@@ -88,7 +87,6 @@ __all__ = [
     "PrimaryObject",
     "ReconcileState",
     "Receivable",
-    "ReceivableSplitLink",
     "ReceivableWriteOff",
     "GoalAllocation",
     "SavingsGoal",
@@ -98,6 +96,7 @@ __all__ = [
     "Recurrence",
     "Scenario",
     "ScenarioSchedule",
+    "SplitLink",
     "ScheduledAmountChange",
     "ScheduledMonthAmount",
     "ScheduleGrowthPolicy",

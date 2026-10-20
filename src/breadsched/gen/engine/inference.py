@@ -295,7 +295,7 @@ def _balance_after_last_payment(db: DbSQLite, handle: str, payments) -> Money:
     from . import ledger
 
     last = max(when for when, _ in payments)
-    return ledger.balance(db, handle, as_of=last)
+    return ledger.balance_amount(db, handle, as_of=last).value
 
 
 def _typical_payment(payments, fraction: int = 100) -> Money | None:

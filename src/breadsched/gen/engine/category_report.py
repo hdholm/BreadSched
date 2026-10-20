@@ -388,7 +388,7 @@ class CategoryReport:
 
 def _spendable_cash_balance(db: DbSQLite, accounts: dict[str, Account], when: date) -> Money:
     return _sum_money(
-        ledger.balance(db, account, as_of=when)
+        ledger.balance_amount(db, account, as_of=when).value
         for account in accounts.values()
         if account.is_spendable_cash and not account.placeholder
     )

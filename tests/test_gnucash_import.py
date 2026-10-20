@@ -26,7 +26,6 @@ from breadsched.gen.lib import (
     Account,
     AccountType,
     FsaClaim,
-    FsaClaimSplitLink,
     FsaFundingYear,
     GnuCashAccountType,
     InvestmentActivityKind,
@@ -36,6 +35,7 @@ from breadsched.gen.lib import (
     Reconciliation,
     ScheduledSplit,
     ScheduledTransaction,
+    SplitLink,
     Transaction,
 )
 from breadsched.gen.lib.commodity import Commodity
@@ -440,7 +440,7 @@ class TestSqliteImport:
 
     def test_amounts_are_exact(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
-        assert ledger.balance(db, gnucash_sqlite_path.ids.checking) == Money("2350.00")
+        assert ledger.balance_amount(db, gnucash_sqlite_path.ids.checking).value == Money("2350.00")
 
     def test_imported_history_is_not_sent_to_plan_resolution(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
@@ -518,7 +518,7 @@ class TestSqliteImport:
 
     def test_liability_balances_read_naturally(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
-        assert ledger.balance(db, gnucash_sqlite_path.ids.card) == Money("75.50")
+        assert ledger.balance_amount(db, gnucash_sqlite_path.ids.card).value == Money("75.50")
 
     def test_commodities_come_across(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
@@ -683,7 +683,7 @@ class TestSqliteImport:
         claim = FsaClaim(
             service_date=transaction.post_date,
             provider="Generic provider",
-            payments=[FsaClaimSplitLink(transaction.handle, transaction.splits[0].handle)],
+            payments=[SplitLink(transaction.handle, transaction.splits[0].handle)],
         )
         with db.transaction("Link imported transaction") as txn:
             db.add_fsa_claim(claim, txn)
@@ -1088,7 +1088,7 @@ class TestXmlImport:
 
     def test_amounts_parse_from_the_fraction_notation(self, db, gnucash_xml_path):
         gnucash_xml.import_book(db, gnucash_xml_path.path)
-        assert ledger.balance(db, gnucash_xml_path.ids.bank) == Money("3093.17")
+        assert ledger.balance_amount(db, gnucash_xml_path.ids.bank).value == Money("3093.17")
 
     def test_account_tree_is_rebuilt(self, db, gnucash_xml_path):
         gnucash_xml.import_book(db, gnucash_xml_path.path)
@@ -1199,8 +1199,8 @@ class TestXmlImport:
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         gnucash_xml.import_book(db, gnucash_xml_path.path)
         assert db.summary()["txn"] == 5
-        assert ledger.balance(db, gnucash_sqlite_path.ids.checking) == Money("2350.00")
-        assert ledger.balance(db, gnucash_xml_path.ids.bank) == Money("3093.17")
+        assert ledger.balance_amount(db, gnucash_sqlite_path.ids.checking).value == Money("2350.00")
+        assert ledger.balance_amount(db, gnucash_xml_path.ids.bank).value == Money("3093.17")
 
 
 class TestDamagedBooks:
@@ -1233,7 +1233,9 @@ class TestDamagedBooks:
         assert result.warnings
         imbalance = db.get_account_by_name("Imbalance")
         assert imbalance is not None
-        assert ledger.balance(db, imbalance.handle, natural_sign=False) == Money("-10.00")
+        assert ledger.balance_amount(db, imbalance.handle, natural_sign=False).value == Money(
+            "-10.00"
+        )
         assert result.transactions == 1
 
     def test_the_repaired_transaction_still_balances(self, db, tmp_path):
@@ -1304,7 +1306,7 @@ class TestDamagedBooks:
         assert result.skipped == 1
         assert result.transactions == 1  # the healthy one still came across
         assert db.get_account(book.bank) is not None
-        assert ledger.balance(db, book.bank) == Money("-50.00")
+        assert ledger.balance_amount(db, book.bank).value == Money("-50.00")
 
 
 class TestXmlScheduledTransactions:

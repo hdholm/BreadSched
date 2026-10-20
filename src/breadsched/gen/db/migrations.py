@@ -129,12 +129,57 @@ def _v10_to_v11(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE payee")
 
 
+def _v11_to_v12(conn: sqlite3.Connection) -> None:
+    """Store Dashboard group membership once, on the accounts (#337).
+
+    The dashboard configuration listed each group's accounts and accounts carried
+    their own group; the Dashboard merged the two with the configuration winning.
+    Each configured account now takes its first configured group as its own (the
+    group it was shown in), and the configuration keeps only each group's name and
+    kind, in order, the first of two same-named groups giving the kind.
+    """
+    import json
+
+    row = conn.execute("SELECT value FROM metadata WHERE key='dashboard'").fetchone()
+    if row is None:
+        return
+    config = json.loads(row[0])
+    if not isinstance(config, dict):
+        return
+    assigned: dict[str, str] = {}
+    groups: list[dict] = []
+    names: set[str] = set()
+    for group in config.get("groups") or []:
+        if not isinstance(group, dict) or not group.get("name"):
+            continue
+        name = str(group["name"])
+        for handle in group.get("accounts") or []:
+            assigned.setdefault(str(handle), name)
+        if name not in names:
+            names.add(name)
+            groups.append({"name": name, "kind": group.get("kind", "asset")})
+    for handle, name in assigned.items():
+        found = conn.execute("SELECT blob FROM account WHERE handle=?", (handle,)).fetchone()
+        if found is None:
+            continue
+        data = json.loads(found[0])
+        if data.get("group") != name:
+            data["group"] = name
+            conn.execute(
+                "UPDATE account SET blob=? WHERE handle=?",
+                (json.dumps(data, separators=(",", ":")), handle),
+            )
+    config["groups"] = groups
+    conn.execute("UPDATE metadata SET value=? WHERE key='dashboard'", (json.dumps(config),))
+
+
 MIGRATIONS: dict[int, Migration] = {
     6: Migration(6, 7, "add reconciliation sessions", _v6_to_v7),
     7: Migration(7, 8, "add payees", _v7_to_v8),
     8: Migration(8, 9, "add reimbursable-expense receivables", _v8_to_v9),
     9: Migration(9, 10, "add savings goals", _v9_to_v10),
     10: Migration(10, 11, "remove payees", _v10_to_v11),
+    11: Migration(11, 12, "store Dashboard group membership on accounts", _v11_to_v12),
 }
 MIN_SUPPORTED_SCHEMA_VERSION = min(MIGRATIONS)
 

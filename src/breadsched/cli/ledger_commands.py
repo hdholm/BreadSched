@@ -106,7 +106,9 @@ def cmd_accounts(args: argparse.Namespace) -> int:
                 valued = valuation.account_value(db, account, as_of=as_of)
                 total = result.amount.value if result.amount is not None else None
                 try:
-                    book_balance = ledger.balance_recursive(db, account.handle, as_of=as_of)
+                    book_balance = ledger.balance_recursive_amount(
+                        db, account.handle, as_of=as_of
+                    ).value
                 except TypeError as exc:
                     if "cannot combine unlike commodities" not in str(exc):
                         raise
@@ -216,9 +218,9 @@ def cmd_balance(args: argparse.Namespace) -> int:
         if args.account:
             account = resolve_account(db, args.account)
             amount = (
-                ledger.balance_recursive(db, account.handle, as_of=as_of)
+                ledger.balance_recursive_amount(db, account.handle, as_of=as_of).value
                 if args.recursive
-                else ledger.balance(db, account.handle, as_of=as_of)
+                else ledger.balance_amount(db, account.handle, as_of=as_of).value
             )
             emit(
                 {"account": db.full_name(account), "balance": amount},

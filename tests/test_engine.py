@@ -24,40 +24,44 @@ from breadsched.gen.lib import (
 class TestBalances:
     def test_bank_balance_after_a_month(self, db, funded_book):
         # 5000 opening + 4200 salary - 1800 rent - 310.55 groceries
-        assert ledger.balance(db, funded_book.checking, as_of=date(2026, 1, 31)) == Money("7089.45")
+        assert ledger.balance_amount(
+            db, funded_book.checking, as_of=date(2026, 1, 31)
+        ).value == Money("7089.45")
 
     def test_credit_card_reports_what_is_owed_as_positive(self, db, funded_book):
         """A liability's natural sign is the amount owed, not the ledger's minus."""
-        assert ledger.balance(db, funded_book.card) == Money("86.40")
+        assert ledger.balance_amount(db, funded_book.card).value == Money("86.40")
 
     def test_raw_sign_is_available_for_arithmetic_that_must_balance(self, db, funded_book):
-        assert ledger.balance(db, funded_book.card, natural_sign=False) == Money("-86.40")
-
-    def test_expense_balance_over_a_window(self, db, funded_book):
-        assert ledger.balance(
-            db, funded_book.rent, since=date(2026, 2, 1), as_of=date(2026, 2, 28)
-        ) == Money("1800.00")
-
-    def test_parent_totals_include_children(self, db, funded_book):
-        assert ledger.balance_recursive(db, funded_book.expenses, as_of=date(2026, 2, 28)) == Money(
-            "3996.95"
+        assert ledger.balance_amount(db, funded_book.card, natural_sign=False).value == Money(
+            "-86.40"
         )
 
+    def test_expense_balance_over_a_window(self, db, funded_book):
+        assert ledger.balance_amount(
+            db, funded_book.rent, since=date(2026, 2, 1), as_of=date(2026, 2, 28)
+        ).value == Money("1800.00")
+
+    def test_parent_totals_include_children(self, db, funded_book):
+        assert ledger.balance_recursive_amount(
+            db, funded_book.expenses, as_of=date(2026, 2, 28)
+        ).value == Money("3996.95")
+
     def test_a_placeholder_holds_nothing_of_its_own(self, db, funded_book):
-        assert ledger.balance(db, funded_book.expenses) == Money(0)
+        assert ledger.balance_amount(db, funded_book.expenses).value == Money(0)
 
     def test_every_transaction_nets_to_zero_across_the_book(self, db, funded_book):
         total = Money(0)
         for account in db.iter_accounts():
-            total = total + ledger.balance(db, account.handle, natural_sign=False)
+            total = total + ledger.balance_amount(db, account.handle, natural_sign=False).value
         assert total == Money(0)
 
     def test_net_worth_is_assets_less_liabilities(self, db, funded_book):
         # Checking 5289.45 at the end of February, less 86.40 on the card.
-        assert ledger.net_worth(db, as_of=date(2026, 2, 28)) == Money("5203.05")
+        assert ledger.net_worth_amount(db, as_of=date(2026, 2, 28)).value == Money("5203.05")
 
     def test_cash_on_hand_ignores_investments(self, db, funded_book):
-        assert ledger.cash_on_hand(db, as_of=date(2026, 1, 31)) == Money("7089.45")
+        assert ledger.cash_on_hand_amount(db, as_of=date(2026, 1, 31)).value == Money("7089.45")
 
     def test_balance_retains_transaction_currency_identity(self, db, book):
         transaction = Transaction.simple(
@@ -87,7 +91,7 @@ class TestBalances:
             db.add_transaction(eur_transaction, txn)
 
         with pytest.raises(TypeError, match="unlike commodities"):
-            ledger.balance(db, book.checking)
+            ledger.balance_amount(db, book.checking)
         with pytest.raises(TypeError, match="unlike commodities"):
             ledger.register(db, book.checking)
 
@@ -148,7 +152,10 @@ class TestRegister:
 
 class TestTotalsByClass:
     def test_groups_by_account_class(self, db, funded_book):
-        totals = ledger.totals_by_class(db, as_of=date(2026, 2, 28))
+        totals = {
+            cls: amount.value
+            for cls, amount in ledger.totals_by_class_amount(db, as_of=date(2026, 2, 28)).items()
+        }
         assert totals[AccountClass.LIABILITY] == Money("86.40")
         assert totals[AccountClass.INCOME] == Money("4200.00")
 
@@ -185,7 +192,7 @@ class TestScheduleEngine:
     def test_posting_writes_real_transactions(self, db, book, payday_schedule):
         posted = schedule.post_due(db, as_of=date(2026, 1, 20))
         assert len(posted) == 2
-        assert ledger.balance(db, book.checking) == Money("3876.92")
+        assert ledger.balance_amount(db, book.checking).value == Money("3876.92")
 
     def test_posting_twice_does_not_duplicate(self, db, payday_schedule):
         schedule.post_due(db, as_of=date(2026, 1, 20))
