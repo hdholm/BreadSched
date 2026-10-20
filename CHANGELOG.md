@@ -10,6 +10,27 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a287 - 2026-10-20
+
+- **Dashboard group membership is stored once (#337, schema 12).** Both
+  `DashboardConfig.groups[].accounts` and `Account.group` said which group an
+  account was in, and `resolve_groups` merged them. The account's group is now the
+  only record: the stored configuration keeps group names, kinds, and order;
+  `DashboardConfig.load` reads members from the accounts and `save` writes them back
+  (clearing the rest) in one undoable change. `services.save_dashboard_config`
+  validates for both editors and refuses an account in two groups, a blank or
+  repeated name, or an unknown kind or account, leaving the book unchanged; the GTK
+  dialog shows the reason, the browser gets a 400 with the code, and the Dashboard's
+  horizons save through it without overwriting groups changed elsewhere. Migration
+  11→12 gives each configured account its first configured group and strips the
+  account lists, merging same-named groups. Tests cover the stored form, loading,
+  clearing, every refusal with the book unchanged, the horizons, the GTK and web
+  refusals, and the migration.
+- **One split-link type; no compatibility balances (#338).** `FsaClaimSplitLink` and
+  `ReceivableSplitLink` become `lib.split_link.SplitLink`, with the same stored form.
+  `ledger.balance`, `balance_recursive`, `totals_by_class`, `net_worth`, and
+  `cash_on_hand` are removed; their callers use the `_amount` functions and `.value`.
+
 ## 0.2.0a286 - 2026-10-20
 
 - **Edit → Preferences (#333).** Double Line and row shading sat on every register's

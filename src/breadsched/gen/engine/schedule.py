@@ -488,7 +488,7 @@ def unconfigured_card_balances(
         and not account.placeholder
         and account.payment_day is None
         and account.handle not in covered
-        and ledger.balance_recursive(db, account.handle, as_of=today) > 0
+        and ledger.balance_recursive_amount(db, account.handle, as_of=today).value > 0
     ]
 
 
@@ -521,11 +521,13 @@ def account_payment_definitions(
             add_months(candidate, -1, day=account.payment_day) + timedelta(days=1),
             today,
         )
-        balance = ledger.balance_recursive(db, account.handle, as_of=today)
+        balance = ledger.balance_recursive_amount(db, account.handle, as_of=today).value
         name = f"{db.full_name(account) or account.name} payment"
 
         if today > candidate and not payment_recorded:
-            statement_balance = ledger.balance_recursive(db, account.handle, as_of=candidate)
+            statement_balance = ledger.balance_recursive_amount(
+                db, account.handle, as_of=candidate
+            ).value
             overdue_amount = _account_payment_amount(account, statement_balance)
             if overdue_amount > 0:
                 definitions.append(

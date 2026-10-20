@@ -34,10 +34,11 @@ from breadsched.gen.lib import (
     Split,
     Transaction,
 )
-from breadsched.gen.lib.fsa_claim import FsaClaim, FsaClaimAllocation, FsaClaimSplitLink
-from breadsched.gen.lib.receivable import Receivable, ReceivableSplitLink
+from breadsched.gen.lib.fsa_claim import FsaClaim, FsaClaimAllocation
+from breadsched.gen.lib.receivable import Receivable
 from breadsched.gen.lib.reconciliation import Reconciliation
 from breadsched.gen.lib.savings_goal import SavingsGoal
+from breadsched.gen.lib.split_link import SplitLink
 
 MISSING = "0" * 32
 
@@ -451,8 +452,8 @@ class TestCommitChecks:
     def test_claims_and_receivables_link_only_to_existing_splits(self, db, book):
         transaction, split = _checking_split(db, book)
         for link, code in (
-            (FsaClaimSplitLink(MISSING, split.handle), "fsa_claim.missing_transaction"),
-            (FsaClaimSplitLink(transaction.handle, MISSING), "fsa_claim.missing_split"),
+            (SplitLink(MISSING, split.handle), "fsa_claim.missing_transaction"),
+            (SplitLink(transaction.handle, MISSING), "fsa_claim.missing_split"),
         ):
             claim = FsaClaim(provider="Clinic", payments=[link])
             _refused(db, code, lambda txn, c=claim: db.add_fsa_claim(c, txn))
@@ -465,13 +466,13 @@ class TestCommitChecks:
         for receivable, code in (
             (Receivable(payer="Insurer", account=MISSING), "receivable.missing_account"),
             (
-                Receivable(payer="Insurer", expenses=[ReceivableSplitLink(MISSING, split.handle)]),
+                Receivable(payer="Insurer", expenses=[SplitLink(MISSING, split.handle)]),
                 "receivable.missing_transaction",
             ),
             (
                 Receivable(
                     payer="Insurer",
-                    reimbursements=[ReceivableSplitLink(transaction.handle, MISSING)],
+                    reimbursements=[SplitLink(transaction.handle, MISSING)],
                 ),
                 "receivable.missing_split",
             ),
@@ -484,11 +485,11 @@ class TestCommitChecks:
         receivable = Receivable(
             payer="Insurer",
             account=book.groceries,
-            expenses=[ReceivableSplitLink(transaction.handle, split.handle)],
+            expenses=[SplitLink(transaction.handle, split.handle)],
         )
         claim = FsaClaim(
             provider="Clinic",
-            payments=[FsaClaimSplitLink(transaction.handle, split.handle)],
+            payments=[SplitLink(transaction.handle, split.handle)],
             receivable=receivable.handle,
         )
         goal = SavingsGoal(name="Trip", account=book.savings, target_amount=Money(100))

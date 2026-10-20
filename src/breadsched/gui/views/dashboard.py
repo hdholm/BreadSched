@@ -518,11 +518,24 @@ class DashboardView(BaseView):
     def _on_setting_changed(self, *_args) -> None:
         if self._updating or self.db is None or self.config is None:
             return
-        self.config.liquidity_days = int(self.liquidity_spin.get_value())
-        self.config.emergency_months = int(self.emergency_spin.get_value())
         # Saved on the book, not in user settings: these name a household's own
-        # circumstances, and carrying them to another book would mislead.
-        self.config.save(self.db)
+        # circumstances, and carrying them to another book would mislead. The
+        # service rereads the groups, so a group changed since this view was
+        # drawn is kept as stored.
+        from ...gen.services import SaveDashboardConfig, save_dashboard_config
+
+        result = save_dashboard_config(
+            self.db,
+            SaveDashboardConfig(
+                liquidity_days=int(self.liquidity_spin.get_value()),
+                emergency_months=int(self.emergency_spin.get_value()),
+            ),
+        )
+        if result.value is not None:
+            # The shown board reads its horizons from this object, so it answers
+            # at once; the refresh below rereads the rest.
+            self.config.liquidity_days = result.value.liquidity_days
+            self.config.emergency_months = result.value.emergency_months
         # Rebuilt on the idle: this runs inside the spin button's own event, and
         # refresh() replaces the widgets around it.
         self.schedule_refresh()
@@ -532,7 +545,7 @@ class DashboardView(BaseView):
             return
         from ..dialogs.dashboard_dialog import DashboardDialog
 
-        dialog = DashboardDialog(self.get_root(), self.db, self.config)
+        dialog = DashboardDialog(self.get_root(), self.db)
         dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
 

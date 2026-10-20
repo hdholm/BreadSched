@@ -11,8 +11,8 @@ from ...gen.lib import (
     AccountClass,
     AccountType,
     FsaClaim,
-    FsaClaimSplitLink,
     Money,
+    SplitLink,
 )
 from ...gen.lib.fsa_claim import FsaClaimEvent
 from ...gen.services import (
@@ -58,7 +58,7 @@ class _LinkList(Gtk.Box):
             self.append(check)
             self._checks.append((check, ClaimLinkInput(transaction, split), when))
 
-    def set_links(self, links: Sequence[FsaClaimSplitLink | ClaimLinkInput]) -> None:
+    def set_links(self, links: Sequence[SplitLink | ClaimLinkInput]) -> None:
         selected = {(item.transaction, item.split) for item in links}
         for check, link, _when in self._checks:
             check.set_active((link.transaction, link.split) in selected)
@@ -354,7 +354,7 @@ class FsaClaimsDialog(BoundedWindow):
         self,
         candidates: list[tuple[str, str, date, str]],
         service_date: date,
-        selected: Sequence[FsaClaimSplitLink | ClaimLinkInput],
+        selected: Sequence[SplitLink | ClaimLinkInput],
     ) -> list[tuple[str, str, date, str]]:
         window = fsa_claims.claim_year_window(self.db, service_date)
         if window is None:
@@ -368,8 +368,8 @@ class FsaClaimsDialog(BoundedWindow):
     def _refresh_claim_candidates(
         self,
         service_date: date,
-        payments: Sequence[FsaClaimSplitLink | ClaimLinkInput],
-        refunds: Sequence[FsaClaimSplitLink | ClaimLinkInput],
+        payments: Sequence[SplitLink | ClaimLinkInput],
+        refunds: Sequence[SplitLink | ClaimLinkInput],
     ) -> None:
         self.payments.set_candidates(
             self._claim_candidates(self._payment_candidates, service_date, payments)

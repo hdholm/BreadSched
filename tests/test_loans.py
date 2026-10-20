@@ -259,13 +259,13 @@ class TestLoanSetup:
         assert [s.name for s in db.iter_scheduled()] == ["Mortgage"]
         from breadsched.gen.engine import ledger
 
-        assert ledger.balance(db, terms.liability) == Money("200000.00")
+        assert ledger.balance_amount(db, terms.liability).value == Money("200000.00")
 
     def test_the_opening_balance_can_be_skipped(self, db, terms):
         from breadsched.gen.engine import ledger
 
         create_loan(db, terms, opening_balance=False)
-        assert ledger.balance(db, terms.liability) == Money(0)
+        assert ledger.balance_amount(db, terms.liability).value == Money(0)
 
     def test_service_returns_the_saved_identity_and_payment(self, db, terms):
         result = save_loan(db, SaveLoan(terms))

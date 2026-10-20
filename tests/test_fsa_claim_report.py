@@ -12,9 +12,9 @@ from breadsched.gen.lib import (
     FsaClaim,
     FsaClaimAllocation,
     FsaClaimRejection,
-    FsaClaimSplitLink,
     FsaFundingYear,
     Money,
+    SplitLink,
     Transaction,
 )
 
@@ -33,14 +33,14 @@ def _paid(db, book, when, amount, text="Service"):
     payment = Transaction.simple(when, text, book.groceries, book.checking, amount)
     with db.transaction("Payment") as txn:
         db.add_transaction(payment, txn)
-    return FsaClaimSplitLink(payment.handle, payment.splits[0].handle)
+    return SplitLink(payment.handle, payment.splits[0].handle)
 
 
 def _reimbursed(db, book, account, when, amount):
     credit = Transaction.simple(when, "FSA reimbursement", book.checking, account.handle, amount)
     with db.transaction("Reimbursement") as txn:
         db.add_transaction(credit, txn)
-    return FsaClaimSplitLink(credit.handle, credit.splits[1].handle)
+    return SplitLink(credit.handle, credit.splits[1].handle)
 
 
 def _claim(db, account, provider, service, payments, *, eob=None, reimbursed=(), rejected=()):

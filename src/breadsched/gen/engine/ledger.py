@@ -21,9 +21,7 @@ from ..lib.transaction import Split, Transaction
 from .currency import reporting_currency_handle
 
 __all__ = [
-    "balance",
     "balance_amount",
-    "balance_recursive",
     "balance_recursive_amount",
     "register_headings",
     "register",
@@ -31,11 +29,8 @@ __all__ = [
     "security_of",
     "share_fraction",
     "update_register",
-    "totals_by_class",
     "totals_by_class_amount",
-    "net_worth",
     "net_worth_amount",
-    "cash_on_hand",
     "cash_on_hand_amount",
 ]
 
@@ -121,17 +116,6 @@ def balance_amount(
     return total
 
 
-def balance(
-    db: DbSQLite,
-    account: str | Account,
-    as_of: date | None = None,
-    since: date | None = None,
-    natural_sign: bool = True,
-) -> Money:
-    """Compatibility scalar for :func:`balance_amount`."""
-    return balance_amount(db, account, as_of, since, natural_sign).value
-
-
 def balance_recursive_amount(
     db: DbSQLite,
     account: str | Account,
@@ -145,17 +129,6 @@ def balance_recursive_amount(
     for child in db.descendants(handle):
         total = _accumulate(total, balance_amount(db, child.handle, as_of, since, natural_sign))
     return total
-
-
-def balance_recursive(
-    db: DbSQLite,
-    account: str | Account,
-    as_of: date | None = None,
-    since: date | None = None,
-    natural_sign: bool = True,
-) -> Money:
-    """Compatibility scalar for :func:`balance_recursive_amount`."""
-    return balance_recursive_amount(db, account, as_of, since, natural_sign).value
 
 
 @dataclass(slots=True)
@@ -320,18 +293,6 @@ def totals_by_class_amount(
     return totals
 
 
-def totals_by_class(
-    db: DbSQLite,
-    as_of: date | None = None,
-    since: date | None = None,
-) -> dict[AccountClass, Money]:
-    """Compatibility scalars for :func:`totals_by_class_amount`."""
-    return {
-        cls: amount.value
-        for cls, amount in totals_by_class_amount(db, as_of=as_of, since=since).items()
-    }
-
-
 def net_worth_amount(db: DbSQLite, as_of: date | None = None) -> Amount:
     """Tagged assets less liabilities, ignoring income and expense flows."""
     currency = reporting_currency_handle(db)
@@ -348,11 +309,6 @@ def net_worth_amount(db: DbSQLite, as_of: date | None = None) -> Amount:
     return assets - liabilities
 
 
-def net_worth(db: DbSQLite, as_of: date | None = None) -> Money:
-    """Compatibility scalar for :func:`net_worth_amount`."""
-    return net_worth_amount(db, as_of).value
-
-
 def cash_on_hand_amount(db: DbSQLite, as_of: date | None = None) -> Amount:
     """Tagged spendable balance in bank and cash accounts."""
     total: Amount | None = None
@@ -360,11 +316,6 @@ def cash_on_hand_amount(db: DbSQLite, as_of: date | None = None) -> Amount:
         if account.atype.is_cash_like and not account.placeholder:
             total = _accumulate(total, balance_amount(db, account.handle, as_of))
     return total or Amount(Money(0), reporting_currency_handle(db))
-
-
-def cash_on_hand(db: DbSQLite, as_of: date | None = None) -> Money:
-    """Compatibility scalar for :func:`cash_on_hand_amount`."""
-    return cash_on_hand_amount(db, as_of).value
 
 
 def accounts_of_class(db: DbSQLite, classes: Iterable[AccountClass]) -> list[Account]:

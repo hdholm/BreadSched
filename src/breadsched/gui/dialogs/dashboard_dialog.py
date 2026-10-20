@@ -9,7 +9,9 @@ turns two unrelated balances into equity and a loan-to-value ratio.
 from __future__ import annotations
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.dashboard import DashboardConfig, GroupConfig, default_config
+from ...gen.engine.dashboard import GROUP_KINDS, DashboardConfig, GroupConfig, default_config
+from ...gen.services import DashboardGroupInput, SaveDashboardConfig, save_dashboard_config
+from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
@@ -17,7 +19,7 @@ from ..widgets.help import help_row
 
 __all__ = ["DashboardDialog"]
 
-KINDS = ["liquid", "retirement", "asset", "property", "liability"]
+KINDS = list(GROUP_KINDS)
 
 _EXPLANATION = {
     "liquid": "Spendable now; the balance the liquidity check is made against",
@@ -29,17 +31,16 @@ _EXPLANATION = {
 
 
 class DashboardDialog(BoundedWindow):
-    """Add, remove and populate the dashboard's groups."""
+    """Add, remove and populate the dashboard's groups.
 
-    def __init__(
-        self,
-        parent: Gtk.Window | None,
-        db: DbSQLite,
-        config: DashboardConfig | None = None,
-    ) -> None:
+    It reads the book's groups when it opens, so it shows each account's group as
+    stored now, and saves every group through ``save_dashboard_config``.
+    """
+
+    def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
         super().__init__(title="Dashboard groups", transient_for=parent, modal=True)
         self.db = db
-        self.config = config or DashboardConfig.load(db)
+        self.config = DashboardConfig.load(db)
         self.set_default_size(720, 560)
 
         self.accounts = sorted(
@@ -81,6 +82,10 @@ class DashboardDialog(BoundedWindow):
         reset.connect("clicked", self._on_reset)
         controls.append(reset)
         box.append(controls)
+
+        self.status = Gtk.Label(xalign=0, wrap=True)
+        self.status.add_css_class("negative")
+        box.append(self.status)
 
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
         cancel = Gtk.Button(label="Cancel")
@@ -146,21 +151,31 @@ class DashboardDialog(BoundedWindow):
 
     # ----------------------------------------------------------------- saving
 
-    def build(self) -> DashboardConfig:
+    def build(self) -> tuple[DashboardGroupInput, ...]:
+        """The groups as edited; a row without a name is left out."""
         groups = []
         for row in self.rows:
             name = row["name"].get_text().strip()
             if not name:
                 continue
-            handles = [
+            handles = tuple(
                 account.handle
                 for account, check in zip(self.accounts, row["checks"], strict=False)
                 if check.get_active()
-            ]
-            groups.append(GroupConfig(name, handles, KINDS[row["kind"].get_selected()]))
-        self.config.groups = groups
-        return self.config
+            )
+            groups.append(DashboardGroupInput(name, KINDS[row["kind"].get_selected()], handles))
+        return tuple(groups)
+
+    def save(self) -> bool:
+        """Store the groups; False, with the reason shown, if they were refused."""
+        result = save_dashboard_config(self.db, SaveDashboardConfig(groups=self.build()))
+        if not result.ok:
+            self.status.set_text(service_error_message(result.errors[0]))
+            return False
+        assert result.value is not None
+        self.config = result.value
+        return True
 
     def _on_save(self, _button) -> None:
-        self.build().save(self.db)
-        self.close()
+        if self.save():
+            self.close()

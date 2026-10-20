@@ -65,7 +65,9 @@ class TestTemplatesStayOutOfTheLedger:
 
     def test_balances_are_unaffected_by_the_template_section(self, db, xml_book):
         gnucash_xml.import_book(db, xml_book.path)
-        assert ledger.balance(db, db.get_account_by_name("Checking").handle) == Money("-1800.00")
+        assert ledger.balance_amount(db, db.get_account_by_name("Checking").handle).value == Money(
+            "-1800.00"
+        )
 
 
 class TestXmlScheduledTransactions:
@@ -309,7 +311,7 @@ class TestMergingIntoAnExistingBook:
         db.load(str(initialised))
         root = db.root_account()
         assets = next(a for a in db.child_accounts(root.handle) if a.name == "Assets")
-        assert ledger.balance_recursive(db, assets.handle) == Money("4250.00")
+        assert ledger.balance_recursive_amount(db, assets.handle).value == Money("4250.00")
         db.close()
 
     def test_a_split_posted_to_a_merged_account_is_not_lost(self, initialised, source, capsys):
@@ -319,7 +321,7 @@ class TestMergingIntoAnExistingBook:
         db = DbSQLite()
         db.load(str(initialised))
         assets = db.get_account_by_name("Assets")
-        assert ledger.balance(db, assets.handle) == Money("50.00")
+        assert ledger.balance_amount(db, assets.handle).value == Money("50.00")
         db.close()
 
     def test_nothing_is_skipped_by_the_merge(self, initialised, source, capsys):

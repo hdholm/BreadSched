@@ -110,7 +110,9 @@ class TestCliEditing:
         db.load(str(book_path))
         edited = db.get_transaction(handle)
         assert edited.is_balanced()
-        assert ledger.balance(db, db.get_account_by_name("Expenses").handle) == Money("1950.00")
+        assert ledger.balance_amount(db, db.get_account_by_name("Expenses").handle).value == Money(
+            "1950.00"
+        )
         db.close()
 
     def test_editing_is_a_single_undo_step(self, book_path, capsys):
@@ -166,7 +168,7 @@ class TestCliDeleting:
         db = DbSQLite()
         db.load(str(book_path))
         assert db.get_transaction(handle) is None
-        assert ledger.balance(db, db.get_account_by_name("Assets").handle) == Money(0)
+        assert ledger.balance_amount(db, db.get_account_by_name("Assets").handle).value == Money(0)
         db.close()
 
     def test_deleting_clears_the_split_index(self, book_path, capsys):

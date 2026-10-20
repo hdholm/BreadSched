@@ -71,8 +71,12 @@ class TestSingleRoot:
 
         assets = initialised_book.get_account_by_name("Assets")
         expenses = initialised_book.get_account_by_name("Expenses")
-        assert ledger.balance_recursive(initialised_book, assets.handle) == Money("3200.00")
-        assert ledger.balance_recursive(initialised_book, expenses.handle) == Money("1800.00")
+        assert ledger.balance_recursive_amount(initialised_book, assets.handle).value == Money(
+            "3200.00"
+        )
+        assert ledger.balance_recursive_amount(initialised_book, expenses.handle).value == Money(
+            "1800.00"
+        )
 
     def test_placeholders_are_merged_not_duplicated(self, initialised_book, tmp_path):
         """`init` makes an Assets placeholder; so does the source book."""

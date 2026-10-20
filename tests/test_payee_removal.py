@@ -107,7 +107,7 @@ def test_a_schema_10_book_loses_payees_and_keeps_its_rules(tmp_path):
     migrated = DbSQLite()
     migrated.load(str(path))
     try:
-        assert migrated.get_metadata("schema_version") == SCHEMA_VERSION == 11
+        assert migrated.get_metadata("schema_version") == SCHEMA_VERSION == 12
         conn = migrated._require()
         assert conn.execute("SELECT name FROM sqlite_master WHERE name='payee'").fetchone() is None
         blob = conn.execute("SELECT blob FROM txn WHERE handle=?", (spend.handle,)).fetchone()[0]

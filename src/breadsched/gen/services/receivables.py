@@ -31,7 +31,8 @@ from ..engine.receivables import (
 )
 from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
-from ..lib.receivable import Receivable, ReceivableSplitLink, ReceivableWriteOff
+from ..lib.receivable import Receivable, ReceivableWriteOff
+from ..lib.split_link import SplitLink
 from ..lib.transaction import Transaction
 from .contracts import ServiceError, ServiceResult
 
@@ -292,7 +293,7 @@ def _link_split(
         return ServiceResult.failure(ServiceError("receivable.split.not_a_credit", ("split",)))
     if transaction_handle in owned_postings(db):
         return ServiceResult.failure(ServiceError("receivable.split.owned_posting", ("split",)))
-    link = ReceivableSplitLink(transaction_handle, split_handle)
+    link = SplitLink(transaction_handle, split_handle)
     if link in receivable.expenses or link in receivable.reimbursements:
         return ServiceResult.failure(ServiceError("receivable.split.duplicate", ("split",)))
     links = receivable.expenses if role == "expense" else receivable.reimbursements
@@ -321,7 +322,7 @@ def detach_split(
     receivable = db.get_receivable(receivable_handle)
     if receivable is None:
         return ServiceResult.failure(ServiceError("receivable.not_found", ("receivable",)))
-    link = ReceivableSplitLink(transaction, split)
+    link = SplitLink(transaction, split)
     if link in receivable.expenses:
         receivable.expenses.remove(link)
     elif link in receivable.reimbursements:

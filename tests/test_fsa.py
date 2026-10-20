@@ -222,7 +222,7 @@ def _second_fsa_account(db, book):
 
 def test_claim_can_coordinate_multiple_fsa_funding_sources(db, book):
     from breadsched.gen.engine import fsa_claims
-    from breadsched.gen.lib import FsaClaim, FsaClaimAllocation, FsaClaimSplitLink
+    from breadsched.gen.lib import FsaClaim, FsaClaimAllocation, SplitLink
 
     primary = _fsa_account(db, book)
     secondary = _second_fsa_account(db, book)
@@ -244,19 +244,19 @@ def test_claim_can_coordinate_multiple_fsa_funding_sources(db, book):
         service_date=date(2026, 8, 1),
         provider="Orthodontist",
         eob_responsibility=Money("900.00"),
-        payments=[FsaClaimSplitLink(payment.handle, payment.splits[0].handle)],
+        payments=[SplitLink(payment.handle, payment.splits[0].handle)],
         allocations=[
             FsaClaimAllocation(
                 primary.handle,
                 primary.fsa_years[0].start,
                 Money("500.00"),
-                [FsaClaimSplitLink(reimbursement_one.handle, reimbursement_one.splits[1].handle)],
+                [SplitLink(reimbursement_one.handle, reimbursement_one.splits[1].handle)],
             ),
             FsaClaimAllocation(
                 secondary.handle,
                 secondary.fsa_years[0].start,
                 Money("400.00"),
-                [FsaClaimSplitLink(reimbursement_two.handle, reimbursement_two.splits[1].handle)],
+                [SplitLink(reimbursement_two.handle, reimbursement_two.splits[1].handle)],
             ),
         ],
     )
@@ -274,7 +274,7 @@ def test_claim_can_coordinate_multiple_fsa_funding_sources(db, book):
 
 def test_claim_waits_for_eob_and_closes_when_no_fsa_funds_remain(db, book):
     from breadsched.gen.engine import fsa_claims
-    from breadsched.gen.lib import FsaClaim, FsaClaimAllocation, FsaClaimSplitLink
+    from breadsched.gen.lib import FsaClaim, FsaClaimAllocation, SplitLink
 
     account = _fsa_account(db, book)
     payment = Transaction.simple(
@@ -285,7 +285,7 @@ def test_claim_waits_for_eob_and_closes_when_no_fsa_funds_remain(db, book):
     claim = FsaClaim(
         service_date=date(2027, 6, 20),
         provider="Dentist",
-        payments=[FsaClaimSplitLink(payment.handle, payment.splits[0].handle)],
+        payments=[SplitLink(payment.handle, payment.splits[0].handle)],
         allocations=[FsaClaimAllocation(account.handle, account.fsa_years[0].start)],
     )
     fsa_claims.save_claim(db, claim)
@@ -304,7 +304,7 @@ def test_claim_refunds_reduce_net_paid_and_rejections_do_not_reimburse(db, book)
         FsaClaim,
         FsaClaimAllocation,
         FsaClaimRejection,
-        FsaClaimSplitLink,
+        SplitLink,
     )
 
     account = _fsa_account(db, book)
@@ -321,8 +321,8 @@ def test_claim_refunds_reduce_net_paid_and_rejections_do_not_reimburse(db, book)
         service_date=date(2026, 3, 15),
         provider="Clinic",
         eob_responsibility=Money("450.00"),
-        payments=[FsaClaimSplitLink(payment.handle, payment.splits[0].handle)],
-        refunds=[FsaClaimSplitLink(refund.handle, refund.splits[1].handle)],
+        payments=[SplitLink(payment.handle, payment.splits[0].handle)],
+        refunds=[SplitLink(refund.handle, refund.splits[1].handle)],
         allocations=[
             FsaClaimAllocation(
                 account.handle,
@@ -380,7 +380,7 @@ def test_review_attachment_links_payment_and_reimbursement_to_claim(db, book):
 
 def test_claim_save_is_atomic_and_undoable(db, book):
     from breadsched.gen.engine import fsa_claims
-    from breadsched.gen.lib import FsaClaim, FsaClaimAllocation, FsaClaimSplitLink
+    from breadsched.gen.lib import FsaClaim, FsaClaimAllocation, SplitLink
 
     account = _fsa_account(db, book)
     reimbursement = Transaction.simple(
@@ -398,9 +398,7 @@ def test_claim_save_is_atomic_and_undoable(db, book):
             FsaClaimAllocation(
                 account.handle,
                 account.fsa_years[0].start,
-                reimbursements=[
-                    FsaClaimSplitLink(reimbursement.handle, reimbursement_split.handle)
-                ],
+                reimbursements=[SplitLink(reimbursement.handle, reimbursement_split.handle)],
             )
         ],
     )

@@ -1255,17 +1255,31 @@ class TestAccountGroupField:
     def test_the_group_takes_its_kind_from_the_accounts(self, db, grouped):
         assert dashboard.build(db, as_of=TODAY).group("Everyday").kind == "liquid"
 
-    def test_the_configuration_wins_over_the_field(self, db, grouped):
-        """The field is a default placement, not an override.
+    def test_moving_an_account_to_another_group_moves_its_field(self, db, grouped):
+        """One place says where an account is shown (#337).
 
-        Letting it override was how a property line lost its house: the asset was
-        pulled out into a group of its own and the mortgage was left reporting a
-        value of zero.
+        The field and a configured account list once disagreed, and the merge that
+        settled it was how a property line lost its house. Moving an account in
+        the group editor now changes the account's own group.
         """
-        config = dashboard.DashboardConfig(
-            groups=[dashboard.GroupConfig("Cash", [grouped.checking], "liquid")]
+        from breadsched.gen.services import (
+            DashboardGroupInput,
+            SaveDashboardConfig,
+            save_dashboard_config,
         )
-        board = dashboard.build(db, config, as_of=TODAY)
+
+        result = save_dashboard_config(
+            db,
+            SaveDashboardConfig(
+                groups=(
+                    DashboardGroupInput("Cash", "liquid", (grouped.checking,)),
+                    DashboardGroupInput("Everyday", "liquid", (grouped.savings,)),
+                )
+            ),
+        )
+        assert result.ok
+        assert db.get_account(grouped.checking).group == "Cash"
+        board = dashboard.build(db, as_of=TODAY)
 
         cash = board.group("Cash")
         assert cash is not None
@@ -1851,3 +1865,136 @@ def test_group_row_hides_inferred_subaccounts_and_lists_members(db, book):
     children = [line.strip() for line in group.members[1:]]
     assert db.full_name(book.checking) in children
     assert db.full_name(book.savings) in children
+
+
+class TestGroupMembershipIsStoredOnce:
+    """#337: Account.group is the only record of which group an account is in."""
+
+    @pytest.fixture
+    def saved(self, db, book):
+        from breadsched.gen.services import (
+            DashboardGroupInput,
+            SaveDashboardConfig,
+            save_dashboard_config,
+        )
+
+        result = save_dashboard_config(
+            db,
+            SaveDashboardConfig(
+                groups=(
+                    DashboardGroupInput("Cash", "liquid", (book.checking, book.checking)),
+                    DashboardGroupInput("Retirement", "retirement", (book.brokerage,)),
+                )
+            ),
+        )
+        assert result.ok
+        return book
+
+    def test_the_configuration_stores_names_and_kinds_only(self, db, saved):
+        stored = db.get_metadata("dashboard")
+        assert stored["groups"] == [
+            {"name": "Cash", "kind": "liquid"},
+            {"name": "Retirement", "kind": "retirement"},
+        ]
+        assert db.get_account(saved.checking).group == "Cash"
+        assert db.get_account(saved.brokerage).group == "Retirement"
+
+    def test_loading_reads_members_from_the_accounts_in_stored_order(self, db, saved):
+        savings = db.get_account(saved.savings)
+        savings.group = "Cash"
+        with db.transaction("field") as txn:
+            db.commit_account(savings, txn)
+        config = dashboard.DashboardConfig.load(db)
+        assert [(group.name, group.kind) for group in config.groups] == [
+            ("Cash", "liquid"),
+            ("Retirement", "retirement"),
+        ]
+        assert set(config.groups[0].accounts) == {saved.checking, saved.savings}
+
+    def test_a_group_named_only_on_an_account_follows_with_its_kind(self, db, saved):
+        loan = db.get_account(saved.card)
+        loan.group = "Debts"
+        with db.transaction("field") as txn:
+            db.commit_account(loan, txn)
+        config = dashboard.DashboardConfig.load(db)
+        assert config.groups[-1].name == "Debts"
+        assert config.groups[-1].kind == "liability"
+
+    def test_saving_clears_the_group_of_an_account_left_out(self, db, saved):
+        from breadsched.gen.services import (
+            DashboardGroupInput,
+            SaveDashboardConfig,
+            save_dashboard_config,
+        )
+
+        result = save_dashboard_config(
+            db, SaveDashboardConfig(groups=(DashboardGroupInput("Cash", "liquid", ()),))
+        )
+        assert result.ok
+        assert db.get_account(saved.checking).group == ""
+        assert db.get_account(saved.brokerage).group == ""
+
+    @pytest.mark.parametrize(
+        ("groups", "code"),
+        [
+            ((("", "liquid", ()),), "dashboard.group.name.empty"),
+            ((("A", "liquid", ()), ("A", "asset", ())), "dashboard.group.name.duplicate"),
+            ((("A", "cash", ()),), "dashboard.group.kind.invalid"),
+            ((("A", "liquid", ("missing",)),), "dashboard.group.account.not_found"),
+        ],
+    )
+    def test_rejected_groups_leave_the_book_as_it_was(self, db, saved, groups, code):
+        from breadsched.gen.services import (
+            DashboardGroupInput,
+            SaveDashboardConfig,
+            save_dashboard_config,
+        )
+
+        before = (
+            db.get_metadata("dashboard"),
+            [(account.handle, account.group) for account in db.iter_accounts()],
+        )
+        result = save_dashboard_config(
+            db,
+            SaveDashboardConfig(groups=tuple(DashboardGroupInput(*group) for group in groups)),
+        )
+        assert [error.code for error in result.errors][:1] == [code]
+        after = (
+            db.get_metadata("dashboard"),
+            [(account.handle, account.group) for account in db.iter_accounts()],
+        )
+        assert after == before
+
+    def test_an_account_in_two_groups_is_refused(self, db, saved):
+        from breadsched.gen.services import (
+            DashboardGroupInput,
+            SaveDashboardConfig,
+            save_dashboard_config,
+        )
+
+        result = save_dashboard_config(
+            db,
+            SaveDashboardConfig(
+                groups=(
+                    DashboardGroupInput("A", "liquid", (saved.checking,)),
+                    DashboardGroupInput("B", "asset", (saved.checking,)),
+                )
+            ),
+        )
+        assert [error.code for error in result.errors] == ["dashboard.group.account.duplicate"]
+        assert db.get_account(saved.checking).group == "Cash"
+
+    def test_horizons_alone_keep_groups_changed_elsewhere(self, db, saved):
+        from breadsched.gen.services import SaveDashboardConfig, save_dashboard_config
+
+        savings = db.get_account(saved.savings)
+        savings.group = "Cash"
+        with db.transaction("account editor") as txn:
+            db.commit_account(savings, txn)
+        result = save_dashboard_config(
+            db, SaveDashboardConfig(liquidity_days=999, emergency_months=0)
+        )
+        assert result.value is not None
+        assert (result.value.liquidity_days, result.value.emergency_months) == (365, 1)
+        assert db.get_account(saved.savings).group == "Cash"
+        assert db.get_account(saved.checking).group == "Cash"

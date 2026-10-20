@@ -21,23 +21,9 @@ from typing import Any
 
 from .base import PrimaryObject
 from .money import Money
+from .split_link import SplitLink
 
-__all__ = ["Receivable", "ReceivableSplitLink", "ReceivableWriteOff"]
-
-
-@dataclass(frozen=True)
-class ReceivableSplitLink:
-    """Reference to one split in an ordinary ledger transaction."""
-
-    transaction: str
-    split: str
-
-    def serialize(self) -> dict[str, str]:
-        return {"transaction": self.transaction, "split": self.split}
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ReceivableSplitLink:
-        return cls(transaction=str(data["transaction"]), split=str(data["split"]))
+__all__ = ["Receivable", "ReceivableWriteOff"]
 
 
 @dataclass(frozen=True)
@@ -76,8 +62,8 @@ class Receivable(PrimaryObject):
         description: str = "",
         expected_amount: Money | None = None,
         expected_cash_date: date | None = None,
-        expenses: list[ReceivableSplitLink] | None = None,
-        reimbursements: list[ReceivableSplitLink] | None = None,
+        expenses: list[SplitLink] | None = None,
+        reimbursements: list[SplitLink] | None = None,
         disputed_on: date | None = None,
         dispute_note: str = "",
         write_offs: list[ReceivableWriteOff] | None = None,
@@ -139,10 +125,8 @@ class Receivable(PrimaryObject):
         self.expected_cash_date = (
             date.fromisoformat(str(raw_cash_date)) if raw_cash_date is not None else None
         )
-        self.expenses = [ReceivableSplitLink.from_dict(item) for item in data.get("expenses", [])]
-        self.reimbursements = [
-            ReceivableSplitLink.from_dict(item) for item in data.get("reimbursements", [])
-        ]
+        self.expenses = [SplitLink.from_dict(item) for item in data.get("expenses", [])]
+        self.reimbursements = [SplitLink.from_dict(item) for item in data.get("reimbursements", [])]
         self.disputed_on = (
             date.fromisoformat(str(raw_disputed)) if raw_disputed is not None else None
         )

@@ -16,9 +16,9 @@ from breadsched.gen.lib import (
     FsaClaimAllocation,
     FsaClaimEvent,
     FsaClaimRejection,
-    FsaClaimSplitLink,
     FsaFundingYear,
     Money,
+    SplitLink,
     Transaction,
 )
 from breadsched.gen.services import (
@@ -56,14 +56,14 @@ def _post(db, transaction):
 
 def _paid(db, book, when, amount):
     payment = _post(db, Transaction.simple(when, "Dentist", book.groceries, book.checking, amount))
-    return FsaClaimSplitLink(payment.handle, payment.splits[0].handle)
+    return SplitLink(payment.handle, payment.splits[0].handle)
 
 
 def _reimbursed(db, book, account, when, amount):
     credit = _post(
         db, Transaction.simple(when, "FSA reimbursement", book.checking, account.handle, amount)
     )
-    return FsaClaimSplitLink(credit.handle, credit.splits[1].handle)
+    return SplitLink(credit.handle, credit.splits[1].handle)
 
 
 def _repaid(db, book, account, when, amount):
@@ -71,7 +71,7 @@ def _repaid(db, book, account, when, amount):
     repayment = _post(
         db, Transaction.simple(when, "Repay FSA", account.handle, book.checking, amount)
     )
-    return FsaClaimSplitLink(repayment.handle, repayment.splits[0].handle)
+    return SplitLink(repayment.handle, repayment.splits[0].handle)
 
 
 def _link(link):
@@ -369,7 +369,7 @@ def test_new_claim_fields_round_trip_and_old_claims_still_load(db, book, fsa_acc
     claim = FsaClaim(
         service_date=date(2026, 3, 1),
         allocations=[
-            FsaClaimAllocation(fsa_account.handle, YEAR, repayments=[FsaClaimSplitLink("t", "s")])
+            FsaClaimAllocation(fsa_account.handle, YEAR, repayments=[SplitLink("t", "s")])
         ],
         closed_on=date(2026, 5, 1),
         close_reason="Gave up",

@@ -491,12 +491,12 @@ class TestSchemaCompatibility:
     def test_new_books_record_the_current_baseline_in_the_migration_ledger(self, db):
         from breadsched.gen.lib import DEFAULT_CURRENCY_HANDLE
 
-        assert db.get_metadata("schema_version") == 11
+        assert db.get_metadata("schema_version") == 12
         assert db.get_metadata("default_currency") == DEFAULT_CURRENCY_HANDLE
         assert db.get_commodity(DEFAULT_CURRENCY_HANDLE).mnemonic == "USD"
         assert db.integrity_problems() == []
         row = db._require().execute("SELECT version FROM schema_migration").fetchone()
-        assert tuple(row) == (11,)
+        assert tuple(row) == (12,)
 
     def test_current_books_with_the_old_unused_ledger_still_open(self, tmp_path):
         path = tmp_path / "current-with-extra-table.breadsched"
@@ -512,7 +512,7 @@ class TestSchemaCompatibility:
 
         reopened = DbSQLite()
         reopened.load(str(path))
-        assert reopened.get_metadata("schema_version") == 11
+        assert reopened.get_metadata("schema_version") == 12
         reopened.close()
 
     @pytest.mark.parametrize("version", [3, 4, 5])
@@ -552,7 +552,7 @@ class TestSchemaCompatibility:
         assert path.read_bytes() == before
         assert not Path(str(path) + ".pre-migration-v6.bak").exists()
         DbSQLite().load(str(path))
-        assert stored_schema_version(str(path)) == 11
+        assert stored_schema_version(str(path)) == 12
 
     def test_the_stored_schema_of_something_unreadable_is_unknown(self, tmp_path):
         from breadsched.gen.db.sqlite import stored_schema_version
@@ -581,7 +581,7 @@ class TestSchemaCompatibility:
         path = self._schema_6_fixture(tmp_path)
         db = DbSQLite()
         db.load(str(path))
-        assert db.get_metadata("schema_version") == 11
+        assert db.get_metadata("schema_version") == 12
         assert db.get_metadata("fixture_marker") == "schema-6"
         assert db.get_account("fixture-account").name == "Fixture Checking"
         assert [
@@ -589,7 +589,7 @@ class TestSchemaCompatibility:
             for row in db._require().execute(
                 "SELECT version FROM schema_migration ORDER BY version"
             )
-        ] == [6, 7, 8, 9, 10, 11]
+        ] == [6, 7, 8, 9, 10, 11, 12]
         assert db.integrity_problems() == []
         db.close()
 
@@ -643,10 +643,10 @@ class TestSchemaCompatibility:
 
     def test_a_newer_schema_is_rejected(self, tmp_path):
         path = tmp_path / "future.breadsched"
-        self._book_with_schema(path, 12)
+        self._book_with_schema(path, 13)
 
         db = DbSQLite()
-        with pytest.raises(DbError, match="unsupported newer schema 12"):
+        with pytest.raises(DbError, match="unsupported newer schema 13"):
             db.load(str(path))
 
     @pytest.mark.parametrize("version", ["seven", None])

@@ -13,12 +13,15 @@ release workflow compares the installed wheel's line with
 carry a stale schema window. Book
 verification includes the same application and schema details in its human and JSON
 diagnostics. The integer data-format/schema version determines whether a
-native book can be opened or must be migrated; it is currently 11. A behavior-only
+native book can be opened or must be migrated; it is currently 12. A behavior-only
 release changes only the application version. A persistent representation change
 increments the data-format version and supplies an explicit migration.
 
-SQLite is the native persistence engine. The current application writes schema 11 and
-can migrate schemas 6, 7, 8, 9, and 10 before decoding primary objects. Schema 11
+SQLite is the native persistence engine. The current application writes schema 12 and
+can migrate schemas 6 through 11 before decoding primary objects. Schema 12 stores
+Dashboard group membership only on accounts (11→12: each account the dashboard
+configuration listed takes its first listed group, and the configuration keeps
+group names and kinds; see valuation and reporting); schema 11
 removed payees (10→11, see household workflows); schema 10 added the
 `savings_goal` table (9→10); schema 9 added the `receivable` table (8→9); schema 8 added the `payee` table (7→8); schema 7 added
 reconciliation sessions (6→7). An explicit sequential registry and durable ledger,
@@ -32,9 +35,11 @@ which runs the migration and its pre-migration backup, and reports the old and n
 schema and the backup path; the Windows upgrade test uses it on the book made by
 the previous release.
 
-The supported migration window currently covers four preceding data-format
-versions: the registry retains 6→7, 7→8, 8→9, and 9→10, and the application accepts
-schemas 6 through 10. Versioned fixtures for schemas 6, 7, 8, and 9 prove each step.
+The supported migration window currently covers six preceding data-format
+versions: the registry retains 6→7 through 11→12, so the application migrates
+schemas 6 through 11 and opens schema 12 directly. Versioned fixtures for schemas 6, 7, 8, and 9 prove each step;
+the 10→11 and 11→12 steps are proved by tests that rewrite a current book into the
+older form (`test_payee_removal.py`, `test_dedupe_schema12.py`).
 The window widens only when a real schema migration is needed; there is no no-op
 format bump. A migration must run before ordinary decoding, fail atomically, preserve
 a verified backup, and leave enough version evidence to diagnose or retry safely.

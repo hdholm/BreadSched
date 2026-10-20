@@ -4900,7 +4900,7 @@ class TestImportReview:
                 db,
                 source.ids.checking,
                 statement,
-                ledger.balance(db, source.ids.checking, statement),
+                ledger.balance_amount(db, source.ids.checking, statement).value,
             )
             reconcile_engine.set_selection(
                 db,
@@ -5636,8 +5636,8 @@ class TestDashboardView:
         from breadsched.gen.lib import (
             FsaClaim,
             FsaClaimAllocation,
-            FsaClaimSplitLink,
             FsaFundingYear,
+            SplitLink,
             Transaction,
         )
         from breadsched.gen.lib.account import AccountClass
@@ -5665,12 +5665,12 @@ class TestDashboardView:
             service_date=start,
             provider="Dentist",
             eob_responsibility=Money("200"),
-            payments=[FsaClaimSplitLink(paid.handle, paid.splits[0].handle)],
+            payments=[SplitLink(paid.handle, paid.splits[0].handle)],
             allocations=[
                 FsaClaimAllocation(
                     account.handle,
                     start,
-                    reimbursements=[FsaClaimSplitLink(credit.handle, credit.splits[1].handle)],
+                    reimbursements=[SplitLink(credit.handle, credit.splits[1].handle)],
                 )
             ],
         )
@@ -5686,7 +5686,7 @@ class TestDashboardView:
             assert "to repay to the FSA 50.00" in dialog.standing.get_text()
             assert "EOB changed from 200.00 to 150.00: Corrected EOB" in (dialog.history.get_text())
             row = dialog._allocation_rows[0]
-            row.repay.set_links([FsaClaimSplitLink(repay.handle, repay.splits[0].handle)])
+            row.repay.set_links([SplitLink(repay.handle, repay.splits[0].handle)])
             dialog._save(None)
             assert dialog.standing.get_text().startswith("Fully reimbursed")
             assert "repaid to the FSA 50.00" in dialog.standing.get_text()
@@ -5733,7 +5733,7 @@ class TestDashboardView:
         from breadsched.gen.engine.dashboard import DashboardConfig
         from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
 
-        dialog = DashboardDialog(view.get_root(), app.db, view.config)
+        dialog = DashboardDialog(view.get_root(), app.db)
         row = dialog.add_group()
         row["name"].set_text("Property")
         row["kind"].set_selected(3)
@@ -5742,6 +5742,24 @@ class TestDashboardView:
 
         saved = DashboardConfig.load(app.db)
         assert any(g.name == "Property" and g.kind == "property" for g in saved.groups)
+        # Membership is stored on the account, not in the configuration (#337).
+        member = dialog.accounts[0]
+        assert app.db.get_account(member.handle).group == "Property"
+        assert "accounts" not in str(app.db.get_metadata("dashboard"))
+
+    def test_the_group_dialog_refuses_an_account_in_two_groups(self, view, app):
+        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+
+        before = [(a.handle, a.group) for a in app.db.iter_accounts()]
+        dialog = DashboardDialog(view.get_root(), app.db)
+        for name in ("One", "Two"):
+            row = dialog.add_group()
+            row["name"].set_text(name)
+            row["checks"][0].set_active(True)
+        assert dialog.save() is False
+        assert dialog.status.get_text() == "An account can be in only one Dashboard group"
+        assert [(a.handle, a.group) for a in app.db.iter_accounts()] == before
+        dialog.destroy()
 
     def test_an_empty_book_still_renders(self, app, window, tmp_path):
         from breadsched.cli.main import main as cli
@@ -6085,7 +6103,7 @@ class TestAccountEditor:
         dialog._on_save(None)
 
         handle = app.db.get_account_by_name("Savings").handle
-        assert ledger.balance(app.db, handle) == Money("2500.00")
+        assert ledger.balance_amount(app.db, handle).value == Money("2500.00")
 
     def test_an_existing_account_opens_on_its_values(self, accounts_view, app):
         account = app.db.get_account_by_name("Assets:Checking Account")
@@ -8231,7 +8249,7 @@ class TestReceivablesDialog:
         self, app, window, populated_book
     ):
         # Issue #192: linked only from the claim; the FSA share waits for the EOB.
-        from breadsched.gen.lib.fsa_claim import FsaClaimSplitLink
+        from breadsched.gen.lib.split_link import SplitLink
         from breadsched.gen.services.receivables import (
             SaveReceivable,
             attach_expense_split,
@@ -8253,7 +8271,7 @@ class TestReceivablesDialog:
             assert claims.shared.get_visible() is False
             claims.service.set_text(rent_txn.post_date.isoformat())
             claims.provider.set_text("Clinic")
-            claims.payments.set_links([FsaClaimSplitLink(rent_txn.handle, cost.handle)])
+            claims.payments.set_links([SplitLink(rent_txn.handle, cost.handle)])
             index = [item.handle for item in claims.receivables].index(receivable.handle)
             claims.payer.set_selected(index + 1)
             claims._save(None)
@@ -8324,7 +8342,7 @@ class TestReceivablesDialog:
     def test_link_dispute_write_off_and_unlink_leave_linked_transactions_alone(
         self, app, window, populated_book
     ):
-        from breadsched.gen.engine.ledger import balance
+        from breadsched.gen.engine.ledger import balance_amount
         from breadsched.gen.engine.receivables import owned_postings
         from breadsched.gen.services.receivables import ReceivableStatus, list_receivables
         from breadsched.gui.dialogs.receivables_dialog import ReceivablesDialog
@@ -8342,7 +8360,7 @@ class TestReceivablesDialog:
             held = db.get_receivable(handle).account
             assert dialog._accounts == [None, held]
             assert dialog.account_picker.get_selected() == 1
-            assert balance(db, held) == summary_owed(db)
+            assert balance_amount(db, held).value == summary_owed(db)
             assert dialog.warning.get_visible() is False
             credit = [c for c in dialog._credits].index((refund.handle, refund.splits[1].handle))
             dialog.credit_picker.set_selected(credit)

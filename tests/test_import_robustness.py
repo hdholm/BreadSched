@@ -59,7 +59,7 @@ class TestSingleSplitTransactions:
         result = gnucash_sqlite.import_book(db, book.path)
 
         assert result.transactions == 2
-        assert ledger.balance(db, book.food) == Money("72.50")
+        assert ledger.balance_amount(db, book.food).value == Money("72.50")
 
     def test_a_lone_split_is_balanced_to_imbalance(self, db, tmp_path):
         book = create_book(tmp_path / "one-split.gnucash", CHART, [HEALTHY])
@@ -69,7 +69,9 @@ class TestSingleSplitTransactions:
 
         imbalance = db.get_account_by_name("Imbalance")
         assert imbalance is not None
-        assert ledger.balance(db, imbalance.handle, natural_sign=False) == Money("-50.00")
+        assert ledger.balance_amount(db, imbalance.handle, natural_sign=False).value == Money(
+            "-50.00"
+        )
 
     def test_the_warning_identifies_the_transaction(self, db, tmp_path):
         book = create_book(tmp_path / "one-split.gnucash", CHART, [HEALTHY])

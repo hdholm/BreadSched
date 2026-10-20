@@ -73,13 +73,13 @@ def test_ofx_investment_statement_imports_balanced_trades_and_income(db, book, t
     fund = _account(db, "Assets:Sample Brokerage Investment 5432:VTSAX")
     stock = _account(db, "Assets:Sample Brokerage Investment 5432:ACME")
     # 5000 deposit - 2004.95 buy + 249 sale + 2.50 interest.
-    assert ledger.balance(db, cash.handle) == Money("3246.55")
+    assert ledger.balance_amount(db, cash.handle).value == Money("3246.55")
     assert valuation.quantity_balance(db, fund) == Money("20.2913")
     assert valuation.quantity_balance(db, stock) == Money(-5)
     fees = _account(db, "Expenses:Investment Fees")
-    assert ledger.balance(db, fees.handle) == Money("5.95")
+    assert ledger.balance_amount(db, fees.handle).value == Money("5.95")
     income = _account(db, "Income:Investment Income")
-    assert ledger.balance(db, income.handle) == Money("32.50")
+    assert ledger.balance_amount(db, income.handle).value == Money("32.50")
     for transaction in db.iter_transactions():
         assert not transaction.imbalance()
     buy = next(item for item in db.iter_transactions() if item.description == "Buy fund")

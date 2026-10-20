@@ -8,29 +8,14 @@ from typing import Any
 
 from .base import PrimaryObject
 from .money import Money
+from .split_link import SplitLink
 
 __all__ = [
     "FsaClaim",
     "FsaClaimAllocation",
     "FsaClaimEvent",
     "FsaClaimRejection",
-    "FsaClaimSplitLink",
 ]
-
-
-@dataclass(frozen=True)
-class FsaClaimSplitLink:
-    """Reference to one split in an ordinary ledger transaction."""
-
-    transaction: str
-    split: str
-
-    def serialize(self) -> dict[str, str]:
-        return {"transaction": self.transaction, "split": self.split}
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> FsaClaimSplitLink:
-        return cls(transaction=str(data["transaction"]), split=str(data["split"]))
 
 
 @dataclass(frozen=True)
@@ -110,11 +95,11 @@ class FsaClaimAllocation:
     account: str
     funding_year_start: date
     target: Money | None = None
-    reimbursements: list[FsaClaimSplitLink] = field(default_factory=list)
+    reimbursements: list[SplitLink] = field(default_factory=list)
     rejections: list[FsaClaimRejection] = field(default_factory=list)
     #: Money paid back into the FSA for this funding year, such as an
     #: over-reimbursement returned after a lower EOB.
-    repayments: list[FsaClaimSplitLink] = field(default_factory=list)
+    repayments: list[SplitLink] = field(default_factory=list)
 
     def serialize(self) -> dict[str, Any]:
         return {
@@ -137,11 +122,9 @@ class FsaClaimAllocation:
             account=str(data["account"]),
             funding_year_start=date.fromisoformat(str(data["funding_year_start"])),
             target=Money(*raw_target) if raw_target is not None else None,
-            reimbursements=[
-                FsaClaimSplitLink.from_dict(item) for item in data.get("reimbursements", [])
-            ],
+            reimbursements=[SplitLink.from_dict(item) for item in data.get("reimbursements", [])],
             rejections=[FsaClaimRejection.from_dict(item) for item in data.get("rejections", [])],
-            repayments=[FsaClaimSplitLink.from_dict(item) for item in data.get("repayments", [])],
+            repayments=[SplitLink.from_dict(item) for item in data.get("repayments", [])],
         )
 
 
@@ -156,8 +139,8 @@ class FsaClaim(PrimaryObject):
         provider: str = "",
         description: str = "",
         eob_responsibility: Money | None = None,
-        payments: list[FsaClaimSplitLink] | None = None,
-        refunds: list[FsaClaimSplitLink] | None = None,
+        payments: list[SplitLink] | None = None,
+        refunds: list[SplitLink] | None = None,
         allocations: list[FsaClaimAllocation] | None = None,
         handle: str | None = None,
         receivable: str | None = None,
@@ -182,7 +165,7 @@ class FsaClaim(PrimaryObject):
         #: EOB changes and closings/reopenings, oldest first.
         self.events = list(events or [])
 
-    def links(self) -> list[FsaClaimSplitLink]:
+    def links(self) -> list[SplitLink]:
         """Every ledger split the claim points at: payments, refunds, and FSA money."""
         found = [*self.payments, *self.refunds]
         for allocation in self.allocations:
@@ -215,8 +198,8 @@ class FsaClaim(PrimaryObject):
         self.provider = str(data.get("provider", ""))
         self.description = str(data.get("description", ""))
         self.eob_responsibility = Money(*raw_eob) if raw_eob is not None else None
-        self.payments = [FsaClaimSplitLink.from_dict(item) for item in data.get("payments", [])]
-        self.refunds = [FsaClaimSplitLink.from_dict(item) for item in data.get("refunds", [])]
+        self.payments = [SplitLink.from_dict(item) for item in data.get("payments", [])]
+        self.refunds = [SplitLink.from_dict(item) for item in data.get("refunds", [])]
         self.allocations = [
             FsaClaimAllocation.from_dict(item) for item in data.get("allocations", [])
         ]

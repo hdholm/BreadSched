@@ -87,7 +87,11 @@ def goal_progress(
     account = db.get_account(goal.account)
     account_name = db.full_name(goal.account) if account is not None else goal.account
     liquid = account is not None and account.atype.is_cash_like and not account.placeholder
-    balance = ledger.balance(db, goal.account, as_of=as_of) if account is not None else Money(0)
+    balance = (
+        ledger.balance_amount(db, goal.account, as_of=as_of).value
+        if account is not None
+        else Money(0)
+    )
     target = goal.target_amount
     fraction = reporting_fraction(db)
 
