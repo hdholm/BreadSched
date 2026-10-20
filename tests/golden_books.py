@@ -100,10 +100,10 @@ def build_and_reopen_book(name: str, path: Path, *, milestone: str = "0226") -> 
                 placeholder=item.get("placeholder", False),
             )
             if "annual_return" in item:
-                account.annual_return = item["annual_return"]
+                account.investment.annual_return = item["annual_return"]
             if "annual_interest" in item:
-                account.annual_interest = item["annual_interest"]
-            account.linked_asset = item.get("linked_asset")
+                account.liability.annual_interest = item["annual_interest"]
+            account.liability.linked_asset = item.get("linked_asset")
             db.add_account(account, txn)
         for item in data.get("transactions", []):
             transaction = Transaction(

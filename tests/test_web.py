@@ -669,7 +669,7 @@ class TestItServes:
                 },
             )
         error = json.loads(caught.value.read())
-        assert (caught.value.code, error["code"]) == (400, "account.fsa.dependent_care.carryover")
+        assert (caught.value.code, error["code"]) == (400, "account.fsa_dependent_care.carryover")
         assert client.database.get_account(retirement["handle"]).serialize() == before
         with pytest.raises(urllib.error.HTTPError) as caught:
             client.post(
@@ -911,7 +911,7 @@ class TestItServes:
         )
         assert status == 200
         assert changed["type"] == "LIABILITY"
-        assert db.get_account(card.handle).card_payment_account is None
+        assert db.get_account(card.handle).card.payment_account is None
 
     def test_web_loan_preview_and_creation_use_the_shared_formula_engine(self, client):
         db = client.database
@@ -3608,7 +3608,7 @@ class TestDashboardApi:
         account = Account(
             name="Health FSA", atype=AccountType.FSA, parent=accounts["Assets"].handle
         )
-        account.fsa_years = [
+        account.fsa.years = [
             FsaFundingYear(start, start.replace(month=12, day=31), Money("500"), None)
         ]
         medical = Account(
@@ -3643,7 +3643,7 @@ class TestDashboardApi:
         account = Account(
             name="Health FSA", atype=AccountType.FSA, parent=accounts["Assets"].handle
         )
-        account.fsa_years = [
+        account.fsa.years = [
             FsaFundingYear(start, start.replace(month=12, day=31), Money("500"), None)
         ]
         medical = Account(
@@ -3688,7 +3688,7 @@ class TestDashboardApi:
         account = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
         today = date.today()
         start = today.replace(month=1, day=1)
-        account.fsa_years = [
+        account.fsa.years = [
             FsaFundingYear(start, start.replace(month=12, day=31), Money("1000"), None)
         ]
         with db.transaction("FSA") as txn:
@@ -3738,7 +3738,7 @@ class TestDashboardApi:
         rent = next(a for a in db.iter_accounts() if a.name == "Rent")
         account = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
         start = date(2026, 1, 1)
-        account.fsa_years = [FsaFundingYear(start, date(2026, 12, 31), Money("1000"), None)]
+        account.fsa.years = [FsaFundingYear(start, date(2026, 12, 31), Money("1000"), None)]
         paid = Transaction.simple(date(2026, 3, 2), "Dentist", rent.handle, checking.handle, "200")
         credit = Transaction.simple(
             date(2026, 3, 20), "FSA reimbursement", checking.handle, account.handle, "200"

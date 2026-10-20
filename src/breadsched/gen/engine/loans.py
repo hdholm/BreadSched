@@ -168,8 +168,8 @@ def create_loan(
         # account as well makes a projection charge interest twice, which turns a
         # repaying mortgage into a growing one -- slowly enough to look plausible.
         liability_account = db.get_account(terms.liability)
-        if liability_account is not None and liability_account.annual_interest:
-            liability_account.annual_interest = Decimal(0)
+        if liability_account is not None and liability_account.liability.annual_interest:
+            liability_account.liability.annual_interest = Decimal(0)
             liability_account.notes = (
                 (liability_account.notes + "\n" if liability_account.notes else "")
                 + f"Interest is calculated by the {terms.name!r} scheduled "

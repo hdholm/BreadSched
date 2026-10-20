@@ -4399,7 +4399,7 @@ class TestDerivedPlanView:
             marks = dialog.open_marks()
             marks.account_checks[expense.handle].set_active(True)
             assert marks.save()
-            assert db.get_account(expense.handle).tax_relevant_override is True
+            assert db.get_account(expense.handle).planning.tax_relevant is True
             names = [row[0] for row in self._grid_texts(dialog.accounts)[1:]]
             assert db.full_name(expense) in names
             dialog.print_report()
@@ -5510,7 +5510,7 @@ class TestDashboardView:
         account = Account(
             name="Health FSA", atype=AccountType.FSA, parent=accounts["Assets"].handle
         )
-        account.fsa_years = [
+        account.fsa.years = [
             FsaFundingYear(start, start.replace(month=12, day=31), Money("500"), None)
         ]
         medical = Account(
@@ -5545,7 +5545,7 @@ class TestDashboardView:
         account = Account(
             name="Health FSA", atype=AccountType.FSA, parent=accounts["Assets"].handle
         )
-        account.fsa_years = [
+        account.fsa.years = [
             FsaFundingYear(start, start.replace(month=12, day=31), Money("500"), None)
         ]
         medical = Account(
@@ -5591,7 +5591,7 @@ class TestDashboardView:
         start = today.replace(month=1, day=1)
         assets = next(a for a in db.iter_accounts() if a.name == "Assets")
         account = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
-        account.fsa_years = [
+        account.fsa.years = [
             FsaFundingYear(start, start.replace(month=12, day=31), Money("1000"), None)
         ]
         with db.transaction("FSA") as txn:
@@ -5651,7 +5651,7 @@ class TestDashboardView:
         checking = next(a for a in db.iter_accounts() if a.atype is AccountType.BANK)
         expense = next(a for a in db.iter_accounts() if a.account_class is AccountClass.EXPENSE)
         account = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
-        account.fsa_years = [
+        account.fsa.years = [
             FsaFundingYear(start, start.replace(month=12, day=31), Money("1000"), None)
         ]
         paid = Transaction.simple(start, "Dentist", expense.handle, checking.handle, "200")
@@ -6246,9 +6246,9 @@ class TestAccountEditor:
 
         card = app.db.get_account_by_name("Visa")
         assert card.carries_balance is True
-        assert card.usual_payment == Money("400.00")
-        assert card.payment_day == 22
-        assert card.card_payment_account == checking.handle
+        assert card.card.usual_payment == Money("400.00")
+        assert card.card.payment_day == 22
+        assert card.card.payment_account == checking.handle
 
     def test_a_card_paid_in_full_keeps_an_editable_payment_day(self, accounts_view, app):
         from breadsched.gen.lib import AccountType
@@ -6267,8 +6267,8 @@ class TestAccountEditor:
         dialog._on_save(None)
 
         card = app.db.get_account_by_name("Monthly card")
-        assert card.pays_in_full is True
-        assert card.payment_day == 17
+        assert card.card.pays_in_full is True
+        assert card.card.payment_day == 17
         reopened = self._dialog(accounts_view, card)
         assert reopened.day_spin.get_sensitive() is True
         assert reopened.day_spin.get_value_as_int() == 17
@@ -6310,7 +6310,7 @@ class TestAccountEditor:
         dialog.asset_picker.set_selected(index)
         dialog._on_save(None)
 
-        assert app.db.get_account_by_name("Mortgage").linked_asset == house.handle
+        assert app.db.get_account_by_name("Mortgage").liability.linked_asset == house.handle
 
     def test_deleting_an_account_with_history_is_refused_with_a_reason(self, accounts_view, app):
         account = app.db.get_account_by_name("Assets:Checking Account")
@@ -6416,7 +6416,7 @@ class TestAccountDialogConstruction:
 
         app.open_book(populated_book)
         account = app.db.get_account_by_name("Assets:Checking Account")
-        account.fsa_years = [
+        account.fsa.years = [
             FsaFundingYear(
                 day(2026, 1, 1),
                 day(2026, 12, 31),
@@ -6448,10 +6448,10 @@ class TestAccountDialogConstruction:
         try:
             assert not dialog.fsa_dependent_care.get_active()
             dialog.fsa_dependent_care.set_active(True)
-            assert dialog.build().fsa_dependent_care
+            assert dialog.build().fsa.dependent_care
         finally:
             dialog.destroy()
-        account.fsa_dependent_care = True
+        account.fsa.dependent_care = True
         reopened = AccountDialog(window, app.db, account)
         try:
             assert reopened.fsa_dependent_care.get_active()
@@ -6475,10 +6475,10 @@ class TestAccountDialogConstruction:
             assert dialog.cost_basis_box.get_visible()
             assert dialog.cost_basis_picker.get_selected() == 0
             dialog.cost_basis_picker.set_selected(1)
-            assert dialog.build().cost_basis_method == "average"
+            assert dialog.build().investment.cost_basis_method == "average"
         finally:
             dialog.destroy()
-        account.cost_basis_method = "average"
+        account.investment.cost_basis_method = "average"
         reopened = AccountDialog(window, app.db, account)
         try:
             assert reopened.cost_basis_picker.get_selected() == 1

@@ -115,10 +115,11 @@ def _account_errors(
     if account.commodity is not None and db.get_commodity(account.commodity) is None:
         errors.append(ServiceError("account.commodity.not_found", ("commodity",)))
     errors.extend(_parent_errors(db, account))
-    errors.extend(_relationship_errors(db, account, existing))
+    # One check per per-type record (#339).
+    errors.extend(_liability_errors(db, account))
+    errors.extend(_card_errors(db, account, existing))
     errors.extend(_fsa_errors(account))
-    if account.cost_basis_method not in COST_BASIS_METHODS:
-        errors.append(ServiceError("account.cost_basis_method.invalid", ("cost_basis_method",)))
+    errors.extend(_investment_errors(account))
     if existing is not None and (existing.source_guid or existing.source_type):
         protected = ("name", "parent", "code", "description")
         changed = tuple(
@@ -157,26 +158,39 @@ def _parent_errors(db: DbSQLite, account: Account) -> list[ServiceError]:
     return []
 
 
-def _relationship_errors(
-    db: DbSQLite, account: Account, existing: Account | None
-) -> list[ServiceError]:
+def _liability_errors(db: DbSQLite, account: Account) -> list[ServiceError]:
+    """``account.liability``: a loan links only to an existing asset."""
+    linked_handle = account.liability.linked_asset
+    if linked_handle is None:
+        return []
+    linked = db.get_account(linked_handle)
+    if linked is None:
+        return [ServiceError("account.linked_asset.not_found", ("linked_asset",))]
+    if linked.account_class is not AccountClass.ASSET:
+        return [ServiceError("account.linked_asset.invalid", ("linked_asset",))]
+    return []
+
+
+def _investment_errors(account: Account) -> list[ServiceError]:
+    """``account.investment``: a known cost-basis method."""
+    if account.investment.cost_basis_method not in COST_BASIS_METHODS:
+        return [ServiceError("account.cost_basis_method.invalid", ("cost_basis_method",))]
+    return []
+
+
+def _card_errors(db: DbSQLite, account: Account, existing: Account | None) -> list[ServiceError]:
+    """``account.card``: terms a credit card can have, and its paying account."""
     errors: list[ServiceError] = []
-    if account.linked_asset is not None:
-        linked = db.get_account(account.linked_asset)
-        if linked is None:
-            errors.append(ServiceError("account.linked_asset.not_found", ("linked_asset",)))
-        elif linked.account_class is not AccountClass.ASSET:
-            errors.append(ServiceError("account.linked_asset.invalid", ("linked_asset",)))
-    if account.atype is not AccountType.CREDIT and account.card_payment_account is not None:
+    if account.atype is not AccountType.CREDIT and account.card.payment_account is not None:
         errors.append(ServiceError("account.card.type_required", ("card_payment_account",)))
-    if account.payment_day is not None and not 1 <= account.payment_day <= 28:
+    if account.card.payment_day is not None and not 1 <= account.card.payment_day <= 28:
         errors.append(ServiceError("account.card.payment_day.invalid", ("payment_day",)))
-    if account.carries_balance and account.usual_payment is None:
+    if account.carries_balance and account.card.usual_payment is None:
         errors.append(ServiceError("account.card.usual_payment.required", ("usual_payment",)))
-    if account.usual_payment is not None and account.usual_payment <= 0:
+    if account.card.usual_payment is not None and account.card.usual_payment <= 0:
         errors.append(ServiceError("account.card.usual_payment.non_positive", ("usual_payment",)))
-    if account.card_payment_account is not None:
-        payment = db.get_account(account.card_payment_account)
+    if account.card.payment_account is not None:
+        payment = db.get_account(account.card.payment_account)
         if payment is None:
             errors.append(
                 ServiceError("account.card.payment_account.not_found", ("payment_account",))
@@ -186,24 +200,25 @@ def _relationship_errors(
                 ServiceError("account.card.payment_account.invalid", ("payment_account",))
             )
         elif payment.hidden and (
-            existing is None or payment.handle != existing.card_payment_account
+            existing is None or payment.handle != existing.card.payment_account
         ):
             errors.append(ServiceError("account.card.payment_account.hidden", ("payment_account",)))
     return errors
 
 
 def _fsa_errors(account: Account) -> list[ServiceError]:
-    years = sorted(account.fsa_years, key=lambda year: year.start)
-    if account.fsa_dependent_care:
+    """``account.fsa``: plan years that do not overlap, and a dependent care plan's rules."""
+    years = sorted(account.fsa.years, key=lambda year: year.start)
+    if account.fsa.dependent_care:
         for index, year in enumerate(years):
             if year.carryover_limit is not None:
                 return [
                     ServiceError(
-                        "account.fsa.dependent_care.carryover",
+                        "account.fsa_dependent_care.carryover",
                         (f"fsa_years.{index}.carryover_limit",),
                     )
                 ]
     for index, (earlier, later) in enumerate(zip(years, years[1:], strict=False), 1):
         if later.start <= earlier.through:
-            return [ServiceError("account.fsa.years.overlap", (f"fsa_years.{index}",))]
+            return [ServiceError("account.fsa_years.overlap", (f"fsa_years.{index}",))]
     return []

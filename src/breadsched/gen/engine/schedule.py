@@ -429,10 +429,10 @@ def _payment_recorded(
 def _account_payment_amount(account: Account, balance: Money) -> Money:
     if balance <= 0:
         return Money(0)
-    if account.pays_in_full:
+    if account.card.pays_in_full:
         return balance
-    if account.usual_payment is not None and account.usual_payment > 0:
-        return min(balance, account.usual_payment)
+    if account.card.usual_payment is not None and account.card.usual_payment > 0:
+        return min(balance, account.card.usual_payment)
     return Money(0)
 
 
@@ -447,7 +447,7 @@ def _account_payment_definition(
     recurrence = Recurrence(
         PeriodType.MONTH,
         start=due,
-        day_of_month=account.payment_day,
+        day_of_month=account.card.payment_day,
     )
     suffix = f":{due.isoformat()}" if next_cycle else ""
     return AccountPaymentDefinition(
@@ -456,8 +456,8 @@ def _account_payment_definition(
         recurrence=recurrence,
         next_due=due,
         amount_due=amount,
-        payment_account=account.card_payment_account,
-        pays_in_full=account.pays_in_full,
+        payment_account=account.card.payment_account,
+        pays_in_full=account.card.pays_in_full,
         handle=f"account-payment:{account.handle}{suffix}",
         description=name,
         variables={},
@@ -486,7 +486,7 @@ def unconfigured_card_balances(
         if account.atype is AccountType.CREDIT
         and not account.hidden
         and not account.placeholder
-        and account.payment_day is None
+        and account.card.payment_day is None
         and account.handle not in covered
         and ledger.balance_recursive_amount(db, account.handle, as_of=today).value > 0
     ]
@@ -509,16 +509,16 @@ def account_payment_definitions(
         if (
             account.atype is not AccountType.CREDIT
             or account.hidden
-            or account.payment_day is None
+            or account.card.payment_day is None
             or account.handle in covered
         ):
             continue
-        candidate = add_months(month, 0, day=account.payment_day)
+        candidate = add_months(month, 0, day=account.card.payment_day)
         payment_recorded = today >= candidate and _payment_recorded(
             db,
             account.handle,
-            account.card_payment_account,
-            add_months(candidate, -1, day=account.payment_day) + timedelta(days=1),
+            account.card.payment_account,
+            add_months(candidate, -1, day=account.card.payment_day) + timedelta(days=1),
             today,
         )
         balance = ledger.balance_recursive_amount(db, account.handle, as_of=today).value
@@ -533,7 +533,7 @@ def account_payment_definitions(
                 definitions.append(
                     _account_payment_definition(account, name, candidate, overdue_amount)
                 )
-            following = add_months(month, 1, day=account.payment_day)
+            following = add_months(month, 1, day=account.card.payment_day)
             residual = max(balance - overdue_amount, Money(0))
             following_amount = _account_payment_amount(account, residual)
             if following_amount > 0:
@@ -544,7 +544,7 @@ def account_payment_definitions(
                 )
             continue
 
-        due = add_months(month, 1, day=account.payment_day) if payment_recorded else candidate
+        due = add_months(month, 1, day=account.card.payment_day) if payment_recorded else candidate
         amount = _account_payment_amount(account, balance)
         definitions.append(_account_payment_definition(account, name, due, amount))
     return sorted(definitions, key=lambda item: (item.name, item.next_due))

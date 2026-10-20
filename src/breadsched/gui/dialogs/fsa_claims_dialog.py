@@ -123,7 +123,7 @@ class _AllocationRow(Gtk.Frame):
         self._refresh_years()
         if allocation is not None:
             selected_account = self.accounts[self.account.get_selected()]
-            for index, year in enumerate(selected_account.fsa_years):
+            for index, year in enumerate(selected_account.fsa.years):
                 if year.start == allocation.funding_year_start:
                     self.year.set_selected(index)
                     break
@@ -143,16 +143,16 @@ class _AllocationRow(Gtk.Frame):
             self.year.set_model(Gtk.StringList.new([]))
             return
         account = self.accounts[self.account.get_selected()]
-        labels = [f"{year.start} – {year.through}" for year in account.fsa_years]
+        labels = [f"{year.start} – {year.through}" for year in account.fsa.years]
         self.year.set_model(Gtk.StringList.new(labels))
 
     def value(self) -> ClaimAllocationInput:
         if not self.accounts:
             raise ValueError("Create an FSA account and funding year first")
         account = self.accounts[self.account.get_selected()]
-        if not account.fsa_years:
+        if not account.fsa.years:
             raise ValueError("Selected FSA account has no funding year")
-        year = account.fsa_years[self.year.get_selected()]
+        year = account.fsa.years[self.year.get_selected()]
         target_text = self.target.get_text().strip()
         rejections: list[ClaimRejectionInput] = []
         for raw in self.rejections.get_text().split(";"):
@@ -327,7 +327,7 @@ class FsaClaimsDialog(BoundedWindow):
             year
             for account in self.db.iter_accounts()
             if account.atype is AccountType.FSA
-            for year in account.fsa_years
+            for year in account.fsa.years
         ]
         candidate_start = min((year.start for year in fsa_years), default=None)
         for transaction in self.db.iter_transactions():

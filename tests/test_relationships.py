@@ -192,7 +192,7 @@ class TestAccountManagement:
         capsys.readouterr()
         db = open_book(book_path)
         loan = db.get_account_by_name("Liabilities:Mortgage Easton")
-        assert loan.linked_asset == db.get_account_by_name("Assets:Home Easton").handle
+        assert loan.liability.linked_asset == db.get_account_by_name("Assets:Home Easton").handle
         db.close()
 
     def test_a_card_records_how_it_is_used(self, book_path, capsys):
@@ -217,9 +217,9 @@ class TestAccountManagement:
         db = open_book(book_path)
         card = db.get_account_by_name("Liabilities:Visa")
         assert card.carries_balance is True
-        assert card.usual_payment == Money("400.00")
-        assert card.payment_day == 22
-        assert card.card_payment_account == db.get_account_by_name("Assets:Checking").handle
+        assert card.card.usual_payment == Money("400.00")
+        assert card.card.payment_day == 22
+        assert card.card.payment_account == db.get_account_by_name("Assets:Checking").handle
         db.close()
 
         cli(
@@ -235,13 +235,13 @@ class TestAccountManagement:
         )
         capsys.readouterr()
         db = open_book(book_path)
-        assert db.get_account_by_name("Liabilities:Visa").card_payment_account is None
+        assert db.get_account_by_name("Liabilities:Visa").card.payment_account is None
         db.close()
 
     def test_a_card_paid_in_full_is_not_a_carried_balance(self, book_path, capsys):
         db = open_book(book_path)
         card = db.get_account_by_name("Liabilities:Visa")
-        assert card.pays_in_full is True
+        assert card.card.pays_in_full is True
         assert card.carries_balance is False
         db.close()
 
@@ -356,7 +356,7 @@ class TestInference:
         cli(["infer", str(book_path)])
         assert "Nothing is changed" in capsys.readouterr().out
         db = open_book(book_path)
-        assert db.get_account_by_name("Liabilities:Mortgage Easton").linked_asset is None
+        assert db.get_account_by_name("Liabilities:Mortgage Easton").liability.linked_asset is None
         db.close()
 
     def test_applying_writes_them(self, book_path, capsys):
@@ -366,10 +366,10 @@ class TestInference:
         try:
             loan = db.get_account_by_name("Liabilities:Mortgage Easton")
             card = db.get_account_by_name("Liabilities:Visa")
-            assert loan.linked_asset is not None
-            assert card.payment_day == 22
+            assert loan.liability.linked_asset is not None
+            assert card.card.payment_day == 22
             assert card.carries_balance is True
-            assert card.card_payment_account == db.get_account_by_name("Assets:Checking").handle
+            assert card.card.payment_account == db.get_account_by_name("Assets:Checking").handle
         finally:
             db.close()
 
@@ -379,10 +379,10 @@ class TestInference:
         try:
             suggestions = inference.infer_all(db).suggestions
             assert inference.apply_suggestions(db, suggestions) == len(suggestions)
-            assert db.get_account_by_name("Liabilities:Visa").payment_day == 22
+            assert db.get_account_by_name("Liabilities:Visa").card.payment_day == 22
 
             assert db.undo() is True
-            assert db.get_account_by_name("Liabilities:Visa").payment_day is None
+            assert db.get_account_by_name("Liabilities:Visa").card.payment_day is None
         finally:
             db.close()
 

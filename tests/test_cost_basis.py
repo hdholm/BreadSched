@@ -197,7 +197,7 @@ def _use_average(db, account):
     from breadsched.gen.services import SaveAccount, save_account
 
     source = Account.from_dict(account.serialize())
-    account.cost_basis_method = "average"
+    account.investment.cost_basis_method = "average"
     result = save_account(db, SaveAccount(account, existing_handle=account.handle, source=source))
     assert result.ok, result.errors
     return db.get_account(account.handle)
@@ -231,10 +231,10 @@ def test_an_unknown_method_is_refused_and_the_account_kept(db, book):
 
     account, _fund_commodity, _usd = _fund(db, book)
     source = Account.from_dict(account.serialize())
-    account.cost_basis_method = "lifo"
+    account.investment.cost_basis_method = "lifo"
     result = save_account(db, SaveAccount(account, existing_handle=account.handle, source=source))
     assert [error.code for error in result.errors] == ["account.cost_basis_method.invalid"]
-    assert db.get_account(account.handle).cost_basis_method == "fifo"
+    assert db.get_account(account.handle).investment.cost_basis_method == "fifo"
 
 
 def test_web_and_cli_choose_the_method(db, book, tmp_path, capsys):
@@ -253,7 +253,7 @@ def test_web_and_cli_choose_the_method(db, book, tmp_path, capsys):
     }
     with pytest.raises(Exception, match="cost"):
         account_cost_basis_save(api, {"handle": account.handle, "method": "lifo"})
-    assert db.get_account(account.handle).cost_basis_method == "average"
+    assert db.get_account(account.handle).investment.cost_basis_method == "average"
     with pytest.raises(ValueError, match="Investment or Retirement"):
         account_cost_basis_save(api, {"handle": book.checking, "method": "average"})
 
@@ -273,7 +273,7 @@ def test_web_and_cli_choose_the_method(db, book, tmp_path, capsys):
     reopened = DbSQLite()
     reopened.load(str(path), mode="r")
     try:
-        assert reopened.get_account(account.handle).cost_basis_method == "fifo"
+        assert reopened.get_account(account.handle).investment.cost_basis_method == "fifo"
     finally:
         reopened.close()
 

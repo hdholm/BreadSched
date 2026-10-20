@@ -715,9 +715,9 @@ def linked_pairs(db: DbSQLite) -> list[tuple[Account, Account]]:
     """Every loan that names the asset it was borrowed against."""
     pairs: list[tuple[Account, Account]] = []
     for loan in db.iter_accounts():
-        if loan.account_class is not AccountClass.LIABILITY or not loan.linked_asset:
+        if loan.account_class is not AccountClass.LIABILITY or not loan.liability.linked_asset:
             continue
-        asset = db.get_account(loan.linked_asset)
+        asset = db.get_account(loan.liability.linked_asset)
         if asset is not None:
             pairs.append((loan, asset))
     return pairs
@@ -1089,7 +1089,7 @@ def _account_group_result(db: DbSQLite, account: Account, today: date) -> GroupA
             missing_quotes=aggregate.missing_quotes,
             members=tuple(members),
         )
-    if not account.fsa_years:
+    if not account.fsa.years:
         return GroupAccountResult(
             name=name,
             total=None,
@@ -1098,7 +1098,7 @@ def _account_group_result(db: DbSQLite, account: Account, today: date) -> GroupA
         )
     applicable = [
         fsa.year_status(db, account, year, as_of=today)
-        for year in account.fsa_years
+        for year in account.fsa.years
         if year.start <= today <= (year.runout_through or year.through)
     ]
     if not applicable:
@@ -1130,7 +1130,7 @@ def _loan_end_date(db: DbSQLite, handles: list[str], paid_off: set[str]) -> date
                 continue
             if candidate.account_class is not AccountClass.LIABILITY:
                 continue
-            if candidate.atype is AccountType.LOAN or candidate.linked_asset:
+            if candidate.atype is AccountType.LOAN or candidate.liability.linked_asset:
                 loans.add(candidate.handle)
 
     latest: date | None = None
@@ -1151,7 +1151,7 @@ def _paid_off_loans(db: DbSQLite, today: date) -> set[str]:
     for account in db.iter_accounts():
         if account.account_class is not AccountClass.LIABILITY:
             continue
-        if account.atype is not AccountType.LOAN and not account.linked_asset:
+        if account.atype is not AccountType.LOAN and not account.liability.linked_asset:
             continue
         if ledger.balance_recursive_amount(db, account.handle, as_of=today).value:
             continue

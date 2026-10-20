@@ -26,7 +26,7 @@ YEAR = date(2026, 1, 1)
 @pytest.fixture
 def fsa(db, book):
     account = Account(name="Health FSA", atype=AccountType.FSA, parent=book.assets)
-    account.fsa_years = [
+    account.fsa.years = [
         FsaFundingYear(YEAR, date(2026, 12, 31), Money("1500.00"), date(2027, 3, 31))
     ]
     medical = Account(name="Medical", atype=AccountType.EXPENSE, parent=book.expenses)

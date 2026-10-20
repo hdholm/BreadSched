@@ -42,7 +42,7 @@ RUNOUT = date(2027, 3, 31)
 @pytest.fixture
 def fsa_account(db, book):
     account = Account(name="Health FSA", atype=AccountType.FSA, parent=book.assets)
-    account.fsa_years = [FsaFundingYear(YEAR, date(2026, 12, 31), Money("1000.00"), RUNOUT)]
+    account.fsa.years = [FsaFundingYear(YEAR, date(2026, 12, 31), Money("1000.00"), RUNOUT)]
     with db.transaction("Add FSA") as txn:
         db.add_account(account, txn)
     return account
@@ -156,7 +156,7 @@ def test_linking_a_repayment_settles_the_claim_and_gives_the_election_back(
     db, book, fsa_account, reimbursed_claim
 ):
     handle, payment, credit = reimbursed_claim
-    year = fsa_account.fsa_years[0]
+    year = fsa_account.fsa.years[0]
     before = fsa.year_status(db, fsa_account, year, as_of=date(2026, 6, 1))
     assert (before.used, before.funded) == (Money("200.00"), Money(0))
 
@@ -314,7 +314,7 @@ def test_a_bad_repayment_is_refused_and_the_stored_claim_is_kept(
     handle, payment, credit = reimbursed_claim
     before = db.get_fsa_claim(handle).serialize()
     other = Account(name="Other FSA", atype=AccountType.FSA, parent=book.assets)
-    other.fsa_years = list(fsa_account.fsa_years)
+    other.fsa.years = list(fsa_account.fsa.years)
     with db.transaction("Other FSA") as txn:
         db.add_account(other, txn)
     elsewhere = _repaid(db, book, other, date(2026, 5, 10), "50.00")

@@ -194,8 +194,8 @@ def test_imported_security_and_commitments_first_dashboard_is_truthful(db, gnuca
     assert "Card payments not set up" in html
 
     card = db.get_account(source.card)
-    card.payment_day = 20
-    card.pays_in_full = True
+    card.card.payment_day = 20
+    card.card.pays_in_full = True
     with db.transaction("Configure card") as txn:
         db.commit_account(card, txn)
     configured = dashboard.build(db, as_of=date(2026, 2, 15))
@@ -598,9 +598,9 @@ class TestCreditCardBills:
     @staticmethod
     def _card(db, book, name, balance, *, pays_in_full, usual_payment=None):
         card = Account(name=name, atype=AccountType.CREDIT, parent=book.liabilities)
-        card.pays_in_full = pays_in_full
-        card.usual_payment = Money(usual_payment) if usual_payment else None
-        card.payment_day = 20
+        card.card.pays_in_full = pays_in_full
+        card.card.usual_payment = Money(usual_payment) if usual_payment else None
+        card.card.payment_day = 20
         with db.transaction(name) as txn:
             db.add_account(card, txn)
             if Money(balance):
@@ -745,7 +745,7 @@ class TestLiquidityAndEmergencyFund:
     def test_an_expense_can_be_excluded_without_hiding_the_bill(self, db, book):
         expense = db.get_account(book.groceries)
         assert expense is not None
-        expense.emergency_fund_override = False
+        expense.planning.emergency_fund = False
         bill = ScheduledTransaction(
             name="Optional service",
             recurrence=Recurrence(PeriodType.MONTH, start=TODAY),
@@ -1025,7 +1025,7 @@ class TestLoansPairWithTheirAssets:
                 ),
                 txn,
             )
-            mortgage.linked_asset = house.handle
+            mortgage.liability.linked_asset = house.handle
             db.commit_account(mortgage, txn)
         return house, mortgage
 
@@ -1367,7 +1367,7 @@ class TestSeveralLoansOnOneAsset:
                 ("Mortgage B", "Home B", "217386.69"),
             ):
                 loan = Account(name=name, atype=AccountType.LIABILITY, parent=book.liabilities)
-                loan.linked_asset = made[asset].handle
+                loan.liability.linked_asset = made[asset].handle
                 loan.group = asset
                 db.add_account(loan, txn)
                 made[name] = loan
@@ -1573,7 +1573,7 @@ class TestFsaGroupAvailability:
 
         account = Account(name="Benefit account", atype=AccountType.BANK, parent=book.assets)
         account.atype = AccountType.FSA
-        account.fsa_years = [FsaFundingYear(**year) for year in years]
+        account.fsa.years = [FsaFundingYear(**year) for year in years]
         with db.transaction("benefit account") as txn:
             db.add_account(account, txn)
         return account
@@ -1666,7 +1666,7 @@ class TestPaidOffLoans:
         loan = Account(name="Loan", atype=AccountType.LIABILITY, parent=book.liabilities)
         asset.group = "Property"
         loan.group = "Property"
-        loan.linked_asset = asset.handle
+        loan.liability.linked_asset = asset.handle
         stale = ScheduledTransaction(
             name="Old loan payment",
             recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 10, 1)),
@@ -1707,7 +1707,7 @@ class TestPaidOffLoans:
         loan = Account(name="Future loan", atype=AccountType.LIABILITY, parent=book.liabilities)
         asset.group = "Property"
         loan.group = "Property"
-        loan.linked_asset = asset.handle
+        loan.liability.linked_asset = asset.handle
         with db.transaction("future loan") as txn:
             db.add_account(asset, txn)
             db.add_account(loan, txn)
@@ -1724,8 +1724,8 @@ class TestPaidOffLoans:
         asset.group = "Property"
         closed.group = "Property"
         active.group = "Property"
-        closed.linked_asset = asset.handle
-        active.linked_asset = asset.handle
+        closed.liability.linked_asset = asset.handle
+        active.liability.linked_asset = asset.handle
         with db.transaction("two loans") as txn:
             for account in (asset, closed, active):
                 db.add_account(account, txn)

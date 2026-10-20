@@ -83,7 +83,7 @@ def sale_lots(db: DbSQLite, transaction: str, split: str) -> ServiceResult[SaleL
             sale,
             lots_before_sale(db, account, split),
             found.lot_picks,
-            account.cost_basis_method,
+            account.investment.cost_basis_method,
         )
     )
 

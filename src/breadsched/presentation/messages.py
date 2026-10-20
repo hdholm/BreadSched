@@ -47,10 +47,10 @@ _SERVICE_MESSAGES = {
     "account.card.payment_account.not_found": "The card payment account no longer exists",
     "account.card.payment_account.invalid": "Choose a Bank or Cash payment account",
     "account.card.payment_account.hidden": "A hidden account cannot fund a new card payment",
-    "account.fsa.dependent_care.carryover": (
+    "account.fsa_dependent_care.carryover": (
         "A dependent care FSA cannot carry unused money into the next plan year"
     ),
-    "account.fsa.years.overlap": "FSA funding years cannot overlap",
+    "account.fsa_years.overlap": "FSA funding years cannot overlap",
     "account.source_fields.read_only": (
         "Imported name, parent, code, and description are controlled by the source book"
     ),

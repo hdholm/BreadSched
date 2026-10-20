@@ -685,7 +685,7 @@ class TestMonthlyStateLedger:
         house = Account(name="House", atype=AccountType.ASSET, parent=book.assets)
         escrow = Account(name="Escrow", atype=AccountType.ESCROW, parent=book.assets)
         mortgage = Account(name="Mortgage", atype=AccountType.LOAN, parent=book.liabilities)
-        mortgage.linked_asset = house.handle
+        mortgage.liability.linked_asset = house.handle
         payment = ScheduledTransaction(
             name="Mortgage payment",
             recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),

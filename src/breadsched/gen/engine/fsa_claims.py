@@ -62,7 +62,7 @@ def claim_year_window(db: DbSQLite, service_date: date) -> tuple[date, date] | N
         if account.atype is not AccountType.FSA:
             continue
         matches.extend(
-            year for year in account.fsa_years if year.start <= service_date <= year.service_through
+            year for year in account.fsa.years if year.start <= service_date <= year.service_through
         )
     if not matches:
         return None
@@ -142,7 +142,7 @@ def suggest_claims_for_transaction(
                 compatible = any(
                     year.start <= claim.service_date <= year.service_through
                     and transaction.post_date <= (year.runout_through or year.through)
-                    for year in account.fsa_years
+                    for year in account.fsa.years
                 )
                 if not compatible:
                     continue
@@ -344,7 +344,7 @@ def _allocation_year(db: DbSQLite, allocation: FsaClaimAllocation) -> FsaFunding
             "claim allocation must reference an FSA account",
         )
     year = next(
-        (item for item in account.fsa_years if item.start == allocation.funding_year_start),
+        (item for item in account.fsa.years if item.start == allocation.funding_year_start),
         None,
     )
     if year is None:
@@ -561,7 +561,7 @@ def attachment_roles(db: DbSQLite, transaction: Transaction) -> list[AttachmentR
             if role == "reimbursement":
                 years = tuple(
                     year.start
-                    for year in account.fsa_years
+                    for year in account.fsa.years
                     if transaction.post_date <= (year.runout_through or year.through)
                 )
             option = AttachmentRole(role, split.handle, account.handle, years)
@@ -649,11 +649,11 @@ def _link(
         claimed = {
             item.funding_year_start for item in claim.allocations if item.account == account.handle
         }
-        eligible_years = [year for year in account.fsa_years if year.start in claimed]
+        eligible_years = [year for year in account.fsa.years if year.start in claimed]
     else:
         eligible_years = [
             year
-            for year in account.fsa_years
+            for year in account.fsa.years
             if transaction.post_date <= (year.runout_through or year.through)
         ]
     if funding_year_start is not None:
@@ -792,7 +792,7 @@ def claim_summary(
         account = db.get_account(allocation.account)
         if account is None:
             raise ValueError("claim allocation account no longer exists")
-        dependent_care = dependent_care and account.fsa_dependent_care
+        dependent_care = dependent_care and account.fsa.dependent_care
         year = _allocation_year(db, allocation)
         year_status = fsa.year_status(db, account, year, as_of=when)
         available = available + year_status.remaining

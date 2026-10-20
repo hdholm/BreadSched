@@ -358,8 +358,8 @@ def _paying_cash_account(db: DbSQLite, receivable: Receivable) -> str | None:
                 continue
             if account.is_spendable_cash:
                 return account.handle
-            if account.atype is AccountType.CREDIT and account.card_payment_account:
-                return account.card_payment_account
+            if account.atype is AccountType.CREDIT and account.card.payment_account:
+                return account.card.payment_account
     return None
 
 

@@ -9,6 +9,7 @@ their exact GnuCash source type for re-import and diagnostics.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field as _field
 from datetime import date
 from decimal import Decimal
 from enum import Enum
@@ -21,9 +22,14 @@ __all__ = [
     "Account",
     "AccountClass",
     "AccountType",
+    "CardTerms",
     "FsaFundingYear",
+    "FsaPlan",
     "GnuCashAccountField",
     "GnuCashAccountType",
+    "InvestmentSettings",
+    "LiabilityTerms",
+    "PlanningChoices",
 ]
 
 
@@ -297,6 +303,78 @@ class GnuCashAccountField:
         )
 
 
+# ------------------------------------------------------- per-type settings (#339)
+#
+# Each record holds the settings one kind of account uses, so an editor shows, and
+# validation checks, the record its account type has. Every account carries all of
+# them (a type can change, and a changed type keeps its old settings), and the
+# stored form is the flat one earlier versions wrote.
+
+
+@dataclass(slots=True)
+class CardTerms:
+    """How a credit card is paid."""
+
+    #: Whether the balance is cleared every month. A card paid in full is a
+    #: payment channel; one carrying a balance is a debt that compounds, and the
+    #: two do not belong in a forecast together.
+    pays_in_full: bool = True
+    #: The payment usually made on a card carrying a balance.
+    usual_payment: Money | None = None
+    #: Day of the month a card payment is due, inferred on import where possible.
+    payment_day: int | None = None
+    #: Cash account normally used to pay this card. This is BreadSched-owned
+    #: relationship data: GnuCash transactions imply it but do not store it on the
+    #: card account itself.
+    payment_account: str | None = None
+
+
+@dataclass(slots=True)
+class LiabilityTerms:
+    """What a debt costs, and what a loan was borrowed against."""
+
+    #: Annual cost of a liability, e.g. 0.1899.
+    annual_interest: Decimal = Decimal("0")
+    #: For a loan: the asset it was borrowed against. A mortgage without its house
+    #: is a debt with no counterpart, and reports equity that is wrong by the value
+    #: of the property.
+    linked_asset: str | None = None
+
+
+@dataclass(slots=True)
+class FsaPlan:
+    """A flexible spending account's plan years."""
+
+    years: list[FsaFundingYear] = _field(default_factory=list)
+    #: A dependent care FSA: only what has been contributed is available, claims
+    #: need no EOB, and nothing carries over. Otherwise a health care FSA.
+    dependent_care: bool = False
+
+
+@dataclass(slots=True)
+class InvestmentSettings:
+    """How a holding grows and how its sales are costed."""
+
+    #: Investment growth, e.g. 0.06.
+    annual_return: Decimal = Decimal("0")
+    #: How a sale's cost is taken from a security's lots: "fifo" (oldest shares
+    #: first) or "average" (the average cost of every share held).
+    cost_basis_method: str = "fifo"
+
+
+@dataclass(slots=True)
+class PlanningChoices:
+    """The household's planning choices that override what the type implies."""
+
+    exclude_from_projection: bool = False
+    #: None means the default (included) for an eligible type. Ineligible types
+    #: are always excluded regardless of this retained preference.
+    emergency_fund: bool | None = None
+    #: Whether the account is tax-relevant. None follows GnuCash's "tax related"
+    #: mark (see ``engine.tax_year.is_tax_relevant``).
+    tax_relevant: bool | None = None
+
+
 class Account(PrimaryObject):
     """A node in the chart of accounts."""
 
@@ -337,48 +415,18 @@ class Account(PrimaryObject):
         self.source_type: str = ""
         #: Typed, read-only GnuCash fields which BreadSched does not interpret.
         self.source_fields: list[GnuCashAccountField] = []
-        self.fsa_years: list[FsaFundingYear] = []
-        #: A dependent care FSA: only what has been contributed is available, claims
-        #: need no EOB, and nothing carries over. Otherwise a health care FSA.
-        self.fsa_dependent_care: bool = False
-
-        # Projection hints.  These are what turn a chart of accounts into a model.
-        self.annual_return: Decimal = Decimal("0")  # investment growth, e.g. 0.06
-        #: How a sale's cost is taken from a security's lots: "fifo" (oldest shares
-        #: first) or "average" (the average cost of every share held).
-        self.cost_basis_method: str = "fifo"
-        self.annual_interest: Decimal = Decimal("0")  # cost of a liability, e.g. 0.1899
-        self.exclude_from_projection: bool = False
+        # Per-type settings: these are what turn a chart of accounts into a model.
+        self.card = CardTerms()
+        self.liability = LiabilityTerms()
+        self.fsa = FsaPlan()
+        self.investment = InvestmentSettings()
+        self.planning = PlanningChoices()
 
         #: Dashboard group this account belongs to, by name. Held on the account
         #: rather than only in the dashboard's configuration so that adding an
         #: account can place it immediately, and so the answer survives a group
         #: being renamed or rebuilt.
         self.group: str = ""
-        #: For a loan: the asset it was borrowed against. A mortgage without its
-        #: house is a debt with no counterpart, and reports equity that is wrong by
-        #: the value of the property.
-        self.linked_asset: str | None = None
-        #: For a credit card: whether the balance is cleared every month. A card
-        #: paid in full is a payment channel; one carrying a balance is a debt that
-        #: compounds, and the two do not belong in a forecast together.
-        self.pays_in_full: bool = True
-        #: The payment usually made on a card carrying a balance.
-        self.usual_payment: Money | None = None
-        #: Day of the month a card payment is due, inferred on import where
-        #: possible.
-        self.payment_day: int | None = None
-        #: Cash account normally used to pay this card. This is BreadSched-owned
-        #: relationship data: GnuCash transactions imply it but do not store it on
-        #: the card account itself.
-        self.card_payment_account: str | None = None
-        #: Optional household choice. None means the default (included) for an
-        #: eligible type. Ineligible types are always excluded regardless of this
-        #: retained preference.
-        self.emergency_fund_override: bool | None = None
-        #: BreadSched's choice of whether the account is tax-relevant. None follows
-        #: GnuCash's "tax related" mark (see ``engine.tax_year.is_tax_relevant``).
-        self.tax_relevant_override: bool | None = None
 
     # -------------------------------------------------------------- convenience
 
@@ -393,7 +441,7 @@ class Account(PrimaryObject):
     @property
     def carries_balance(self) -> bool:
         """A card that is not cleared monthly, and so accrues interest."""
-        return self.atype is AccountType.CREDIT and not self.pays_in_full
+        return self.atype is AccountType.CREDIT and not self.card.pays_in_full
 
     @property
     def is_spendable_cash(self) -> bool:
@@ -410,7 +458,7 @@ class Account(PrimaryObject):
         """Whether positive economic activity contributes to fund sizing."""
         if not self.emergency_fund_eligible:
             return False
-        return self.emergency_fund_override is not False
+        return self.planning.emergency_fund is not False
 
     def sign(self) -> int:
         """Multiplier that turns a raw split total into a displayed balance."""
@@ -435,27 +483,28 @@ class Account(PrimaryObject):
             "source_guid": self.source_guid,
             "source_type": self.source_type,
             "source_fields": [field.serialize() for field in self.source_fields],
-            "fsa_years": [year.serialize() for year in self.fsa_years],
-            "fsa_dependent_care": self.fsa_dependent_care,
-            "annual_return": str(self.annual_return),
-            "cost_basis_method": self.cost_basis_method,
-            "annual_interest": str(self.annual_interest),
-            "exclude_from_projection": self.exclude_from_projection,
+            # The per-type records are stored flat, as before #339.
+            "fsa_years": [year.serialize() for year in self.fsa.years],
+            "fsa_dependent_care": self.fsa.dependent_care,
+            "annual_return": str(self.investment.annual_return),
+            "cost_basis_method": self.investment.cost_basis_method,
+            "annual_interest": str(self.liability.annual_interest),
+            "exclude_from_projection": self.planning.exclude_from_projection,
             "group": self.group,
-            "linked_asset": self.linked_asset,
-            "pays_in_full": self.pays_in_full,
+            "linked_asset": self.liability.linked_asset,
+            "pays_in_full": self.card.pays_in_full,
             "usual_payment": (
-                [self.usual_payment.numerator, self.usual_payment.denominator]
-                if self.usual_payment is not None
+                [self.card.usual_payment.numerator, self.card.usual_payment.denominator]
+                if self.card.usual_payment is not None
                 else None
             ),
-            "payment_day": self.payment_day,
-            "card_payment_account": self.card_payment_account,
-            "emergency_fund": self.emergency_fund_override,
+            "payment_day": self.card.payment_day,
+            "card_payment_account": self.card.payment_account,
+            "emergency_fund": self.planning.emergency_fund,
             # Written only when set, so every other account's stored form is unchanged.
             **(
-                {"tax_relevant": self.tax_relevant_override}
-                if self.tax_relevant_override is not None
+                {"tax_relevant": self.planning.tax_relevant}
+                if self.planning.tax_relevant is not None
                 else {}
             ),
         }
@@ -500,24 +549,34 @@ class Account(PrimaryObject):
             )
             self.source_notes = legacy_notes if imported_note == legacy_notes else ""
             self.notes = "" if imported_note == legacy_notes else legacy_notes
-        self.fsa_years = [FsaFundingYear.from_dict(year) for year in data.get("fsa_years", [])]
-        self.fsa_dependent_care = bool(data.get("fsa_dependent_care", False))
-        self.annual_return = Decimal(data.get("annual_return", "0"))
-        self.cost_basis_method = str(data.get("cost_basis_method", "fifo"))
-        self.annual_interest = Decimal(data.get("annual_interest", "0"))
-        self.exclude_from_projection = data.get("exclude_from_projection", False)
+        self.fsa = FsaPlan(
+            years=[FsaFundingYear.from_dict(year) for year in data.get("fsa_years", [])],
+            dependent_care=bool(data.get("fsa_dependent_care", False)),
+        )
+        self.investment = InvestmentSettings(
+            annual_return=Decimal(data.get("annual_return", "0")),
+            cost_basis_method=str(data.get("cost_basis_method", "fifo")),
+        )
         self.group = data.get("group", "")
-        self.linked_asset = data.get("linked_asset")
-        self.pays_in_full = data.get("pays_in_full", True)
+        self.liability = LiabilityTerms(
+            annual_interest=Decimal(data.get("annual_interest", "0")),
+            linked_asset=data.get("linked_asset"),
+        )
         usual = data.get("usual_payment")
-        self.usual_payment = Money(*usual) if usual else None
-        self.payment_day = data.get("payment_day")
         payment_account = data.get("card_payment_account")
-        self.card_payment_account = str(payment_account) if payment_account else None
+        self.card = CardTerms(
+            pays_in_full=data.get("pays_in_full", True),
+            usual_payment=Money(*usual) if usual else None,
+            payment_day=data.get("payment_day"),
+            payment_account=str(payment_account) if payment_account else None,
+        )
         raw_emergency = data.get("emergency_fund")
-        self.emergency_fund_override = bool(raw_emergency) if raw_emergency is not None else None
         raw_tax = data.get("tax_relevant")
-        self.tax_relevant_override = bool(raw_tax) if raw_tax is not None else None
+        self.planning = PlanningChoices(
+            exclude_from_projection=data.get("exclude_from_projection", False),
+            emergency_fund=bool(raw_emergency) if raw_emergency is not None else None,
+            tax_relevant=bool(raw_tax) if raw_tax is not None else None,
+        )
 
     def __repr__(self) -> str:
         return f"<Account {self.name!r} {self.atype.value}>"

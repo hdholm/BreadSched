@@ -37,7 +37,7 @@ def _add_investments_and_a_loan(db):
     opening = db.get_account_by_name("Equity:Opening balances").handle
     retirement = Account(name="401k", atype=AccountType.RETIREMENT, parent=assets)
     loan = Account(name="Car loan", atype=AccountType.LOAN, parent=liabilities)
-    loan.annual_interest = Decimal("0.06")
+    loan.liability.annual_interest = Decimal("0.06")
     with db.transaction("Bridge accounts") as txn:
         db.add_account(retirement, txn)
         db.add_account(loan, txn)

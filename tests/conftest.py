@@ -139,12 +139,12 @@ def book(db):
         checking = add("Checking", AccountType.BANK, assets.handle)
         savings = add("Savings", AccountType.BANK, assets.handle)
         brokerage = add("Brokerage", AccountType.INVESTMENT, assets.handle)
-        brokerage.annual_return = Decimal("0.07")
+        brokerage.investment.annual_return = Decimal("0.07")
         db.commit_account(brokerage, txn)
 
         liabilities = add("Liabilities", AccountType.LIABILITY, root.handle, placeholder=True)
         card = add("Credit Card", AccountType.CREDIT, liabilities.handle)
-        card.annual_interest = Decimal("0.1899")
+        card.liability.annual_interest = Decimal("0.1899")
         db.commit_account(card, txn)
 
         equity = add("Equity", AccountType.EQUITY, root.handle, placeholder=True)

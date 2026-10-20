@@ -417,8 +417,8 @@ def cmd_account(args: argparse.Namespace) -> int:
             for account in sorted(db.iter_accounts(), key=db.full_name):
                 if account.is_root:
                     continue
-                linked = db.get_account(account.linked_asset or "")
-                payment_account = db.get_account(account.card_payment_account or "")
+                linked = db.get_account(account.liability.linked_asset or "")
+                payment_account = db.get_account(account.card.payment_account or "")
                 rows.append(
                     [
                         db.full_name(account),
@@ -427,7 +427,7 @@ def cmd_account(args: argparse.Namespace) -> int:
                         db.full_name(linked) if linked else "",
                         ""
                         if account.atype is not AccountType.CREDIT
-                        else ("monthly" if account.pays_in_full else "carries"),
+                        else ("monthly" if account.card.pays_in_full else "carries"),
                         db.full_name(payment_account) if payment_account else "",
                     ]
                 )
@@ -525,33 +525,33 @@ def _apply_account_options(db: DbSQLite, account: Account, args) -> None:
     if args.dependent_care is not None:
         if account.atype is not AccountType.FSA:
             raise CommandError("--dependent-care applies only to an FSA account")
-        account.fsa_dependent_care = args.dependent_care
+        account.fsa.dependent_care = args.dependent_care
     if args.cost_basis is not None:
         if account.atype not in {AccountType.INVESTMENT, AccountType.RETIREMENT}:
             raise CommandError("--cost-basis applies only to an Investment or Retirement account")
-        account.cost_basis_method = args.cost_basis
+        account.investment.cost_basis_method = args.cost_basis
     if args.group is not None:
         account.group = args.group
     if args.linked_asset:
-        account.linked_asset = resolve_account(db, args.linked_asset).handle
+        account.liability.linked_asset = resolve_account(db, args.linked_asset).handle
     if args.carries_balance is not None:
-        account.pays_in_full = not args.carries_balance
+        account.card.pays_in_full = not args.carries_balance
     if args.usual_payment:
-        account.usual_payment = Money(args.usual_payment)
+        account.card.usual_payment = Money(args.usual_payment)
     if args.payment_day:
-        account.payment_day = args.payment_day
+        account.card.payment_day = args.payment_day
     if args.payment_account is not None:
         if account.atype is not AccountType.CREDIT:
             raise CommandError("--payment-account applies only to a Credit card account")
         if args.payment_account.strip().lower() == "none":
-            account.card_payment_account = None
+            account.card.payment_account = None
             return
         payment = resolve_account(db, args.payment_account)
         if not payment.atype.is_cash_like:
             raise CommandError("--payment-account must name a Bank or Cash account")
-        account.card_payment_account = payment.handle
+        account.card.payment_account = payment.handle
     elif account.atype is not AccountType.CREDIT:
-        account.card_payment_account = None
+        account.card.payment_account = None
 
 
 def register(add: AddCommand) -> None:

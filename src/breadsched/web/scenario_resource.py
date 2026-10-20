@@ -119,9 +119,9 @@ def scenarios_report(db: DbSQLite, base: Scenario) -> dict:
                 "name": db.full_name(account),
                 "class": account.account_class.value,
                 "account_rate": (
-                    account.annual_interest
+                    account.liability.annual_interest
                     if account.account_class is AccountClass.LIABILITY
-                    else account.annual_return
+                    else account.investment.annual_return
                 ),
             }
         )

@@ -10,6 +10,18 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a288 - 2026-10-20
+
+- **Account settings grouped by type (#339).** Account carried every type's
+  settings as flat fields. They are now records: `card` (`CardTerms`), `liability`
+  (`LiabilityTerms`), `fsa` (`FsaPlan`), `investment` (`InvestmentSettings`), and
+  `planning` (`PlanningChoices`), with every caller moved to them and the account
+  service's validation split into one check per record. The stored form is
+  unchanged (no schema change), and inference suggestions keep their field names,
+  mapped to records by `Suggestion.apply`. Tests pin the stored form, independent
+  records per account, the derived card and emergency-fund rules, and suggestion
+  application.
+
 ## 0.2.0a287 - 2026-10-20
 
 - **Dashboard group membership is stored once (#337, schema 12).** Both

@@ -30,7 +30,7 @@ YEAR = date(2026, 1, 1)
 @pytest.fixture
 def flows(db, book):
     fsa_account = Account(name="Health FSA", atype=AccountType.FSA, parent=book.assets)
-    fsa_account.fsa_years = [
+    fsa_account.fsa.years = [
         FsaFundingYear(YEAR, date(2026, 12, 31), Money("1200.00"), date(2027, 3, 31))
     ]
     medical = Account(name="Medical", atype=AccountType.EXPENSE, parent=book.expenses)
@@ -96,7 +96,7 @@ class TestBenefitUsage:
     def test_usage_counts_each_path_once_and_a_refund_restores_election(self, db, flows):
         account, _medical, _posted = flows
 
-        status = fsa.year_status(db, account, account.fsa_years[0], as_of=date(2026, 4, 1))
+        status = fsa.year_status(db, account, account.fsa.years[0], as_of=date(2026, 4, 1))
 
         # Payroll is the only funding: the provider refund is not a contribution.
         assert status.funded == Money("100.00")
@@ -175,7 +175,7 @@ class TestClaimsLinkBothSides:
         assert summary.reimbursed == Money("50.00")
         assert summary.over_reimbursed == Money(0)
         # The refund split is now tagged with the claim's year; usage is unchanged.
-        status = fsa.year_status(db, account, account.fsa_years[0], as_of=date(2026, 4, 1))
+        status = fsa.year_status(db, account, account.fsa.years[0], as_of=date(2026, 4, 1))
         assert status.used == Money("250.00")
 
     def test_a_card_chain_links_the_charge_and_the_bank_reimbursement(self, db, flows):

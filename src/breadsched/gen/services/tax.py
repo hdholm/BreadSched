@@ -1,7 +1,7 @@
 """Mark the accounts and tags whose totals a tax year reports.
 
 An account follows GnuCash's *tax related* mark until BreadSched marks it
-(``Account.tax_relevant_override``); the BreadSched mark is kept across re-import
+(``Account.planning.tax_relevant``); the BreadSched mark is kept across re-import
 and never written back. Tags are marked in book metadata
 (``engine.tax_year.TAX_TAGS_KEY``). One request changes any number of marks as
 one undo step, and a rejected request changes nothing.
@@ -66,7 +66,7 @@ def tax_marks(db: DbSQLite) -> TaxMarks:
                 account,
                 db.full_name(account),
                 gnucash_tax_related(account),
-                account.tax_relevant_override,
+                account.planning.tax_relevant,
             )
             for account in accounts
         ),
@@ -86,10 +86,10 @@ def set_tax_marks(db: DbSQLite, request: SetTaxMarks) -> ServiceResult[TaxMarks]
         if mark is not None and not isinstance(mark, bool):
             errors.append(ServiceError("tax.mark.invalid", (f"accounts.{handle}",)))
             continue
-        if account.tax_relevant_override != mark:
+        if account.planning.tax_relevant != mark:
             # Edit a copy: the cached account must not change if the request fails.
             edited = Account.from_dict(account.serialize())
-            edited.tax_relevant_override = mark
+            edited.planning.tax_relevant = mark
             changed.append(edited)
 
     current = list(tax_relevant_tags(db))
