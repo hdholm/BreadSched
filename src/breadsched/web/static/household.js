@@ -104,7 +104,7 @@ async function showGoals() {
           say(`${closed ? "Reopened" : "Closed"} ${goal.name}.`);
           await refresh();
         }) }, closed ? "Reopen" : "Close"),
-        el("button", { class:"action", type:"button", onclick:run(async () => {
+        el("button", { class:"action destructive", type:"button", onclick:run(async () => {
           if (!window.confirm(`Delete ${goal.name}? No transaction is changed.`)) return;
           await post("/api/savings-goal/delete", { handle:goal.handle });
           say(`Deleted ${goal.name}.`);
@@ -345,7 +345,7 @@ async function showReimbursables() {
         }) }, "Record write-off")),
       scenarioRow(selected),
       el("div", { class:"toolbar" },
-        el("button", { class:"action", type:"button", onclick:run(async () => {
+        el("button", { class:"action destructive", type:"button", onclick:run(async () => {
           if (!window.confirm(`Delete the receivable from ${selected.payer}? `
             + "Its transactions are unchanged.")) return;
           await post("/api/receivable/delete", { handle:selected.handle });
@@ -415,7 +415,8 @@ async function showRules() {
           await post("/api/rule/move", { handle:rule.handle, position:rule.position + 1 });
           await refresh();
         }) }, "Down"),
-      el("button", { class:"action", type:"button", onclick:run(async () => {
+      el("button", { class:"action destructive", type:"button", onclick:run(async () => {
+        if (!window.confirm(`Delete the rule for “${rule.key}”?`)) return;
         await post("/api/rule/delete", { handle:rule.handle });
         say(`Deleted rule ${rule.position}.`);
         await refresh();

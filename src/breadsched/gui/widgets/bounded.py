@@ -9,13 +9,30 @@ A window also opens at its natural size, and a wrapping label's natural width is
 its whole text on one line, so a dialog with a long note opened wider than the
 screen. :class:`BoundedWindow` caps the size a dialog opens at to the monitor it
 opens on (:func:`fit_to_screen`); the content then wraps or scrolls inside.
+
+Every dialog also answers the keyboard the same way (#335): Escape closes it, as
+its Cancel or Close button does, and Enter in a one-line field activates its main
+button, the ``suggested-action`` button in its last row (or one named with
+:meth:`BoundedWindow.set_primary`).
 """
 
 from __future__ import annotations
 
+import weakref
+
 from ..gi_setup import Gtk
 
-__all__ = ["BoundedWindow", "fit_to_screen", "scroll_body"]
+__all__ = ["BoundedWindow", "fit_to_screen", "keeps_enter", "scroll_body"]
+
+#: One-line fields whose Enter does their own job (fetch, propose), not the dialog's.
+_OWN_ENTER: weakref.WeakSet = weakref.WeakSet()
+
+
+def keeps_enter(entry: Gtk.Entry) -> Gtk.Entry:
+    """Leave Enter in ``entry`` to its own ``activate`` handler."""
+    _OWN_ENTER.add(entry)
+    return entry
+
 
 #: Share of the monitor a dialog may open at, leaving room for panels and docks.
 SCREEN_SHARE = 0.9
@@ -97,10 +114,67 @@ def fit_to_screen(window: Gtk.Window, bounds: tuple[int, int] | None = None) -> 
     return width, height
 
 
+def _descendants(widget: Gtk.Widget):
+    child = widget.get_first_child()
+    while child is not None:
+        yield child
+        yield from _descendants(child)
+        child = child.get_next_sibling()
+
+
 class BoundedWindow(Gtk.Window):
-    """A dialog window that opens within the screen (see :func:`fit_to_screen`)."""
+    """A dialog window that opens within the screen and answers Escape and Enter."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._primary: Gtk.Widget | None = None
+        keys = Gtk.ShortcutController()
+        keys.set_scope(Gtk.ShortcutScope.LOCAL)
+        keys.add_shortcut(
+            Gtk.Shortcut.new(
+                Gtk.ShortcutTrigger.parse_string("Escape"),
+                Gtk.CallbackAction.new(lambda *_: self._on_escape()),
+            )
+        )
+        self.add_controller(keys)
+
+    def _on_escape(self) -> bool:
+        self.close()
+        return True
+
+    def set_primary(self, button: Gtk.Widget) -> None:
+        """Make ``button`` the one Enter activates."""
+        self._primary = button
+
+    def primary(self) -> Gtk.Widget | None:
+        """The button Enter activates: the one named, else the last row's suggested one."""
+        if self._primary is not None:
+            return self._primary
+        child = self.get_child()
+        footer = child.get_last_child() if child is not None else None
+        if footer is None:
+            return None
+        candidates = [footer, *_descendants(footer)]
+        return next(
+            (
+                widget
+                for widget in candidates
+                if isinstance(widget, Gtk.Button) and widget.has_css_class("suggested-action")
+            ),
+            None,
+        )
 
     def present(self) -> None:
         if not self.get_mapped():
             fit_to_screen(self)
+            primary = self.primary()
+            if primary is not None:
+                self.set_default_widget(primary)
+                for widget in _descendants(self):
+                    if (
+                        isinstance(widget, Gtk.Entry)
+                        and not isinstance(widget, Gtk.SearchEntry)
+                        and widget not in _OWN_ENTER
+                    ):
+                        widget.set_activates_default(True)
         super().present()

@@ -63,8 +63,10 @@ from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry, suggest_
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import claim_role_label, service_error_message
 from ..gi_setup import Gio, GLib, Gtk
-from ..widgets.bounded import BoundedWindow
+from ..widgets.bounded import BoundedWindow, keeps_enter
 from ..widgets.choice import bounded_dropdown
+from ..widgets.confirm import delete_button
+from ..widgets.help import help_row
 
 __all__ = ["TransactionDialog"]
 
@@ -277,6 +279,7 @@ class TransactionDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
+        box.prepend(help_row("transactions"))
 
         header = Gtk.Grid(column_spacing=10, row_spacing=8)
         box.append(header)
@@ -295,6 +298,7 @@ class TransactionDialog(BoundedWindow):
         header.attach(self.description_entry, 1, 1, 1, 1)
         if transaction is None:
             # Leaving the description proposes the latest matching entry's splits.
+            keeps_enter(self.description_entry)
             self.description_entry.connect("activate", lambda *_: self.propose_from_entry())
             leave = Gtk.EventControllerFocus()
             leave.connect("leave", lambda *_: self.propose_from_entry())
@@ -417,9 +421,10 @@ class TransactionDialog(BoundedWindow):
             )
             schedule_button.connect("clicked", self._on_make_scheduled)
             buttons.append(schedule_button)
-            delete = Gtk.Button(label="Delete")
-            delete.add_css_class("destructive-action")
-            delete.connect("clicked", self._on_delete)
+            delete = delete_button(
+                f"the transaction {transaction.description}",
+                lambda: self._on_delete(None),
+            )
             buttons.append(delete)
         cancel = Gtk.Button(label="Cancel")
         cancel.connect("clicked", lambda *_: self.close())
@@ -512,6 +517,7 @@ class TransactionDialog(BoundedWindow):
         controls.append(attach)
         address = Gtk.Entry(placeholder_text="https://…")
         address.set_hexpand(True)
+        keeps_enter(address)
         address.connect("activate", lambda entry: self.link_location(entry.get_text()))
         controls.append(address)
         self.link_entry = address

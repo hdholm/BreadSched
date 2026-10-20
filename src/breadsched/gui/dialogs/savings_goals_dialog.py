@@ -9,6 +9,7 @@ leaves the stored goal unchanged.
 from __future__ import annotations
 
 from datetime import date
+from functools import partial
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.currency import reporting_currency_label
@@ -36,6 +37,7 @@ from ...presentation import goal_override_text, goal_status_text, service_error_
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
+from ..widgets.confirm import delete_button
 from ..widgets.help import help_row
 from ..widgets.model_chart import ModelChartView
 
@@ -249,8 +251,10 @@ class SavingsGoalsDialog(BoundedWindow):
             closed = item.goal.closed_on is not None
             toggle = Gtk.Button(label="Reopen" if closed else "Close")
             toggle.connect("clicked", lambda _b, h=handle, c=closed: self.toggle_closed(h, c))
-            delete = Gtk.Button(label="Delete")
-            delete.connect("clicked", lambda _b, h=handle: self.delete(h))
+            delete = delete_button(
+                f"the savings goal {item.goal.name}",
+                partial(self.delete, handle),
+            )
             for offset, button in enumerate((edit, toggle, delete)):
                 self.goal_rows.attach(button, 8 + offset, row, 1, 1)
         model = goals_chart(goals, reporting_currency_label(self.db))

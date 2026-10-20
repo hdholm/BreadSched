@@ -13,6 +13,7 @@ from ...gen.engine.plan_detail import (
 from ...presentation import plan_detail_cost_text
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
+from ..widgets.help import help_row
 
 __all__ = ["PlanDetailDialog"]
 
@@ -47,6 +48,7 @@ class PlanDetailDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(outer, f"set_margin_{side}")(16)
         self.set_child(outer)
+        outer.prepend(help_row("plan"))
 
         outer.append(
             Gtk.Label(

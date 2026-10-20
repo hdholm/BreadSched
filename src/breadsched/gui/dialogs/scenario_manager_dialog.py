@@ -28,6 +28,8 @@ from ..planning_context import (
 )
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
+from ..widgets.confirm import delete_button
+from ..widgets.help import help_row
 from .drawdown_dialog import DrawdownsDialog
 
 __all__ = ["ScenarioManagerDialog"]
@@ -60,6 +62,7 @@ class ScenarioManagerDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
+        box.prepend(help_row("plan"))
 
         box.append(
             Gtk.Label(
@@ -468,6 +471,7 @@ class AccountAssumptionsDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(outer, f"set_margin_{side}")(16)
         self.set_child(outer)
+        outer.prepend(help_row("plan"))
         outer.append(
             Gtk.Label(
                 label=(
@@ -547,6 +551,7 @@ class AssumptionTimelineDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
+        box.prepend(help_row("plan"))
         box.append(
             Gtk.Label(
                 label=(
@@ -568,9 +573,9 @@ class AssumptionTimelineDialog(BoundedWindow):
         self.edit_button = Gtk.Button(label="Edit…")
         self.edit_button.connect("clicked", self._on_edit)
         row.append(self.edit_button)
-        self.delete_button = Gtk.Button(label="Delete")
-        self.delete_button.add_css_class("destructive-action")
-        self.delete_button.connect("clicked", self._on_delete)
+        self.delete_button = delete_button(
+            "the selected dated assumption", lambda: self._on_delete(None)
+        )
         row.append(self.delete_button)
         box.append(row)
 
@@ -680,6 +685,7 @@ class AssumptionPeriodDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
+        box.prepend(help_row("plan"))
 
         grid = Gtk.Grid(column_spacing=12, row_spacing=8)
         box.append(grid)
@@ -810,6 +816,7 @@ class ScenarioDeleteDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
+        box.prepend(help_row("plan"))
         box.append(
             Gtk.Label(
                 label=(

@@ -8,6 +8,7 @@ from ...gen.services import SaveScenario, save_scenario  # noqa: E402
 from ...presentation import service_error_message  # noqa: E402
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
+from ..widgets.help import help_row
 
 __all__ = ["SaveScenarioDialog"]
 
@@ -30,6 +31,7 @@ class SaveScenarioDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
+        box.prepend(help_row("plan"))
 
         self.name_entry = Gtk.Entry(placeholder_text="Base case")
         if scenario.name and scenario.name != "Working scenario":

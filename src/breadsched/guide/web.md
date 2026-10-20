@@ -49,7 +49,20 @@ net worth, and net worth's composition by group, each with its exact values unde
 postings behind it; **Download CSV** saves them with their totals, and printing the
 page includes them. See [Net worth history](../USER_GUIDE.md#net-worth-history).
 
-## Exchange rates
+## Accounts
+
+In **Accounts**, choose an account to change its settings: its type, a card's
+payment terms, an FSA's funding years, emergency-fund inclusion, or an investment's
+cost method. See [Accounts](../USER_GUIDE.md#accounts).
+
+## Dashboard groups
+
+On the **Dashboard**, the group settings name the groups it shows, give each a kind,
+and choose its accounts. Groups only arrange what the Dashboard shows; its totals
+cover the whole book. See
+[Dashboard and near-term cash](../USER_GUIDE.md#dashboard-and-near-term-cash).
+
+## Exchange rates and security prices
 
 In **Accounts**, choose **Exchange rate…**, select the source and target currencies,
 enter an as-of date and the target units per source unit, then save. The account
@@ -57,6 +70,9 @@ display refreshes its quote date and source or missing-quote warning. The contro
 accepts currencies already in the book; it does not create a new currency or alter
 ledger transactions. The account data also include the signed number of days since
 each quote (`quote_age_days`), with negative days identifying a future-dated quote.
+
+**Security price…** in **Accounts** records a dated price for a security, the
+price its holdings are valued at from that date.
 
 **Holdings and cost basis…** in **Accounts** lists each holding's shares, cost,
 market value, and unrealized gain; open a holding for its lots, sales, transfers,
@@ -105,7 +121,7 @@ settings and never shown again (`/api/quotes`, `/api/quotes/source`,
 `/api/quotes/key`, `/api/quotes/update`). See
 [Online quotes](../USER_GUIDE.md#online-quotes).
 
-## Enter transactions in the register
+## Enter transactions in a register
 
 The register has a blank row at the bottom for a new entry, **Split** for split
 lines with an imbalance line, and in-place editing of any row: click it (or choose
@@ -172,6 +188,12 @@ or **Set to** an amount: **Preview** shows the result without saving and **Save 
 change** saves it. **Payroll templates** lists, edits, and deletes templates, fills
 one from the selected paycheck, and creates a new paycheck from one. See
 [Paychecks and pay changes](../USER_GUIDE.md#paychecks-and-pay-changes).
+
+### Loans
+
+**Scheduled** sets up a loan from its amount borrowed, rate, term, and first
+payment, with the loan, interest, and paying accounts, previewing the payments
+before saving them. See [Create a loan](../USER_GUIDE.md#create-a-loan).
 
 ### Review due transactions
 
@@ -299,6 +321,13 @@ both empty to expect what the receivable says again. The line below lists every
 scenario's change, and that scenario's Projection shows the gross and net cost (see
 [Reimbursable expenses](../USER_GUIDE.md#reimbursable-expenses)).
 
+## FSA claims
+
+On the **FSA Dashboard**, the claims editor keeps each claim's service date,
+provider, EOB amount, linked payments and refunds, and funding-year allocations,
+and closes, reopens, or deletes a claim (deleting asks first). See
+[FSA and benefit accounts](../USER_GUIDE.md#fsa-and-benefit-accounts).
+
 ## Import files
 
 In **Import**, select a QIF, OFX/QFX, or GnuCash file from the browser (up to
@@ -352,6 +381,12 @@ and choose **Accept selected**.
 
 **Print** prints the current view with navigation and actions removed. On Plan it
 includes the applied Expense Explorer with its selected comparison and detail.
+
+## Protect and recover a book
+
+**Verify** checks the open book, like `breadsched verify`, and lists any problems
+found. Back up and restore from the desktop window or the command line. See
+[Protect and recover a book](../USER_GUIDE.md#protect-and-recover-a-book).
 
 ## Troubleshooting
 

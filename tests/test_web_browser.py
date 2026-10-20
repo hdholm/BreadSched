@@ -1421,3 +1421,36 @@ def test_a_security_register_shows_and_takes_shares(page, served):
     page.locator("tr.entry-row [aria-label='New transaction buy']").first.press("Enter")
     page.wait_for_selector("text=Enter the shares bought or sold, or a price and an amount.")
     assert sorted(t.handle for t in db.iter_transactions()) == before
+
+
+def test_deleting_a_rule_asks_first(page, served):
+    # #335: every delete asks before it removes anything, in the browser too.
+    from breadsched.gen.services.categorization import list_rules
+
+    db, _httpd = served
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Rules", exact=True).first.click()
+    page.wait_for_selector("text=No rules yet.")
+    page.fill("input[name=description]", "Corner Store")
+    page.get_by_role("button", name="Add rule").click()
+    page.wait_for_selector("td:has-text('Description corner store')")
+    assert len(list_rules(db)) == 1
+
+    asked: list[str] = []
+
+    def answer(accept):
+        def handle(dialog):
+            asked.append(dialog.message)
+            dialog.accept() if accept else dialog.dismiss()
+
+        return handle
+
+    page.once("dialog", answer(False))
+    page.get_by_role("button", name="Delete").click()
+    page.wait_for_timeout(300)
+    assert asked == ["Delete the rule for “corner store”?"]
+    assert len(list_rules(db)) == 1
+    page.once("dialog", answer(True))
+    page.get_by_role("button", name="Delete").click()
+    page.wait_for_selector("text=No rules yet.")
+    assert list_rules(db) == []

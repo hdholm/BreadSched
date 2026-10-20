@@ -136,9 +136,23 @@ class ViewManager(Gtk.ApplicationWindow):
                 action.set_enabled(False)
                 self.add_action(action)
                 self.view_actions[name] = action
+        # Tabs and finding, with the shortcuts other tabbed applications use.
+        for name, handler in (
+            ("close-tab", self._on_close_tab),
+            ("next-tab", lambda *_: self.step_tab(1)),
+            ("previous-tab", lambda *_: self.step_tab(-1)),
+            ("find", self._on_find),
+        ):
+            action = Gio.SimpleAction.new(name, None)
+            action.connect("activate", handler)
+            self.add_action(action)
         application = self.get_application()
         if application is not None:
             application.set_accels_for_action("win.print-view", ["<Control>p"])
+            application.set_accels_for_action("win.close-tab", ["<Control>w"])
+            application.set_accels_for_action("win.next-tab", ["<Control>Page_Down"])
+            application.set_accels_for_action("win.previous-tab", ["<Control>Page_Up"])
+            application.set_accels_for_action("win.find", ["<Control>f"])
 
     # ----------------------------------------------------------------- chrome
 
@@ -625,6 +639,18 @@ class ViewManager(Gtk.ApplicationWindow):
         # since it was last drawn; the map handler usually did that already.
         view.ensure_current()
         self._enable_printing(view)
+        self._focus_view(view)
+
+    @staticmethod
+    def _focus_view(view) -> None:
+        """Put the keyboard in the shown view, wherever the switch came from (#331).
+
+        A register takes it in the cell under its cursor; a tab or toolbar button
+        clicked to get here would otherwise keep it.
+        """
+        focus = getattr(view, "focus_entry", None)
+        if callable(focus):
+            focus()
 
     def _enable_printing(self, view) -> None:
         printable = bool(self.db is not None and getattr(view, "PRINTABLE", False))
@@ -867,6 +893,31 @@ class ViewManager(Gtk.ApplicationWindow):
             return
         self.show_category(tab.key)
 
+    def _current_tab(self) -> _Tab | None:
+        return next((tab for tab in self._tabs if tab.current), None)
+
+    def _on_close_tab(self, *_args) -> None:
+        tab = self._current_tab()
+        if tab is not None:
+            self.close_tab(tab)
+
+    def step_tab(self, step: int) -> None:
+        """Show the tab ``step`` places from the current one, wrapping around."""
+        if not self._tabs:
+            return
+        current = self._current_tab()
+        index = self._tabs.index(current) if current is not None else 0
+        self._on_tab_clicked(self._tabs[(index + step) % len(self._tabs)])
+
+    def _on_find(self, *_args) -> None:
+        """Ctrl+F: the shown register's filter, the one search a view has."""
+        view = self.stack.get_visible_child()
+        if view is self.register_stack:
+            view = self._views.get("register")
+        entry = getattr(view, "filter_entry", None)
+        if entry is not None:
+            entry.grab_focus()
+
     @property
     def tabs(self) -> list[tuple[str, str]]:
         """(view key, title) of every open tab, in order."""
@@ -1047,10 +1098,13 @@ class _Tab:
         self.widget.add_css_class("linked")
         self.button = Gtk.Button(label=title)
         self.button.set_has_frame(False)
+        # Choosing a tab leaves the keyboard in the view it shows (#331).
+        self.button.set_focus_on_click(False)
         self.button.get_child().set_ellipsize(Pango.EllipsizeMode.END)
         self.button.get_child().set_max_width_chars(28)
         self.close = Gtk.Button.new_from_icon_name("window-close-symbolic")
         self.close.set_has_frame(False)
+        self.close.set_focus_on_click(False)
         self.close.set_tooltip_text(f"Close {title}")
         self.widget.append(self.button)
         self.widget.append(self.close)

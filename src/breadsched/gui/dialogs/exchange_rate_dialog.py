@@ -19,6 +19,7 @@ from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.help import help_row
 
 __all__ = ["ExchangeRateDialog"]
 
@@ -41,6 +42,7 @@ class ExchangeRateDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
+        box.prepend(help_row("prices"))
 
         explanation = Gtk.Label(
             label=(

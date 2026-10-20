@@ -773,6 +773,9 @@ def build_menu_model(actions_menu: ActionsMenu | None = None) -> Gio.Menu:
     edit_menu = Gio.Menu()
     edit_menu.append("_Undo", "app.undo")
     edit_menu.append("_Redo", "app.redo")
+    finding = Gio.Menu()
+    finding.append("_Find in Register", "win.find")
+    edit_menu.append_section(None, finding)
     menubar.append_submenu("_Edit", edit_menu)
 
     view_menu = Gio.Menu()
@@ -786,6 +789,11 @@ def build_menu_model(actions_menu: ActionsMenu | None = None) -> Gio.Menu:
             if item.toggle:
                 toggles.append(item.label, f"win.{view_action_name(key, item)}")
     view_menu.append_section(None, toggles)
+    tabs = Gio.Menu()
+    tabs.append("_Previous Tab", "win.previous-tab")
+    tabs.append("Ne_xt Tab", "win.next-tab")
+    tabs.append("_Close Tab", "win.close-tab")
+    view_menu.append_section(None, tabs)
     menubar.append_submenu("_View", view_menu)
 
     # Every view-level command also has a menu item (#156), the current view's

@@ -21,8 +21,9 @@ from ...gen.services import SaveLoan, save_loan
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
-from ..widgets.bounded import BoundedWindow
+from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
+from ..widgets.help import help_row
 
 __all__ = ["LoanDialog"]
 
@@ -47,6 +48,7 @@ class LoanDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
+        box.prepend(help_row("loans"))
 
         grid = Gtk.Grid(column_spacing=10, row_spacing=8)
         box.append(grid)
@@ -116,6 +118,7 @@ class LoanDialog(BoundedWindow):
         self.preview = Gtk.Grid(column_spacing=18, row_spacing=2)
         scroller = Gtk.ScrolledWindow(child=self.preview)
         scroller.set_vexpand(True)
+        scroller.set_min_content_height(120)
         box.append(scroller)
 
         self.status = Gtk.Label(xalign=0)
@@ -131,6 +134,8 @@ class LoanDialog(BoundedWindow):
         self.save_button.connect("clicked", self._on_save)
         buttons.append(self.save_button)
         box.append(buttons)
+        # The form scrolls on a small screen and the buttons stay in view.
+        scroll_body(self)
 
         self._recalculate()
 

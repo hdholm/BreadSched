@@ -45,6 +45,7 @@ from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
+from ..widgets.help import help_row
 from ..widgets.schedule_timeline import (
     DatedAmountListEditor,
     DateListEditor,
@@ -144,6 +145,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
+        box.prepend(help_row("scheduled"))
 
         explanation = Gtk.Label(xalign=0, wrap=True)
         explanation.add_css_class("dim")
@@ -1006,6 +1008,7 @@ class ScenarioSchedulePickerDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
+        box.prepend(help_row("scheduled"))
         box.append(Gtk.Label(label="Baseline scheduled transaction", xalign=0))
         self.schedule = bounded_dropdown(
             [item.name for item in self._schedules] or ["(none available)"]

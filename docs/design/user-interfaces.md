@@ -36,7 +36,11 @@ one per pinned scenario Projection (`ViewManager._tabs`). Register tabs are
 shown, so callers that address "the register" keep working. A pinned
 `ProjectionView` keeps its scenario and only recalculates when inherited Base
 assumptions change, while the unpinned Projection and Plan follow the selected
-scenario. Closing a register with unsaved typing asks first; opening another book
+scenario. Choosing a tab, a view icon, or a menu item leaves the keyboard in the
+shown view (`ViewManager._focus_view`, a register's cursor cell, #331); tab buttons
+do not take focus on click. Ctrl+Page Up and Ctrl+Page Down step through the tabs,
+Ctrl+W closes the current one, and Ctrl+F (**Edit → Find in Register**) goes to the
+register's filter. Closing a register with unsaved typing asks first; opening another book
 closes every tab, because tabs name the old book's accounts. Each book's tabs are
 remembered in `views.ini` (section `open-tabs`, keyed by a digest of the book path)
 and restored after the Dashboard opens, skipping deleted accounts and scenarios. The
@@ -60,6 +64,17 @@ Scrollbars are always shown: `app.show_scrollbars()` turns GTK's
 than its window (the due review, for example) shows a permanent scrollbar rather
 than a thin indicator that appears only while scrolling (#318); the stylesheet
 widens the slider to 10 pixels.
+
+Every dialog follows one set of conventions (#335). `widgets.bounded.BoundedWindow`
+closes on Escape and makes its main button (the `suggested-action` button in its
+last row, or one named with `set_primary`) the default, so Enter in a one-line
+field activates it; a field whose Enter does its own job is marked with
+`keeps_enter`. Editors close with **Cancel** and save with **Save** (or a named
+save); viewers and reports close with **Close**. Every dialog has a **Help** row
+naming a `user_guide.HELP_TOPICS` topic (`TestDialogConventions` checks both). Every
+Delete is a `widgets.confirm.delete_button`: styled `destructive-action`, it asks
+"Delete …?" with Cancel as the default before deleting, even where Ctrl+Z could
+restore it. The browser confirms every delete the same way.
 
 A modal dialog is never shown behind the window it blocks (#295), and never two at
 once. The main window's own modal dialogs (alerts from `_report`, the GnuCash change
@@ -146,7 +161,9 @@ parallel transaction models:
   cursor cannot jump when a split transaction expands (the regression that a
   `Gtk.ColumnView` with hosted editors showed). There is no column chooser or
   sorting: a register is always in ledger order.
-- **Cells and keys.** Date (defaulting to the last date entered), Num, Description,
+- **Cells and keys.** Arriving in a cell selects all of its text, so typing or
+  Backspace replaces a proposed value and Left or Right goes to its start or end
+  (#332). Date (defaulting to the last date entered), Num, Description,
   Transfer (visible, postable accounts), R, and Increase/Decrease titled with the
   account's headings. Tab and Shift+Tab move in column order, Enter saves and moves
   to the next transaction (past the saved one's notes and split lines, #325), Escape restores the transaction, Up/Down/Page Up/Page Down move the cursor

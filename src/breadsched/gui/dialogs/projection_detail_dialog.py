@@ -10,6 +10,7 @@ from ...gen.engine.projection_bridge import StockBridge, month_bridges, projecti
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.help import help_row
 
 __all__ = ["ProjectionDetailDialog"]
 
@@ -32,6 +33,7 @@ class ProjectionDetailDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(outer, f"set_margin_{side}")(16)
         self.set_child(outer)
+        outer.prepend(help_row("plan"))
 
         chooser = Gtk.Box(spacing=8)
         chooser.append(Gtk.Label(label="Month", xalign=0))

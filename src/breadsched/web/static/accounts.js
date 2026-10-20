@@ -994,7 +994,9 @@ async function openFsaClaimsEditor(initialHandle=null) {
         el("div", { class:"row" },
           why, closing,
           el("button", { class:"action", type:"button", onclick:()=>loadClaim(claim) }, "Edit"),
-          el("button", { class:"action", type:"button", onclick:async()=>{
+          el("button", { class:"action destructive", type:"button", onclick:async()=>{
+            if (!window.confirm(`Delete the claim ${claim.description || claim.provider || ""}?`
+              + " Its transactions are unchanged.")) return;
             await post("/api/fsa/claim/delete", { handle:claim.handle });
             data.claims = data.claims.filter((item)=>item.handle !== claim.handle);
             if (editingHandle === claim.handle) clearForm();
