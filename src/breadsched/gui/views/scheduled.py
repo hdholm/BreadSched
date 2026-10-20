@@ -607,7 +607,7 @@ class UpcomingView(BaseView):
         self.horizon_picker.connect("notify::selected", self._on_horizon_changed)
         bar.append(self.horizon_picker)
 
-        self.post_button = Gtk.Button(label="Review due…")
+        self.post_button = Gtk.Button(label="Review Due Transactions…")
         self.post_button.add_css_class("suggested-action")
         self.post_button.connect("clicked", self._on_post_clicked)
         bar.append(self.post_button)

@@ -95,6 +95,7 @@ HELP_TOPICS: dict[str, str] = {
     "fsa-claims": "FSA claims",
     "transactions": "Enter transactions in a register",
     "protect": "Protect and recover a book",
+    "preferences": "Preferences",
 }
 
 #: The interfaces that show contextual help, and the guide part each opens.

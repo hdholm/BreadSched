@@ -21,14 +21,22 @@ the application build from one catalog that can be read without a display;
 `viewmanager` re-exports it.
 
 View commands are declared once in `view_catalog.VIEW_ACTIONS`. Each becomes a
-`win.<view>-<name>` action, is listed in **Actions**, and appears in the toolbar
-only while its view is current. **Actions** lists the current view's commands
-first, then the commands that work anywhere, then every other view's commands under
-**Other Views**, so each command has exactly one item. The menu model is rebuilt only
+`win.<view>-<name>` action, is listed in **Actions** (a `toggle` on **View**, a
+`report` on **Reports**), and appears in the toolbar only while its view is current.
+**Actions** lists the current view's commands first, then the commands that work
+anywhere, then every other view's commands under **Other Views**, so each command
+has exactly one item; **Reports** lists every `report` action whichever view
+computes it (#336). An item that asks for more input ends in "…", and the one New
+Transaction command (`app.new-transaction`, Ctrl+T) starts in the shown register's
+account (`ViewManager.shown_register`). Toolbar icons are unique per command:
+`view_catalog.toolbar_icons()` lists them and only `SHARED_ICONS`
+(`document-new` for New…, `tab-new` for …in New Tab) may repeat, each with that one
+meaning; a test enforces it. The menu model is rebuilt only
 when the view changes: opening a submenu moves focus into its popover, and
 rebuilding the same view's model then destroyed the open submenu and crashed GTK.
-Buttons stay in a view only where their state depends on it (Review due, Save as
-scenario, Reconcile) or where they act on a table's selected row.
+Buttons stay in a view only where their state depends on it (Review Due
+Transactions…, Save Base as Scenario…, Reconcile…) or where they act on a table's
+selected row.
 
 Below the toolbar, a tab bar lists each open view, one tab per open register, and
 one per pinned scenario Projection (`ViewManager._tabs`). Register tabs are
@@ -75,6 +83,16 @@ naming a `user_guide.HELP_TOPICS` topic (`TestDialogConventions` checks both). E
 Delete is a `widgets.confirm.delete_button`: styled `destructive-action`, it asks
 "Delete …?" with Cancel as the default before deleting, even where Ctrl+Z could
 restore it. The browser confirms every delete the same way.
+
+**Edit → Preferences…** (`app.preferences`, Ctrl+comma;
+`dialogs.preferences_dialog.PreferencesDialog`, #333) edits user settings that are
+not part of a book: `general.last_book_path`, `register.double_line` and
+`register.banding` in the view settings, and the Alpha Vantage key through
+`plugins.quotes.save_alphavantage_key` (stored only if changed, so a key from the
+environment is not copied into the file). **Configure Dashboard Groups…** there
+activates the window's existing `win.dashboard-configure-groups`, because groups
+belong to the book. The browser has no equivalent window; its guide's Preferences
+section says where each setting lives there.
 
 A modal dialog is never shown behind the window it blocks (#295), and never two at
 once. The main window's own modal dialogs (alerts from `_report`, the GnuCash change
@@ -227,19 +245,24 @@ parallel transaction models:
   held and their market value with the quote's date and source, or "no quote" and
   the ledger amount, never an unquoted conversion. The transaction editor's
   splits show a Shares entry for a security's split.
-- **Double Line.** The toolbar's **Double Line** toggle (remembered in view
-  settings as `register.double_line`) adds a `NOTES` row under every transaction
+- **Double Line.** The window's stateful `win.double-line` action (**View → Double
+  Line**, also in Preferences; remembered in view settings as
+  `register.double_line`) adds a `NOTES` row under every transaction
   and the blank one. Its editable cell is the description column, drawn and edited
   across to the balance column; Tab reaches it after the transaction's last cell,
   and `Draft.notes` is saved with the transaction. With it off, notes are kept.
 - **Shading.** `RegisterSheet.ordinals` numbers each row's transaction, so
   `RegisterGrid.banded` can alternate by transaction (the default; a notes or split
-  line shares its transaction's band), by line, or not at all. The toolbar choice is
-  remembered as `register.banding`. Before #325 the band followed the row index, so
+  line shares its transaction's band), by line, or not at all. Preferences stores it
+  as `register.banding`. Before #325 the band followed the row index, so
   Double Line gave every transaction the same shade.
-- **Focus.** Split, Double Line, and the shading choice do not take focus on click,
-  and a change redraws with focus back in the cursor's cell, so typing continues
-  (#325: after Double Line the keys went to the button).
+- **Shared display settings.** Both are settings for every register, not toolbar
+  controls (#333): `views.register.apply_register_display()` redraws each live
+  `RegisterView` (a `WeakSet`) after View → Double Line or Preferences → Save, and
+  `BreadSchedApp.preferences_changed` updates each window's Double Line check.
+- **Focus.** Split does not take focus on click, and a display change redraws with
+  focus back in the cursor's cell, so typing continues (#325: after Double Line the
+  keys went to the button).
 - **Accounts anywhere.** `complete_account` lists, after the segment matches, every
   account whose full name holds text typed without a `:` (`groc` lists
   Expenses:Groceries); such a match is listed but never filled into the cell. With

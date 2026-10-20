@@ -104,15 +104,23 @@ in has no icon, since you are already there. After those icons, two short lines
 count the book's accounts and transactions. The **View** menu lists every area.
 The **Actions** menu follows the view too: the current view's commands come first,
 under its name, then the commands that work anywhere, and every other view's
-commands under **Actions → Other Views**. The toolbar command icons are, for
-example, **New Account**, **Edit Account**, **Security Price**, and **Exchange
-Rate** in Accounts, **Manage FSA Claims** on the FSA
-Dashboard, **Configure Dashboard Groups** on the Dashboard, **New Scheduled**,
-**Suggest**, and **New Loan** in Scheduled, **New Scenario**, **Scenarios**, and
-**Explore** in Plan, and **Compare**, **Export**, and **New tab** in Projection. **View → Hide
-Empty Accounts** and **View → Show Hidden Accounts** filter the account tree.
-Buttons that act on a selected row, such as a schedule's **View / Edit…**, stay
-beside their table.
+commands under **Actions → Other Views**. The **Reports** menu lists every report
+wherever it is calculated: **Net Worth History…**, **Holdings and Cost Basis…**,
+**Realized Gains…**, **Tax Year…**, **Explore Expenses…**, and **Budget Jars…**.
+A menu item that asks for more before it acts ends in "…". The toolbar command
+icons are, for example, **New Account**, **Edit Account**, **Security Price**, and
+**Exchange Rate** in Accounts, **Manage FSA Claims** on the FSA Dashboard,
+**Configure Dashboard Groups** on the Dashboard, **New Scheduled**, **Suggest**, and
+**New Loan** in Scheduled, **New Scenario**, **Scenarios**, and **Explore** in Plan,
+and **Compare**, **Export**, and **New tab** in Projection. Each icon stands for one
+command, so the same picture never means two things. **View → Hide Empty
+Accounts** and **View → Show Hidden Accounts** filter the account tree, and **View
+→ Double Line** shows every register's notes line. Buttons that act on a selected
+row, such as a schedule's **View / Edit…**, stay beside their table.
+
+**New Transaction…** (the toolbar's **Transaction**, or Ctrl+T) opens the
+transaction editor; with a register shown, the new transaction starts in that
+register's account.
 
 Categorization rules and reimbursable expenses open from **Actions →
 Categorization Rules…** and **Actions → Reimbursable Expenses…**.
@@ -333,17 +341,17 @@ and no price.
 In the transaction editor, a split in such an account has a **Shares** entry
 beside its amount; a negative number means shares sold or moved out.
 
-**Double Line** in the toolbar adds a second line under every transaction, the
-blank one included, for its notes, as in GnuCash: Tab moves from the last amount to
-the notes line, and Enter saves what you typed there with the transaction. The
-choice is remembered. With it off, saving keeps the notes a transaction already has.
+**View → Double Line** (also in **Edit → Preferences…**) adds a second line under
+every transaction in every register, the blank one included, for its notes, as in
+GnuCash: Tab moves from the last amount to the notes line, and Enter saves what you
+typed there with the transaction. The choice is remembered. With it off, saving keeps the notes a transaction already has.
 Whether you are entering a new transaction or changing one, **Enter** (or **Tab**
 past the last cell) saves it and moves to the next transaction.
 
-The shading choice in the toolbar keeps rows apart: **Shade alternate
+**Row shading** in **Edit → Preferences…** keeps rows apart: **Shade alternate
 transactions** (a transaction's notes and split lines share its shade), **Shade
-alternate lines**, or **No shading**. It is remembered. The toolbar's choices leave
-the keyboard in the register, so you can keep typing.
+alternate lines**, or **No shading**. Either change redraws every open register
+and leaves the keyboard in the register's cell, so you can keep typing.
 
 Typing in **Transfer** without a `:` also lists accounts that contain what you
 typed anywhere in their name, after those whose names begin with it: `groc` lists
@@ -424,9 +432,9 @@ accounts; **Create loan** saves the loan account and its payment schedule. See
 
 ### Review due transactions
 
-BreadSched asks when a book opens (after any held GnuCash changes), and **Post
-Scheduled Transactions** in the menu, or **Review due…** in Upcoming, opens the
-same review; if nothing is due, it says so. Choose each date's action, or one for all
+BreadSched asks when a book opens (after any held GnuCash changes), and **Actions →
+Review Due Transactions…**, or the **Review Due Transactions…** button in Upcoming,
+opens the same review; if nothing is due, it says so. Choose each date's action, or one for all
 of a schedule's dates, then **Apply**. If anything was posted, **Posted
 transactions** lists it split by split; choose **Edit…** to change one in the
 transaction editor or **Delete** to remove it, then **Close**. See
@@ -643,6 +651,23 @@ spending and income over time with their charts, the selected category's trend
 chart and the period with merchant detail, and the chosen Income detail. If the system print dialog cannot be used,
 these open in your web browser instead. Use **File → Export Transactions** for
 transaction data.
+
+## Preferences
+
+**Edit → Preferences…** (Ctrl+,) gathers the settings that are not part of day-to-day
+work. They are kept in your own settings, not in a book:
+
+- **Book**: the book BreadSched opens when it starts. **Choose…** picks another,
+  and **Forget** starts without one.
+- **Registers**: **Double Line** (also **View → Double Line**) and **Row shading**,
+  for every register.
+- **Online quotes**: the Alpha Vantage API key, the same key **Online Quotes…**
+  keeps (see [Online quotes](#online-quotes)).
+- **Dashboard**: **Configure Dashboard Groups…** opens the open book's groups (see
+  [Dashboard groups](#dashboard-groups)); groups belong to the book.
+
+**Save** stores them all and redraws open registers; **Cancel** or Escape changes
+nothing.
 
 ## Protect and recover a book
 

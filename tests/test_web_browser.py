@@ -524,7 +524,7 @@ def test_an_open_receivable_shows_its_fsa_allocation(page, served):
     ).ok
 
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Reimbursables", exact=True).first.click()
+    page.get_by_role("button", name="Reimbursable Expenses", exact=True).first.click()
     page.locator("tr:has-text('Acme Insurance')").get_by_role("button", name="Open").click()
     page.wait_for_selector("text=Acme Insurance pays 60.00")
     assert page.locator("text=until the EOB is entered").count() == 1
@@ -560,7 +560,7 @@ def test_a_proposed_reimbursement_is_accepted_on_the_page(page, served):
     attach_expense_split(db, receivable.handle, visit.handle, cost.handle)
 
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Reimbursables", exact=True).first.click()
+    page.get_by_role("button", name="Reimbursable Expenses", exact=True).first.click()
     page.wait_for_selector("text=Proposed reimbursements")
     page.get_by_role("button", name="Accept selected").click()
     page.wait_for_selector("text=Linked 1 reimbursement(s)")
@@ -768,7 +768,7 @@ def test_goals_page_adds_funds_and_closes_a_goal(page, served):
     db, _httpd = served
     today = date.today()
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Goals", exact=True).first.click()
+    page.get_by_role("button", name="Savings Goals", exact=True).first.click()
     page.wait_for_selector("text=No savings goals yet.")
     form = page.locator("form.goal-form")
     form.locator("input[name=name]").fill("Roof")
@@ -788,7 +788,7 @@ def test_goals_page_adds_funds_and_closes_a_goal(page, served):
     page.wait_for_selector("h2:has-text('Savings goals (1)')")
     assert "Roof" in page.locator(".dashboard-goals").inner_text()
 
-    page.get_by_role("button", name="Goals", exact=True).first.click()
+    page.get_by_role("button", name="Savings Goals", exact=True).first.click()
     page.wait_for_selector("text=Set aside for goals")
     # The goal's set-aside is charted under what is still to save toward its target.
     chart = page.locator(".savings-goals figure.model-chart[data-key='goals']")
@@ -814,7 +814,7 @@ def test_goals_page_changes_a_goal_in_a_scenario_and_projection_shows_it(page, s
         db.add_scenario(scenario, txn)
     page.goto(f"http://127.0.0.1:{httpd.server_port}/?goals#token={httpd.token}")
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Goals", exact=True).first.click()
+    page.get_by_role("button", name="Savings Goals", exact=True).first.click()
     page.wait_for_selector("text=Scenario changes")
     page.get_by_role("button", name="Edit", exact=True).first.click()
     overrides = page.locator("form.goal-override")
@@ -1116,7 +1116,7 @@ def test_a_scenario_expects_less_of_a_reimbursement(page, served):
     assert attach_expense_split(db, receivable.handle, visit.handle, cost.handle).ok
 
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Reimbursables", exact=True).first.click()
+    page.get_by_role("button", name="Reimbursable Expenses", exact=True).first.click()
     page.get_by_role("button", name="Open", exact=True).first.click()
     page.wait_for_selector("text=Every scenario expects what this receivable says.")
     page.fill("input[aria-label='Amount expected in scenario']", "40")

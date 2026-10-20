@@ -20,6 +20,7 @@ and their quoted value (#323).
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Callable
 from datetime import date
 
@@ -34,7 +35,17 @@ from ._base import BaseView
 
 __all__ = ["RegisterView", "column_headings"]
 
-#: The row shading choices, in the order the toolbar lists them.
+#: Every register showing, in any window, so a display setting reaches them all.
+_LIVE_REGISTERS: weakref.WeakSet = weakref.WeakSet()
+
+
+def apply_register_display() -> None:
+    """Redraw every open register with the current Double Line and shading settings."""
+    for register in list(_LIVE_REGISTERS):
+        register.apply_display()
+
+
+#: The row shading choices, in the order Preferences lists them.
 BANDING_CHOICES = (
     ("transactions", "Shade alternate transactions"),
     ("lines", "Shade alternate lines"),
@@ -107,23 +118,10 @@ class RegisterView(BaseView):
         self.split_button.set_focus_on_click(False)
         bar.append(self.split_button)
 
-        self.double_line_button = Gtk.ToggleButton(label="Double Line")
-        self.double_line_button.set_tooltip_text(
-            "Show a second line under each transaction for its notes"
-        )
-        self.double_line_button.set_active(self._settings_double_line())
-        self.double_line_button.connect("toggled", self._on_double_line_toggled)
-        self.double_line_button.set_focus_on_click(False)
-        bar.append(self.double_line_button)
-
-        self.banding_choice = bounded_dropdown([label for _key, label in BANDING_CHOICES])
-        self.banding_choice.set_tooltip_text("How rows are shaded to keep them apart")
-        self.banding_choice.update_property([Gtk.AccessibleProperty.LABEL], ["Row shading"])
-        self.banding_choice.set_focus_on_click(False)
-        keys = [key for key, _label in BANDING_CHOICES]
-        self.banding_choice.set_selected(keys.index(self._settings_banding()))
-        self.banding_choice.connect("notify::selected", self._on_banding_changed)
-        bar.append(self.banding_choice)
+        # Double Line (View menu) and row shading (Preferences) are settings shared
+        # by every register, not toolbar controls (#333).
+        self.double_line = self._settings_double_line()
+        _LIVE_REGISTERS.add(self)
 
         self.editor_button = Gtk.Button(icon_name="document-edit-symbolic")
         self.editor_button.set_tooltip_text(
@@ -194,7 +192,7 @@ class RegisterView(BaseView):
             # A change made elsewhere: re-read, keeping the cursor and any typing.
             self.sheet.reload()
         self._pending_changes.clear()
-        self.sheet.set_double_line(self.double_line_button.get_active())
+        self.sheet.set_double_line(self.double_line)
         self.sheet.set_filter(self.filter_entry.get_text())
         self.grid.set_sheet(self.sheet)
         self._show_balance()
@@ -256,25 +254,14 @@ class RegisterView(BaseView):
         chosen = settings.get(self.SETTINGS_SECTION, "banding") if settings else None
         return chosen if chosen in BANDING else "transactions"
 
-    def _on_banding_changed(self, choice, _pspec) -> None:
-        key = BANDING_CHOICES[choice.get_selected()][0]
-        self.grid.set_banding(key)
-        settings = self._settings()
-        if settings is not None:
-            settings.set(self.SETTINGS_SECTION, "banding", key)
-            settings.save()
-        self.grid.sync(focus=self.get_mapped())
-
-    def _on_double_line_toggled(self, button: Gtk.ToggleButton) -> None:
-        on = button.get_active()
+    def apply_display(self) -> None:
+        """Show Double Line and row shading as the settings now say."""
+        self.double_line = self._settings_double_line()
+        self.grid.set_banding(self._settings_banding())
         if self.sheet is not None:
-            self.sheet.set_double_line(on)
+            self.sheet.set_double_line(self.double_line)
             # The cursor's cell keeps the keyboard, so typing goes on (#325).
             self.grid.sync(focus=self.get_mapped())
-        settings = self._settings()
-        if settings is not None:
-            settings.set(self.SETTINGS_SECTION, "double_line", on)
-            settings.save()
 
     def _show_balance(self) -> None:
         summary = (

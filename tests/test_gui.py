@@ -814,6 +814,11 @@ def _type(grid, text):
         editor.set_position(start + 1)
 
 
+def _double_line(window, on: bool) -> None:
+    """Choose View → Double Line on or off (#333)."""
+    window.lookup_action("double-line").change_state(GLib.Variant.new_boolean(on))
+
+
 class TestRegisterGrid:
     """The GnuCash-style grid: plain ruled rows, one editor at the cursor."""
 
@@ -823,9 +828,9 @@ class TestRegisterGrid:
 
         view = _grid_register(app, window, populated_book)
         sheet, grid = view.sheet, view.grid
-        assert not view.double_line_button.get_active()
+        assert window.lookup_action("double-line").get_state().get_boolean() is False
         assert NOTES not in {row.kind for row in sheet.rows}
-        view.double_line_button.set_active(True)
+        _double_line(window, True)
         grid.paint(900, 320)
         assert sheet.rows[-1].kind == NOTES and sheet.rows[-2].kind == "blank"
         # Tab from the blank transaction's last cell reaches its notes line.
@@ -861,7 +866,7 @@ class TestRegisterGrid:
         # The choice is remembered for the next register.
         settings = app.view_settings
         assert settings.get_bool("register", "double_line") is True
-        view.double_line_button.set_active(False)
+        _double_line(window, False)
         assert settings.get_bool("register", "double_line") is False
         assert NOTES not in {row.kind for row in sheet.rows}
 
@@ -981,7 +986,7 @@ class TestRegisterGrid:
 
         view = _grid_register(app, window, populated_book)
         sheet, grid = view.sheet, view.grid
-        view.double_line_button.set_active(True)
+        _double_line(window, True)
         grid.paint(900, 320)
         assert grid.banding == "transactions"
         bands = [grid.banded(i) for i in range(len(sheet.rows))]
@@ -990,25 +995,29 @@ class TestRegisterGrid:
                 assert bands[index] == bands[index - 1]
         headers = [bands[i] for i, row in enumerate(sheet.rows) if row.kind != NOTES]
         assert headers[:4] == [False, True, False, True]
+        # Row shading is a Preferences choice (#333), applied to open registers.
         keys = [key for key, _label in BANDING_CHOICES]
-        view.banding_choice.set_selected(keys.index("lines"))
-        assert grid.banding == "lines"
-        assert [grid.banded(i) for i in range(4)] == [False, True, False, True]
-        view.banding_choice.set_selected(keys.index("none"))
+        for choice in ("lines", "none"):
+            preferences = app.on_preferences()
+            preferences.banding.set_selected(keys.index(choice))
+            assert preferences.save()
+            preferences.destroy()
+            assert grid.banding == choice
+            if choice == "lines":
+                assert [grid.banded(i) for i in range(4)] == [False, True, False, True]
         assert not any(grid.banded(i) for i in range(len(sheet.rows)))
         grid.paint(900, 320)
         assert app.view_settings.get("register", "banding") == "none"
 
-    def test_toolbar_choices_leave_the_keyboard_in_the_register(self, app, window, populated_book):
+    def test_display_changes_leave_the_keyboard_in_the_register(self, app, window, populated_book):
         # #325: after Double Line the keys went to the toolbar button.
         view = _grid_register(app, window, populated_book)
         window.present()
         assert _spin(window.get_mapped)
-        for widget in (view.double_line_button, view.split_button, view.banding_choice):
-            assert widget.get_focus_on_click() is False
+        assert view.split_button.get_focus_on_click() is False
         view.grid.sync()
-        view.double_line_button.grab_focus()
-        view.double_line_button.set_active(True)
+        view.split_button.grab_focus()
+        _double_line(window, True)
         _spin(lambda: False, 0.2)
         focus = window.get_focus()
         assert focus is not None and focus.is_ancestor(view.grid.editor)
@@ -2165,6 +2174,7 @@ class TestMenuBarAndToolbar:
             "Edit",
             "View",
             "Actions",
+            "Reports",
             "Help",
         ]
 
@@ -8511,7 +8521,7 @@ class TestViewSpecificChrome:
         assert _menu_actions(first) == [
             f"win.{view_action_name('scheduled', item)}"
             for item in VIEW_ACTIONS["scheduled"]
-            if not item.toggle
+            if not (item.toggle or item.report)
         ]
         others = _menu_actions(sections[-1][1])
         assert not any(action.startswith("win.scheduled-") for action in others)
@@ -9312,6 +9322,193 @@ class TestBoundedSizes:
             assert width >= minimum[0] and height >= minimum[1]
         finally:
             window.destroy()
+
+
+def _submenu(app, label: str):
+    menubar = app.get_menubar()
+    return next(
+        menubar.get_item_link(index, "submenu")
+        for index in range(menubar.get_n_items())
+        if menubar.get_item_attribute_value(index, "label", None).get_string() == label
+    )
+
+
+def _menu_labels(menu) -> dict[str, str]:
+    """Each menu item's action (with any target) and label."""
+    found = {}
+    for index in range(menu.get_n_items()):
+        action = menu.get_item_attribute_value(index, "action", None)
+        label = menu.get_item_attribute_value(index, "label", None)
+        if action is not None and label is not None:
+            found[action.get_string()] = label.get_string()
+        for link in ("section", "submenu"):
+            child = menu.get_item_link(index, link)
+            if child is not None:
+                found.update(_menu_labels(child))
+    return found
+
+
+class TestPreferences:
+    """#333: one window for the settings that are not day-to-day work."""
+
+    def test_edit_preferences_opens_with_ctrl_comma(self, app, window):
+        assert "app.preferences" in _menu_actions(_submenu(app, "_Edit"))
+        assert app.get_accels_for_action("app.preferences") == ["<Control>comma"]
+        # Preferences works without a book; only the Dashboard groups need one.
+        assert app.lookup_action("preferences").get_enabled()
+
+    def test_preferences_show_and_save_every_setting(self, app, window, populated_book, tmp_path):
+        from breadsched.gui.dialogs.preferences_dialog import PreferencesDialog
+        from breadsched.gui.views.register import BANDING_CHOICES
+
+        app.open_book(populated_book)
+        dialog = app.on_preferences()
+        assert isinstance(dialog, PreferencesDialog)
+        assert _spin(dialog.get_mapped)
+        assert dialog.book_path.endswith(Path(populated_book).name)
+        assert dialog.double_line.get_active() is False
+        assert BANDING_CHOICES[dialog.banding.get_selected()][0] == "transactions"
+        other = str(tmp_path / "other.breadsched")
+        dialog.set_book_path(other)
+        dialog.double_line.set_active(True)
+        dialog.banding.set_selected([key for key, _ in BANDING_CHOICES].index("lines"))
+        dialog.api_key.set_text("KEY123")
+        assert dialog.primary().get_label() == "Save"
+        dialog.primary().emit("clicked")
+        assert _spin(lambda: not dialog.get_visible())
+        assert app.settings.get("general", "last_book_path") == other
+        assert app.settings.get("quotes", "alphavantage_api_key") == "KEY123"
+        assert app.view_settings.get_bool("register", "double_line") is True
+        assert app.view_settings.get("register", "banding") == "lines"
+        # The View menu's Double Line check follows the saved preference.
+        assert window.lookup_action("double-line").get_state().get_boolean() is True
+
+    def test_forget_and_cancel(self, app, window, populated_book):
+        app.open_book(populated_book)
+        stored = app.settings.get("general", "last_book_path")
+        dialog = app.on_preferences()
+        dialog.set_book_path("")
+        dialog.double_line.set_active(True)
+        dialog.close()  # Cancel: nothing is written
+        assert app.settings.get("general", "last_book_path") == stored
+        assert app.view_settings.get_bool("register", "double_line") is False
+        dialog = app.on_preferences()
+        dialog.set_book_path("")
+        assert dialog.save()
+        assert app.settings.get("general", "last_book_path") is None
+
+    def test_a_key_from_the_environment_is_not_written(self, app, window, monkeypatch):
+        monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "FROMENV")
+        dialog = app.on_preferences()
+        assert dialog.api_key.get_text() == "FROMENV"
+        assert dialog.save()
+        assert app.settings.get("quotes", "alphavantage_api_key") is None
+
+    def test_view_double_line_redraws_every_open_register(self, app, window, populated_book):
+        from breadsched.gui.register_sheet import NOTES
+
+        app.open_book(populated_book)
+        window.show_category("register")
+        first = window._views["register"]
+        first.open_in_new_tab()
+        second = window._views["register"]
+        assert second is not first
+        assert "_Double Line" in _menu_labels(_submenu(app, "_View")).values()
+        _double_line(window, True)
+        for register in (first, second):
+            assert register.double_line is True
+            assert NOTES in {row.kind for row in register.sheet.rows}
+        _double_line(window, False)
+        assert NOTES not in {row.kind for row in second.sheet.rows}
+
+    def test_registers_have_no_display_controls_in_their_toolbar(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("register")
+        view = window._views["register"]
+        assert not hasattr(view, "double_line_button")
+        assert not hasattr(view, "banding_choice")
+
+
+class TestMenusAndIcons:
+    """#336: one item per command, a Reports menu, and one meaning per icon."""
+
+    def test_the_reports_menu_lists_every_report_once(self, app, window, populated_book):
+        from breadsched.gui.view_catalog import VIEW_ACTIONS, view_action_name
+
+        reports = {
+            f"win.{view_action_name(key, item)}"
+            for key, actions in VIEW_ACTIONS.items()
+            for item in actions
+            if item.report
+        }
+        assert {
+            "win.dashboard-net-worth-history",
+            "win.accounts-holdings",
+            "win.accounts-realized-gains",
+            "win.accounts-tax-year",
+            "win.plan-explore-expenses",
+            "win.plan-budget-jars",
+        } == reports
+        assert set(_menu_actions(_submenu(app, "_Reports"))) == reports
+        assert not reports & set(_menu_actions(_submenu(app, "_Actions")))
+        app.open_book(populated_book)
+        window.show_category("dashboard")
+        window.lookup_action("accounts-realized-gains").activate(None)
+        assert _spin(
+            lambda: any(w.get_title() == "Realized Gains" for w in Gtk.Window.list_toplevels())
+        )
+
+    def test_one_new_transaction_command_starts_in_the_shown_register(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+        from breadsched.gui.view_catalog import VIEW_ACTIONS
+
+        assert "full-editor" not in {item.name for item in VIEW_ACTIONS["register"]}
+        app.open_book(populated_book)
+        window.present()
+        window.show_category("register")
+        register = window._views["register"]
+
+        dialog = app.on_new_transaction()
+        assert isinstance(dialog, TransactionDialog)
+        assert dialog.default_account == register.account_handle
+        dialog.destroy()
+        window.show_category("dashboard")
+        dialog = app.on_new_transaction()
+        assert isinstance(dialog, TransactionDialog) and dialog.default_account is None
+        dialog.destroy()
+
+    def test_review_due_has_one_name_and_dialog_items_end_in_an_ellipsis(self, app, window):
+        from breadsched.gui.view_catalog import VIEW_ACTIONS
+
+        labels = _menu_labels(app.get_menubar())
+        assert labels["app.post-scheduled"] == "Review _Due Transactions…"
+        assert "upcoming" not in VIEW_ACTIONS
+        assert labels["win.projection-save-scenario"] == "_Save as Scenario…"
+        assert labels["app.preferences"] == "_Preferences…"
+        assert not any("Post Scheduled" in label for label in labels.values())
+
+    def test_each_toolbar_icon_means_one_command(self):
+        from breadsched.gui.view_catalog import SHARED_ICONS, toolbar_icons
+
+        by_icon: dict[str, set[str]] = {}
+        for icon, label in toolbar_icons():
+            by_icon.setdefault(icon, set()).add(label)
+        for icon, labels in by_icon.items():
+            if icon in SHARED_ICONS:
+                assert all(SHARED_ICONS[icon] in label for label in labels), (icon, labels)
+            else:
+                assert len(labels) == 1, (icon, labels)
+
+    def test_every_toolbar_icon_is_in_the_icon_theme(self, window):
+        from breadsched.gui.view_catalog import toolbar_icons
+
+        theme = Gtk.IconTheme.get_for_display(window.get_display())
+        if not theme.has_icon("document-open-symbolic"):
+            pytest.skip("needs the Adwaita icon theme")
+        missing = [icon for icon, _label in toolbar_icons() if not theme.has_icon(icon)]
+        assert not missing
 
 
 class TestDialogConventions:

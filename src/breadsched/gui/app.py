@@ -208,6 +208,7 @@ class BreadSchedApplication(Gtk.Application):
             ("verify", self.on_verify, None),
             ("post-scheduled", self.on_post_scheduled, None),
             ("new-transaction", self.on_new_transaction, "<Control>t"),
+            ("preferences", self.on_preferences, "<Control>comma"),
             ("user-guide", self.on_user_guide, "F1"),
             ("about", self.on_about, None),
             ("quit", lambda *_: self.quit(), "<Control>q"),
@@ -597,12 +598,41 @@ class BreadSchedApplication(Gtk.Application):
         if window.prompt_for_due() is None:
             self._report("No scheduled transactions are due to post.")
 
-    def on_new_transaction(self, *_args) -> None:
+    def on_new_transaction(self, *_args):
+        """The transaction editor, opened in the shown register's account if any."""
         if self.db is None:
-            return
+            return None
+        # One New Transaction command (#336): in a register it starts in that
+        # register's account, as the register's own button does.
+        window = self.props.active_window or next(
+            (w for w in self.get_windows() if isinstance(w, ViewManager)), None
+        )
+        shown = getattr(window, "shown_register", None)
+        register = shown() if callable(shown) else None
+        dialog = register._on_add_clicked() if register is not None else None
+        if dialog is not None:
+            return dialog
         from .dialogs.transaction_dialog import TransactionDialog
 
-        TransactionDialog(self.props.active_window, self.db).present()
+        dialog = TransactionDialog(window, self.db)
+        dialog.present()
+        return dialog
+
+    def on_preferences(self, *_args):
+        """Edit → Preferences (#333): the settings that are not day-to-day work."""
+        from .dialogs.preferences_dialog import PreferencesDialog
+
+        dialog = PreferencesDialog(self.props.active_window, self)
+        dialog.present()
+        return dialog
+
+    def preferences_changed(self) -> None:
+        """Show saved preferences in every window's menus (View → Double Line)."""
+        double_line = self.view_settings.get_bool("register", "double_line")
+        for window in self.get_windows():
+            action = getattr(window, "double_line_action", None)
+            if action is not None:
+                action.set_state(GLib.Variant.new_boolean(double_line))
 
     def on_about(self, *_args) -> None:
         about = Gtk.AboutDialog(
@@ -707,7 +737,8 @@ class ActionsMenu:
         self.menu.remove_all()
 
         def commands(view: str) -> list:
-            return [item for item in VIEW_ACTIONS.get(view, ()) if not item.toggle]
+            # Toggles are on the View menu and reports on the Reports menu.
+            return [item for item in VIEW_ACTIONS.get(view, ()) if not (item.toggle or item.report)]
 
         if key is not None and commands(key):
             here = Gio.Menu()
@@ -716,7 +747,7 @@ class ActionsMenu:
             self.menu.append_section(labels.get(key, key), here)
         general = Gio.Menu()
         general.append("New _Transaction…", "app.new-transaction")
-        general.append("_Post Scheduled Transactions", "app.post-scheduled")
+        general.append("Review _Due Transactions…", "app.post-scheduled")
         general.append("Categorization _Rules…", "app.rules")
         general.append("Rei_mbursable Expenses…", "app.receivables")
         general.append("Savings _Goals…", "app.savings-goals")
@@ -735,7 +766,7 @@ class ActionsMenu:
 
 
 def build_menu_model(actions_menu: ActionsMenu | None = None) -> Gio.Menu:
-    """The application menu bar: File, Edit, View, Actions, Help.
+    """The application menu bar: File, Edit, View, Actions, Reports, Help.
 
     A conventional menu bar rather than a hamburger, because this is an accounting
     application whose users are coming from GnuCash and Gramps, and discoverability
@@ -776,6 +807,9 @@ def build_menu_model(actions_menu: ActionsMenu | None = None) -> Gio.Menu:
     finding = Gio.Menu()
     finding.append("_Find in Register", "win.find")
     edit_menu.append_section(None, finding)
+    preferences = Gio.Menu()
+    preferences.append("_Preferences…", "app.preferences")
+    edit_menu.append_section(None, preferences)
     menubar.append_submenu("_Edit", edit_menu)
 
     view_menu = Gio.Menu()
@@ -784,6 +818,7 @@ def build_menu_model(actions_menu: ActionsMenu | None = None) -> Gio.Menu:
         views.append(label, f"win.show-category::{key}")
     view_menu.append_section(None, views)
     toggles = Gio.Menu()
+    toggles.append("_Double Line", "win.double-line")
     for key, actions in VIEW_ACTIONS.items():
         for item in actions:
             if item.toggle:
@@ -799,6 +834,14 @@ def build_menu_model(actions_menu: ActionsMenu | None = None) -> Gio.Menu:
     # Every view-level command also has a menu item (#156), the current view's
     # first (#182).
     menubar.append_submenu("_Actions", (actions_menu or ActionsMenu()).menu)
+
+    # Every report in one place (#336), whichever view it is computed from.
+    reports_menu = Gio.Menu()
+    for key, actions in VIEW_ACTIONS.items():
+        for item in actions:
+            if item.report:
+                reports_menu.append(item.label, f"win.{view_action_name(key, item)}")
+    menubar.append_submenu("_Reports", reports_menu)
 
     help_menu = Gio.Menu()
     help_menu.append("_User Guide", "app.user-guide")

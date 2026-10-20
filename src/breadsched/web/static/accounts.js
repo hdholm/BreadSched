@@ -1402,7 +1402,7 @@ async function showRegister() {
           onclick:()=>makeScheduled(row.handle) }, "Make scheduled…"),
         el("button", { class:"action", type:"button",
           title:"Track this expense as owed back by an insurer, employer, or other payer",
-          onclick:()=>{ state.receivableFrom = row.handle; switchTo("Reimbursables"); } },
+          onclick:()=>{ state.receivableFrom = row.handle; switchTo("Reimbursable Expenses"); } },
           "Reimbursable…")))));
   }
   rows.push(...registerEntry(data, usable, null));

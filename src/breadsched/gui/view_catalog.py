@@ -10,13 +10,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-__all__ = ["CATEGORIES", "TOOLBAR", "VIEW_ACTIONS", "ViewAction", "view_action_name"]
+__all__ = [
+    "CATEGORIES",
+    "SHARED_ICONS",
+    "TOOLBAR",
+    "VIEW_ACTIONS",
+    "ViewAction",
+    "toolbar_icons",
+    "view_action_name",
+]
 
 #: (label, icon, action, tooltip) for the toolbar's actions; a None action inserts
 #: a separator. The view icons (from ``CATEGORIES``) follow these.
 TOOLBAR = [
     ("Open", "document-open-symbolic", "app.open", "Open a book"),
-    ("Import", "document-import-symbolic", "app.import", "Import a GnuCash book"),
+    ("Import", "folder-download-symbolic", "app.import", "Import a GnuCash book"),
     (None, None, None, None),
     ("Undo", "edit-undo-symbolic", "app.undo", "Undo the last change"),
     ("Redo", "edit-redo-symbolic", "app.redo", "Redo the last undone change"),
@@ -30,7 +38,7 @@ TOOLBAR = [
 #: menu item; no two views share an icon.
 CATEGORIES = [
     ("dashboard", "Dashboard", "go-home-symbolic"),
-    ("fsa-dashboard", "FSA Dashboard", "view-calendar-symbolic"),
+    ("fsa-dashboard", "FSA Dashboard", "emoji-body-symbolic"),
     ("accounts", "Accounts", "view-list-symbolic"),
     ("register", "Register", "text-x-generic-symbolic"),
     ("scheduled", "Scheduled", "alarm-symbolic"),
@@ -47,8 +55,10 @@ class ViewAction:
 
     Every view action appears in the menus; ``toolbar`` ones also appear as icons
     while their view is current, and ``toggle`` ones are checkable View-menu items
-    whose handler receives the new boolean. The handler is a method of that view.
-    ``caption`` is the toolbar icon's short caption; it defaults to the label.
+    whose handler receives the new boolean. ``report`` ones open a report and are
+    listed on the **Reports** menu instead of under Actions (#336). The handler is
+    a method of that view. ``caption`` is the toolbar icon's short caption; it
+    defaults to the label.
     """
 
     name: str
@@ -58,6 +68,7 @@ class ViewAction:
     toolbar: bool = False
     toggle: bool = False
     caption: str | None = None
+    report: bool = False
 
 
 #: Commands per view. Buttons that act on a table's selected row (a schedule, a
@@ -79,6 +90,7 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             "document-open-recent-symbolic",
             True,
             caption="History",
+            report=True,
         ),
     ),
     "fsa-dashboard": (
@@ -86,7 +98,7 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             "manage-claims",
             "Manage _FSA Claims…",
             "_on_fsa_claims",
-            "document-edit-symbolic",
+            "emblem-documents-symbolic",
             toolbar=True,
         ),
     ),
@@ -110,11 +122,12 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             "exchange-rate",
             "E_xchange Rate…",
             "_on_exchange_rate",
-            "mail-send-receive-symbolic",
+            "object-flip-horizontal-symbolic",
             True,
         ),
-        ViewAction("holdings", "Holdings and _Cost Basis…", "_on_holdings"),
-        ViewAction("tax-year", "_Tax Year…", "_on_tax_year"),
+        ViewAction("holdings", "Holdings and _Cost Basis…", "_on_holdings", report=True),
+        ViewAction("realized-gains", "_Realized Gains…", "_on_realized_gains", report=True),
+        ViewAction("tax-year", "_Tax Year…", "_on_tax_year", report=True),
         ViewAction("online-quotes", "Online _Quotes…", "_on_online_quotes"),
         ViewAction("hide-empty", "_Hide Empty Accounts", "set_hide_empty", toggle=True),
         ViewAction("show-hidden", "Show Hi_dden Accounts", "set_show_hidden", toggle=True),
@@ -122,7 +135,6 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
     "register": (
         ViewAction("edit-in-place", "Edit Transaction in _Place", "edit_selected_in_place"),
         ViewAction("track-reimbursable", "Track as Rei_mbursable…", "track_selected_reimbursable"),
-        ViewAction("full-editor", "New Transaction in _Editor…", "_on_add_clicked"),
         ViewAction("new-window", "Open in New _Window", "_on_open_window_clicked"),
         ViewAction("reconcile", "_Reconcile…", "_on_reconcile_clicked"),
         ViewAction(
@@ -134,9 +146,10 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             caption="New tab",
         ),
     ),
-    # A command whose button changes with the view's state (Review due,
-    # Reconcile, Save as scenario) stays in its view; the register keeps its own
-    # buttons because a separate register window has no toolbar.
+    # A command whose button changes with the view's state (Reconcile, Save as
+    # Scenario) stays in its view; the register keeps its own buttons because a
+    # separate register window has no toolbar. Review Due Transactions… is the
+    # Actions menu's general command, with a button on the Upcoming view.
     "scheduled": (
         ViewAction(
             "new-scheduled",
@@ -150,7 +163,7 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             "suggest",
             "_Suggest Estimates from History…",
             "_on_suggest_clicked",
-            "edit-find-symbolic",
+            "edit-find-replace-symbolic",
             True,
             caption="Suggest",
         ),
@@ -158,7 +171,7 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             "new-loan",
             "New _Loan…",
             "_on_loan_clicked",
-            "accessories-calculator-symbolic",
+            "x-office-document-symbolic",
             True,
             caption="New Loan",
         ),
@@ -171,7 +184,6 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             caption="Payroll",
         ),
     ),
-    "upcoming": (ViewAction("review-due", "_Review Due…", "_on_post_clicked"),),
     "plan": (
         ViewAction(
             "new-scenario",
@@ -185,7 +197,7 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             "manage-scenarios",
             "_Manage Scenarios…",
             "_on_manage_scenarios",
-            "view-list-symbolic",
+            "view-grid-symbolic",
             True,
             caption="Scenarios",
         ),
@@ -193,11 +205,12 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             "explore-expenses",
             "_Explore Expenses…",
             "_open_expense_explorer",
-            "edit-find-symbolic",
+            "system-search-symbolic",
             True,
             caption="Explore",
+            report=True,
         ),
-        ViewAction("budget-jars", "_Budget Jars…", "_open_budget_jars"),
+        ViewAction("budget-jars", "_Budget Jars…", "_open_budget_jars", report=True),
     ),
     "projection": (
         ViewAction(
@@ -208,7 +221,7 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             True,
             caption="Compare",
         ),
-        ViewAction("save-scenario", "_Save as Scenario", "_on_save_clicked"),
+        ViewAction("save-scenario", "_Save as Scenario…", "_on_save_clicked"),
         ViewAction(
             "export",
             "E_xport Projection…",
@@ -227,6 +240,27 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
         ),
     ),
 }
+
+
+#: The only icons more than one toolbar command may show, each with the one meaning
+#: it has wherever it appears (#336). Every other toolbar icon means one command.
+SHARED_ICONS = {
+    "document-new-symbolic": "New",
+    "tab-new-symbolic": "in New Tab",
+}
+
+
+def toolbar_icons() -> list[tuple[str, str]]:
+    """(icon, label) for every icon the main window's toolbar can show."""
+    icons = [(icon, label) for label, icon, action, _tip in TOOLBAR if action and icon and label]
+    icons += [(icon, label) for _key, label, icon in CATEGORIES]
+    icons += [
+        (item.icon, item.label.replace("_", ""))
+        for actions in VIEW_ACTIONS.values()
+        for item in actions
+        if item.toolbar and item.icon
+    ]
+    return icons
 
 
 def view_action_name(key: str, action: ViewAction) -> str:
