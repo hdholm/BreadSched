@@ -822,6 +822,56 @@ def _double_line(window, on: bool) -> None:
 class TestRegisterGrid:
     """The GnuCash-style grid: plain ruled rows, one editor at the cursor."""
 
+    def test_cancel_abandons_a_new_entry_and_an_edit(self, app, window, populated_book):
+        # #344: Escape was the only way to give up on typing.
+        view = _grid_register(app, window, populated_book)
+        sheet, grid = view.sheet, view.grid
+        count = len(list(app.db.iter_transactions()))
+        sheet.to_blank()
+        sheet.column = "description"
+        sheet.set_text("Never mind")
+        grid.sync()
+        assert view.cancel_button.get_focus_on_click() is False
+        view.cancel_button.emit("clicked")
+        assert sheet.draft.description == "" and not sheet.draft.dirty()
+        assert len(list(app.db.iter_transactions())) == count
+
+        index = next(i for i, row in enumerate(sheet.rows) if row.kind == "transaction")
+        sheet.move_to(index, "description")
+        stored = sheet.draft.source
+        sheet.set_text("Changed my mind")
+        view.cancel_transaction()
+        assert sheet.draft.description == stored.description
+        assert app.db.get_transaction(stored.handle).description == stored.description
+
+    def test_the_enter_button_saves_like_the_key(self, app, window, populated_book):
+        view = _grid_register(app, window, populated_book)
+        sheet = view.sheet
+        sheet.to_blank()
+        for column, text in (
+            ("description", "Hardware"),
+            ("transfer", "Expenses:Rent"),
+            ("decrease", "5"),
+        ):
+            sheet.column = column
+            sheet.set_text(text)
+        view.grid.sync()
+        assert view.enter_button.get_focus_on_click() is False
+        view.enter_button.emit("clicked")
+        assert any(t.description == "Hardware" for t in app.db.iter_transactions())
+        assert sheet.rows[sheet.cursor].kind == "blank" and not sheet.draft.dirty()
+
+    def test_enter_and_cancel_are_register_actions(self, app, window, populated_book):
+        labels = _menu_labels(app.get_menubar())
+        assert labels["win.register-enter"] == "_Enter Transaction"
+        assert labels["win.register-cancel"] == "_Cancel Transaction"
+        view = _grid_register(app, window, populated_book)
+        view.sheet.to_blank()
+        view.sheet.column = "description"
+        view.sheet.set_text("Typed")
+        window.lookup_action("register-cancel").activate(None)
+        assert view.sheet.draft.description == ""
+
     def test_double_line_shows_and_edits_notes_and_is_remembered(self, app, window, populated_book):
         # #319: notes could not be typed in the register.
         from breadsched.gui.register_sheet import NOTES

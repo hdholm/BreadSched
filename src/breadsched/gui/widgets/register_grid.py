@@ -462,15 +462,14 @@ class RegisterGrid(Gtk.Box):
             sheet.tab(backwards=shift or keyval == Gdk.KEY_ISO_Left_Tab)
             return self._done()
         if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_ISO_Enter):
-            self._take_match()
-            sheet.enter()
-            return self._done()
+            self.enter()
+            return True
         if keyval == Gdk.KEY_Escape:
             if listing:
                 self.hide_matches()
                 return True
-            sheet.escape()
-            return self._done()
+            self.cancel()
+            return True
         if keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up, Gdk.KEY_Down, Gdk.KEY_KP_Down):
             step = -1 if keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up) else 1
             if listing:
@@ -540,6 +539,23 @@ class RegisterGrid(Gtk.Box):
             self.editor.select_region(keep, len(text))
         else:
             self.editor.set_position(-1)
+
+    def enter(self) -> bool:
+        """Save the transaction under the cursor, as Enter does (the Enter button)."""
+        if self.sheet is None:
+            return False
+        self._take_match()
+        saved = self.sheet.enter()
+        self.sync()
+        return saved
+
+    def cancel(self) -> None:
+        """Put the transaction under the cursor back as it was (Escape, the Cancel button)."""
+        if self.sheet is None:
+            return
+        self.hide_matches()
+        self.sheet.escape()
+        self.sync()
 
     def _done(self) -> bool:
         self.sync()

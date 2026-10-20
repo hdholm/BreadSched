@@ -256,6 +256,10 @@ parallel transaction models:
   line shares its transaction's band), by line, or not at all. Preferences stores it
   as `register.banding`. Before #325 the band followed the row index, so
   Double Line gave every transaction the same shade.
+- **Enter and Cancel.** `RegisterGrid.enter` and `RegisterGrid.cancel` are the one
+  path for the Enter and Escape keys, the register toolbar's **Enter** and **Cancel**
+  buttons (which do not take focus), and the `register-enter` and `register-cancel`
+  view actions (#344, as GnuCash's register toolbar has them).
 - **Shared display settings.** Both are settings for every register, not toolbar
   controls (#333): `views.register.apply_register_display()` redraws each live
   `RegisterView` (a `WeakSet`) after View → Double Line or Preferences → Save, and

@@ -286,7 +286,9 @@ Arriving in a cell selects everything in it, so typing (or Backspace) replaces a
 proposed amount or account; **Left** or **Right** goes to its start or end instead.
 **Tab** and **Shift+Tab** move between cells; **Tab** past the last cell saves
 the transaction, like **Enter**. **Escape** puts the transaction back as it was
-(the blank one empties). Dates, amounts, and **Num** take the shortcuts in
+(the blank one empties). The register's **Enter** and **Cancel** buttons, and
+**Actions → Enter Transaction** and **Cancel Transaction**, do the same as the keys,
+so you can save or abandon what you typed without them. Dates, amounts, and **Num** take the shortcuts in
 [Typing shortcuts in the register](../USER_GUIDE.md#typing-shortcuts-in-the-register):
 for example `+` for the next day or `100/3` for an amount.
 
