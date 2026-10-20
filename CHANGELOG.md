@@ -10,6 +10,20 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a289 - 2026-10-20
+
+- **FSA claims and reimbursable expenses check links alike (#340).**
+  `engine.split_links` now holds what both records use: one `LinkError` base for
+  `FsaClaimError` and `ReceivableError`, `missing_link` for each record's not-found
+  codes, and `owned_postings` with `refuse_owned_posting`. A claim could link a
+  receivable's BreadSched-owned reclassification transaction (its expense credit
+  looked like a provider refund); a claim save now refuses it
+  (`claim.split.owned_posting`, worded as the receivable's refusal) and leaves the
+  stored claim unchanged, and `attachment_roles` offers such a transaction no role.
+  Tests cover the shared error kinds and codes, the shared owned-posting list, the
+  refusal with the claim unchanged, the roles, the receivable's matching refusal,
+  and link totals.
+
 ## 0.2.0a288 - 2026-10-20
 
 - **Account settings grouped by type (#339).** Account carried every type's
