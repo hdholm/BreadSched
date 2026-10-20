@@ -932,6 +932,46 @@ class TestRegisterGrid:
         grid.sync()
         assert not grid.editor.get_selection_bounds()
 
+    def test_the_account_list_scrolls_to_follow_the_choice(self, app, window, populated_book):
+        # #334: Down moved the choice past the visible rows of the list.
+        from breadsched.gen.lib import Account, AccountType
+
+        app.open_book(populated_book)
+        expenses = app.db.get_account_by_name("Expenses")
+        with app.db.transaction("Many") as txn:
+            for number in range(30):
+                app.db.add_account(
+                    Account(
+                        name=f"Errand {number:02d}",
+                        atype=AccountType.EXPENSE,
+                        parent=expenses.handle,
+                    ),
+                    txn,
+                )
+        window.present()
+        assert _spin(window.get_mapped)
+        window.open_register(app.db.get_account_by_name("Assets:Checking Account").handle)
+        view = window._views["register"]
+        grid, sheet = view.grid, view.sheet
+        _spin(lambda: False, 0.3)
+        sheet.to_blank()
+        sheet.column = "transfer"
+        grid.sync()
+        _type(grid, "errand")
+        _spin(lambda: False, 0.2)
+        assert len(grid.match_names()) >= 20
+        for _ in range(15):
+            assert grid.key(Gdk.KEY_Down, 0)
+        _spin(lambda: False, 0.2)
+        row = grid.matches.get_selected_row()
+        adjustment = grid.match_frame.get_vadjustment()
+        found, bounds = row.compute_bounds(grid.matches)
+        assert found and adjustment.get_value() > 0
+        assert adjustment.get_value() <= bounds.get_y()
+        assert bounds.get_y() + bounds.get_height() <= adjustment.get_value() + (
+            adjustment.get_page_size() + 1
+        )
+
     def test_shading_alternates_by_transaction_and_is_a_remembered_choice(
         self, app, window, populated_book
     ):
@@ -9345,3 +9385,41 @@ class TestDialogConventions:
         assert [what for what, _ in asked] == ["the rule for “Rent”"] and not deleted
         asked[0][1]()
         assert deleted == [True]
+
+
+class TestSearchableChoices:
+    """#334: every long choice list, accounts included, filters as you type."""
+
+    def test_a_long_list_can_be_searched_anywhere_in_a_choice(self):
+        from breadsched.gui.widgets.choice import SEARCH_FROM, bounded_dropdown
+
+        short = bounded_dropdown(["Keep", "Scale with gross", "Set to"])
+        assert short.get_enable_search() is False
+        names = [f"Expenses:Category {n}" for n in range(SEARCH_FROM)]
+        long = bounded_dropdown(names)
+        assert long.get_enable_search() is True
+        assert long.get_expression() is not None
+        if hasattr(long, "get_search_match_mode"):
+            assert long.get_search_match_mode() == Gtk.StringFilterMatchMode.SUBSTRING
+        # A list filled later becomes searchable when it grows long enough.
+        later = bounded_dropdown()
+        assert later.get_enable_search() is False
+        later.set_model(Gtk.StringList.new(names))
+        assert later.get_enable_search() is True
+
+    def test_the_register_account_choice_is_searchable(self, app, window, populated_book):
+        from breadsched.gen.lib import Account, AccountType
+
+        app.open_book(populated_book)
+        expenses = app.db.get_account_by_name("Expenses")
+        with app.db.transaction("Many") as txn:
+            for number in range(10):
+                app.db.add_account(
+                    Account(
+                        name=f"Hobby {number}", atype=AccountType.EXPENSE, parent=expenses.handle
+                    ),
+                    txn,
+                )
+        window.open_register(app.db.get_account_by_name("Assets:Checking Account").handle)
+        picker = window._views["register"].account_picker
+        assert picker.get_enable_search() is True

@@ -93,7 +93,9 @@ BreadSched fits a small laptop screen however long your account names and notes
 are: a long name in a choice list is shortened in the middle when chosen (the list
 shows it in full), wide toolbars scroll sideways, the Dashboard's summary cards wrap
 onto more rows, and dialogs open within the screen and scroll inside. Scrollbars are
-always shown, so a list with more out of view says so.
+always shown, so a list with more out of view says so. A long choice list, such as
+every list of accounts, has a search field when it opens: type part of a name to
+keep only the choices that contain it.
 
 The toolbar starts with the commands that work anywhere (open, import, undo, redo,
 new transaction, and print). Next come the name of the view you are in and that

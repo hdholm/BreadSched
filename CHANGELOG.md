@@ -10,6 +10,17 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a285 - 2026-10-20
+
+- **Uniform, searchable account choices (#334).** Only the register's account cell
+  narrowed a list as you typed. `bound_dropdown` now gives every list of
+  `SEARCH_FROM` or more choices GTK's search field, matching anywhere in a choice,
+  so the register's account picker and every account choice in a dialog filter
+  alike; a list filled later becomes searchable when it grows long enough. The
+  account list under the Transfer cell scrolls to keep the chosen row in view as Up
+  and Down move through it. GTK tests cover searchable lists, the register picker,
+  and the list scrolling.
+
 ## 0.2.0a284 - 2026-10-20
 
 - **Keyboard focus follows the view (#331).** Choosing a tab kept the keyboard on
