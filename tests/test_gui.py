@@ -9421,6 +9421,23 @@ class TestPreferences:
         _double_line(window, False)
         assert NOTES not in {row.kind for row in second.sheet.rows}
 
+    def test_a_register_whose_book_closed_is_left_alone(
+        self, app, window, populated_book, monkeypatch
+    ):
+        """A closed book's register can outlive it in the live set until collected.
+        Saving preferences redrew it, and a security register then read prices
+        from no book and crashed (CI, PR #343)."""
+        from breadsched.gui.views.register import _LIVE_REGISTERS, apply_register_display
+
+        stale = _grid_register(app, window, populated_book)
+        window.book_closing()
+        assert stale in _LIVE_REGISTERS and stale.db is None and stale.sheet is not None
+        redrawn = []
+        monkeypatch.setattr(stale.grid, "sync", lambda **_: redrawn.append(True))
+        app.view_settings.set("register", "double_line", True)
+        apply_register_display()
+        assert stale.double_line is True and redrawn == []
+
     def test_registers_have_no_display_controls_in_their_toolbar(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("register")

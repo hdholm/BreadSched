@@ -258,7 +258,9 @@ class RegisterView(BaseView):
         """Show Double Line and row shading as the settings now say."""
         self.double_line = self._settings_double_line()
         self.grid.set_banding(self._settings_banding())
-        if self.sheet is not None:
+        # A register whose book has closed waits only for garbage collection; it
+        # has nothing to redraw, and its sheet's book is gone.
+        if self.sheet is not None and self.db is not None and self.sheet.db is self.db:
             self.sheet.set_double_line(self.double_line)
             # The cursor's cell keeps the keyboard, so typing goes on (#325).
             self.grid.sync(focus=self.get_mapped())
