@@ -19,9 +19,9 @@ GTK. To create a book first, use the [command line](cli.md#create-and-inspect-bo
 
 The navigation bar offers the work areas (**Dashboard**, **FSA Dashboard**,
 **Accounts**, **Register**, **Scheduled**, **Plan**, **Review**, **Projection**) and
-**Enter**, **Import**, **Rules**, **Reimbursables**, **Goals**, **Verify**, and **Guide**. **Guide** shows this guide: choose the overview or the desktop, browser,
+**Enter**, **Import**, **Rules**, **Reimbursable Expenses**, **Savings Goals**, **Verify**, and **Guide**. **Guide** shows this guide: choose the overview or the desktop, browser,
 or command-line part, and a link to another part opens it there. **Help** on
-**Scheduled**, **Payroll**, **Plan**, **Projection**, **Import**, **Rules**, **Reimbursables**, and **Goals**, and in the CSV statement, write-back,
+**Scheduled**, **Payroll**, **Plan**, **Projection**, **Import**, **Rules**, **Reimbursable Expenses**, and **Savings Goals**, and in the CSV statement, write-back,
 reconciliation, due review, held GnuCash changes, Expense Explorer, and net worth
 history sections, opens this guide at that section in a new browser tab, so the
 form you were filling in stays as it was.
@@ -255,13 +255,13 @@ merchant table. **Carry prior periods** turns rollover on. See
 
 ## Savings goals
 
-**Goals** lists each goal's account, target date, target, what is set aside, what
+**Savings Goals** lists each goal's account, target date, target, what is set aside, what
 remains, and its status. Fill in the form below the list and choose **Add goal**;
 **Edit** loads a goal into the form for **Save changes**. Enter an amount beside a
 goal and choose **Allocate** to set extra money aside today. **Close** releases a
 goal's money, **Reopen** undoes that, and **Delete** removes the goal. **Show closed
 goals** includes closed goals. The Dashboard lists each open goal under **Savings
-goals**; choose a goal's name to open **Goals**. After **Edit**, the form below the
+goals**; choose a goal's name to open **Savings Goals**. After **Edit**, the form below the
 goal form changes that goal in one scenario: choose the scenario, enter a different
 target amount or target date or check **Leave out**, and choose **Apply to
 scenario** (with nothing entered, the scenario follows the goal unchanged). **Buy
@@ -273,7 +273,7 @@ section, and **Plan** lists goals reaching their target in its range. See
 ## Reimbursable expenses
 
 Choose **Reimbursable…** on a register row to start a receivable from that expense,
-or open **Reimbursables** to list, open, link, dispute, and write off receivables.
+or open **Reimbursable Expenses** to list, open, link, dispute, and write off receivables.
 **Held in** chooses the receivable account (the default is one per currency).
 **Proposed reimbursements** lists credits that clearly belong to one open
 receivable, checked; choose **Accept selected** to link them. A warning appears when
@@ -381,6 +381,15 @@ and choose **Accept selected**.
 
 **Print** prints the current view with navigation and actions removed. On Plan it
 includes the applied Expense Explorer with its selected comparison and detail.
+
+## Preferences
+
+The browser interface has no preferences window: each setting the desktop's **Edit
+→ Preferences…** keeps has its own place here. The book is the one named when the
+server starts (`breadsched web household.breadsched`). The Alpha Vantage API key is
+entered in [Online quotes](#online-quotes) and stored in the same settings file the
+desktop uses. Dashboard groups are arranged in [Dashboard groups](#dashboard-groups). The
+desktop's Double Line and row shading settings apply to desktop registers only.
 
 ## Protect and recover a book
 

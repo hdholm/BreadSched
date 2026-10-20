@@ -380,7 +380,7 @@ async function showDashboard() {
           table(["Goal", "Target date", { label: "Target", num: true },
                  { label: "Set aside", num: true }, { label: "Remaining", num: true }, "Status"],
             data.goals.map((goal) => [
-              el("button", { class: "action", type: "button", onclick: () => switchTo("Goals") },
+              el("button", { class: "action", type: "button", onclick: () => switchTo("Savings Goals") },
                 goal.name),
               goal.target_date, money(goal.target), money(goal.set_aside),
               money(goal.remaining), goal.status_text])))]

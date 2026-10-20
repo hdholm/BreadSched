@@ -10,6 +10,33 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a286 - 2026-10-20
+
+- **Edit → Preferences (#333).** Double Line and row shading sat on every register's
+  toolbar, and the start-up book and Alpha Vantage key had no settings window.
+  `PreferencesDialog` (`app.preferences`, Ctrl+comma) edits the start-up book
+  (choose or forget), Double Line, row shading, and the Alpha Vantage key (stored
+  only if changed), and opens Configure Dashboard Groups for the open book. The
+  register toolbar loses both controls; **View → Double Line** (`win.double-line`)
+  and Preferences change every open register through `apply_register_display()`,
+  and `preferences_changed` keeps each window's check in step.
+- **Consistent menus, icons, and names (#336).** A **Reports** menu lists Net Worth
+  History, Holdings and Cost Basis, a new Realized Gains item, Tax Year, Explore
+  Expenses, and Budget Jars (`ViewAction.report`); they leave the Actions menu. One
+  New Transaction command remains: the register's "New Transaction in Editor"
+  item is gone, and `app.new-transaction` starts in the shown register's account.
+  Post Scheduled Transactions and Upcoming's Review Due are one item, **Review Due
+  Transactions…**; dialog items end in "…" (Save as Scenario…, Save Base as
+  Scenario…). Toolbar icons mean one command each (`view_catalog.toolbar_icons`,
+  `SHARED_ICONS` for New… and …in New Tab): Manage Scenarios, New Loan, Suggest,
+  Explore, Manage FSA Claims, and Exchange Rate have their own icons, and Import and
+  the FSA Dashboard use icons the current Adwaita theme provides. The browser's
+  **Reimbursables** and **Goals** are now **Reimbursable Expenses** and **Savings
+  Goals**, as on the desktop. GTK tests cover Preferences, Double Line across
+  registers, the Reports menu, New Transaction, labels, and icon uniqueness and
+  presence; the guide gains a Preferences section in both parts (help topic
+  `preferences`).
+
 ## 0.2.0a285 - 2026-10-20
 
 - **Uniform, searchable account choices (#334).** Only the register's account cell

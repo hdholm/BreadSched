@@ -132,7 +132,7 @@ The rest of this file is unscheduled and comes after the first Beta.
 - Continue real GTK runtime testing for selections, dialogs, focus transitions,
   model replacement, multiple windows, and GTK API-version differences.
 
-- Improve first-run UX, preferences, actionable errors, icons/resources, and
+- Improve first-run UX, actionable errors, and
   native desktop polish without moving financial logic into GUI code.
 
 - **Accessibility baseline.** Audit complete keyboard operation,

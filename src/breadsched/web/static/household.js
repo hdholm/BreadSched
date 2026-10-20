@@ -5,7 +5,7 @@
 async function showGoals() {
   const showClosed = state.goalsShowClosed ? "?closed=1" : "";
   const data = await get(`/api/savings-goals${showClosed}`);
-  const refresh = async () => { current = "Goals"; await render(); };
+  const refresh = async () => { current = "Savings Goals"; await render(); };
   const run = (action) => async () => {
     try { await action(); } catch (error) { say(error.message, "error"); }
   };
@@ -142,7 +142,7 @@ async function showReimbursables() {
   // gathers input. The service keeps the Receivable-account reclassifications
   // (#170); nothing here changes a linked transaction.
   const data = await get("/api/receivables");
-  const refresh = async () => { current = "Reimbursables"; await render(); };
+  const refresh = async () => { current = "Reimbursable Expenses"; await render(); };
   const run = (action) => async () => {
     try { await action(); } catch (error) { say(error.message, "error"); }
   };

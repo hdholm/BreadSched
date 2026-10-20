@@ -176,7 +176,7 @@ one shared sentence (`presentation.reimbursement_notice`) points at waiting
 proposals; it never links anything.
 
 GTK's **Reimbursable Expenses** dialog, the register's **Track as Reimbursable…**,
-the web **Reimbursables** page (`web/receivable_resource.py`), and `breadsched
+the web **Reimbursable Expenses** page (`web/receivable_resource.py`), and `breadsched
 receivables` gather input and render these results only.
 
 ## FSA accounts and claims

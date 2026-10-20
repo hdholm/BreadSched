@@ -136,6 +136,14 @@ class ViewManager(Gtk.ApplicationWindow):
                 action.set_enabled(False)
                 self.add_action(action)
                 self.view_actions[name] = action
+        # View → Double Line: one setting for every register, also in Preferences.
+        settings = getattr(self.get_application(), "view_settings", None)
+        double_line = bool(settings is not None and settings.get_bool("register", "double_line"))
+        self.double_line_action = Gio.SimpleAction.new_stateful(
+            "double-line", None, GLib.Variant.new_boolean(double_line)
+        )
+        self.double_line_action.connect("change-state", self._on_double_line)
+        self.add_action(self.double_line_action)
         # Tabs and finding, with the shortcuts other tabbed applications use.
         for name, handler in (
             ("close-tab", self._on_close_tab),
@@ -909,12 +917,31 @@ class ViewManager(Gtk.ApplicationWindow):
         index = self._tabs.index(current) if current is not None else 0
         self._on_tab_clicked(self._tabs[(index + step) % len(self._tabs)])
 
+    def _on_double_line(self, action, value) -> None:
+        """Show or hide every register's notes line, and remember the choice."""
+        action.set_state(value)
+        application = self.get_application()
+        settings = getattr(application, "view_settings", None)
+        if settings is None:
+            return
+        settings.set("register", "double_line", value.get_boolean())
+        settings.save()
+        from .views.register import apply_register_display
+
+        apply_register_display()
+        changed = getattr(application, "preferences_changed", None)
+        if callable(changed):
+            changed()
+
+    def shown_register(self):
+        """The register tab on screen, or None when another view is shown."""
+        if self.stack.get_visible_child() is self.register_stack:
+            return self._views.get("register")
+        return None
+
     def _on_find(self, *_args) -> None:
         """Ctrl+F: the shown register's filter, the one search a view has."""
-        view = self.stack.get_visible_child()
-        if view is self.register_stack:
-            view = self._views.get("register")
-        entry = getattr(view, "filter_entry", None)
+        entry = getattr(self.shown_register(), "filter_entry", None)
         if entry is not None:
             entry.grab_focus()
 

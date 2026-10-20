@@ -4,15 +4,16 @@ const RENDERERS = {
   Dashboard: showDashboard, Accounts: showAccounts, Register: showRegister, Scheduled: showScheduled, Payroll: showPayroll,
   "FSA Dashboard": showFsaDashboard, Plan: showPlan, Scenarios: showScenarios,
   Review: showReview, Projection: showProjection, Enter: showEntry, Import: showImport,
-  Rules: showRules, Reimbursables: showReimbursables, Goals: showGoals, Verify: showVerify,
+  Rules: showRules, "Reimbursable Expenses": showReimbursables, "Savings Goals": showGoals,
+  Verify: showVerify,
   Guide: showGuide,
 };
 
 // Views whose workflow has a section in the browser guide get a Help button.
 const VIEW_HELP = {
   Scheduled: "scheduled", Payroll: "payroll", Plan: "plan", Projection: "plan",
-  Import: "import", Rules: "rules", Reimbursables: "reimbursables",
-  Goals: "goals",
+  Import: "import", Rules: "rules", "Reimbursable Expenses": "reimbursables",
+  "Savings Goals": "goals",
 };
 
 function switchTo(name) { current = name; render(); }

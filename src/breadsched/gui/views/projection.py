@@ -179,7 +179,7 @@ class ProjectionView(BaseView):
         spacer.set_hexpand(True)
         bar.append(spacer)
 
-        self.save_button = Gtk.Button(label="Save as scenario")
+        self.save_button = Gtk.Button(label="Save Base as Scenario…")
         self.save_button.add_css_class("suggested-action")
         self.save_button.connect("clicked", self._on_save_clicked)
         bar.append(self.save_button)
@@ -294,7 +294,7 @@ class ProjectionView(BaseView):
         self._set_scenario_name(chosen.name if chosen is not None else "Base scenario")
         self._load_scenario_controls()
         self.save_button.set_label(
-            "Save scenario changes" if chosen is not None else "Save base as scenario"
+            "Save Scenario Changes" if chosen is not None else "Save Base as Scenario…"
         )
 
     def _load_scenario_controls(self) -> None:
@@ -659,7 +659,7 @@ class ProjectionView(BaseView):
         try:
             self._load_scenario_controls()
             self.save_button.set_label(
-                "Save scenario changes" if chosen is not None else "Save base as scenario"
+                "Save Scenario Changes" if chosen is not None else "Save Base as Scenario…"
             )
         finally:
             self._updating = False
