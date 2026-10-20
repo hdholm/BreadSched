@@ -45,8 +45,9 @@ from ...gen.services.payroll import (
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
-from ..widgets.bounded import BoundedWindow
+from ..widgets.bounded import BoundedWindow, keeps_enter
 from ..widgets.choice import bounded_dropdown
+from ..widgets.confirm import delete_button
 from ..widgets.help import help_row
 
 __all__ = ["PAY_PERIODS", "PayrollDialog"]
@@ -177,6 +178,7 @@ class PayrollDialog(BoundedWindow):
         row = Gtk.Box(spacing=8)
         row.append(Gtk.Label(label="As of"))
         self.as_of_entry = Gtk.Entry(text=date.today().isoformat(), width_chars=12)
+        keeps_enter(self.as_of_entry)
         self.as_of_entry.connect("activate", lambda _entry: self.show_breakdown())
         row.append(self.as_of_entry)
         show = Gtk.Button(label="Show")
@@ -281,9 +283,11 @@ class PayrollDialog(BoundedWindow):
         save.add_css_class("suggested-action")
         save.connect("clicked", lambda _b: self.save_template())
         buttons.append(save)
-        self.delete_template_button = Gtk.Button(label="Delete template")
-        self.delete_template_button.add_css_class("destructive-action")
-        self.delete_template_button.connect("clicked", lambda _b: self.delete_template())
+        self.delete_template_button = delete_button(
+            lambda: f"the payroll template {self.template_name_entry.get_text().strip()}",
+            self.delete_template,
+            label="Delete template",
+        )
         buttons.append(self.delete_template_button)
         page.append(buttons)
 

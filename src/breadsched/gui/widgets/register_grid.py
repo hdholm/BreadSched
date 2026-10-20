@@ -112,6 +112,8 @@ class RegisterGrid(Gtk.Box):
         self._width = 0
         self._height = 0
         self._dark = False
+        #: The cell the editor was last placed on, to select a newly reached one.
+        self._placed_cell: tuple | None = None
         #: One of :data:`BANDING`.
         self.banding = "transactions"
 
@@ -316,6 +318,9 @@ class RegisterGrid(Gtk.Box):
                 self.editor.set_text(text)
             finally:
                 self._syncing = False
+        cell = (sheet.cursor, sheet.column, id(sheet.draft))
+        arrived = cell != self._placed_cell
+        self._placed_cell = cell
         heading = "Notes" if notes else sheet.headings()[sheet.column]
         self.editor.update_property(
             [Gtk.AccessibleProperty.LABEL], [f"{heading}: {sheet.summary(sheet.cursor)}"]
@@ -324,6 +329,10 @@ class RegisterGrid(Gtk.Box):
         if focus:
             self.editor.grab_focus()
             self.editor.set_position(-1)
+        if arrived:
+            # Arriving in a cell selects all of it, so typing or Backspace replaces
+            # a proposed value; Left and Right go to its start or end (#332).
+            self.editor.select_region(0, -1)
 
     def _on_editor_changed(self, entry: Gtk.Entry) -> None:
         if self._syncing or self.sheet is None:

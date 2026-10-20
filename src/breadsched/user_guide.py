@@ -88,6 +88,13 @@ HELP_TOPICS: dict[str, str] = {
     "rules": "Categorization rules",
     "reimbursables": "Reimbursable expenses",
     "goals": "Savings goals",
+    "accounts": "Accounts",
+    "dashboard-groups": "Dashboard groups",
+    "prices": "Exchange rates and security prices",
+    "loans": "Loans",
+    "fsa-claims": "FSA claims",
+    "transactions": "Enter transactions in a register",
+    "protect": "Protect and recover a book",
 }
 
 #: The interfaces that show contextual help, and the guide part each opens.

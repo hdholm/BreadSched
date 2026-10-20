@@ -140,8 +140,15 @@ When you make the window narrower, text columns such as descriptions shorten (wi
 "…") so every column, including every amount, stays visible. On a small screen, a
 long dialog scrolls its form, and its Save and Cancel buttons stay at the bottom.
 
+Dialogs work the same way throughout: **Escape** closes one as its **Cancel** or
+**Close** button does, **Enter** in a one-line field chooses its main button (such as
+**Save**), and **Help** opens this guide at its section. Every **Delete** asks first.
+
 Every view you open, and the register of every account you open, gets a tab in the
-bar below the toolbar. Choose a tab to go back to it; each register tab keeps its
+bar below the toolbar. Choosing a tab puts the keyboard in what it shows (in a
+register, the cell under the cursor). **Ctrl+Page Up** and **Ctrl+Page Down** move
+between tabs, **Ctrl+W** closes the current one, and **Ctrl+F** (**Edit → Find in
+Register**) goes to the register's filter. Choose a tab to go back to it; each register tab keeps its
 own place, filter, and half-typed entry. Opening an account that already has a tab
 returns to that tab. To open another register beside the one you are in, choose
 **New tab** in the register's toolbar (**Actions → Open Register in New Tab**): it
@@ -162,6 +169,24 @@ scenario deleted since is left out. Another book has its own tabs.
 
 Registers can also open in independent windows; their account, filter, and cursor
 do not replace the main window's register state.
+
+## Accounts
+
+In Accounts, **New Account** and **Edit Account** (toolbar icons, or the Actions
+menu) open the account editor: its name, type, parent, code, description, and notes,
+whether it is a placeholder or hidden, and the settings its type has, such as a
+card's payment terms, a loan's asset, an FSA's funding years, or an investment's
+return and cost method. **Delete** asks first, and refuses an account the book still
+needs, saying why. See [Accounts](../USER_GUIDE.md#accounts).
+
+## Dashboard groups
+
+On the Dashboard, **Configure Dashboard Groups** (toolbar icon or the Actions menu)
+names the groups the Dashboard shows (a `:` nests one group in another), gives each
+a kind, and chooses its accounts; **Suggest from accounts** proposes groups from the
+chart of accounts. Groups only arrange what the Dashboard shows; its totals cover
+the whole book. See
+[Dashboard and near-term cash](../USER_GUIDE.md#dashboard-and-near-term-cash).
 
 ## Exchange rates and security prices
 
@@ -245,6 +270,8 @@ Type a new entry straight into the blank transaction:
 4. Press **Enter** to save it. A new blank transaction waits for the next entry,
    keeping the date.
 
+Arriving in a cell selects everything in it, so typing (or Backspace) replaces a
+proposed amount or account; **Left** or **Right** goes to its start or end instead.
 **Tab** and **Shift+Tab** move between cells; **Tab** past the last cell saves
 the transaction, like **Enter**. **Escape** puts the transaction back as it was
 (the blank one empties). Dates, amounts, and **Num** take the shortcuts in
@@ -386,6 +413,13 @@ such as 85.50 or a percentage such as 6.2%), fills one from the selected paychec
 creates a new paycheck from one. See
 [Paychecks and pay changes](../USER_GUIDE.md#paychecks-and-pay-changes).
 
+### Loans
+
+**New Loan** in Scheduled sets up a loan from its name, amount borrowed, annual
+rate, term, and first payment, with the loan, interest expense, and paying
+accounts; **Create loan** saves the loan account and its payment schedule. See
+[Create a loan](../USER_GUIDE.md#create-a-loan).
+
 ### Review due transactions
 
 BreadSched asks when a book opens (after any held GnuCash changes), and **Post
@@ -393,7 +427,7 @@ Scheduled Transactions** in the menu, or **Review due…** in Upcoming, opens th
 same review; if nothing is due, it says so. Choose each date's action, or one for all
 of a schedule's dates, then **Apply**. If anything was posted, **Posted
 transactions** lists it split by split; choose **Edit…** to change one in the
-transaction editor or **Delete** to remove it, then **Done**. See
+transaction editor or **Delete** to remove it, then **Close**. See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
 ## Plan and projection
@@ -529,6 +563,14 @@ The **Plan** lists each expense category a receivable changed under **Reimbursab
 expenses: gross and net cost**, below the savings goals, and a Plan cell's detail
 window shows its gross cost and what was reimbursed or expected back under the Plan,
 Actual, and Variance line.
+
+## FSA claims
+
+On the FSA Dashboard, **Manage FSA Claims** opens the claims editor: each claim's
+service date, provider, description, and EOB amount, the payments and refunds it
+links, and how much of it each FSA funding year covers. **Close claim** and
+**Reopen claim** keep a reason, and **Delete** asks first. See
+[FSA and benefit accounts](../USER_GUIDE.md#fsa-and-benefit-accounts).
 
 ## Import files
 

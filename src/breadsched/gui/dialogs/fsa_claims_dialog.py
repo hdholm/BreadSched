@@ -34,6 +34,8 @@ from ...presentation import service_error_message, shared_cost_text
 from ..gi_setup import GLib, Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
+from ..widgets.confirm import delete_button
+from ..widgets.help import help_row
 
 __all__ = ["FsaClaimsDialog"]
 
@@ -191,6 +193,7 @@ class FsaClaimsDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(outer, f"set_margin_{side}")(12)
         self.set_child(outer)
+        outer.prepend(help_row("fsa-claims"))
 
         top = Gtk.Box(spacing=6)
         self.claim_select = bounded_dropdown(
@@ -201,8 +204,14 @@ class FsaClaimsDialog(BoundedWindow):
         new = Gtk.Button(label="New")
         new.connect("clicked", lambda *_: self._load(None))
         top.append(new)
-        delete = Gtk.Button(label="Delete")
-        delete.connect("clicked", self._delete)
+        delete = delete_button(
+            lambda: (
+                f"the claim {self.current.description or self.current.provider}"
+                if self.current is not None
+                else "this claim"
+            ),
+            lambda: self._delete(None),
+        )
         top.append(delete)
         outer.append(top)
 

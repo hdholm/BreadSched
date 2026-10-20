@@ -15,6 +15,7 @@ from ...gen.lib.money import Money
 from ...presentation import holding_cost_text, lot_move_text, lot_text, sale_text
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
+from ..widgets.help import help_row
 from ..widgets.model_chart import ModelChartView
 
 __all__ = ["HoldingsDialog"]
@@ -47,6 +48,7 @@ class HoldingsDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(outer, f"set_margin_{side}")(12)
         self.set_child(outer)
+        outer.prepend(help_row("prices"))
         note = Gtk.Label(
             label=(
                 "Lots come from each security account's transactions: a sale takes the "

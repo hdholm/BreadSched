@@ -15,6 +15,7 @@ transaction deleted elsewhere simply drops out.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from functools import partial
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import ledger
@@ -23,6 +24,7 @@ from ...gen.services import DeleteTransaction, delete_transaction
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
+from ..widgets.confirm import delete_button
 from ..widgets.help import help_row
 
 __all__ = ["PostedTransactionsDialog", "split_lines"]
@@ -92,7 +94,7 @@ class PostedTransactionsDialog(BoundedWindow):
         box.append(self.status)
 
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        close = Gtk.Button(label="Done")
+        close = Gtk.Button(label="Close")
         close.add_css_class("suggested-action")
         close.connect("clicked", lambda *_: self.close())
         buttons.append(close)
@@ -137,9 +139,11 @@ class PostedTransactionsDialog(BoundedWindow):
             edit.set_tooltip_text("Open this transaction in the full editor")
             edit.connect("clicked", lambda _b, handle=transaction.handle: self.edit(handle))
             actions.append(edit)
-            delete = Gtk.Button(label="Delete")
+            delete = delete_button(
+                f"the transaction {transaction.description}",
+                partial(self.delete, transaction.handle),
+            )
             delete.set_tooltip_text("Remove this transaction; Ctrl+Z restores it")
-            delete.connect("clicked", lambda _b, handle=transaction.handle: self.delete(handle))
             actions.append(delete)
             self.journal.attach(actions, 3, row, 2, 1)
             self.edit_buttons[transaction.handle] = edit

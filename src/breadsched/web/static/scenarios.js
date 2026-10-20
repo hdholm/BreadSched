@@ -326,6 +326,7 @@ async function showScenarios() {
             el("button", {
               class: "action destructive", type: "button",
               onclick: async () => {
+                if (!confirm("Delete this dated assumption?")) return;
                 try {
                   await post("/api/scenario/period/delete", {
                     handle: selected.handle, index: period.index,
@@ -448,6 +449,7 @@ function drawdownSection(data, selected) {
         el("button", {
           class: "action destructive", type: "button",
           onclick: async () => {
+            if (!confirm("Delete this drawdown?")) return;
             try {
               await post("/api/scenario/drawdown/delete", {
                 handle: selected.handle, drawdown: drawdown.handle,

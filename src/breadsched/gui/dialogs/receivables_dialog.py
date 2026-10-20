@@ -43,6 +43,7 @@ from ...presentation import (
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
+from ..widgets.confirm import delete_button
 from ..widgets.help import help_row
 
 __all__ = ["ReceivablesDialog"]
@@ -151,9 +152,11 @@ class ReceivablesDialog(BoundedWindow):
         self.save_button.connect("clicked", lambda _b: self.save())
         new_button = Gtk.Button(label="New")
         new_button.connect("clicked", lambda _b: self.edit(None))
-        self.delete_button = Gtk.Button(label="Delete")
-        self.delete_button.add_css_class("destructive-action")
-        self.delete_button.connect("clicked", lambda _b: self.delete())
+        self.delete_button = delete_button(
+            lambda: "this reimbursable expense",
+            self.delete,
+            detail="Its transactions are not changed.",
+        )
         for button in (self.save_button, new_button, self.delete_button):
             actions.append(button)
         form.attach(actions, 1, 6, 1, 1)

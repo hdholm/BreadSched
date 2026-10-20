@@ -10,6 +10,26 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a284 - 2026-10-20
+
+- **Keyboard focus follows the view (#331).** Choosing a tab kept the keyboard on
+  the tab button. `ViewManager._focus_view` puts it in the shown view (a register's
+  cursor cell, once the grid is sized), and tab buttons no longer take focus.
+  `win.next-tab`, `win.previous-tab`, `win.close-tab`, and `win.find` add Ctrl+Page
+  Down/Up, Ctrl+W, and Ctrl+F (View and Edit menus).
+- **Arriving in a cell selects it (#332).** The grid selects a cell's whole text when
+  the cursor reaches it, so a proposed value is replaced by typing.
+- **Dialog conventions (#335).** `BoundedWindow` closes on Escape and makes the last
+  row's suggested button the default for Enter (`keeps_enter` exempts fields with
+  their own Enter); every dialog has a Help row, with new `accounts`,
+  `dashboard-groups`, `prices`, `loans`, `fsa-claims`, `transactions`, and `protect`
+  topics and matching desktop and browser guide sections; the posted-transactions
+  window closes with Close. Every Delete is `widgets.confirm.delete_button`
+  (destructive style, "Delete …?" with Cancel default), and every browser delete
+  confirms. The loan form now scrolls on a small screen. GTK tests cover focus,
+  shortcuts, selection, Escape and Enter, Help and confirm coverage; a browser test
+  covers a refused and an accepted delete.
+
 ## 0.2.0a283 - 2026-10-19
 
 - **Review what a due review posted (#328).** Applying the GTK due review reported

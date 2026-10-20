@@ -351,7 +351,7 @@ currencies when estimating net worth.
 
 A manual exchange rate is entered as target units per one source unit, for currencies
 already in the book ([desktop](guide/desktop.md#exchange-rates-and-security-prices),
-[browser](guide/web.md#exchange-rates),
+[browser](guide/web.md#exchange-rates-and-security-prices),
 [command line](guide/cli.md#exchange-rates)). A repeated manual entry for the same
 pair and date updates that manual quote without replacing imported evidence.
 Entering a rate never creates a currency or alters ledger transactions. Imported
@@ -478,7 +478,7 @@ Both the desktop and browser registers end in a blank row for typing a new entry
 (the desktop register opens there, scrolled to the newest entries),
 with split lines for entries of more than two splits, and let you edit an existing
 entry in place ([desktop](guide/desktop.md#enter-transactions-in-a-register),
-[browser](guide/web.md#enter-transactions-in-the-register)).
+[browser](guide/web.md#enter-transactions-in-a-register)).
 
 An account that holds a security (a fund or stock, with shares rather than a
 currency) shows each transaction's shares and price and the shares held after it,

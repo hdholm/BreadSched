@@ -36,6 +36,8 @@ from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
+from ..widgets.confirm import delete_button
+from ..widgets.help import help_row
 
 __all__ = ["AccountDialog"]
 
@@ -80,6 +82,7 @@ class AccountDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
+        box.prepend(help_row("accounts"))
 
         grid = Gtk.Grid(column_spacing=10, row_spacing=8)
         box.append(grid)
@@ -414,9 +417,10 @@ class AccountDialog(BoundedWindow):
     def _build_actions(self, box: Gtk.Box, account: Account | None) -> None:
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
         if account is not None:
-            delete = Gtk.Button(label="Delete")
-            delete.add_css_class("destructive-action")
-            delete.connect("clicked", self._on_delete)
+            delete = delete_button(
+                f"the account {self.db.full_name(account)}",
+                lambda: self._on_delete(None),
+            )
             buttons.append(delete)
         cancel = Gtk.Button(label="Cancel")
         cancel.connect("clicked", lambda *_: self.close())

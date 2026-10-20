@@ -41,7 +41,7 @@ async function showScheduled() {
             render();
           } catch (error) { say(error.message, "error"); }
         }}, "Duplicate…"),
-      s.account_linked ? null : el("button", { class:"action", type:"button", onclick:async()=>{
+      s.account_linked ? null : el("button", { class:"action destructive", type:"button", onclick:async()=>{
         if (!window.confirm(`Delete scheduled transaction "${s.name}"? Already posted transactions remain.`)) return;
         try {
           await post("/api/scheduled/delete", {handle:s.handle});
@@ -647,7 +647,8 @@ async function showPayroll() {
         state.payrollTemplate = { ...item, existing_name:item.name };
         await refresh();
       }) }, "Edit"),
-      el("button", { class:"action", type:"button", onclick:run(async () => {
+      el("button", { class:"action destructive", type:"button", onclick:run(async () => {
+        if (!window.confirm(`Delete the payroll template ${item.name}?`)) return;
         await post("/api/payroll/template/delete", { name:item.name });
         if (state.payrollTemplate?.existing_name === item.name) state.payrollTemplate = null;
         await refresh();

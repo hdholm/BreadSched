@@ -7,6 +7,7 @@ from ...gen.engine import estimates
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.help import help_row
 
 __all__ = ["HistoricalEstimatesDialog"]
 
@@ -25,6 +26,7 @@ class HistoricalEstimatesDialog(BoundedWindow):
         outer.set_margin_start(12)
         outer.set_margin_end(12)
         self.set_child(outer)
+        outer.prepend(help_row("scheduled"))
 
         controls = Gtk.Box(spacing=8)
         controls.append(Gtk.Label(label="Completed months", xalign=0))

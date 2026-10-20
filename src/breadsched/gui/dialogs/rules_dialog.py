@@ -9,6 +9,8 @@ step, and a rejected request leaves the book unchanged.
 
 from __future__ import annotations
 
+from functools import partial
+
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib.account import AccountClass
 from ...gen.services.categorization import (
@@ -26,6 +28,7 @@ from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.confirm import delete_button
 from ..widgets.help import help_row
 
 __all__ = ["RulesDialog"]
@@ -135,8 +138,10 @@ class RulesDialog(BoundedWindow):
                     "clicked", lambda _b, handle=rule.handle, to=target: self.move(handle, to)
                 )
                 self.rule_rows.attach(button, column, position, 1, 1)
-            delete = Gtk.Button(label="Delete")
-            delete.connect("clicked", lambda _b, handle=rule.handle: self.delete(handle))
+            delete = delete_button(
+                f"the rule for “{rule.key}”",
+                partial(self.delete, rule.handle),
+            )
             self.rule_rows.attach(delete, 5, position, 1, 1)
 
         proposals = preview_category_proposals(self.db).value or ()

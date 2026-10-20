@@ -359,11 +359,19 @@ class RegisterView(BaseView):
     def focus_entry(self) -> None:
         """Put keyboard focus in the cell under the cursor, once the grid is shown."""
 
+        tries = [0]
+
         def focus() -> bool:
-            self.grid.sync()
+            # A register just shown may not be sized yet; the editor has no cell
+            # to sit on until it is, so wait for that (briefly) before focusing.
+            grid = self.grid
+            if (not grid.get_mapped() or not grid._widths or grid._height <= 0) and tries[0] < 50:
+                tries[0] += 1
+                return GLib.SOURCE_CONTINUE
+            grid.sync()
             return GLib.SOURCE_REMOVE
 
-        GLib.idle_add(focus)
+        GLib.timeout_add(20, focus)
 
     def edit_selected_in_place(self, *_args) -> bool:
         """Typing goes into the transaction under the cursor; this puts focus there."""

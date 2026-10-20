@@ -911,6 +911,27 @@ class TestRegisterGrid:
         window.open_register(app.db.get_account_by_name("Assets:Checking Account").handle)
         assert window._views["register"].grid.columns[-1] == "balance"
 
+    def test_reaching_a_cell_selects_all_of_it(self, app, window, populated_book):
+        # #332: a proposed value had to be erased character by character.
+        view = _grid_register(app, window, populated_book)
+        window.present()
+        assert _spin(window.get_mapped)
+        _spin(lambda: False, 0.2)
+        grid, sheet = view.grid, view.sheet
+        sheet.to_blank()
+        sheet.column = "description"
+        sheet.set_text("Groceries")
+        grid.sync()
+        assert grid.key(Gdk.KEY_Tab, 0)
+        sheet.column = "description"
+        grid.sync()
+        assert grid.editor.get_text() == "Groceries"
+        assert grid.editor.get_selection_bounds() == (0, len("Groceries"))
+        # Typing within the same cell keeps what was typed, not reselected.
+        grid.editor.set_position(-1)
+        grid.sync()
+        assert not grid.editor.get_selection_bounds()
+
     def test_shading_alternates_by_transaction_and_is_a_remembered_choice(
         self, app, window, populated_book
     ):
@@ -8529,6 +8550,55 @@ class TestTabs:
         assert again.account_handle == checking and len(window._registers) == 3
         assert first.account_handle == checking
 
+    def test_choosing_a_register_tab_puts_the_keyboard_in_it(self, app, window, populated_book):
+        # #331: the keyboard stayed with the tab until the register was clicked.
+        app.open_book(populated_book)
+        checking, card = self._accounts(app)
+        window.present()
+        assert _spin(window.get_mapped)
+        window.open_register(checking)
+        first = window._views["register"]
+        window.open_register(card)
+        for tab in window._tabs:
+            assert tab.button.get_focus_on_click() is False
+        window._tabs[-1].button.grab_focus()
+        window._on_tab_clicked(window._tabs[-2])
+        _spin(lambda: False, 0.3)
+        focus = window.get_focus()
+        assert focus is not None and focus.is_ancestor(first.grid.editor)
+
+    def test_keyboard_shortcuts_step_close_tabs_and_find(self, app, window, populated_book):
+        app.open_book(populated_book)
+        checking, card = self._accounts(app)
+        window.present()
+        assert _spin(window.get_mapped)
+        window.open_register(checking)
+        window.open_register(card)
+        accels = app.get_accels_for_action
+        assert accels("win.next-tab") == ["<Control>Page_Down"]
+        assert accels("win.previous-tab") == ["<Control>Page_Up"]
+        assert accels("win.close-tab") == ["<Control>w"]
+        assert accels("win.find") == ["<Control>f"]
+        window.activate_action("win.previous-tab", None)
+        assert window._views["register"].account_handle == checking
+        window.activate_action("win.next-tab", None)
+        register = window._views["register"]
+        assert register.account_handle == card
+
+        def in_register() -> bool:
+            focus = window.get_focus()
+            return focus is not None and focus.is_ancestor(register.grid.editor)
+
+        # The tab's own focus lands first; Ctrl+F then moves it to the filter.
+        assert _spin(in_register)
+        window.activate_action("win.find", None)
+        _spin(lambda: False, 0.2)
+        focus = window.get_focus()
+        assert focus is not None and focus.is_ancestor(window._views["register"].filter_entry)
+        count = len(window.tabs)
+        window.activate_action("win.close-tab", None)
+        assert len(window.tabs) == count - 1
+
     def test_each_register_tab_keeps_its_own_place(self, app, window, populated_book):
         app.open_book(populated_book)
         checking, card = self._accounts(app)
@@ -9202,3 +9272,76 @@ class TestBoundedSizes:
             assert width >= minimum[0] and height >= minimum[1]
         finally:
             window.destroy()
+
+
+class TestDialogConventions:
+    """#335: every dialog answers Escape and Enter, has Help, and confirms deletes."""
+
+    def test_escape_closes_and_enter_activates_the_main_button(self, app, window, populated_book):
+        from breadsched.gui.dialogs.exchange_rate_dialog import ExchangeRateDialog
+
+        app.open_book(populated_book)
+        dialog = ExchangeRateDialog(window, app.db)
+        dialog.present()
+        assert _spin(dialog.get_mapped)
+        primary = dialog.primary()
+        assert primary is not None and primary.has_css_class("suggested-action")
+        assert dialog.get_default_widget() is primary
+        entries = [w for w in _descendants(dialog) if isinstance(w, Gtk.Entry)]
+        assert entries and all(entry.get_activates_default() for entry in entries)
+        closed = []
+        dialog.connect("close-request", lambda *_: closed.append(True) or False)
+        assert dialog._on_escape()
+        assert closed
+
+    def test_a_field_with_its_own_enter_keeps_it(self, app, window, populated_book):
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        dialog = TransactionDialog(window, app.db)
+        try:
+            dialog.present()
+            assert _spin(dialog.get_mapped)
+            assert dialog.description_entry.get_activates_default() is False
+        finally:
+            dialog.destroy()
+
+    def test_every_dialog_has_help_and_every_delete_confirms(self):
+        import ast
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parent.parent / "src" / "breadsched" / "gui"
+        for path in sorted((root / "dialogs").glob("*.py")):
+            tree = ast.parse(path.read_text("utf-8"))
+            text = path.read_text("utf-8")
+            windows = [
+                node.name
+                for node in tree.body
+                if isinstance(node, ast.ClassDef)
+                and any(getattr(base, "id", "") == "BoundedWindow" for base in node.bases)
+            ]
+            if windows:
+                assert text.count("help_row(") >= len(windows), (path.name, windows)
+        for path in sorted(root.rglob("*.py")):
+            text = path.read_text("utf-8")
+            assert 'Gtk.Button(label="Delete' not in text or path.name in {
+                "scheduled.py",
+                "scenario_manager_dialog.py",
+            }, path.name
+
+    def test_a_delete_button_asks_before_deleting(self, monkeypatch):
+        from breadsched.gui.widgets import confirm
+
+        asked = []
+        monkeypatch.setattr(
+            confirm,
+            "confirm_delete",
+            lambda widget, what, on_confirm, detail="": asked.append((what, on_confirm)),
+        )
+        deleted = []
+        button = confirm.delete_button("the rule for “Rent”", lambda: deleted.append(True))
+        assert button.has_css_class("destructive-action")
+        button.emit("clicked")
+        assert [what for what, _ in asked] == ["the rule for “Rent”"] and not deleted
+        asked[0][1]()
+        assert deleted == [True]
