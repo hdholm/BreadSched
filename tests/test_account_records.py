@@ -100,3 +100,30 @@ def test_suggestions_write_to_the_right_record():
         Suggestion(account=card.handle, field=field, value=value, reason="").apply(card)
     assert card.liability.linked_asset == "house"
     assert card.card == CardTerms(False, Money(40), 9, "checking")
+
+
+def test_no_code_uses_the_flat_names():
+    """Setting a removed flat name only adds a stray attribute, silently (the demo's
+    growth rates were lost that way), so no source, script, or example may use one."""
+    import re
+    from pathlib import Path
+
+    names = (
+        "pays_in_full|usual_payment|payment_day|card_payment_account|linked_asset|"
+        "annual_interest|fsa_years|fsa_dependent_care|annual_return|cost_basis_method|"
+        "exclude_from_projection|emergency_fund_override|tax_relevant_override"
+    )
+    # A bare receiver (not a record such as ``account.card``, nor text such as an
+    # error code) other than ``self`` or ``args``, whose widgets and options keep
+    # the names.
+    pattern = re.compile(rf"(?<![\w.\"'])(?!self\b|args\b)[a-z_]\w*\.({names})\b")
+    root = Path(__file__).resolve().parents[1]
+    found = []
+    for folder in ("src", "scripts", "examples"):
+        for path in (root / folder).rglob("*.py"):
+            if path.name == "account.py" and path.parent.name == "lib":
+                continue
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if pattern.search(line):
+                    found.append(f"{path.relative_to(root)}:{number}: {line.strip()}")
+    assert not found, "\n".join(found)

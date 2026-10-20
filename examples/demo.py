@@ -256,7 +256,7 @@ def main() -> int:
 
     for account_name, rate in (("Assets:Brokerage", "0.06"),):
         account = db.get_account(accounts[account_name])
-        account.annual_return = Decimal(rate)
+        account.investment.annual_return = Decimal(rate)
         with db.transaction("Set return assumption") as txn:
             db.commit_account(account, txn)
 
