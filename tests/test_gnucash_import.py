@@ -202,16 +202,16 @@ class TestSqliteImport:
         brokerage = accounts["brokerage"]
         mortgage = accounts["mortgage"]
         fsa = accounts["fsa"]
-        brokerage.annual_return = Decimal("0.061")
+        brokerage.investment.annual_return = Decimal("0.061")
         mortgage.atype = AccountType.LOAN
-        mortgage.linked_asset = accounts["house"].handle
-        mortgage.annual_interest = Decimal("0.0525")
+        mortgage.liability.linked_asset = accounts["house"].handle
+        mortgage.liability.annual_interest = Decimal("0.0525")
         fsa.atype = AccountType.FSA
-        fsa.fsa_dependent_care = True
+        fsa.fsa.dependent_care = True
         fund = accounts["fund"]
-        fund.cost_basis_method = "average"
+        fund.investment.cost_basis_method = "average"
         fsa.notes = "Local enrollment context"
-        fsa.fsa_years = [
+        fsa.fsa.years = [
             FsaFundingYear(
                 start=date(2026, 1, 1),
                 through=date(2026, 12, 31),
@@ -241,16 +241,16 @@ class TestSqliteImport:
         assert refreshed_fund.hidden is True
         assert refreshed_fund.commodity_scu == 1000
         assert refreshed_fund.parent == source.ids.brokerage
-        assert refreshed_brokerage.annual_return == Decimal("0.061")
+        assert refreshed_brokerage.investment.annual_return == Decimal("0.061")
         assert refreshed_mortgage.atype is AccountType.LOAN
-        assert refreshed_mortgage.linked_asset == source.ids.house
-        assert refreshed_mortgage.annual_interest == Decimal("0.0525")
+        assert refreshed_mortgage.liability.linked_asset == source.ids.house
+        assert refreshed_mortgage.liability.annual_interest == Decimal("0.0525")
         assert refreshed_fsa.atype is AccountType.FSA
         assert refreshed_fsa.notes == "Local enrollment context"
         assert refreshed_fsa.source_notes == "Source enrollment note"
-        assert refreshed_fsa.fsa_years[0].election == Money("2400")
-        assert refreshed_fsa.fsa_dependent_care is True
-        assert refreshed_fund.cost_basis_method == "average"
+        assert refreshed_fsa.fsa.years[0].election == Money("2400")
+        assert refreshed_fsa.fsa.dependent_care is True
+        assert refreshed_fund.investment.cost_basis_method == "average"
 
     def test_notify_false_suppresses_the_complete_importer_boundary(self, db, gnucash_sqlite_path):
         seen = []
@@ -747,24 +747,24 @@ class TestSqliteImport:
         account = db.get_account(gnucash_sqlite_path.ids.checking)
         assert account is not None
         account.atype = AccountType.FSA
-        account.fsa_years = [
+        account.fsa.years = [
             FsaFundingYear(
                 start=date(2026, 1, 1),
                 through=date(2026, 12, 31),
                 election=Money("1200.00"),
             )
         ]
-        account.annual_return = Decimal("0.041")
-        account.annual_interest = Decimal("0.073")
-        account.exclude_from_projection = True
+        account.investment.annual_return = Decimal("0.041")
+        account.liability.annual_interest = Decimal("0.073")
+        account.planning.exclude_from_projection = True
         account.group = "Planning group"
-        account.pays_in_full = False
-        account.usual_payment = Money("125.00")
-        account.payment_day = 18
-        account.emergency_fund_override = False
+        account.card.pays_in_full = False
+        account.card.usual_payment = Money("125.00")
+        account.card.payment_day = 18
+        account.planning.emergency_fund = False
         card = db.get_account(gnucash_sqlite_path.ids.card)
         assert card is not None
-        card.card_payment_account = gnucash_sqlite_path.ids.checking
+        card.card.payment_account = gnucash_sqlite_path.ids.checking
         with db.transaction("Configure imported account") as db_txn:
             db.commit_account(account, db_txn)
             db.commit_account(card, db_txn)
@@ -782,18 +782,18 @@ class TestSqliteImport:
         assert reimported.description == "Updated source description"
         assert reimported.atype is AccountType.FSA
         assert reimported.source_atype is GnuCashAccountType.ASSET
-        assert reimported.fsa_years == account.fsa_years
-        assert reimported.annual_return == Decimal("0.041")
-        assert reimported.annual_interest == Decimal("0.073")
-        assert reimported.exclude_from_projection is True
+        assert reimported.fsa.years == account.fsa.years
+        assert reimported.investment.annual_return == Decimal("0.041")
+        assert reimported.liability.annual_interest == Decimal("0.073")
+        assert reimported.planning.exclude_from_projection is True
         assert reimported.group == "Planning group"
-        assert reimported.pays_in_full is False
-        assert reimported.usual_payment == Money("125.00")
-        assert reimported.payment_day == 18
-        assert reimported.emergency_fund_override is False
+        assert reimported.card.pays_in_full is False
+        assert reimported.card.usual_payment == Money("125.00")
+        assert reimported.card.payment_day == 18
+        assert reimported.planning.emergency_fund is False
         reimported_card = db.get_account(gnucash_sqlite_path.ids.card)
         assert reimported_card is not None
-        assert reimported_card.card_payment_account == gnucash_sqlite_path.ids.checking
+        assert reimported_card.card.payment_account == gnucash_sqlite_path.ids.checking
 
     def test_incompatible_source_type_change_requires_review_and_keeps_type(
         self, db, gnucash_sqlite_path

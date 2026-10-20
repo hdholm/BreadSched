@@ -87,7 +87,7 @@ is the expected amount, or the whole linked expense, never more than the expense
 Expected receipts: `receivables.expected_receipt` gives an open or partly reimbursed
 receivable with a receivable account, a reporting-currency posting, and an
 `expected_cash_date` on or after today the amount still owed and the cash account
-that paid its expense (a card's `card_payment_account` for a card-paid expense);
+that paid its expense (a card's `card.payment_account` for a card-paid expense);
 disputed, overdue, settled, and written-off receivables have none.
 `planning.receivable_receipt_events` turns each into a placeholder `ONE_OFF` planned
 event (cash +remaining, receivable account −remaining) in every scenario's events, so
@@ -198,7 +198,7 @@ use the money. A grace period extends `service_through`, so a grace-period servi
 be claimed against either year and the household chooses; grace-period claims tagged
 to the earlier year reduce what it can carry over.
 
-**Dependent care.** `Account.fsa_dependent_care` marks a dependent care FSA. Its
+**Dependent care.** `Account.fsa.dependent_care` marks a dependent care FSA. Its
 `year_status` availability is the year's funding, at most the election, less what was
 used, and it never carries in or over (`services.accounts` refuses a carryover limit
 with `account.fsa.dependent_care.carryover`). A claim whose allocations are all on

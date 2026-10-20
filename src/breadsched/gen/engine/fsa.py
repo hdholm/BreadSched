@@ -113,7 +113,7 @@ def year_status(
         - repaid
     )
     carried_in = _carried_in(db, account, year, when)
-    if account.fsa_dependent_care:
+    if account.fsa.dependent_care:
         remaining_raw = min(funded, year.election) - used
     else:
         remaining_raw = year.election + carried_in - used
@@ -123,7 +123,7 @@ def year_status(
     closed = when > runout
     remaining = Money(0) if closed else available
     carried_over = Money(0)
-    if closed and year.carryover_limit is not None and not account.fsa_dependent_care:
+    if closed and year.carryover_limit is not None and not account.fsa.dependent_care:
         carried_over = min(available, year.carryover_limit)
     forfeited = available - carried_over if closed else Money(0)
     return FsaYearStatus(
@@ -136,7 +136,7 @@ def year_status(
         forfeited,
         when,
         repaid=repaid,
-        dependent_care=account.fsa_dependent_care,
+        dependent_care=account.fsa.dependent_care,
         carried_in=carried_in,
         carried_over=carried_over,
         direct_payments=totals[FsaFlowKind.DIRECT_PAYMENT],
@@ -147,13 +147,13 @@ def year_status(
 
 def previous_year(account: Account, year: FsaFundingYear) -> FsaFundingYear | None:
     """The account's funding year that ends last before ``year`` starts."""
-    earlier = [item for item in account.fsa_years if item.through < year.start]
+    earlier = [item for item in account.fsa.years if item.through < year.start]
     return max(earlier, key=lambda item: item.through, default=None)
 
 
 def _carried_in(db: DbSQLite, account: Account, year: FsaFundingYear, when: date) -> Money:
     prior = previous_year(account, year)
-    if prior is None or prior.carryover_limit is None or account.fsa_dependent_care:
+    if prior is None or prior.carryover_limit is None or account.fsa.dependent_care:
         return Money(0)
     closes = prior.runout_through or prior.through
     if when <= closes:
@@ -182,7 +182,7 @@ def dashboard_statuses(
             continue
         account_statuses = [
             year_status(db, account, year, as_of=when)
-            for year in sorted(account.fsa_years, key=lambda item: item.start, reverse=True)
+            for year in sorted(account.fsa.years, key=lambda item: item.start, reverse=True)
         ]
         active = [
             status

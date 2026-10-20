@@ -40,7 +40,7 @@ def nest_egg(db, book):
     """A retirement account holding 120,000 and no growth of its own."""
     with db.transaction("Retirement account") as txn:
         ira = Account(name="IRA", atype=AccountType.RETIREMENT, parent=book.assets)
-        ira.annual_return = Decimal(0)
+        ira.investment.annual_return = Decimal(0)
         db.add_account(ira, txn)
         db.add_transaction(
             Transaction.simple(date(2025, 12, 1), "Rollover", ira.handle, book.opening, "120000"),

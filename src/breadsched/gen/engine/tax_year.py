@@ -11,7 +11,7 @@ but the marks that say what is tax-relevant.
   shared between its short- and long-term parts by shares, rounded to the cent,
   with the long-term part taking the remainder so the two add up exactly.
 * **Tax-relevant accounts.** An account is tax-relevant when BreadSched marks it so
-  (``Account.tax_relevant_override``) or, without a BreadSched mark, when GnuCash
+  (``Account.planning.tax_relevant``) or, without a BreadSched mark, when GnuCash
   marks it *tax related*. Its total is the year's change in the account and the
   accounts beneath it, as the account shows it (income and spending positive), per
   commodity.
@@ -90,8 +90,8 @@ def gnucash_tax_related(account: Account) -> bool:
 
 def is_tax_relevant(account: Account) -> bool:
     """BreadSched's mark when there is one, otherwise GnuCash's."""
-    if account.tax_relevant_override is not None:
-        return account.tax_relevant_override
+    if account.planning.tax_relevant is not None:
+        return account.planning.tax_relevant
     return gnucash_tax_related(account)
 
 
@@ -359,7 +359,7 @@ def tax_year(db: DbSQLite, year: int) -> TaxYearReport:
             for commodity, amount in own.get(handle, {}).items():
                 sums[commodity] += amount
             transactions |= own_transactions.get(handle, set())
-        marked_by = "BreadSched" if account.tax_relevant_override is not None else "GnuCash"
+        marked_by = "BreadSched" if account.planning.tax_relevant is not None else "GnuCash"
         if not sums:
             sums[account.commodity] = Money(0)
         for commodity, amount in sorted(sums.items(), key=lambda item: str(item[0])):

@@ -44,7 +44,7 @@ def _fund(db, book, name="Index holding", method="fifo"):
         commodity=fund.handle,
         commodity_scu=1000,
     )
-    account.cost_basis_method = method
+    account.investment.cost_basis_method = method
     with db.transaction("Security") as txn:
         if add_usd:
             db.add_commodity(usd, txn)

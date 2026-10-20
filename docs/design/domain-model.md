@@ -100,6 +100,19 @@ modelled correctly as a generic asset: FSA availability follows elections and
 claims, while Escrow recognizes expense when funded and suppresses duplicate
 expense recognition when disbursed.
 
+An account's type-specific settings are grouped into small records (#339):
+`Account.card` (`CardTerms`: paid in full, usual payment, payment day, paying
+account), `Account.liability` (`LiabilityTerms`: annual interest, the linked asset),
+`Account.fsa` (`FsaPlan`: funding years, dependent care), `Account.investment`
+(`InvestmentSettings`: annual return, cost-basis method), and `Account.planning`
+(`PlanningChoices`: left out of projections, the emergency-fund and tax-relevance
+choices). Every account carries all of them, because a type can change and keeps
+its old settings; editors show, and `services.accounts` validates, the record the
+type uses (`_card_errors`, `_liability_errors`, `_fsa_errors`, `_investment_errors`).
+The records are stored flat, under the field names earlier versions wrote, so the
+stored form did not change. Inference suggestions keep their field names and
+`Suggestion.apply` maps each one to its record.
+
 An imported account records the exact latest GnuCash source type and source GUID.
 The source GUID is separate from the BreadSched object handle because importing into
 an initialized book adopts the existing root and compatible top-level placeholders.

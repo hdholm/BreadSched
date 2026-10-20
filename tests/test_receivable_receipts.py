@@ -123,7 +123,7 @@ def test_a_partial_reimbursement_leaves_the_rest_expected(db, book):
 
 def test_a_card_paid_expense_is_expected_in_the_account_that_pays_the_card(db, book):
     card = db.get_account(book.card)
-    card.card_payment_account = book.savings
+    card.card.payment_account = book.savings
     with db.transaction("Card setup") as txn:
         db.commit_account(card, txn)
     receivable = _receivable(db, book, paid_from=book.card)

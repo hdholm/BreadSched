@@ -22,7 +22,7 @@ SECOND = date(2027, 1, 1)
 
 def _account(db, book, *, carryover=None, grace=None):
     account = Account(name="Health FSA", atype=AccountType.FSA, parent=book.assets)
-    account.fsa_years = [
+    account.fsa.years = [
         FsaFundingYear(
             FIRST,
             date(2026, 12, 31),
@@ -48,7 +48,7 @@ def _used(db, book, account, when, amount, year=None):
 
 
 def _status(db, account, index, as_of):
-    return fsa.year_status(db, account, account.fsa_years[index], as_of=as_of)
+    return fsa.year_status(db, account, account.fsa.years[index], as_of=as_of)
 
 
 def test_plan_rules_are_checked_and_round_trip():

@@ -637,7 +637,7 @@ def test_a_goal_in_an_account_left_out_of_the_projection_is_not_compared(db, boo
 
     roof, _car, _cash = _brokerage_goals(db, book)
     account = db.get_account(book.brokerage)
-    account.exclude_from_projection = True
+    account.planning.exclude_from_projection = True
     with db.transaction("Leave out") as txn:
         db.commit_account(account, txn)
 

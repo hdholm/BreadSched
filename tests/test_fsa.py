@@ -28,7 +28,7 @@ def _fsa_account(db, book):
         atype=AccountType.FSA,
         parent=book.assets,
     )
-    account.fsa_years = [
+    account.fsa.years = [
         FsaFundingYear(
             date(2026, 7, 1),
             date(2027, 6, 30),
@@ -106,7 +106,7 @@ def test_election_not_ledger_balance_controls_available_benefit(db, book):
             txn,
         )
 
-    status = fsa.year_status(db, account, account.fsa_years[0], as_of=date(2026, 8, 2))
+    status = fsa.year_status(db, account, account.fsa.years[0], as_of=date(2026, 8, 2))
     assert status.funded == Money("125.00")
     assert status.used == Money("400.00")
     assert status.remaining == Money("2600.00")
@@ -127,7 +127,7 @@ def test_runout_claim_can_be_explicitly_assigned_to_prior_year(db, book):
     with db.transaction("Post run-out claim") as txn:
         db.add_transaction(claim, txn)
 
-    status = fsa.year_status(db, account, account.fsa_years[0], as_of=date(2027, 8, 20))
+    status = fsa.year_status(db, account, account.fsa.years[0], as_of=date(2027, 8, 20))
     assert status.phase == "run-out"
     assert status.used == Money("250.00")
     assert status.remaining == Money("2750.00")
@@ -135,7 +135,7 @@ def test_runout_claim_can_be_explicitly_assigned_to_prior_year(db, book):
 
 def test_closed_year_reports_forfeited_remaining_funds(db, book):
     account = _fsa_account(db, book)
-    status = fsa.year_status(db, account, account.fsa_years[0], as_of=date(2027, 10, 1))
+    status = fsa.year_status(db, account, account.fsa.years[0], as_of=date(2027, 10, 1))
     assert status.phase == "closed"
     assert status.remaining == Money(0)
     assert status.forfeited == Money("3000.00")
@@ -144,11 +144,11 @@ def test_closed_year_reports_forfeited_remaining_funds(db, book):
 def test_fsa_years_round_trip_with_account_serialization():
     account = Account(name="FSA", atype=AccountType.ASSET)
     account.atype = AccountType.FSA
-    account.fsa_years = [
+    account.fsa.years = [
         FsaFundingYear(date(2026, 1, 1), date(2026, 12, 31), Money("3200"), date(2027, 3, 31))
     ]
     restored = Account.from_dict(account.serialize())
-    assert restored.fsa_years == account.fsa_years
+    assert restored.fsa.years == account.fsa.years
 
 
 def test_dashboard_limits_recent_closed_year_to_90_days_after_runout(db, book):
@@ -158,7 +158,7 @@ def test_dashboard_limits_recent_closed_year_to_90_days_after_runout(db, book):
     deadline = date(2027, 9, 30)
     history = fsa.dashboard_statuses(db, as_of=deadline + timedelta(days=90))
     assert history[0].phase == "closed"
-    assert history[0].forfeited == account.fsa_years[0].election
+    assert history[0].forfeited == account.fsa.years[0].election
     assert fsa.dashboard_statuses(db, as_of=deadline + timedelta(days=91)) == []
     assert fsa.dashboard_statuses(db, as_of=deadline + timedelta(days=1), recent_closed=0) == []
 
@@ -166,7 +166,7 @@ def test_dashboard_limits_recent_closed_year_to_90_days_after_runout(db, book):
 def test_dashboard_keeps_current_year_when_prior_year_closes(db, book):
     account = _fsa_account(db, book)
     current = FsaFundingYear(date(2027, 7, 1), date(2028, 6, 30), Money("2400"))
-    account.fsa_years.append(current)
+    account.fsa.years.append(current)
     with db.transaction("Add next benefit year") as txn:
         db.commit_account(account, txn)
 
@@ -189,7 +189,7 @@ def test_dashboard_uses_year_end_when_no_runout_and_keeps_only_latest_closed(db,
     account = _fsa_account(db, book)
     first = FsaFundingYear(date(2025, 1, 1), date(2025, 12, 31), Money("1200"))
     second = FsaFundingYear(date(2026, 1, 1), date(2026, 1, 31), Money("100"))
-    account.fsa_years = [first, second]
+    account.fsa.years = [first, second]
     with db.transaction("Set generic benefit years") as txn:
         db.commit_account(account, txn)
 
@@ -207,7 +207,7 @@ def _second_fsa_account(db, book):
         parent=book.assets,
     )
     account.atype = AccountType.FSA
-    account.fsa_years = [
+    account.fsa.years = [
         FsaFundingYear(
             date(2026, 1, 1),
             date(2026, 12, 31),
@@ -248,13 +248,13 @@ def test_claim_can_coordinate_multiple_fsa_funding_sources(db, book):
         allocations=[
             FsaClaimAllocation(
                 primary.handle,
-                primary.fsa_years[0].start,
+                primary.fsa.years[0].start,
                 Money("500.00"),
                 [SplitLink(reimbursement_one.handle, reimbursement_one.splits[1].handle)],
             ),
             FsaClaimAllocation(
                 secondary.handle,
-                secondary.fsa_years[0].start,
+                secondary.fsa.years[0].start,
                 Money("400.00"),
                 [SplitLink(reimbursement_two.handle, reimbursement_two.splits[1].handle)],
             ),
@@ -286,7 +286,7 @@ def test_claim_waits_for_eob_and_closes_when_no_fsa_funds_remain(db, book):
         service_date=date(2027, 6, 20),
         provider="Dentist",
         payments=[SplitLink(payment.handle, payment.splits[0].handle)],
-        allocations=[FsaClaimAllocation(account.handle, account.fsa_years[0].start)],
+        allocations=[FsaClaimAllocation(account.handle, account.fsa.years[0].start)],
     )
     fsa_claims.save_claim(db, claim)
 
@@ -326,7 +326,7 @@ def test_claim_refunds_reduce_net_paid_and_rejections_do_not_reimburse(db, book)
         allocations=[
             FsaClaimAllocation(
                 account.handle,
-                account.fsa_years[0].start,
+                account.fsa.years[0].start,
                 rejections=[FsaClaimRejection(date(2026, 4, 10), Money("200.00"), "Denied")],
             )
         ],
@@ -397,7 +397,7 @@ def test_claim_save_is_atomic_and_undoable(db, book):
         allocations=[
             FsaClaimAllocation(
                 account.handle,
-                account.fsa_years[0].start,
+                account.fsa.years[0].start,
                 reimbursements=[SplitLink(reimbursement.handle, reimbursement_split.handle)],
             )
         ],
@@ -409,7 +409,7 @@ def test_claim_save_is_atomic_and_undoable(db, book):
         split for split in stored_transaction.splits if split.handle == reimbursement_split.handle
     )
     assert db.get_fsa_claim(claim.handle) is not None
-    assert stored_split.fsa_year_start == account.fsa_years[0].start
+    assert stored_split.fsa_year_start == account.fsa.years[0].start
 
     assert db.undo() is True
     restored_transaction = db.get_transaction(reimbursement.handle)
@@ -425,7 +425,7 @@ def test_claim_save_is_atomic_and_undoable(db, book):
         split for split in redone_transaction.splits if split.handle == reimbursement_split.handle
     )
     assert db.get_fsa_claim(claim.handle) is not None
-    assert redone_split.fsa_year_start == account.fsa_years[0].start
+    assert redone_split.fsa_year_start == account.fsa.years[0].start
 
 
 def test_claim_suggestions_rank_service_context(db, book):

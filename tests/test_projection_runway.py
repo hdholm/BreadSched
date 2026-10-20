@@ -232,7 +232,7 @@ def test_accounts_past_the_seventh_combine_as_other(db, book):
             account = Account(
                 name=f"Fund {number}", atype=AccountType.INVESTMENT, parent=book.assets
             )
-            account.annual_return = Decimal(0)
+            account.investment.annual_return = Decimal(0)
             db.add_account(account, txn)
             db.add_transaction(
                 Transaction.simple(

@@ -230,7 +230,7 @@ class AccountDialog(BoundedWindow):
         self.fsa_box.append(fsa_note)
         self.fsa_dependent_care = Gtk.CheckButton(
             label="Dependent care FSA",
-            active=bool(account is not None and account.fsa_dependent_care),
+            active=bool(account is not None and account.fsa.dependent_care),
         )
         self.fsa_dependent_care.set_tooltip_text(
             "Pays only what has been contributed so far; claims need no EOB; nothing carries over"
@@ -250,12 +250,12 @@ class AccountDialog(BoundedWindow):
             "First in, first out: a sale takes the oldest shares' cost. Average cost: "
             "each share sold costs the average of every share held."
         )
-        if account is not None and account.cost_basis_method == "average":
+        if account is not None and account.investment.cost_basis_method == "average":
             self.cost_basis_picker.set_selected(1)
         self.cost_basis_box.append(self.cost_basis_picker)
         box.append(self.cost_basis_box)
         if account is not None:
-            for funding_year in account.fsa_years:
+            for funding_year in account.fsa.years:
                 self._add_fsa_year_row(funding_year)
 
         self.placeholder_check = Gtk.CheckButton(label="Placeholder (holds no entries)")
@@ -299,7 +299,7 @@ class AccountDialog(BoundedWindow):
             "no-income emergency fund"
         )
         self.emergency_check.set_active(
-            account.emergency_fund_override is not False if account is not None else True
+            account.planning.emergency_fund is not False if account is not None else True
         )
         grid.attach(self.emergency_check, 1, row, 1, 1)
         row += 1
@@ -352,7 +352,7 @@ class AccountDialog(BoundedWindow):
             if a.account_class is AccountClass.ASSET and not a.is_root and not a.atype.is_cash_like
         ]
         self.assets.sort(key=self.db.full_name)
-        current_payment = account.card_payment_account if account is not None else None
+        current_payment = account.card.payment_account if account is not None else None
         self.payment_accounts = [
             a
             for a in self.db.iter_accounts()
@@ -367,9 +367,9 @@ class AccountDialog(BoundedWindow):
         self.asset_picker = bounded_dropdown(
             ["(none)"] + [self.db.full_name(a) for a in self.assets]
         )
-        if account is not None and account.linked_asset:
+        if account is not None and account.liability.linked_asset:
             for index, asset in enumerate(self.assets, start=1):
-                if asset.handle == account.linked_asset:
+                if asset.handle == account.liability.linked_asset:
                     self.asset_picker.set_selected(index)
                     break
         self.loan_box.append(Gtk.Label(label="Secured on", xalign=0))
@@ -380,7 +380,7 @@ class AccountDialog(BoundedWindow):
         self.card_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.card_box.add_css_class("card")
         self.full_check = Gtk.CheckButton(label="Cleared in full every month")
-        self.full_check.set_active(account.pays_in_full if account is not None else True)
+        self.full_check.set_active(account.card.pays_in_full if account is not None else True)
         self.full_check.connect("toggled", self._on_card_changed)
         self.card_box.append(self.full_check)
 
@@ -389,14 +389,14 @@ class AccountDialog(BoundedWindow):
         self.usual_entry.set_tooltip_text(
             "Carried as a scheduled estimate while a balance is outstanding"
         )
-        if account is not None and account.usual_payment:
-            self.usual_entry.set_text(f"{account.usual_payment.to_decimal():.2f}")
+        if account is not None and account.card.usual_payment:
+            self.usual_entry.set_text(f"{account.card.usual_payment.to_decimal():.2f}")
         card_grid.attach(Gtk.Label(label="Usual payment", xalign=0), 0, 0, 1, 1)
         card_grid.attach(self.usual_entry, 1, 0, 1, 1)
 
         self.day_spin = Gtk.SpinButton.new_with_range(1, 28, 1)
-        if account is not None and account.payment_day:
-            self.day_spin.set_value(account.payment_day)
+        if account is not None and account.card.payment_day:
+            self.day_spin.set_value(account.card.payment_day)
         card_grid.attach(Gtk.Label(label="Payment day", xalign=0), 0, 1, 1, 1)
         card_grid.attach(self.day_spin, 1, 1, 1, 1)
 
@@ -404,9 +404,9 @@ class AccountDialog(BoundedWindow):
             ["(choose when recording payment)"]
             + [self.db.full_name(item) for item in self.payment_accounts]
         )
-        if account is not None and account.card_payment_account:
+        if account is not None and account.card.payment_account:
             for index, payment_account in enumerate(self.payment_accounts, start=1):
-                if payment_account.handle == account.card_payment_account:
+                if payment_account.handle == account.card.payment_account:
                     self.card_payment_picker.set_selected(index)
                     break
         card_grid.attach(Gtk.Label(label="Paid from", xalign=0), 0, 2, 1, 1)
@@ -628,38 +628,40 @@ class AccountDialog(BoundedWindow):
         account.commodity_scu = int(scu_text) if scu_text else None
         account.group = self.group_entry.get_text().strip()
         if account.atype is AccountType.FSA:
-            account.fsa_years = self._fsa_year_values()
-            account.fsa_dependent_care = self.fsa_dependent_care.get_active()
+            account.fsa.years = self._fsa_year_values()
+            account.fsa.dependent_care = self.fsa_dependent_care.get_active()
         if account.atype in {AccountType.INVESTMENT, AccountType.RETIREMENT}:
-            account.cost_basis_method = COST_BASIS_METHODS[self.cost_basis_picker.get_selected()]
+            account.investment.cost_basis_method = COST_BASIS_METHODS[
+                self.cost_basis_picker.get_selected()
+            ]
         account.placeholder = self.placeholder_check.get_active()
         account.hidden = self.hidden_check.get_active()
         if self.parents:
             account.parent = self.parents[self.parent_picker.get_selected()].handle
 
         index = self.asset_picker.get_selected()
-        account.linked_asset = (
+        account.liability.linked_asset = (
             self.assets[index - 1].handle
             if account.atype is AccountType.LOAN and index > 0
             else None
         )
 
         if account.atype is AccountType.CREDIT:
-            account.pays_in_full = self.full_check.get_active()
+            account.card.pays_in_full = self.full_check.get_active()
             text = self.usual_entry.get_text().strip()
             try:
-                account.usual_payment = Money(parse_user_amount(text)) if text else None
+                account.card.usual_payment = Money(parse_user_amount(text)) if text else None
             except (ValueError, InvalidOperation, ArithmeticError):
-                account.usual_payment = None
-            account.payment_day = int(self.day_spin.get_value())
+                account.card.usual_payment = None
+            account.card.payment_day = int(self.day_spin.get_value())
             payment_index = self.card_payment_picker.get_selected()
-            account.card_payment_account = (
+            account.card.payment_account = (
                 self.payment_accounts[payment_index - 1].handle if payment_index > 0 else None
             )
         else:
-            account.card_payment_account = None
+            account.card.payment_account = None
         if account.emergency_fund_eligible:
-            account.emergency_fund_override = self.emergency_check.get_active()
+            account.planning.emergency_fund = self.emergency_check.get_active()
         return account
 
     def _on_save(self, _button) -> None:

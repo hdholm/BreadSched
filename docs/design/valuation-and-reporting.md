@@ -60,7 +60,7 @@ Cost basis (`engine/cost_basis`) is derived, never stored, like a receivable's
 status: each security account's splits are read in date order, a split adding
 shares opens a lot at its transaction-currency value, and a split removing shares
 consumes lots first in, first out with exact rational shares (`Money * Fraction`),
-or, when `Account.cost_basis_method` is `"average"`, takes the same fraction of every
+or, when `Account.investment.cost_basis_method` is `"average"`, takes the same fraction of every
 open lot so each sold share costs the pool's average. The method is a per-account
 setting validated by the account service (`COST_BASIS_METHODS`) and kept across a
 GnuCash re-import, like the dependent-care flag; sales are
@@ -116,7 +116,7 @@ shares, the short-term part rounded to the cent and the long-term part taking th
 rest, so the parts add to the sale; shares sold beyond the recorded purchases are a
 named problem and left out. Tax-relevant accounts total the year's change in each
 marked account and those beneath it, as the account shows it, per commodity; an
-account is marked by `Account.tax_relevant_override`, or without it by GnuCash's
+account is marked by `Account.planning.tax_relevant`, or without it by GnuCash's
 `tax-related` slot as imported into `source_fields`. Tax-relevant tags (book
 metadata `tax.tags`) total their transactions' expense splits as spent and income
 splits as received, per currency. Income by source is every income account's year

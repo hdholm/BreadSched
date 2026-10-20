@@ -38,7 +38,7 @@ def _spend(db, book, when, account, amount, *, tags=(), income=False, currency=N
 
 def _mark(db, handle, mark):
     account = db.get_account(handle)
-    account.tax_relevant_override = mark
+    account.planning.tax_relevant = mark
     with db.transaction("Mark") as txn:
         db.commit_account(account, txn)
 
@@ -223,7 +223,7 @@ class TestTaxMarksService:
         assert result.ok and db.undo_message() == "Change tax marks"
         db.undo()
         assert db.undo_message() == before
-        assert db.get_account(book.rent).tax_relevant_override is None
+        assert db.get_account(book.rent).planning.tax_relevant is None
         assert db.get_metadata(TAX_TAGS_KEY, []) == []
 
     def test_a_rejected_request_changes_nothing(self, db, book):
@@ -233,7 +233,7 @@ class TestTaxMarksService:
         )
         assert not result.ok
         assert {error.code for error in result.errors} == {"tax.account.not_found", "tag.invalid"}
-        assert db.get_account(book.rent).tax_relevant_override is None
+        assert db.get_account(book.rent).planning.tax_relevant is None
         assert db.get_metadata(TAX_TAGS_KEY, []) == []
         assert not set_tax_marks(db, SetTaxMarks(accounts={book.root: True})).ok
 
@@ -244,16 +244,16 @@ class TestTaxMarksService:
         stored = db.get_account(book.rent)
         assert stored.serialize()["tax_relevant"] is False
         assert (
-            Account.from_dict(json.loads(json.dumps(stored.serialize()))).tax_relevant_override
+            Account.from_dict(json.loads(json.dumps(stored.serialize()))).planning.tax_relevant
             is False
         )
 
         from breadsched.plugins.importer.gnucash_common import ImportSink
 
         incoming = Account.from_dict(stored.serialize())
-        incoming.tax_relevant_override = None
+        incoming.planning.tax_relevant = None
         ImportSink._preserve_breadsched_account_state(incoming, stored)
-        assert incoming.tax_relevant_override is False
+        assert incoming.planning.tax_relevant is False
 
 
 def test_the_layout_prints_every_section(db, book):

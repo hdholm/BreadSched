@@ -157,7 +157,7 @@ class HoldingCostBasis:
 
     @property
     def method(self) -> str:
-        return self.account.cost_basis_method
+        return self.account.investment.cost_basis_method
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -343,7 +343,7 @@ def cost_basis(
     if obj is None or not _is_security(db, obj):
         return None
     visiting = _visiting | {(obj.handle, as_of)}
-    method = obj.cost_basis_method
+    method = obj.investment.cost_basis_method
     book = reporting_currency_handle(db)
     open_lots: list[Lot] = []
     sales: list[RealizedGain] = []

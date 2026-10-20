@@ -231,8 +231,8 @@ class TestScheduleEngine:
 
     def test_a_card_payment_is_an_account_linked_definition(self, db, funded_book):
         card = db.get_account(funded_book.card)
-        card.payment_day = 22
-        card.card_payment_account = funded_book.checking
+        card.card.payment_day = 22
+        card.card.payment_account = funded_book.checking
         with db.transaction("Configure card payment") as txn:
             db.commit_account(card, txn)
 
@@ -253,8 +253,8 @@ class TestScheduleEngine:
 
     def test_an_overdue_card_stays_due_until_an_actual_payment(self, db, funded_book):
         card = db.get_account(funded_book.card)
-        card.payment_day = 22
-        card.card_payment_account = funded_book.checking
+        card.card.payment_day = 22
+        card.card.payment_account = funded_book.checking
         with db.transaction("Configure card payment") as txn:
             db.commit_account(card, txn)
 
@@ -283,8 +283,8 @@ class TestScheduleEngine:
         self, db, funded_book
     ):
         card = db.get_account(funded_book.card)
-        card.payment_day = 22
-        card.card_payment_account = funded_book.checking
+        card.card.payment_day = 22
+        card.card.payment_account = funded_book.checking
         with db.transaction("Statement and later purchase") as txn:
             db.commit_account(card, txn)
             db.add_transaction(
@@ -309,8 +309,8 @@ class TestScheduleEngine:
         self, db, funded_book
     ):
         card = db.get_account(funded_book.card)
-        card.payment_day = 22
-        card.card_payment_account = funded_book.checking
+        card.card.payment_day = 22
+        card.card.payment_account = funded_book.checking
         with db.transaction("Partial payment") as txn:
             db.commit_account(card, txn)
             db.add_transaction(
@@ -332,8 +332,8 @@ class TestScheduleEngine:
 
     def test_a_card_refund_does_not_resolve_the_overdue_statement(self, db, funded_book):
         card = db.get_account(funded_book.card)
-        card.payment_day = 22
-        card.card_payment_account = funded_book.checking
+        card.card.payment_day = 22
+        card.card.payment_account = funded_book.checking
         with db.transaction("Refund") as txn:
             db.commit_account(card, txn)
             db.add_transaction(
@@ -355,8 +355,8 @@ class TestScheduleEngine:
 
     def test_a_reversed_payment_does_not_resolve_the_overdue_statement(self, db, funded_book):
         card = db.get_account(funded_book.card)
-        card.payment_day = 22
-        card.card_payment_account = funded_book.checking
+        card.card.payment_day = 22
+        card.card.payment_account = funded_book.checking
         with db.transaction("Reversed payment") as txn:
             db.commit_account(card, txn)
             db.add_transaction(
@@ -377,8 +377,8 @@ class TestScheduleEngine:
 
     def test_a_payment_on_the_due_date_advances_the_card_cycle(self, db, funded_book):
         card = db.get_account(funded_book.card)
-        card.payment_day = 22
-        card.card_payment_account = funded_book.checking
+        card.card.payment_day = 22
+        card.card.payment_account = funded_book.checking
         with db.transaction("Configure and pay card") as txn:
             db.commit_account(card, txn)
             db.add_transaction(
@@ -398,9 +398,9 @@ class TestScheduleEngine:
 
     def test_a_carried_card_payment_is_capped_at_the_balance(self, db, funded_book):
         card = db.get_account(funded_book.card)
-        card.pays_in_full = False
-        card.usual_payment = Money("400.00")
-        card.payment_day = 22
+        card.card.pays_in_full = False
+        card.card.usual_payment = Money("400.00")
+        card.card.payment_day = 22
         with db.transaction("Configure carried card") as txn:
             db.commit_account(card, txn)
 
@@ -409,7 +409,7 @@ class TestScheduleEngine:
 
     def test_an_explicit_card_schedule_suppresses_the_account_definition(self, db, funded_book):
         card = db.get_account(funded_book.card)
-        card.payment_day = 22
+        card.card.payment_day = 22
         explicit = ScheduledTransaction(
             name="Explicit card payment",
             recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 2, 22)),
@@ -428,7 +428,7 @@ class TestScheduleEngine:
         self, db, funded_book
     ):
         card = db.get_account(funded_book.card)
-        card.payment_day = 22
+        card.card.payment_day = 22
         explicit = ScheduledTransaction(
             name="Finished card payment",
             recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 22)),

@@ -90,24 +90,27 @@ class ChangeVerification(DbBase):
                         handle,
                     )
                 )
-            if account.linked_asset is not None and self.get_account(account.linked_asset) is None:
+            if (
+                account.liability.linked_asset is not None
+                and self.get_account(account.liability.linked_asset) is None
+            ):
                 issues.append(
                     BookIssue(
                         "account.missing_linked_asset",
                         f"account {account.name!r} refers to missing linked asset "
-                        f"{account.linked_asset}",
+                        f"{account.liability.linked_asset}",
                         handle,
                     )
                 )
             if (
-                account.card_payment_account is not None
-                and self.get_account(account.card_payment_account) is None
+                account.card.payment_account is not None
+                and self.get_account(account.card.payment_account) is None
             ):
                 issues.append(
                     BookIssue(
                         "account.missing_card_payment_account",
                         f"account {account.name!r} refers to missing card payment account "
-                        f"{account.card_payment_account}",
+                        f"{account.card.payment_account}",
                         handle,
                     )
                 )
@@ -506,7 +509,7 @@ class ChangeVerification(DbBase):
                             account.handle,
                         )
                     )
-                if account.linked_asset == handle:
+                if account.liability.linked_asset == handle:
                     issues.append(
                         BookIssue(
                             "account.missing_linked_asset",
@@ -514,7 +517,7 @@ class ChangeVerification(DbBase):
                             account.handle,
                         )
                     )
-                if account.card_payment_account == handle:
+                if account.card.payment_account == handle:
                     issues.append(
                         BookIssue(
                             "account.missing_card_payment_account",

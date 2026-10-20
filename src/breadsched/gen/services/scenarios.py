@@ -177,7 +177,7 @@ def drawdown_accounts(db: DbSQLite) -> tuple[list[str], list[str]]:
     sources: list[str] = []
     targets: list[str] = []
     for account in db.iter_accounts():
-        if account.placeholder or account.is_root or account.exclude_from_projection:
+        if account.placeholder or account.is_root or account.planning.exclude_from_projection:
             continue
         if account.is_spendable_cash:
             targets.append(account.handle)

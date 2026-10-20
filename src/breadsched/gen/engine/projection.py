@@ -174,9 +174,11 @@ def explain_month(db: DbSQLite, result: Projection, index: int) -> ProjectionMon
             return account_sources.get(account.handle, result.scenario.name or "Scenario")
         if account.account_class is AccountClass.LIABILITY:
             return (
-                "Account" if account.annual_interest else assumption_sources["liability_interest"]
+                "Account"
+                if account.liability.annual_interest
+                else assumption_sources["liability_interest"]
             )
-        if account.annual_return:
+        if account.investment.annual_return:
             return "Account"
         if account.atype.is_investment:
             return assumption_sources["investment_return"]
@@ -307,12 +309,12 @@ def _resolve_rate(
         return assumptions.per_account[account.handle]
     if account.account_class is AccountClass.LIABILITY:
         return (
-            Rate(account.annual_interest)
-            if account.annual_interest
+            Rate(account.liability.annual_interest)
+            if account.liability.annual_interest
             else assumptions.liability_interest
         )
-    if account.annual_return:
-        return Rate(account.annual_return)
+    if account.investment.annual_return:
+        return Rate(account.investment.annual_return)
     if account.atype.is_investment:
         return assumptions.investment_return
     return Rate(0)
@@ -533,7 +535,7 @@ def _apply_event(
     }
     for planned_split in event.splits:
         account = accounts.get(planned_split.account)
-        if account is None or account.exclude_from_projection:
+        if account is None or account.planning.exclude_from_projection:
             continue
         amount = (planned_split.amount * factor).quantize(fraction)
         cls = account.account_class
@@ -724,7 +726,7 @@ def _project_events(
     debts: dict[str, Money] = {}
     accounts: dict[str, Account] = {}
     for account in db.iter_accounts():
-        if account.is_root or account.placeholder or account.exclude_from_projection:
+        if account.is_root or account.placeholder or account.planning.exclude_from_projection:
             continue
         accounts[account.handle] = account
         opening = scenario.opening_overrides.get(account.handle)

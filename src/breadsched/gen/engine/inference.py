@@ -44,7 +44,18 @@ class Suggestion:
     value_label: str = ""
 
     def apply(self, account: Account) -> None:
-        setattr(account, self.field, self.value)
+        record, name = _SUGGESTION_FIELDS[self.field]
+        setattr(getattr(account, record), name, self.value)
+
+
+#: Where each suggested field lives on an account: (per-type record, attribute).
+_SUGGESTION_FIELDS = {
+    "linked_asset": ("liability", "linked_asset"),
+    "card_payment_account": ("card", "payment_account"),
+    "payment_day": ("card", "payment_day"),
+    "pays_in_full": ("card", "pays_in_full"),
+    "usual_payment": ("card", "usual_payment"),
+}
 
 
 @dataclass
@@ -87,7 +98,7 @@ def infer_asset_links(db: DbSQLite) -> list[Suggestion]:
     for loan in db.iter_accounts():
         if loan.account_class is not AccountClass.LIABILITY or loan.placeholder:
             continue
-        if loan.linked_asset:
+        if loan.liability.linked_asset:
             continue
 
         paired: Counter[str] = Counter()
@@ -217,7 +228,7 @@ def infer_card_settings(db: DbSQLite, months: int = 12) -> list[Suggestion]:
 
         if payment_accounts:
             source_handle, count = payment_accounts.most_common(1)[0]
-            if card.card_payment_account != source_handle:
+            if card.card.payment_account != source_handle:
                 source = db.get_account(source_handle)
                 suggestions.append(
                     Suggestion(
@@ -251,7 +262,7 @@ def infer_card_settings(db: DbSQLite, months: int = 12) -> list[Suggestion]:
 
         balance = _balance_after_last_payment(db, card.handle, payments)
         carries = balance > Money("1.00")
-        if carries != (not card.pays_in_full):
+        if carries != (not card.card.pays_in_full):
             suggestions.append(
                 Suggestion(
                     account=card.handle,
@@ -273,7 +284,7 @@ def infer_card_settings(db: DbSQLite, months: int = 12) -> list[Suggestion]:
 
         if carries:
             typical = _typical_payment(payments, fraction)
-            if typical and card.usual_payment != typical:
+            if typical and card.card.usual_payment != typical:
                 suggestions.append(
                     Suggestion(
                         account=card.handle,

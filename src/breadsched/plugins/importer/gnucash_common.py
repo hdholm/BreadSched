@@ -796,20 +796,20 @@ class ImportSink:
         """Keep BreadSched-owned account configuration across source re-import."""
         imported.atype = existing.atype
         imported.notes = existing.notes
-        imported.fsa_years = list(existing.fsa_years)
-        imported.fsa_dependent_care = existing.fsa_dependent_care
-        imported.annual_return = existing.annual_return
-        imported.cost_basis_method = existing.cost_basis_method
-        imported.annual_interest = existing.annual_interest
-        imported.exclude_from_projection = existing.exclude_from_projection
+        imported.fsa.years = list(existing.fsa.years)
+        imported.fsa.dependent_care = existing.fsa.dependent_care
+        imported.investment.annual_return = existing.investment.annual_return
+        imported.investment.cost_basis_method = existing.investment.cost_basis_method
+        imported.liability.annual_interest = existing.liability.annual_interest
+        imported.planning.exclude_from_projection = existing.planning.exclude_from_projection
         imported.group = existing.group
-        imported.linked_asset = existing.linked_asset
-        imported.pays_in_full = existing.pays_in_full
-        imported.usual_payment = existing.usual_payment
-        imported.payment_day = existing.payment_day
-        imported.card_payment_account = existing.card_payment_account
-        imported.emergency_fund_override = existing.emergency_fund_override
-        imported.tax_relevant_override = existing.tax_relevant_override
+        imported.liability.linked_asset = existing.liability.linked_asset
+        imported.card.pays_in_full = existing.card.pays_in_full
+        imported.card.usual_payment = existing.card.usual_payment
+        imported.card.payment_day = existing.card.payment_day
+        imported.card.payment_account = existing.card.payment_account
+        imported.planning.emergency_fund = existing.planning.emergency_fund
+        imported.planning.tax_relevant = existing.planning.tax_relevant
 
     def _existing_sibling(
         self,

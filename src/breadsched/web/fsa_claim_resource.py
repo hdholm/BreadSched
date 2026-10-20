@@ -113,7 +113,7 @@ def _candidates(api: Api) -> dict[str, object]:
         year
         for account in api.db.iter_accounts()
         if account.atype is AccountType.FSA
-        for year in account.fsa_years
+        for year in account.fsa.years
     ]
     candidate_start = min((year.start for year in fsa_years), default=None)
     for transaction in api.db.iter_transactions():
@@ -145,7 +145,7 @@ def _candidates(api: Api) -> dict[str, object]:
         {
             "handle": account.handle,
             "name": api.db.full_name(account),
-            "years": [year.serialize() for year in account.fsa_years],
+            "years": [year.serialize() for year in account.fsa.years],
         }
         for account in api.db.iter_accounts()
         if account.atype is AccountType.FSA

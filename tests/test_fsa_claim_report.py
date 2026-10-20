@@ -23,7 +23,7 @@ YEAR = date(2026, 7, 1)
 
 def _fsa(db, book, name="Health FSA", runout=date(2027, 9, 30)):
     account = Account(name=name, atype=AccountType.FSA, parent=book.assets)
-    account.fsa_years = [FsaFundingYear(YEAR, date(2027, 6, 30), Money("3000.00"), runout)]
+    account.fsa.years = [FsaFundingYear(YEAR, date(2027, 6, 30), Money("3000.00"), runout)]
     with db.transaction("Add FSA") as txn:
         db.add_account(account, txn)
     return account

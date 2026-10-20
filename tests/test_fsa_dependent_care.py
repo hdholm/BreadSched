@@ -38,8 +38,8 @@ def _post(db, transaction):
 @pytest.fixture
 def dependent_care(db, book):
     account = Account(name="Dependent care FSA", atype=AccountType.FSA, parent=book.assets)
-    account.fsa_dependent_care = True
-    account.fsa_years = [
+    account.fsa.dependent_care = True
+    account.fsa.years = [
         FsaFundingYear(YEAR, date(2026, 12, 31), Money("5000.00"), date(2027, 3, 31))
     ]
     with db.transaction("FSA") as txn:
@@ -56,7 +56,7 @@ def dependent_care(db, book):
 
 def test_only_what_has_been_contributed_is_available(db, book, dependent_care):
     status = fsa.year_status(
-        db, dependent_care, dependent_care.fsa_years[0], as_of=date(2026, 3, 1)
+        db, dependent_care, dependent_care.fsa.years[0], as_of=date(2026, 3, 1)
     )
     assert status.dependent_care
     assert status.funded == Money("833.34")
@@ -69,15 +69,15 @@ def test_only_what_has_been_contributed_is_available(db, book, dependent_care):
         ),
     )
     status = fsa.year_status(
-        db, dependent_care, dependent_care.fsa_years[0], as_of=date(2026, 3, 5)
+        db, dependent_care, dependent_care.fsa.years[0], as_of=date(2026, 3, 5)
     )
     assert (status.used, status.remaining) == (Money("600.00"), Money("233.34"))
 
 
 def test_a_health_fsa_still_offers_the_whole_election(db, book, dependent_care):
     health = Account.from_dict(dependent_care.serialize())
-    health.fsa_dependent_care = False
-    status = fsa.year_status(db, health, health.fsa_years[0], as_of=date(2026, 3, 1))
+    health.fsa.dependent_care = False
+    status = fsa.year_status(db, health, health.fsa.years[0], as_of=date(2026, 3, 1))
     assert status.remaining == Money("5000.00") and not status.dependent_care
 
 
@@ -112,7 +112,7 @@ def test_a_dependent_care_claim_needs_no_eob_and_waits_for_contributions(db, boo
 
 def test_a_dependent_care_fsa_cannot_carry_over(db, book, dependent_care):
     changed = Account.from_dict(dependent_care.serialize())
-    changed.fsa_years = [
+    changed.fsa.years = [
         FsaFundingYear(
             YEAR, date(2026, 12, 31), Money("5000.00"), date(2027, 3, 31), Money("500.00")
         )
@@ -122,16 +122,16 @@ def test_a_dependent_care_fsa_cannot_carry_over(db, book, dependent_care):
         db, SaveAccount(changed, existing_handle=changed.handle, source=dependent_care)
     )
     assert not result.ok
-    assert result.errors[0].code == "account.fsa.dependent_care.carryover"
+    assert result.errors[0].code == "account.fsa_dependent_care.carryover"
     assert db.get_account(dependent_care.handle).serialize() == before
 
 
 def test_the_flag_round_trips_and_older_accounts_are_health_fsas(dependent_care):
     again = Account.from_dict(dependent_care.serialize())
-    assert again.fsa_dependent_care
+    assert again.fsa.dependent_care
     data = dependent_care.serialize()
     del data["fsa_dependent_care"]
-    assert not Account.from_dict(data).fsa_dependent_care
+    assert not Account.from_dict(data).fsa.dependent_care
 
 
 def test_cli_marks_an_fsa_as_dependent_care(tmp_path, capsys):
@@ -151,6 +151,6 @@ def test_cli_marks_an_fsa_as_dependent_care(tmp_path, capsys):
     db = DbSQLite()
     db.load(str(book), mode="r")
     try:
-        assert db.get_account_by_name("Assets:DCFSA").fsa_dependent_care
+        assert db.get_account_by_name("Assets:DCFSA").fsa.dependent_care
     finally:
         db.close()

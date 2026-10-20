@@ -931,7 +931,7 @@ def test_fsa_claims_needing_attention_show_on_both_dashboards(page, served):
     start = today.replace(month=1, day=1)
     assets = next(a for a in db.iter_accounts() if a.name == "Assets")
     account = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
-    account.fsa_years = [
+    account.fsa.years = [
         FsaFundingYear(start, start.replace(month=12, day=31), Money("1000"), None)
     ]
     with db.transaction("FSA") as txn:
@@ -972,7 +972,7 @@ def test_a_claim_is_closed_and_reopened_in_the_claims_editor(page, served):
     start = today.replace(month=1, day=1)
     assets = next(a for a in db.iter_accounts() if a.name == "Assets")
     account = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
-    account.fsa_years = [
+    account.fsa.years = [
         FsaFundingYear(start, start.replace(month=12, day=31), Money("1000"), None)
     ]
     with db.transaction("FSA") as txn:
@@ -1252,7 +1252,7 @@ def test_the_tax_year_marks_accounts_and_tags_and_prints_alone(page, served):
     dialog = page.locator(".tax-dialog")
     text = dialog.inner_text()
     assert expense_name in text and "Charity" in text and "80.00" in text
-    assert db.get_account(expense.handle).tax_relevant_override is True
+    assert db.get_account(expense.handle).planning.tax_relevant is True
     assert db.get_metadata("tax.tags") == ["Charity"]
 
     page.evaluate("window.print = () => { window.__printed = document.body.className; }")

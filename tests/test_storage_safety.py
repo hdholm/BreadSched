@@ -378,14 +378,14 @@ def _checking_split(db, book):
 
 class TestCommitChecks:
     def test_accounts_must_name_existing_relatives(self, db, book):
-        for field_name, code in (
-            ("parent", "account.missing_parent"),
-            ("commodity", "account.missing_commodity"),
-            ("linked_asset", "account.missing_linked_asset"),
-            ("card_payment_account", "account.missing_card_payment_account"),
+        for record, field_name, code in (
+            (None, "parent", "account.missing_parent"),
+            (None, "commodity", "account.missing_commodity"),
+            ("liability", "linked_asset", "account.missing_linked_asset"),
+            ("card", "payment_account", "account.missing_card_payment_account"),
         ):
             account = Account(name=f"Odd {field_name}", atype=AccountType.BANK, parent=book.assets)
-            setattr(account, field_name, MISSING)
+            setattr(getattr(account, record) if record else account, field_name, MISSING)
             _refused(db, code, lambda txn, a=account: db.add_account(a, txn))
 
     def test_prices_need_a_known_security_and_a_currency_quote(self, db, book):

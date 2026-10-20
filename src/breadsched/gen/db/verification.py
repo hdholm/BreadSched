@@ -172,24 +172,27 @@ def _verify_accounts(state: _VerificationState) -> list[BookIssue]:
                     account.handle,
                 )
             )
-        if account.linked_asset is not None and account.linked_asset not in state.accounts:
+        if (
+            account.liability.linked_asset is not None
+            and account.liability.linked_asset not in state.accounts
+        ):
             issues.append(
                 BookIssue(
                     "account.missing_linked_asset",
                     f"account {account.name!r} "
-                    f"refers to missing linked asset {account.linked_asset}",
+                    f"refers to missing linked asset {account.liability.linked_asset}",
                     account.handle,
                 )
             )
         if (
-            account.card_payment_account is not None
-            and account.card_payment_account not in state.accounts
+            account.card.payment_account is not None
+            and account.card.payment_account not in state.accounts
         ):
             issues.append(
                 BookIssue(
                     "account.missing_card_payment_account",
                     f"account {account.name!r} refers to missing card payment account "
-                    f"{account.card_payment_account}",
+                    f"{account.card.payment_account}",
                     account.handle,
                 )
             )

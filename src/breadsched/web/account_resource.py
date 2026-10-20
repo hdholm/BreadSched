@@ -52,22 +52,22 @@ def accounts(api: Api) -> list[dict]:
                     "commodity_scu": account.commodity_scu,
                     "emergency_fund_eligible": account.emergency_fund_eligible,
                     "emergency_fund_included": account.emergency_fund_included,
-                    "pays_in_full": account.pays_in_full,
+                    "pays_in_full": account.card.pays_in_full,
                     "usual_payment": (
-                        str(account.usual_payment.to_decimal())
-                        if account.usual_payment is not None
+                        str(account.card.usual_payment.to_decimal())
+                        if account.card.usual_payment is not None
                         else None
                     ),
-                    "payment_day": account.payment_day,
-                    "card_payment_account": account.card_payment_account,
+                    "payment_day": account.card.payment_day,
+                    "card_payment_account": account.card.payment_account,
                     "source_type": (
                         account.source_type
                         or (account.source_atype.value if account.source_atype else None)
                     ),
                     "source_guid": account.source_guid,
                     "source_fields": [field.serialize() for field in account.source_fields],
-                    "fsa_dependent_care": account.fsa_dependent_care,
-                    "cost_basis_method": account.cost_basis_method,
+                    "fsa_dependent_care": account.fsa.dependent_care,
+                    "cost_basis_method": account.investment.cost_basis_method,
                     "fsa_years": [
                         {
                             "start": year.start.isoformat(),
@@ -85,7 +85,7 @@ def accounts(api: Api) -> list[dict]:
                                 year.grace_through.isoformat() if year.grace_through else None
                             ),
                         }
-                        for year in account.fsa_years
+                        for year in account.fsa.years
                     ],
                     "depth": depth,
                     "balance": recursive,
@@ -193,14 +193,14 @@ def account_cost_basis_save(api: Api, payload: dict) -> dict:
         raise ValueError("cost basis applies only to an Investment or Retirement account")
     source = Account.from_dict(stored.serialize())
     account = Account.from_dict(stored.serialize())
-    account.cost_basis_method = str(payload.get("method", "")).strip()
+    account.investment.cost_basis_method = str(payload.get("method", "")).strip()
     result = save_account(
         api.db,
         SaveAccount(account, existing_handle=account.handle, source=source),
     )
     if not result.ok:
         raise service_error(result.errors[0])
-    return {"handle": account.handle, "method": account.cost_basis_method}
+    return {"handle": account.handle, "method": account.investment.cost_basis_method}
 
 
 def account_type_save(api: Api, payload: dict) -> dict:
@@ -220,7 +220,7 @@ def account_type_save(api: Api, payload: dict) -> dict:
         raise ValueError("choose a user account type")
     account.atype = account_type
     if account_type is not AccountType.CREDIT:
-        account.card_payment_account = None
+        account.card.payment_account = None
     result = save_account(
         api.db,
         SaveAccount(account, existing_handle=account.handle, source=source),
@@ -240,7 +240,7 @@ def account_emergency_fund_save(api: Api, payload: dict) -> dict:
     account = Account.from_dict(stored.serialize())
     if not account.emergency_fund_eligible:
         raise ValueError("this account type is always excluded from the emergency fund")
-    account.emergency_fund_override = bool(payload.get("included"))
+    account.planning.emergency_fund = bool(payload.get("included"))
     result = save_account(
         api.db,
         SaveAccount(account, existing_handle=account.handle, source=source),
@@ -282,13 +282,13 @@ def account_card_save(api: Api, payload: dict) -> dict:
         payment = api.db.get_account(payment_handle)
         if payment is None or not payment.atype.is_cash_like or payment.placeholder:
             raise ValueError("paid from must be a Bank or Cash account")
-        if payment.hidden and payment.handle != account.card_payment_account:
+        if payment.hidden and payment.handle != account.card.payment_account:
             raise ValueError("a hidden account cannot fund a new card payment")
 
-    account.pays_in_full = raw_full
-    account.usual_payment = usual_payment
-    account.payment_day = payment_day
-    account.card_payment_account = payment_handle
+    account.card.pays_in_full = raw_full
+    account.card.usual_payment = usual_payment
+    account.card.payment_day = payment_day
+    account.card.payment_account = payment_handle
     result = save_account(
         api.db,
         SaveAccount(account, existing_handle=account.handle, source=source),
@@ -297,12 +297,14 @@ def account_card_save(api: Api, payload: dict) -> dict:
         raise service_error(result.errors[0])
     return {
         "handle": account.handle,
-        "pays_in_full": account.pays_in_full,
+        "pays_in_full": account.card.pays_in_full,
         "usual_payment": (
-            str(account.usual_payment.to_decimal()) if account.usual_payment is not None else None
+            str(account.card.usual_payment.to_decimal())
+            if account.card.usual_payment is not None
+            else None
         ),
-        "payment_day": account.payment_day,
-        "card_payment_account": account.card_payment_account,
+        "payment_day": account.card.payment_day,
+        "card_payment_account": account.card.payment_account,
     }
 
 
@@ -335,11 +337,11 @@ def account_fsa_years_save(api: Api, payload: dict) -> dict:
     for earlier, later in zip(years, years[1:], strict=False):
         if later.start <= earlier.through:
             raise ValueError("FSA funding years cannot overlap")
-    account.fsa_years = years
-    dependent_care = payload.get("dependent_care", account.fsa_dependent_care)
+    account.fsa.years = years
+    dependent_care = payload.get("dependent_care", account.fsa.dependent_care)
     if not isinstance(dependent_care, bool):
         raise ValueError("dependent_care must be true or false")
-    account.fsa_dependent_care = dependent_care
+    account.fsa.dependent_care = dependent_care
     result = save_account(
         api.db,
         SaveAccount(account, existing_handle=account.handle, source=source),
