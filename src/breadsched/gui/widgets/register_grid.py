@@ -392,6 +392,20 @@ class RegisterGrid(Gtk.Box):
         target = self.matches.get_row_at_index(max(0, index))
         if target is not None:
             self.matches.select_row(target)
+            self._reveal_match(target)
+
+    def _reveal_match(self, row: Gtk.ListBoxRow) -> None:
+        """Scroll the account list so the chosen row is in view (#334)."""
+        adjustment = self.match_frame.get_vadjustment()
+        found, bounds = row.compute_bounds(self.matches)
+        if not found:
+            return
+        top, bottom = bounds.get_y(), bounds.get_y() + bounds.get_height()
+        first, page = adjustment.get_value(), adjustment.get_page_size()
+        if top < first:
+            adjustment.set_value(top)
+        elif bottom > first + page:
+            adjustment.set_value(bottom - page)
 
     def accept_match(self, name: str) -> None:
         """Take an account from the list into the transfer cell."""

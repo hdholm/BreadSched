@@ -12,6 +12,11 @@ open list are at least as wide as the longest choice up to that limit, so short
 choices such as "Keep" or "Scale with gross" always show whole. Before #327 the
 button could shrink to four characters and the list's rows wrapped a word a few
 letters at a time.
+
+A list of :data:`SEARCH_FROM` or more choices can be searched (#334): opening it
+shows a search field, and typing keeps only the choices that contain what was typed
+anywhere, as the register's account cell does. Every account choice in the desktop
+window comes from here, so they all search the same way.
 """
 
 from __future__ import annotations
@@ -21,12 +26,14 @@ from collections.abc import Sequence
 
 from ..gi_setup import Gtk, Pango
 
-__all__ = ["bound_dropdown", "bounded_dropdown"]
+__all__ = ["SEARCH_FROM", "bound_dropdown", "bounded_dropdown"]
 
 #: Characters a shown choice may take before it is shortened.
 CHOICE_CHARS = 36
 #: Characters a line of the open list may take before it wraps.
 LIST_CHARS = 72
+#: A list this long or longer can be searched by typing.
+SEARCH_FROM = 8
 
 
 def _text(item) -> str:
@@ -116,9 +123,23 @@ def bound_dropdown(dropdown: Gtk.DropDown, chars: int = CHOICE_CHARS) -> Gtk.Dro
     listing.connect("setup", setup_row)
     listing.connect("bind", bind_row)
     listing.connect("unbind", unbind_row)
+    # Typing filters a long list by its choices' text, matched anywhere (#334).
+    # The expression is set before the factories: setting it afterwards puts
+    # GTK's own full-width button factory back in place of the shortening one.
+    dropdown.set_expression(Gtk.PropertyExpression.new(Gtk.StringObject, None, "string"))
+    if hasattr(dropdown, "set_search_match_mode"):  # GTK 4.12+
+        dropdown.set_search_match_mode(Gtk.StringFilterMatchMode.SUBSTRING)
     dropdown.set_factory(button)
     dropdown.set_list_factory(listing)
     dropdown.connect("notify::selected-item", refresh_checks)
+
+    def searchable(*_args) -> None:
+        model = dropdown.get_model()
+        count = model.get_n_items() if model is not None else 0
+        dropdown.set_enable_search(count >= SEARCH_FROM)
+
+    searchable()
+    dropdown.connect("notify::model", searchable)
     return dropdown
 
 

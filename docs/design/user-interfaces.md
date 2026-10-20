@@ -99,7 +99,11 @@ Windows must stay usable on small screens whatever the book holds:
   when a choice is longer than 36 characters (GTK's default made the longest account
   path the minimum width). A list whose choices all fit shows them whole: its button
   is as wide as the longest choice and the open list's rows are too (#327; GTK 4.22
-  had shrunk such buttons to "Sc…oss" and wrapped "Keep" as "Ke-ep"). View
+  had shrunk such buttons to "Sc…oss" and wrapped "Keep" as "Ke-ep"). A list of
+  `SEARCH_FROM` (8) or more choices can be searched: its popup has a search field
+  matching anywhere in a choice (`StringFilterMatchMode.SUBSTRING`), so every
+  account choice, including the register's account picker, filters as the
+  register's account cell does (#334). View
   toolbars scroll, Dashboard cards wrap in a `Gtk.FlowBox`, and the main stacks are
   not homogeneous, so the window's minimum is the shown page's.
 - Every secondary window is a `widgets.bounded.BoundedWindow`, which opens at its
@@ -184,7 +188,8 @@ parallel transaction models:
 - **Quickfill.** `quickfill_account` completes the segment being typed from the
   best match, and the grid selects the added text so the next key replaces it; `:`
   accepts the segments shown and prefers a deeper account. The matches are listed
-  in a `Gtk.ListBox` under the cell. `quickfill_description` completes a new
+  in a `Gtk.ListBox` under the cell, which scrolls to keep the chosen one in view
+  as Up and Down move through it (#334). `quickfill_description` completes a new
   entry's description from the register's earlier descriptions, most recent first;
   leaving the description then asks `suggest_entry` for the rest.
 - **Commit.** Two balancing `TransactionSplitInput`s with a positive exact amount
