@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import queue
 import secrets
 import threading
 from datetime import date
@@ -13,13 +14,23 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode, urlparse
 
+from ..api.protocol import Change
+from ..api.views import change_json
 from ..gen.db.sqlite import DbSQLite
 from ..gen.lib import Money, Rate
 from ..gen.utils.logs import get_logger
 from .attachment_resource import MAX_ATTACHMENT_BYTES, attachment_content, attachment_upload
 from .context import Api
 from .controls import ResourceError
-from .resources import GET_ROUTES, POST_ROUTES, QueryError, QueryParams
+from .resources import (
+    GET_ROUTES,
+    POST_ROUTES,
+    V1_EVENTS,
+    V1_PREFIX,
+    QueryError,
+    QueryParams,
+    match_v1,
+)
 from .upload_resource import import_upload
 
 LOG = get_logger(__name__)
@@ -76,11 +87,19 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:  # noqa: A003 - base class name
         LOG.debug("%s %s", self.address_string(), fmt % args)
 
-    def _send(self, status: int, body: bytes, content_type: str) -> None:
+    def _send(
+        self,
+        status: int,
+        body: bytes,
+        content_type: str,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.send_header(
             "Content-Security-Policy",
             "; ".join(
@@ -101,9 +120,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _json(self, status: int, payload: object) -> None:
+    def _json(self, status: int, payload: object, headers: dict[str, str] | None = None) -> None:
         body = json.dumps(payload, default=_encode).encode("utf-8")
-        self._send(status, body, "application/json; charset=utf-8")
+        self._send(status, body, "application/json; charset=utf-8", headers)
 
     def _error(
         self,
@@ -192,6 +211,12 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/attachment/content":
             self._attachment_content(parsed.query)
             return
+        if parsed.path == V1_EVENTS:
+            self._events(parsed.query)
+            return
+        if parsed.path.startswith(V1_PREFIX + "/"):
+            self._v1("GET")
+            return
         route = GET_ROUTES.get(parsed.path)
         if route is None:
             self._static("index.html" if parsed.path in ("/", "") else parsed.path[1:])
@@ -265,6 +290,9 @@ class Handler(BaseHTTPRequestHandler):
         if urlparse(self.path).path == "/api/attachment/upload":
             self._attachment_upload()
             return
+        if urlparse(self.path).path.startswith(V1_PREFIX + "/"):
+            self._v1("POST")
+            return
         if not self._trusted_api_request(write=True):
             self._discard_body()
             self._error(403, "request.untrusted")
@@ -298,6 +326,149 @@ class Handler(BaseHTTPRequestHandler):
             self._error(400, "request.invalid", message=str(exc))
         except Exception:  # noqa: BLE001 - isolate the threaded server
             self._unexpected()
+
+    def do_PATCH(self) -> None:  # noqa: N802 - required by the base class
+        self._v1("PATCH")
+
+    # ---------------------------------------------------------------- /api/v1
+
+    def _revision_headers(self, revision: int) -> dict[str, str]:
+        return {"ETag": f'"{revision}"', "Cache-Control": "no-store"}
+
+    def _if_match(self) -> int | None:
+        """The revision a write's ``If-Match`` requires, if it names one."""
+        raw = self.headers.get("If-Match")
+        if raw is None:
+            return None
+        try:
+            return int(raw.strip().removeprefix("W/").strip('"'))
+        except ValueError:
+            raise QueryError("request.if_match.invalid", ("If-Match",)) from None
+
+    def _v1(self, method: str) -> None:
+        """Serve one versioned book-server resource (#357)."""
+        write = method != "GET"
+        if not self._trusted_api_request(write=write):
+            if write:
+                self._discard_body()
+            self._error(403, "request.untrusted")
+            return
+        parsed = urlparse(self.path)
+        try:
+            matched = match_v1(method, parsed.path)
+        except LookupError:
+            if write:
+                self._discard_body()
+            self._error(405, "request.method.not_allowed")
+            return
+        if matched is None:
+            if write:
+                self._discard_body()
+            self._error(404, "resource.not_found")
+            return
+        handler, values = matched
+        try:
+            if not write:
+                query = QueryParams(parsed.query)
+                api, reader = self._open_read_api()
+                try:
+                    result = handler(api, values, query)
+                    revision = api.book.revision
+                finally:
+                    self._close_read_api(reader)
+                self._json(200, result, self._revision_headers(revision))
+                return
+            if parsed.query:
+                self._discard_body()
+                raise QueryError("query.unknown", ())
+            length = self._content_length()
+            if length is None:
+                return
+            try:
+                body: Any = json.loads(self.rfile.read(length) or b"{}")
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                self._error(400, "request.body.json_invalid", ("body",))
+                return
+            if not isinstance(body, dict):
+                self._error(400, "request.body.object_required", ("body",))
+                return
+            required = self._if_match()
+            with self.lock:
+                book = self.api_object.book
+                if required is not None and required != book.revision:
+                    self._error(
+                        412,
+                        "book.revision.stale",
+                        ("If-Match",),
+                        message="The book changed since it was read; reload and try again",
+                    )
+                    return
+                result = handler(self.api_object, values, body)
+                revision = book.revision
+            self._json(200, result, self._revision_headers(revision))
+        except QueryError as exc:
+            self._error(400, exc.code, exc.fields)
+        except ResourceError as exc:
+            self._error(exc.status, exc.code, exc.fields, message=exc.message)
+        except KeyError:
+            self._error(404 if not write else 400, "request.reference.not_found")
+        except ValueError as exc:
+            self._error(400, "request.invalid", message=str(exc))
+        except Exception:  # noqa: BLE001 - isolate the threaded server
+            self._unexpected()
+
+    #: Seconds between keep-alive comments on an idle change stream.
+    EVENT_KEEPALIVE = 15.0
+
+    def _events(self, raw_query: str) -> None:
+        """Stream the book's changes as server-sent events (#357).
+
+        The first event, ``hello``, carries the current revision; a client that
+        asked for changes ``since`` an older one has missed some and should reload.
+        Each later ``change`` event is one :class:`~breadsched.api.protocol.Change`.
+        """
+        if not self._trusted_api_request():
+            self._error(403, "request.untrusted")
+            return
+        try:
+            query = QueryParams(raw_query)
+            since = query.integer("since", minimum=0)
+            query.finish()
+        except QueryError as exc:
+            self._error(400, exc.code, exc.fields)
+            return
+        changes: queue.Queue[Change] = queue.Queue()
+        with self.lock:
+            book = self.api_object.book
+            stop = book.subscribe(changes.put)
+            revision = book.revision
+        stopping = getattr(self.server, "stopping", None)
+        try:
+            self.close_connection = True
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            hello = {"revision": revision, "missed": since is not None and since < revision}
+            self._event("hello", revision, hello)
+            while stopping is None or not stopping.is_set():
+                try:
+                    change = changes.get(timeout=self.EVENT_KEEPALIVE)
+                except queue.Empty:
+                    self.wfile.write(b": keep-alive\n\n")
+                    self.wfile.flush()
+                    continue
+                self._event("change", change.revision, change_json(change))
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            stop()
+
+    def _event(self, name: str, revision: int, payload: object) -> None:
+        data = json.dumps(payload, default=_encode)
+        self.wfile.write(f"event: {name}\nid: {revision}\ndata: {data}\n\n".encode())
+        self.wfile.flush()
 
     def _import_upload(self) -> None:
         """Receive one bounded file without JSON encoding or a client filesystem path."""
@@ -422,6 +593,12 @@ class BreadSchedHTTPServer(ThreadingHTTPServer):
     """Threaded local server carrying the API token exposed to the launcher."""
 
     token: str
+    #: Set on shutdown so open change streams end.
+    stopping: threading.Event
+
+    def shutdown(self) -> None:
+        self.stopping.set()
+        super().shutdown()
 
 
 def build_handler(db: DbSQLite, token: str) -> type[Handler]:
@@ -450,6 +627,7 @@ def serve(
     token = secrets.token_urlsafe(32)
     server = BreadSchedHTTPServer((host, port), build_handler(db, token))
     server.token = token
+    server.stopping = threading.Event()
     if open_browser:  # pragma: no cover - depends on a desktop session
         import webbrowser
 

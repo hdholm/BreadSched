@@ -98,6 +98,19 @@ stale lock is reclaimed automatically only when it belongs to the same host and 
 recorded process no longer exists. Lock removal verifies the ownership token so one
 process cannot delete another writer's lock.
 
+## Book revision
+
+A book carries a change counter, `DbSQLite.revision()`, stored under the
+metadata key `book_revision` (no schema change). Every committed database
+transaction that changed a record, and every undo or redo, raises it by one inside
+the same SQL transaction, so a read-only snapshot sees exactly the revision of the
+generation it reads and every process agrees on it. It is written outside the undo
+records, so undoing a change moves the counter forward rather than back. Metadata
+written outside a database transaction (presentation settings) does not count. The
+experimental book server's `ETag` and change events report this value (#357); see
+[decision 0003](decisions/0003-book-server.md). `tests/test_book_server.py`
+covers reopening, undo, and a read-only snapshot.
+
 ## Verification, backup, and restore
 
 Normal writes are verified incrementally from the records already captured by the

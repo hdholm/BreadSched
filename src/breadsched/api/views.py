@@ -8,17 +8,30 @@ the leaves.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
-from ..gen.services import AdvanceDays, DueResolution, DueScheduleReview, NextOccurrence
+from ..gen.lib.money import Money
+from ..gen.services import (
+    AdvanceDays,
+    DueItem,
+    DueResolution,
+    DueScheduleReview,
+    NextOccurrence,
+)
 from .contract import to_json
 from .protocol import Change
 
 __all__ = [
+    "advance_days_from_json",
     "advance_days_json",
+    "change_from_json",
     "change_json",
+    "due_review_from_json",
     "due_review_json",
+    "next_occurrence_from_json",
     "next_occurrence_json",
+    "resolution_from_json",
     "resolution_json",
 ]
 
@@ -82,3 +95,63 @@ def advance_days_json(days: AdvanceDays) -> dict[str, Any]:
 def change_json(change: Change) -> dict[str, Any]:
     """A change event as a subscriber receives it."""
     return {"revision": change.revision, "kinds": sorted(change.kinds), "label": change.label}
+
+
+# ------------------------------------------------------------------ decoding
+#
+# The HTTP client turns each JSON form back into the services' typed results, so a
+# caller cannot tell an in-process server from a remote one.
+
+
+def due_review_from_json(payload: dict[str, Any]) -> list[DueScheduleReview]:
+    return [
+        DueScheduleReview(
+            schedule=review["schedule"],
+            name=review["name"],
+            frequency=review["frequency"],
+            items=tuple(
+                DueItem(
+                    review["schedule"],
+                    date.fromisoformat(item["date"]),
+                    Money(item["amount"]),
+                    bool(item["overdue"]),
+                    item["stage"],
+                )
+                for item in review["items"]
+            ),
+        )
+        for review in payload["schedules"]
+    ]
+
+
+def resolution_from_json(payload: dict[str, Any]) -> DueResolution:
+    return DueResolution(
+        int(payload["posted"]),
+        int(payload["skipped"]),
+        int(payload["deferred"]),
+        tuple(payload["transactions"]),
+    )
+
+
+def next_occurrence_from_json(payload: dict[str, Any] | None) -> NextOccurrence | None:
+    if payload is None:
+        return None
+    return NextOccurrence(
+        payload["schedule"],
+        payload["name"],
+        date.fromisoformat(payload["date"]),
+        Money(payload["amount"]),
+    )
+
+
+def advance_days_from_json(payload: dict[str, Any]) -> AdvanceDays:
+    return AdvanceDays(
+        payload["schedule"],
+        payload["name"],
+        int(payload["advance_days"]),
+        int(payload["remind_days"]),
+    )
+
+
+def change_from_json(payload: dict[str, Any]) -> Change:
+    return Change(int(payload["revision"]), frozenset(payload["kinds"]), payload.get("label"))

@@ -212,6 +212,23 @@ So far only scheduled transactions go through it:
 
 Their command-line JSON is therefore the browser's JSON.
 
+The same operations are served as versioned resources under `/api/v1` (#357):
+- **Handlers:** `web/v1_resource.py`, each calling `Api.book`.
+- **Routing:** `web.resources.V1_ROUTES` maps a method and a path pattern with
+  `{handle}` segments to each handler. A known path with the wrong method answers
+  405.
+- **`ETag`:** `web.transport` sends the book revision (see
+  [Book revision](storage.md#book-revision)) as the `ETag` of every response. It
+  checks a write's `If-Match` against the revision under the writer lock and answers
+  412 if the book has moved on.
+- **Change stream:** `/api/v1/events` streams server-sent events: a `hello` with the
+  current revision, saying whether the client's `since` missed changes, then one
+  `change` per change, with keep-alive comments in between.
+- **Client:** `breadsched.api.http_client.HttpBookClient` implements the same
+  protocol over these resources and decodes responses back into the services'
+  dataclasses. `tests/test_book_server.py` runs one contract against both the
+  in-process server and this client.
+
 ## GTK and web parity
 
 GTK4 defines the reference workflow and interaction model. The web UI must maintain

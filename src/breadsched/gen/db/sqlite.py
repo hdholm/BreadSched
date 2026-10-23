@@ -141,6 +141,9 @@ CREATE TABLE IF NOT EXISTS schema_migration (
 );
 """
 
+#: Metadata key of the book's change counter (see :meth:`DbSQLite.revision`).
+REVISION_KEY = "book_revision"
+
 #: table -> (object class, signal stem)
 _TABLES: dict[str, tuple[type, str]] = {
     "commodity": (Commodity, "commodity"),
@@ -702,6 +705,8 @@ class DbSQLite(ChangeVerification):
                 raise DbError(
                     f"transaction would leave an invalid book: {first.code}: {first.message}"
                 )
+            if txn.records:
+                self._advance_revision()
             conn.commit()
             self._active_txn = None
             if txn.records:
@@ -787,6 +792,7 @@ class DbSQLite(ChangeVerification):
                     raise DbError(
                         f"undo/redo would leave an invalid book: {first.code}: {first.message}"
                     )
+                self._advance_revision()
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -1244,6 +1250,20 @@ class DbSQLite(ChangeVerification):
                 yield obj
 
     # ---------------------------------------------------------------- metadata
+
+    def revision(self) -> int:
+        """How many recorded changes the book has committed, across every process.
+
+        Each committed database transaction that changed a record, and each undo or
+        redo, raises it by one in the same SQL transaction; it is kept outside the
+        undo records so undoing a change still moves it forward (#357). Metadata
+        written outside a database transaction (presentation settings) does not
+        count.
+        """
+        return int(self.get_metadata(REVISION_KEY, 0) or 0)
+
+    def _advance_revision(self) -> None:
+        self._set_metadata_uncommitted(REVISION_KEY, self.revision() + 1)
 
     def get_metadata(self, key: str, default: Any = None) -> Any:
         conn = self._conn

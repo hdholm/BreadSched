@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING, Any
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, unquote
 
 from .account_resource import (
     account_card_save,
@@ -148,6 +148,18 @@ from .schedule_resource import (
     scheduled_save,
 )
 from .tax_resource import tax_marks_save, tax_marks_view, tax_year_report
+from .v1_resource import (
+    advance_days_get,
+    advance_days_patch,
+    book_get,
+    due_review_get,
+    due_review_post,
+    next_get,
+    next_post,
+    redo_post,
+    schedule_lookup,
+    undo_post,
+)
 
 if TYPE_CHECKING:
     from .context import Api
@@ -477,3 +489,61 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/projection/explain": projection_explain,
     "/api/projection/save": projection_save,
 }
+
+
+# ------------------------------------------------------------------ /api/v1
+#
+# The versioned book-server resources (#357, experimental). A route is a method and
+# a path pattern whose ``{name}`` segments are handed to the handler; GET handlers
+# take the typed query, writes the JSON body. ``/api/v1/events`` is a stream the
+# transport serves itself.
+
+V1Get = Callable[["Api", dict[str, str], QueryParams], object]
+V1Write = Callable[["Api", dict[str, str], dict[str, Any]], object]
+
+V1_PREFIX = "/api/v1"
+V1_EVENTS = "/api/v1/events"
+
+V1_ROUTES: tuple[tuple[str, str, Callable[..., object]], ...] = (
+    ("GET", "/book", book_get),
+    ("GET", "/due-review", due_review_get),
+    ("POST", "/due-review", due_review_post),
+    ("GET", "/schedules/lookup", schedule_lookup),
+    ("GET", "/schedules/{handle}/next", next_get),
+    ("POST", "/schedules/{handle}/next", next_post),
+    ("GET", "/schedules/{handle}/advance-days", advance_days_get),
+    ("PATCH", "/schedules/{handle}/advance-days", advance_days_patch),
+    ("POST", "/undo", undo_post),
+    ("POST", "/redo", redo_post),
+)
+
+
+def match_v1(method: str, path: str) -> tuple[Callable[..., object], dict[str, str]] | None:
+    """The handler and path values for ``method path``, or None.
+
+    A path that names a resource with other methods raises ``LookupError`` so the
+    transport can answer 405 rather than 404.
+    """
+    if not path.startswith(V1_PREFIX + "/"):
+        return None
+    parts = path[len(V1_PREFIX) :].strip("/").split("/")
+    other_method = False
+    for route_method, pattern, handler in V1_ROUTES:
+        expected = pattern.strip("/").split("/")
+        if len(expected) != len(parts):
+            continue
+        values: dict[str, str] = {}
+        for want, got in zip(expected, parts, strict=True):
+            if want.startswith("{") and want.endswith("}"):
+                if not got:
+                    break
+                values[want[1:-1]] = unquote(got)
+            elif want != got:
+                break
+        else:
+            if route_method == method:
+                return handler, values
+            other_method = True
+    if other_method:
+        raise LookupError(path)
+    return None

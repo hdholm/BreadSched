@@ -32,10 +32,12 @@ __all__ = ["BookApi", "Change", "Listener"]
 class Change:
     """One committed change to the book, as every subscriber sees it.
 
-    ``revision`` rises by one with each change the server observes, including undo
-    and redo. ``kinds`` names what changed (``transaction``, ``scheduled``, and so
-    on, as the storage signals call them) and ``label`` is the undo step's wording,
-    when there is one.
+    ``revision`` is the book's change counter after the change; it rises with each
+    recorded change, undo, and redo, whichever process made it. ``kinds`` names what
+    changed (``transaction``, ``scheduled``, and so on, as the storage signals call
+    them) and ``label`` is the undo step's wording, when there is one. An empty
+    ``kinds`` means only that the book moved on, as when a client reconnects after
+    missing changes.
     """
 
     revision: int
@@ -51,7 +53,7 @@ class BookApi(Protocol):
 
     @property
     def revision(self) -> int:
-        """How many changes this server has observed since it opened the book."""
+        """The book's change counter: it rises with every recorded change."""
         ...
 
     def subscribe(self, listener: Listener) -> Callable[[], None]:
