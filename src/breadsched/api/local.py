@@ -38,7 +38,7 @@ from ..gen.services import advance_days as stored_advance_days
 from .contract import ApiError, unwrap
 from .protocol import Change, Listener
 
-__all__ = ["LocalBookServer", "lookup_schedule", "open_book_server"]
+__all__ = ["LocalBookServer", "book_server", "lookup_schedule", "open_book_server"]
 
 #: Storage signal stems whose add, update, and delete signals name a change's kinds.
 _STEMS = (
@@ -132,6 +132,22 @@ class LocalBookServer:
 
     def set_advance_days(self, request: SetAdvanceDays) -> AdvanceDays:
         return unwrap(set_advance_days(self.db, request))
+
+
+def book_server(db: DbSQLite) -> LocalBookServer:
+    """The one in-process server over ``db``, for code that holds the book itself.
+
+    GTK holds its book directly; each view and dialog moved onto the book API asks
+    for the server here, so one server (and one set of storage-signal connections)
+    serves the whole application.
+    """
+    # Kept on the book itself (a cycle the collector frees with it), not in a cache
+    # whose values would keep every book ever opened alive.
+    server = getattr(db, "_book_server", None)
+    if not isinstance(server, LocalBookServer):
+        server = LocalBookServer(db)
+        db._book_server = server  # type: ignore[attr-defined]
+    return server
 
 
 def lookup_schedule(db: DbSQLite, reference: str) -> ScheduledTransaction:

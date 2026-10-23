@@ -1088,7 +1088,11 @@ class TestWebBoundaries:
         source = (SRC / "web/transport.py").read_text(encoding="utf-8")
         assert 'reader.load(path, mode="r")' in source
         assert '"writer_db": db' in source
-        assert "with self.lock:" in source
+        # Every writer request runs through one executor: the transport's lock by
+        # default, or a host's own thread (GTK's main loop, #359).
+        assert "with lock:" in source
+        assert "self._exclusive(lambda: route(self.api_object, body))" in source
+        assert source.count("route(self.api_object") == 1
 
 
 class TestCliBoundaries:
