@@ -52,7 +52,7 @@ format-check:
 	ruff format --check src tests examples scripts packaging
 
 typecheck:
-	mypy src/breadsched/gen src/breadsched/plugins tests/typecheck
+	mypy src/breadsched/gen src/breadsched/plugins src/breadsched/api tests/typecheck
 
 # Check every presentation layer, including GUI modules and their imports.
 typecheck-extended:

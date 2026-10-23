@@ -8,16 +8,25 @@ Nothing financial lives here.
 
 from __future__ import annotations
 
+from ..api import LocalBookServer
 from ..gen.db.sqlite import DbSQLite
 
 __all__ = ["Api", "api"]
 
 
 class Api:
-    """The open book a request works on."""
+    """The open book a request works on, and its in-process book server (#356)."""
 
     def __init__(self, db: DbSQLite) -> None:
         self.db = db
+        self._book: LocalBookServer | None = None
+
+    @property
+    def book(self) -> LocalBookServer:
+        """The book server over :attr:`db`; adapters moved onto it use only this."""
+        if self._book is None:
+            self._book = LocalBookServer(self.db)
+        return self._book
 
 
 def api(db: DbSQLite) -> Api:

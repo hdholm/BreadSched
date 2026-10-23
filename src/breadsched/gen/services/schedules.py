@@ -674,6 +674,67 @@ def _advance_errors(candidate: ScheduledTransaction) -> list[ServiceError]:
     return errors
 
 
+@dataclass(frozen=True, slots=True)
+class SetAdvanceDays:
+    """Change only how far ahead a schedule is entered or reminded (#352).
+
+    ``None`` keeps the stored value.
+    """
+
+    schedule: str
+    advance_days: int | None = None
+    remind_days: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AdvanceDays:
+    schedule: str
+    name: str
+    advance_days: int
+    remind_days: int
+
+
+def advance_days(db: DbSQLite, schedule: str) -> AdvanceDays | None:
+    """A schedule's enter- and remind-in-advance days, or None if it is gone."""
+    stored = db.get_scheduled(schedule)
+    if stored is None:
+        return None
+    return AdvanceDays(stored.handle, stored.name, stored.advance_days, stored.remind_days)
+
+
+def set_advance_days(db: DbSQLite, request: SetAdvanceDays) -> ServiceResult[AdvanceDays]:
+    """Validate and save a schedule's advance days, keeping everything else."""
+    stored = db.get_scheduled(request.schedule)
+    if stored is None:
+        return ServiceResult.failure(ServiceError("schedule.not_found", ("schedule",)))
+    edited = ScheduledTransaction.from_dict(stored.serialize())
+    if request.advance_days is not None:
+        edited.advance_days = request.advance_days
+    if request.remind_days is not None:
+        edited.remind_days = request.remind_days
+    saved = save_schedule(db, SaveSchedule(edited, stored.handle))
+    if not saved.ok:
+        return ServiceResult.failure(*saved.errors)
+    return ServiceResult.success(
+        AdvanceDays(edited.handle, edited.name, edited.advance_days, edited.remind_days)
+    )
+
+
+def find_schedule(db: DbSQLite, reference: str) -> ServiceResult[ScheduledTransaction]:
+    """A schedule by handle, unique handle prefix, or exact name (any case)."""
+    exact = db.get_scheduled(reference)
+    if exact is not None:
+        return ServiceResult.success(exact)
+    schedules = list(db.iter_scheduled())
+    named = [item for item in schedules if item.name.casefold() == reference.casefold()]
+    matches = named or [item for item in schedules if item.handle.startswith(reference)]
+    if not reference or not matches:
+        return ServiceResult.failure(ServiceError("schedule.not_found", ("schedule",)))
+    if len(matches) > 1:
+        return ServiceResult.failure(ServiceError("schedule.reference.ambiguous", ("schedule",)))
+    return ServiceResult.success(matches[0])
+
+
 def duplicate_schedule(db: DbSQLite, request: DuplicateSchedule) -> ServiceResult[SavedSchedule]:
     """Persist an independent exact copy, including protected custom structure."""
     source = db.get_scheduled(request.handle)

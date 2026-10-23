@@ -3098,7 +3098,8 @@ class TestDueReview:
             outcome = call(
                 {"decisions": [{"schedule": rent["schedule"], "date": second, "decision": "post"}]}
             )
-            assert outcome == {"posted": 1, "skipped": 0, "deferred": 0}
+            assert (outcome["posted"], outcome["skipped"], outcome["deferred"]) == (1, 0, 0)
+            assert len(outcome["transactions"]) == 1
             assert db.summary()["txn"] == before + 1
             remaining = next(item for item in call()["schedules"] if item["name"] == "Sample rent")
             assert second not in [item["date"] for item in remaining["items"]]
@@ -3133,7 +3134,12 @@ class TestDueReview:
 
         item = definition()
         assert (item["advance_days"], item["remind_days"]) == (0, 7)
-        assert item["next"] == {"date": first.isoformat(), "amount": "40.00"}
+        assert item["next"] == {
+            "schedule": handle,
+            "name": "Early bill",
+            "date": first.isoformat(),
+            "amount": "40.00",
+        }
         _status, review = client.get("/api/due-review")
         bill = next(row for row in review["schedules"] if row["schedule"] == handle)
         assert [(row["date"], row["stage"]) for row in bill["items"]] == [
@@ -3178,7 +3184,8 @@ class TestDueReview:
             "/api/scheduled/next",
             {"schedule": handle, "decision": "skip", "date": first.isoformat()},
         )
-        assert status == 200 and skipped == {"posted": 0, "skipped": 1, "transactions": []}
+        assert status == 200
+        assert skipped == {"posted": 0, "skipped": 1, "deferred": 0, "transactions": []}
         second = definition()["next"]["date"]
         assert second > first.isoformat()
         status, entered = client.post(

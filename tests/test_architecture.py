@@ -39,7 +39,7 @@ def module_exists(dotted: list[str]) -> bool:
     return (candidate / "__init__.py").exists() or candidate.with_suffix(".py").exists()
 
 
-CORE_DIRS = ["gen", "cli", "plugins"]
+CORE_DIRS = ["gen", "api", "cli", "plugins"]
 GUI_DIR = SRC / "gui"
 
 
@@ -127,6 +127,7 @@ class TestLayering:
             "bisect",
             "calendar",
             "configparser",
+            "contextlib",
             "csv",
             "ctypes",
             "dataclasses",
@@ -994,13 +995,70 @@ class TestPresentationPackage:
                 assert getattr(presentation, name) is getattr(module, name)
 
 
+class TestBookServerBoundaries:
+    """Interfaces moved onto the book server reach the book only through it (#356)."""
+
+    #: Service calls the book server now owns for these adapters.
+    OWNED = {
+        "pending_due_review",
+        "resolve_due",
+        "resolve_next",
+        "next_occurrence",
+        "set_advance_days",
+        "advance_days",
+        "find_schedule",
+    }
+
+    @pytest.mark.parametrize(
+        ("relative", "functions"),
+        [
+            (
+                "cli/plan_commands.py",
+                ("cmd_due_review", "cmd_scheduled_next", "cmd_scheduled_advance"),
+            ),
+            ("web/schedule_resource.py", ("due_review", "due_review_resolve", "scheduled_next")),
+        ],
+    )
+    def test_moved_adapters_call_the_book_server(self, relative, functions):
+        tree = ast.parse((SRC / relative).read_text(encoding="utf-8"))
+        bodies = {
+            node.name: node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name in functions
+        }
+        assert set(bodies) == set(functions)
+        for name, body in bodies.items():
+            direct = {
+                node.func.id
+                for node in ast.walk(body)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            }
+            assert not direct & self.OWNED, (name, direct & self.OWNED)
+            reached = {
+                node.func.attr
+                for node in ast.walk(body)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            }
+            assert reached & {"due_review", "resolve_due", "resolve_next", "find_schedule"}, name
+
+    def test_the_book_server_package_has_no_interface_imports(self):
+        for module in modules_under("api"):
+            names = imported_names(module)
+            assert not names & {"gi", "http"}, module
+            text = module.read_text(encoding="utf-8")
+            assert (
+                "from ..web" not in text and "from ..cli" not in text and "from ..gui" not in text
+            )
+
+
 class TestWebBoundaries:
     def test_the_request_context_holds_only_the_book(self):
-        """Every handler is a resource adapter; ``Api`` carries the open book alone."""
+        """Every handler is a resource adapter; ``Api`` carries the open book alone,
+        and the book server over it (#356)."""
         tree = ast.parse((SRC / "web/context.py").read_text(encoding="utf-8"))
         [api] = [node for node in tree.body if isinstance(node, ast.ClassDef)]
         methods = [node.name for node in api.body if isinstance(node, ast.FunctionDef)]
-        assert methods == ["__init__"]
+        assert methods == ["__init__", "book"]
         resources = (SRC / "web/resources.py").read_text(encoding="utf-8")
         assert "getattr(api" not in resources
 

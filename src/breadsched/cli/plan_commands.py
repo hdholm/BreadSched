@@ -5,6 +5,14 @@ from __future__ import annotations
 import argparse
 from datetime import date
 
+from ..api import open_book_server
+from ..api.local import lookup_schedule
+from ..api.views import (
+    advance_days_json,
+    due_review_json,
+    next_occurrence_json,
+    resolution_json,
+)
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
     activity,
@@ -30,14 +38,11 @@ from ..gen.services import (
     ReviewTransaction,
     SaveSchedule,
     ServiceError,
+    SetAdvanceDays,
     delete_schedule,
     mark_review_unexpected,
     match_review,
-    next_occurrence,
-    pending_due_review,
     reject_review,
-    resolve_due,
-    resolve_next,
     save_schedule,
 )
 from ..gen.services.payroll import (
@@ -166,9 +171,8 @@ def cmd_due_review(args: argparse.Namespace) -> int:
     if args.post_all and args.skip_all:
         raise CommandError("choose either --post-all or --skip-all, not both")
     as_of = parse_date(args.as_of) or date.today()
-    db = open_book(args.book)
-    try:
-        reviews = pending_due_review(db, as_of)
+    with open_book_server(args.book) as book:
+        reviews = book.due_review(as_of)
         decisions: dict[tuple[str, date], DueDecision] = {}
         if args.post_all or args.skip_all:
             chosen = DueDecision.POST if args.post_all else DueDecision.SKIP
@@ -188,19 +192,14 @@ def cmd_due_review(args: argparse.Namespace) -> int:
                 for key in _due_references(reviews, reference):
                     decisions[key] = decision
         if decisions:
-            resolved = resolve_due(
-                db,
+            outcome = book.resolve_due(
                 ResolveDue(
                     tuple((handle, when, choice) for (handle, when), choice in decisions.items()),
                     as_of=as_of,
-                ),
+                )
             )
-            if not resolved.ok:
-                raise CommandError(service_error_message(resolved.errors[0]))
-            assert resolved.value is not None
-            outcome = resolved.value
             emit(
-                {"posted": outcome.posted, "skipped": outcome.skipped},
+                resolution_json(outcome),
                 args,
                 f"Posted {outcome.posted}; marked {outcome.skipped} as done",
             )
@@ -217,109 +216,66 @@ def cmd_due_review(args: argparse.Namespace) -> int:
             for review in reviews
         ]
         emit(
-            [
-                {
-                    "schedule": review.schedule,
-                    "name": review.name,
-                    "frequency": review.frequency,
-                    "total": review.total,
-                    "items": [
-                        {
-                            "date": item.when,
-                            "amount": item.amount,
-                            "overdue": item.overdue,
-                            "stage": item.stage,
-                        }
-                        for item in review.items
-                    ],
-                }
-                for review in reviews
-            ],
+            due_review_json(reviews),
             args,
             table(rows, ["schedule", "id", "due", "dates", "frequency", "total"], right={2, 5})
             if rows
             else "Nothing is due.",
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_scheduled_next(args: argparse.Namespace) -> int:
     """Show, enter, or skip a schedule's next occurrence before it is due (#351)."""
     decision = DueDecision.POST if args.enter else DueDecision.SKIP if args.skip else None
-    db = open_book(args.book, "w" if decision is not None else "r")
-    try:
-        as_of = parse_date(args.as_of)
-        sched = _find_schedule(db, args.schedule)
-        upcoming = next_occurrence(db, sched.handle, as_of=as_of)
+    as_of = parse_date(args.as_of)
+    with open_book_server(args.book, "w" if decision is not None else "r") as book:
+        sched = book.find_schedule(args.schedule)
+        upcoming = book.next_occurrence(sched.handle, as_of=as_of)
         if decision is None:
-            if upcoming is None:
-                emit(None, args, f"{sched.name} has no occurrence to enter or skip")
-            else:
-                emit(
-                    {"schedule": sched.handle, "date": upcoming.when, "amount": upcoming.amount},
-                    args,
-                    f"{sched.name}: next {upcoming.when.isoformat()} {upcoming.amount.format()}",
-                )
+            emit(
+                next_occurrence_json(upcoming),
+                args,
+                f"{sched.name} has no occurrence to enter or skip"
+                if upcoming is None
+                else f"{sched.name}: next {upcoming.when.isoformat()} {upcoming.amount.format()}",
+            )
             return 0
-        result = resolve_next(
-            db,
+        outcome = book.resolve_next(
             ResolveNext(
                 sched.handle,
                 decision,
                 when=upcoming.when if upcoming is not None else None,
                 as_of=as_of,
-            ),
+            )
         )
-        if result.value is None:
-            raise CommandError(service_error_message(result.errors[0]))
         assert upcoming is not None
         verb = "Entered" if decision is DueDecision.POST else "Skipped"
         emit(
-            {
-                "schedule": sched.handle,
-                "date": upcoming.when,
-                "posted": result.value.posted,
-                "skipped": result.value.skipped,
-            },
+            resolution_json(outcome),
             args,
             f"{verb} {sched.name} for {upcoming.when.isoformat()}",
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_scheduled_advance(args: argparse.Namespace) -> int:
     """Show or set how many days ahead a schedule is entered or reminded (#352)."""
     writing = args.enter_days is not None or args.remind_days is not None
-    db = open_book(args.book, "w" if writing else "r")
-    try:
-        sched = _find_schedule(db, args.schedule)
-        if writing:
-            edited = ScheduledTransaction.from_dict(sched.serialize())
-            if args.enter_days is not None:
-                edited.advance_days = args.enter_days
-            if args.remind_days is not None:
-                edited.remind_days = args.remind_days
-            result = save_schedule(db, SaveSchedule(edited, sched.handle))
-            if not result.ok:
-                raise CommandError(service_error_message(result.errors[0]))
-            sched = edited
+    with open_book_server(args.book, "w" if writing else "r") as book:
+        sched = book.find_schedule(args.schedule)
+        days = (
+            book.set_advance_days(SetAdvanceDays(sched.handle, args.enter_days, args.remind_days))
+            if writing
+            else book.advance_days(sched.handle)
+        )
         emit(
-            {
-                "schedule": sched.handle,
-                "enter_days": sched.advance_days,
-                "remind_days": sched.remind_days,
-            },
+            advance_days_json(days),
             args,
-            f"{sched.name}: enter {sched.advance_days} day(s) and remind "
-            f"{sched.remind_days} day(s) in advance",
+            f"{days.name}: enter {days.advance_days} day(s) and remind "
+            f"{days.remind_days} day(s) in advance",
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_scheduled(args: argparse.Namespace) -> int:
@@ -360,17 +316,7 @@ def cmd_scheduled(args: argparse.Namespace) -> int:
 
 def _find_schedule(db: DbSQLite, reference: str) -> ScheduledTransaction:
     """Locate a schedule by handle, unique handle prefix, or exact name."""
-    exact = db.get_scheduled(reference)
-    if exact is not None:
-        return exact
-    schedules = list(db.iter_scheduled())
-    named = [item for item in schedules if item.name.casefold() == reference.casefold()]
-    matches = named or [item for item in schedules if item.handle.startswith(reference)]
-    if not matches:
-        raise CommandError(f"no schedule matches {reference!r}")
-    if len(matches) > 1:
-        raise CommandError(f"{reference!r} matches {len(matches)} schedules; use its handle")
-    return matches[0]
+    return lookup_schedule(db, reference)
 
 
 def _payroll_line_text(db: DbSQLite, line: PayrollLine) -> str:
