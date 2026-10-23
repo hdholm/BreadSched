@@ -106,6 +106,9 @@ class FixedScheduleInput:
     skipped: tuple[date, ...] = ()
     occurrence_adjustments: tuple[ScheduledOccurrenceAdjustment, ...] = ()
     estimate_evidence: dict[str, object] | None = None
+    #: Enter and remind this many days in advance (#352); None keeps the stored value.
+    advance_days: int | None = None
+    remind_days: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +142,9 @@ class FormulaScheduleInput:
     growth_policy: ScheduleGrowthPolicy
     skipped: tuple[date, ...] = ()
     source: ScheduledTransaction | None = None
+    #: Enter and remind this many days in advance (#352); None keeps the stored value.
+    advance_days: int | None = None
+    remind_days: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,6 +311,10 @@ def build_fixed_schedule(
     candidate.seasonal_amounts = list(definition.seasonal_amounts)
     candidate.skipped = list(definition.skipped)
     candidate.occurrence_adjustments = list(definition.occurrence_adjustments)
+    if definition.advance_days is not None:
+        candidate.advance_days = definition.advance_days
+    if definition.remind_days is not None:
+        candidate.remind_days = definition.remind_days
     if definition.estimate_evidence is not None or existing is None:
         candidate.estimate_evidence = definition.estimate_evidence
     return ServiceResult.success(candidate)
@@ -339,6 +349,10 @@ def build_formula_schedule(
     candidate.placeholder = request.placeholder
     candidate.growth_policy = request.growth_policy
     candidate.skipped = list(request.skipped)
+    if request.advance_days is not None:
+        candidate.advance_days = request.advance_days
+    if request.remind_days is not None:
+        candidate.remind_days = request.remind_days
     return ServiceResult.success(candidate)
 
 
@@ -634,6 +648,7 @@ def save_schedule(db: DbSQLite, request: SaveSchedule) -> ServiceResult[SavedSch
     if existing is not None and candidate.handle != existing.handle:
         return ServiceResult.failure(ServiceError("schedule.identity.changed", ("handle",)))
     errors = _candidate_errors(db, candidate, existing)
+    errors.extend(_advance_errors(candidate))
     if errors:
         return ServiceResult.failure(*errors)
 
@@ -644,6 +659,19 @@ def save_schedule(db: DbSQLite, request: SaveSchedule) -> ServiceResult[SavedSch
         else:
             db.commit_scheduled(candidate, txn)
     return ServiceResult.success(SavedSchedule(candidate.handle, candidate.name))
+
+
+#: The most days in advance a schedule may enter or remind (GnuCash's own limit).
+MAX_ADVANCE_DAYS = 999
+
+
+def _advance_errors(candidate: ScheduledTransaction) -> list[ServiceError]:
+    errors = []
+    if not 0 <= candidate.advance_days <= MAX_ADVANCE_DAYS:
+        errors.append(ServiceError("schedule.advance_days.invalid", ("advance_days",)))
+    if not 0 <= candidate.remind_days <= MAX_ADVANCE_DAYS:
+        errors.append(ServiceError("schedule.remind_days.invalid", ("remind_days",)))
+    return errors
 
 
 def duplicate_schedule(db: DbSQLite, request: DuplicateSchedule) -> ServiceResult[SavedSchedule]:

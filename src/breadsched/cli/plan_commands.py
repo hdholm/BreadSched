@@ -25,6 +25,7 @@ from ..gen.services import (
     DeleteSchedule,
     DueDecision,
     ResolveDue,
+    ResolveNext,
     ReviewOccurrence,
     ReviewTransaction,
     SaveSchedule,
@@ -32,9 +33,11 @@ from ..gen.services import (
     delete_schedule,
     mark_review_unexpected,
     match_review,
+    next_occurrence,
     pending_due_review,
     reject_review,
     resolve_due,
+    resolve_next,
     save_schedule,
 )
 from ..gen.services.payroll import (
@@ -169,8 +172,14 @@ def cmd_due_review(args: argparse.Namespace) -> int:
         decisions: dict[tuple[str, date], DueDecision] = {}
         if args.post_all or args.skip_all:
             chosen = DueDecision.POST if args.post_all else DueDecision.SKIP
+            # Reminders (remind in advance) are left for an explicit choice, as
+            # GnuCash leaves them uncreated (#352).
             for review in reviews:
-                decisions.update(((review.schedule, item.when), chosen) for item in review.items)
+                decisions.update(
+                    ((review.schedule, item.when), chosen)
+                    for item in review.items
+                    if item.stage != "reminder"
+                )
         for references, decision in (
             (args.post, DueDecision.POST),
             (args.skip, DueDecision.SKIP),
@@ -215,7 +224,12 @@ def cmd_due_review(args: argparse.Namespace) -> int:
                     "frequency": review.frequency,
                     "total": review.total,
                     "items": [
-                        {"date": item.when, "amount": item.amount, "overdue": item.overdue}
+                        {
+                            "date": item.when,
+                            "amount": item.amount,
+                            "overdue": item.overdue,
+                            "stage": item.stage,
+                        }
                         for item in review.items
                     ],
                 }
@@ -225,6 +239,83 @@ def cmd_due_review(args: argparse.Namespace) -> int:
             table(rows, ["schedule", "id", "due", "dates", "frequency", "total"], right={2, 5})
             if rows
             else "Nothing is due.",
+        )
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_scheduled_next(args: argparse.Namespace) -> int:
+    """Show, enter, or skip a schedule's next occurrence before it is due (#351)."""
+    decision = DueDecision.POST if args.enter else DueDecision.SKIP if args.skip else None
+    db = open_book(args.book, "w" if decision is not None else "r")
+    try:
+        as_of = parse_date(args.as_of)
+        sched = _find_schedule(db, args.schedule)
+        upcoming = next_occurrence(db, sched.handle, as_of=as_of)
+        if decision is None:
+            if upcoming is None:
+                emit(None, args, f"{sched.name} has no occurrence to enter or skip")
+            else:
+                emit(
+                    {"schedule": sched.handle, "date": upcoming.when, "amount": upcoming.amount},
+                    args,
+                    f"{sched.name}: next {upcoming.when.isoformat()} {upcoming.amount.format()}",
+                )
+            return 0
+        result = resolve_next(
+            db,
+            ResolveNext(
+                sched.handle,
+                decision,
+                when=upcoming.when if upcoming is not None else None,
+                as_of=as_of,
+            ),
+        )
+        if result.value is None:
+            raise CommandError(service_error_message(result.errors[0]))
+        assert upcoming is not None
+        verb = "Entered" if decision is DueDecision.POST else "Skipped"
+        emit(
+            {
+                "schedule": sched.handle,
+                "date": upcoming.when,
+                "posted": result.value.posted,
+                "skipped": result.value.skipped,
+            },
+            args,
+            f"{verb} {sched.name} for {upcoming.when.isoformat()}",
+        )
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_scheduled_advance(args: argparse.Namespace) -> int:
+    """Show or set how many days ahead a schedule is entered or reminded (#352)."""
+    writing = args.enter_days is not None or args.remind_days is not None
+    db = open_book(args.book, "w" if writing else "r")
+    try:
+        sched = _find_schedule(db, args.schedule)
+        if writing:
+            edited = ScheduledTransaction.from_dict(sched.serialize())
+            if args.enter_days is not None:
+                edited.advance_days = args.enter_days
+            if args.remind_days is not None:
+                edited.remind_days = args.remind_days
+            result = save_schedule(db, SaveSchedule(edited, sched.handle))
+            if not result.ok:
+                raise CommandError(service_error_message(result.errors[0]))
+            sched = edited
+        emit(
+            {
+                "schedule": sched.handle,
+                "enter_days": sched.advance_days,
+                "remind_days": sched.remind_days,
+            },
+            args,
+            f"{sched.name}: enter {sched.advance_days} day(s) and remind "
+            f"{sched.remind_days} day(s) in advance",
         )
         return 0
     finally:
@@ -893,6 +984,32 @@ def register(add: AddCommand) -> None:
     sched.add_argument("--all", action="store_true", help="with --post, include manual schedules")
     sched.set_defaults(func=cmd_scheduled)
 
+    next_cmd = add(
+        "scheduled-next",
+        "Show, enter, or skip a schedule's next occurrence, even before it is due",
+    )
+    next_cmd.add_argument("schedule", help="schedule id prefix or exact name")
+    choice = next_cmd.add_mutually_exclusive_group()
+    choice.add_argument("--enter", action="store_true", help="post the next occurrence now")
+    choice.add_argument(
+        "--skip", action="store_true", help="mark the next occurrence done without posting"
+    )
+    next_cmd.add_argument("--as-of", help="today, for testing (YYYY-MM-DD)")
+    next_cmd.set_defaults(func=cmd_scheduled_next)
+
+    advance_cmd = add(
+        "scheduled-advance",
+        "Show or set how many days ahead a schedule is entered or reminded",
+    )
+    advance_cmd.add_argument("schedule", help="schedule id prefix or exact name")
+    advance_cmd.add_argument(
+        "--enter-days", type=int, help="days before its date an occurrence is entered"
+    )
+    advance_cmd.add_argument(
+        "--remind-days", type=int, help="days before its date an occurrence is a reminder"
+    )
+    advance_cmd.set_defaults(func=cmd_scheduled_advance)
+
     review_cmd = add(
         "review",
         "List unresolved transactions, the planned items Review offers for each, and why",
@@ -917,9 +1034,13 @@ def register(add: AddCommand) -> None:
         metavar="SCHEDULE[@DATE]",
         help="mark a schedule's due dates, or one date, as done without posting (repeatable)",
     )
-    due_review.add_argument("--post-all", action="store_true", help="post every due date")
     due_review.add_argument(
-        "--skip-all", action="store_true", help="mark every due date as done without posting"
+        "--post-all", action="store_true", help="post every due date (not reminders)"
+    )
+    due_review.add_argument(
+        "--skip-all",
+        action="store_true",
+        help="mark every due date (not reminders) as done without posting",
     )
     due_review.set_defaults(func=cmd_due_review)
 

@@ -507,7 +507,8 @@ class ViewManager(Gtk.ApplicationWindow):
         from ..gen.engine import schedule as schedule_engine
         from .dialogs.due_dialog import DueDialog
 
-        due = schedule_engine.due_occurrences(self.db, horizon_days=0)
+        # Due and missed, plus what schedules enter or remind in advance (#352).
+        due = [item for item, _stage in schedule_engine.review_occurrences(self.db)]
         if not due:
             return None
         dialog = DueDialog(self, self.db, due)

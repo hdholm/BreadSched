@@ -23,9 +23,14 @@ from ...gen.lib import ScheduledTransaction
 from ...gen.lib.money import Money
 from ...gen.services import (
     DeleteSchedule,
+    DueDecision,
     DuplicateSchedule,
+    ResolveNext,
+    ServiceError,
     delete_schedule,
     duplicate_schedule,
+    next_occurrence,
+    resolve_next,
 )
 from ...presentation import service_error_message
 from ..gi_setup import Gio, Gtk, Pango
@@ -123,6 +128,16 @@ class ScheduledView(BaseView):
         self.edit_button.set_sensitive(False)
         self.edit_button.connect("clicked", self._on_edit_clicked)
         bar.append(self.edit_button)
+
+        # Resolve the selected schedule's next occurrence before it is due (#351).
+        self.enter_next_button = Gtk.Button(label="Enter Next")
+        self.enter_next_button.set_sensitive(False)
+        self.enter_next_button.connect("clicked", lambda *_: self.resolve_next(DueDecision.POST))
+        bar.append(self.enter_next_button)
+        self.skip_next_button = Gtk.Button(label="Skip Next")
+        self.skip_next_button.set_sensitive(False)
+        self.skip_next_button.connect("clicked", lambda *_: self.resolve_next(DueDecision.SKIP))
+        bar.append(self.skip_next_button)
 
         self.duplicate_button = Gtk.Button(label="Duplicate…")
         self.duplicate_button.set_sensitive(False)
@@ -341,6 +356,55 @@ class ScheduledView(BaseView):
         saved_schedule = isinstance(payload, ScheduledTransaction)
         self.delete_button.set_sensitive(saved_schedule)
         self.duplicate_button.set_sensitive(saved_schedule)
+        self._show_next()
+
+    def _show_next(self) -> None:
+        """Name the date Enter Next and Skip Next act on, or why they cannot."""
+        sched = self._selected_schedule()
+        upcoming = (
+            next_occurrence(self.db, sched.handle)
+            if sched is not None and self.db is not None
+            else None
+        )
+        for button, verb in ((self.enter_next_button, "Enter"), (self.skip_next_button, "Skip")):
+            button.set_sensitive(upcoming is not None)
+            if upcoming is not None:
+                button.set_tooltip_text(
+                    f"{verb} the occurrence of {upcoming.when.isoformat()} "
+                    f"({upcoming.amount.format()}) now, before it is due"
+                )
+            else:
+                button.set_tooltip_text(
+                    "Select a schedule that can still post an occurrence"
+                    if sched is None
+                    else "This schedule has no occurrence to enter or skip"
+                )
+
+    def resolve_next(self, decision: DueDecision) -> bool:
+        """Enter or skip the selected schedule's next occurrence; False if refused."""
+        sched = self._selected_schedule()
+        if sched is None or self.db is None:
+            return False
+        upcoming = next_occurrence(self.db, sched.handle)
+        if upcoming is None:
+            self.status.set_text(service_error_message(ServiceError("schedule.next.none")))
+            return False
+        result = resolve_next(self.db, ResolveNext(sched.handle, decision, when=upcoming.when))
+        if result.value is None:
+            self.status.set_text(service_error_message(result.errors[0]))
+            return False
+        self.refresh()
+        when = upcoming.when.isoformat()
+        if decision is DueDecision.SKIP:
+            self.status.set_text(f"Skipped {sched.name} of {when}. Ctrl+Z restores it.")
+        else:
+            self.status.set_text(f"Entered {sched.name} of {when}. Ctrl+Z removes it.")
+            from ..dialogs.posted_dialog import PostedTransactionsDialog
+
+            dialog = PostedTransactionsDialog(self.get_root(), self.db, result.value.transactions)
+            dialog.connect("close-request", self.refresh_on_close)
+            dialog.present()
+        return True
 
     def _selected_item(self) -> ScheduledTransaction | AccountPaymentDefinition | None:
         selection = self._active_selection
@@ -660,6 +724,8 @@ class UpcomingView(BaseView):
         )
 
         overdue = [o for o in occurrences if o.when <= today]
+        # Enter- and remind-in-advance occurrences are reviewed too (#352).
+        reviewable = schedule.review_occurrences(self.db, as_of=today)
         if overdue:
             self.status.set_text(
                 f"{len(overdue)} occurrence(s) overdue, oldest {overdue[0].when.isoformat()}"
@@ -671,7 +737,10 @@ class UpcomingView(BaseView):
                 f"{self._horizon} days"
             )
             self.status.remove_css_class("negative")
-        self.post_button.set_sensitive(bool(overdue))
+        early = len(reviewable) - len([o for o, _stage in reviewable if o.when <= today])
+        if early:
+            self.status.set_text(f"{self.status.get_text()}; {early} to enter or remind in advance")
+        self.post_button.set_sensitive(bool(reviewable))
 
     def _due_text(self, occurrence) -> str:
         today = date.today()
@@ -714,7 +783,7 @@ class UpcomingView(BaseView):
             return
         from ..dialogs.due_dialog import DueDialog
 
-        due = schedule.due_occurrences(self.db, horizon_days=0)
+        due = [item for item, _stage in schedule.review_occurrences(self.db)]
         if not due:
             self.status.set_text("Nothing is due")
             return

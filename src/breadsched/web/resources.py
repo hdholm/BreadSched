@@ -143,6 +143,7 @@ from .schedule_resource import (
     scheduled_draft,
     scheduled_duplicate,
     scheduled_formula_save,
+    scheduled_next,
     scheduled_occurrence_options,
     scheduled_save,
 )
@@ -447,6 +448,7 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/rules/accept": rules_accept,
     "/api/due-review": due_review_resolve,
     "/api/post-scheduled": _without_body(post_scheduled),
+    "/api/scheduled/next": scheduled_next,
     "/api/scheduled/occurrences": scheduled_occurrence_options,
     "/api/scheduled/save": scheduled_save,
     "/api/scheduled/formula-save": scheduled_formula_save,

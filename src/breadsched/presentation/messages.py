@@ -324,6 +324,13 @@ _SERVICE_MESSAGES = {
     "import.csv.delimiter.invalid": "Use a single-character delimiter",
     "import.csv.file.unreadable": "The file is not CSV text",
     "schedule.due.duplicate": "Decide each due occurrence only once",
+    "schedule.next.none": (
+        "This schedule has no occurrence to enter or skip (it is disabled, an "
+        "estimate, or finished)"
+    ),
+    "schedule.next.decision": "Enter or skip the next occurrence",
+    "schedule.advance_days.invalid": "Days to enter in advance must be from 0 to 999",
+    "schedule.remind_days.invalid": "Days to remind in advance must be from 0 to 999",
     "schedule.due.not_found": "The schedule no longer exists",
     "schedule.due.not_pending": (
         "That occurrence is no longer due; it may already have been posted or skipped"

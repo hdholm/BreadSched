@@ -634,6 +634,24 @@ elsewhere (another window, the browser, or the command line), nothing is written
 and the review says so instead of posting it twice. The whole batch is one undo
 step. Plan-only estimates are never offered for posting.
 
+A schedule can also be reviewed before its date, as in GnuCash
+([desktop](guide/desktop.md#enter-or-skip-the-next-occurrence),
+[browser](guide/web.md#enter-or-skip-the-next-occurrence),
+[command line](guide/cli.md#enter-or-skip-the-next-occurrence)):
+
+- **Enter in advance** (days) lists each occurrence that many days before its
+  date, marked *in advance*. A schedule set to post automatically posts it then,
+  dated on its own date, as GnuCash's *create in advance* does.
+- **Remind in advance** (days) lists each occurrence that many days before its
+  date as a *reminder*. A reminder is never posted automatically, and **Post all**
+  on the command line leaves it for you to choose.
+- **Enter Next** and **Skip Next** in Scheduled enter or skip a schedule's next
+  occurrence now, however far ahead it is. The transaction keeps the occurrence's
+  date, the schedule moves on to the following one, and either can be undone.
+
+Both are kept from a GnuCash import. Each is from 0 to 999 days; anything else is
+refused and the schedule is left as it was.
+
 In the desktop window, what was posted opens next in **Posted transactions**:
 each transaction with every split on its own line, so you can check the accounts
 and amounts. **Edit…** opens one in the transaction editor and **Delete** removes

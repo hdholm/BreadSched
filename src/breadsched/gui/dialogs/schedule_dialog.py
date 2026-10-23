@@ -394,6 +394,25 @@ class ScheduleDialog(BoundedWindow):
 
         self.auto_check = Gtk.CheckButton(label="Post automatically once the date arrives")
         grid.attach(self.auto_check, 1, row, 1, 1)
+        row += 1
+
+        # GnuCash's create and remind in advance (#352).
+        self.advance_spin = Gtk.SpinButton.new_with_range(0, 999, 1)
+        self.advance_spin.set_tooltip_text(
+            "Days before its date that an occurrence joins the due review to be "
+            "entered (an automatic schedule posts it then)"
+        )
+        self.advance_spin.update_property([Gtk.AccessibleProperty.LABEL], ["Enter in advance"])
+        grid.attach(Gtk.Label(label="Enter in advance (days)", xalign=0), 0, row, 1, 1)
+        grid.attach(self.advance_spin, 1, row, 1, 1)
+        row += 1
+        self.remind_spin = Gtk.SpinButton.new_with_range(0, 999, 1)
+        self.remind_spin.set_tooltip_text(
+            "Days before its date that an occurrence joins the due review as a reminder"
+        )
+        self.remind_spin.update_property([Gtk.AccessibleProperty.LABEL], ["Remind in advance"])
+        grid.attach(Gtk.Label(label="Remind in advance (days)", xalign=0), 0, row, 1, 1)
+        grid.attach(self.remind_spin, 1, row, 1, 1)
 
     def _build_supplemental_content(self, content: Gtk.Box) -> None:
         self.formula_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -463,7 +482,8 @@ class ScheduleDialog(BoundedWindow):
             f"Kind: {'Estimate' if source.placeholder else 'Commitment'}",
             f"Enabled: {'yes' if source.enabled else 'no'}",
             f"Automatic posting: {'yes' if source.auto_create else 'no'}",
-            f"Advance notice: {source.advance_days} day(s)",
+            f"Enter in advance: {source.advance_days} day(s)",
+            f"Remind in advance: {source.remind_days} day(s)",
             f"Currency: {source.currency or '(book/default)'}",
             f"Recurrence: {recurrence.describe()}",
             f"First due: {recurrence.start.isoformat()}",
@@ -553,6 +573,8 @@ class ScheduleDialog(BoundedWindow):
                 break
         self.enabled_check.set_active(source.enabled)
         self.auto_check.set_active(source.auto_create)
+        self.advance_spin.set_value(source.advance_days)
+        self.remind_spin.set_value(source.remind_days)
         self.skipped_editor.set_values(source.skipped)
 
     def _protect_formula_fields(self, source: ScheduledTransaction) -> None:
@@ -798,6 +820,8 @@ class ScheduleDialog(BoundedWindow):
                 break
         self.enabled_check.set_active(source.enabled)
         self.auto_check.set_active(source.auto_create)
+        self.advance_spin.set_value(source.advance_days)
+        self.remind_spin.set_value(source.remind_days)
         self.amount_changes_editor.set_values(
             (item.start, str(item.amount.to_decimal())) for item in source.amount_changes
         )
@@ -1101,6 +1125,8 @@ class ScheduleDialog(BoundedWindow):
             growth_policy=_GROWTH_POLICIES[self.growth_policy.get_selected()][1],
             skipped=tuple(self._skipped(recurrence) or ()),
             source=self.source,
+            advance_days=self.advance_spin.get_value_as_int(),
+            remind_days=self.remind_spin.get_value_as_int(),
         )
 
     def _fixed_request(self) -> SaveFixedSchedule:
@@ -1156,6 +1182,8 @@ class ScheduleDialog(BoundedWindow):
                 seasonal_amounts=tuple(self._seasonal_amounts() or ()),
                 skipped=tuple(self._skipped(recurrence) or ()),
                 occurrence_adjustments=tuple(self._occurrence_adjustments(recurrence) or ()),
+                advance_days=self.advance_spin.get_value_as_int(),
+                remind_days=self.remind_spin.get_value_as_int(),
             ),
             existing_handle=(
                 self.source.handle if self.source is not None and not self.creating else None

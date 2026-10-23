@@ -3107,6 +3107,94 @@ class TestDueReview:
             httpd.server_close()
             db.close()
 
+    def test_advance_days_and_resolving_the_next_occurrence(self, client):
+        """Enter/remind in advance (#352) and entering or skipping the next date (#351)."""
+        db = client.database
+        _status, data = client.get("/api/scheduled")
+        category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+        funding = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
+        first = date.today() + timedelta(days=5)
+        values = {
+            "name": "Early bill",
+            "category": category["handle"],
+            "funding": funding["handle"],
+            "amount": "40.00",
+            "frequency": "monthly",
+            "start": first.isoformat(),
+            "remind_days": "7",
+        }
+        status, created = client.post("/api/scheduled/save", values)
+        assert status == 200
+        handle = created["handle"]
+
+        def definition():
+            _status, listed = client.get("/api/scheduled")
+            return next(row for row in listed["definitions"] if row["handle"] == handle)
+
+        item = definition()
+        assert (item["advance_days"], item["remind_days"]) == (0, 7)
+        assert item["next"] == {"date": first.isoformat(), "amount": "40.00"}
+        _status, review = client.get("/api/due-review")
+        bill = next(row for row in review["schedules"] if row["schedule"] == handle)
+        assert [(row["date"], row["stage"]) for row in bill["items"]] == [
+            (first.isoformat(), "reminder")
+        ]
+
+        # Out-of-range days are refused and the stored definition is kept.
+        stored = db.get_scheduled(handle).serialize()
+        for key, value, code in (
+            ("remind_days", "1000", "schedule.remind_days.invalid"),
+            ("advance_days", "-1", "schedule.advance_days.invalid"),
+        ):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post("/api/scheduled/save", {**values, "handle": handle, key: value})
+            assert caught.value.code == 400
+            assert json.loads(caught.value.read())["code"] == code
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/scheduled/save", {**values, "handle": handle, "remind_days": "x"})
+        assert caught.value.code == 400
+        assert db.get_scheduled(handle).serialize() == stored
+
+        # Refused next-occurrence requests write nothing.
+        before = (db.summary()["txn"], stored)
+        for payload, code in (
+            ({"schedule": handle, "decision": "later"}, 400),
+            ({"schedule": "missing", "decision": "post"}, 404),
+            (
+                {
+                    "schedule": handle,
+                    "decision": "post",
+                    "date": (first + timedelta(days=1)).isoformat(),
+                },
+                400,
+            ),
+        ):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post("/api/scheduled/next", payload)
+            assert caught.value.code == code
+        assert (db.summary()["txn"], db.get_scheduled(handle).serialize()) == before
+
+        status, skipped = client.post(
+            "/api/scheduled/next",
+            {"schedule": handle, "decision": "skip", "date": first.isoformat()},
+        )
+        assert status == 200 and skipped == {"posted": 0, "skipped": 1, "transactions": []}
+        second = definition()["next"]["date"]
+        assert second > first.isoformat()
+        status, entered = client.post(
+            "/api/scheduled/next", {"schedule": handle, "decision": "post", "date": second}
+        )
+        assert status == 200 and entered["posted"] == 1
+        posted = db.get_transaction(entered["transactions"][0])
+        assert posted.post_date.isoformat() == second and posted.scheduled_from == handle
+        assert db.summary()["txn"] == before[0] + 1
+
+        # Saving without the day fields keeps the stored ones.
+        values.pop("remind_days")
+        status, _saved = client.post("/api/scheduled/save", {**values, "handle": handle})
+        assert status == 200
+        assert definition()["remind_days"] == 7
+
 
 class TestSafety:
     def test_only_named_static_assets_are_served(self, client, tmp_path, monkeypatch):

@@ -8,6 +8,7 @@ a laptop that sleeps through a month boundary can easily happen twice in a minut
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import Enum
@@ -35,6 +36,9 @@ __all__ = [
     "already_posted",
     "delete_definition",
     "due_occurrences",
+    "next_pending",
+    "ReviewStage",
+    "review_occurrences",
     "duplicate_definition",
     "duplicate_saved_definition",
     "forecast_occurrences",
@@ -666,11 +670,13 @@ def due_occurrences(
     db: DbSQLite,
     as_of: date | None = None,
     horizon_days: int | None = None,
+    window: Callable[[ScheduledTransaction], int] | None = None,
 ) -> list[Occurrence]:
     """Occurrences that should already have been posted, plus any within advance days.
 
     ``horizon_days`` overrides each schedule's own ``advance_days``, which is what
-    the "show me the next 30 days" filter in the UI uses.
+    the "show me the next 30 days" filter in the UI uses; ``window`` instead gives
+    each schedule its own number of days ahead.
     """
     today = as_of or date.today()
     found: list[Occurrence] = []
@@ -679,7 +685,10 @@ def due_occurrences(
             continue
         if not sched.enabled:
             continue
-        advance = horizon_days if horizon_days is not None else sched.advance_days
+        if window is not None:
+            advance = window(sched)
+        else:
+            advance = horizon_days if horizon_days is not None else sched.advance_days
         until = today + timedelta(days=advance)
         since = sched.last_posted + timedelta(days=1) if sched.last_posted else None
         for when in sched.upcoming(until, since=since):
@@ -689,6 +698,74 @@ def due_occurrences(
                 continue
             found.append(Occurrence(sched, when, sched.amount(when=when)))
     return sorted(found, key=lambda o: (o.when, o.name))
+
+
+class ReviewStage(str, Enum):
+    """Why an occurrence is on the due review (#352), most pressing first."""
+
+    #: Its date has passed.
+    OVERDUE = "overdue"
+    #: It is dated today.
+    DUE = "due"
+    #: Within the schedule's enter-in-advance days: proposed for posting.
+    ADVANCE = "advance"
+    #: Within its remind-in-advance days only: a reminder, proposed as Later.
+    REMINDER = "reminder"
+
+
+def review_stage(schedule: ScheduledTransaction, when: date, today: date) -> ReviewStage:
+    if when < today:
+        return ReviewStage.OVERDUE
+    if when == today:
+        return ReviewStage.DUE
+    if when <= today + timedelta(days=max(0, schedule.advance_days)):
+        return ReviewStage.ADVANCE
+    return ReviewStage.REMINDER
+
+
+def review_occurrences(
+    db: DbSQLite, as_of: date | None = None
+) -> list[tuple[Occurrence, ReviewStage]]:
+    """What the due review asks about: due and missed occurrences, plus each
+    schedule's occurrences within its enter-in-advance or remind-in-advance days.
+
+    Plan-only estimates are never on it, since they are never posted.
+    """
+    today = as_of or date.today()
+    found = []
+    for occurrence in due_occurrences(db, as_of=today, window=_review_window):
+        if occurrence.schedule.placeholder:
+            continue
+        found.append((occurrence, review_stage(occurrence.schedule, occurrence.when, today)))
+    return found
+
+
+def _review_window(schedule: ScheduledTransaction) -> int:
+    return max(0, schedule.advance_days, schedule.remind_days)
+
+
+#: How far ahead :func:`next_pending` looks: past any yearly schedule's next date.
+_NEXT_LOOKAHEAD_DAYS = 800
+
+
+def next_pending(
+    db: DbSQLite, schedule: ScheduledTransaction, as_of: date | None = None
+) -> Occurrence | None:
+    """The schedule's first occurrence still to enter or skip, however far ahead (#351).
+
+    None when the schedule cannot post (disabled, an estimate, or unusable) or has
+    no occurrence left.
+    """
+    if not schedule.postable:
+        return None
+    today = as_of or date.today()
+    since = schedule.last_posted + timedelta(days=1) if schedule.last_posted else None
+    horizon = max(today, schedule.recurrence.start) + timedelta(days=_NEXT_LOOKAHEAD_DAYS)
+    for when in schedule.upcoming(horizon, since=since):
+        if when in schedule.skipped or already_posted(db, schedule.handle, when):
+            continue
+        return Occurrence(schedule, when, schedule.amount(when=when))
+    return None
 
 
 def post_due(
@@ -702,10 +779,12 @@ def post_due(
     posted: list[Transaction] = []
     candidates = [
         occ
-        for occ in due_occurrences(db, as_of=today, horizon_days=0)
+        # Each schedule's own enter-in-advance days (GnuCash's "create in
+        # advance"): an automatic schedule posts that far ahead (#352).
+        for occ in due_occurrences(db, as_of=today)
         # A placeholder describes a planning expectation, not a transaction that
         # will happen; posting one would invent a ledger entry.
-        if occ.when <= today
+        if occ.when <= today + timedelta(days=max(0, occ.schedule.advance_days))
         and not occ.schedule.placeholder
         and (occ.schedule.auto_create or not only_auto)
     ]

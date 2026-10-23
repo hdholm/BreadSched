@@ -596,6 +596,7 @@ def _read_schedule(
         enabled=_text(element, "sx:enabled", "y").lower() in ("y", "true", "1"),
         auto_create=_text(element, "sx:autoCreate", "n").lower() in ("y", "true", "1"),
         advance_days=int(_text(element, "sx:advanceCreateDays", "0") or 0),
+        remind_days=int(_text(element, "sx:advanceRemindDays", "0") or 0),
     )
     schedule.last_posted = _gdate(element.find("sx:last", NS))
     if len(recurrence_nodes) > 1:

@@ -446,6 +446,16 @@ transactions** lists it split by split; choose **Edit…** to change one in the
 transaction editor or **Delete** to remove it, then **Close**. See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
+### Enter or skip the next occurrence
+
+Select a schedule in Scheduled and choose **Enter Next** to post its next
+occurrence now, or **Skip Next** to mark it done without posting; hover either to
+see the date and amount. An entered transaction opens in **Posted transactions**,
+and **Edit → Undo** reverses either. In the schedule editor, **Enter in advance
+(days)** and **Remind in advance (days)** set how long before its date an
+occurrence joins the review; its rows say *(in advance)* or *(reminder)*. See
+[Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
+
 ## Plan and projection
 
 Set the Plan controls and apply them; they are shared with the browser. Select a

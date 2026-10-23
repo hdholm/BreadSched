@@ -180,7 +180,24 @@ breadsched due-review household.breadsched --post-all
 ```
 
 `--post` and `--skip` take a schedule id prefix or exact name, optionally with
-`@YYYY-MM-DD` for one date; `--post-all` and `--skip-all` decide everything due. See
+`@YYYY-MM-DD` for one date; `--post-all` and `--skip-all` decide everything due or
+entered in advance, but leave reminders. With `--json`, each date's `stage` is
+`overdue`, `due`, `advance`, or `reminder`. See
+[Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
+
+### Enter or skip the next occurrence
+
+```bash
+breadsched scheduled-next household.breadsched Rent
+breadsched scheduled-next household.breadsched Rent --enter
+breadsched scheduled-next household.breadsched Gym --skip
+breadsched scheduled-advance household.breadsched Rent --enter-days 3 --remind-days 10
+```
+
+`scheduled-next` shows a schedule's next occurrence still to enter or skip, and
+`--enter` or `--skip` decides it now, before it is due. `scheduled-advance` shows,
+or with `--enter-days` and `--remind-days` sets, how many days ahead its
+occurrences are entered or reminded (0 to 999). See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
 ## Import files

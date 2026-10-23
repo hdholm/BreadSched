@@ -115,7 +115,7 @@ execution boundary across native books and generated GnuCash SQLite/XML books:
 | Schedule fact | Native definition | Supported GnuCash definition | Unsupported GnuCash definition |
 |---|---|---|---|
 | Recurrence, bounds, weekend rule | Persist and execute | Refresh from source and execute | Preserve original source structure; read-only and never execute |
-| Enabled/automatic/advance flags | Persist and execute | Refresh from source | Preserve with the protected definition |
+| Enabled/automatic flags, enter- and remind-in-advance days | Persist and execute | Refresh from source | Preserve with the protected definition |
 | Split accounts, memos, amounts/formulas | Persist exactly | Refresh from source; execute only through the bounded formula engine | Preserve inspectably; never execute |
 | Growth policy and dated amount rules | Persist exactly | BreadSched-owned and retained on source refresh | Retained, but cannot make a protected definition executable |
 | Skips, one-time adjustments, local formula inputs | Persist exactly | BreadSched-owned and retained on source refresh | Retained as local context only |
@@ -188,9 +188,18 @@ whose interest is already represented by schedule formulas.
 ## Due and missed occurrences
 
 Due and missed occurrences are decided through `gen.services.due_review`. It lists
-`schedule.due_occurrences` through the review date, grouped by schedule, which
-already excludes plan-only estimates, disabled schedules, and unusable imported
-definitions. A decision names only a schedule handle, a date, and post, skip, or
+`schedule.review_occurrences`, grouped by schedule: every occurrence through the
+review date, plus each schedule's occurrences within its `advance_days` (*enter in
+advance*, GnuCash's `advanceCreateDays`/`adv_creation`) or `remind_days` (*remind in
+advance*, `advanceRemindDays`/`adv_notify`), each tagged with a `ReviewStage`
+(`overdue`, `due`, `advance`, `reminder`) (#352). It excludes plan-only estimates,
+disabled schedules, and unusable imported definitions. `post_due` posts an automatic
+schedule's occurrences up to its `advance_days` ahead, never a reminder; bulk
+choices in the `due-review` command likewise leave reminders. The schedule service
+refuses either day count outside 0–999. `resolve_next` enters or skips the one
+occurrence `schedule.next_pending` returns (the first after `last_posted` not
+already skipped or posted, however far ahead), refusing a stale date, a deferral,
+or a schedule with nothing left, through the same write as `resolve_due` (#351). A decision names only a schedule handle, a date, and post, skip, or
 defer. `resolve_due` recomputes the currently due set immediately before writing
 and refuses a whole batch that names a date no longer due, a missing schedule, or
 the same date twice, so a stale GTK window, browser page, or script cannot post an
