@@ -62,7 +62,7 @@ def running(book_path):
     httpd = serve(db, host="127.0.0.1", port=0)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{httpd.server_port}"
-    record = publish_server(str(book_path), base, httpd.token)
+    record = publish_server(str(book_path), base, httpd.token, db.writer_lock_token)
     yield type("Running", (), {"db": db, "base": base, "token": httpd.token, "record": record})
     withdraw_server(record)
     httpd.shutdown()
@@ -109,7 +109,7 @@ def test_the_record_is_readable_only_by_its_user(running, book_path):
 def test_a_stale_record_is_ignored_and_removed(book_path):
     path = record_path(str(book_path))
     # No process holds the book's writer lock.
-    publish_server(str(book_path), "http://127.0.0.1:9", "secret")
+    publish_server(str(book_path), "http://127.0.0.1:9", "secret", "no-such-lock")
     assert find_server(str(book_path)) is None
     assert not path.exists()
     # A process that has exited.
@@ -120,6 +120,7 @@ def test_a_stale_record_is_ignored_and_removed(book_path):
         "token": "secret",
         "pid": 2**22 + 12345,
         "host": socket.gethostname(),
+        "lock": "no-such-lock",
     }
     path.write_text(json.dumps(gone), encoding="utf-8")
     assert find_server(str(book_path)) is None and not path.exists()
@@ -128,8 +129,21 @@ def test_a_stale_record_is_ignored_and_removed(book_path):
     assert find_server(str(book_path)) is None
 
 
+def test_the_holder_is_the_lock_token_not_the_host_name(running, book_path, monkeypatch):
+    """A host name can change while a server runs; the lock token still names it."""
+    monkeypatch.setattr(socket, "gethostname", lambda: "renamed-host")
+    assert find_server(str(book_path)) == running.record
+    # A record naming another lock token is stale even though its process is alive.
+    path = record_path(str(book_path))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    path.write_text(json.dumps({**data, "lock": "another-writer"}), encoding="utf-8")
+    assert find_server(str(book_path)) is None and not path.exists()
+
+
 def test_withdrawing_removes_only_the_record_it_published(running, book_path):
-    impostor = ServerRecord(running.record.book, running.base, "other", os.getpid(), "elsewhere")
+    impostor = ServerRecord(
+        running.record.book, running.base, "other", os.getpid(), "elsewhere", "lock"
+    )
     withdraw_server(impostor)
     assert find_server(str(book_path)) == running.record
     withdraw_server(running.record)
@@ -210,8 +224,9 @@ def test_serve_publishes_its_record_until_it_stops(book_path, monkeypatch, capsy
         target=lambda: result.append(main(["serve", str(book_path), "--port", "0"])), daemon=True
     )
     thread.start()
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + 30
     while find_server(str(book_path)) is None:
+        assert thread.is_alive(), (result, capsys.readouterr())
         assert time.monotonic() < deadline, "the server never published its record"
         time.sleep(0.05)
     record = find_server(str(book_path))

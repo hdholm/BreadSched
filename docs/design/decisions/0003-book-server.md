@@ -93,8 +93,11 @@ Phase 4 (#358) has begun:
   data directory's `run` folder), named by a hash of the book's canonical path. It
   holds the address, the token, and the process. The token never goes beside the
   book.
-- **When a record counts:** only while its process is alive on this host and still
-  holds the book's writer lock. Any other record is removed.
+- **When a record counts:** the record names the server's writer lock by the
+  lock's random token (`DbSQLite.writer_lock_token`). It counts only while the
+  book's lock file carries that token and, on this host, the process is alive. Any
+  other record is removed. The token, not the host name, identifies the holder,
+  because a host name can change while a server runs.
 - **Connecting:** `breadsched.api.connect.open_book_api` uses an explicit
   `--server`, else the recorded server, else an in-process server. The command
   line's book-server commands use it, so they work while a server holds the book.

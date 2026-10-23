@@ -9,9 +9,11 @@ the lock.
 The record lives in the user's runtime directory, not beside the book, so the
 token is never written to a folder the book may share with other people or a sync
 service: one user-only (``0600``) file per book, named by a hash of the book's
-canonical path, in a user-only (``0700``) directory. A record is trusted only while
-its process is alive on this host and still holds the book's writer lock; any other
-record is stale and is removed.
+canonical path, in a user-only (``0700``) directory. A record names the writer
+lock its server holds by the lock's random token, and is trusted only while the
+book's lock file still carries that token (and, on this host, while the process is
+alive); any other record is stale and is removed. The token, not the host name,
+identifies the holder, since a host name can change while a server runs.
 """
 
 from __future__ import annotations
@@ -38,6 +40,8 @@ class ServerRecord:
     token: str
     pid: int
     host: str
+    #: The token of the writer lock the server holds.
+    lock: str
 
 
 def _canonical(book: str) -> str:
@@ -51,9 +55,11 @@ def record_path(book: str, directory: Path | None = None) -> Path:
     return root / f"{digest}.json"
 
 
-def publish_server(book: str, url: str, token: str, directory: Path | None = None) -> ServerRecord:
-    """Record that this process serves ``book`` at ``url``."""
-    record = ServerRecord(_canonical(book), url, token, os.getpid(), socket.gethostname())
+def publish_server(
+    book: str, url: str, token: str, lock: str, directory: Path | None = None
+) -> ServerRecord:
+    """Record that this process, holding ``book``'s writer lock ``lock``, serves it at ``url``."""
+    record = ServerRecord(_canonical(book), url, token, os.getpid(), socket.gethostname(), lock)
     path = record_path(book, directory)
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -70,6 +76,7 @@ def publish_server(book: str, url: str, token: str, directory: Path | None = Non
                 "token": record.token,
                 "pid": record.pid,
                 "host": record.host,
+                "lock": record.lock,
             },
             handle,
             sort_keys=True,
@@ -98,6 +105,7 @@ def _read(path: Path) -> ServerRecord | None:
             str(data["token"]),
             int(data["pid"]),
             str(data["host"]),
+            str(data["lock"]),
         )
     except (OSError, ValueError, TypeError, KeyError):
         return None
@@ -108,7 +116,7 @@ def _holds_lock(record: ServerRecord) -> bool:
         lock = json.loads(BookWriterLock.lock_path(record.book).read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
         return False
-    return lock.get("pid") == record.pid and lock.get("host") == record.host
+    return bool(record.lock) and lock.get("token") == record.lock
 
 
 def find_server(book: str, directory: Path | None = None) -> ServerRecord | None:
@@ -117,15 +125,15 @@ def find_server(book: str, directory: Path | None = None) -> ServerRecord | None
     record = _read(path)
     if record is None:
         return None
+    here = record.host == socket.gethostname()
     live = (
         record.book == _canonical(book)
-        and record.host == socket.gethostname()
-        and BookWriterLock.pid_is_alive(record.pid)
         and _holds_lock(record)
+        and (not here or BookWriterLock.pid_is_alive(record.pid))
     )
     if live:
         return record
-    if record.book == _canonical(book) and record.host == socket.gethostname():
+    if record.book == _canonical(book):
         try:
             path.unlink()
         except FileNotFoundError:
