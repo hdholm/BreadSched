@@ -25,6 +25,16 @@ an older book revision is refused with 412 and changes nothing. The browser's
 `EventSource` cannot send the token header, so the page does not use the stream yet;
 it is for programmatic clients such as `breadsched.api.http_client`.
 
+A writable server publishes its address and token for other BreadSched processes of
+the same user (#358):
+- **Where:** one record per book in the per-user runtime directory, never beside the
+  book, since a book folder may be shared or synced. The file is `0600` in a `0700`
+  directory on POSIX.
+- **When it counts:** only while its process is alive on this host and holds the
+  book's writer lock. Other records are removed as stale.
+- **Explicit server:** `--server` takes its token from a file or the environment,
+  never from the command line, where other users could read it in the process list.
+
 Security hardening belongs in normal acceptance criteria, including transport-level
 regression tests for rejected foreign origins/hosts, missing tokens, and invalid
 write content types.

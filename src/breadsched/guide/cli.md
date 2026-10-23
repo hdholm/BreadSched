@@ -202,6 +202,22 @@ or with `--enter-days` and `--remind-days` sets, how many days ahead its
 occurrences are entered or reminded (0 to 999). See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
+### Share a book with a running server (experimental)
+
+```bash
+breadsched serve household.breadsched --port 8765
+breadsched due-review household.breadsched
+breadsched scheduled-next household.breadsched Rent --enter
+```
+
+While `breadsched serve` (or `breadsched web` without `--read-only`) holds a book,
+`due-review`, `scheduled-next`, and `scheduled-advance` for the same book work through
+that server instead of stopping because the book is already open for writing. The
+server records its address and token in a file only you can read, in your runtime
+folder, and removes it when it stops. `--server URL` names a server explicitly; its
+token comes from `--token-file PATH` or the `BREADSCHED_SERVER_TOKEN` environment
+variable. Other commands still need the book to themselves.
+
 ## Import files
 
 ```bash

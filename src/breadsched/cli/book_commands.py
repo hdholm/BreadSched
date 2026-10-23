@@ -226,24 +226,44 @@ def cmd_gnucash(args: argparse.Namespace) -> int:
 
 def cmd_web(args: argparse.Namespace) -> int:
     """Serve the browser interface on this machine."""
+    return _serve_book(args, open_browser=args.open, read_only=args.read_only)
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Serve a book to other interfaces (experimental, #358)."""
+    return _serve_book(args, open_browser=False, read_only=False)
+
+
+def _serve_book(args: argparse.Namespace, *, open_browser: bool, read_only: bool) -> int:
+    """Hold the book and serve it until Ctrl+C.
+
+    A writable server publishes its address (``api.discovery``) so other commands
+    for the same book connect to it instead of failing on the writer lock.
+    """
+    from ..api.discovery import publish_server, withdraw_server
     from ..web.transport import serve
 
-    db = open_book(args.book, "r" if args.read_only else "w")
+    db = open_book(args.book, "r" if read_only else "w")
     try:
         try:
-            httpd = serve(db, host=args.host, port=args.port, open_browser=args.open)
+            httpd = serve(db, host=args.host, port=args.port, open_browser=open_browser)
         except ValueError as exc:
             raise CommandError(str(exc)) from exc
         except OSError as exc:
             raise CommandError(f"could not listen on {args.host}:{args.port}: {exc}") from exc
-        address = f"http://{args.host}:{httpd.server_port}/#token={httpd.token}"
-        print(f"BreadSched is serving {args.book} at {address}")
+        base = f"http://{args.host}:{httpd.server_port}"
+        record = None if read_only else publish_server(args.book, base, httpd.token)
+        print(f"BreadSched is serving {args.book} at {base}/#token={httpd.token}")
+        if record is not None:
+            print("Other BreadSched commands for this book use this server while it runs.")
         print("Press Ctrl+C to stop.")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
             print("\nStopped.")
         finally:
+            if record is not None:
+                withdraw_server(record)
             httpd.shutdown()
             httpd.server_close()
         return 0
@@ -341,6 +361,14 @@ def register(add: AddCommand) -> None:
     web.add_argument("--open", action="store_true", help="open a browser window")
     web.add_argument("--read-only", action="store_true")
     web.set_defaults(func=cmd_web)
+
+    serve_cmd = add(
+        "serve",
+        "Hold a book and serve it to other BreadSched commands and browsers (experimental)",
+    )
+    serve_cmd.add_argument("--host", default="127.0.0.1")
+    serve_cmd.add_argument("--port", type=int, default=8765)
+    serve_cmd.set_defaults(func=cmd_serve)
 
     gui = add("gui", "Open the graphical interface", needs_book=False)
     gui.add_argument("book", nargs="?", help="book to open on start-up")
