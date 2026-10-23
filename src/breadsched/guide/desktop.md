@@ -89,8 +89,10 @@ when it opens the book.
 
 ## Find your way around
 
-BreadSched fits a small laptop screen however long your account names and notes
-are: a long name in a choice list is shortened in the middle when chosen (the list
+The main window opens at the size you last left it, maximized if it was; a
+dialog you resized opens at that size next time. Sizes never exceed the screen
+and can be forgotten in [Preferences](#preferences). BreadSched fits a small
+laptop screen however long your account names and notes are: a long name in a choice list is shortened in the middle when chosen (the list
 shows it in full), wide toolbars scroll sideways, the Dashboard's summary cards wrap
 onto more rows, and dialogs open within the screen and scroll inside. Scrollbars are
 always shown, so a list with more out of view says so. A long choice list, such as
@@ -669,6 +671,10 @@ work. They are kept in your own settings, not in a book:
   keeps (see [Online quotes](#online-quotes)).
 - **Dashboard**: **Configure Dashboard Groups…** opens the open book's groups (see
   [Dashboard groups](#dashboard-groups)); groups belong to the book.
+- **Windows**: **Forget remembered window sizes** returns every window to its own
+  size. BreadSched remembers the main window's size (and whether it was maximized)
+  and an independent register window's size each time you close them, and the
+  size of any other window you resize, for every book.
 
 **Save** stores them all and redraws open registers; **Cancel** or Escape changes
 nothing.

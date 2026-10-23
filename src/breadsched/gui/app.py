@@ -211,7 +211,7 @@ class BreadSchedApplication(Gtk.Application):
             ("preferences", self.on_preferences, "<Control>comma"),
             ("user-guide", self.on_user_guide, "F1"),
             ("about", self.on_about, None),
-            ("quit", lambda *_: self.quit(), "<Control>q"),
+            ("quit", self.on_quit, "<Control>q"),
         ):
             action = Gio.SimpleAction.new(name, None)
             action.connect("activate", handler)
@@ -617,6 +617,19 @@ class BreadSchedApplication(Gtk.Application):
         dialog = TransactionDialog(window, self.db)
         dialog.present()
         return dialog
+
+    def on_quit(self, *_args) -> None:
+        """File → Quit: remember each window's size (#349), then quit.
+
+        Quitting ends the application without asking its windows to close, so
+        their own close handlers would not record the size.
+        """
+        from .widgets.window_sizes import remember_size
+
+        for window in self.get_windows():
+            if isinstance(window, ViewManager):
+                remember_size(window, "main")
+        self.quit()
 
     def on_preferences(self, *_args):
         """Edit → Preferences (#333): the settings that are not day-to-day work."""

@@ -9596,6 +9596,99 @@ class TestMenusAndIcons:
         assert not missing
 
 
+class TestWindowSizes:
+    """#349: windows open at the size they were last given, from user settings."""
+
+    def test_the_main_window_reopens_at_its_last_size(self, app, window):
+        from breadsched.gui.widgets.window_sizes import SECTION
+
+        window.present()
+        assert _spin(window.get_mapped)
+        window.set_default_size(900, 640)
+        window.close()
+        assert app.view_settings.get(SECTION, "main") == "900,640"
+        again = ViewManager(app)
+        try:
+            assert again.get_default_size() == (900, 640)
+        finally:
+            again.destroy()
+
+    def test_quit_remembers_the_main_window(self, app, window, monkeypatch):
+        from breadsched.gui.widgets.window_sizes import SECTION
+
+        quits = []
+        monkeypatch.setattr(app, "quit", lambda: quits.append(True))
+        window.set_default_size(1000, 700)
+        app.activate_action("quit")
+        assert quits and app.view_settings.get(SECTION, "main") == "1000,700"
+
+    def test_a_maximized_window_keeps_its_size_and_state(self, app, window):
+        from breadsched.gui.widgets.window_sizes import SECTION, stored_size
+
+        app.view_settings.set(SECTION, "main", "950,650,maximized")
+        assert stored_size(window, "main") == (950, 650, True)
+        for broken in ("", "wide,tall", "0,600", "800"):
+            app.view_settings.set(SECTION, "main", broken)
+            assert stored_size(window, "main") is None
+
+    def test_a_dialog_remembers_only_a_size_you_chose(self, app, window, populated_book):
+        from breadsched.gui.dialogs.exchange_rate_dialog import ExchangeRateDialog
+        from breadsched.gui.widgets.window_sizes import SECTION
+
+        app.open_book(populated_book)
+        dialog = ExchangeRateDialog(window, app.db)
+        dialog.present()
+        opened = dialog.get_default_size()
+        dialog.close()
+        # Not resized: it keeps opening at the size its content asks for.
+        assert app.view_settings.get(SECTION, "ExchangeRateDialog") is None
+
+        dialog = ExchangeRateDialog(window, app.db)
+        dialog.present()
+        chosen = (opened[0] + 40, opened[1] + 30)
+        dialog.set_default_size(*chosen)
+        dialog.close()
+        assert app.view_settings.get(SECTION, "ExchangeRateDialog") == "{},{}".format(*chosen)
+
+        again = ExchangeRateDialog(window, app.db)
+        again.present()
+        try:
+            width, height = again.get_default_size()
+            # Kept within the screen, so at most the chosen size.
+            assert (width, height) == chosen or (width <= chosen[0] and height <= chosen[1])
+            assert (width, height) != opened
+        finally:
+            again.destroy()
+
+    def test_preferences_can_forget_every_size(self, app, window):
+        from breadsched.gui.widgets.window_sizes import SECTION
+
+        app.view_settings.set(SECTION, "main", "900,640")
+        app.view_settings.set(SECTION, "ExchangeRateDialog", "500,400")
+        dialog = app.on_preferences()
+        dialog.close()  # Cancel keeps them
+        assert app.view_settings.get(SECTION, "main") == "900,640"
+        dialog = app.on_preferences()
+        dialog.forget_sizes.set_active(True)
+        assert dialog.save()
+        assert SECTION not in app.view_settings
+
+    def test_a_register_window_remembers_its_size(self, app, window, populated_book):
+        from breadsched.gui.widgets.window_sizes import SECTION
+
+        app.open_book(populated_book)
+        checking = app.db.get_account_by_name("Assets:Checking Account").handle
+        register_window = window.open_register_window(checking)
+        register_window.set_default_size(980, 600)
+        register_window.close()
+        assert app.view_settings.get(SECTION, "register-window") == "980,600"
+        again = window.open_register_window(checking)
+        try:
+            assert again.get_default_size()[0] <= 980
+        finally:
+            again.destroy()
+
+
 class TestDialogConventions:
     """#335: every dialog answers Escape and Enter, has Help, and confirms deletes."""
 

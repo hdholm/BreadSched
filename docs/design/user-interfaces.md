@@ -84,6 +84,17 @@ Delete is a `widgets.confirm.delete_button`: styled `destructive-action`, it ask
 "Delete …?" with Cancel as the default before deleting, even where Ctrl+Z could
 restore it. The browser confirms every delete the same way.
 
+Window sizes are the user's, not a book's (#349): `widgets.window_sizes` keeps them
+in the view settings section `window-sizes` as `width,height[,maximized]`. The main
+window (`main`) restores its size and maximized state when created and records them
+on `close-request` and on `app.quit` (which closes windows without that signal); an
+independent register window (`register-window`) records on every close. Any other
+`BoundedWindow` records under its class name only when it closes at a size other
+than the one GTK settled on after mapping it, so a dialog whose size follows its
+content keeps doing so until the user resizes it. `present` restores before
+`fit_to_screen`, so a remembered size is still capped to the monitor. Preferences
+can forget them all (`forget_sizes`).
+
 **Edit → Preferences…** (`app.preferences`, Ctrl+comma;
 `dialogs.preferences_dialog.PreferencesDialog`, #333) edits user settings that are
 not part of a book: `general.last_book_path`, `register.double_line` and
