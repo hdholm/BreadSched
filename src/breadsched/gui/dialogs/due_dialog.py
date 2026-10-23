@@ -30,6 +30,7 @@ posted then opens in ``PostedTransactionsDialog`` to check, edit, or delete (#32
 from __future__ import annotations
 
 from ...gen.db.sqlite import DbSQLite
+from ...gen.engine.schedule import ReviewStage, review_stage
 from ...gen.lib.money import Money
 from ...gen.services import DueDecision, ResolveDue, resolve_due
 from ...presentation import service_error_message
@@ -45,6 +46,12 @@ POST, LATER, NEVER = 0, 1, 2
 _CHOICES = ["Post now", "Remind me later", "Never (mark as done)"]
 _DECISIONS = {POST: DueDecision.POST, LATER: DueDecision.DEFER, NEVER: DueDecision.SKIP}
 _GROUP_CHOICES = ["Choose each date", "Post all", "Remind me later for all", "Never, all"]
+#: How a row says why it is listed, beside its date (#352).
+_STAGE_NOTES = {
+    ReviewStage.OVERDUE: "overdue",
+    ReviewStage.ADVANCE: "in advance",
+    ReviewStage.REMINDER: "reminder",
+}
 
 
 class DueDialog(BoundedWindow):
@@ -73,8 +80,8 @@ class DueDialog(BoundedWindow):
         box.append(
             Gtk.Label(
                 label=(
-                    f"{len(self.occurrences)} scheduled transaction(s) are due. "
-                    "Choose what to do with each."
+                    f"{len(self.occurrences)} scheduled transaction(s) are due, or are "
+                    "entered or reminded in advance. Choose what to do with each."
                 ),
                 xalign=0,
                 wrap=True,
@@ -105,7 +112,7 @@ class DueDialog(BoundedWindow):
             first = items[0]
             total = sum((o.amount for o in items), Money(0))
             heading = Gtk.Label(
-                label=f"{first.name}: {len(items)} due, {total.format()}",
+                label=f"{first.name}: {len(items)} to review, {total.format()}",
                 xalign=0,
             )
             heading.add_css_class("summary-label")
@@ -125,9 +132,11 @@ class DueDialog(BoundedWindow):
             row += 1
             for occurrence in items:
                 due = Gtk.Label(label=occurrence.when.isoformat(), xalign=0)
-                if occurrence.when < _today():
+                stage = review_stage(occurrence.schedule, occurrence.when, _today())
+                if stage is ReviewStage.OVERDUE:
                     due.add_css_class("negative")
-                    due.set_text(f"{occurrence.when.isoformat()}  (overdue)")
+                if stage is not ReviewStage.DUE:
+                    due.set_text(f"{occurrence.when.isoformat()}  ({_STAGE_NOTES[stage]})")
                 due.set_margin_start(18)
                 grid.attach(due, 0, row, 1, 1)
                 grid.attach(Gtk.Label(label=occurrence.name, xalign=0), 1, row, 1, 1)

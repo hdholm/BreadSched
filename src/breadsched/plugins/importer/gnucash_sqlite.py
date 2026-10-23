@@ -609,6 +609,7 @@ def _import_scheduled(conn: sqlite3.Connection, sink: ImportSink, db: DbSQLite, 
             enabled=_source_flag(row["enabled"]),
             auto_create=_source_flag(row["auto_create"]),
             advance_days=row["adv_creation"] or 0,
+            remind_days=(row["adv_notify"] if "adv_notify" in row.keys() else 0) or 0,
         )
         if len(recurrences) > 1:
             sched.source_recurrence = [dict(item) for item in recurrences]

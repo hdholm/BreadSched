@@ -314,6 +314,7 @@ class ScheduledTransaction(PrimaryObject):
         auto_create: bool = False,
         advance_days: int = 0,
         currency: str | None = None,
+        remind_days: int = 0,
         amount_changes: list[ScheduledAmountChange] | None = None,
         seasonal_amounts: list[ScheduledMonthAmount] | None = None,
         skipped: list[date] | None = None,
@@ -328,8 +329,13 @@ class ScheduledTransaction(PrimaryObject):
         self.enabled = enabled
         #: Post the real transaction automatically once its date arrives.
         self.auto_create = auto_create
-        #: How many days ahead to surface the occurrence in the "due" list.
+        #: Enter in advance (GnuCash's "create in advance"): an occurrence this many
+        #: days ahead joins the due review proposed for posting, and an automatic
+        #: schedule posts it then (#352).
         self.advance_days = advance_days
+        #: Remind in advance: an occurrence this many days ahead joins the due
+        #: review as a reminder, proposed as Later until decided (#352).
+        self.remind_days = remind_days
         self.currency = currency
         self.growth_policy = ScheduleGrowthPolicy(growth_policy)
         self.amount_changes = sorted(list(amount_changes or []), key=lambda item: item.start)
@@ -576,6 +582,8 @@ class ScheduledTransaction(PrimaryObject):
             "enabled": self.enabled,
             "auto_create": self.auto_create,
             "advance_days": self.advance_days,
+            # Written only when set, so every other schedule's stored form is unchanged.
+            **({"remind_days": self.remind_days} if self.remind_days else {}),
             "currency": self.currency,
             "growth_policy": self.growth_policy.value,
             "amount_changes": [item.serialize() for item in self.amount_changes],
@@ -597,7 +605,8 @@ class ScheduledTransaction(PrimaryObject):
         self.splits = [ScheduledSplit.from_dict(s) for s in data.get("splits", [])]
         self.enabled = data.get("enabled", True)
         self.auto_create = data.get("auto_create", False)
-        self.advance_days = data.get("advance_days", 0)
+        self.advance_days = int(data.get("advance_days", 0) or 0)
+        self.remind_days = int(data.get("remind_days", 0) or 0)
         self.currency = data.get("currency")
         self.growth_policy = ScheduleGrowthPolicy(data.get("growth_policy", "auto"))
         self.amount_changes = sorted(

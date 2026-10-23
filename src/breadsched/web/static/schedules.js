@@ -1,6 +1,21 @@
 // Scheduled transactions, historical estimates, due review, the schedule
 // editors, and paychecks.
 
+// Why a due-review row is listed, beside its date (#352).
+const DUE_STAGE_NOTES = { overdue:"overdue", advance:"in advance", reminder:"reminder" };
+
+// Enter or skip a schedule's next occurrence before it is due (#351).
+async function resolveNextOccurrence(s, decision) {
+  if (decision === "skip"
+      && !window.confirm(`Skip ${s.name} on ${s.next.date}? Nothing is posted for that date.`)) return;
+  try {
+    await post("/api/scheduled/next", { schedule:s.handle, decision, date:s.next.date });
+    say(decision === "skip" ? `Skipped ${s.name} on ${s.next.date}.`
+      : `Entered ${s.name} for ${s.next.date}.`);
+    render();
+  } catch (error) { say(error.message, "error"); }
+}
+
 async function showScheduled() {
   if (!state.accounts.length) state.accounts = await get("/api/accounts");
   const data = await get("/api/scheduled?days=90");
@@ -41,6 +56,12 @@ async function showScheduled() {
             render();
           } catch (error) { say(error.message, "error"); }
         }}, "Duplicate…"),
+      s.next ? el("button", { class:"action", type:"button",
+        title:`Enter the ${s.next.date} occurrence now, before it is due`,
+        onclick:()=>resolveNextOccurrence(s, "post") }, `Enter next (${s.next.date})`) : null,
+      s.next ? el("button", { class:"action", type:"button",
+        title:`Mark the ${s.next.date} occurrence done without posting it`,
+        onclick:()=>resolveNextOccurrence(s, "skip") }, "Skip next") : null,
       s.account_linked ? null : el("button", { class:"action destructive", type:"button", onclick:async()=>{
         if (!window.confirm(`Delete scheduled transaction "${s.name}"? Already posted transactions remain.`)) return;
         try {
@@ -237,7 +258,7 @@ async function openDueReviewDialog() {
       rows.push(el("tr", {},
         el("td", {}, ""),
         el("td", { class:item.overdue ? "neg" : null },
-          item.overdue ? `${item.date} (overdue)` : item.date),
+          DUE_STAGE_NOTES[item.stage] ? `${item.date} (${DUE_STAGE_NOTES[item.stage]})` : item.date),
         el("td", {}, ""),
         el("td", { class:"num" }, money(item.amount)),
         el("td", {}, select)));
@@ -265,6 +286,19 @@ async function openDueReviewDialog() {
       el("button", { class:"action", type:"button", onclick:close }, "Decide later"),
       el("button", { class:"action primary", type:"button", onclick:apply }, "Apply"))));
   document.body.append(backdrop);
+}
+
+// GnuCash's create and remind in advance, as a schedule's days (#352).
+function advanceFields(source) {
+  const field = (label, control) => el("label", {}, label, control);
+  return [
+    field("Enter in advance (days)", el("input", { name:"advance_days", type:"number", min:"0",
+      max:"999", value:String(source?.advance_days ?? 0),
+      title:"Days before its date that an occurrence joins the due review to be entered" })),
+    field("Remind in advance (days)", el("input", { name:"remind_days", type:"number", min:"0",
+      max:"999", value:String(source?.remind_days ?? 0),
+      title:"Days before its date that an occurrence joins the due review as a reminder" })),
+  ];
 }
 
 function openScheduledEditor(data, source) {
@@ -339,7 +373,8 @@ function openScheduledEditor(data, source) {
     field("End date", el("input", { name:"end", type:"date", value:source?.end || "" })),
     field("Occurrences", el("input", { name:"count", type:"number", min:"1", value:source?.count || "" })),
     field("Weekend", weekend),
-    field("Posting", select("posting", [["manual","Manual"],["automatic","Automatic"]], source?.auto ? "automatic" : "manual")));
+    field("Posting", select("posting", [["manual","Manual"],["automatic","Automatic"]], source?.auto ? "automatic" : "manual")),
+    ...advanceFields(source));
   form.append(el("div", { class:"toolbar" },
     el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Cancel"),
     el("button", { class:"action primary", type:"submit" }, "Save")));
@@ -392,6 +427,7 @@ function openScheduledEditor(data, source) {
         frequency: values.frequency, start: values.start,
         end: values.end || null, count: values.count || null, weekend: values.weekend,
         auto: values.posting === "automatic" && values.kind !== "estimate",
+        advance_days: values.advance_days, remind_days: values.remind_days,
         estimate_evidence: source?.estimate_evidence || null,
       });
       backdrop.remove(); say(source?.handle ? "Scheduled transaction updated." : "Scheduled transaction added."); render();
@@ -444,7 +480,8 @@ function openFormulaScheduleEditor(source) {
       value:source.count || ""})),
     field("Weekend", weekend),
     field("Posting", select("posting", [["manual","Manual"],["automatic","Automatic"]],
-      source.auto ? "automatic" : "manual")));
+      source.auto ? "automatic" : "manual")),
+    ...advanceFields(source));
   const refreshOccurrences = async () => {
     const values = Object.fromEntries(new FormData(form).entries());
     if (!values.start) return;
@@ -477,6 +514,7 @@ function openFormulaScheduleEditor(source) {
         variables, skipped:skipped.values(), frequency:values.frequency, start:values.start,
         end:values.end || null, count:values.count || null, weekend:values.weekend,
         auto:values.posting === "automatic" && values.kind !== "estimate",
+        advance_days:values.advance_days, remind_days:values.remind_days,
       });
       backdrop.remove(); say("Formula schedule updated."); render();
     } catch (error) { say(error.message, "error"); }

@@ -26,11 +26,14 @@ from ..gen.services import (
     FixedScheduleInput,
     FormulaScheduleInput,
     ResolveDue,
+    ResolveNext,
     SaveFixedSchedule,
     delete_schedule,
     duplicate_schedule,
+    next_occurrence,
     pending_due_review,
     resolve_due,
+    resolve_next,
     save_fixed_schedule,
     save_formula_schedule,
 )
@@ -81,6 +84,9 @@ def scheduled(api: Api, days: int = 60) -> dict:
                 "enabled": item.enabled,
                 "placeholder": item.placeholder,
                 "auto": item.auto_create,
+                "advance_days": item.advance_days,
+                "remind_days": item.remind_days,
+                "next": _next_json(api.db, item.handle),
                 "growth_policy": item.growth_policy.value,
                 "simple": simple is not None and frequency is not None,
                 "editable": editability.editable,
@@ -435,6 +441,8 @@ def scheduled_save(api: Api, payload: dict) -> dict:
                 skipped=tuple(skipped),
                 occurrence_adjustments=tuple(adjustments),
                 estimate_evidence=evidence,
+                advance_days=_days(payload, "advance_days"),
+                remind_days=_days(payload, "remind_days"),
             ),
             existing_handle=existing.handle if existing is not None else None,
         ),
@@ -511,6 +519,8 @@ def scheduled_formula_save(api: Api, payload: dict) -> dict:
             placeholder=placeholder,
             growth_policy=growth_policy,
             skipped=tuple(parse_skipped(payload, recurrence)),
+            advance_days=_days(payload, "advance_days"),
+            remind_days=_days(payload, "remind_days"),
         ),
     )
     if result.value is None:
@@ -690,6 +700,7 @@ def due_review(api: Api) -> dict:
                         "date": item.when.isoformat(),
                         "amount": str(item.amount.to_decimal()),
                         "overdue": item.overdue,
+                        "stage": item.stage,
                     }
                     for item in review.items
                 ],
@@ -731,4 +742,44 @@ def post_scheduled(api: Api) -> dict:
     return {
         "posted": len(posted),
         "transactions": [{"date": t.post_date, "description": t.description} for t in posted],
+    }
+
+
+def _days(payload: dict, key: str) -> int | None:
+    """An optional whole number of days; the service checks its range (#352)."""
+    if key not in payload or payload[key] in (None, ""):
+        return None
+    raw = payload[key]
+    if isinstance(raw, bool):
+        raise ValueError(f"{key} must be a whole number of days")
+    try:
+        return int(str(raw))
+    except ValueError:
+        raise ValueError(f"{key} must be a whole number of days") from None
+
+
+def _next_json(db: DbSQLite, handle: str) -> dict | None:
+    upcoming = next_occurrence(db, handle)
+    if upcoming is None:
+        return None
+    return {"date": upcoming.when.isoformat(), "amount": str(upcoming.amount.to_decimal())}
+
+
+def scheduled_next(api: Api, payload: dict) -> dict:
+    """Enter or skip a schedule's next occurrence before it is due (#351)."""
+    raw_decision = str(payload.get("decision", ""))
+    if raw_decision not in ("post", "skip"):
+        raise ValueError("decision must be post or skip")
+    raw_date = payload.get("date")
+    when = date.fromisoformat(str(raw_date)) if raw_date else None
+    result = resolve_next(
+        api.db,
+        ResolveNext(str(payload.get("schedule", "")), DueDecision(raw_decision), when=when),
+    )
+    if result.value is None:
+        raise service_error(result.errors[0])
+    return {
+        "posted": result.value.posted,
+        "skipped": result.value.skipped,
+        "transactions": list(result.value.transactions),
     }

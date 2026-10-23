@@ -2702,6 +2702,15 @@ class TestScheduleEntry:
         assert len(created.splits) == 2
         assert created.instantiate(date(2026, 6, 1)).is_balanced()
 
+    def test_enter_and_remind_in_advance_days_are_saved(self, dialog):
+        # #352: GnuCash's create- and remind-in-advance days.
+        dialog.name_entry.set_text("Council tax")
+        dialog.amount_entry.set_text("180.00")
+        dialog.advance_spin.set_value(3)
+        dialog.remind_spin.set_value(10)
+        built = dialog.build()
+        assert (built.advance_days, built.remind_days) == (3, 10)
+
     def test_an_estimate_is_never_posted(self, dialog):
         dialog.name_entry.set_text("Groceries")
         dialog.amount_entry.set_text("600.00")
@@ -5145,6 +5154,92 @@ class TestDueReview:
         db.close()
         app.open_book(str(path))
         return app
+
+    @pytest.fixture
+    def upcoming_book(self, app, window, tmp_path):
+        """A rent bill first due in ten days, entered 3 and reminded 12 days ahead."""
+        from breadsched.cli.main import main as cli
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.gen.lib import (
+            Money,
+            PeriodType,
+            Recurrence,
+            ScheduledSplit,
+            ScheduledTransaction,
+        )
+
+        path = tmp_path / "upcoming.breadsched"
+        cli(["init", str(path)])
+        db = DbSQLite()
+        db.load(str(path))
+        accounts = {db.full_name(a): a.handle for a in db.iter_accounts()}
+        with db.transaction("Add schedule") as txn:
+            db.add_scheduled(
+                ScheduledTransaction(
+                    name="Rent",
+                    recurrence=Recurrence(PeriodType.WEEK, start=date.today() + timedelta(days=10)),
+                    splits=[
+                        ScheduledSplit(accounts["Expenses"], Money("1800.00")),
+                        ScheduledSplit(accounts["Assets"], Money("-1800.00")),
+                    ],
+                    advance_days=3,
+                    remind_days=12,
+                ),
+                txn,
+            )
+        db.close()
+        app.open_book(str(path))
+        return app
+
+    def test_enter_next_and_skip_next_resolve_an_occurrence_early(self, upcoming_book, window):
+        # #351: the next occurrence could only be posted once it was due.
+        from breadsched.gen.services import DueDecision
+        from breadsched.gui.dialogs.posted_dialog import PostedTransactionsDialog
+
+        db = upcoming_book.db
+        [sched] = db.iter_scheduled()
+        first = date.today() + timedelta(days=10)
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        view.select_schedule(sched.handle)
+        assert view.enter_next_button.get_sensitive() is True
+        assert first.isoformat() in view.enter_next_button.get_tooltip_text()
+
+        assert view.resolve_next(DueDecision.SKIP) is True
+        assert db.summary()["txn"] == 0
+        assert first in db.get_scheduled(sched.handle).skipped
+        assert "Skipped Rent" in view.status.get_text()
+
+        before = {id(w) for w in Gtk.Window.list_toplevels()}
+        assert view.resolve_next(DueDecision.POST) is True
+        opened = [
+            w
+            for w in Gtk.Window.list_toplevels()
+            if isinstance(w, PostedTransactionsDialog) and id(w) not in before
+        ]
+        try:
+            assert len(opened) == 1
+            [posted] = db.iter_transactions()
+            assert posted.post_date == first + timedelta(days=7)
+            assert "Entered Rent" in view.status.get_text()
+        finally:
+            for dialog in opened:
+                dialog.destroy()
+
+    def test_rows_say_when_they_are_entered_or_reminded_in_advance(self, upcoming_book, window):
+        # #352: the review lists occurrences within each schedule's days ahead.
+        from breadsched.gen.engine import schedule as engine
+        from breadsched.gui.dialogs.due_dialog import LATER, DueDialog
+
+        reviewed = engine.review_occurrences(upcoming_book.db)
+        assert [stage.value for _item, stage in reviewed] == ["reminder"]
+        dialog = DueDialog(window, upcoming_book.db, [item for item, _ in reviewed])
+        try:
+            labels = [w.get_text() for w in _descendants(dialog) if isinstance(w, Gtk.Label)]
+            assert any(text.endswith("(reminder)") for text in labels)
+            assert all(c.get_selected() == LATER for c in dialog.choosers)
+        finally:
+            dialog.destroy()
 
     def _dialog(self, app, window, limit=4):
         from breadsched.gen.engine import schedule as engine

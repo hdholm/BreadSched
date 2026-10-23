@@ -203,6 +203,14 @@ Dashboard. Choose each date's action, or one for all of a schedule's dates, then
 **Apply**. See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
+### Enter or skip the next occurrence
+
+In Scheduled, a schedule that can still post shows **Enter next (date)** and **Skip
+next**; Skip next asks first. The editor's **Enter in advance (days)** and **Remind
+in advance (days)** set how long before its date an occurrence joins the review,
+where it is marked *in advance* or *reminder*. See
+[Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
+
 ## Review
 
 **Review** lists actual transactions waiting for a decision. Each planned item it

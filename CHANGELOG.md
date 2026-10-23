@@ -10,6 +10,30 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a292 - 2026-10-23
+
+- **Enter and remind in advance (#352).** A schedule's `advance_days` came from
+  GnuCash's *create in advance* but was never used: the due review stopped at today
+  and automatic posting never ran early. `ScheduledTransaction.remind_days` (from
+  `advanceRemindDays`/`adv_notify`, stored only when set) joins it, and
+  `schedule.review_occurrences` lists each occurrence through today plus those
+  within either window, tagged with a `ReviewStage` (`overdue`, `due`, `advance`,
+  `reminder`). `post_due` posts an automatic schedule's occurrences up to its enter
+  days ahead, never a reminder. The GTK review rows, web review, and `due-review
+  --json` show the stage; `--post-all`/`--skip-all` leave reminders. The GTK and web
+  schedule editors set both counts, `scheduled-advance` sets them from the command
+  line, and the schedule service refuses either outside 0 to 999.
+- **Enter or skip the next occurrence early (#351).** Only an occurrence already due
+  could be posted. `due_review.resolve_next` enters or skips the occurrence
+  `schedule.next_pending` returns, however far ahead, refusing a stale date, a
+  deferral, or a schedule with nothing left, through the same single undoable write
+  as `resolve_due`. GTK Scheduled has **Enter Next** and **Skip Next**, the web
+  Scheduled definitions **Enter next (date)** and **Skip next**
+  (`POST /api/scheduled/next`, each definition carrying `next`), and the command line
+  `scheduled-next`. Tests cover the stages, automatic posting ahead, refusals that
+  leave the book unchanged, GnuCash SQLite and XML import, the web routes, the GTK
+  buttons and review rows, and the commands.
+
 ## 0.2.0a291 - 2026-10-23
 
 - **Windows remember their size (#349).** Every window opened at a fixed or natural
