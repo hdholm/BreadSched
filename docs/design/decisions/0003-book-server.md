@@ -99,6 +99,23 @@ Phase 4 (#358) has begun:
   `--server`, else the recorded server, else an in-process server. The command
   line's book-server commands use it, so they work while a server holds the book.
 
+Phase 5 (#359) has begun:
+- **GTK on the protocol:** GTK's due review (`DueDialog`, built from
+  `book.due_review` and applied with `book.resolve_due`), the Scheduled view's
+  Enter Next and Skip Next, and the Upcoming view's review count use the book
+  server. `api.local.book_server(db)` gives the one in-process server over the
+  book GTK holds.
+- **Sharing the GTK book:** with **Preferences → Sharing** on, GTK serves its
+  writable book the way `breadsched serve` does and publishes a server record, so
+  commands for that book work through the window.
+  - **Main-loop executor:** the HTTP server runs on its own thread. Every request
+    that uses the book is run on the GTK main loop through the transport's
+    executor (`gui.book_sharing.main_loop_executor`), so the book is only ever
+    touched there.
+  - **Undo:** storage signals, redraw-on-change, and undo behave as for an edit
+    made in the window. Undo stays one history per book: a command's change can be
+    undone in GTK.
+
 Revisions are whole-book: any change makes every `ETag` stale. Per-record versions
 remain open if whole-book conflicts prove too coarse once several interfaces share a
 book.

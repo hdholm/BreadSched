@@ -6,12 +6,13 @@ import json
 import queue
 import secrets
 import threading
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 from urllib.parse import urlencode, urlparse
 
 from ..api.protocol import Change
@@ -34,6 +35,7 @@ from .resources import (
 from .upload_resource import import_upload
 
 LOG = get_logger(__name__)
+T = TypeVar("T")
 STATIC = Path(__file__).parent / "static"
 #: The page's classic scripts, in the order ``index.html`` loads them. They share one
 #: global scope: ``core.js`` first, one script per area, and ``app.js`` (navigation
@@ -81,6 +83,8 @@ class Handler(BaseHTTPRequestHandler):
     writer_db: DbSQLite
     lock: threading.Lock
     token: str
+    #: Runs a callable with exclusive use of the writer book (see ``_exclusive``).
+    executor: Callable[[Callable[[], Any]], Any]
 
     _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
@@ -181,6 +185,15 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:  # noqa: BLE001 - broken logging must not block the HTTP response
             pass
         self._error(500, "internal.error", correlation_id=correlation_id)
+
+    def _exclusive(self, work: Callable[[], T]) -> T:
+        """Run ``work`` with the writer book to itself.
+
+        By default that is under the server's lock, in this request's thread. A host
+        that owns the book on another thread (GTK, #359) supplies an executor that
+        runs it there instead.
+        """
+        return self.executor(work)
 
     def _open_read_api(self) -> tuple[Api, DbSQLite | None]:
         """Open one isolated GET view, or lock the non-reopenable writer."""
@@ -315,8 +328,7 @@ class Handler(BaseHTTPRequestHandler):
             self._error(400, "request.body.object_required", ("body",))
             return
         try:
-            with self.lock:
-                result = route(self.api_object, body)
+            result = self._exclusive(lambda: route(self.api_object, body))
             self._json(200, result)
         except ResourceError as exc:
             self._error(exc.status, exc.code, exc.fields, message=exc.message)
@@ -393,18 +405,20 @@ class Handler(BaseHTTPRequestHandler):
                 self._error(400, "request.body.object_required", ("body",))
                 return
             required = self._if_match()
-            with self.lock:
+
+            def perform() -> tuple[object, int]:
                 book = self.api_object.book
                 if required is not None and required != book.revision:
-                    self._error(
+                    raise ResourceError(
                         412,
                         "book.revision.stale",
                         ("If-Match",),
-                        message="The book changed since it was read; reload and try again",
+                        "The book changed since it was read; reload and try again",
                     )
-                    return
                 result = handler(self.api_object, values, body)
-                revision = book.revision
+                return result, book.revision
+
+            result, revision = self._exclusive(perform)
             self._json(200, result, self._revision_headers(revision))
         except QueryError as exc:
             self._error(400, exc.code, exc.fields)
@@ -438,10 +452,12 @@ class Handler(BaseHTTPRequestHandler):
             self._error(400, exc.code, exc.fields)
             return
         changes: queue.Queue[Change] = queue.Queue()
-        with self.lock:
+
+        def follow() -> tuple[Callable[[], None], int]:
             book = self.api_object.book
-            stop = book.subscribe(changes.put)
-            revision = book.revision
+            return book.subscribe(changes.put), book.revision
+
+        stop, revision = self._exclusive(follow)
         stopping = getattr(self.server, "stopping", None)
         try:
             self.close_connection = True
@@ -505,8 +521,8 @@ class Handler(BaseHTTPRequestHandler):
             if len(content) != length:
                 self._error(400, "request.body.incomplete", ("file",))
                 return
-            with self.lock:
-                result = import_upload(
+            result = self._exclusive(
+                lambda: import_upload(
                     self.api_object,
                     self.writer_db,
                     filename=filename,
@@ -515,6 +531,7 @@ class Handler(BaseHTTPRequestHandler):
                     date_format=date_format,
                     include_duplicates=duplicates == "1",
                 )
+            )
             self._json(200, result)
         except ResourceError as exc:
             self._error(exc.status, exc.code, exc.fields, message=exc.message)
@@ -572,14 +589,15 @@ class Handler(BaseHTTPRequestHandler):
             if len(content) != length:
                 self._error(400, "request.body.incomplete", ("file",))
                 return
-            with self.lock:
-                result = attachment_upload(
+            result = self._exclusive(
+                lambda: attachment_upload(
                     self.api_object,
                     self.writer_db,
                     transaction=transaction,
                     filename=filename,
                     content=content,
                 )
+            )
             self._json(200, result)
         except ResourceError as exc:
             self._error(exc.status, exc.code, exc.fields, message=exc.message)
@@ -601,16 +619,30 @@ class BreadSchedHTTPServer(ThreadingHTTPServer):
         super().shutdown()
 
 
-def build_handler(db: DbSQLite, token: str) -> type[Handler]:
-    """Bind one serialized writer and short-lived read snapshots to a handler."""
+Executor = Callable[[Callable[[], Any]], Any]
+
+
+def build_handler(db: DbSQLite, token: str, executor: Executor | None = None) -> type[Handler]:
+    """Bind one serialized writer and short-lived read snapshots to a handler.
+
+    Writer work runs under one lock in the request's thread unless ``executor``
+    runs it elsewhere (GTK runs it on its main loop, #359).
+    """
+    lock = threading.Lock()
+
+    def locked(work: Callable[[], Any]) -> Any:
+        with lock:
+            return work()
+
     return type(
         "BoundHandler",
         (Handler,),
         {
             "api_object": Api(db),
             "writer_db": db,
-            "lock": threading.Lock(),
+            "lock": lock,
             "token": token,
+            "executor": staticmethod(executor or locked),
         },
     )
 
@@ -620,12 +652,13 @@ def serve(
     host: str = "127.0.0.1",
     port: int = 8765,
     open_browser: bool = False,
+    executor: Executor | None = None,
 ) -> BreadSchedHTTPServer:
     """Start the server. Returns it without blocking; call ``serve_forever``."""
     if host not in ("127.0.0.1", "localhost", "::1"):
         raise ValueError("the web interface binds to loopback only")
     token = secrets.token_urlsafe(32)
-    server = BreadSchedHTTPServer((host, port), build_handler(db, token))
+    server = BreadSchedHTTPServer((host, port), build_handler(db, token, executor))
     server.token = token
     server.stopping = threading.Event()
     if open_browser:  # pragma: no cover - depends on a desktop session

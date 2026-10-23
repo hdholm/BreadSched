@@ -216,7 +216,8 @@ that server instead of stopping because the book is already open for writing. Th
 server records its address and token in a file only you can read, in your runtime
 folder, and removes it when it stops. `--server URL` names a server explicitly; its
 token comes from `--token-file PATH` or the `BREADSCHED_SERVER_TOKEN` environment
-variable. Other commands still need the book to themselves.
+variable. Other commands still need the book to themselves. The desktop application
+can share the book it has open the same way (**Edit → Preferences… → Sharing**).
 
 ## Import files
 

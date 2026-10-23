@@ -35,6 +35,11 @@ the same user (#358):
 - **Explicit server:** `--server` takes its token from a file or the environment,
   never from the command line, where other users could read it in the process list.
 
+GTK shares its open book only when the user turns on **Preferences → Sharing**. It
+then listens on the loopback interface with the same per-server token, trusted-Host,
+and trusted-Origin checks as the web server, and publishes the same user-only server
+record.
+
 Security hardening belongs in normal acceptance criteria, including transport-level
 regression tests for rejected foreign origins/hosts, missing tokens, and invalid
 write content types.

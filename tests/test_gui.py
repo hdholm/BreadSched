@@ -15,6 +15,7 @@ from __future__ import annotations
 import gc
 import importlib
 import itertools
+import json
 import os
 import re
 import shutil
@@ -5228,12 +5229,12 @@ class TestDueReview:
 
     def test_rows_say_when_they_are_entered_or_reminded_in_advance(self, upcoming_book, window):
         # #352: the review lists occurrences within each schedule's days ahead.
-        from breadsched.gen.engine import schedule as engine
+        from breadsched.api.local import book_server
         from breadsched.gui.dialogs.due_dialog import LATER, DueDialog
 
-        reviewed = engine.review_occurrences(upcoming_book.db)
-        assert [stage.value for _item, stage in reviewed] == ["reminder"]
-        dialog = DueDialog(window, upcoming_book.db, [item for item, _ in reviewed])
+        reviews = book_server(upcoming_book.db).due_review()
+        assert [item.stage for review in reviews for item in review.items] == ["reminder"]
+        dialog = DueDialog(window, upcoming_book.db, reviews)
         try:
             labels = [w.get_text() for w in _descendants(dialog) if isinstance(w, Gtk.Label)]
             assert any(text.endswith("(reminder)") for text in labels)
@@ -5242,11 +5243,15 @@ class TestDueReview:
             dialog.destroy()
 
     def _dialog(self, app, window, limit=4):
-        from breadsched.gen.engine import schedule as engine
+        """The review of the first ``limit`` due dates, from the book server (#359)."""
+        from dataclasses import replace
+
+        from breadsched.api.local import book_server
         from breadsched.gui.dialogs.due_dialog import DueDialog
 
-        due = engine.due_occurrences(app.db, horizon_days=0)[:limit]
-        return DueDialog(window, app.db, due), due
+        [review] = book_server(app.db).due_review()
+        shown = replace(review, items=review.items[:limit])
+        return DueDialog(window, app.db, [shown]), list(shown.items)
 
     def test_a_long_due_list_shows_a_permanent_scrollbar(self, due_book, window):
         # #318: overlay scrollbars only appeared while scrolling, so a long due
@@ -5437,7 +5442,10 @@ class TestDueReview:
         dialog, due = self._dialog(due_book, window)
         dialog.choosers[0].set_selected(POST)
         # The same date is posted from another window after this one opened.
-        engine.post_occurrences(due_book.db, [due[0]])
+        [occurrence] = [
+            o for o in engine.due_occurrences(due_book.db, horizon_days=0) if o.when == due[0].when
+        ]
+        engine.post_occurrences(due_book.db, [occurrence])
 
         assert dialog.apply() is None
         assert "no longer due" in dialog.status.get_text()
@@ -9893,3 +9901,102 @@ class TestSearchableChoices:
         window.open_register(app.db.get_account_by_name("Assets:Checking Account").handle)
         picker = window._views["register"].account_picker
         assert picker.get_enable_search() is True
+
+
+class TestBookSharing:
+    """#359 (experimental): commands use the book open in GTK through this window."""
+
+    @pytest.fixture
+    def shared(self, app, window, tmp_path, monkeypatch):
+        from breadsched.gen.sample_book import create_sample_book
+
+        monkeypatch.setattr(
+            "breadsched.api.discovery.runtime_directory", lambda: tmp_path / "runtime"
+        )
+        path = tmp_path / "shared.breadsched"
+        create_sample_book(path, as_of=date(2026, 3, 15))
+        app.settings.set("general", "share_book", True)
+        app.open_book(str(path))
+        yield path
+        app.stop_sharing()
+
+    def _run(self, command: list[str]) -> int:
+        """Run a command on another thread while GTK's main loop serves the book."""
+        from breadsched.cli.main import main
+
+        result: list[int] = []
+        thread = threading.Thread(target=lambda: result.append(main(command)), daemon=True)
+        thread.start()
+        assert _spin(lambda: not thread.is_alive(), 20)
+        return result[0]
+
+    def test_a_command_writes_through_the_window_holding_the_book(self, app, shared, capsys):
+        from breadsched.api.discovery import find_server
+
+        record = find_server(str(shared))
+        assert record is not None and record.url == app.shared_book.url
+        changed: list[object] = []
+        app.db.connect("database-changed", changed.append)
+        start = app.db.revision()
+
+        command = ["scheduled-next", str(shared), "Sample rent", "--as-of", "2026-09-27"]
+        assert self._run([*command, "--skip", "--json"]) == 0
+        assert json.loads(capsys.readouterr().out)["skipped"] == 1
+
+        rent = next(item for item in app.db.iter_scheduled() if item.name == "Sample rent")
+        assert date(2026, 4, 6) in rent.skipped
+        assert app.db.revision() == start + 1
+        # The change reached GTK's own book on its main loop, as an edit here does.
+        assert changed
+        assert app.db.undo() is True
+        assert date(2026, 4, 6) not in app.db.get_scheduled(rent.handle).skipped
+
+    def test_reads_and_refusals_come_back_through_the_window(self, app, shared, capsys):
+        assert self._run(["due-review", str(shared), "--as-of", "2026-09-27", "--json"]) == 0
+        listed = json.loads(capsys.readouterr().out)["schedules"]
+        assert "Sample rent" in [item["name"] for item in listed]
+        before = app.db.revision()
+        assert (
+            self._run(["scheduled-advance", str(shared), "Sample rent", "--enter-days", "1000"])
+            == 2
+        )
+        assert "0 to 999" in capsys.readouterr().err
+        assert app.db.revision() == before
+
+    def test_turning_sharing_off_withdraws_the_book(self, app, shared, capsys):
+        from breadsched.api.discovery import find_server
+
+        app.settings.set("general", "share_book", False)
+        app.preferences_changed()
+        assert app.shared_book is None and find_server(str(shared)) is None
+        command = ["scheduled-next", str(shared), "Sample rent", "--as-of", "2026-09-27", "--skip"]
+        assert self._run(command) == 2
+        assert "already open for writing" in capsys.readouterr().err
+
+    def test_opening_another_book_stops_sharing_the_first(self, app, shared, tmp_path):
+        from breadsched.api.discovery import find_server
+        from breadsched.cli.main import main as cli
+
+        other = tmp_path / "other.breadsched"
+        cli(["init", str(other)])
+        app.open_book(str(other))
+        assert find_server(str(shared)) is None
+        assert find_server(str(other)) is not None
+
+    def test_sharing_is_off_by_default_and_saved_from_preferences(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.book_sharing import SETTING
+
+        app.open_book(populated_book)
+        assert app.shared_book is None
+        dialog = app.on_preferences()
+        assert dialog.share_book.get_active() is False
+        dialog.share_book.set_active(True)
+        try:
+            assert dialog.save() is True
+            assert app.settings.get_bool(*SETTING) is True
+            assert app.shared_book is not None
+        finally:
+            dialog.destroy()
+            app.stop_sharing()

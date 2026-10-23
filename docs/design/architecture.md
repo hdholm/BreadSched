@@ -237,6 +237,12 @@ process holds the book (#358). `tests/test_book_sharing.py` covers the record's
 life, stale records, the commands through a holding server, an explicit server, and
 `serve`.
 
+GTK reaches the same server in process through `api.local.book_server(db)` for the
+due review, Enter Next and Skip Next, and the Upcoming count (#359).
+`gui.book_sharing` serves GTK's own book when **Preferences → Sharing** is on.
+`web.transport.serve` takes an executor that runs each writer request on the GTK
+main loop instead of under the transport's lock.
+
 ## GTK and web parity
 
 GTK4 defines the reference workflow and interaction model. The web UI must maintain
