@@ -1,0 +1,34 @@
+"""The book server: one API that owns an open book for every interface (#354).
+
+**Experimental.** This package is developed on the ``claude/experimental-book-server``
+branch and is not part of a release.
+
+A *book server* owns one open book: its storage, undo history, and change
+notifications. The command line, the browser, and (later) GTK reach a book only
+through the :class:`~breadsched.api.protocol.BookApi` protocol, so every interface
+reads the same results, writes through the same validation, and serializes the same
+JSON. :class:`~breadsched.api.local.LocalBookServer` implements the protocol in
+process over :mod:`breadsched.gen.services`; an HTTP server and client implementing
+the same protocol follow (#357).
+
+* :mod:`~breadsched.api.contract` – the error envelope and leaf JSON encoding.
+* :mod:`~breadsched.api.protocol` – what a book server offers, and its change events.
+* :mod:`~breadsched.api.local` – the in-process server.
+* :mod:`~breadsched.api.views` – the one JSON form of each response.
+"""
+
+from __future__ import annotations
+
+from .contract import ApiError, to_json, unwrap
+from .local import LocalBookServer, open_book_server
+from .protocol import BookApi, Change
+
+__all__ = [
+    "ApiError",
+    "BookApi",
+    "Change",
+    "LocalBookServer",
+    "open_book_server",
+    "to_json",
+    "unwrap",
+]

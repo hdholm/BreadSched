@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING
 
+from ..api.views import due_review_json, next_occurrence_json, resolution_json
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import estimates, schedule
 from ..gen.lib import (
@@ -30,10 +31,6 @@ from ..gen.services import (
     SaveFixedSchedule,
     delete_schedule,
     duplicate_schedule,
-    next_occurrence,
-    pending_due_review,
-    resolve_due,
-    resolve_next,
     save_fixed_schedule,
     save_formula_schedule,
 )
@@ -86,7 +83,7 @@ def scheduled(api: Api, days: int = 60) -> dict:
                 "auto": item.auto_create,
                 "advance_days": item.advance_days,
                 "remind_days": item.remind_days,
-                "next": _next_json(api.db, item.handle),
+                "next": next_occurrence_json(api.book.next_occurrence(item.handle)),
                 "growth_policy": item.growth_policy.value,
                 "simple": simple is not None and frequency is not None,
                 "editable": editability.editable,
@@ -687,27 +684,8 @@ def historical_estimate_accept(api: Api, payload: dict) -> dict:
 
 
 def due_review(api: Api) -> dict:
-    """Due and missed scheduled occurrences, grouped by schedule."""
-    return {
-        "schedules": [
-            {
-                "schedule": review.schedule,
-                "name": review.name,
-                "frequency": review.frequency,
-                "total": str(review.total.to_decimal()),
-                "items": [
-                    {
-                        "date": item.when.isoformat(),
-                        "amount": str(item.amount.to_decimal()),
-                        "overdue": item.overdue,
-                        "stage": item.stage,
-                    }
-                    for item in review.items
-                ],
-            }
-            for review in pending_due_review(api.db)
-        ]
-    }
+    """Due, missed, and early scheduled occurrences, grouped by schedule."""
+    return due_review_json(api.book.due_review())
 
 
 def due_review_resolve(api: Api, payload: dict) -> dict:
@@ -725,16 +703,7 @@ def due_review_resolve(api: Api, payload: dict) -> dict:
                 DueDecision(str(item.get("decision"))),
             )
         )
-    result = resolve_due(api.db, ResolveDue(tuple(decisions)))
-    if not result.ok:
-        raise service_error(result.errors[0])
-    outcome = result.value
-    assert outcome is not None
-    return {
-        "posted": outcome.posted,
-        "skipped": outcome.skipped,
-        "deferred": outcome.deferred,
-    }
+    return resolution_json(api.book.resolve_due(ResolveDue(tuple(decisions))))
 
 
 def post_scheduled(api: Api) -> dict:
@@ -758,13 +727,6 @@ def _days(payload: dict, key: str) -> int | None:
         raise ValueError(f"{key} must be a whole number of days") from None
 
 
-def _next_json(db: DbSQLite, handle: str) -> dict | None:
-    upcoming = next_occurrence(db, handle)
-    if upcoming is None:
-        return None
-    return {"date": upcoming.when.isoformat(), "amount": str(upcoming.amount.to_decimal())}
-
-
 def scheduled_next(api: Api, payload: dict) -> dict:
     """Enter or skip a schedule's next occurrence before it is due (#351)."""
     raw_decision = str(payload.get("decision", ""))
@@ -772,14 +734,5 @@ def scheduled_next(api: Api, payload: dict) -> dict:
         raise ValueError("decision must be post or skip")
     raw_date = payload.get("date")
     when = date.fromisoformat(str(raw_date)) if raw_date else None
-    result = resolve_next(
-        api.db,
-        ResolveNext(str(payload.get("schedule", "")), DueDecision(raw_decision), when=when),
-    )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return {
-        "posted": result.value.posted,
-        "skipped": result.value.skipped,
-        "transactions": list(result.value.transactions),
-    }
+    request = ResolveNext(str(payload.get("schedule", "")), DueDecision(raw_decision), when=when)
+    return resolution_json(api.book.resolve_next(request))

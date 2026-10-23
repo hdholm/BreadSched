@@ -1,0 +1,90 @@
+# 0003: A book server that owns a book for every interface
+
+Part of the [BreadSched design](../../../DESIGN.md); see
+[Architecture and ownership](../architecture.md#book-server-experimental).
+
+- **Status:** experimental, 2026-10-23. Work happens on the
+  `claude/experimental-book-server` branch and does not land on `main` until its
+  full impact is understood (#354).
+- **Decision under trial:** a *book server* owns one open book: its storage, undo
+  history, and change notifications. The command line, the browser, and GTK reach a
+  book only through one API, the `BookApi` protocol. An interface can use an
+  in-process server, or a server started on its own that several interfaces share.
+
+## Context
+
+Validation and every write already belong to `gen/services`, and each interface is
+an adapter over them. What is still duplicated is:
+
+- how results become JSON: the command line's `--json` and each web adapter each
+  had their own shape;
+- reads that bypass the services, in the command line and in GTK;
+- input lookups, such as finding a schedule by name.
+
+Each process also opens the book itself and holds its writer lock alone. So the
+browser and GTK cannot share a book, and a command run while the web server is
+open fails on the lock.
+
+## Decision
+
+1. **Protocol and contract (#355).**
+   - `breadsched.api.protocol.BookApi` lists what a book server offers. Its requests
+     and results are the services' own typed dataclasses.
+   - `breadsched.api.contract.ApiError` is the one error envelope. A missing object
+     is a 404; anything else is a 400. The browser's `ResourceError` is now this
+     same class.
+   - `breadsched.api.views` builds the one JSON form of each response, and
+     `to_json` encodes the leaves.
+2. **In-process server (#356).**
+   - `breadsched.api.local.LocalBookServer` implements the protocol over the
+     services and one `DbSQLite`.
+   - It observes the book's storage signals. Every change, including undo, redo,
+     and writes by other code on the same book, raises its revision by one and
+     reaches each subscriber as a `Change` (revision, kinds, undo label).
+   - The command line and the browser move onto it one area at a time.
+3. **HTTP transport (#357).**
+   - The protocol is served as versioned `/api/v1` resources, with record
+     revisions (`ETag`/`If-Match`) and a server-sent events stream of changes.
+   - A client implementing the same protocol hides which kind of server a caller
+     has.
+   - The revision must then be stored with the book, so that changes made by
+     another process count; the in-process server counts only what it observes.
+4. **A shared, independent server (#358).**
+   - `breadsched serve BOOK` runs a server that no interface owns.
+   - The book lock records its endpoint and a token file only the user can read,
+     so other interfaces connect to it instead of failing on the lock.
+5. **GTK on the protocol (#359).** GTK moves view by view, keeping the register
+   performance tests green, then may connect to a shared server.
+
+## Where it stands
+
+Scheduled transactions are the pilot area. These now go through `LocalBookServer`
+and `breadsched.api.views`:
+
+- the command line's `due-review`, `scheduled-next`, and `scheduled-advance`;
+- the browser's due review, next-occurrence routes, and each definition's `next`.
+
+As a result:
+
+- `due-review --json` now prints exactly what `GET /api/due-review` returns
+  (`{"schedules": [...]}`).
+- Decisions answer with posted, skipped, deferred, and the transaction handles on
+  both interfaces.
+- `tests/test_book_server.py` proves both of these on one book.
+- Architecture tests keep the moved adapters off the services they no longer call.
+
+## Consequences and open questions
+
+- **JSON shapes change** for the moved commands, so scripts that read the old
+  `due-review --json` list must read `schedules` instead. Each area that moves
+  changes the same way, and the release that brings this to `main` must say so.
+- **Undo**: today one undo history belongs to the book. Shared editing must decide
+  whether undo stays global or becomes per client.
+- **Security**: an independent server stays on the loopback interface, with a token
+  file only the user can read. Anything wider needs real authentication and TLS.
+- **Long operations** (imports, quote fetches, projections) need jobs with progress
+  and cancellation once a client is a separate process.
+- **Flatpak**: a sandboxed GTK client reaching a server outside the sandbox needs
+  network permission; a server inside it needs portal access to the book.
+- **Speed**: in process, the protocol adds a function call; over HTTP, the GTK
+  register needs bulk reads and pushed changes, not a round trip per keystroke.

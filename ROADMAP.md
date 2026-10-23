@@ -38,6 +38,16 @@ The rest of this file is unscheduled and comes after the first Beta.
 
 ### Architecture
 
+- **Book server (experimental, #354).** One API owns a book for the command line,
+  browser, and GTK: in process, or a server started on its own that several
+  interfaces share. Developed on the `claude/experimental-book-server` branch and
+  kept off `main` until its impact is understood; see
+  [decision 0003](docs/design/decisions/0003-book-server.md). The phases are:
+  protocol and contract (#355), the in-process server under the command line and
+  browser (#356, with scheduled transactions moved first), HTTP transport with
+  revisions and change events (#357), a shared independent server (#358), and GTK
+  on the protocol (#359).
+
 - Split oversized modules/functions where ownership is clear. Split large GUI test
   modules only when the resulting fixture ownership and runtime isolation improve;
   do not optimize for a line-count threshold alone.

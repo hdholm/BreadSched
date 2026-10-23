@@ -171,6 +171,7 @@ from .scenarios import (
     suppress_scenario_schedule,
 )
 from .schedules import (
+    AdvanceDays,
     DeleteSchedule,
     DuplicateSchedule,
     FixedScheduleInput,
@@ -183,18 +184,22 @@ from .schedules import (
     SaveFixedSchedule,
     SaveScenarioSchedule,
     SaveSchedule,
+    SetAdvanceDays,
+    advance_days,
     build_fixed_scenario_schedule,
     build_fixed_schedule,
     build_formula_scenario_schedule,
     build_formula_schedule,
     delete_schedule,
     duplicate_schedule,
+    find_schedule,
     save_fixed_scenario_schedule,
     save_fixed_schedule,
     save_formula_scenario_schedule,
     save_formula_schedule,
     save_scenario_schedule,
     save_schedule,
+    set_advance_days,
 )
 from .tax import SetTaxMarks, TaxAccountMark, TaxMarks, set_tax_marks, tax_marks
 from .transactions import (
@@ -211,6 +216,11 @@ from .transactions import (
 )
 
 __all__ = [
+    "AdvanceDays",
+    "SetAdvanceDays",
+    "advance_days",
+    "find_schedule",
+    "set_advance_days",
     "DashboardGroupInput",
     "EMERGENCY_MONTHS_RANGE",
     "LIQUIDITY_DAYS_RANGE",

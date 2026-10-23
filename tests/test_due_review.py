@@ -170,7 +170,7 @@ def test_cli_lists_and_decides_due_dates(tmp_path, capsys):
     assert "every month" in text
 
     assert main([*command, "--json"]) == 0
-    listed = json.loads(capsys.readouterr().out)
+    listed = json.loads(capsys.readouterr().out)["schedules"]
     rent = next(item for item in listed if item["name"] == "Sample rent")
     assert len(rent["items"]) == 6 and rent["total"] == "8700.00"
 
@@ -178,10 +178,12 @@ def test_cli_lists_and_decides_due_dates(tmp_path, capsys):
         main([*command, "--post", "Sample rent@2026-04-06", "--skip", "Sample wages", "--json"])
         == 0
     )
-    assert json.loads(capsys.readouterr().out) == {"posted": 1, "skipped": 6}
+    outcome = json.loads(capsys.readouterr().out)
+    assert (outcome["posted"], outcome["skipped"], outcome["deferred"]) == (1, 6, 0)
+    assert len(outcome["transactions"]) == 1
 
     assert main([*command, "--json"]) == 0
-    after = {item["name"]: item for item in json.loads(capsys.readouterr().out)}
+    after = {item["name"]: item for item in json.loads(capsys.readouterr().out)["schedules"]}
     assert "Sample wages" not in after
     assert [item["date"] for item in after["Sample rent"]["items"]][0] == "2026-05-06"
 

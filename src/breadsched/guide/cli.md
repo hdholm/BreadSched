@@ -181,8 +181,10 @@ breadsched due-review household.breadsched --post-all
 
 `--post` and `--skip` take a schedule id prefix or exact name, optionally with
 `@YYYY-MM-DD` for one date; `--post-all` and `--skip-all` decide everything due or
-entered in advance, but leave reminders. With `--json`, each date's `stage` is
-`overdue`, `due`, `advance`, or `reminder`. See
+entered in advance, but leave reminders. With `--json`, the output is what the browser's
+due review returns (`schedules`, each date with its `stage`: `overdue`, `due`,
+`advance`, or `reminder`), and a decision reports `posted`, `skipped`, `deferred`,
+and the new `transactions`. See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
 ### Enter or skip the next occurrence

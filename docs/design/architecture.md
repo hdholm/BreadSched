@@ -191,6 +191,27 @@ into a typed service request or engine call and formats the result; architecture
 tests check that the entry point defines no handlers and that every command's
 handler is in the module that registers it.
 
+## Book server (experimental)
+
+`breadsched.api` is the book server of
+[decision 0003](decisions/0003-book-server.md), under trial on its own branch.
+`LocalBookServer` wraps one open `DbSQLite` and implements the `BookApi` protocol
+over the application services. Requests and results are the services' typed
+dataclasses. A failure is an `ApiError`, the same class as the web's
+`ResourceError`, and `api.views` gives each response its one JSON form. The server
+turns the book's storage signals into numbered `Change` events for its
+subscribers. It imports nothing from the interfaces, and architecture tests check
+that.
+
+So far only scheduled transactions go through it:
+
+- the command line's `due-review`, `scheduled-next`, and `scheduled-advance`, through
+  `open_book_server`;
+- the browser's due review and next-occurrence routes, through `Api.book`, the
+  server over the request's book.
+
+Their command-line JSON is therefore the browser's JSON.
+
 ## GTK and web parity
 
 GTK4 defines the reference workflow and interaction model. The web UI must maintain
