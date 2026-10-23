@@ -46,7 +46,9 @@ The rest of this file is unscheduled and comes after the first Beta.
   protocol and contract (#355), the in-process server under the command line and
   browser (#356, with scheduled transactions moved first), HTTP transport with
   revisions and change events (#357), a shared independent server (#358), and GTK
-  on the protocol (#359).
+  on the protocol (#359). Phases 1–2 cover scheduled transactions so far, and phase 3
+  has a stored book revision, `/api/v1` resources with `ETag`/`If-Match`, a change
+  stream, and an HTTP client.
 
 - Split oversized modules/functions where ownership is clear. Split large GUI test
   modules only when the resulting fixture ownership and runtime isolation improve;

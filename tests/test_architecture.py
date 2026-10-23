@@ -138,6 +138,7 @@ class TestLayering:
             "gzip",
             "hashlib",
             "html",
+            "http",
             "io",
             "json",
             "logging",
@@ -1043,9 +1044,10 @@ class TestBookServerBoundaries:
 
     def test_the_book_server_package_has_no_interface_imports(self):
         for module in modules_under("api"):
-            names = imported_names(module)
-            assert not names & {"gi", "http"}, module
+            assert "gi" not in imported_names(module), module
             text = module.read_text(encoding="utf-8")
+            # A client may speak HTTP; serving it is the web transport's job.
+            assert "http.server" not in text, module
             assert (
                 "from ..web" not in text and "from ..cli" not in text and "from ..gui" not in text
             )

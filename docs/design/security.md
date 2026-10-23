@@ -17,6 +17,14 @@ the page moves it into ``X-BreadSched-Token`` request headers and removes it fro
 visible URL. Static assets do not need the token, but they still require a trusted
 Host.
 
+The experimental versioned resources under `/api/v1` (#357) follow the same rules:
+trusted Host and Origin, the per-server token on every request (including the
+change stream at `/api/v1/events`), and `application/json` for every write.
+`PATCH` is accepted only for `/api/v1` resources. A write with an `If-Match` naming
+an older book revision is refused with 412 and changes nothing. The browser's
+`EventSource` cannot send the token header, so the page does not use the stream yet;
+it is for programmatic clients such as `breadsched.api.http_client`.
+
 Security hardening belongs in normal acceptance criteria, including transport-level
 regression tests for rejected foreign origins/hosts, missing tokens, and invalid
 write content types.

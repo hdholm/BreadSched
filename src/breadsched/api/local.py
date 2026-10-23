@@ -6,8 +6,8 @@ It observes the book's own storage signals, so a change made through it, by undo
 redo, or by any other code holding the same book in this process, raises the
 revision and reaches every subscriber.
 
-The revision counts changes since the server opened the book; it is not yet stored
-in the book, so another process's writes are not counted (see #357).
+The revision is the book's own change counter (:meth:`DbSQLite.revision`), stored
+with the book, so every process that opens it agrees on it (#357).
 """
 
 from __future__ import annotations
@@ -60,7 +60,6 @@ class LocalBookServer:
 
     def __init__(self, db: DbSQLite) -> None:
         self.db = db
-        self._revision = 0
         self._pending: set[str] = set()
         self._listeners: list[Listener] = []
         known = db._known_signals()
@@ -78,7 +77,7 @@ class LocalBookServer:
 
     @property
     def revision(self) -> int:
-        return self._revision
+        return self.db.revision()
 
     def subscribe(self, listener: Listener) -> Callable[[], None]:
         self._listeners.append(listener)
@@ -90,8 +89,7 @@ class LocalBookServer:
         return stop
 
     def _on_changed(self, _db: DbSQLite) -> None:
-        self._revision += 1
-        change = Change(self._revision, frozenset(self._pending), self.db.undo_message())
+        change = Change(self.db.revision(), frozenset(self._pending), self.db.undo_message())
         self._pending.clear()
         for listener in list(self._listeners):
             listener(change)

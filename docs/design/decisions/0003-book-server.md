@@ -73,6 +73,23 @@ As a result:
 - `tests/test_book_server.py` proves both of these on one book.
 - Architecture tests keep the moved adapters off the services they no longer call.
 
+Phase 3 (#357) has begun:
+- **Stored revision:** the revision is kept with the book (`DbSQLite.revision()`,
+  metadata key `book_revision`). It rises in the same SQL transaction as each
+  recorded change, undo, or redo, so every process and every read snapshot agrees on
+  it.
+- **`/api/v1` resources:** the pilot operations are served under `/api/v1`, each
+  response carrying its revision as an `ETag`. A write with a stale `If-Match` gets
+  412 `book.revision.stale` and changes nothing.
+- **Change stream:** `/api/v1/events` streams changes. A client that reconnects
+  after missing some first receives a change with no kinds, meaning reload.
+- **HTTP client:** `HttpBookClient` implements `BookApi` over HTTP. The book-server
+  tests run the same contract against it and the in-process server.
+
+Revisions are whole-book: any change makes every `ETag` stale. Per-record versions
+remain open if whole-book conflicts prove too coarse once several interfaces share a
+book.
+
 ## Consequences and open questions
 
 - **JSON shapes change** for the moved commands, so scripts that read the old
