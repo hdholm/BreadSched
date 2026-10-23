@@ -200,6 +200,15 @@ class DbSQLite(ChangeVerification):
 
     # ------------------------------------------------------------- life cycle
 
+    @property
+    def writer_lock_token(self) -> str | None:
+        """The random token of the writer lock this book holds, if it holds one.
+
+        It identifies the lock's holder without relying on the host name, which can
+        change while a process runs (#358).
+        """
+        return self._book_lock.token if self._book_lock is not None else None
+
     def _release_book_lock(self) -> None:
         lock, self._book_lock = self._book_lock, None
         if lock is not None:

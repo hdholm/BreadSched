@@ -30,8 +30,9 @@ the same user (#358):
 - **Where:** one record per book in the per-user runtime directory, never beside the
   book, since a book folder may be shared or synced. The file is `0600` in a `0700`
   directory on POSIX.
-- **When it counts:** only while its process is alive on this host and holds the
-  book's writer lock. Other records are removed as stale.
+- **When it counts:** only while the book's writer lock still carries the lock
+  token the record names and, on this host, its process is alive. Other records are
+  removed as stale.
 - **Explicit server:** `--server` takes its token from a file or the environment,
   never from the command line, where other users could read it in the process list.
 
