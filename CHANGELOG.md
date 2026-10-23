@@ -10,6 +10,18 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a291 - 2026-10-23
+
+- **Windows remember their size (#349).** Every window opened at a fixed or natural
+  size. `widgets.window_sizes` keeps sizes in the user's view settings, for every
+  book: the main window's size and maximized state (recorded on close and on Quit)
+  and an independent register window's size, plus any dialog's size once the user
+  has resized it, by dialog class. `BoundedWindow.present` restores a size before
+  capping it to the screen. **Preferences → Windows** can forget them all
+  (`Settings.remove_section`). GTK tests cover the main window, Quit, maximized and
+  malformed values, a dialog that is and is not resized, a register window, and
+  forgetting with Cancel and Save.
+
 ## 0.2.0a290 - 2026-10-20
 
 - **Enter and Cancel buttons in the register (#344).** Escape was the only way to

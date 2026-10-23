@@ -13,6 +13,7 @@ over toolbars:
   Quotes window edits.
 * **Dashboard** – **Configure Dashboard Groups…**, which opens that window for the
   open book (groups belong to the book, not to these settings).
+* **Windows** – forget the remembered window sizes (#349).
 
 **Save** writes them all; **Cancel** (or Escape) changes nothing.
 """
@@ -25,6 +26,7 @@ from ..views.register import BANDING_CHOICES, apply_register_display
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
+from ..widgets.window_sizes import forget_sizes
 
 __all__ = ["PreferencesDialog"]
 
@@ -111,6 +113,16 @@ class PreferencesDialog(BoundedWindow):
         grid.attach(groups, 0, row, 2, 1)
         row += 1
 
+        heading("Windows")
+        self.forget_sizes = Gtk.CheckButton(
+            label="Forget remembered window sizes (windows open at their own sizes again)"
+        )
+        self.forget_sizes.set_tooltip_text(
+            "BreadSched remembers the main window's size, and each window you resize"
+        )
+        grid.attach(self.forget_sizes, 0, row, 2, 1)
+        row += 1
+
         self.status = Gtk.Label(xalign=0, wrap=True)
         self.status.add_css_class("dim")
         box.append(self.status)
@@ -177,6 +189,8 @@ class PreferencesDialog(BoundedWindow):
         self.view_settings.set(
             _REGISTER, "banding", BANDING_CHOICES[self.banding.get_selected()][0]
         )
+        if self.forget_sizes.get_active():
+            forget_sizes(self.view_settings)
         if not self.view_settings.save():
             self.status.set_text("Could not save the view settings file.")
             return False

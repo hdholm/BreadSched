@@ -10,6 +10,10 @@ its whole text on one line, so a dialog with a long note opened wider than the
 screen. :class:`BoundedWindow` caps the size a dialog opens at to the monitor it
 opens on (:func:`fit_to_screen`); the content then wraps or scrolls inside.
 
+A dialog you have resized opens at that size next time (#349; see
+``widgets.window_sizes``): each kind of dialog is remembered under its class
+name, or under :attr:`BoundedWindow.size_key` when one is set.
+
 Every dialog also answers the keyboard the same way (#335): Escape closes it, as
 its Cancel or Close button does, and Enter in a one-line field activates its main
 button, the ``suggested-action`` button in its last row (or one named with
@@ -20,7 +24,8 @@ from __future__ import annotations
 
 import weakref
 
-from ..gi_setup import Gtk
+from ..gi_setup import GLib, Gtk
+from .window_sizes import remember_size, restore_size
 
 __all__ = ["BoundedWindow", "fit_to_screen", "keeps_enter", "scroll_body"]
 
@@ -125,9 +130,22 @@ def _descendants(widget: Gtk.Widget):
 class BoundedWindow(Gtk.Window):
     """A dialog window that opens within the screen and answers Escape and Enter."""
 
+    #: The key a resized size is remembered under; None for a plain BoundedWindow
+    #: unless its creator names one (a subclass defaults to its class name).
+    size_key: str | None = None
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._primary: Gtk.Widget | None = None
+        #: The size the window opened at, to tell whether it was resized (#349).
+        self._opened_size: tuple[int, int] | None = None
+        #: Remember the size on every close, not only after a resize (a register
+        #: window, whose size is not set by what it shows).
+        self.always_remember_size = False
+        self.connect("close-request", self._on_close_remember)
+        # The size GTK settles on once the window is shown is the baseline, so
+        # only a resize the user makes afterwards counts.
+        self.connect("map", lambda *_: GLib.idle_add(self._note_opened_size))
         keys = Gtk.ShortcutController()
         keys.set_scope(Gtk.ShortcutScope.LOCAL)
         keys.add_shortcut(
@@ -137,6 +155,24 @@ class BoundedWindow(Gtk.Window):
             )
         )
         self.add_controller(keys)
+
+    def _note_opened_size(self) -> bool:
+        if self.get_mapped():
+            self._opened_size = self.get_default_size()
+        return False
+
+    def _size_key(self) -> str | None:
+        if self.size_key is not None:
+            return self.size_key
+        return None if type(self) is BoundedWindow else type(self).__name__
+
+    def _on_close_remember(self, *_args) -> bool:
+        key = self._size_key()
+        if key is not None and self._opened_size is not None:
+            resized = self.get_default_size() != self._opened_size or self.is_maximized()
+            if resized or self.always_remember_size:
+                remember_size(self, key)
+        return False
 
     def _on_escape(self) -> bool:
         self.close()
@@ -166,7 +202,10 @@ class BoundedWindow(Gtk.Window):
 
     def present(self) -> None:
         if not self.get_mapped():
-            fit_to_screen(self)
+            key = self._size_key()
+            if key is not None:
+                restore_size(self, key)
+            self._opened_size = fit_to_screen(self)
             primary = self.primary()
             if primary is not None:
                 self.set_default_widget(primary)

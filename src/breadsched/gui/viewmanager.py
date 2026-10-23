@@ -42,6 +42,7 @@ from .view_catalog import (
 )
 from .widgets.bounded import BoundedWindow
 from .widgets.presented import when_presented
+from .widgets.window_sizes import remember_size, restore_size
 
 # The catalog is re-exported for callers that import it from the window.
 __all__ = ["CATEGORIES", "TOOLBAR", "VIEW_ACTIONS", "ViewAction", "ViewManager", "view_action_name"]
@@ -57,6 +58,8 @@ class ViewManager(Gtk.ApplicationWindow):
     def __init__(self, application: Gtk.Application, *, prompt_due_on_open: bool = True) -> None:
         super().__init__(application=application, title=APP_NAME)
         self.set_default_size(1180, 760)
+        # The last size and maximized state, from the user's settings (#349).
+        restore_size(self, "main")
         self.db: DbSQLite | None = None
         self._views: dict[str, Gtk.Widget] = {}
         #: Every register tab's view; ``_views["register"]`` is the one shown.
@@ -371,6 +374,7 @@ class ViewManager(Gtk.ApplicationWindow):
         self._detach_views()
 
     def _on_close_request(self, *_args) -> bool:
+        remember_size(self, "main")
         self._detach_views()
         return False
 
@@ -1074,6 +1078,8 @@ class ViewManager(Gtk.ApplicationWindow):
         window = BoundedWindow(transient_for=self)
         window.set_destroy_with_parent(True)
         window.set_default_size(1050, 620)
+        window.size_key = "register-window"
+        window.always_remember_size = True
         register = RegisterView(self)
         window.set_child(register)
         pair = (window, register)

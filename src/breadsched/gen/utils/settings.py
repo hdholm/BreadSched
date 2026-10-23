@@ -107,6 +107,10 @@ class Settings:
         except configparser.NoSectionError:
             pass
 
+    def remove_section(self, section: str) -> None:
+        """Forget every key in ``section``."""
+        self._parser.remove_section(section)
+
     def sections(self) -> list[str]:
         return self._parser.sections()
 
