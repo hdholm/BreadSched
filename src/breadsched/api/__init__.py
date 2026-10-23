@@ -15,6 +15,9 @@ the same protocol follow (#357).
 * :mod:`~breadsched.api.protocol` – what a book server offers, and its change events.
 * :mod:`~breadsched.api.local` – the in-process server.
 * :mod:`~breadsched.api.views` – the one JSON form of each response.
+* :mod:`~breadsched.api.http_client` – the same protocol over ``/api/v1``.
+* :mod:`~breadsched.api.discovery` and :mod:`~breadsched.api.connect` – finding and
+  using the server that already holds a book.
 """
 
 from __future__ import annotations

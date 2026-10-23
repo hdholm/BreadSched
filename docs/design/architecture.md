@@ -229,6 +229,14 @@ The same operations are served as versioned resources under `/api/v1` (#357):
   dataclasses. `tests/test_book_server.py` runs one contract against both the
   in-process server and this client.
 
+A writable `breadsched serve` or `breadsched web` publishes a server record
+(`api.discovery`; see [Security](security.md)). `api.connect.open_book_api` gives a
+command an explicit `--server`, else the recorded server, else an in-process server.
+So `due-review`, `scheduled-next`, and `scheduled-advance` work while another
+process holds the book (#358). `tests/test_book_sharing.py` covers the record's
+life, stale records, the commands through a holding server, an explicit server, and
+`serve`.
+
 ## GTK and web parity
 
 GTK4 defines the reference workflow and interaction model. The web UI must maintain

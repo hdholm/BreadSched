@@ -96,7 +96,11 @@ spellings or symlink aliases from becoming competing writers. A competing writer
 fails with an explicit read-only alternative; read-only opens remain allowed. A
 stale lock is reclaimed automatically only when it belongs to the same host and its
 recorded process no longer exists. Lock removal verifies the ownership token so one
-process cannot delete another writer's lock.
+process cannot delete another writer's lock. On the experimental book-server branch,
+the server holding a book publishes where to reach it, and a command for the same
+book connects to it instead of failing on the lock (#358; see
+[decision 0003](decisions/0003-book-server.md)). The lock itself is unchanged and
+still admits one writer.
 
 ## Book revision
 

@@ -48,7 +48,8 @@ The rest of this file is unscheduled and comes after the first Beta.
   revisions and change events (#357), a shared independent server (#358), and GTK
   on the protocol (#359). Phases 1–2 cover scheduled transactions so far, and phase 3
   has a stored book revision, `/api/v1` resources with `ETag`/`If-Match`, a change
-  stream, and an HTTP client.
+  stream, and an HTTP client. Phase 4 has `breadsched serve`, a user-only server
+  record, and command-line commands that use the server holding a book.
 
 - Split oversized modules/functions where ownership is clear. Split large GUI test
   modules only when the resulting fixture ownership and runtime isolation improve;

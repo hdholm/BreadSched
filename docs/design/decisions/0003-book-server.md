@@ -86,6 +86,19 @@ Phase 3 (#357) has begun:
 - **HTTP client:** `HttpBookClient` implements `BookApi` over HTTP. The book-server
   tests run the same contract against it and the in-process server.
 
+Phase 4 (#358) has begun:
+- **Server record:** `breadsched serve BOOK`, and `breadsched web` when writable,
+  publish a server record (`breadsched.api.discovery`): one user-only file per
+  book in the runtime directory (`$XDG_RUNTIME_DIR/breadsched/servers`, or the
+  data directory's `run` folder), named by a hash of the book's canonical path. It
+  holds the address, the token, and the process. The token never goes beside the
+  book.
+- **When a record counts:** only while its process is alive on this host and still
+  holds the book's writer lock. Any other record is removed.
+- **Connecting:** `breadsched.api.connect.open_book_api` uses an explicit
+  `--server`, else the recorded server, else an in-process server. The command
+  line's book-server commands use it, so they work while a server holds the book.
+
 Revisions are whole-book: any change makes every `ETag` stale. Per-record versions
 remain open if whole-book conflicts prove too coarse once several interfaces share a
 book.
