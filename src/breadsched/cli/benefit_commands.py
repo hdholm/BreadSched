@@ -9,7 +9,6 @@ from ..api.protocol import BookApi
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import category_report
 from ..gen.lib import (
-    FsaClaim,
     FsaClaimEvent,
     Money,
     Split,
@@ -19,8 +18,6 @@ from ..gen.services import (
     CloseClaim,
     ReopenClaim,
     SetReimbursementOverride,
-    close_claim,
-    reopen_claim,
 )
 from ..gen.services.receivables import (
     RecordWriteOff,
@@ -29,7 +26,6 @@ from ..gen.services.receivables import (
 from ..presentation import (
     goal_status_text,
     plan_reimbursable_text,
-    service_error_message,
     shared_cost_text,
 )
 from .common import (
@@ -40,7 +36,6 @@ from .common import (
     emit,
     open_book,
     parse_date,
-    resolve_account,
     table,
 )
 
@@ -199,19 +194,6 @@ def cmd_goals(args: argparse.Namespace) -> int:
     return 0
 
 
-def _find_claim(db: DbSQLite, reference: str) -> FsaClaim:
-    """Locate an FSA claim by handle, or by a unique prefix of one."""
-    exact = db.get_fsa_claim(reference)
-    if exact is not None:
-        return exact
-    matches = [item for item in db.iter_fsa_claims() if item.handle.startswith(reference)]
-    if not matches:
-        raise CommandError(f"no FSA claim matches {reference!r}")
-    if len(matches) > 1:
-        raise CommandError(f"{reference!r} matches {len(matches)} claims; use more characters")
-    return matches[0]
-
-
 def _claim_event_text(event: FsaClaimEvent) -> str:
     def amount(value: Money | None) -> str:
         return value.format() if value is not None else "none"
@@ -223,13 +205,12 @@ def _claim_event_text(event: FsaClaimEvent) -> str:
     return f"{event.on.isoformat()} {text}" + (f": {event.note}" if event.note else "")
 
 
-def _claim_link_proposals(db, args: argparse.Namespace) -> int:
+def _claim_link_proposals(book: BookApi, args: argparse.Namespace) -> int:
     """FSA statement lines that clearly belong on one claim; link them all if asked."""
-    from ..gen.services import accept_claim_links, claim_link_proposals
     from ..presentation import claim_role_label
 
-    account = resolve_account(db, args.account).handle if args.account else None
-    proposals = claim_link_proposals(db, account=account).value or ()
+    account = book.find_account(args.account).handle if args.account else None
+    proposals = book.claim_link_proposals(account)
     payload: dict[str, object] = {
         "proposals": [
             {
@@ -248,8 +229,7 @@ def _claim_link_proposals(db, args: argparse.Namespace) -> int:
     }
     if args.link_proposals:
         chosen = tuple((item.claim, item.transaction, item.split) for item in proposals)
-        accepted = accept_claim_links(db, chosen).value
-        assert accepted is not None
+        accepted = book.accept_claim_links(chosen)
         payload["linked"] = accepted.linked
         payload["unchanged"] = accepted.unchanged
         noun = "link" if accepted.linked == 1 else "links"
@@ -280,18 +260,18 @@ def _claim_link_proposals(db, args: argparse.Namespace) -> int:
     return 0
 
 
-def _fsa_years(db, args: argparse.Namespace) -> int:
+def _fsa_years(book: BookApi, args: argparse.Namespace) -> int:
     """Open and recently closed FSA benefit years, with how each was used."""
-    from ..gen.engine import fsa
     from ..presentation import fsa_account_text, fsa_usage_text
 
-    statuses = fsa.dashboard_statuses(db, as_of=parse_date(args.as_of) or date.today())
+    view = book.benefit_years(parse_date(args.as_of) or date.today())
+    statuses = list(view.years)
     if args.account:
-        handle = resolve_account(db, args.account).handle
+        handle = book.find_account(args.account).handle
         statuses = [status for status in statuses if status.account.handle == handle]
     payload = [
         {
-            "account": db.full_name(status.account),
+            "account": view.name(status.account.handle),
             "dependent_care": status.dependent_care,
             "start": status.year.start,
             "through": status.year.through,
@@ -315,7 +295,7 @@ def _fsa_years(db, args: argparse.Namespace) -> int:
         return 0
     rows = [
         [
-            fsa_account_text(db.full_name(status.account), status.dependent_care),
+            fsa_account_text(view.name(status.account.handle), status.dependent_care),
             status.label,
             status.phase,
             status.year.election.format(),
@@ -349,23 +329,20 @@ def _fsa_years(db, args: argparse.Namespace) -> int:
 
 def cmd_claims(args: argparse.Namespace) -> int:
     """FSA claims grouped by status, account, funding year, or provider."""
-    from ..gen.engine.fsa_claim_report import claim_report
     from ..gen.engine.fsa_claims import FsaClaimStatus
+    from ..gen.services.claims import ClaimReportQuery
 
     changing = bool(args.close or args.reopen)
     if args.close and args.reopen:
         raise CommandError("use --close or --reopen, not both")
-    db = open_book(args.book, "w" if changing or args.link_proposals else "r")
-    try:
+    with book_api(args, "w" if changing or args.link_proposals else "r") as book:
         if changing:
-            claim = _find_claim(db, args.close or args.reopen)
+            claim = book.find_fsa_claim(args.close or args.reopen)
             on = parse_date(args.on) or date.today()
             if args.close:
-                result = close_claim(db, CloseClaim(claim.handle, on, args.reason or ""))
+                book.close_fsa_claim(CloseClaim(claim.handle, on, args.reason or ""))
             else:
-                result = reopen_claim(db, ReopenClaim(claim.handle, on, args.note or ""))
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
+                book.reopen_fsa_claim(ReopenClaim(claim.handle, on, args.note or ""))
             name = claim.provider or claim.description or "FSA claim"
             emit(
                 {"handle": claim.handle},
@@ -375,11 +352,11 @@ def cmd_claims(args: argparse.Namespace) -> int:
             )
             return 0
         if args.years:
-            return _fsa_years(db, args)
+            return _fsa_years(book, args)
         if args.proposals or args.link_proposals:
-            return _claim_link_proposals(db, args)
+            return _claim_link_proposals(book, args)
         if args.history:
-            claim = _find_claim(db, args.history)
+            claim = book.find_fsa_claim(args.history)
             emit(
                 {"handle": claim.handle, "events": [event.serialize() for event in claim.events]},
                 args,
@@ -394,15 +371,16 @@ def cmd_claims(args: argparse.Namespace) -> int:
             except ValueError as exc:
                 choices = ", ".join(item.value for item in FsaClaimStatus)
                 raise CommandError(f"--status must be one of {choices}") from exc
-        report = claim_report(
-            db,
-            as_of=parse_date(args.as_of) or date.today(),
-            by=args.by,
-            account=resolve_account(db, args.account).handle if args.account else None,
-            funding_year=parse_date(args.year),
-            provider=args.provider,
-            status=status,
-            attention_only=args.attention,
+        report = book.fsa_claim_report(
+            ClaimReportQuery(
+                as_of=parse_date(args.as_of) or date.today(),
+                by=args.by,
+                account=book.find_account(args.account).handle if args.account else None,
+                funding_year=parse_date(args.year),
+                provider=args.provider,
+                status=status,
+                attention_only=args.attention,
+            )
         )
 
         def money(value: Money) -> str:
@@ -483,8 +461,6 @@ def cmd_claims(args: argparse.Namespace) -> int:
             text += "\n\nNeeds attention:\n" + "\n".join(f"  {entry}" for entry in attention)
         emit(payload, args, text)
         return 0
-    finally:
-        db.close()
 
 
 def _receivable_costs(db: DbSQLite, args: argparse.Namespace) -> int:
@@ -839,6 +815,7 @@ def register(add: AddCommand) -> None:
     claims_cmd.add_argument(
         "--history", metavar="CLAIM", help="list a claim's EOB changes, closings, and reopenings"
     )
+    add_server_options(claims_cmd)
     claims_cmd.set_defaults(func=cmd_claims)
 
     receivables_cmd = add(

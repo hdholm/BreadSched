@@ -417,19 +417,31 @@ class TestServiceBoundaries:
     @pytest.mark.parametrize(
         ("relative", "class_name", "method_name", "service_call"),
         (
-            ("gui/dialogs/fsa_claims_dialog.py", "FsaClaimsDialog", "_save", "save_claim"),
-            ("gui/dialogs/fsa_claims_dialog.py", "FsaClaimsDialog", "_delete", "delete_claim"),
-            ("gui/dialogs/fsa_claims_dialog.py", "FsaClaimsDialog", "_close_claim", "close_claim"),
+            ("gui/dialogs/fsa_claims_dialog.py", "FsaClaimsDialog", "_save", "save_fsa_claim"),
+            (
+                "gui/dialogs/fsa_claims_dialog.py",
+                "FsaClaimsDialog",
+                "_delete",
+                "delete_fsa_claim",
+            ),
+            (
+                "gui/dialogs/fsa_claims_dialog.py",
+                "FsaClaimsDialog",
+                "_close_claim",
+                "close_fsa_claim",
+            ),
             (
                 "gui/dialogs/fsa_claims_dialog.py",
                 "FsaClaimsDialog",
                 "_reopen_claim",
-                "reopen_claim",
+                "reopen_fsa_claim",
             ),
-            ("web/fsa_claim_resource.py", None, "fsa_claim_save", "save_claim"),
-            ("web/fsa_claim_resource.py", None, "fsa_claim_delete", "delete_claim"),
-            ("web/fsa_claim_resource.py", None, "fsa_claim_close", "close_claim"),
-            ("web/fsa_claim_resource.py", None, "fsa_claim_reopen", "reopen_claim"),
+            # On the experimental book-server branch (#354) these reach the claim
+            # services through the book server.
+            ("web/fsa_claim_resource.py", None, "fsa_claim_save", "save_fsa_claim"),
+            ("web/fsa_claim_resource.py", None, "fsa_claim_delete", "delete_fsa_claim"),
+            ("web/fsa_claim_resource.py", None, "fsa_claim_close", "close_fsa_claim"),
+            ("web/fsa_claim_resource.py", None, "fsa_claim_reopen", "reopen_fsa_claim"),
         ),
     )
     def test_claim_mutations_use_typed_services(
@@ -1098,6 +1110,19 @@ class TestBookServerBoundaries:
         "preview_pay_change",
         "apply_pay_change",
         "payroll_view",
+        "fsa_claims_view",
+        "claim_candidates",
+        "find_claim",
+        "save_claim",
+        "delete_claim",
+        "close_claim",
+        "reopen_claim",
+        "fsa_claim_report",
+        "claim_report",
+        "dashboard_statuses",
+        "fsa_years_view",
+        "accept_claim_links",
+        "iter_claims",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1180,6 +1205,16 @@ class TestBookServerBoundaries:
         "create_paycheck",
         "preview_pay_change",
         "apply_pay_change",
+        "fsa_claims",
+        "find_fsa_claim",
+        "save_fsa_claim",
+        "delete_fsa_claim",
+        "close_fsa_claim",
+        "reopen_fsa_claim",
+        "fsa_claim_report",
+        "benefit_years",
+        "claim_link_proposals",
+        "accept_claim_links",
     }
 
     @pytest.mark.parametrize(
@@ -1225,6 +1260,35 @@ class TestBookServerBoundaries:
             ("web/register_entry_resource.py", ("register_cleared_toggle",)),
             ("cli/projection_commands.py", ("cmd_scenario", "cmd_drawdown")),
             ("cli/plan_commands.py", ("cmd_payroll",)),
+            (
+                "cli/benefit_commands.py",
+                ("cmd_claims", "_claim_link_proposals", "_fsa_years"),
+            ),
+            (
+                "web/fsa_claim_resource.py",
+                (
+                    "fsa_claims",
+                    "fsa_claim_save",
+                    "fsa_claim_delete",
+                    "fsa_claim_close",
+                    "fsa_claim_reopen",
+                ),
+            ),
+            ("web/fsa_resource.py", ("fsa_dashboard", "fsa_claim_links_accept")),
+            (
+                "gui/views/fsa_dashboard.py",
+                (
+                    "_render_proposals",
+                    "_on_link_selected",
+                    "_render_years",
+                    "_render_claims",
+                    "_render_report",
+                ),
+            ),
+            (
+                "gui/dialogs/fsa_claims_dialog.py",
+                ("_close_claim", "_reopen_claim", "_after_closing", "_save", "_delete"),
+            ),
             (
                 "web/payroll_resource.py",
                 (

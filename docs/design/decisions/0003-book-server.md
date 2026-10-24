@@ -240,6 +240,24 @@ Payroll followed:
 - **Interfaces:** the command line's `payroll`, the browser's payroll page, and
   GTK's Payroll dialog.
 
+FSA claims followed, all through the typed codec:
+- **Reads:** `fsa_claims(as_of)` (`FsaClaimsView`: every claim's stored form and
+  recomputed standing, the allocation accounts' names, and the splits, FSA accounts,
+  and payers a claim could link), `find_fsa_claim` (handle or unique prefix),
+  `fsa_claim_report(ClaimReportQuery)`, `benefit_years(as_of)`, and
+  `claim_link_proposals(account)`.
+- **Writes:** saving, deleting, closing, and reopening a claim, and accepting
+  claim-link proposals.
+- **Resources:** `GET` and `POST /api/v1/fsa-claims`, `/lookup`, `/report`,
+  `DELETE /api/v1/fsa-claims/{handle}`, `POST /api/v1/fsa-claims/{handle}/close` and
+  `/reopen`, `GET /api/v1/fsa-years`, `GET /api/v1/fsa-claim-proposals`, and
+  `POST /api/v1/fsa-claim-proposals/accept`.
+- **Interfaces:** the command line's `claims`; the browser's FSA claims and FSA
+  Dashboard; GTK's FSA Dashboard, the FSA claims dialog's claim list and writes, and
+  the import dialogs' claim-link notices.
+- **Still local:** the GTK claims editor builds its link candidates, funding-year
+  windows, and the standing of the claim on screen from the book directly.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

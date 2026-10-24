@@ -25,10 +25,13 @@ from datetime import date
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
+from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
+from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.fsa_claim import FsaClaim
 from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
@@ -69,6 +72,16 @@ from ..gen.services.categorization import (
     AppliedCategories,
     CategorizationRules,
     CategoryRule,
+)
+from ..gen.services.claims import (
+    AcceptedClaimLinks,
+    ClaimReportQuery,
+    CloseClaim,
+    FsaClaimsView,
+    FsaYearsView,
+    ReopenClaim,
+    SaveClaim,
+    SavedClaim,
 )
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.receivables import (
@@ -720,3 +733,53 @@ class HttpBookClient:
     def apply_pay_change(self, request: PayChange) -> PayChangePlan:
         found = self._call("POST", "/payroll/pay-changes", body=to_data(request))
         return from_data(PayChangePlan, found["plan"], "plan")
+
+    # --------------------------------------------------------------- FSA claims
+
+    def fsa_claims(self, as_of: date | None = None) -> FsaClaimsView:
+        return from_data(FsaClaimsView, self._call("GET", "/fsa-claims", {"as_of": as_of}))
+
+    def find_fsa_claim(self, reference: str) -> FsaClaim:
+        found = self._call("GET", "/fsa-claims/lookup", {"reference": reference})
+        return from_data(FsaClaim, found["claim"], "claim")
+
+    def save_fsa_claim(self, request: SaveClaim) -> SavedClaim:
+        return from_data(SavedClaim, self._call("POST", "/fsa-claims", body=to_data(request)))
+
+    def delete_fsa_claim(self, claim: str) -> SavedClaim:
+        found = self._call("DELETE", f"/fsa-claims/{quote(claim, safe='')}")
+        return from_data(SavedClaim, found)
+
+    def close_fsa_claim(self, request: CloseClaim) -> SavedClaim:
+        body = {"on": request.on, "reason": request.reason}
+        path = f"/fsa-claims/{quote(request.handle, safe='')}/close"
+        return from_data(SavedClaim, self._call("POST", path, body=body))
+
+    def reopen_fsa_claim(self, request: ReopenClaim) -> SavedClaim:
+        body = {"on": request.on, "note": request.note}
+        path = f"/fsa-claims/{quote(request.handle, safe='')}/reopen"
+        return from_data(SavedClaim, self._call("POST", path, body=body))
+
+    def fsa_claim_report(self, query: ClaimReportQuery) -> ClaimReport:
+        params = {
+            "as_of": query.as_of,
+            "by": query.by,
+            "account": query.account,
+            "funding_year": query.funding_year,
+            "provider": query.provider,
+            "status": query.status.value if query.status is not None else None,
+            "attention": "true" if query.attention_only else None,
+        }
+        return from_data(ClaimReport, self._call("GET", "/fsa-claims/report", params))
+
+    def benefit_years(self, as_of: date | None = None) -> FsaYearsView:
+        return from_data(FsaYearsView, self._call("GET", "/fsa-years", {"as_of": as_of}))
+
+    def claim_link_proposals(self, account: str | None = None) -> tuple[FsaClaimProposal, ...]:
+        found = self._call("GET", "/fsa-claim-proposals", {"account": account})
+        return from_data(tuple[FsaClaimProposal, ...], found["proposals"], "proposals")
+
+    def accept_claim_links(self, chosen: tuple[tuple[str, str, str], ...]) -> AcceptedClaimLinks:
+        body = {"chosen": [list(item) for item in chosen]}
+        found = self._call("POST", "/fsa-claim-proposals/accept", body=body)
+        return from_data(AcceptedClaimLinks, found)

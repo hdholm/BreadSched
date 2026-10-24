@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from ...gen.engine import fsa
-from ...gen.engine.fsa_claim_report import claim_report
-from ...gen.services import accept_claim_links, claim_link_proposals
+from ...api.local import book_server
+from ...gen.services.claims import ClaimReportQuery
 from ...presentation import claim_role_label, fsa_account_text, fsa_usage_text
 from ..gi_setup import Gtk
 from ..widgets.choice import bounded_dropdown
@@ -130,7 +129,7 @@ class FsaDashboardView(BaseView):
         _empty(self.proposal_grid)
         self._proposal_checks = []
         assert self.db is not None
-        proposals = claim_link_proposals(self.db).value or ()
+        proposals = book_server(self.db).claim_link_proposals()
         for widget in (self.proposal_heading, self.proposal_grid, self.proposal_actions):
             widget.set_visible(bool(proposals))
         if not proposals:
@@ -164,9 +163,7 @@ class FsaDashboardView(BaseView):
         chosen = tuple(key for check, key in self._proposal_checks if check.get_active())
         if not chosen:
             return
-        result = accept_claim_links(self.db, chosen)
-        accepted = result.value
-        assert accepted is not None
+        accepted = book_server(self.db).accept_claim_links(chosen)
         self.refresh()
         noun = "link" if accepted.linked == 1 else "links"
         text = f"Linked {accepted.linked} claim {noun}."
@@ -178,7 +175,8 @@ class FsaDashboardView(BaseView):
     def _render_years(self) -> None:
         _empty(self.fsa_grid)
         assert self.db is not None
-        statuses = fsa.dashboard_statuses(self.db)
+        years = book_server(self.db).benefit_years()
+        statuses = years.years
         self.fsa_heading.set_visible(bool(statuses))
         self.fsa_grid.set_visible(bool(statuses))
         if not statuses:
@@ -203,7 +201,7 @@ class FsaDashboardView(BaseView):
             self.fsa_grid.attach(label, column_index, 0, 1, 1)
         for row_index, status in enumerate(statuses, start=1):
             values = (
-                fsa_account_text(self.db.full_name(status.account), status.dependent_care),
+                fsa_account_text(years.name(status.account.handle), status.dependent_care),
                 status.label,
                 status.phase,
                 status.year.election.format(),
@@ -225,7 +223,7 @@ class FsaDashboardView(BaseView):
     def _render_claims(self) -> None:
         _empty(self.claim_grid)
         assert self.db is not None
-        report = claim_report(self.db)
+        report = book_server(self.db).fsa_claim_report(ClaimReportQuery())
         waiting = len(report.needing_attention)
         self.attention_label.set_label(
             f"{waiting} claim{' needs' if waiting == 1 else 's need'} attention." if waiting else ""
@@ -286,7 +284,7 @@ class FsaDashboardView(BaseView):
         if self.db is None:
             return
         key, label = GROUPINGS[min(self.report_by.get_selected(), len(GROUPINGS) - 1)]
-        report = claim_report(self.db, by=key)
+        report = book_server(self.db).fsa_claim_report(ClaimReportQuery(by=key))
         self.report_row.set_visible(bool(report.lines))
         self.report_grid.set_visible(bool(report.lines))
         if not report.lines:

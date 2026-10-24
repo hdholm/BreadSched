@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path  # noqa: E402
 
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite  # noqa: E402
 from ...gen.plug import (  # noqa: E402
     IMPORTER,
@@ -22,7 +23,6 @@ from ...gen.plug import (  # noqa: E402
     remembered_import_source,
 )
 from ...gen.services import ImportBook, import_book  # noqa: E402
-from ...gen.services.claims import claim_link_proposals
 from ...gen.services.receivables import reimbursement_proposals
 from ...gen.utils import logs  # noqa: E402
 from ...gen.utils.cancellation import OperationCancelled  # noqa: E402
@@ -335,7 +335,7 @@ class ImportDialog(BoundedWindow):
         if notice:
             # Imported deposits may be money back on a reimbursable expense.
             text += f"\n\n{notice}"
-        if claim_notice := claim_link_notice(len(claim_link_proposals(self.db).value or ())):
+        if claim_notice := claim_link_notice(len(book_server(self.db).claim_link_proposals())):
             # An imported FSA statement line may belong on a claim.
             text += f"\n\n{claim_notice}"
         self.result_view.set_text(text)
