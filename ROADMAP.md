@@ -54,8 +54,9 @@ The rest of this file is unscheduled and comes after the first Beta.
   the server holding a book. Phase 5 has GTK's due review and Enter/Skip Next on the
   protocol, and an opt-in **Preferences → Sharing** that serves GTK's open book to
   commands. Decision 0003 also documents reaching a book through a TLS reverse proxy
-  (nginx). The server changes it still needs are a configured trusted origin, a
-  Unix-socket listener, a token file, and HTTPS in the HTTP client.
+  (nginx). The server takes a trusted origin and a token file for that proxy, and the
+  HTTP client speaks HTTPS with client certificates; a Unix-socket listener is still
+  to come.
 
 - Split oversized modules/functions where ownership is clear. Split large GUI test
   modules only when the resulting fixture ownership and runtime isolation improve;

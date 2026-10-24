@@ -39,8 +39,18 @@ the same user (#358):
 Reaching a book from another device goes only through a TLS reverse proxy on the
 same host, with authentication of its own; the server itself never listens beyond
 loopback. Decision 0003 documents the method, the checks the proxy must keep
-(origin, host, buffering, logging), an illustrative nginx configuration, and the
-server changes still open.
+(host, buffering, logging), an illustrative nginx configuration, and the server
+changes still open. For a proxy (#358):
+- **Trusted origin:** `--trusted-origin https://host` adds that one origin to the
+  loopback origins a page may write from. Only an `https://` origin with no path is
+  accepted.
+- **Token file:** `--token-file PATH` keeps the token in a file the server creates
+  `0600`, so it is not printed and survives restarts. A file other users can read,
+  or a token shorter than 32 characters, is refused.
+- **HTTPS client:** `--server https://...` verifies the proxy's certificate against
+  the system's authorities or `--ca-file`, requires TLS 1.2 or later, and presents
+  `--client-cert` (and `--client-key`) when the proxy asks. A certificate that does
+  not verify is a `server.unreachable` failure, never a fallback to plain HTTP.
 
 GTK shares its open book only when the user turns on **Preferences → Sharing**. It
 then listens on the loopback interface with the same per-server token, trusted-Host,

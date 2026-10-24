@@ -169,6 +169,7 @@ class TestLayering:
             "re",
             "shutil",
             "socket",
+            "ssl",
             "tempfile",
             "textwrap",
             "threading",

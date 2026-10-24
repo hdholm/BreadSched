@@ -272,16 +272,12 @@ any proxy that can do the same works.
    takes over that defence for the public name, so a default server that answers
    any other name with 444 is needed.
 4. **Origin:** a page served through the proxy sends `Origin: https://books.example.lan`.
-   The server accepts loopback origins only, so its writes would be refused. Until
-   the server takes a configured trusted origin (an open item), the proxy checks the
-   origin itself and rewrites it:
-   - an `Origin` that is neither absent nor exactly the public origin is refused with
-     403;
-   - an accepted one is replaced by `http://127.0.0.1:PORT`.
-
-   Cross-site requests stay blocked twice over: the proxy checks the origin, and the
-   server requires the token in a custom header, which a foreign page cannot send
-   without a CORS preflight the server never grants.
+   The server accepts loopback origins, and the one public origin it is started with
+   (`--trusted-origin https://books.example.lan`); any other origin is refused with
+   403. The proxy passes `Origin` through unchanged. Cross-site requests stay blocked
+   twice over: the server checks the origin, and it requires the token in a custom
+   header, which a foreign page cannot send without a CORS preflight the server never
+   grants.
 5. **Request limits:** `client_max_body_size 32m` matches the import upload limit
    (the server still enforces its own limits).
 6. **Change stream:** `/api/v1/events` must not be buffered, and its read timeout
@@ -296,12 +292,6 @@ any proxy that can do the same works.
 An illustrative configuration (replace the names, port, and certificate paths):
 
 ```nginx
-map $http_origin $breadsched_origin {
-    ""                            "";
-    "https://books.example.lan"   "http://127.0.0.1:8765";
-    default                       "refuse";
-}
-
 server {
     listen 443 ssl default_server;
     ssl_reject_handshake on;                       # any other name: no answer (nginx 1.19.4+)
@@ -320,17 +310,13 @@ server {
     client_max_body_size 32m;
     access_log /var/log/nginx/breadsched.log;      # the default format logs no headers
 
-    if ($breadsched_origin = "refuse") { return 403; }
-
     location / {
         proxy_pass http://127.0.0.1:8765;
-        proxy_set_header Origin $breadsched_origin;
         proxy_http_version 1.1;
     }
 
     location = /api/v1/events {
         proxy_pass http://127.0.0.1:8765;
-        proxy_set_header Origin $breadsched_origin;
         proxy_http_version 1.1;
         proxy_buffering off;
         proxy_read_timeout 1h;
@@ -338,21 +324,32 @@ server {
 }
 ```
 
-Start the server with `breadsched serve BOOK --port 8765`. Open the printed address
-with `https://books.example.lan` in place of `http://127.0.0.1:8765`, keeping the
-`#token=` fragment. The token changes every time the server starts.
+Start the server with:
 
-**Not yet supported through a proxy:**
-- **HTTP client:** `HttpBookClient` (and so `--server`) speaks plain HTTP only.
-  Reaching a proxied server from another machine's command line needs HTTPS with
-  certificate verification, and client certificates where the proxy requires them.
-- **Local commands:** on the serving host itself, commands keep using the loopback
-  address from the server record, so the proxy is never in their way.
-- **Server-side changes still needed** to make the proxy's origin rewriting
-  unnecessary and close the local-user gap:
-  - a configured trusted origin, such as `--trusted-origin https://books.example.lan`;
-  - a Unix-socket listener;
-  - the token taken from a file rather than printed.
+```bash
+breadsched serve BOOK --port 8765 --trusted-origin https://books.example.lan \
+    --token-file ~/.config/breadsched/books.token
+```
+
+The token is kept in that file (created `0600` if absent), is not printed, and stays
+the same across restarts. Open `https://books.example.lan/#token=TOKEN` in the
+browser. Without `--token-file`, the printed address carries a new token each start.
+
+From another machine's command line, name the proxy as the server:
+
+```bash
+breadsched balance BOOK --server https://books.example.lan --token-file books.token \
+    --ca-file household-ca.pem --client-cert laptop.pem --client-key laptop.key
+```
+
+`HttpBookClient` verifies the proxy's certificate (against `--ca-file`, or the
+system's authorities), requires TLS 1.2 or later, and presents the client
+certificate the proxy asks for. On the serving host itself, commands keep using the
+loopback address from the server record, so the proxy is never in their way.
+
+**Still open:** a Unix-socket listener readable only by the user, to close the
+local-user gap in item 8. The proxy would then reach the server through the socket
+(`proxy_pass http://unix:/run/user/1000/breadsched/books.sock`).
 
 ## Consequences and open questions
 

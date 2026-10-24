@@ -18,6 +18,7 @@ from __future__ import annotations
 import http.client
 import json
 import socket
+import ssl
 import threading
 from collections.abc import Callable
 from datetime import date
@@ -110,16 +111,40 @@ __all__ = ["HttpBookClient"]
 
 
 class HttpBookClient:
-    """The book API of a BreadSched server at ``base_url``."""
+    """The book API of a BreadSched server at ``base_url``.
 
-    def __init__(self, base_url: str, token: str, timeout: float = 30.0) -> None:
+    ``http://`` reaches a server on this host. ``https://`` reaches one through a
+    TLS reverse proxy: the proxy's certificate is verified against the system's
+    certificate authorities, or ``ca_file``, and ``client_cert`` (with
+    ``client_key`` when the key is separate) answers a proxy that asks for a
+    client certificate.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        token: str,
+        timeout: float = 30.0,
+        *,
+        ca_file: str | None = None,
+        client_cert: str | None = None,
+        client_key: str | None = None,
+    ) -> None:
         parsed = urlparse(base_url)
-        if parsed.scheme != "http" or not parsed.hostname:
-            raise ValueError("a book server URL is http://host:port")
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError("a book server URL is http://host:port or https://host[:port]")
+        if parsed.scheme == "http" and (ca_file or client_cert or client_key):
+            raise ValueError("certificates are only used with an https:// server")
         self.host = parsed.hostname
-        self.port = parsed.port or 80
+        self.port = parsed.port or (443 if parsed.scheme == "https" else 80)
         self.token = token
         self.timeout = timeout
+        self._tls: ssl.SSLContext | None = None
+        if parsed.scheme == "https":
+            self._tls = ssl.create_default_context(cafile=ca_file)
+            self._tls.minimum_version = ssl.TLSVersion.TLSv1_2
+            if client_cert:
+                self._tls.load_cert_chain(client_cert, client_key)
         #: The revision named by the last response.
         self.seen_revision: int | None = None
         #: When set, writes send ``If-Match`` with this revision.
@@ -128,6 +153,10 @@ class HttpBookClient:
     # -------------------------------------------------------------- transport
 
     def _connection(self, timeout: float | None) -> http.client.HTTPConnection:
+        if self._tls is not None:
+            return http.client.HTTPSConnection(
+                self.host, self.port, timeout=timeout, context=self._tls
+            )
         return http.client.HTTPConnection(self.host, self.port, timeout=timeout)
 
     def _call(
@@ -155,6 +184,11 @@ class HttpBookClient:
             raw = response.read()
             etag = response.getheader("ETag")
             status = response.status
+        except OSError as exc:
+            # Refused, unreachable, timed out, or a certificate that does not verify.
+            raise ApiError(
+                503, "server.unreachable", (), f"could not reach {self.host}:{self.port}: {exc}"
+            ) from exc
         finally:
             connection.close()
         if etag:

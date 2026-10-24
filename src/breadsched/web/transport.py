@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import queue
 import secrets
 import socketserver
@@ -84,6 +85,9 @@ class Handler(BaseHTTPRequestHandler):
     writer_db: DbSQLite
     lock: threading.Lock
     token: str
+    #: Origins besides loopback whose pages may use the API: the public origin of
+    #: a TLS proxy in front of the server (``serve(trusted_origins=...)``).
+    trusted_origins: frozenset[str] = frozenset()
     #: Runs a callable with exclusive use of the writer book (see ``_exclusive``).
     executor: Callable[[Callable[[], Any]], Any]
 
@@ -167,6 +171,8 @@ class Handler(BaseHTTPRequestHandler):
     def _trusted_origin(self) -> bool:
         origin = self.headers.get("Origin")
         if not origin:
+            return True
+        if origin in self.trusted_origins:
             return True
         parsed = urlparse(origin)
         return parsed.scheme in {"http", "https"} and parsed.hostname in self._LOCAL_HOSTS
@@ -639,7 +645,59 @@ class BreadSchedHTTPServer(ThreadingHTTPServer):
 Executor = Callable[[Callable[[], Any]], Any]
 
 
-def build_handler(db: DbSQLite, token: str, executor: Executor | None = None) -> type[Handler]:
+def trusted_origin(raw: str) -> str:
+    """``raw`` as an origin a proxied page may send, or a ``ValueError``.
+
+    Only ``https://host`` or ``https://host:port`` is accepted: a page reaching the
+    book from the network must have come over TLS.
+    """
+    parsed = urlparse(raw.strip())
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.path not in ("", "/")
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError(f"a trusted origin is https://host[:port], not {raw!r}")
+    port = f":{parsed.port}" if parsed.port not in (None, 443) else ""
+    return f"https://{parsed.hostname}{port}"
+
+
+#: The shortest token a token file may hold.
+MIN_TOKEN_LENGTH = 32
+
+
+def token_from_file(path: str | Path) -> str:
+    """The server token kept in ``path``, creating it (readable only by the user) if absent.
+
+    A kept token survives restarts, so a client given it once keeps working. A file
+    others can read, or a token too short to guess at, is refused.
+    """
+    target = Path(path)
+    if not target.exists():
+        token = secrets.token_urlsafe(32)
+        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(token + "\n")
+        return token
+    if os.name == "posix" and target.stat().st_mode & 0o077:
+        raise ValueError(f"{target} can be read by other users; make it private (chmod 600)")
+    token = target.read_text(encoding="utf-8").strip()
+    if len(token) < MIN_TOKEN_LENGTH or any(char.isspace() for char in token):
+        raise ValueError(f"{target} must hold one token of at least {MIN_TOKEN_LENGTH} characters")
+    return token
+
+
+def build_handler(
+    db: DbSQLite,
+    token: str,
+    executor: Executor | None = None,
+    trusted_origins: frozenset[str] = frozenset(),
+) -> type[Handler]:
     """Bind one serialized writer and short-lived read snapshots to a handler.
 
     Writer work runs under one lock in the request's thread unless ``executor``
@@ -659,6 +717,7 @@ def build_handler(db: DbSQLite, token: str, executor: Executor | None = None) ->
             "writer_db": db,
             "lock": lock,
             "token": token,
+            "trusted_origins": trusted_origins,
             "executor": staticmethod(executor or locked),
         },
     )
@@ -670,12 +729,22 @@ def serve(
     port: int = 8765,
     open_browser: bool = False,
     executor: Executor | None = None,
+    *,
+    token: str | None = None,
+    trusted_origins: tuple[str, ...] = (),
 ) -> BreadSchedHTTPServer:
-    """Start the server. Returns it without blocking; call ``serve_forever``."""
+    """Start the server. Returns it without blocking; call ``serve_forever``.
+
+    ``token`` is a kept token (``token_from_file``), else a new one is made.
+    ``trusted_origins`` are the public origins of a TLS proxy in front of it.
+    """
     if host not in ("127.0.0.1", "localhost", "::1"):
         raise ValueError("the web interface binds to loopback only")
-    token = secrets.token_urlsafe(32)
-    server = BreadSchedHTTPServer((host, port), build_handler(db, token, executor))
+    origins = frozenset(trusted_origin(origin) for origin in trusted_origins)
+    token = token or secrets.token_urlsafe(32)
+    server = BreadSchedHTTPServer(
+        (host, port), build_handler(db, token, executor, trusted_origins=origins)
+    )
     server.token = token
     server.stopping = threading.Event()
     if open_browser:  # pragma: no cover - depends on a desktop session
