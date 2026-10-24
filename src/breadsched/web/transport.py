@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import queue
 import secrets
+import socketserver
 import threading
 from collections.abc import Callable
 from datetime import date
@@ -622,6 +623,17 @@ class BreadSchedHTTPServer(ThreadingHTTPServer):
     def shutdown(self) -> None:
         self.stopping.set()
         super().shutdown()
+
+    def server_bind(self) -> None:
+        """Bind without ``HTTPServer``'s reverse lookup of the loopback address.
+
+        ``socket.getfqdn`` can stall for many seconds where reverse DNS is slow
+        (macOS runners), delaying every start; the name is only informational.
+        """
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = int(port)
 
 
 Executor = Callable[[Callable[[], Any]], Any]
