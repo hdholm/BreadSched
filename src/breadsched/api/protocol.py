@@ -19,9 +19,13 @@ from ..gen.services import (
     AdvanceDays,
     DueResolution,
     DueScheduleReview,
+    DuplicateSchedule,
     NextOccurrence,
+    PostDue,
+    PostedDue,
     ResolveDue,
     ResolveNext,
+    SavedSchedule,
     SetAdvanceDays,
 )
 
@@ -83,3 +87,15 @@ class BookApi(Protocol):
     def advance_days(self, schedule: str) -> AdvanceDays: ...
 
     def set_advance_days(self, request: SetAdvanceDays) -> AdvanceDays: ...
+
+    def delete_schedule(self, schedule: str) -> SavedSchedule:
+        """Remove a definition; what it already posted stays in the ledger."""
+        ...
+
+    def duplicate_schedule(self, request: DuplicateSchedule) -> SavedSchedule:
+        """Save an independent exact copy, including editor-protected fields."""
+        ...
+
+    def post_due(self, request: PostDue) -> PostedDue:
+        """Post what is due without a review (automatic schedules, or all)."""
+        ...

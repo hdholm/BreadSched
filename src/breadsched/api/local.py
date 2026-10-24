@@ -20,16 +20,24 @@ from ..gen.db.sqlite import DbSQLite
 from ..gen.lib import ScheduledTransaction
 from ..gen.services import (
     AdvanceDays,
+    DeleteSchedule,
     DueResolution,
     DueScheduleReview,
+    DuplicateSchedule,
     NextOccurrence,
+    PostDue,
+    PostedDue,
     ResolveDue,
     ResolveNext,
+    SavedSchedule,
     ServiceError,
     SetAdvanceDays,
+    delete_schedule,
+    duplicate_schedule,
     find_schedule,
     next_occurrence,
     pending_due_review,
+    post_due,
     resolve_due,
     resolve_next,
     set_advance_days,
@@ -132,6 +140,15 @@ class LocalBookServer:
 
     def set_advance_days(self, request: SetAdvanceDays) -> AdvanceDays:
         return unwrap(set_advance_days(self.db, request))
+
+    def delete_schedule(self, schedule: str) -> SavedSchedule:
+        return unwrap(delete_schedule(self.db, DeleteSchedule(schedule)))
+
+    def duplicate_schedule(self, request: DuplicateSchedule) -> SavedSchedule:
+        return unwrap(duplicate_schedule(self.db, request))
+
+    def post_due(self, request: PostDue) -> PostedDue:
+        return unwrap(post_due(self.db, request))
 
 
 def book_server(db: DbSQLite) -> LocalBookServer:

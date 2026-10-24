@@ -67,10 +67,14 @@ from .due_review import (
     DueResolution,
     DueScheduleReview,
     NextOccurrence,
+    PostDue,
+    PostedDue,
+    PostedOccurrence,
     ResolveDue,
     ResolveNext,
     next_occurrence,
     pending_due_review,
+    post_due,
     resolve_due,
     resolve_next,
 )
@@ -216,6 +220,10 @@ from .transactions import (
 )
 
 __all__ = [
+    "PostDue",
+    "PostedDue",
+    "PostedOccurrence",
+    "post_due",
     "AdvanceDays",
     "SetAdvanceDays",
     "advance_days",

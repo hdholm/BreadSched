@@ -1008,6 +1008,9 @@ class TestBookServerBoundaries:
         "set_advance_days",
         "advance_days",
         "find_schedule",
+        "delete_schedule",
+        "duplicate_schedule",
+        "post_due",
     }
 
     @pytest.mark.parametrize(
@@ -1015,9 +1018,23 @@ class TestBookServerBoundaries:
         [
             (
                 "cli/plan_commands.py",
-                ("cmd_due_review", "cmd_scheduled_next", "cmd_scheduled_advance"),
+                ("cmd_due_review", "cmd_scheduled_next", "cmd_scheduled_advance", "cmd_scheduled"),
             ),
-            ("web/schedule_resource.py", ("due_review", "due_review_resolve", "scheduled_next")),
+            (
+                "web/schedule_resource.py",
+                (
+                    "due_review",
+                    "due_review_resolve",
+                    "scheduled_next",
+                    "scheduled_delete",
+                    "scheduled_duplicate",
+                    "post_scheduled",
+                ),
+            ),
+            (
+                "gui/views/scheduled.py",
+                ("resolve_next", "_on_post_clicked"),
+            ),
         ],
     )
     def test_moved_adapters_call_the_book_server(self, relative, functions):
@@ -1040,7 +1057,15 @@ class TestBookServerBoundaries:
                 for node in ast.walk(body)
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
             }
-            assert reached & {"due_review", "resolve_due", "resolve_next", "find_schedule"}, name
+            assert reached & {
+                "due_review",
+                "resolve_due",
+                "resolve_next",
+                "find_schedule",
+                "delete_schedule",
+                "duplicate_schedule",
+                "post_due",
+            }, name
 
     def test_the_book_server_package_has_no_interface_imports(self):
         for module in modules_under("api"):

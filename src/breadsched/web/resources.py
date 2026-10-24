@@ -156,7 +156,10 @@ from .v1_resource import (
     due_review_post,
     next_get,
     next_post,
+    post_due_post,
     redo_post,
+    schedule_delete,
+    schedule_duplicate,
     schedule_lookup,
     undo_post,
 )
@@ -513,6 +516,9 @@ V1_ROUTES: tuple[tuple[str, str, Callable[..., object]], ...] = (
     ("POST", "/schedules/{handle}/next", next_post),
     ("GET", "/schedules/{handle}/advance-days", advance_days_get),
     ("PATCH", "/schedules/{handle}/advance-days", advance_days_patch),
+    ("DELETE", "/schedules/{handle}", schedule_delete),
+    ("POST", "/schedules/{handle}/duplicate", schedule_duplicate),
+    ("POST", "/post-due", post_due_post),
     ("POST", "/undo", undo_post),
     ("POST", "/redo", redo_post),
 )

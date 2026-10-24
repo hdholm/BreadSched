@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING
 
-from ..api.views import due_review_json, next_occurrence_json, resolution_json
+from ..api.views import due_review_json, next_occurrence_json, posted_due_json, resolution_json
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import estimates, schedule
 from ..gen.lib import (
@@ -21,16 +21,14 @@ from ..gen.lib import (
     scheduled_occurrence_preview,
 )
 from ..gen.services import (
-    DeleteSchedule,
     DueDecision,
     DuplicateSchedule,
     FixedScheduleInput,
     FormulaScheduleInput,
+    PostDue,
     ResolveDue,
     ResolveNext,
     SaveFixedSchedule,
-    delete_schedule,
-    duplicate_schedule,
     save_fixed_schedule,
     save_formula_schedule,
 )
@@ -528,27 +526,15 @@ def scheduled_formula_save(api: Api, payload: dict) -> dict:
 def scheduled_delete(api: Api, payload: dict) -> dict:
     """Remove one definition while retaining its posted ledger history."""
     handle = str(payload.get("handle") or "").strip()
-    result = delete_schedule(api.db, DeleteSchedule(handle))
-    if not result.ok:
-        raise service_error(result.errors[0])
-    deleted = result.value
-    assert deleted is not None
+    deleted = api.book.delete_schedule(handle)
     return {"handle": deleted.handle, "name": deleted.name}
 
 
 def scheduled_duplicate(api: Api, payload: dict) -> dict:
     """Save an independent exact copy, including editor-protected fields."""
-    result = duplicate_schedule(
-        api.db,
-        DuplicateSchedule(
-            str(payload.get("handle") or ""),
-            name=str(payload.get("name") or ""),
-        ),
+    copied = api.book.duplicate_schedule(
+        DuplicateSchedule(str(payload.get("handle") or ""), name=str(payload.get("name") or ""))
     )
-    if not result.ok:
-        raise service_error(result.errors[0])
-    copied = result.value
-    assert copied is not None
     return {"handle": copied.handle, "name": copied.name}
 
 
@@ -707,11 +693,8 @@ def due_review_resolve(api: Api, payload: dict) -> dict:
 
 
 def post_scheduled(api: Api) -> dict:
-    posted = schedule.post_due(api.db, only_auto=False)
-    return {
-        "posted": len(posted),
-        "transactions": [{"date": t.post_date, "description": t.description} for t in posted],
-    }
+    """Post every due occurrence, automatic or not, without a review."""
+    return posted_due_json(api.book.post_due(PostDue(only_automatic=False)))
 
 
 def _days(payload: dict, key: str) -> int | None:

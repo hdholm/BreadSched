@@ -29,9 +29,13 @@ from ..gen.services import (
     AdvanceDays,
     DueResolution,
     DueScheduleReview,
+    DuplicateSchedule,
     NextOccurrence,
+    PostDue,
+    PostedDue,
     ResolveDue,
     ResolveNext,
+    SavedSchedule,
     SetAdvanceDays,
 )
 from .contract import ApiError, to_json
@@ -41,7 +45,9 @@ from .views import (
     change_from_json,
     due_review_from_json,
     next_occurrence_from_json,
+    posted_due_from_json,
     resolution_from_json,
+    saved_schedule_from_json,
 )
 
 __all__ = ["HttpBookClient"]
@@ -216,3 +222,15 @@ class HttpBookClient:
         body = {"advance_days": request.advance_days, "remind_days": request.remind_days}
         path = f"/schedules/{quote(request.schedule, safe='')}/advance-days"
         return advance_days_from_json(self._call("PATCH", path, body=body))
+
+    def delete_schedule(self, schedule: str) -> SavedSchedule:
+        path = f"/schedules/{quote(schedule, safe='')}"
+        return saved_schedule_from_json(self._call("DELETE", path))
+
+    def duplicate_schedule(self, request: DuplicateSchedule) -> SavedSchedule:
+        path = f"/schedules/{quote(request.handle, safe='')}/duplicate"
+        return saved_schedule_from_json(self._call("POST", path, body={"name": request.name}))
+
+    def post_due(self, request: PostDue) -> PostedDue:
+        body = {"as_of": request.as_of, "all": not request.only_automatic}
+        return posted_due_from_json(self._call("POST", "/post-due", body=body))

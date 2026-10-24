@@ -24,13 +24,10 @@ from ...gen.engine.schedule import AccountPaymentDefinition
 from ...gen.lib import ScheduledTransaction
 from ...gen.lib.money import Money
 from ...gen.services import (
-    DeleteSchedule,
     DueDecision,
     DuplicateSchedule,
     ResolveNext,
     ServiceError,
-    delete_schedule,
-    duplicate_schedule,
 )
 from ...presentation import service_error_message
 from ..gi_setup import Gio, Gtk, Pango
@@ -582,12 +579,11 @@ class ScheduleDuplicateDialog(BoundedWindow):
         self.status.set_text("" if valid else "Give the copied schedule a name.")
 
     def _confirm(self, _button) -> None:
-        result = duplicate_schedule(
-            self.db,
-            DuplicateSchedule(self.scheduled.handle, name=self.name_entry.get_text()),
-        )
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        request = DuplicateSchedule(self.scheduled.handle, name=self.name_entry.get_text())
+        try:
+            book_server(self.db).duplicate_schedule(request)
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return
         self.close()
@@ -631,9 +627,10 @@ class ScheduleDeleteDialog(BoundedWindow):
         box.append(buttons)
 
     def _confirm(self, _button) -> None:
-        result = delete_schedule(self.db, DeleteSchedule(self.scheduled.handle))
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).delete_schedule(self.scheduled.handle)
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return
         self.close()
