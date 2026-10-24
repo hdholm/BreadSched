@@ -73,6 +73,7 @@ from ..gen.services import (
 )
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
+from ..gen.services.budget_jars import JarsView
 from ..gen.services.categorization import (
     AddRule,
     AppliedCategories,
@@ -591,6 +592,18 @@ class HttpBookClient:
             f"/splits/{quote(request.split, safe='')}/cleared"
         )
         return ReconcileState(self._call("POST", path)["state"])
+
+    # ------------------------------------------------------------- budget jars
+
+    def budget_jars(
+        self,
+        start: date,
+        end: date,
+        period: ReportingPeriod = ReportingPeriod.MONTH,
+        today: date | None = None,
+    ) -> JarsView:
+        params = {"start": start, "end": end, "period": ReportingPeriod(period).value}
+        return from_data(JarsView, self._call("GET", "/budget-jars", {**params, "today": today}))
 
     # ------------------------------------------------------- investment reports
 

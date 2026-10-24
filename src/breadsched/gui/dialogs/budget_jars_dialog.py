@@ -4,16 +4,10 @@ from __future__ import annotations
 
 from datetime import date
 
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.activity import ReportingPeriod
-from ...gen.engine.budget_jars import (
-    JarPeriod,
-    JarsReport,
-    budget_jars,
-    currency_labels,
-    jar_charts,
-    jar_kind_label,
-)
+from ...gen.engine.budget_jars import JarPeriod, JarsReport, jar_kind_label
 from ...plugins.export.report_layout import budget_jars_layout
 from .. import printing
 from ..gi_setup import Gtk
@@ -125,14 +119,15 @@ class BudgetJarsDialog(BoundedWindow):
 
     def refresh(self) -> None:
         """Recompute the jars for the range and grouping and redraw them."""
-        self.report = report = budget_jars(self.db, self.start, self.end, period=self.period)
+        self.view = book_server(self.db).budget_jars(self.start, self.end, self.period)
+        self.report = report = self.view.report
         child = self.body.get_first_child()
         while child is not None:
             following = child.get_next_sibling()
             self.body.remove(child)
             child = following
-        labels = currency_labels(self.db, report)
-        charts = jar_charts(report, labels)
+        labels = self.view.labels()
+        charts = self.view.charts()
         self.charts: list[ModelChartView] = []
         self.account_rows: list[Gtk.Expander] = []
         for total in report.totals:
@@ -175,7 +170,7 @@ class BudgetJarsDialog(BoundedWindow):
             self.body.append(warning)
 
     def layout(self):
-        return budget_jars_layout(self.report, currency_labels(self.db, self.report))
+        return budget_jars_layout(self.report, self.view.labels())
 
     def print_report(self) -> None:
         printing.print_document(self, self.layout())

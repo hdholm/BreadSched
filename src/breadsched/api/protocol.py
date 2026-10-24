@@ -62,6 +62,7 @@ from ..gen.services import (
 )
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
+from ..gen.services.budget_jars import JarsView
 from ..gen.services.categorization import (
     AddRule,
     AppliedCategories,
@@ -346,6 +347,18 @@ class BookApi(Protocol):
 
     def toggle_cleared(self, request: ToggleCleared) -> ReconcileState:
         """Cycle one split between not cleared and cleared."""
+        ...
+
+    # ------------------------------------------------------------- budget jars
+
+    def budget_jars(
+        self,
+        start: date,
+        end: date,
+        period: ReportingPeriod = ReportingPeriod.MONTH,
+        today: date | None = None,
+    ) -> JarsView:
+        """Every jar's fills, draws, and level from ``start`` through ``end``."""
         ...
 
     # ------------------------------------------------------- investment reports

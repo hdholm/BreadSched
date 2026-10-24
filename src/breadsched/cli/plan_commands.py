@@ -739,22 +739,21 @@ def cmd_estimate(args: argparse.Namespace) -> int:
 
 
 def cmd_jars(args: argparse.Namespace) -> int:
-    from ..gen.engine.budget_jars import budget_jars, currency_labels, jar_kind_label
+    from ..gen.engine.budget_jars import jar_kind_label
 
     start = parse_date(args.start)
     end = parse_date(args.end)
     if start is None or end is None or end < start:
         raise CommandError("--start and --end are dates, and --end is not before --start")
-    db = open_book(args.book, "r")
-    try:
-        report = budget_jars(
-            db,
+    with book_api(args, "r") as book:
+        view = book.budget_jars(
             start,
             end,
-            period=activity.ReportingPeriod(args.period),
-            today=parse_date(args.as_of) or date.today(),
+            activity.ReportingPeriod(args.period),
+            parse_date(args.as_of) or date.today(),
         )
-        labels = currency_labels(db, report)
+        report = view.report
+        labels = view.labels()
 
         def period_data(item) -> dict[str, object]:
             return {
@@ -839,8 +838,6 @@ def cmd_jars(args: argparse.Namespace) -> int:
         lines.extend(f"note: {problem}" for problem in report.problems)
         emit(payload, args, "\n".join(lines) if lines else "No jars in this range.")
         return 0
-    finally:
-        db.close()
 
 
 def register(add: AddCommand) -> None:
@@ -965,6 +962,7 @@ def register(add: AddCommand) -> None:
         help="display grouping; does not change event dates",
     )
     jars.add_argument("--as-of", help="income after this date is expected (default today)")
+    add_server_options(jars)
     jars.set_defaults(func=cmd_jars)
 
     activity_cmd = add(

@@ -362,6 +362,13 @@ mnemonics instead of the book. They serve the command line's `holdings`,
 pages, and GTK's dialogs of the same names; an unknown account is a 404 rather than a
 report with no sales.
 
+Budget jars followed the same way: `budget_jars(start, end, period, today)`
+(`GET /api/v1/budget-jars`) returns a view from `gen/services/budget_jars` carrying
+the engine's report with its currency mnemonics, from which each interface takes its
+labels and charts; a range that ends before it starts is refused there
+(`jars.range.invalid`). It serves the command line's `jars`, the browser's Budget
+jars page, and GTK's Budget Jars dialog.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

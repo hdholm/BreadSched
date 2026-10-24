@@ -1181,6 +1181,9 @@ class TestBookServerBoundaries:
         "tax_years",
         "tax_year_view",
         "currency_labels",
+        "budget_jars",
+        "jars_view",
+        "jar_charts",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1317,6 +1320,7 @@ class TestBookServerBoundaries:
         "holdings",
         "realized_gains",
         "tax_year",
+        "budget_jars",
     }
 
     @pytest.mark.parametrize(
@@ -1372,6 +1376,9 @@ class TestBookServerBoundaries:
             ("gui/dialogs/holdings_dialog.py", ("refresh",)),
             ("gui/dialogs/realized_gains_dialog.py", ("__init__", "refresh")),
             ("gui/dialogs/tax_year_dialog.py", ("refresh",)),
+            ("cli/plan_commands.py", ("cmd_jars",)),
+            ("web/jars_resource.py", ("jars_report",)),
+            ("gui/dialogs/budget_jars_dialog.py", ("refresh",)),
             ("cli/quote_commands.py", ("cmd_quotes", "cmd_quote_source")),
             ("web/loan_resource.py", ("loan_options", "loan_preview", "loan_save")),
             ("gui/dialogs/loan_dialog.py", ("_on_save",)),

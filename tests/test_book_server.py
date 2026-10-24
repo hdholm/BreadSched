@@ -1619,6 +1619,28 @@ def test_every_response_names_the_revision_and_a_stale_write_is_refused(remote):
     assert client.set_advance_days(SetAdvanceDays(sched.handle, remind_days=6)).remind_days == 6
 
 
+def test_budget_jars_read_alike(target, book):
+    from test_budget_jars import TODAY, _groceries, _pay
+
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.engine.activity import ReportingPeriod
+    from breadsched.gen.engine.budget_jars import budget_jars
+    from breadsched.gen.services.budget_jars import jars_view
+
+    api, db = target.api, target.db
+    _pay(db, book)
+    _groceries(db, book)
+    start, end = date(2026, 6, 1), date(2026, 7, 31)
+    view = api.budget_jars(start, end, ReportingPeriod.MONTH, TODAY)
+    assert to_data(view) == to_data(jars_view(db, start, end, "month", TODAY).value)
+    assert to_data(view.report) == to_data(budget_jars(db, start, end, today=TODAY))
+    assert [jar.name for jar in view.report.jars]
+    assert len(view.charts()) == 2 * len(view.report.accounts)
+    with pytest.raises(ApiError) as refused:
+        api.budget_jars(end, start)
+    assert (refused.value.status, refused.value.code) == (400, "jars.range.invalid")
+
+
 def test_investment_reports_read_alike(target, book):
     from test_specific_lots import _fund, _trade
 
@@ -1793,6 +1815,14 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("PATCH", "/api/v1/attachment-folders", {}, 400, "request.invalid"),
         ("GET", "/api/v1/net-worth?start=2026-01-01", None, 400, "query.missing"),
         ("GET", "/api/v1/holdings?as_of=soon", None, 400, "query.date.invalid"),
+        ("GET", "/api/v1/budget-jars?start=2026-01-01", None, 400, "query.missing"),
+        (
+            "GET",
+            "/api/v1/budget-jars?start=2026-02-01&end=2026-01-01",
+            None,
+            400,
+            "jars.range.invalid",
+        ),
         ("GET", "/api/v1/realized-gains?year=last", None, 400, "query.integer.invalid"),
         ("GET", "/api/v1/realized-gains?account=nope", None, 404, "account.not_found"),
         ("GET", "/api/v1/tax-year?year=x", None, 400, "query.integer.invalid"),

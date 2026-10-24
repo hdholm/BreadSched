@@ -107,6 +107,7 @@ from ..gen.services import (
 from ..gen.services import advance_days as stored_advance_days
 from ..gen.services import assumptions as assumption_service
 from ..gen.services import attachments as attachment_service
+from ..gen.services import budget_jars as jars_service
 from ..gen.services import claims as claim_service
 from ..gen.services import expense_explorer as expense_service
 from ..gen.services import investment_reports as investment_report_service
@@ -122,6 +123,7 @@ from ..gen.services import scenarios as scenario_service
 from ..gen.services import tax as tax_service
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
+from ..gen.services.budget_jars import JarsView
 from ..gen.services.categorization import (
     AddRule,
     AppliedCategories,
@@ -659,6 +661,17 @@ class LocalBookServer:
 
     def net_worth_change(self, start: date, end: date, today: date | None = None) -> NetWorthChange:
         return unwrap(net_worth_service.query_net_worth_change(self.db, start, end, today))
+
+    # ------------------------------------------------------------- budget jars
+
+    def budget_jars(
+        self,
+        start: date,
+        end: date,
+        period: ReportingPeriod = ReportingPeriod.MONTH,
+        today: date | None = None,
+    ) -> JarsView:
+        return unwrap(jars_service.jars_view(self.db, start, end, period, today))
 
     # ------------------------------------------------------- investment reports
 

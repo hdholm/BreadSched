@@ -391,6 +391,8 @@ _SERVICE_MESSAGES = {
     "net_worth.range.invalid": "The net worth history must not end before it starts",
     "net_worth.range.future": "A net worth change cannot start after today",
     "net_worth.period.invalid": "Group net worth history by month, quarter, or year",
+    "jars.range.invalid": "The jars must not end before they start",
+    "jars.period.invalid": "Group the jars by month, quarter, or year",
     "schedule.name.required": "Give the scheduled transaction a name",
     "schedule.not_found": "The scheduled transaction no longer exists",
     "transaction.reference.ambiguous": (

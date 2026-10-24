@@ -38,7 +38,7 @@ currency, and the goal account's commodity); totals never add currencies togethe
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
@@ -562,13 +562,12 @@ def jar_kind_label(kind: str) -> str:
     return _KIND_LABELS.get(kind, kind)
 
 
-def currency_labels(db: DbSQLite, report: JarsReport) -> dict[str | None, str]:
-    """The mnemonic of each currency the report uses."""
-    labels: dict[str | None, str] = {}
-    for handle in {bundle.currency for bundle in report.accounts}:
-        commodity = db.get_commodity(handle) if handle else None
-        labels[handle] = commodity.mnemonic if commodity is not None else (handle or "")
-    return labels
+def currency_labels(report: JarsReport, mnemonics: Mapping[str, str]) -> dict[str | None, str]:
+    """The mnemonic of each currency the report uses (its handle, or "", when unnamed)."""
+    return {
+        handle: mnemonics.get(handle, handle) if handle else ""
+        for handle in {bundle.currency for bundle in report.accounts}
+    }
 
 
 def jar_charts(report: JarsReport, labels: dict[str | None, str]) -> tuple[ChartModel, ...]:
