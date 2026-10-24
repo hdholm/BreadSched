@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import date
 
+from ..api.local import book_server
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
     ledger,
@@ -20,15 +21,12 @@ from ..gen.lib import (
 )
 from ..gen.services import (
     DeleteAccount,
-    DeleteTransaction,
     SaveAccount,
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
     delete_account,
-    delete_transaction,
     save_account,
-    save_transaction,
     transaction_currency,
 )
 from ..presentation import (
@@ -276,8 +274,7 @@ def cmd_add(args: argparse.Namespace) -> int:
         when = parse_date(args.date) or date.today()
         amount = Money(args.amount)
         currency = transaction_currency(db)
-        result = save_transaction(
-            db,
+        saved = book_server(db).save_transaction(
             SaveTransaction(
                 TransactionInput(
                     post_date=when,
@@ -295,10 +292,6 @@ def cmd_add(args: argparse.Namespace) -> int:
                 )
             ),
         )
-        if not result.ok:
-            raise CommandError(service_error_message(result.errors[0]))
-        saved = result.value
-        assert saved is not None
         emit(
             {"handle": saved.handle, "date": when, "amount": amount},
             args,
@@ -346,16 +339,13 @@ def cmd_edit(args: argparse.Namespace) -> int:
                 split.value = amount if split is positive else -amount
                 split.quantity = split.value
 
-        result = save_transaction(
-            db,
+        book_server(db).save_transaction(
             SaveTransaction(
                 _transaction_input(db, target),
                 existing_handle=target.handle,
                 source=target,
-            ),
+            )
         )
-        if not result.ok:
-            raise CommandError(service_error_message(result.errors[0]))
 
         emit(
             {"handle": target.handle, "date": target.post_date, "description": target.description},
@@ -372,9 +362,7 @@ def cmd_delete(args: argparse.Namespace) -> int:
     try:
         target = find_transaction(db, args.transaction)
         description = target.describe()
-        result = delete_transaction(db, DeleteTransaction(target.handle))
-        if not result.ok:
-            raise CommandError(service_error_message(result.errors[0]))
+        book_server(db).delete_transaction(target.handle)
         emit({"deleted": target.handle}, args, f"Deleted {description}")
         return 0
     finally:

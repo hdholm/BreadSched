@@ -34,6 +34,7 @@ from breadsched.gen.lib import (
     ScheduledTransaction,
     Transaction,
 )
+from breadsched.gen.lib.amount import Amount
 from breadsched.gen.sample_book import create_sample_book
 from breadsched.gen.services import (
     DueDecision,
@@ -44,8 +45,11 @@ from breadsched.gen.services import (
     ResolveDue,
     ResolveNext,
     SaveFixedSchedule,
+    SaveTransaction,
     ServiceError,
     SetAdvanceDays,
+    TransactionInput,
+    TransactionSplitInput,
 )
 from breadsched.web.server import serve
 
@@ -353,6 +357,70 @@ def test_saving_a_formula_schedule_from_an_editor_alike(target, book):
     assert [split.formula for split in stored.splits] == ["payment + 25", "-(payment + 25)"]
 
 
+def _transaction(book, description="Shop", amount="12.00", **overrides):
+    values = dict(
+        post_date=date(2026, 10, 2),
+        description=description,
+        currency=book.currency,
+        splits=(
+            TransactionSplitInput(
+                book.groceries, Amount(Money(amount), book.currency), memo="milk"
+            ),
+            TransactionSplitInput(book.checking, Amount(-Money(amount), book.currency)),
+        ),
+        tags=("food",),
+    )
+    values.update(overrides)
+    return TransactionInput(**values)
+
+
+def test_saving_and_deleting_a_transaction_alike(target, book):
+    from breadsched.gen.services import transaction_currency
+
+    book.currency = transaction_currency(target.db)
+    api = target.api
+    start = api.revision
+    added = api.save_transaction(SaveTransaction(_transaction(book)))
+    stored = target.db.get_transaction(added.handle)
+    assert (added.description, added.post_date) == ("Shop", date(2026, 10, 2))
+    assert stored.tags == ["food"] and stored.splits[0].memo == "milk"
+
+    edited = api.save_transaction(
+        SaveTransaction(
+            _transaction(book, description="Corner shop", amount="15.50"),
+            existing_handle=added.handle,
+            source=stored,
+        )
+    )
+    assert edited.handle == added.handle
+    stored = target.db.get_transaction(added.handle)
+    assert stored.description == "Corner shop"
+    assert sorted(split.value for split in stored.splits) == [Money("-15.50"), Money("15.50")]
+
+    removed = api.delete_transaction(added.handle)
+    assert removed.description == "Corner shop"
+    assert target.db.get_transaction(added.handle) is None
+    assert api.revision == start + 3
+
+    before = _snapshot(target.db)
+    unbalanced = _transaction(
+        book,
+        splits=(
+            TransactionSplitInput(book.groceries, Amount(Money("5"), book.currency)),
+            TransactionSplitInput(book.checking, Amount(Money("-4"), book.currency)),
+        ),
+    )
+    for call, status in (
+        (lambda: api.save_transaction(SaveTransaction(unbalanced)), 400),
+        (lambda: api.save_transaction(SaveTransaction(_transaction(book), "missing")), 404),
+        (lambda: api.delete_transaction("missing"), 404),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert refused.value.status == status
+    assert _snapshot(target.db) == before
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -563,6 +631,21 @@ def test_one_error_envelope_and_one_leaf_encoding():
     ) == {"m": "1.50", "d": "2026-01-02", "x": "0.25", "k": "a", "t": [1]}
     with pytest.raises(TypeError):
         to_json(object())
+
+
+def test_money_is_written_exactly_and_reads_back_unchanged():
+    from breadsched.api.contract import exact_money
+
+    for text, written in (
+        ("1800", "1800.00"),
+        ("-0.5", "-0.50"),
+        ("12.3456", "12.3456"),
+        ("0.000001", "0.000001"),
+    ):
+        assert exact_money(Money(text)) == written
+        assert Money(written) == Money(text)
+    third = Money(1, 3)
+    assert exact_money(third) == "1/3" and Money(exact_money(third)) == third
 
 
 def test_the_web_error_is_the_book_api_error():

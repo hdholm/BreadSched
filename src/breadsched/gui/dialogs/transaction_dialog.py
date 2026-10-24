@@ -31,6 +31,8 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import attachments as attachment_engine
 from ...gen.engine import escrow, fsa_claims, ledger
@@ -46,17 +48,14 @@ from ...gen.lib import (
 )
 from ...gen.services import (
     ClaimAttachment,
-    DeleteTransaction,
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
     attach_file,
     attach_location,
     build_transaction,
-    delete_transaction,
     detach,
     relink,
-    save_transaction,
     transaction_currency,
 )
 from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry, suggest_entry
@@ -841,9 +840,10 @@ class TransactionDialog(BoundedWindow):
         except ValueError as exc:
             self.status.set_text(str(exc))
             return
-        result = save_transaction(self.db, request)
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).save_transaction(request)
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return
         self.saved = True
@@ -852,9 +852,10 @@ class TransactionDialog(BoundedWindow):
     def _on_delete(self, _button) -> None:
         if not self.editing or self.transaction is None:
             return
-        result = delete_transaction(self.db, DeleteTransaction(self.transaction.handle))
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).delete_transaction(self.transaction.handle)
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return
         self.close()

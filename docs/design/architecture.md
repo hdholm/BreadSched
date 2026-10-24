@@ -212,6 +212,12 @@ So far only scheduled transactions go through it:
 - GTK's due review, Enter Next and Skip Next, schedule delete and duplicate, and
   the schedule editor's save, through `api.local.book_server`.
 
+Transaction saves and deletes go through it too, from GTK's register, transaction
+editor, and Posted transactions, the browser's register and entry form, and the
+command line's `add`, `edit`, and `delete`. Over `/api/v1`, a save travels in
+`api.transaction_codec`'s form; money in the book API's JSON is always exact
+(`api.contract.exact_money`).
+
 The browser's schedule save routes go through the server as well. Over `/api/v1`,
 an editor's typed request travels in `api.schedule_codec`'s lossless, strictly
 decoded JSON form.

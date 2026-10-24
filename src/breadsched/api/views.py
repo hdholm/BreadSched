@@ -21,6 +21,7 @@ from ..gen.services import (
     PostedDue,
     PostedOccurrence,
     SavedSchedule,
+    SavedTransaction,
 )
 from .contract import to_json
 from .protocol import Change
@@ -40,6 +41,8 @@ __all__ = [
     "resolution_json",
     "saved_schedule_from_json",
     "saved_schedule_json",
+    "saved_transaction_from_json",
+    "saved_transaction_json",
 ]
 
 
@@ -200,4 +203,19 @@ def posted_due_from_json(payload: dict[str, Any]) -> PostedDue:
             )
             for item in payload["transactions"]
         )
+    )
+
+
+def saved_transaction_json(saved: SavedTransaction) -> dict[str, Any]:
+    """The transaction a save or delete acted on."""
+    return {
+        "transaction": saved.handle,
+        "date": to_json(saved.post_date),
+        "description": saved.description,
+    }
+
+
+def saved_transaction_from_json(payload: dict[str, Any]) -> SavedTransaction:
+    return SavedTransaction(
+        payload["transaction"], date.fromisoformat(payload["date"]), payload["description"]
     )
