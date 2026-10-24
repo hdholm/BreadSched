@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from ...api import ApiError  # noqa: E402
+from ...api.local import book_server  # noqa: E402
 from ...gen.db.sqlite import DbSQLite  # noqa: E402
 from ...gen.lib import Scenario  # noqa: E402
-from ...gen.services import SaveScenario, save_scenario  # noqa: E402
-from ...presentation import service_error_message  # noqa: E402
+from ...gen.services import SaveScenario  # noqa: E402
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.help import help_row
@@ -78,7 +79,8 @@ class SaveScenarioDialog(BoundedWindow):
             self.status.add_css_class("negative")
             return
 
-        existing = self.db.get_scenario_by_name(name)
+        book = book_server(self.db)
+        existing = next((item for item in book.scenarios() if item.name == name), None)
         target = existing or self.scenario.clone()
         target.name = name
         target.description = self.description_entry.get_text().strip()
@@ -96,12 +98,12 @@ class SaveScenarioDialog(BoundedWindow):
         target.assumption_periods = list(self.scenario.assumption_periods)
         target.schedule_overrides = list(self.scenario.schedule_overrides)
 
-        result = save_scenario(
-            self.db,
-            SaveScenario(target, existing_handle=existing.handle if existing else None),
-        )
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            book.save_scenario(
+                SaveScenario(target, existing_handle=existing.handle if existing else None)
+            )
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return
         self.close()

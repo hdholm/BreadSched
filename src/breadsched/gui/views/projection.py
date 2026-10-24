@@ -19,6 +19,8 @@ from datetime import date
 from decimal import Decimal
 from time import monotonic
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import projection
 from ...gen.engine.completeness import combine
@@ -28,7 +30,6 @@ from ...gen.engine.projection_result import projection_balances_chart, projectio
 from ...gen.lib import Assumptions, Scenario  # noqa: E402
 from ...gen.services import (
     SaveScenarioAssumptions,
-    save_scenario_assumptions,
 )
 from ...gen.utils.cancellation import OperationCancelled
 from ...gen.utils.logs import get_logger  # noqa: E402
@@ -710,10 +711,13 @@ class ProjectionView(BaseView):
             return
         scenario = self._collect()
         if self._scenario_handle is not None:
-            save_scenario_assumptions(
-                self.db,
-                SaveScenarioAssumptions(scenario, existing_handle=self._scenario_handle),
-            )
+            try:
+                book_server(self.db).save_scenario_assumptions(
+                    SaveScenarioAssumptions(scenario, existing_handle=self._scenario_handle)
+                )
+            except ApiError:
+                # The controls constrain the values; a vanished scenario refreshes.
+                pass
             return
 
         from ..dialogs.scenario_dialog import SaveScenarioDialog

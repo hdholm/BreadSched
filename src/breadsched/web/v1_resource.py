@@ -57,6 +57,13 @@ Resources so far, all under ``/api/v1``:
   ``GET /reimbursement-proposals`` (``as_of``, ``account``) and
   ``POST /reimbursement-proposals/accept``; ``POST /scenarios/{handle}/reimbursements``.
   These read and write the generic typed form (``api.typed_codec``).
+* ``GET /scenarios`` (stored) and ``GET /scenarios/lookup`` (``reference``: handle or
+  name); ``POST /scenarios`` saves (``SaveScenario``) and ``POST /scenario-assumptions``
+  saves after checking assumptions; ``POST /scenarios/duplicate``;
+  ``DELETE /scenarios/{handle}``; ``POST /scenarios/{handle}/suppressed-schedules``;
+  ``GET /drawdown-accounts``, ``POST /drawdowns``, and
+  ``DELETE /scenarios/{handle}/drawdowns/{drawdown}``; ``GET`` and ``POST /assumptions``;
+  ``POST /scenarios/{handle}/periods`` and ``DELETE /scenarios/{handle}/periods/{index}``.
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -95,6 +102,7 @@ from ..api.views import (
     tag_counts_json,
 )
 from ..gen.lib.money import Money
+from ..gen.lib.scenario import AssumptionPeriod
 from ..gen.services import (
     BalanceQuery,
     DueDecision,
@@ -105,6 +113,7 @@ from ..gen.services import (
     ResolveNext,
     SetAdvanceDays,
 )
+from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.categorization import AddRule
 from ..gen.services.receivables import RecordWriteOff, SaveReceivable
 from ..gen.services.reconciliations import (
@@ -113,13 +122,33 @@ from ..gen.services.reconciliations import (
     UpdateReconciliation,
 )
 from ..gen.services.savings_goals import AllocateToGoal, SaveSavingsGoal, SetGoalOverride
-from ..gen.services.scenarios import SetReimbursementOverride
+from ..gen.services.scenarios import (
+    DuplicateScenario,
+    SaveDrawdown,
+    SaveScenario,
+    SetReimbursementOverride,
+    SuppressScenarioSchedule,
+)
 from .context import Api
 
 if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "assumption_period_delete",
+    "assumption_period_save",
+    "base_assumptions_get",
+    "base_assumptions_save",
+    "drawdown_accounts_get",
+    "drawdown_remove",
+    "drawdown_save",
+    "scenario_assumptions_save",
+    "scenario_delete_v1",
+    "scenario_duplicate_v1",
+    "scenario_lookup",
+    "scenario_save_v1",
+    "scenario_suppress",
+    "scenarios_get",
     "receivable_candidates_get",
     "receivable_clear_dispute",
     "receivable_delete",
@@ -751,3 +780,89 @@ def reimbursement_override(api: Api, path: Path, body: dict[str, Any]) -> dict:
     change = from_data(_Expectation, body, "request")
     request = SetReimbursementOverride(path["handle"], change.receivable, change.amount, change.on)
     return {"scenario": to_data(api.book.set_reimbursement_override(request))}
+
+
+@dataclass(frozen=True, slots=True)
+class _Suppress:
+    source_schedule: str
+
+
+@dataclass(frozen=True, slots=True)
+class _Period:
+    period: AssumptionPeriod
+    index: int | None = None
+
+
+def scenarios_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return {"scenarios": to_data(api.book.scenarios())}
+
+
+def scenario_lookup(api: Api, _path: Path, query: QueryParams) -> dict:
+    reference = query.text("reference", required=True) or ""
+    query.finish()
+    return {"scenario": to_data(api.book.find_scenario(reference))}
+
+
+def scenario_save_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.save_scenario(from_data(SaveScenario, body, "request")))
+
+
+def scenario_assumptions_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(SaveScenarioAssumptions, body, "request")
+    return to_data(api.book.save_scenario_assumptions(request))
+
+
+def scenario_duplicate_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.duplicate_scenario(from_data(DuplicateScenario, body, "request")))
+
+
+def scenario_delete_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return to_data(api.book.delete_scenario(path["handle"]))
+
+
+def scenario_suppress(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    source = from_data(_Suppress, body, "request").source_schedule
+    return to_data(
+        api.book.suppress_scenario_schedule(SuppressScenarioSchedule(path["handle"], source))
+    )
+
+
+def drawdown_accounts_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    sources, targets = api.book.drawdown_accounts()
+    return {"sources": sources, "targets": targets}
+
+
+def drawdown_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return {"drawdown": to_data(api.book.save_drawdown(from_data(SaveDrawdown, body, "request")))}
+
+
+def drawdown_remove(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return {"drawdown": to_data(api.book.remove_drawdown(path["handle"], path["drawdown"]))}
+
+
+def base_assumptions_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return {"assumptions": to_data(api.book.base_assumptions())}
+
+
+def base_assumptions_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(SaveBaseAssumptions, body, "request")
+    return {"assumptions": to_data(api.book.save_base_assumptions(request))}
+
+
+def assumption_period_save(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    change = from_data(_Period, body, "request")
+    return to_data(api.book.save_assumption_period(path["handle"], change.period, change.index))
+
+
+def assumption_period_delete(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    try:
+        index = int(path["index"])
+    except ValueError:
+        raise ValueError("index must be a whole number") from None
+    return to_data(api.book.delete_assumption_period(path["handle"], index))

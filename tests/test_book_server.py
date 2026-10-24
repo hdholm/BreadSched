@@ -971,6 +971,76 @@ def test_receivables_alike(target, book):
     assert api.delete_receivable(saved.handle) == saved.handle
 
 
+def test_scenarios_and_assumptions_alike(target, book):
+    from breadsched.gen.lib import Scenario
+    from breadsched.gen.lib.money import Rate
+    from breadsched.gen.lib.scenario import AssumptionPeriod, Assumptions
+    from breadsched.gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
+    from breadsched.gen.services.scenarios import (
+        DuplicateScenario,
+        SaveDrawdown,
+        SaveScenario,
+        SuppressScenarioSchedule,
+    )
+
+    api, db = target.api, target.db
+    base = api.save_base_assumptions(SaveBaseAssumptions(Assumptions(income_growth="0.041")))
+    assert api.base_assumptions().income_growth == base.income_growth == Rate("0.041")
+
+    lean = Scenario(name=" Lean ", years=3)
+    saved = api.save_scenario(SaveScenario(lean))
+    assert saved.name == "Lean"
+    stored = api.find_scenario("Lean")
+    assert api.find_scenario(saved.handle).serialize() == stored.serialize()
+    stored.years = 4
+    api.save_scenario_assumptions(SaveScenarioAssumptions(stored, existing_handle=stored.handle))
+    assert db.get_scenario(saved.handle).years == 4
+
+    copy = api.duplicate_scenario(DuplicateScenario(api.find_scenario(saved.handle)))
+    assert copy.name != "Lean" and {s.name for s in api.scenarios()} == {"Lean", copy.name}
+
+    [rent] = db.iter_scheduled()
+    api.suppress_scenario_schedule(SuppressScenarioSchedule(saved.handle, rent.handle))
+    assert [o.source_schedule for o in db.get_scenario(saved.handle).schedule_overrides] == [
+        rent.handle
+    ]
+
+    sources, targets = api.drawdown_accounts()
+    assert book.brokerage in sources and book.checking in targets
+    drawdown = api.save_drawdown(
+        SaveDrawdown(saved.handle, book.brokerage, book.checking, date(2027, 1, 1), Money("12000"))
+    )
+    assert [d.handle for d in db.get_scenario(saved.handle).drawdowns] == [drawdown.handle]
+    assert api.remove_drawdown(saved.handle, drawdown.handle).handle == drawdown.handle
+
+    period = AssumptionPeriod(start=date(2027, 1, 1), expense_inflation=Rate("0.05"))
+    api.save_assumption_period(saved.handle, period)
+    assert len(db.get_scenario(saved.handle).assumption_periods) == 1
+    api.delete_assumption_period(saved.handle, 0)
+    assert db.get_scenario(saved.handle).assumption_periods == []
+
+    before = sorted(repr(s.serialize()) for s in db.iter_scenarios())
+    for call, status, code in (
+        (lambda: api.save_scenario(SaveScenario(Scenario(name="Lean"))), 400, None),
+        (lambda: api.find_scenario("Nowhere"), 404, "scenario.not_found"),
+        (lambda: api.delete_scenario("missing"), 404, "scenario.not_found"),
+        (lambda: api.delete_assumption_period(saved.handle, 3), 404, None),
+        (
+            lambda: api.save_drawdown(
+                SaveDrawdown(saved.handle, book.checking, book.checking, date(2027, 1, 1))
+            ),
+            400,
+            "scenario.drawdown.account",
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert refused.value.status == status
+        assert code is None or refused.value.code == code
+    assert sorted(repr(s.serialize()) for s in db.iter_scenarios()) == before
+    assert api.delete_scenario(copy.handle).name == copy.name
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -1176,6 +1246,11 @@ def test_v1_refuses_what_it_does_not_serve(remote):
             "request.invalid",
         ),
         ("DELETE", "/api/v1/receivables/missing", None, 404, "receivable.not_found"),
+        ("POST", "/api/v1/scenarios", {"scenario": "Lean"}, 400, "request.invalid"),
+        ("POST", "/api/v1/scenarios", {}, 400, "request.invalid"),
+        ("POST", "/api/v1/drawdowns", {"scenario": "x"}, 400, "request.invalid"),
+        ("DELETE", "/api/v1/scenarios/x/periods/first", None, 400, "request.invalid"),
+        ("GET", "/api/v1/scenarios/lookup", None, 400, "query.missing"),
     ]
     for method, route, body, status, code in cases:
         got, payload, _ = _raw(remote, method, route, body)

@@ -207,6 +207,23 @@ Receivables were the first area moved with it, in all three interfaces:
 - **Still local:** `receivables --costs`, a Plan report, opens the book itself
   until the Plan's reports move.
 
+Scenarios and projection assumptions followed, with the typed codec carrying each
+scenario in its stored form:
+- **Reads:** `scenarios` (every scenario as stored), `find_scenario` (by handle or
+  name), `drawdown_accounts`, and `base_assumptions`.
+- **Writes:** saving a scenario (and saving it after checking its assumptions),
+  duplicating, deleting, leaving a baseline schedule out, saving and removing a
+  drawdown, saving the base assumptions, and saving or deleting a dated assumption
+  period. Base assumptions live in the book's metadata, so the server names their
+  change `base-assumptions` itself.
+- **Interfaces:** the command line's `scenario` and `drawdown`; the browser's
+  scenario management, drawdown, period, and suppress routes; GTK's scenario,
+  scenario manager, and drawdown dialogs, the Plan view's suppress, the Projection
+  view's save, and the shared Base assumptions.
+- **Still local:** projecting, comparing, and the Plan read the book directly, and
+  the browser's scenario estimate editor (`save_fixed_scenario_schedule`) has not
+  moved.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.
