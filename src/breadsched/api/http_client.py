@@ -30,16 +30,19 @@ from ..gen.services import (
     DueResolution,
     DueScheduleReview,
     DuplicateSchedule,
+    FormulaScheduleInput,
     NextOccurrence,
     PostDue,
     PostedDue,
     ResolveDue,
     ResolveNext,
     SavedSchedule,
+    SaveFixedSchedule,
     SetAdvanceDays,
 )
 from .contract import ApiError, to_json
 from .protocol import Change, Listener
+from .schedule_codec import fixed_request_json, formula_request_json
 from .views import (
     advance_days_from_json,
     change_from_json,
@@ -234,3 +237,11 @@ class HttpBookClient:
     def post_due(self, request: PostDue) -> PostedDue:
         body = {"as_of": request.as_of, "all": not request.only_automatic}
         return posted_due_from_json(self._call("POST", "/post-due", body=body))
+
+    def save_fixed_schedule(self, request: SaveFixedSchedule) -> SavedSchedule:
+        found = self._call("POST", "/schedules/fixed", body=fixed_request_json(request))
+        return saved_schedule_from_json(found)
+
+    def save_formula_schedule(self, request: FormulaScheduleInput) -> SavedSchedule:
+        found = self._call("POST", "/schedules/formula", body=formula_request_json(request))
+        return saved_schedule_from_json(found)

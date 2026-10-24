@@ -24,12 +24,14 @@ from ..gen.services import (
     DueResolution,
     DueScheduleReview,
     DuplicateSchedule,
+    FormulaScheduleInput,
     NextOccurrence,
     PostDue,
     PostedDue,
     ResolveDue,
     ResolveNext,
     SavedSchedule,
+    SaveFixedSchedule,
     ServiceError,
     SetAdvanceDays,
     delete_schedule,
@@ -40,6 +42,8 @@ from ..gen.services import (
     post_due,
     resolve_due,
     resolve_next,
+    save_fixed_schedule,
+    save_formula_schedule,
     set_advance_days,
 )
 from ..gen.services import advance_days as stored_advance_days
@@ -149,6 +153,12 @@ class LocalBookServer:
 
     def post_due(self, request: PostDue) -> PostedDue:
         return unwrap(post_due(self.db, request))
+
+    def save_fixed_schedule(self, request: SaveFixedSchedule) -> SavedSchedule:
+        return unwrap(save_fixed_schedule(self.db, request))
+
+    def save_formula_schedule(self, request: FormulaScheduleInput) -> SavedSchedule:
+        return unwrap(save_formula_schedule(self.db, request))
 
 
 def book_server(db: DbSQLite) -> LocalBookServer:

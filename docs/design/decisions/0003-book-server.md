@@ -68,6 +68,16 @@ and `breadsched.api.views`:
 - GTK's due review, Enter Next and Skip Next, and schedule delete and duplicate
   (phase 5, below).
 
+Saving from the schedule editors (`save_fixed_schedule`, `save_formula_schedule`)
+goes through the server from the browser and GTK too. Over HTTP, the editors'
+typed requests travel in `api.schedule_codec`'s strict JSON form:
+- **Encoding:** every field is kept, with the stored forms of recurrences, dated
+  amount changes, and the schedule an edit is based on.
+- **Decoding:** a value of the wrong type is a 400, never a guess.
+- **Cost:** this codec is the measure of moving a large editor. It is about 300
+  lines for the fixed and formula schedule requests, each field written once each
+  way. Transactions, scenarios, and the Plan will need the same.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

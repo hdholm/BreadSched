@@ -16,6 +16,8 @@ Resources so far, all under ``/api/v1``:
 * ``GET`` and ``PATCH /schedules/{handle}/advance-days``.
 * ``DELETE /schedules/{handle}`` and ``POST /schedules/{handle}/duplicate`` (``name``).
 * ``POST /post-due`` (``as_of``, ``all``) – post what is due without a review.
+* ``POST /schedules/fixed`` and ``POST /schedules/formula`` – save from an editor;
+  the body is ``api.schedule_codec``'s form of the typed request.
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -25,6 +27,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
+from ..api.schedule_codec import fixed_request_from_json, formula_request_from_json
 from ..api.views import (
     advance_days_json,
     due_review_json,
@@ -57,6 +60,8 @@ __all__ = [
     "post_due_post",
     "schedule_delete",
     "schedule_duplicate",
+    "schedule_save_fixed",
+    "schedule_save_formula",
     "redo_post",
     "schedule_lookup",
     "undo_post",
@@ -192,3 +197,11 @@ def post_due_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:
         raise ValueError("all must be true or false")
     request = PostDue(as_of=_optional_date(body, "as_of"), only_automatic=not everything)
     return posted_due_json(api.book.post_due(request))
+
+
+def schedule_save_fixed(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return saved_schedule_json(api.book.save_fixed_schedule(fixed_request_from_json(body)))
+
+
+def schedule_save_formula(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return saved_schedule_json(api.book.save_formula_schedule(formula_request_from_json(body)))

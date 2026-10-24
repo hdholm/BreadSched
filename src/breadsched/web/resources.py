@@ -161,6 +161,8 @@ from .v1_resource import (
     schedule_delete,
     schedule_duplicate,
     schedule_lookup,
+    schedule_save_fixed,
+    schedule_save_formula,
     undo_post,
 )
 
@@ -519,6 +521,8 @@ V1_ROUTES: tuple[tuple[str, str, Callable[..., object]], ...] = (
     ("DELETE", "/schedules/{handle}", schedule_delete),
     ("POST", "/schedules/{handle}/duplicate", schedule_duplicate),
     ("POST", "/post-due", post_due_post),
+    ("POST", "/schedules/fixed", schedule_save_fixed),
+    ("POST", "/schedules/formula", schedule_save_formula),
     ("POST", "/undo", undo_post),
     ("POST", "/redo", redo_post),
 )
