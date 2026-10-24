@@ -12,8 +12,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from ..api.views import due_review_json, next_occurrence_json, posted_due_json, resolution_json
-from ..gen.db.sqlite import DbSQLite
-from ..gen.engine import estimates, schedule
+from ..gen.engine import schedule
 from ..gen.lib import (
     InvestmentActivityKind,
     PlanningFlowKind,
@@ -30,6 +29,8 @@ from ..gen.services import (
     ResolveNext,
     SaveFixedSchedule,
 )
+from ..gen.services.historical_estimates import AcceptHistoricalEstimate
+from ..gen.services.schedule_editing import ScheduleEditorView
 from .controls import input_money
 from .schedule_controls import (
     frequency_key,
@@ -40,6 +41,7 @@ from .schedule_controls import (
     parse_skipped,
     parse_split_amount_changes,
     schedule_recurrence,
+    simple_parts,
     simple_schedule_parts,
     weekend_key,
 )
@@ -537,12 +539,7 @@ def historical_estimates(
     scenario_handle: str | None = None,
 ) -> dict:
     """Return reviewable category estimates inferred from closed history."""
-    proposals = estimates.propose_historical_estimates(
-        api.db,
-        months=months,
-        min_active_months=min_active_months,
-        scenario_handle=scenario_handle,
-    )
+    found = api.book.historical_estimates(months, min_active_months, scenario_handle)
     return {
         "months": months,
         "proposals": [
@@ -571,7 +568,7 @@ def historical_estimates(
                 "variability": item.variability,
                 "reason": item.reason,
                 "evidence": item.evidence.serialize(),
-                "draft": historical_estimate_draft(api.db, item),
+                "draft": historical_estimate_draft(draft),
                 "planning_flow": (
                     item.planning_flow.value if item.planning_flow is not None else None
                 ),
@@ -579,22 +576,16 @@ def historical_estimates(
                     item.investment_activity.value if item.investment_activity is not None else None
                 ),
             }
-            for item in proposals
+            for item, draft in zip(found.proposals, found.drafts, strict=True)
         ],
-        "targets": [
-            {"handle": None, "name": "Base"},
-            *[
-                {"handle": scenario.handle, "name": scenario.name}
-                for scenario in api.db.iter_scenarios()
-            ],
-        ],
+        "targets": [{"handle": target.handle, "name": target.name} for target in found.targets],
     }
 
 
-def historical_estimate_draft(db: DbSQLite, proposal: estimates.HistoricalEstimateProposal) -> dict:
+def historical_estimate_draft(view: ScheduleEditorView) -> dict:
     """Translate the engine-owned draft once for every interactive client."""
-    draft = estimates.draft_historical_estimate(db, proposal)
-    parts = simple_schedule_parts(db, draft)
+    draft = view.schedule
+    parts = simple_parts(view)
     if parts is None:
         raise ValueError("historical estimate draft is not safely editable")
     frequency = frequency_key(draft.recurrence)
@@ -641,24 +632,16 @@ def historical_estimate_accept(api: Api, payload: dict) -> dict:
     proposal_key = str(payload.get("key") or "")
     category = str(payload.get("category") or "")
     scenario = str(payload.get("scenario") or "").strip() or None
-    proposals = estimates.propose_historical_estimates(
-        api.db,
-        months=months,
-        min_active_months=minimum,
-        scenario_handle=scenario,
+    accepted = api.book.accept_historical_estimate(
+        AcceptHistoricalEstimate(
+            key=proposal_key,
+            category=category,
+            months=months,
+            min_active_months=minimum,
+            scenario=scenario,
+        )
     )
-    proposal = next(
-        (
-            item
-            for item in proposals
-            if item.key == proposal_key or (not proposal_key and item.category == category)
-        ),
-        None,
-    )
-    if proposal is None:
-        raise ValueError("historical estimate proposal is no longer available")
-    handle = estimates.accept_historical_estimate(api.db, proposal, scenario_handle=scenario)
-    return {"handle": handle, "category": proposal.category_name}
+    return {"handle": accepted.handle, "category": accepted.category_name}
 
 
 def due_review(api: Api) -> dict:

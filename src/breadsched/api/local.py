@@ -121,6 +121,7 @@ from ..gen.services import budget_jars as jars_service
 from ..gen.services import claims as claim_service
 from ..gen.services import expense_explorer as expense_service
 from ..gen.services import gnucash_writeback as writeback_service
+from ..gen.services import historical_estimates as estimate_service
 from ..gen.services import investment_reports as investment_report_service
 from ..gen.services import loans as loan_service
 from ..gen.services import lots as lot_service
@@ -162,6 +163,11 @@ from ..gen.services.entry_input import EntryAccount, EntryAmount, ReadEntryTrade
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
 from ..gen.services.expense_explorer import ExpenseExplorer
 from ..gen.services.gnucash_writeback import ApplyWriteback, WritebackApplied, WritebackPlan
+from ..gen.services.historical_estimates import (
+    AcceptedEstimate,
+    AcceptHistoricalEstimate,
+    HistoricalEstimatesView,
+)
 from ..gen.services.import_review import (
     HeldImportChange,
     HeldImportResolution,
@@ -785,6 +791,24 @@ class LocalBookServer:
 
     def net_worth_change(self, start: date, end: date, today: date | None = None) -> NetWorthChange:
         return unwrap(net_worth_service.query_net_worth_change(self.db, start, end, today))
+
+    # ----------------------------------------------------- historical estimates
+
+    def historical_estimates(
+        self,
+        months: int = 12,
+        min_active_months: int = 3,
+        scenario: str | None = None,
+        as_of: date | None = None,
+    ) -> HistoricalEstimatesView:
+        return unwrap(
+            estimate_service.historical_estimates(
+                self.db, months, min_active_months, scenario, as_of
+            )
+        )
+
+    def accept_historical_estimate(self, request: AcceptHistoricalEstimate) -> AcceptedEstimate:
+        return unwrap(estimate_service.accept_historical_estimate(self.db, request))
 
     # ---------------------------------------------------------------- activity
 

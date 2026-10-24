@@ -152,3 +152,26 @@ def test_an_unsupported_value_is_a_programming_error():
         to_data(object())
     with pytest.raises(TypeError):
         from_data(complex, "1j")
+
+
+@dataclass(frozen=True)
+class _Statistic:
+    confidence: float
+    weight: float = 1.0
+
+
+def test_a_float_statistic_round_trips_as_a_number():
+    """A statistic (never an amount) reads back as the same float."""
+    import json
+
+    value = _Statistic(0.1 + 0.2, 3)
+    data = json.loads(json.dumps(to_data(value)))
+    assert data == {"confidence": 0.30000000000000004, "weight": 3}
+    assert from_data(_Statistic, data) == value
+    assert from_data(_Statistic, {"confidence": 1}) == _Statistic(1.0)
+    with pytest.raises(ValueError):
+        from_data(_Statistic, {"confidence": True})
+    with pytest.raises(ValueError):
+        from_data(_Statistic, {"confidence": "0.5"})
+    with pytest.raises(TypeError):
+        to_data(_Statistic(float("nan")))

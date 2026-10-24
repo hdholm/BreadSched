@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import estimates
 from ..gi_setup import Gtk
@@ -83,19 +85,22 @@ class HistoricalEstimatesDialog(BoundedWindow):
 
     def _reload(self) -> None:
         self._clear_rows()
-        proposals = estimates.propose_historical_estimates(
-            self.db,
-            months=self.months.get_value_as_int(),
-            scenario_handle=self._scenario_handle(),
-        )
+        try:
+            found = book_server(self.db).historical_estimates(
+                self.months.get_value_as_int(), scenario=self._scenario_handle()
+            )
+        except ApiError as error:
+            self.status.set_text(str(error))
+            return
+        proposals = found.proposals
         if not proposals:
             self.status.set_text("No categories have enough completed history yet.")
             return
         self.status.set_text(f"{len(proposals)} proposal(s)")
-        for proposal in proposals:
+        for proposal, draft in zip(proposals, found.drafts, strict=True):
             row = Gtk.Box(spacing=10)
             add = Gtk.Button(label="Review…")
-            add.connect("clicked", self._on_add, proposal)
+            add.connect("clicked", self._on_add, proposal, draft.schedule)
             row.append(add)
             label = Gtk.Label(
                 label=(
@@ -117,13 +122,12 @@ class HistoricalEstimatesDialog(BoundedWindow):
     def _on_target_changed(self, *_args) -> None:
         self._reload()
 
-    def _on_add(self, button, proposal) -> None:
+    def _on_add(self, button, proposal, base_draft) -> None:
         try:
             scenario_handle = self._scenario_handle()
             if scenario_handle is None:
                 from .schedule_dialog import ScheduleDialog
 
-                base_draft = estimates.draft_historical_estimate(self.db, proposal)
                 dialog = ScheduleDialog(self, self.db, source=base_draft, creating=True)
             else:
                 from .scenario_schedule_dialog import ScenarioScheduleDialog

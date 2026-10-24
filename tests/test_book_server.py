@@ -1620,6 +1620,68 @@ def test_every_response_names_the_revision_and_a_stale_write_is_refused(remote):
     assert client.set_advance_days(SetAdvanceDays(sched.handle, remind_days=6)).remind_days == 6
 
 
+def test_historical_estimates_are_proposed_and_accepted_alike(target, book):
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.engine import estimates
+    from breadsched.gen.services.historical_estimates import (
+        AcceptHistoricalEstimate,
+        historical_estimates,
+    )
+
+    api, db = target.api, target.db
+    with db.transaction("One-time history") as txn:
+        db.add_transaction(
+            Transaction.simple(date(2026, 3, 5), "One-time", book.utilities, book.checking, "600"),
+            txn,
+        )
+    as_of = date(2026, 4, 20)
+    found = api.historical_estimates(3, 1, as_of=as_of)
+    expected = historical_estimates(db, 3, 1, as_of=as_of).value
+    # Each draft is a new, unsaved schedule, so only its handle differs between calls.
+    assert to_data(found.proposals) == to_data(expected.proposals)
+    assert [to_data(item.projection) for item in found.drafts] == [
+        to_data(item.projection) for item in expected.drafts
+    ]
+    engine = estimates.propose_historical_estimates(db, as_of=as_of, months=3, min_active_months=1)
+    assert [item.key for item in found.proposals] == [item.key for item in engine]
+    index = next(i for i, item in enumerate(found.proposals) if item.category == book.utilities)
+    proposal, draft = found.proposals[index], found.drafts[index]
+    assert proposal.amount == Money("600")
+    assert draft.schedule.placeholder
+    assert draft.projection.editability.editable
+    assert set(draft.classes) == {split.account for split in draft.schedule.splits}
+    assert [target.name for target in found.targets][0] == "Base"
+
+    before = len(list(db.iter_scheduled()))
+    for request, code in (
+        (
+            AcceptHistoricalEstimate(key="nothing", months=3, min_active_months=1, as_of=as_of),
+            "estimate.proposal.unavailable",
+        ),
+        (
+            AcceptHistoricalEstimate(key=proposal.key, months=0, as_of=as_of),
+            "estimate.months.invalid",
+        ),
+        (
+            AcceptHistoricalEstimate(
+                key=proposal.key, months=3, min_active_months=1, scenario="gone", as_of=as_of
+            ),
+            "estimate.scenario.not_found",
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            api.accept_historical_estimate(request)
+        assert refused.value.code == code
+    assert len(list(db.iter_scheduled())) == before
+
+    accepted = api.accept_historical_estimate(
+        AcceptHistoricalEstimate(key=proposal.key, months=3, min_active_months=1, as_of=as_of)
+    )
+    stored = db.get_scheduled(accepted.handle)
+    assert stored is not None and stored.placeholder
+    assert accepted.category_name == proposal.category_name
+
+
 def test_plan_settings_are_kept_alike(target, book):
     from breadsched.gen.engine.activity import PlanMeasure, PlanSettings, ReportingPeriod
 
@@ -2125,6 +2187,8 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("GET", "/api/v1/holdings?as_of=soon", None, 400, "query.date.invalid"),
         ("GET", "/api/v1/dashboard?liquidity_days=soon", None, 400, "query.integer.invalid"),
         ("GET", "/api/v1/plan/settings", None, 400, "query.missing"),
+        ("GET", "/api/v1/historical-estimates?months=0", None, 400, "estimate.months.invalid"),
+        ("POST", "/api/v1/historical-estimates", {"months": "twelve"}, 400, "request.invalid"),
         ("PATCH", "/api/v1/plan/settings", {"start": "soon"}, 400, "request.invalid"),
         ("GET", "/api/v1/activity?start=2026-01-01", None, 400, "query.missing"),
         ("GET", "/api/v1/schedules/due?days=many", None, 400, "query.integer.invalid"),

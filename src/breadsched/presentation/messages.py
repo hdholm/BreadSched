@@ -409,6 +409,11 @@ _SERVICE_MESSAGES = {
     "schedule.name.required": "Give the scheduled transaction a name",
     "schedule.not_found": "The scheduled transaction no longer exists",
     "schedule.horizon.invalid": "The number of days ahead cannot be negative",
+    "estimate.months.invalid": "Look back between 1 and 1,200 months",
+    "estimate.active_months.invalid": "A category must be active in 1 to 1,200 months",
+    "estimate.scenario.not_found": "The scenario no longer exists",
+    "estimate.proposal.unavailable": "That historical estimate proposal is no longer available",
+    "estimate.draft.invalid": "That historical estimate can no longer be saved as proposed",
     "transaction.reference.ambiguous": (
         "More than one transaction matches; use more characters of its id"
     ),

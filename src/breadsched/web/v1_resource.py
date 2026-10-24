@@ -120,6 +120,9 @@ Resources so far, all under ``/api/v1``:
   ``number_format``), ``/entry/accounts`` (``text``, ``exclude``, ``limit``), and
   ``/entry/num`` (``account``, ``text``, ``step``) – reading what is typed into a
   register; none writes.
+* ``GET /historical-estimates`` (``months``, ``min_active_months``, ``scenario``,
+  ``as_of``) – proposals from closed history with their drafts; ``POST
+  /historical-estimates`` (``AcceptHistoricalEstimate``) – accept one.
 * ``GET /activity`` (``start``, ``end``, ``period``, ``as_of``) – plan versus
   actuals with the notes that disclose its quotes and exclusions.
 * ``GET /budget-jars`` (``start``, ``end``, ``period``, ``today``).
@@ -194,6 +197,7 @@ from ..gen.services.dashboard_config import SaveDashboardConfig
 from ..gen.services.entry_input import ReadEntryTrade
 from ..gen.services.exchange_rates import SaveExchangeRate
 from ..gen.services.gnucash_writeback import ApplyWriteback
+from ..gen.services.historical_estimates import AcceptHistoricalEstimate
 from ..gen.services.import_review import ResolveHeldImports
 from ..gen.services.loans import SaveLoan
 from ..gen.services.lots import SetSaleLots
@@ -231,6 +235,8 @@ __all__ = [
     "plan_settings_patch",
     "plan_v1",
     "activity_get",
+    "historical_estimate_accept_v1",
+    "historical_estimates_get",
     "book_summary_get",
     "book_verification_get",
     "entry_accounts_get",
@@ -1527,6 +1533,21 @@ def entry_num_get(api: Api, _path: Path, query: QueryParams) -> dict:
     query.finish()
     assert step is not None
     return {"num": api.book.next_num(account, text, step)}
+
+
+def historical_estimates_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    months = query.integer("months", default=12)
+    minimum = query.integer("min_active_months", default=3)
+    scenario = query.text("scenario")
+    as_of = query.iso_date("as_of")
+    query.finish()
+    assert months is not None and minimum is not None
+    return to_data(api.book.historical_estimates(months, minimum, scenario, as_of))
+
+
+def historical_estimate_accept_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(AcceptHistoricalEstimate, body, "request")
+    return to_data(api.book.accept_historical_estimate(request))
 
 
 def activity_get(api: Api, _path: Path, query: QueryParams) -> dict:

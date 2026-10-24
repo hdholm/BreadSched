@@ -16,7 +16,6 @@ from ..api.views import (
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
     activity,
-    estimates,
 )
 from ..gen.engine.payroll import PaycheckBreakdown, PayrollLine
 from ..gen.lib import (
@@ -614,8 +613,49 @@ def cmd_plan_unexpected(args: argparse.Namespace) -> int:
         return 0
 
 
+def _estimate_suggestions(args: argparse.Namespace) -> int:
+    """Category estimates proposed from closed history, through the book server."""
+    with book_api(args, "r") as book:
+        proposals = book.historical_estimates(
+            args.months, args.min_active_months, as_of=parse_date(args.as_of)
+        ).proposals
+        payload = [
+            {
+                "key": proposal.key,
+                "purpose": proposal.purpose_name,
+                "account": proposal.category_name,
+                "funding": proposal.funding_name,
+                "amount": proposal.display_amount,
+                "frequency": proposal.recurrence.describe(),
+                "confidence": proposal.confidence,
+                "evidence": proposal.evidence.serialize(),
+            }
+            for proposal in proposals
+        ]
+        rows = [
+            [
+                proposal.purpose_name,
+                proposal.display_amount.format(),
+                proposal.recurrence.describe(),
+                f"{proposal.confidence:.0%}",
+            ]
+            for proposal in proposals
+        ]
+        details = "\n\n".join(
+            f"{proposal.purpose_name}\n" + "\n".join(proposal.evidence.summary_lines())
+            for proposal in proposals
+        )
+        text = table(rows, ["purpose", "amount", "frequency", "confidence"], right={1})
+        if details:
+            text += "\n\n" + details
+        emit(payload, args, text)
+        return 0
+
+
 def cmd_estimate(args: argparse.Namespace) -> int:
     """Manage placeholder flows: recurring estimates that are never posted."""
+    if args.action == "suggest":
+        return _estimate_suggestions(args)
     db = open_book(
         args.book if args.action not in {"list", "suggest"} else args.book,
         "r" if args.action in {"list", "suggest"} else "w",
@@ -643,45 +683,6 @@ def cmd_estimate(args: argparse.Namespace) -> int:
                     }
                 )
             emit(payload, args, table(rows, ["name", "frequency", "amount", "enabled"], right={2}))
-            return 0
-
-        if args.action == "suggest":
-            proposals = estimates.propose_historical_estimates(
-                db,
-                as_of=parse_date(args.as_of),
-                months=args.months,
-                min_active_months=args.min_active_months,
-            )
-            payload = [
-                {
-                    "key": proposal.key,
-                    "purpose": proposal.purpose_name,
-                    "account": proposal.category_name,
-                    "funding": proposal.funding_name,
-                    "amount": proposal.display_amount,
-                    "frequency": proposal.recurrence.describe(),
-                    "confidence": proposal.confidence,
-                    "evidence": proposal.evidence.serialize(),
-                }
-                for proposal in proposals
-            ]
-            rows = [
-                [
-                    proposal.purpose_name,
-                    proposal.display_amount.format(),
-                    proposal.recurrence.describe(),
-                    f"{proposal.confidence:.0%}",
-                ]
-                for proposal in proposals
-            ]
-            details = "\n\n".join(
-                f"{proposal.purpose_name}\n" + "\n".join(proposal.evidence.summary_lines())
-                for proposal in proposals
-            )
-            text = table(rows, ["purpose", "amount", "frequency", "confidence"], right={1})
-            if details:
-                text += "\n\n" + details
-            emit(payload, args, text)
             return 0
 
         if args.action == "remove":
@@ -1000,6 +1001,7 @@ def register(add: AddCommand) -> None:
     estimate.add_argument("--as-of", help="analysis date for suggest (YYYY-MM-DD)")
     estimate.add_argument("--months", type=int, default=12, help="completed history months")
     estimate.add_argument("--min-active-months", type=int, default=3)
+    add_server_options(estimate)  # used by suggest
     estimate.set_defaults(func=cmd_estimate)
 
     payroll_cmd = add(

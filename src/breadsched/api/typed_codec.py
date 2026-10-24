@@ -5,7 +5,9 @@ few kinds of value, so instead of a hand-written codec per area this module writ
 any of them as JSON data (:func:`to_data`) and reads it back from its type alone
 (:func:`from_data`):
 
-* ``None``, ``bool``, ``int``, ``str``; ``Money`` exactly (``contract.exact_money``),
+* ``None``, ``bool``, ``int``, ``str``; a ``float`` (a statistic such as a confidence,
+  never an amount) as a JSON number, which reads back to the same float;
+  ``Money`` exactly (``contract.exact_money``),
   ``Decimal`` as text, dates and times in ISO form, a path as text, an enum as its
   value;
 * a record that has its own stored form (``serialize`` and ``from_dict``, such as
@@ -48,6 +50,10 @@ def _stored_form(kind: type) -> bool:
 def to_data(value: Any) -> Any:
     """``value`` as JSON data."""
     if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            raise TypeError("cannot write a non-finite float as JSON data")
         return value
     if isinstance(value, Money):
         return exact_money(value)
@@ -145,6 +151,10 @@ def from_data(kind: Any, data: Any, where: str = "value") -> Any:
         if not isinstance(data, str):
             raise _fail(where, "text")
         return data
+    if kind is float:
+        if isinstance(data, bool) or not isinstance(data, (int, float)):
+            raise _fail(where, "a number")
+        return float(data)
     if kind is Money:
         if not isinstance(data, str):
             raise _fail(where, "an amount in text")

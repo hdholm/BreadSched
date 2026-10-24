@@ -1206,6 +1206,9 @@ class TestBookServerBoundaries:
         "aggregate_value",
         "register_share_summary",
         "save_plan_settings",
+        "propose_historical_estimates",
+        "accept_historical_estimate",
+        "draft_historical_estimate",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1363,6 +1366,8 @@ class TestBookServerBoundaries:
         "register_view",
         "plan_settings",
         "save_plan_settings",
+        "historical_estimates",
+        "accept_historical_estimate",
     }
 
     @pytest.mark.parametrize(
@@ -1443,6 +1448,9 @@ class TestBookServerBoundaries:
             ("web/register_resource.py", ("register",)),
             ("web/plan_resource.py", ("plan_settings_save",)),
             ("gui/views/plan.py", ("set_db", "_on_apply")),
+            ("web/schedule_resource.py", ("historical_estimates", "historical_estimate_accept")),
+            ("gui/dialogs/historical_estimates_dialog.py", ("_reload",)),
+            ("cli/plan_commands.py", ("_estimate_suggestions",)),
             ("web/dashboard_resource.py", ("dashboard_report",)),
             ("gui/views/dashboard.py", ("refresh",)),
             ("cli/quote_commands.py", ("cmd_quotes", "cmd_quote_source")),

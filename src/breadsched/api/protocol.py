@@ -92,6 +92,11 @@ from ..gen.services.entry_input import EntryAccount, EntryAmount, ReadEntryTrade
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
 from ..gen.services.expense_explorer import ExpenseExplorer
 from ..gen.services.gnucash_writeback import ApplyWriteback, WritebackApplied, WritebackPlan
+from ..gen.services.historical_estimates import (
+    AcceptedEstimate,
+    AcceptHistoricalEstimate,
+    HistoricalEstimatesView,
+)
 from ..gen.services.import_review import (
     HeldImportChange,
     HeldImportResolution,
@@ -407,6 +412,22 @@ class BookApi(Protocol):
 
     def toggle_cleared(self, request: ToggleCleared) -> ReconcileState:
         """Cycle one split between not cleared and cleared."""
+        ...
+
+    # ----------------------------------------------------- historical estimates
+
+    def historical_estimates(
+        self,
+        months: int = 12,
+        min_active_months: int = 3,
+        scenario: str | None = None,
+        as_of: date | None = None,
+    ) -> HistoricalEstimatesView:
+        """Category estimates proposed from closed history, each with its draft."""
+        ...
+
+    def accept_historical_estimate(self, request: AcceptHistoricalEstimate) -> AcceptedEstimate:
+        """Save one current proposal as an ordinary Base or scenario estimate."""
         ...
 
     # ---------------------------------------------------------------- activity

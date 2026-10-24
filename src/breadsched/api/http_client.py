@@ -103,6 +103,11 @@ from ..gen.services.entry_input import EntryAccount, EntryAmount, ReadEntryTrade
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
 from ..gen.services.expense_explorer import ExpenseExplorer
 from ..gen.services.gnucash_writeback import ApplyWriteback, WritebackApplied, WritebackPlan
+from ..gen.services.historical_estimates import (
+    AcceptedEstimate,
+    AcceptHistoricalEstimate,
+    HistoricalEstimatesView,
+)
 from ..gen.services.import_review import (
     HeldImportChange,
     HeldImportResolution,
@@ -663,6 +668,29 @@ class HttpBookClient:
             f"/splits/{quote(request.split, safe='')}/cleared"
         )
         return ReconcileState(self._call("POST", path)["state"])
+
+    # ----------------------------------------------------- historical estimates
+
+    def historical_estimates(
+        self,
+        months: int = 12,
+        min_active_months: int = 3,
+        scenario: str | None = None,
+        as_of: date | None = None,
+    ) -> HistoricalEstimatesView:
+        params = {
+            "months": months,
+            "min_active_months": min_active_months,
+            "scenario": scenario,
+            "as_of": as_of,
+        }
+        return from_data(
+            HistoricalEstimatesView, self._call("GET", "/historical-estimates", params)
+        )
+
+    def accept_historical_estimate(self, request: AcceptHistoricalEstimate) -> AcceptedEstimate:
+        found = self._call("POST", "/historical-estimates", body=to_data(request))
+        return from_data(AcceptedEstimate, found)
 
     # ---------------------------------------------------------------- activity
 

@@ -438,6 +438,20 @@ grouping, measure, and scenarios. Saving now refuses a range that ends before it
 starts or a scenario the book no longer has (`plan.end.before_start`,
 `plan.scenario.not_found`, `plan.comparison.not_found`), so GTK's Plan reports the
 refusal instead of storing it. GTK's Plan view and the browser's Plan page use them.
+
+Historical estimates followed: `historical_estimates(months, min_active_months,
+scenario, as_of)` and `accept_historical_estimate` (`GET`/`POST
+/api/v1/historical-estimates`) come from `gen/services/historical_estimates`, which
+now checks an acceptance and names each refusal (`estimate.proposal.unavailable`,
+`estimate.months.invalid`, `estimate.scenario.not_found`, and so on); the browser
+used to write the engine's estimate directly. Each proposal travels with its draft as
+a schedule editor view (`gen/services/schedule_editing`: the definition, its edit
+projection, and the class of each account it uses), so the browser's simple-editor
+fields come from the view (`simple_parts`) rather than the book. The typed codec now
+carries a `float` (a statistic such as a confidence, never an amount) as a JSON
+number. They serve the command line's `estimate suggest`, the browser's historical
+estimates, and GTK's historical estimates dialog; GTK still opens the proposal in its
+own schedule editor, which reads the book.
 GTK's register still does; it needs the bulk reads and pushed changes the
 consequences below name before it can move without a round trip per row.
 
