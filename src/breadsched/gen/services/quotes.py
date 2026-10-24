@@ -35,13 +35,18 @@ __all__ = [
     "FetchedQuote",
     "Prefetched",
     "QuoteFailure",
+    "QuoteCommodity",
     "QuoteFetcher",
+    "QuotePlan",
     "QuoteRequest",
     "QuoteUpdate",
     "SetQuoteSource",
+    "StoreQuotes",
     "StoredQuote",
+    "quote_plan",
     "quote_requests",
     "set_quote_source",
+    "store_quotes",
     "update_quotes",
 ]
 
@@ -238,3 +243,62 @@ def set_quote_source(db: DbSQLite, request: SetQuoteSource) -> ServiceResult[str
         with db.transaction(f"Quote source for {commodity.mnemonic}") as txn:
             db.commit_commodity(commodity, txn)
     return ServiceResult.success(source)
+
+
+# ------------------------------------------------- reads and prefetched stores
+
+
+@dataclass(frozen=True, slots=True)
+class QuoteCommodity:
+    handle: str
+    mnemonic: str
+    fullname: str
+    currency: bool
+    quote_source: str
+    #: The book's reporting currency, which is never quoted against itself.
+    reporting: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class QuotePlan:
+    """Every commodity with its quote source, and what a fetch would ask for."""
+
+    commodities: tuple[QuoteCommodity, ...]
+    requests: tuple[QuoteRequest, ...]
+    #: The reporting currency's mnemonic, or ``None`` when the book has none.
+    currency: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class StoreQuotes:
+    """Quotes fetched where the network is (a worker, or the command line's process)."""
+
+    quotes: tuple[FetchedQuote, ...]
+    failures: tuple[QuoteFailure, ...] = ()
+    dry_run: bool = False
+
+
+def quote_plan(db: DbSQLite) -> QuotePlan:
+    reporting = reporting_currency_handle(db)
+    currency = db.get_commodity(reporting)
+    return QuotePlan(
+        tuple(
+            QuoteCommodity(
+                item.handle,
+                item.mnemonic,
+                item.fullname,
+                item.is_currency,
+                item.quote_source,
+                item.handle == reporting,
+            )
+            for item in sorted(db.iter_commodities(), key=lambda c: (c.is_currency, c.mnemonic))
+        ),
+        tuple(quote_requests(db)),
+        currency.mnemonic if currency is not None else None,
+    )
+
+
+def store_quotes(db: DbSQLite, request: StoreQuotes) -> ServiceResult[QuoteUpdate]:
+    """Store quotes fetched elsewhere; requests left unanswered are reported."""
+    prefetched = Prefetched(request.quotes, request.failures)
+    return update_quotes(db, prefetched, dry_run=request.dry_run)

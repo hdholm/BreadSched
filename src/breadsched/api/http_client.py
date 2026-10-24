@@ -91,6 +91,7 @@ from ..gen.services.import_review import (
 )
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
+from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
     AcceptedReimbursements,
     CandidateLine,
@@ -876,3 +877,16 @@ class HttpBookClient:
 
     def set_tax_marks(self, request: SetTaxMarks) -> TaxMarks:
         return from_data(TaxMarks, self._call("PATCH", "/tax-marks", body=to_data(request)))
+
+    # ------------------------------------------------------------------ quotes
+
+    def quote_plan(self) -> QuotePlan:
+        return from_data(QuotePlan, self._call("GET", "/quotes"))
+
+    def store_quotes(self, request: StoreQuotes) -> QuoteUpdate:
+        return from_data(QuoteUpdate, self._call("POST", "/quotes", body=to_data(request)))
+
+    def set_quote_source(self, request: SetQuoteSource) -> str:
+        path = f"/commodities/{quote(request.commodity, safe='')}/quote-source"
+        found = self._call("PATCH", path, body={"source": request.source})
+        return str(found["source"])
