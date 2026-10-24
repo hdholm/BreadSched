@@ -31,6 +31,7 @@ from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.loans import LoanTerms
 from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
 from ..gen.engine.planning import MatchCandidate, PlannedEvent
+from ..gen.engine.projection import Projection, ProjectionMonthDetail
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
@@ -991,6 +992,16 @@ class HttpBookClient:
             "rollover": rollover,
         }
         return from_data(ExpenseExplorer, self._call("POST", "/expense-explorer", body=body))
+
+    # -------------------------------------------------------------- projection
+
+    def project(self, scenario: Scenario) -> Projection:
+        found = self._call("POST", "/projection", body={"scenario": to_data(scenario)})
+        return from_data(Projection, found)
+
+    def projection_month(self, scenario: Scenario, month_index: int) -> ProjectionMonthDetail:
+        body = {"scenario": to_data(scenario), "month_index": month_index}
+        return from_data(ProjectionMonthDetail, self._call("POST", "/projection/month", body=body))
 
     # --------------------------------------------------------------- net worth
 

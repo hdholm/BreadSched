@@ -104,6 +104,8 @@ Resources so far, all under ``/api/v1``:
 * ``GET /reporting-currency`` – the reporting currency's code; ``POST /plan``
   (``PlanQuery``) and ``POST /expense-explorer`` (``query``, ``account``,
   ``period_index``, ``rollover``) – reads whose request is a typed query.
+* ``POST /projection`` (``scenario``, saved or a draft) and ``POST /projection/month``
+  (``scenario``, ``month_index``).
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -145,6 +147,7 @@ from ..gen.engine.activity import ReportingPeriod
 from ..gen.engine.fsa_claim_report import GROUPINGS
 from ..gen.engine.fsa_claims import FsaClaimStatus
 from ..gen.engine.loans import LoanTerms
+from ..gen.lib import Scenario
 from ..gen.lib.money import Money
 from ..gen.lib.scenario import AssumptionPeriod
 from ..gen.services import (
@@ -190,6 +193,8 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "projection_month_v1",
+    "projection_v1",
     "reporting_currency_get",
     "expense_explorer_v1",
     "plan_v1",
@@ -1378,3 +1383,23 @@ def expense_explorer_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
 def reporting_currency_get(api: Api, _path: Path, query: QueryParams) -> dict:
     query.finish()
     return {"currency": api.book.reporting_currency()}
+
+
+@dataclass(frozen=True, slots=True)
+class _Projected:
+    scenario: Scenario
+
+
+@dataclass(frozen=True, slots=True)
+class _ProjectedMonth:
+    scenario: Scenario
+    month_index: int
+
+
+def projection_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.project(from_data(_Projected, body, "request").scenario))
+
+
+def projection_month_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(_ProjectedMonth, body, "request")
+    return to_data(api.book.projection_month(request.scenario, request.month_index))

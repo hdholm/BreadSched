@@ -1500,6 +1500,28 @@ def test_plan_and_spending_alike(target, book):
     assert missing.value.status == 404
 
 
+def test_projection_alike(target, book):
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.engine import projection
+    from breadsched.gen.lib import Scenario
+
+    api, db = target.api, target.db
+    with db.transaction("Opening") as txn:
+        db.add_transaction(
+            Transaction.simple(date(2026, 9, 1), "Opening", book.checking, book.opening, "9000"),
+            txn,
+        )
+    draft = Scenario(name="Draft", start=date(2026, 10, 1), years=1)
+    result = api.project(draft)
+    assert result == projection.project(db, draft)
+    assert len(result.rows) == 12
+    month = api.projection_month(draft, 2)
+    assert to_data(month) == to_data(projection.explain_month(db, projection.project(db, draft), 2))
+    with pytest.raises(ApiError) as refused:
+        api.projection_month(draft, 99)
+    assert (refused.value.status, refused.value.code) == (404, "projection.month.not_found")
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -1724,6 +1746,7 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("PATCH", "/api/v1/attachment-folders", {}, 400, "request.invalid"),
         ("GET", "/api/v1/net-worth?start=2026-01-01", None, 400, "query.missing"),
         ("POST", "/api/v1/plan", {"period": "fortnight"}, 400, "request.invalid"),
+        ("POST", "/api/v1/projection", {}, 400, "request.invalid"),
         ("POST", "/api/v1/expense-explorer", {"rollover": "yes"}, 400, "request.invalid"),
         (
             "GET",

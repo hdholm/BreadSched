@@ -1303,6 +1303,8 @@ class TestBookServerBoundaries:
         "plan",
         "expense_explorer",
         "reporting_currency",
+        "project",
+        "projection_month",
     }
 
     @pytest.mark.parametrize(
@@ -1366,6 +1368,7 @@ class TestBookServerBoundaries:
             ("web/plan_resource.py", ("plan_report",)),
             ("web/expense_resource.py", ("expense_report",)),
             ("gui/views/plan.py", ("refresh",)),
+            ("cli/projection_commands.py", ("cmd_project", "cmd_compare")),
             ("gui/dialogs/net_worth_history_dialog.py", ("_update", "_explain")),
             (
                 "web/attachment_resource.py",

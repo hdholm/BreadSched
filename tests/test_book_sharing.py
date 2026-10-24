@@ -490,6 +490,18 @@ def test_net_worth_works_through_the_server_holding_the_book(running, book_path,
     assert json.loads(capsys.readouterr().out)["closing_on"] == "2026-02-28"
 
 
+def test_projection_works_through_the_server_holding_the_book(running, book_path, capsys):
+    path = str(book_path)
+    assert main(["project", path, "--years", "1", "--json"]) == 0
+    projected = json.loads(capsys.readouterr().out)
+    assert projected
+    assert main(["scenario", path, "save", "--name", "Lean", "--years", "1"]) == 0
+    assert main(["scenario", path, "save", "--name", "Rich", "--years", "1"]) == 0
+    capsys.readouterr()
+    assert main(["compare", path, "Lean", "Rich", "--json"]) == 0
+    assert isinstance(json.loads(capsys.readouterr().out), list)
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

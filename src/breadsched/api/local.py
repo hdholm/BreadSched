@@ -18,6 +18,7 @@ from datetime import date
 from pathlib import Path
 
 from ..gen.db.sqlite import DbSQLite
+from ..gen.engine import projection as projection_engine
 from ..gen.engine.activity import ReportingPeriod
 from ..gen.engine.currency import reporting_currency_label
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
@@ -25,6 +26,7 @@ from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.loans import LoanTerms
 from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
 from ..gen.engine.planning import MatchCandidate, PlannedEvent
+from ..gen.engine.projection import Projection, ProjectionMonthDetail
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
@@ -627,6 +629,19 @@ class LocalBookServer:
             self.db, query, account=account, period_index=period_index, rollover=rollover
         )
         return unwrap(found)
+
+    # -------------------------------------------------------------- projection
+
+    def project(self, scenario: Scenario) -> Projection:
+        return projection_engine.project(self.db, scenario)
+
+    def projection_month(self, scenario: Scenario, month_index: int) -> ProjectionMonthDetail:
+        result = projection_engine.project(self.db, scenario)
+        if not 0 <= month_index < len(result.rows):
+            raise ApiError(
+                404, "projection.month.not_found", ("month_index",), "no such projection month"
+            )
+        return projection_engine.explain_month(self.db, result, month_index)
 
     # --------------------------------------------------------------- net worth
 
