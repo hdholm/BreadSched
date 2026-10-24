@@ -281,6 +281,17 @@ class ChartLine:
     #: The ledger balance of the account and its descendants in their own
     #: commodity, or None when they hold unlike commodities.
     book_balance: Money | None
+    #: The account's own ledger balance, without its descendants.
+    own_balance: Money
+    #: How the account alone was valued (``ledger``, ``price``, ...), with the
+    #: quantity and price used and whether a quote it needs is missing.
+    valuation_source: str
+    quantity: Money | None
+    price: Money | None
+    missing_quote: bool
+    #: Mnemonics of the commodity held and the currency it was valued in.
+    commodity: str | None
+    currency: str | None
 
 
 def chart_of_accounts(
@@ -317,6 +328,13 @@ def chart_of_accounts(
                     valued.conversion_path,
                     valuation.quote_evidence(db, valued),
                     book_balance,
+                    ledger.balance_amount(db, account.handle, as_of=as_of).value,
+                    valued.source,
+                    valued.quantity,
+                    valued.price,
+                    valued.missing_quote,
+                    valued.commodity.mnemonic if valued.commodity is not None else None,
+                    valued.currency.mnemonic if valued.currency is not None else None,
                 )
             )
             walk(account.handle, depth + 1)

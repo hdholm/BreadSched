@@ -1016,6 +1016,42 @@ class TestBookServerBoundaries:
         "save_formula_schedule",
         "save_transaction",
         "delete_transaction",
+        "save_account",
+        "delete_account",
+        "find_account",
+        "find_transaction",
+        "editable_transaction",
+        "register_page",
+        "account_balance",
+        "balance_summary",
+        "account_record",
+        "account_records",
+        "chart_of_accounts",
+    }
+
+    #: Book server operations a moved adapter reaches through ``book``.
+    OPERATIONS = {
+        "due_review",
+        "resolve_due",
+        "resolve_next",
+        "find_schedule",
+        "delete_schedule",
+        "duplicate_schedule",
+        "post_due",
+        "save_fixed_schedule",
+        "save_formula_schedule",
+        "save_transaction",
+        "delete_transaction",
+        "find_account",
+        "find_transaction",
+        "register",
+        "account_balance",
+        "balance_summary",
+        "accounts",
+        "account",
+        "chart",
+        "save_account",
+        "delete_account",
     }
 
     @pytest.mark.parametrize(
@@ -1043,7 +1079,29 @@ class TestBookServerBoundaries:
                 ("resolve_next", "_on_post_clicked"),
             ),
             ("gui/dialogs/schedule_dialog.py", ("_on_save",)),
-            ("cli/ledger_commands.py", ("cmd_add", "cmd_edit", "cmd_delete")),
+            (
+                "cli/ledger_commands.py",
+                (
+                    "cmd_add",
+                    "cmd_edit",
+                    "cmd_delete",
+                    "cmd_register",
+                    "cmd_balance",
+                    "cmd_accounts",
+                    "cmd_account",
+                ),
+            ),
+            (
+                "web/account_resource.py",
+                (
+                    "accounts",
+                    "account_cost_basis_save",
+                    "account_type_save",
+                    "account_emergency_fund_save",
+                    "account_card_save",
+                    "account_fsa_years_save",
+                ),
+            ),
             ("web/register_entry_resource.py", ("register_entry_save",)),
             ("web/register_resource.py", ("transaction_add",)),
             ("gui/dialogs/posted_dialog.py", ("delete",)),
@@ -1070,19 +1128,17 @@ class TestBookServerBoundaries:
                 for node in ast.walk(body)
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
             }
-            assert reached & {
-                "due_review",
-                "resolve_due",
-                "resolve_next",
-                "find_schedule",
-                "delete_schedule",
-                "duplicate_schedule",
-                "post_due",
-                "save_fixed_schedule",
-                "save_formula_schedule",
-                "save_transaction",
-                "delete_transaction",
-            }, name
+            assert reached & self.OPERATIONS, name
+            # Nor do they compute what the server serves from the engines themselves.
+            engines = {
+                node.func.value.id
+                for node in ast.walk(body)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id in {"ledger", "valuation"}
+            }
+            assert not engines, (name, engines)
 
     def test_the_book_server_package_has_no_interface_imports(self):
         for module in modules_under("api"):

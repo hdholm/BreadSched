@@ -370,6 +370,13 @@ def chart_json(lines: list[ChartLine]) -> dict[str, Any]:
                 "conversion_path": line.conversion_path,
                 "quote_evidence": line.quote_evidence,
                 "book_balance": to_json(line.book_balance),
+                "own_balance": to_json(line.own_balance),
+                "valuation_source": line.valuation_source,
+                "quantity": to_json(line.quantity),
+                "price": to_json(line.price),
+                "missing_quote": line.missing_quote,
+                "commodity": line.commodity,
+                "currency": line.currency,
             }
             for line in lines
         ]
@@ -392,6 +399,13 @@ def chart_from_json(payload: dict[str, Any]) -> list[ChartLine]:
             row["conversion_path"],
             row["quote_evidence"],
             money(row["book_balance"]),
+            Money(row["own_balance"]),
+            row["valuation_source"],
+            money(row["quantity"]),
+            money(row["price"]),
+            bool(row["missing_quote"]),
+            row["commodity"],
+            row["currency"],
         )
         for row in payload["lines"]
     ]

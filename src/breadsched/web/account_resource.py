@@ -1,8 +1,9 @@
 """HTTP input and output for the chart of accounts, securities, and account settings.
 
-Account reads value each account through ``engine.valuation`` with its quote
-evidence; every account change goes through ``services.save_account``, so a
-rejected request leaves the stored account unchanged.
+The chart is the book server's (``Api.book.chart``): each account valued through
+``engine.valuation`` with its quote evidence. Every account settings change goes
+through the book server's ``save_account``, so a rejected request leaves the
+stored account unchanged.
 """
 
 from __future__ import annotations
@@ -10,10 +11,11 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING
 
-from ..gen.engine import ledger, valuation
+from ..api.contract import ApiError
+from ..gen.engine import valuation
 from ..gen.lib import Account, AccountType, FsaFundingYear
-from ..gen.services import SaveAccount, save_account
-from .controls import input_money, service_error
+from ..gen.services import SaveAccount
+from .controls import input_money
 
 if TYPE_CHECKING:
     from .context import Api
@@ -22,96 +24,88 @@ if TYPE_CHECKING:
 def accounts(api: Api) -> list[dict]:
     """The chart of accounts as a flat list carrying its own depth."""
     rows: list[dict] = []
-
-    def walk(parent: str | None, depth: int) -> None:
-        for account in api.db.child_accounts(parent):
-            valued = valuation.account_value(api.db, account)
-            rollup = valuation.aggregate_value(
-                api.db, accounts=[account, *api.db.descendants(account.handle)]
-            )
-            recursive = rollup.amount.value if rollup.amount is not None else None
-            try:
-                book_balance = ledger.balance_recursive_amount(api.db, account.handle).value
-            except TypeError as exc:
-                if "cannot combine unlike commodities" not in str(exc):
-                    raise
-                book_balance = None
-            rows.append(
-                {
-                    "handle": account.handle,
-                    "name": account.name,
-                    "full_name": api.db.full_name(account),
-                    "type": account.atype.value,
-                    "class": account.account_class.value,
-                    "placeholder": account.placeholder,
-                    "hidden": account.hidden,
-                    "code": account.code,
-                    "description": account.description,
-                    "notes": account.notes,
-                    "source_notes": account.source_notes,
-                    "commodity_scu": account.commodity_scu,
-                    "emergency_fund_eligible": account.emergency_fund_eligible,
-                    "emergency_fund_included": account.emergency_fund_included,
-                    "pays_in_full": account.card.pays_in_full,
-                    "usual_payment": (
-                        str(account.card.usual_payment.to_decimal())
-                        if account.card.usual_payment is not None
-                        else None
-                    ),
-                    "payment_day": account.card.payment_day,
-                    "card_payment_account": account.card.payment_account,
-                    "source_type": (
-                        account.source_type
-                        or (account.source_atype.value if account.source_atype else None)
-                    ),
-                    "source_guid": account.source_guid,
-                    "source_fields": [field.serialize() for field in account.source_fields],
-                    "fsa_dependent_care": account.fsa.dependent_care,
-                    "cost_basis_method": account.investment.cost_basis_method,
-                    "fsa_years": [
-                        {
-                            "start": year.start.isoformat(),
-                            "through": year.through.isoformat(),
-                            "election": str(year.election.to_decimal()),
-                            "runout_through": (
-                                year.runout_through.isoformat() if year.runout_through else None
-                            ),
-                            "carryover_limit": (
-                                str(year.carryover_limit.to_decimal())
-                                if year.carryover_limit is not None
-                                else None
-                            ),
-                            "grace_through": (
-                                year.grace_through.isoformat() if year.grace_through else None
-                            ),
-                        }
-                        for year in account.fsa.years
-                    ],
-                    "depth": depth,
-                    "balance": recursive,
-                    "rollup_missing_quotes": list(rollup.missing_quotes),
-                    "book_balance": book_balance,
-                    "own_balance": ledger.balance_amount(api.db, account.handle).value,
-                    "valuation_source": valued.source,
-                    "quantity": valued.quantity,
-                    "price": valued.price,
-                    "price_date": valued.price_date,
-                    "price_source": valued.price_source,
-                    "quote_age_days": valued.quote_age_days,
-                    "conversion_path": valued.conversion_path,
-                    "missing_quote": valued.missing_quote,
-                    "quote_evidence": valuation.quote_evidence(api.db, valued),
-                    "commodity": (
-                        valued.commodity.mnemonic if valued.commodity is not None else None
-                    ),
-                    "currency": (valued.currency.mnemonic if valued.currency is not None else None),
-                }
-            )
-            walk(account.handle, depth + 1)
-
-    root = api.db.root_account()
-    walk(root.handle if root else None, 0)
+    for line in api.book.chart(include_hidden=True):
+        account = line.record.account
+        rows.append(
+            {
+                "handle": account.handle,
+                "name": account.name,
+                "full_name": line.record.full_name,
+                "type": account.atype.value,
+                "class": account.account_class.value,
+                "placeholder": account.placeholder,
+                "hidden": account.hidden,
+                "code": account.code,
+                "description": account.description,
+                "notes": account.notes,
+                "source_notes": account.source_notes,
+                "commodity_scu": account.commodity_scu,
+                "emergency_fund_eligible": account.emergency_fund_eligible,
+                "emergency_fund_included": account.emergency_fund_included,
+                "pays_in_full": account.card.pays_in_full,
+                "usual_payment": (
+                    str(account.card.usual_payment.to_decimal())
+                    if account.card.usual_payment is not None
+                    else None
+                ),
+                "payment_day": account.card.payment_day,
+                "card_payment_account": account.card.payment_account,
+                "source_type": (
+                    account.source_type
+                    or (account.source_atype.value if account.source_atype else None)
+                ),
+                "source_guid": account.source_guid,
+                "source_fields": [field.serialize() for field in account.source_fields],
+                "fsa_dependent_care": account.fsa.dependent_care,
+                "cost_basis_method": account.investment.cost_basis_method,
+                "fsa_years": [
+                    {
+                        "start": year.start.isoformat(),
+                        "through": year.through.isoformat(),
+                        "election": str(year.election.to_decimal()),
+                        "runout_through": (
+                            year.runout_through.isoformat() if year.runout_through else None
+                        ),
+                        "carryover_limit": (
+                            str(year.carryover_limit.to_decimal())
+                            if year.carryover_limit is not None
+                            else None
+                        ),
+                        "grace_through": (
+                            year.grace_through.isoformat() if year.grace_through else None
+                        ),
+                    }
+                    for year in account.fsa.years
+                ],
+                "depth": line.depth,
+                "balance": line.balance,
+                "rollup_missing_quotes": list(line.missing_quotes),
+                "book_balance": line.book_balance,
+                "own_balance": line.own_balance,
+                "valuation_source": line.valuation_source,
+                "quantity": line.quantity,
+                "price": line.price,
+                "price_date": line.quote_date,
+                "price_source": line.quote_source,
+                "quote_age_days": line.quote_age_days,
+                "conversion_path": line.conversion_path,
+                "missing_quote": line.missing_quote,
+                "quote_evidence": line.quote_evidence,
+                "commodity": line.commodity,
+                "currency": line.currency,
+            }
+        )
     return rows
+
+
+def _stored(api: Api, handle: str) -> Account | None:
+    """The account as stored, through the book server, or None."""
+    try:
+        return api.book.account(handle).account
+    except ApiError as exc:
+        if exc.status == 404:
+            return None
+        raise
 
 
 def commodities(api: Api) -> dict:
@@ -186,7 +180,7 @@ def commodity_price_save(api: Api, payload: dict) -> dict:
 def account_cost_basis_save(api: Api, payload: dict) -> dict:
     """Choose how a security account's sales take cost: fifo or average."""
     handle = str(payload.get("handle", ""))
-    stored = api.db.get_account(handle)
+    stored = _stored(api, handle)
     if stored is None:
         raise KeyError(handle)
     if stored.atype not in {AccountType.INVESTMENT, AccountType.RETIREMENT}:
@@ -194,18 +188,13 @@ def account_cost_basis_save(api: Api, payload: dict) -> dict:
     source = Account.from_dict(stored.serialize())
     account = Account.from_dict(stored.serialize())
     account.investment.cost_basis_method = str(payload.get("method", "")).strip()
-    result = save_account(
-        api.db,
-        SaveAccount(account, existing_handle=account.handle, source=source),
-    )
-    if not result.ok:
-        raise service_error(result.errors[0])
+    api.book.save_account(SaveAccount(account, existing_handle=account.handle, source=source))
     return {"handle": account.handle, "method": account.investment.cost_basis_method}
 
 
 def account_type_save(api: Api, payload: dict) -> dict:
     handle = str(payload.get("handle", ""))
-    stored = api.db.get_account(handle)
+    stored = _stored(api, handle)
     if stored is None:
         raise KeyError(handle)
     # Edit a copy: a save the service refuses must leave the stored account as it was.
@@ -221,18 +210,13 @@ def account_type_save(api: Api, payload: dict) -> dict:
     account.atype = account_type
     if account_type is not AccountType.CREDIT:
         account.card.payment_account = None
-    result = save_account(
-        api.db,
-        SaveAccount(account, existing_handle=account.handle, source=source),
-    )
-    if not result.ok:
-        raise service_error(result.errors[0])
+    api.book.save_account(SaveAccount(account, existing_handle=account.handle, source=source))
     return {"handle": account.handle, "type": account.atype.value}
 
 
 def account_emergency_fund_save(api: Api, payload: dict) -> dict:
     handle = str(payload.get("handle", ""))
-    stored = api.db.get_account(handle)
+    stored = _stored(api, handle)
     if stored is None:
         raise KeyError(handle)
     # Edit a copy: a save the service refuses must leave the stored account as it was.
@@ -241,12 +225,7 @@ def account_emergency_fund_save(api: Api, payload: dict) -> dict:
     if not account.emergency_fund_eligible:
         raise ValueError("this account type is always excluded from the emergency fund")
     account.planning.emergency_fund = bool(payload.get("included"))
-    result = save_account(
-        api.db,
-        SaveAccount(account, existing_handle=account.handle, source=source),
-    )
-    if not result.ok:
-        raise service_error(result.errors[0])
+    api.book.save_account(SaveAccount(account, existing_handle=account.handle, source=source))
     return {
         "handle": account.handle,
         "emergency_fund_included": account.emergency_fund_included,
@@ -256,7 +235,7 @@ def account_emergency_fund_save(api: Api, payload: dict) -> dict:
 def account_card_save(api: Api, payload: dict) -> dict:
     """Persist the account-owned definition of a credit-card payment."""
     handle = str(payload.get("handle", ""))
-    stored = api.db.get_account(handle)
+    stored = _stored(api, handle)
     if stored is None:
         raise KeyError(handle)
     # Edit a copy: a save the service refuses must leave the stored account as it was.
@@ -279,7 +258,7 @@ def account_card_save(api: Api, payload: dict) -> dict:
         raise ValueError("a card carrying a balance needs a usual payment")
     payment_handle = str(payload.get("payment_account") or "") or None
     if payment_handle is not None:
-        payment = api.db.get_account(payment_handle)
+        payment = _stored(api, payment_handle)
         if payment is None or not payment.atype.is_cash_like or payment.placeholder:
             raise ValueError("paid from must be a Bank or Cash account")
         if payment.hidden and payment.handle != account.card.payment_account:
@@ -289,12 +268,7 @@ def account_card_save(api: Api, payload: dict) -> dict:
     account.card.usual_payment = usual_payment
     account.card.payment_day = payment_day
     account.card.payment_account = payment_handle
-    result = save_account(
-        api.db,
-        SaveAccount(account, existing_handle=account.handle, source=source),
-    )
-    if not result.ok:
-        raise service_error(result.errors[0])
+    api.book.save_account(SaveAccount(account, existing_handle=account.handle, source=source))
     return {
         "handle": account.handle,
         "pays_in_full": account.card.pays_in_full,
@@ -310,7 +284,7 @@ def account_card_save(api: Api, payload: dict) -> dict:
 
 def account_fsa_years_save(api: Api, payload: dict) -> dict:
     handle = str(payload.get("handle", ""))
-    stored = api.db.get_account(handle)
+    stored = _stored(api, handle)
     if stored is None:
         raise KeyError(handle)
     # Edit a copy: a save the service refuses must leave the stored account as it was.
@@ -342,10 +316,5 @@ def account_fsa_years_save(api: Api, payload: dict) -> dict:
     if not isinstance(dependent_care, bool):
         raise ValueError("dependent_care must be true or false")
     account.fsa.dependent_care = dependent_care
-    result = save_account(
-        api.db,
-        SaveAccount(account, existing_handle=account.handle, source=source),
-    )
-    if not result.ok:
-        raise service_error(result.errors[0])
+    api.book.save_account(SaveAccount(account, existing_handle=account.handle, source=source))
     return {"handle": account.handle, "years": [year.serialize() for year in years]}
