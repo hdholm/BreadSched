@@ -290,8 +290,8 @@ def _serve_book(args: argparse.Namespace, *, open_browser: bool, read_only: bool
             print(f"BreadSched is serving {args.book} at {base}/#token={httpd.token}")
         else:
             print(f"BreadSched is serving {args.book} at {base}; the token is in {args.token_file}")
-        for origin in origins:
-            print(f"Pages from {origin} may also use it.")
+        if origins:
+            print("Pages from the trusted origins given may also use it.")
         if record is not None:
             print("Other BreadSched commands for this book use this server while it runs.")
         print("Press Ctrl+C to stop.")
