@@ -236,6 +236,23 @@ def test_account_commands_work_through_the_server_holding_the_book(running, book
     assert "breadsched:" in capsys.readouterr().err
 
 
+def test_rules_work_through_the_server_holding_the_book(running, book_path, capsys):
+    path = str(book_path)
+    add = ["rules", path, "--add-description", "Corner Grocer", "--category", "Groceries"]
+    assert main(add) == 0
+    assert "Added rule: corner grocer -> Expenses:Groceries" in capsys.readouterr().out
+    assert main(["rules", path, "--json"]) == 0
+    [rule] = json.loads(capsys.readouterr().out)
+    assert (rule["position"], rule["category_name"]) == (1, "Expenses:Groceries")
+    assert main(["rules", path, "--preview", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == []
+    assert main(["rules", path, "--move", "1", "--to", "2"]) == 2
+    assert "position" in capsys.readouterr().err
+    assert main(["rules", path, "--delete", "1"]) == 0
+    capsys.readouterr()
+    assert running.db.get_metadata("categorization_rules", []) == []
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

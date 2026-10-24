@@ -53,6 +53,12 @@ from ..gen.services import (
     SetAdvanceDays,
     TransactionInput,
 )
+from ..gen.services.categorization import (
+    AddRule,
+    AppliedCategories,
+    CategorizationRules,
+    CategoryRule,
+)
 from .account_codec import save_account_json
 from .contract import ApiError, to_json
 from .protocol import Change, Listener
@@ -63,7 +69,9 @@ from .views import (
     account_record_from_json,
     account_ref_from_json,
     advance_days_from_json,
+    applied_categories_from_json,
     balance_summary_from_json,
+    categorization_rules_from_json,
     change_from_json,
     chart_from_json,
     due_review_from_json,
@@ -71,6 +79,7 @@ from .views import (
     posted_due_from_json,
     register_from_json,
     resolution_from_json,
+    rule_from_json,
     saved_account_from_json,
     saved_schedule_from_json,
     saved_transaction_from_json,
@@ -329,3 +338,29 @@ class HttpBookClient:
     def delete_account(self, account: str) -> SavedAccount:
         path = f"/accounts/{quote(account, safe='')}"
         return saved_account_from_json(self._call("DELETE", path))
+
+    # ------------------------------------------------- categorization rules
+
+    def categorization_rules(self) -> CategorizationRules:
+        return categorization_rules_from_json(self._call("GET", "/rules"))
+
+    def add_rule(self, request: AddRule) -> CategoryRule:
+        body = {
+            "category": request.category,
+            "description": request.description,
+            "position": request.position,
+        }
+        return rule_from_json(self._call("POST", "/rules", body=body))
+
+    def move_rule(self, rule: str, position: int) -> CategoryRule:
+        path = f"/rules/{quote(rule, safe='')}"
+        return rule_from_json(self._call("PATCH", path, body={"position": position}))
+
+    def delete_rule(self, rule: str) -> CategoryRule:
+        return rule_from_json(self._call("DELETE", f"/rules/{quote(rule, safe='')}"))
+
+    def apply_category_proposals(
+        self, transactions: tuple[str, ...] | None = None
+    ) -> AppliedCategories:
+        body = {"transactions": None if transactions is None else list(transactions)}
+        return applied_categories_from_json(self._call("POST", "/rules/accept", body=body))

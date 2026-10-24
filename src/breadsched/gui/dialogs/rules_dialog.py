@@ -1,4 +1,4 @@
-"""Manage categorization rules and review their proposals through the shared service.
+"""Manage categorization rules and review their proposals through the book server.
 
 Rules propose a category for imported transactions still on an import placeholder
 (Uncategorized CSV or OFX). The first matching rule decides, and a later rule that
@@ -11,20 +11,14 @@ from __future__ import annotations
 
 from functools import partial
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
-from ...gen.lib.account import AccountClass
 from ...gen.services.categorization import (
     AddRule,
     AppliedCategories,
     CategoryRule,
-    add_rule,
-    apply_category_proposals,
-    delete_rule,
-    list_rules,
-    move_rule,
-    preview_category_proposals,
 )
-from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
@@ -42,6 +36,7 @@ class RulesDialog(BoundedWindow):
         self.set_destroy_with_parent(True)
         self.set_default_size(900, 640)
         self.db = db
+        self.book = book_server(db)
         self.proposal_checks: dict[str, Gtk.CheckButton] = {}
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -68,21 +63,13 @@ class RulesDialog(BoundedWindow):
         rule_scroller.set_child(self.rule_rows)
         box.append(rule_scroller)
 
-        self.categories = sorted(
-            (
-                account
-                for account in db.iter_accounts()
-                if not account.placeholder
-                and account.account_class in (AccountClass.INCOME, AccountClass.EXPENSE)
-            ),
-            key=lambda account: db.full_name(account).casefold(),
-        )
+        self.categories = self.book.categorization_rules().categories
         form = Gtk.Box(spacing=8)
         self.description_entry = Gtk.Entry(
             hexpand=True, placeholder_text="Example description, e.g. CORNER GROCER #1234"
         )
         self.category_picker = bounded_dropdown(
-            [db.full_name(account) for account in self.categories] or ["(no categories)"]
+            [choice.name for choice in self.categories] or ["(no categories)"]
         )
         add_button = Gtk.Button(label="Add rule")
         add_button.add_css_class("suggested-action")
@@ -110,14 +97,12 @@ class RulesDialog(BoundedWindow):
         box.append(self.status)
         self.refresh()
 
-    def _name(self, handle: str) -> str:
-        return self.db.full_name(handle) or handle
-
     # ------------------------------------------------------------------ views
 
     def refresh(self) -> None:
         """Reload the rules and the current proposals."""
-        rules = list_rules(self.db)
+        view = self.book.categorization_rules()
+        rules = view.rules
         _clear(self.rule_rows)
         for column, heading in enumerate(("Rule", "Matches", "Category")):
             label = Gtk.Label(label=heading, xalign=0)
@@ -125,8 +110,9 @@ class RulesDialog(BoundedWindow):
             self.rule_rows.attach(label, column, 0, 1, 1)
         if not rules:
             self.rule_rows.attach(Gtk.Label(label="No rules yet.", xalign=0), 0, 1, 3, 1)
-        for position, rule in enumerate(rules, start=1):
-            texts = (str(position), f"Description {rule.key}", self._name(rule.category))
+        for line in rules:
+            position, rule = line.position, line.rule
+            texts = (str(position), f"Description {rule.key}", line.category_name)
             for column, text in enumerate(texts):
                 self.rule_rows.attach(Gtk.Label(label=text, xalign=0), column, position, 1, 1)
             for column, (label, target) in enumerate(
@@ -144,7 +130,7 @@ class RulesDialog(BoundedWindow):
             )
             self.rule_rows.attach(delete, 5, position, 1, 1)
 
-        proposals = preview_category_proposals(self.db).value or ()
+        proposals = view.proposals
         self.proposal_checks = {}
         _clear(self.proposal_rows)
         headings = ("Accept", "Date", "Description", "Amount", "Category", "Rule", "Also")
@@ -160,19 +146,20 @@ class RulesDialog(BoundedWindow):
                 len(headings),
                 1,
             )
-        for row, item in enumerate(proposals, start=1):
+        for row, entry in enumerate(proposals, start=1):
+            item = entry.proposal
             check = Gtk.CheckButton(active=True)
             self.proposal_checks[item.transaction] = check
             self.proposal_rows.attach(check, 0, row, 1, 1)
             conflicts = "; ".join(
-                f"rule {conflict.rule_position}: {self._name(conflict.category)}"
-                for conflict in item.conflicts
+                f"rule {conflict.rule_position}: {name}"
+                for conflict, name in zip(item.conflicts, entry.conflict_names, strict=True)
             )
             cells = (
                 (item.when.isoformat(), 0),
                 (item.description, 0),
                 (item.amount.format(parens_negative=True), 1),
-                (self._name(item.category), 0),
+                (entry.category_name, 0),
                 (str(item.rule_position), 1),
                 (conflicts or "—", 0),
             )
@@ -195,28 +182,31 @@ class RulesDialog(BoundedWindow):
             ),
             description=self.description_entry.get_text(),
         )
-        result = add_rule(self.db, request)
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            rule = self.book.add_rule(request)
+        except ApiError as error:
+            self._message(str(error), True)
             return None
         self.description_entry.set_text("")
         self.refresh()
         self._message("Rule added.", False)
-        return result.value
+        return rule
 
     def move(self, handle: str, position: int) -> bool:
-        result = move_rule(self.db, handle, position)
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            self.book.move_rule(handle, position)
+        except ApiError as error:
+            self._message(str(error), True)
             return False
         self.refresh()
         return True
 
     def delete(self, handle: str) -> bool:
         """Delete a rule; Edit → Undo restores it."""
-        result = delete_rule(self.db, handle)
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            self.book.delete_rule(handle)
+        except ApiError as error:
+            self._message(str(error), True)
             return False
         self.refresh()
         self._message("Rule deleted. Edit → Undo restores it.", False)
@@ -227,17 +217,17 @@ class RulesDialog(BoundedWindow):
         chosen = tuple(
             handle for handle, check in self.proposal_checks.items() if check.get_active()
         )
-        result = apply_category_proposals(self.db, chosen)
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            applied = self.book.apply_category_proposals(chosen)
+        except ApiError as error:
+            self._message(str(error), True)
             return None
         self.refresh()
         self._message(
-            f"Categorized {result.value.assigned} transaction(s); "
-            f"{result.value.unchanged} left unchanged.",
+            f"Categorized {applied.assigned} transaction(s); {applied.unchanged} left unchanged.",
             False,
         )
-        return result.value
+        return applied
 
     def _message(self, text: str, error: bool) -> None:
         self.status.set_text(text)

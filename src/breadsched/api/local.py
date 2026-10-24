@@ -53,6 +53,7 @@ from ..gen.services import (
     account_record,
     account_records,
     balance_summary,
+    categorization,
     chart_of_accounts,
     delete_account,
     delete_schedule,
@@ -76,6 +77,12 @@ from ..gen.services import (
     transaction_currency,
 )
 from ..gen.services import advance_days as stored_advance_days
+from ..gen.services.categorization import (
+    AddRule,
+    AppliedCategories,
+    CategorizationRules,
+    CategoryRule,
+)
 from .contract import ApiError, unwrap
 from .protocol import Change, Listener
 
@@ -236,6 +243,40 @@ class LocalBookServer:
 
     def delete_account(self, account: str) -> SavedAccount:
         return unwrap(delete_account(self.db, DeleteAccount(account)))
+
+    # ------------------------------------------------- categorization rules
+
+    @contextmanager
+    def _changing(self, kind: str) -> Iterator[None]:
+        """Name ``kind`` in the change a write inside the block makes.
+
+        Rules are kept in the book's metadata, which raises no storage signal.
+        """
+        self._pending.add(kind)
+        try:
+            yield
+        finally:
+            self._pending.discard(kind)
+
+    def categorization_rules(self) -> CategorizationRules:
+        return categorization.categorization_rules(self.db)
+
+    def add_rule(self, request: AddRule) -> CategoryRule:
+        with self._changing("categorization-rule"):
+            return unwrap(categorization.add_rule(self.db, request))
+
+    def move_rule(self, rule: str, position: int) -> CategoryRule:
+        with self._changing("categorization-rule"):
+            return unwrap(categorization.move_rule(self.db, rule, position))
+
+    def delete_rule(self, rule: str) -> CategoryRule:
+        with self._changing("categorization-rule"):
+            return unwrap(categorization.delete_rule(self.db, rule))
+
+    def apply_category_proposals(
+        self, transactions: tuple[str, ...] | None = None
+    ) -> AppliedCategories:
+        return unwrap(categorization.apply_category_proposals(self.db, transactions))
 
 
 def book_server(db: DbSQLite) -> LocalBookServer:

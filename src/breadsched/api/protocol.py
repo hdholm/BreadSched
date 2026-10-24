@@ -43,6 +43,12 @@ from ..gen.services import (
     SetAdvanceDays,
     TransactionInput,
 )
+from ..gen.services.categorization import (
+    AddRule,
+    AppliedCategories,
+    CategorizationRules,
+    CategoryRule,
+)
 
 __all__ = ["BookApi", "Change", "Listener"]
 
@@ -177,4 +183,26 @@ class BookApi(Protocol):
 
     def delete_account(self, account: str) -> SavedAccount:
         """Remove an account nothing uses."""
+        ...
+
+    # ------------------------------------------------- categorization rules
+
+    def categorization_rules(self) -> CategorizationRules:
+        """The rules in priority order, their current proposals, and the choices."""
+        ...
+
+    def add_rule(self, request: AddRule) -> CategoryRule:
+        """Insert a rule (last, unless a 1-based position is given)."""
+        ...
+
+    def move_rule(self, rule: str, position: int) -> CategoryRule:
+        """Move a rule to a 1-based position; earlier rules win."""
+        ...
+
+    def delete_rule(self, rule: str) -> CategoryRule: ...
+
+    def apply_category_proposals(
+        self, transactions: tuple[str, ...] | None = None
+    ) -> AppliedCategories:
+        """Accept the current proposals: all of them, or only these transactions'."""
         ...

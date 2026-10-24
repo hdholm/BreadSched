@@ -625,6 +625,89 @@ def test_the_chart_and_totals_carry_quote_evidence_alike(target, book):
     assert quoted.book_balance == Money(10)
 
 
+def test_categorization_rules_alike(target, book, tmp_path):
+    from breadsched.gen.services.categorization import AddRule
+    from breadsched.gen.services.csv_import import CsvImportRequest, CsvMapping, import_csv
+
+    api, db = target.api, target.db
+    statement = tmp_path / "statement.csv"
+    statement.write_text(
+        "Date,Description,Amount\n"
+        "2026-09-01,CORNER GROCER #1234,-42.10\n"
+        "2026-09-03,City Power,-60.00\n",
+        encoding="utf-8",
+    )
+    mapping = CsvMapping(date="Date", description="Description", amount="Amount")
+    imported = import_csv(db, CsvImportRequest(str(statement), book.checking, mapping))
+    assert imported.ok, imported.errors
+    seen, stop = _follow(api)
+    try:
+        power = api.add_rule(AddRule(book.utilities, "CITY POWER"))
+        grocer = api.add_rule(AddRule(book.groceries, "Corner Grocer 99", position=1))
+        _until(lambda: len(seen) == 2)
+    finally:
+        stop()
+    assert all(change.kinds == {"categorization-rule"} for change in seen)
+    # The service refuses a second rule for one key, but a migrated book can hold
+    # one; the later rule is then a conflict.
+    stored = db.get_metadata("categorization_rules", [])
+    with db.transaction("Rules from a migrated book") as txn:
+        db.set_metadata(
+            "categorization_rules",
+            [*stored, {"handle": "late", "category": book.rent, "key": grocer.key}],
+            txn,
+        )
+
+    view = api.categorization_rules()
+    assert [(line.position, line.category_name) for line in view.rules] == [
+        (1, "Expenses:Groceries"),
+        (2, "Expenses:Utilities"),
+        (3, "Expenses:Rent"),
+    ]
+    [power_line, grocer_line] = view.proposals
+    # The amount is the placeholder split's: the expense side of the payment.
+    assert (power_line.category_name, power_line.proposal.amount) == (
+        "Expenses:Utilities",
+        Money("60.00"),
+    )
+    assert (grocer_line.category_name, grocer_line.proposal.rule_position) == (
+        "Expenses:Groceries",
+        1,
+    )
+    assert [c.rule_position for c in grocer_line.proposal.conflicts] == [3]
+    assert grocer_line.conflict_names == ("Expenses:Rent",)
+    assert grocer_line.proposal.rule.handle == grocer.handle
+    assert "Expenses:Groceries" in [choice.name for choice in view.categories]
+    assert "Expenses" not in [choice.name for choice in view.categories]
+
+    assert api.move_rule("late", 1).handle == "late"
+    assert api.categorization_rules().proposals[1].category_name == "Expenses:Rent"
+    assert api.delete_rule("late").category == book.rent
+
+    before = _snapshot(db), db.get_metadata("categorization_rules", None)
+    for call, status, code in (
+        (lambda: api.add_rule(AddRule(book.groceries, "!!!")), 400, "rule.match.empty"),
+        (lambda: api.add_rule(AddRule(book.expenses, "new shop")), 400, "rule.category.invalid"),
+        (lambda: api.add_rule(AddRule(book.rent, "city power")), 400, "rule.match.duplicate"),
+        (lambda: api.add_rule(AddRule(book.rent, "x", position=9)), 400, "rule.position.invalid"),
+        (lambda: api.move_rule(power.handle, 0), 400, "rule.position.invalid"),
+        (lambda: api.delete_rule("missing"), 404, "rule.not_found"),
+        (
+            lambda: api.apply_category_proposals(("missing",)),
+            404,
+            "rule.transaction.not_found",
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert (refused.value.status, refused.value.code) == (status, code)
+    assert (_snapshot(db), db.get_metadata("categorization_rules", None)) == before
+
+    applied = api.apply_category_proposals()
+    assert (applied.assigned, applied.unchanged) == (2, 0)
+    assert api.categorization_rules().proposals == ()
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -768,6 +851,12 @@ def test_v1_refuses_what_it_does_not_serve(remote):
             "request.invalid",
         ),
         ("DELETE", "/api/v1/accounts/missing", None, 404, "account.not_found"),
+        ("POST", "/api/v1/rules", {"category": 5, "description": "x"}, 400, "request.invalid"),
+        ("POST", "/api/v1/rules", {"description": "x"}, 400, "request.invalid"),
+        ("PATCH", "/api/v1/rules/x", {"position": "1"}, 400, "request.invalid"),
+        ("PATCH", "/api/v1/rules/x", {}, 400, "request.invalid"),
+        ("POST", "/api/v1/rules/accept", {"transactions": "all"}, 400, "request.invalid"),
+        ("DELETE", "/api/v1/rules/missing", None, 404, "rule.not_found"),
     ]
     for method, route, body, status, code in cases:
         got, payload, _ = _raw(remote, method, route, body)

@@ -131,6 +131,20 @@ Accounts followed:
   a refusal's message as before. The browser's and GTK's registers still read the
   book.
 
+Categorization rules followed, in all three interfaces at once:
+- **One read:** `categorization_rules` returns the rules in priority order, the
+  current proposals, and the category choices, each with its account's full name.
+  The command line, the browser, and GTK's rules dialog format that one answer, so
+  no interface looks up names in the book itself.
+- **Writes:** `add_rule`, `move_rule`, `delete_rule`, and
+  `apply_category_proposals`, each as one undo step, as before.
+- **Change kind:** rules live in the book's metadata, which raises no storage signal.
+  The server names a rule write's change `categorization-rule` itself, so a
+  subscriber can tell it apart from the "reload" that an empty `kinds` means.
+- **Resources:** `GET` and `POST /api/v1/rules`, `PATCH` and
+  `DELETE /api/v1/rules/{handle}`, and `POST /api/v1/rules/accept`. The browser's
+  `/api/rules` responses are unchanged.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

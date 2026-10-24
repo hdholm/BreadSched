@@ -1027,6 +1027,13 @@ class TestBookServerBoundaries:
         "account_record",
         "account_records",
         "chart_of_accounts",
+        "list_rules",
+        "add_rule",
+        "move_rule",
+        "delete_rule",
+        "preview_category_proposals",
+        "apply_category_proposals",
+        "categorization_rules",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1052,6 +1059,11 @@ class TestBookServerBoundaries:
         "chart",
         "save_account",
         "delete_account",
+        "categorization_rules",
+        "add_rule",
+        "move_rule",
+        "delete_rule",
+        "apply_category_proposals",
     }
 
     @pytest.mark.parametrize(
@@ -1080,6 +1092,15 @@ class TestBookServerBoundaries:
             ),
             ("gui/dialogs/schedule_dialog.py", ("_on_save",)),
             ("gui/dialogs/account_dialog.py", ("_on_save", "_on_delete")),
+            ("cli/categorization_commands.py", ("cmd_rules",)),
+            (
+                "web/rules_resource.py",
+                ("rules", "rule_add", "rule_delete", "rule_move", "rules_accept"),
+            ),
+            (
+                "gui/dialogs/rules_dialog.py",
+                ("refresh", "add_rule", "move", "delete", "accept_selected"),
+            ),
             (
                 "cli/ledger_commands.py",
                 (

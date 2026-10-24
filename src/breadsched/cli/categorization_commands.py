@@ -6,88 +6,69 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from ..gen.db.sqlite import DbSQLite
-from ..gen.services.categorization import (
-    AddRule,
-    add_rule,
-    apply_category_proposals,
-    delete_rule,
-    list_rules,
-    move_rule,
-    preview_category_proposals,
-)
+from ..api.protocol import BookApi
+from ..gen.services.categorization import AddRule
 from ..presentation import (
     service_error_message,
 )
 from .common import (
     AddCommand,
     CommandError,
+    add_server_options,
+    book_api,
     emit,
     find_transaction,
     open_book,
-    resolve_account,
     table,
 )
 
 
-def _rule_at(db: DbSQLite, position: int) -> str:
-    rules = list_rules(db)
+def _rule_at(book: BookApi, position: int) -> str:
+    rules = book.categorization_rules().rules
     if not 1 <= position <= len(rules):
         raise CommandError(f"there is no rule {position}; there are {len(rules)}")
-    return rules[position - 1].handle
+    return rules[position - 1].rule.handle
 
 
 def cmd_rules(args: argparse.Namespace) -> int:
     """List categorization rules, change them, or preview and accept their proposals."""
     writes = args.add_description or args.delete or args.move
     read_only = not (writes or args.accept or args.accept_all)
-    db = open_book(args.book, "r" if read_only else "w")
-
-    def name(handle: str) -> str:
-        return db.full_name(handle) or handle
-
-    def check(result):
-        if result.value is None:
-            raise CommandError(service_error_message(result.errors[0]))
-        return result.value
-
-    try:
+    with book_api(args, "r" if read_only else "w") as book:
         if args.add_description:
             if not args.category:
                 raise CommandError("--category is required when adding a rule")
-            rule = check(
-                add_rule(
-                    db,
-                    AddRule(
-                        category=resolve_account(db, args.category).handle,
-                        description=args.add_description,
-                        position=args.position,
-                    ),
+            category = book.find_account(args.category)
+            rule = book.add_rule(
+                AddRule(
+                    category=category.handle,
+                    description=args.add_description,
+                    position=args.position,
                 )
             )
             emit(
                 {"handle": rule.handle, "category": rule.category, "key": rule.key},
                 args,
-                f"Added rule: {rule.key} -> {name(rule.category)}",
+                f"Added rule: {rule.key} -> {category.full_name}",
             )
             return 0
         if args.delete:
-            rule = check(delete_rule(db, _rule_at(db, args.delete)))
+            rule = book.delete_rule(_rule_at(book, args.delete))
             emit({"deleted": rule.handle}, args, f"Deleted rule {args.delete}")
             return 0
         if args.move:
             if args.to is None:
                 raise CommandError("--to is required with --move")
-            check(move_rule(db, _rule_at(db, args.move), args.to))
+            book.move_rule(_rule_at(book, args.move), args.to)
             emit({"moved": args.move, "to": args.to}, args, f"Moved rule {args.move} to {args.to}")
             return 0
         if args.accept or args.accept_all:
             chosen = (
                 None
                 if args.accept_all
-                else tuple(find_transaction(db, reference).handle for reference in args.accept)
+                else tuple(book.find_transaction(reference).handle for reference in args.accept)
             )
-            applied = check(apply_category_proposals(db, chosen))
+            applied = book.apply_category_proposals(chosen)
             emit(
                 {"assigned": applied.assigned, "unchanged": applied.unchanged},
                 args,
@@ -95,81 +76,80 @@ def cmd_rules(args: argparse.Namespace) -> int:
                 f"{applied.unchanged} left unchanged",
             )
             return 0
-        if args.preview:
-            proposals = check(preview_category_proposals(db))
-            emit(
-                [
-                    {
-                        "transaction": item.transaction,
-                        "date": item.when,
-                        "description": item.description,
-                        "amount": item.amount,
-                        "category": item.category,
-                        "category_name": name(item.category),
-                        "rule_position": item.rule_position,
-                        "conflicts": [
-                            {"rule_position": c.rule_position, "category_name": name(c.category)}
-                            for c in item.conflicts
-                        ],
-                    }
-                    for item in proposals
-                ],
-                args,
-                table(
-                    [
-                        [
-                            item.when.isoformat(),
-                            item.transaction[:8],
-                            item.description,
-                            item.amount.format(parens_negative=True),
-                            name(item.category),
-                            str(item.rule_position),
-                            "; ".join(
-                                f"rule {c.rule_position}: {name(c.category)}"
-                                for c in item.conflicts
-                            )
-                            or "-",
-                        ]
-                        for item in proposals
-                    ],
-                    ["date", "transaction", "description", "amount", "category", "rule", "also"],
-                    right={3, 5},
-                )
-                if proposals
-                else "No uncategorized imported transactions match a rule.",
-            )
-            return 0
-        rules = list_rules(db)
+        view = book.categorization_rules()
+    if args.preview:
+        proposals = view.proposals
         emit(
             [
                 {
-                    "position": position,
-                    "handle": rule.handle,
-                    "key": rule.key,
-                    "category": rule.category,
-                    "category_name": name(rule.category),
+                    "transaction": line.proposal.transaction,
+                    "date": line.proposal.when,
+                    "description": line.proposal.description,
+                    "amount": line.proposal.amount,
+                    "category": line.proposal.category,
+                    "category_name": line.category_name,
+                    "rule_position": line.proposal.rule_position,
+                    "conflicts": [
+                        {"rule_position": c.rule_position, "category_name": name}
+                        for c, name in zip(
+                            line.proposal.conflicts, line.conflict_names, strict=True
+                        )
+                    ],
                 }
-                for position, rule in enumerate(rules, start=1)
+                for line in proposals
             ],
             args,
             table(
                 [
                     [
-                        str(position),
-                        f"description {rule.key}",
-                        name(rule.category),
+                        line.proposal.when.isoformat(),
+                        line.proposal.transaction[:8],
+                        line.proposal.description,
+                        line.proposal.amount.format(parens_negative=True),
+                        line.category_name,
+                        str(line.proposal.rule_position),
+                        "; ".join(
+                            f"rule {c.rule_position}: {name}"
+                            for c, name in zip(
+                                line.proposal.conflicts, line.conflict_names, strict=True
+                            )
+                        )
+                        or "-",
                     ]
-                    for position, rule in enumerate(rules, start=1)
+                    for line in proposals
                 ],
-                ["rule", "matches", "category"],
-                right={0},
+                ["date", "transaction", "description", "amount", "category", "rule", "also"],
+                right={3, 5},
             )
-            if rules
-            else "No categorization rules yet. Add one with --add-description.",
+            if proposals
+            else "No uncategorized imported transactions match a rule.",
         )
         return 0
-    finally:
-        db.close()
+    rules = view.rules
+    emit(
+        [
+            {
+                "position": line.position,
+                "handle": line.rule.handle,
+                "key": line.rule.key,
+                "category": line.rule.category,
+                "category_name": line.category_name,
+            }
+            for line in rules
+        ],
+        args,
+        table(
+            [
+                [str(line.position), f"description {line.rule.key}", line.category_name]
+                for line in rules
+            ],
+            ["rule", "matches", "category"],
+            right={0},
+        )
+        if rules
+        else "No categorization rules yet. Add one with --add-description.",
+    )
+    return 0
 
 
 def cmd_tags(args: argparse.Namespace) -> int:
@@ -366,6 +346,7 @@ def register(add: AddCommand) -> None:
         help="accept one proposal (repeatable; handle or unique prefix)",
     )
     rules_cmd.add_argument("--accept-all", action="store_true", help="accept every proposal")
+    add_server_options(rules_cmd)
     rules_cmd.set_defaults(func=cmd_rules)
 
     tags_cmd = add("tags", "List tags, the transactions with one, or set a transaction's tags")
