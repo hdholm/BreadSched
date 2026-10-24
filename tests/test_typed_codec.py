@@ -82,6 +82,17 @@ def test_a_value_round_trips_through_its_json_form():
     assert from_data(ReimbursementOverride, to_data(override)) == override
 
 
+def test_a_mapping_reads_as_an_object():
+    from breadsched.gen.services.payroll import PayChange
+
+    change = PayChange("s", date(2026, 3, 1), Money("10"), amounts={"a": Money("2.50")})
+    data = to_data(change)
+    assert data["amounts"] == {"a": "2.50"} and data["scaled"] is None
+    assert from_data(PayChange, data) == change
+    with pytest.raises(ValueError, match=r"value\.amounts\.a must be an amount in text"):
+        from_data(PayChange, {**data, "amounts": {"a": 2}})
+
+
 def test_missing_fields_take_their_defaults():
     data = to_data(_outer())
     del data["note"], data["tags"]

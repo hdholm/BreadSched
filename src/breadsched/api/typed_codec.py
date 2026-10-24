@@ -10,7 +10,7 @@ any of them as JSON data (:func:`to_data`) and reads it back from its type alone
 * a record that has its own stored form (``serialize`` and ``from_dict``, such as
   every ``PrimaryObject``) in that form;
 * a dataclass as an object of its fields; tuples, lists, and sets as lists; a
-  ``dict`` with text keys as an object; ``X | None`` and other unions.
+  ``dict`` or ``Mapping`` with text keys as an object; ``X | None`` and other unions.
 
 Reading is strict, because a server reads what a client sends: an unknown field, a
 missing required field, or a value of the wrong type is a ``ValueError`` naming
@@ -114,7 +114,7 @@ def from_data(kind: Any, data: Any, where: str = "value") -> Any:
         item_kind = args[0] if args else Any
         items = [from_data(item_kind, item, f"{where}[{index}]") for index, item in enumerate(data)]
         return origin(items)
-    if origin is dict:
+    if origin is dict or origin is Mapping:
         if not isinstance(data, dict):
             raise _fail(where, "an object")
         _key, value_kind = get_args(kind) or (str, Any)

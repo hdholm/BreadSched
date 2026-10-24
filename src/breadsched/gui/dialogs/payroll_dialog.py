@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from datetime import date
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.payroll import (
     PayChangePlan,
@@ -21,29 +23,12 @@ from ...gen.engine.payroll import (
     PayrollError,
     PayrollLine,
     PayrollTemplate,
-    leg_kind,
     parse_percent,
-    paycheck_breakdown,
 )
-from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
 from ...gen.lib.recurrence import PeriodType, Recurrence
-from ...gen.services.contracts import ServiceError, ServiceResult
-from ...gen.services.payroll import (
-    CreatePaycheck,
-    PayChange,
-    SavePayrollTemplate,
-    apply_pay_change,
-    create_paycheck_schedule,
-    delete_payroll_template,
-    list_payroll_templates,
-    paychecks,
-    preview_pay_change,
-    save_payroll_template,
-    template_from_schedule,
-)
+from ...gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, keeps_enter
 from ..widgets.choice import bounded_dropdown
@@ -100,6 +85,8 @@ class PayrollDialog(BoundedWindow):
         self.set_destroy_with_parent(True)
         self.set_default_size(900, 680)
         self.db = db
+        self.book = book_server(db)
+        self.view: PayrollView = self.book.payroll()
         self.paychecks: list[PaycheckBreakdown] = []
         self._after_labels: dict[str, Gtk.Label] = {}
         self.templates: list[PayrollTemplate] = []
@@ -108,13 +95,9 @@ class PayrollDialog(BoundedWindow):
         self._loaded_template: str | None = None
         self.last_plan: PayChangePlan | None = None
 
-        self.income_accounts = self._accounts(
-            lambda account: account.account_class is AccountClass.INCOME
-        )
-        self.deposit_accounts = self._accounts(lambda account: account.is_spendable_cash)
-        self.line_accounts = self._accounts(
-            lambda account: leg_kind(account, db.full_name(account) or "") is not None
-        )
+        self.income_accounts = list(self.view.income_accounts)
+        self.deposit_accounts = list(self.view.deposit_accounts)
+        self.line_accounts = list(self.view.line_accounts)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         for side in ("top", "bottom", "start", "end"):
@@ -140,18 +123,8 @@ class PayrollDialog(BoundedWindow):
         box.append(self.status)
         self.refresh(select=schedule)
 
-    def _accounts(self, wanted) -> list:
-        return sorted(
-            (
-                account
-                for account in self.db.iter_accounts()
-                if not account.placeholder and not account.is_root and wanted(account)
-            ),
-            key=lambda account: (self.db.full_name(account) or "").casefold(),
-        )
-
     def _name(self, handle: str) -> str:
-        return self.db.full_name(handle) or handle
+        return self.view.name(handle)
 
     def _message(self, text: str, error: bool = False) -> None:
         self.status.set_text(text)
@@ -160,10 +133,8 @@ class PayrollDialog(BoundedWindow):
         else:
             self.status.remove_css_class("error")
 
-    def _refused(self, result: ServiceResult) -> None:
-        self._message(
-            "; ".join(service_error_message(error) for error in result.errors) + ".", True
-        )
+    def _refused(self, error: ApiError) -> None:
+        self._message(f"{error}.", True)
 
     # ------------------------------------------------------------------- pages
 
@@ -320,7 +291,8 @@ class PayrollDialog(BoundedWindow):
         """Reload paychecks and templates, keeping or choosing a selection."""
         current = self.selected_paycheck()
         wanted = select or (current.schedule if current is not None else None)
-        self.paychecks = paychecks(self.db)
+        self.view = self.book.payroll()
+        self.paychecks = list(self.view.paychecks)
         names = [item.name for item in self.paychecks] or ["(no paychecks)"]
         self.paycheck_picker.set_model(Gtk.StringList.new(names))
         index = next((i for i, item in enumerate(self.paychecks) if item.schedule == wanted), 0)
@@ -340,16 +312,22 @@ class PayrollDialog(BoundedWindow):
         self.show_breakdown()
         self._build_change_rows()
 
-    def _schedule(self):
+    def _paycheck(self, when: date) -> PaycheckBreakdown | None:
+        """The selected paycheck as of ``when``, or ``None`` with the reason shown."""
         selected = self.selected_paycheck()
-        return self.db.get_scheduled(selected.schedule) if selected is not None else None
+        if selected is None:
+            return None
+        try:
+            return self.book.paycheck(selected.schedule, when)
+        except ApiError as error:
+            self.summary.set_text(f"{error}.")
+            return None
 
     # --------------------------------------------------------------- breakdown
 
     def show_breakdown(self) -> PaycheckBreakdown | None:
         _clear(self.breakdown_rows)
-        schedule = self._schedule()
-        if schedule is None:
+        if self.selected_paycheck() is None:
             self.summary.set_text(
                 "No schedule reads as a paycheck. Create one from a template, or add "
                 "a schedule with gross pay into an income account and the net into a "
@@ -361,11 +339,8 @@ class PayrollDialog(BoundedWindow):
         except ValueError:
             self._message("Enter the date as YYYY-MM-DD.", True)
             return None
-        breakdown = paycheck_breakdown(self.db, schedule, max(when, schedule.recurrence.start))
+        breakdown = self._paycheck(when)
         if breakdown is None:
-            self.summary.set_text(
-                service_error_message(ServiceError("payroll.schedule.not_paycheck")) + "."
-            )
             return None
         self.summary.set_text(
             f"Gross {breakdown.gross.format()}; taxes and deductions "
@@ -386,12 +361,7 @@ class PayrollDialog(BoundedWindow):
         self.change_rows = {}
         self._after_labels = {}
         self.last_plan = None
-        schedule = self._schedule()
-        breakdown = (
-            paycheck_breakdown(self.db, schedule, max(date.today(), schedule.recurrence.start))
-            if schedule is not None
-            else None
-        )
+        breakdown = self._paycheck(date.today())
         self.save_change_button.set_sensitive(breakdown is not None)
         if breakdown is None:
             return
@@ -468,40 +438,43 @@ class PayrollDialog(BoundedWindow):
         request = self._change_request()
         if request is None:
             return None
-        result = preview_pay_change(self.db, request)
-        if result.value is None:
-            self._refused(result)
+        try:
+            plan = self.book.preview_pay_change(request)
+        except ApiError as error:
+            self._refused(error)
             return None
-        self.last_plan = result.value
-        self._show_plan(result.value)
+        self.last_plan = plan
+        self._show_plan(plan)
         self._message(
             f"From {request.start.isoformat()}: take-home "
-            f"{result.value.total(PayLegKind.NET).format()}. Nothing is saved until you "
+            f"{plan.total(PayLegKind.NET).format()}. Nothing is saved until you "
             "choose Save pay change."
         )
-        return result.value
+        return plan
 
     def save_change(self) -> PayChangePlan | None:
         """Save the pay change as one undo step."""
         request = self._change_request()
         if request is None:
             return None
-        result = apply_pay_change(self.db, request)
-        if result.value is None:
-            self._refused(result)
+        try:
+            plan = self.book.apply_pay_change(request)
+        except ApiError as error:
+            self._refused(error)
             return None
         selected = self.selected_paycheck()
         self.refresh(select=selected.schedule if selected else None)
         self._message(
             f"Saved the pay change from {request.start.isoformat()}: take-home "
-            f"{result.value.total(PayLegKind.NET).format()}. Edit → Undo reverses it."
+            f"{plan.total(PayLegKind.NET).format()}. Edit → Undo reverses it."
         )
-        return result.value
+        return plan
 
     # --------------------------------------------------------------- templates
 
     def _reload_templates(self, select: str | None = None) -> None:
-        self.templates = list_payroll_templates(self.db)
+        self.view = self.book.payroll()
+        self.templates = list(self.view.templates)
         self.template_picker.set_model(
             Gtk.StringList.new(["New template", *(item.name for item in self.templates)])
         )
@@ -620,40 +593,43 @@ class PayrollDialog(BoundedWindow):
         if selected is None:
             self._message("Choose a paycheck first.", True)
             return None
-        result = template_from_schedule(self.db, selected.schedule, selected.name)
-        if result.value is None:
-            self._refused(result)
+        try:
+            template = self.book.template_from_schedule(selected.schedule, selected.name)
+        except ApiError as error:
+            self._refused(error)
             return None
         self.template_picker.set_selected(0)
-        self._fill_template_form(result.value)
+        self._fill_template_form(template)
         self._message("Filled the template from the paycheck. Save template to keep it.")
-        return result.value
+        return template
 
     def save_template(self) -> PayrollTemplate | None:
         template = self._template_from_form()
         if template is None:
             return None
-        result = save_payroll_template(
-            self.db, SavePayrollTemplate(template, existing_name=self._loaded_template)
-        )
-        if result.value is None:
-            self._refused(result)
+        try:
+            saved = self.book.save_payroll_template(
+                SavePayrollTemplate(template, existing_name=self._loaded_template)
+            )
+        except ApiError as error:
+            self._refused(error)
             return None
-        self._reload_templates(result.value.name)
-        self._message(f"Saved payroll template {result.value.name}.")
-        return result.value
+        self._reload_templates(saved.name)
+        self._message(f"Saved payroll template {saved.name}.")
+        return saved
 
     def delete_template(self) -> PayrollTemplate | None:
         template = self.selected_template()
         if template is None:
             return None
-        result = delete_payroll_template(self.db, template.name)
-        if result.value is None:
-            self._refused(result)
+        try:
+            removed = self.book.delete_payroll_template(template.name)
+        except ApiError as error:
+            self._refused(error)
             return None
         self._reload_templates()
         self._message(f"Deleted payroll template {template.name}. Edit → Undo restores it.")
-        return result.value
+        return removed
 
     def create_paycheck(self) -> str | None:
         """Add a paycheck schedule from the selected template; returns its handle."""
@@ -674,13 +650,13 @@ class PayrollDialog(BoundedWindow):
             return None
         _label, period, interval = PAY_PERIODS[self.new_period_picker.get_selected()]
         name = self.new_name_entry.get_text().strip() or template.name
-        result = create_paycheck_schedule(
-            self.db,
-            CreatePaycheck(template.name, name, _recurrence(period, interval, start), gross),
-        )
-        if result.value is None:
-            self._refused(result)
+        try:
+            created = self.book.create_paycheck(
+                CreatePaycheck(template.name, name, _recurrence(period, interval, start), gross)
+            )
+        except ApiError as error:
+            self._refused(error)
             return None
-        self.refresh(select=result.value.handle)
-        self._message(f"Added paycheck {result.value.name}. Edit → Undo removes it.")
-        return result.value.handle
+        self.refresh(select=created.handle)
+        self._message(f"Added paycheck {created.name}. Edit → Undo removes it.")
+        return created.handle

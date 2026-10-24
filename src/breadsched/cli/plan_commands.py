@@ -21,7 +21,7 @@ from ..gen.engine import (
     planning,
     schedule,
 )
-from ..gen.engine.payroll import PaycheckBreakdown, PayrollLine, paycheck_breakdown
+from ..gen.engine.payroll import PaycheckBreakdown, PayrollLine
 from ..gen.lib import (
     Money,
     PeriodType,
@@ -39,7 +39,6 @@ from ..gen.services import (
     ReviewOccurrence,
     ReviewTransaction,
     SaveSchedule,
-    ServiceError,
     SetAdvanceDays,
     delete_schedule,
     mark_review_unexpected,
@@ -47,19 +46,7 @@ from ..gen.services import (
     reject_review,
     save_schedule,
 )
-from ..gen.services.payroll import (
-    CreatePaycheck,
-    PayChange,
-    SavePayrollTemplate,
-    apply_pay_change,
-    create_paycheck_schedule,
-    delete_payroll_template,
-    list_payroll_templates,
-    paychecks,
-    preview_pay_change,
-    save_payroll_template,
-    template_from_schedule,
-)
+from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..presentation import (
     service_error_message,
 )
@@ -325,7 +312,7 @@ def _find_schedule(db: DbSQLite, reference: str) -> ScheduledTransaction:
     return lookup_schedule(db, reference)
 
 
-def _payroll_line_text(db: DbSQLite, line: PayrollLine) -> str:
+def _payroll_line_text(view: PayrollView, line: PayrollLine) -> str:
     amount = (
         f"{line.percent}% of gross"
         if line.percent is not None
@@ -333,7 +320,7 @@ def _payroll_line_text(db: DbSQLite, line: PayrollLine) -> str:
         if line.amount is not None
         else ""
     )
-    return f"{db.full_name(line.account) or line.account}: {amount}"
+    return f"{view.name(line.account)}: {amount}"
 
 
 def _paycheck_text(breakdown: PaycheckBreakdown) -> str:
@@ -351,32 +338,24 @@ def cmd_payroll(args: argparse.Namespace) -> int:
     writes = (
         args.save_template or args.delete_template or args.create or args.pay_change
     ) and not args.preview
-    db = open_book(args.book, "w" if writes else "r")
-
-    def check(result):
-        if result.value is None:
-            raise CommandError(service_error_message(result.errors[0]))
-        return result.value
-
-    try:
-        as_of = parse_date(args.as_of)
+    as_of = parse_date(args.as_of)
+    with book_api(args, "w" if writes else "r") as book:
         if args.save_template:
             if not args.from_schedule:
                 raise CommandError("--from-schedule is required with --save-template")
-            source = _find_schedule(db, args.from_schedule)
-            template = check(
-                template_from_schedule(db, source.handle, args.save_template, when=as_of)
-            )
-            saved = check(save_payroll_template(db, SavePayrollTemplate(template)))
+            source = book.find_schedule(args.from_schedule)
+            template = book.template_from_schedule(source.handle, args.save_template, as_of)
+            saved = book.save_payroll_template(SavePayrollTemplate(template))
+            view = book.payroll(as_of)
             emit(
                 saved.serialize(),
                 args,
                 f"Saved payroll template {saved.name!r} from {source.name!r}"
-                + "".join(f"\n  {_payroll_line_text(db, line)}" for line in saved.lines),
+                + "".join(f"\n  {_payroll_line_text(view, line)}" for line in saved.lines),
             )
             return 0
         if args.delete_template:
-            removed = check(delete_payroll_template(db, args.delete_template))
+            removed = book.delete_payroll_template(args.delete_template)
             emit({"deleted": removed.name}, args, f"Deleted payroll template {removed.name!r}")
             return 0
         if args.create:
@@ -387,41 +366,36 @@ def cmd_payroll(args: argparse.Namespace) -> int:
                 interval=args.interval,
                 start=parse_date(args.start) or date.today(),
             )
-            created = check(
-                create_paycheck_schedule(
-                    db,
-                    CreatePaycheck(
-                        args.template,
-                        args.create,
-                        recurrence,
-                        gross=Money(args.gross) if args.gross else None,
-                        auto_create=args.auto_create,
-                    ),
+            created = book.create_paycheck(
+                CreatePaycheck(
+                    args.template,
+                    args.create,
+                    recurrence,
+                    gross=Money(args.gross) if args.gross else None,
+                    auto_create=args.auto_create,
                 )
             )
-            schedule = db.get_scheduled(created.handle)
-            assert schedule is not None
-            breakdown = paycheck_breakdown(db, schedule, recurrence.start)
+            breakdown = book.paycheck(created.handle, recurrence.start)
             emit(
-                breakdown.as_dict() if breakdown else {"handle": created.handle},
+                breakdown.as_dict(),
                 args,
                 f"Added paycheck {created.name!r} {recurrence.describe()}\n"
-                + (_paycheck_text(breakdown) if breakdown else ""),
+                + _paycheck_text(breakdown),
             )
             return 0
         if args.pay_change:
             if not args.gross or not args.start:
                 raise CommandError("--gross and --start are required with --pay-change")
-            schedule = _find_schedule(db, args.pay_change)
+            schedule = book.find_schedule(args.pay_change)
             scaled = None
             if args.scale is not None:
-                scaled = frozenset(resolve_account(db, item).handle for item in args.scale)
+                scaled = frozenset(book.find_account(item).handle for item in args.scale)
             amounts: dict[str, Money] = {}
             for item in args.set or ():
                 account, _sep, amount = item.rpartition("=")
                 if not account:
                     raise CommandError(f"--set takes ACCOUNT=AMOUNT, not {item!r}")
-                amounts[resolve_account(db, account).handle] = Money(amount)
+                amounts[book.find_account(account).handle] = Money(amount)
             request = PayChange(
                 schedule.handle,
                 parse_date(args.start) or date.today(),
@@ -429,8 +403,8 @@ def cmd_payroll(args: argparse.Namespace) -> int:
                 scaled=scaled,
                 amounts=amounts,
             )
-            plan = check(
-                preview_pay_change(db, request) if args.preview else apply_pay_change(db, request)
+            plan = (
+                book.preview_pay_change(request) if args.preview else book.apply_pay_change(request)
             )
             rows = [
                 [line.kind.label, line.name, line.before.format(), line.after.format(), line.how]
@@ -445,18 +419,11 @@ def cmd_payroll(args: argparse.Namespace) -> int:
             )
             return 0
         if args.show:
-            schedule = _find_schedule(db, args.show)
-            breakdown = paycheck_breakdown(
-                db, schedule, as_of or max(date.today(), schedule.recurrence.start)
-            )
-            if breakdown is None:
-                raise CommandError(
-                    service_error_message(ServiceError("payroll.schedule.not_paycheck"))
-                )
+            breakdown = book.paycheck(book.find_schedule(args.show).handle, as_of)
             emit(breakdown.as_dict(), args, _paycheck_text(breakdown))
             return 0
-        templates = list_payroll_templates(db)
-        found = paychecks(db, as_of)
+        view = book.payroll(as_of)
+        found, templates = view.paychecks, view.templates
         emit(
             {
                 "paychecks": [item.as_dict() for item in found],
@@ -486,7 +453,7 @@ def cmd_payroll(args: argparse.Namespace) -> int:
                 "Payroll templates:\n"
                 + "\n".join(
                     f"  {item.name}: gross {item.gross.format()}; "
-                    + "; ".join(_payroll_line_text(db, line) for line in item.lines)
+                    + "; ".join(_payroll_line_text(view, line) for line in item.lines)
                     for item in templates
                 )
                 if templates
@@ -495,8 +462,6 @@ def cmd_payroll(args: argparse.Namespace) -> int:
             ),
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_activity(args: argparse.Namespace) -> int:
@@ -1131,4 +1096,5 @@ def register(add: AddCommand) -> None:
     payroll_cmd.add_argument(
         "--preview", action="store_true", help="show the pay change without saving it"
     )
+    add_server_options(payroll_cmd)
     payroll_cmd.set_defaults(func=cmd_payroll)

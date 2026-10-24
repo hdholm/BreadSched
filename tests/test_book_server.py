@@ -1041,6 +1041,70 @@ def test_scenarios_and_assumptions_alike(target, book):
     assert api.delete_scenario(copy.handle).name == copy.name
 
 
+def test_payroll_alike(target, book):
+    from breadsched.gen.engine.payroll import PayLegKind, PayrollLine, PayrollTemplate
+    from breadsched.gen.lib import Account, AccountType
+    from breadsched.gen.services.payroll import CreatePaycheck, PayChange, SavePayrollTemplate
+
+    api, db = target.api, target.db
+    with db.transaction("Payroll accounts") as txn:
+        taxes = Account(name="Taxes", atype=AccountType.EXPENSE, parent=book.expenses)
+        db.add_account(taxes, txn)
+        federal = Account(name="Federal", atype=AccountType.EXPENSE, parent=taxes.handle)
+        db.add_account(federal, txn)
+    template = PayrollTemplate(
+        " Acme ",
+        book.salary,
+        book.checking,
+        Money("3000.00"),
+        (PayrollLine(federal.handle, percent=Decimal("12")),),
+    )
+    saved = api.save_payroll_template(SavePayrollTemplate(template))
+    assert saved.name == "Acme"
+    view = api.payroll(date(2026, 1, 2))
+    assert [item.name for item in view.templates] == ["Acme"]
+    assert view.name(federal.handle) == "Expenses:Taxes:Federal"
+    assert book.salary in {item.handle for item in view.income_accounts}
+    assert federal.handle in {item.handle for item in view.line_accounts}
+
+    start = date(2026, 1, 2)
+    recurrence = Recurrence(PeriodType.WEEK, interval=2, start=start)
+    created = api.create_paycheck(CreatePaycheck("acme", "Acme pay", recurrence))
+    paycheck = api.paycheck(created.handle, start)
+    assert (paycheck.gross, paycheck.net) == (Money("3000.00"), Money("2640.00"))
+    assert created.handle in {item.schedule for item in api.payroll(start).paychecks}
+    drafted = api.template_from_schedule(created.handle, "Copy")
+    assert drafted.lines == (PayrollLine(federal.handle, percent=Decimal("12")),)
+
+    change = PayChange(created.handle, date(2026, 3, 1), Money("3300.00"), amounts={})
+    before = db.get_scheduled(created.handle).serialize()
+    preview = api.preview_pay_change(change)
+    assert preview.total(PayLegKind.NET) == Money("2904.00")
+    assert db.get_scheduled(created.handle).serialize() == before
+    applied = api.apply_pay_change(change)
+    assert applied.as_dict() == preview.as_dict()
+    assert db.get_scheduled(created.handle).serialize() != before
+
+    stored = db.get_metadata("payroll_templates")
+    for call, status, code in (
+        (lambda: api.save_payroll_template(SavePayrollTemplate(template)), 400, None),
+        (lambda: api.delete_payroll_template("Nobody"), 404, "payroll.template.not_found"),
+        (lambda: api.paycheck(book.checking), 404, "schedule.not_found"),
+        (
+            lambda: api.create_paycheck(CreatePaycheck("Nobody", "x", recurrence)),
+            404,
+            "payroll.template.not_found",
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert refused.value.status == status
+        assert code is None or refused.value.code == code
+    assert db.get_metadata("payroll_templates") == stored
+    assert api.delete_payroll_template("ACME").name == "Acme"
+    assert api.payroll().templates == ()
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -1251,6 +1315,17 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("POST", "/api/v1/drawdowns", {"scenario": "x"}, 400, "request.invalid"),
         ("DELETE", "/api/v1/scenarios/x/periods/first", None, 400, "request.invalid"),
         ("GET", "/api/v1/scenarios/lookup", None, 400, "query.missing"),
+        ("GET", "/api/v1/payroll?as_of=soon", None, 400, "query.date.invalid"),
+        ("POST", "/api/v1/payroll/templates", {"template": "Acme"}, 400, "request.invalid"),
+        ("POST", "/api/v1/payroll/templates/draft", {"schedule": "x"}, 400, "request.invalid"),
+        ("DELETE", "/api/v1/payroll/templates/Nobody", None, 404, "payroll.template.not_found"),
+        (
+            "POST",
+            "/api/v1/payroll/pay-changes/preview",
+            {"schedule": "x", "start": "2026-01-01", "gross": "1", "amounts": {"a": 1}},
+            400,
+            "request.invalid",
+        ),
     ]
     for method, route, body, status, code in cases:
         got, payload, _ = _raw(remote, method, route, body)

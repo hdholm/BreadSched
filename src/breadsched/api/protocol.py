@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
+from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
@@ -58,6 +59,7 @@ from ..gen.services.categorization import (
     CategorizationRules,
     CategoryRule,
 )
+from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.receivables import (
     AcceptedReimbursements,
     CandidateLine,
@@ -402,3 +404,33 @@ class BookApi(Protocol):
         ...
 
     def delete_assumption_period(self, scenario: str, index: int) -> SavedScenario: ...
+
+    # ------------------------------------------------------------------ payroll
+
+    def payroll(self, as_of: date | None = None) -> PayrollView:
+        """Paychecks as of ``as_of`` (default today), templates, and form choices."""
+        ...
+
+    def paycheck(self, schedule: str, as_of: date | None = None) -> PaycheckBreakdown:
+        """One schedule read as a paycheck."""
+        ...
+
+    def template_from_schedule(
+        self, schedule: str, name: str, as_of: date | None = None
+    ) -> PayrollTemplate:
+        """A template describing a paycheck; nothing is saved."""
+        ...
+
+    def save_payroll_template(self, request: SavePayrollTemplate) -> PayrollTemplate: ...
+
+    def delete_payroll_template(self, name: str) -> PayrollTemplate: ...
+
+    def create_paycheck(self, request: CreatePaycheck) -> SavedSchedule:
+        """Add a paycheck schedule from a saved template."""
+        ...
+
+    def preview_pay_change(self, request: PayChange) -> PayChangePlan:
+        """The paycheck after a dated pay change; writes nothing."""
+        ...
+
+    def apply_pay_change(self, request: PayChange) -> PayChangePlan: ...

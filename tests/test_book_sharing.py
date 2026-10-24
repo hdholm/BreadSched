@@ -312,6 +312,28 @@ def test_scenarios_work_through_the_server_holding_the_book(running, book_path, 
     assert "no scenario named 'Lean'" in capsys.readouterr().err
 
 
+def test_payroll_works_through_the_server_holding_the_book(running, book_path, capsys):
+    path = str(book_path)
+    save = ["payroll", path, "--save-template", "Wages", "--from-schedule", "Sample wages"]
+    assert main([*save, "--as-of", "2026-03-15"]) == 0
+    assert "Saved payroll template 'Wages'" in capsys.readouterr().out
+    assert [item["name"] for item in running.db.get_metadata("payroll_templates")] == ["Wages"]
+    assert main(["payroll", path, "--as-of", "2026-03-15", "--json"]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert [item["name"] for item in listed["paychecks"]] == ["Sample wages"]
+    assert [item["name"] for item in listed["templates"]] == ["Wages"]
+    assert main(["payroll", path, "--show", "Sample wages", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["gross"] == "4200.00"
+    change = ["payroll", path, "--pay-change", "Sample wages", "--gross", "4400"]
+    before = repr([s.serialize() for s in running.db.iter_scheduled()])
+    assert main([*change, "--start", "2027-01-01", "--preview"]) == 0
+    assert "Pay change preview" in capsys.readouterr().out
+    assert repr([s.serialize() for s in running.db.iter_scheduled()]) == before
+    assert main(["payroll", path, "--delete-template", "wages"]) == 0
+    assert running.db.get_metadata("payroll_templates") == []
+    capsys.readouterr()
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

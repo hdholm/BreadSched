@@ -224,6 +224,22 @@ scenario in its stored form:
   the browser's scenario estimate editor (`save_fixed_scenario_schedule`) has not
   moved.
 
+Payroll followed:
+- **Reads:** `payroll(as_of)` (`PayrollView`: paychecks, saved templates, the
+  accounts a template may use, and their full names) and `paycheck(schedule,
+  as_of)`, one schedule read as a paycheck.
+- **Writes:** drafting a template from a paycheck (nothing saved), saving and
+  deleting a template, creating a paycheck schedule from a template, and previewing
+  or applying a dated pay change. Templates live in the book's metadata, so the
+  server names their change `payroll-template` itself. The typed codec now reads a
+  `Mapping` field (a pay change's per-account amounts) as an object.
+- **Resources:** `GET /api/v1/payroll`, `GET /api/v1/schedules/{handle}/paycheck`,
+  `POST /api/v1/payroll/templates/draft`, `POST /api/v1/payroll/templates`,
+  `DELETE /api/v1/payroll/templates/{name}`, `POST /api/v1/payroll/paychecks`,
+  `POST /api/v1/payroll/pay-changes/preview`, and `POST /api/v1/payroll/pay-changes`.
+- **Interfaces:** the command line's `payroll`, the browser's payroll page, and
+  GTK's Payroll dialog.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

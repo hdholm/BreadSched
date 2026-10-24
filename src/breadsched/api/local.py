@@ -17,6 +17,7 @@ from contextlib import contextmanager
 from datetime import date
 
 from ..gen.db.sqlite import DbSQLite
+from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
@@ -91,6 +92,7 @@ from ..gen.services import (
 )
 from ..gen.services import advance_days as stored_advance_days
 from ..gen.services import assumptions as assumption_service
+from ..gen.services import payroll as payroll_service
 from ..gen.services import receivables as receivable_service
 from ..gen.services import scenarios as scenario_service
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
@@ -100,6 +102,7 @@ from ..gen.services.categorization import (
     CategorizationRules,
     CategoryRule,
 )
+from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.receivables import (
     AcceptedReimbursements,
     CandidateLine,
@@ -353,6 +356,37 @@ class LocalBookServer:
     def delete_assumption_period(self, scenario: str, index: int) -> SavedScenario:
         request = assumption_service.DeleteAssumptionPeriod(scenario, index)
         return unwrap(assumption_service.delete_assumption_period(self.db, request))
+
+    # ------------------------------------------------------------------ payroll
+
+    def payroll(self, as_of: date | None = None) -> PayrollView:
+        return payroll_service.payroll_view(self.db, as_of)
+
+    def paycheck(self, schedule: str, as_of: date | None = None) -> PaycheckBreakdown:
+        return unwrap(payroll_service.paycheck(self.db, schedule, as_of))
+
+    def template_from_schedule(
+        self, schedule: str, name: str, as_of: date | None = None
+    ) -> PayrollTemplate:
+        found = payroll_service.template_from_schedule(self.db, schedule, name, when=as_of)
+        return unwrap(found)
+
+    def save_payroll_template(self, request: SavePayrollTemplate) -> PayrollTemplate:
+        with self._changing("payroll-template"):
+            return unwrap(payroll_service.save_payroll_template(self.db, request))
+
+    def delete_payroll_template(self, name: str) -> PayrollTemplate:
+        with self._changing("payroll-template"):
+            return unwrap(payroll_service.delete_payroll_template(self.db, name))
+
+    def create_paycheck(self, request: CreatePaycheck) -> SavedSchedule:
+        return unwrap(payroll_service.create_paycheck_schedule(self.db, request))
+
+    def preview_pay_change(self, request: PayChange) -> PayChangePlan:
+        return unwrap(payroll_service.preview_pay_change(self.db, request))
+
+    def apply_pay_change(self, request: PayChange) -> PayChangePlan:
+        return unwrap(payroll_service.apply_pay_change(self.db, request))
 
     # -------------------------------------------------------------- receivables
 
