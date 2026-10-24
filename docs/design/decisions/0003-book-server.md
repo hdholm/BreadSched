@@ -398,6 +398,15 @@ an arithmetic amount, a filled trade, a completed account, and the next check nu
 come from the server both ways. Typed dates need no book and stay a local parse.
 GTK's register otherwise still reads the book directly.
 
+Security prices followed, with a service of their own: `gen/services/security_prices`
+checks a manual price before `engine.valuation` writes it and names each refusal with
+a stable code (`security.price.invalid`, `security.symbol.duplicate`, and so on), so a
+refused price leaves the book unchanged; until now the engine raised plain errors
+and the browser adapter checked the price itself. `securities()` and
+`save_security_price` (`GET /api/v1/securities`, `POST /api/v1/security-prices`) serve
+the browser's and GTK's security price editors. Both still list the quote currencies
+from the book, in book order, since the first is the editor's default.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

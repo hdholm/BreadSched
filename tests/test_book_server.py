@@ -1619,6 +1619,65 @@ def test_every_response_names_the_revision_and_a_stale_write_is_refused(remote):
     assert client.set_advance_days(SetAdvanceDays(sched.handle, remind_days=6)).remind_days == 6
 
 
+def test_security_prices_are_listed_and_saved_alike(target, book):
+    from breadsched.gen.services.security_prices import SaveSecurityPrice
+
+    api, db = target.api, target.db
+    usd = db.get_commodity_by_mnemonic("USD")
+    before = sorted(repr(price.serialize()) for price in db.iter_prices())
+    for request, code in (
+        (
+            SaveSecurityPrice(None, usd.handle, date(2026, 3, 1), Money("0")),
+            "security.price.invalid",
+        ),
+        (
+            SaveSecurityPrice(None, usd.handle, date(2026, 3, 1), Money("1")),
+            "security.symbol.required",
+        ),
+        (SaveSecurityPrice(usd.handle, None, date(2026, 3, 1), Money("1")), "security.is_currency"),
+        (
+            SaveSecurityPrice("gone", usd.handle, date(2026, 3, 1), Money("1")),
+            "security.not_found",
+        ),
+        (
+            SaveSecurityPrice(None, "gone", date(2026, 3, 1), Money("1"), mnemonic="IDX"),
+            "security.currency.invalid",
+        ),
+        (
+            SaveSecurityPrice(
+                None, usd.handle, date(2026, 3, 1), Money("1"), mnemonic="IDX", namespace="ISO4217"
+            ),
+            "security.namespace.invalid",
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            api.save_security_price(request)
+        status = 404 if code.endswith("not_found") else 400
+        assert (refused.value.status, refused.value.code) == (status, code)
+    # A refused price leaves the book as it was.
+    assert sorted(repr(price.serialize()) for price in db.iter_prices()) == before
+    assert db.get_commodity_by_mnemonic("IDX") is None
+
+    saved = api.save_security_price(
+        SaveSecurityPrice(
+            None, usd.handle, date(2026, 3, 1), Money("125.25"), mnemonic="idx", fullname="Index"
+        )
+    )
+    assert (saved.security.mnemonic, saved.currency.mnemonic) == ("IDX", "USD")
+    assert saved.price.value == Money("125.25")
+    [quote] = [item for item in api.securities() if item.security.mnemonic == "IDX"]
+    assert (quote.latest.quote_date, quote.latest.value) == (date(2026, 3, 1), Money("125.25"))
+    again = api.save_security_price(
+        SaveSecurityPrice(saved.security.handle, usd.handle, date(2026, 3, 1), Money("126"))
+    )
+    assert again.price.handle == saved.price.handle  # the same day's price is replaced
+    with pytest.raises(ApiError) as refused:
+        api.save_security_price(
+            SaveSecurityPrice(None, usd.handle, date(2026, 3, 2), Money("1"), mnemonic="IDX")
+        )
+    assert refused.value.code == "security.symbol.duplicate"
+
+
 def test_entry_input_reads_alike(target, book):
     from test_specific_lots import _fund
 
@@ -1947,6 +2006,7 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("GET", "/api/v1/activity?start=2026-01-01", None, 400, "query.missing"),
         ("GET", "/api/v1/schedules/due?days=many", None, 400, "query.integer.invalid"),
         ("GET", "/api/v1/entry/trade", None, 400, "query.missing"),
+        ("POST", "/api/v1/security-prices", {"security": None}, 400, "request.invalid"),
         ("GET", "/api/v1/entry/amount?number_format=dash", None, 400, "query.invalid"),
         ("GET", "/api/v1/entry/num?account=x&step=lots", None, 400, "query.integer.invalid"),
         ("GET", "/api/v1/receivables/costs?start=2026-01-01", None, 400, "query.missing"),

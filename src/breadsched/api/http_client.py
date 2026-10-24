@@ -146,6 +146,7 @@ from ..gen.services.scenarios import (
     SetReimbursementOverride,
     SuppressScenarioSchedule,
 )
+from ..gen.services.security_prices import SavedSecurityPrice, SaveSecurityPrice, SecurityQuote
 from ..gen.services.tax import SetTaxMarks, TaxMarks
 from .account_codec import save_account_json
 from .contract import ApiError, to_json
@@ -1025,6 +1026,14 @@ class HttpBookClient:
     def save_exchange_rate(self, request: SaveExchangeRate) -> CommodityPrice:
         found = self._call("POST", "/exchange-rates", body=to_data(request))
         return from_data(CommodityPrice, found["rate"], "rate")
+
+    def securities(self) -> tuple[SecurityQuote, ...]:
+        found = self._call("GET", "/securities")
+        return from_data(tuple[SecurityQuote, ...], found["securities"], "securities")
+
+    def save_security_price(self, request: SaveSecurityPrice) -> SavedSecurityPrice:
+        found = self._call("POST", "/security-prices", body=to_data(request))
+        return from_data(SavedSecurityPrice, found, "saved")
 
     # ------------------------------------------------------- dashboard settings
 

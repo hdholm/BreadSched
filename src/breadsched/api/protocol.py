@@ -135,6 +135,7 @@ from ..gen.services.scenarios import (
     SetReimbursementOverride,
     SuppressScenarioSchedule,
 )
+from ..gen.services.security_prices import SavedSecurityPrice, SaveSecurityPrice, SecurityQuote
 from ..gen.services.tax import SetTaxMarks, TaxMarks
 
 __all__ = ["BookApi", "Change", "Listener"]
@@ -686,6 +687,14 @@ class BookApi(Protocol):
 
     def save_exchange_rate(self, request: SaveExchangeRate) -> CommodityPrice:
         """Save a dated manual quote; one for the same pair and date is replaced."""
+        ...
+
+    def securities(self) -> tuple[SecurityQuote, ...]:
+        """Every security with its latest exact dated price."""
+        ...
+
+    def save_security_price(self, request: SaveSecurityPrice) -> SavedSecurityPrice:
+        """Save a dated manual quote, creating the security when none is named."""
         ...
 
     # ------------------------------------------------------- dashboard settings

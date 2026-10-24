@@ -1196,6 +1196,8 @@ class TestBookServerBoundaries:
         "read_entry_trade",
         "complete_entry_account",
         "next_entry_num",
+        "save_security_price",
+        "latest_price",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1342,6 +1344,8 @@ class TestBookServerBoundaries:
         "entry_trade",
         "entry_accounts",
         "next_num",
+        "securities",
+        "save_security_price",
     }
 
     @pytest.mark.parametrize(
@@ -1410,6 +1414,8 @@ class TestBookServerBoundaries:
             ("web/autocomplete_resource.py", ("entry_suggestion",)),
             ("gui/register_sheet.py", ("num_key", "read_amount", "propose")),
             ("gui/dialogs/transaction_dialog.py", ("propose_from_entry",)),
+            ("web/account_resource.py", ("commodities", "commodity_price_save")),
+            ("gui/dialogs/security_price_dialog.py", ("_on_save",)),
             ("web/dashboard_resource.py", ("dashboard_report",)),
             ("gui/views/dashboard.py", ("refresh",)),
             ("cli/quote_commands.py", ("cmd_quotes", "cmd_quote_source")),

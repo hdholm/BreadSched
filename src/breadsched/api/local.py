@@ -104,6 +104,7 @@ from ..gen.services import (
     save_formula_schedule,
     save_transaction,
     savings_goals,
+    security_prices,
     set_advance_days,
     set_tags,
     tag_counts,
@@ -202,6 +203,7 @@ from ..gen.services.scenarios import (
     SetReimbursementOverride,
     SuppressScenarioSchedule,
 )
+from ..gen.services.security_prices import SavedSecurityPrice, SaveSecurityPrice, SecurityQuote
 from ..gen.services.tax import SetTaxMarks, TaxMarks
 from .contract import ApiError, unwrap
 from .protocol import Change, Listener
@@ -628,6 +630,12 @@ class LocalBookServer:
 
     def save_exchange_rate(self, request: SaveExchangeRate) -> CommodityPrice:
         return unwrap(exchange_rates.save_exchange_rate(self.db, request))
+
+    def securities(self) -> tuple[SecurityQuote, ...]:
+        return security_prices.securities(self.db)
+
+    def save_security_price(self, request: SaveSecurityPrice) -> SavedSecurityPrice:
+        return unwrap(security_prices.save_security_price(self.db, request))
 
     # ------------------------------------------------------- dashboard settings
 

@@ -95,6 +95,8 @@ Resources so far, all under ``/api/v1``:
   (``SaveLoan``).
 * ``GET /currencies`` and ``/currencies/lookup`` (``reference``); ``POST /exchange-rates``
   (``SaveExchangeRate``).
+* ``GET /securities`` – each security with its latest price; ``POST /security-prices``
+  (``SaveSecurityPrice``) – one dated manual price, creating the security when needed.
 * ``GET /dashboard`` (``as_of``, ``liquidity_days``, ``emergency_months``) – the
   Dashboard computed once, over other horizons without saving them.
 * ``GET`` and ``PATCH /dashboard/settings`` (``SaveDashboardConfig``) – the
@@ -203,6 +205,7 @@ from ..gen.services.scenarios import (
     SetReimbursementOverride,
     SuppressScenarioSchedule,
 )
+from ..gen.services.security_prices import SaveSecurityPrice
 from ..gen.services.tax import SetTaxMarks
 from .context import Api
 
@@ -239,6 +242,8 @@ __all__ = [
     "currencies_get",
     "currency_lookup",
     "exchange_rate_save",
+    "securities_get",
+    "security_price_save",
     "loan_choices_get",
     "loan_preview_v1",
     "loan_save_v1",
@@ -1312,6 +1317,16 @@ def currency_lookup(api: Api, _path: Path, query: QueryParams) -> dict:
 def exchange_rate_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     request = from_data(SaveExchangeRate, body, "request")
     return {"rate": to_data(api.book.save_exchange_rate(request))}
+
+
+def securities_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return {"securities": to_data(api.book.securities())}
+
+
+def security_price_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(SaveSecurityPrice, body, "request")
+    return to_data(api.book.save_security_price(request))
 
 
 def dashboard_get(api: Api, _path: Path, query: QueryParams) -> dict:

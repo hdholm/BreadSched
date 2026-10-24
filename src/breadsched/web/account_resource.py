@@ -12,9 +12,9 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from ..api.contract import ApiError
-from ..gen.engine import valuation
 from ..gen.lib import Account, AccountType, FsaFundingYear
 from ..gen.services import SaveAccount
+from ..gen.services.security_prices import SaveSecurityPrice
 from .controls import input_money
 
 if TYPE_CHECKING:
@@ -110,12 +110,11 @@ def _stored(api: Api, handle: str) -> Account | None:
 
 def commodities(api: Api) -> dict:
     """Securities, currencies, and their latest exact dated prices."""
+    # In book order: the first is the editor's default quote currency.
     currencies = [item for item in api.db.iter_commodities() if item.is_currency]
     securities = []
-    for item in api.db.iter_commodities():
-        if item.is_currency:
-            continue
-        latest = valuation.latest_price(api.db, item)
+    for quote in api.book.securities():
+        item, latest = quote.security, quote.latest
         securities.append(
             {
                 "handle": item.handle,
@@ -149,29 +148,26 @@ def commodity_price_save(api: Api, payload: dict) -> dict:
         value = input_money(payload, payload.get("price") or "0")
     except (ValueError, ArithmeticError) as exc:
         raise ValueError("price must be a valid number") from exc
-    if value <= 0:
-        raise ValueError("price must be greater than zero")
     try:
         fraction = int(payload.get("fraction") or 10000)
     except (TypeError, ValueError) as exc:
         raise ValueError("security fraction must be a whole number") from exc
-    security, price = valuation.save_security_price(
-        api.db,
-        security_handle=security_handle,
-        currency_handle=currency_handle,
-        quote_date=quote_date,
-        value=value,
-        mnemonic=str(payload.get("mnemonic") or ""),
-        fullname=str(payload.get("fullname") or ""),
-        namespace=str(payload.get("namespace") or "FUND"),
-        fraction=fraction,
+    saved = api.book.save_security_price(
+        SaveSecurityPrice(
+            security=security_handle,
+            currency=currency_handle or None,
+            quote_date=quote_date,
+            value=value,
+            mnemonic=str(payload.get("mnemonic") or ""),
+            fullname=str(payload.get("fullname") or ""),
+            namespace=str(payload.get("namespace") or "FUND"),
+            fraction=fraction,
+        )
     )
-    currency = api.db.get_commodity(price.currency)
-    assert currency is not None
     return {
-        "commodity": security.handle,
-        "mnemonic": security.mnemonic,
-        "currency": currency.mnemonic,
+        "commodity": saved.security.handle,
+        "mnemonic": saved.security.mnemonic,
+        "currency": saved.currency.mnemonic,
         "date": quote_date,
         "price": value,
     }
