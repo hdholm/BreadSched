@@ -5,7 +5,9 @@
 The current layout keeps each transaction as a JSON blob in ``txn`` with a derived
 ``split_index``; the candidate normalizes transactions and splits into typed,
 constrained tables (``txn_n``/``split_n``) and keeps only rarely used,
-BreadSched-owned transaction fields as JSON. Both are written and read with the
+BreadSched-owned transaction fields as JSON. A third layout keeps the current blob
+and index but writes *minimized* JSON: every key whose value is what reading would
+supply when the key is missing is left out. Both are written and read with the
 same plain SQL the storage layer would use, so the figures compare the layouts and
 not the surrounding undo journal or verification, which either layout needs. Each
 operation reports the best of ``--repeat`` runs. Results go to standard output as
@@ -245,6 +247,65 @@ class BlobLayout(Layout):
         return total
 
 
+def _omittable(read: Callable[[dict], dict], sample: dict) -> dict[str, object]:
+    """Keys of ``sample`` that reading supplies when missing, with the value it supplies."""
+    defaults: dict[str, object] = {}
+    for key in sample:
+        if key in {"_schema", "handle"}:
+            continue
+        rest = {name: value for name, value in sample.items() if name != key}
+        try:
+            restored = read(rest)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if set(restored) == set(sample) and all(restored[name] == sample[name] for name in rest):
+            defaults[key] = restored[key]
+    return defaults
+
+
+def _split_read(data: dict) -> dict:
+    return Split.from_dict(data).serialize()
+
+
+def _txn_read(data: dict) -> dict:
+    return Transaction.from_dict(data).serialize()
+
+
+class MinimizedBlobLayout(BlobLayout):
+    name = "blob + split_index, minimized JSON"
+
+    def __init__(self, path: Path, sample: dict) -> None:
+        super().__init__(path)
+        self.txn_defaults = _omittable(_txn_read, {**sample, "splits": sample["splits"]})
+        self.txn_defaults.pop("splits", None)
+        self.split_defaults = _omittable(_split_read, sample["splits"][0])
+
+    def _minimize(self, data: dict) -> dict:
+        kept = {
+            key: value
+            for key, value in data.items()
+            if key not in self.txn_defaults or self.txn_defaults[key] != value
+        }
+        kept["splits"] = [
+            {
+                key: value
+                for key, value in split.items()
+                if key not in self.split_defaults or self.split_defaults[key] != value
+            }
+            for split in data["splits"]
+        ]
+        return kept
+
+    def write(self, transactions: Iterable[dict]) -> None:
+        with self.conn:
+            for data in transactions:
+                txn, splits = _blob_rows(data)
+                txn = (*txn[:3], json.dumps(self._minimize(data), separators=(",", ":")))
+                self.conn.execute("INSERT OR REPLACE INTO txn VALUES (?,?,?,?)", txn)
+                self.conn.execute("DELETE FROM split_index WHERE txn=?", (txn[0],))
+                self.conn.executemany("INSERT INTO split_index VALUES (?,?,?,?,?,?,?,?)", splits)
+
+
 class NormalizedLayout(Layout):
     name = "normalized tables (candidate)"
     schema = NORMALIZED_SCHEMA
@@ -332,9 +393,13 @@ def measure(count: int, repeat: int) -> list[tuple[str, dict[str, float]]]:
     edits = serialized[-50:]
     results = []
     with tempfile.TemporaryDirectory() as folder:
-        for layout_type in (BlobLayout, NormalizedLayout):
+        for layout_type in (BlobLayout, NormalizedLayout, MinimizedBlobLayout):
             path = Path(folder) / f"{layout_type.__name__}.sqlite"
-            layout = layout_type(path)
+            layout = (
+                layout_type(path, serialized[0])
+                if layout_type is MinimizedBlobLayout
+                else layout_type(path)
+            )
             started = time.perf_counter()
             layout.write(serialized)
             bulk = time.perf_counter() - started
@@ -350,8 +415,21 @@ def measure(count: int, repeat: int) -> list[tuple[str, dict[str, float]]]:
                 layout.write([data])
                 single.append(time.perf_counter() - started)
             busiest = accounts[0]
+            stored = (
+                [
+                    len(row[0])
+                    for row in layout.conn.execute(
+                        "SELECT blob FROM txn ORDER BY handle LIMIT 1000"
+                    )
+                ]
+                if layout_type is not NormalizedLayout
+                else []
+            )
             figures = {
                 "file size (MiB)": size / 2**20,
+                "mean transaction JSON (bytes)": statistics.mean(stored)
+                if stored
+                else float("nan"),
                 "bulk write (s)": bulk,
                 "load every transaction (s)": best(layout.load_all, repeat),
                 "busiest register (s)": best(partial(layout.register, busiest), repeat),
@@ -369,13 +447,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repeat", type=int, default=5)
     args = parser.parse_args(argv)
     results = measure(args.transactions, args.repeat)
-    (current_name, current), (candidate_name, candidate) = results
+    (current_name, current), *others = results
     print(f"{args.transactions} transactions, best of {args.repeat}\n")
-    print(f"| measure | {current_name} | {candidate_name} | candidate / current |")
-    print("|---|---:|---:|---:|")
+    headings = " | ".join(f"{name} | / current" for name, _ in others)
+    print(f"| measure | {current_name} | {headings} |")
+    print("|---|---:|" + "---:|---:|" * len(others))
     for key in current:
-        ratio = candidate[key] / current[key] if current[key] else float("nan")
-        print(f"| {key} | {current[key]:.3f} | {candidate[key]:.3f} | {ratio:.2f} |")
+        cells = []
+        for _name, figures in others:
+            ratio = figures[key] / current[key] if current[key] else float("nan")
+            cells.append(f"{figures[key]:.3f} | {ratio:.2f}")
+        print(f"| {key} | {current[key]:.3f} | " + " | ".join(cells) + " |")
     return 0
 
 

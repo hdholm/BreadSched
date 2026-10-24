@@ -36,6 +36,12 @@ the same user (#358):
 - **Explicit server:** `--server` takes its token from a file or the environment,
   never from the command line, where other users could read it in the process list.
 
+Reaching a book from another device goes only through a TLS reverse proxy on the
+same host, with authentication of its own; the server itself never listens beyond
+loopback. Decision 0003 documents the method, the checks the proxy must keep
+(origin, host, buffering, logging), an illustrative nginx configuration, and the
+server changes still open.
+
 GTK shares its open book only when the user turns on **Preferences → Sharing**. It
 then listens on the loopback interface with the same per-server token, trusted-Host,
 and trusted-Origin checks as the web server, and publishes the same user-only server
