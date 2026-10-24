@@ -6,6 +6,7 @@ import argparse
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
+from ..api.protocol import BookApi
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
     activity,
@@ -22,15 +23,9 @@ from ..gen.lib import (
     Scenario,
 )
 from ..gen.services import (
-    DeleteScenario,
     SaveDrawdown,
     SaveScenario,
     SaveScenarioAssumptions,
-    delete_scenario,
-    remove_drawdown,
-    save_drawdown,
-    save_scenario,
-    save_scenario_assumptions,
 )
 from ..presentation import (
     goal_milestone_text,
@@ -42,10 +37,11 @@ from ..presentation import (
 from .common import (
     AddCommand,
     CommandError,
+    add_server_options,
+    book_api,
     emit,
     open_book,
     parse_date,
-    resolve_account,
     table,
 )
 
@@ -347,54 +343,57 @@ def _scenario_for(db: DbSQLite, args: argparse.Namespace) -> Scenario:
     )
 
 
+def _named_scenario(book: BookApi, name: str) -> Scenario:
+    found = next((item for item in book.scenarios() if item.name == name), None)
+    if found is None:
+        raise CommandError(f"no scenario named {name!r}")
+    return found
+
+
 def cmd_scenario(args: argparse.Namespace) -> int:
     if args.action == "list":
-        db = open_book(args.book, "r")
-        try:
-            scenarios = list(db.iter_scenarios())
-            effective = {s.handle: s.effective_assumptions() for s in scenarios}
-            names: dict[str | None, str] = {
-                None: "Base",
-                **{s.handle: s.name for s in scenarios},
-            }
-            emit(
+        with book_api(args, "r") as book:
+            scenarios = book.scenarios()
+        effective = {s.handle: s.effective_assumptions() for s in scenarios}
+        names: dict[str | None, str] = {
+            None: "Base",
+            **{s.handle: s.name for s in scenarios},
+        }
+        emit(
+            [
+                {
+                    "name": s.name,
+                    "parent": names.get(s.parent_handle, "Base"),
+                    "years": s.years,
+                    "income_growth": effective[s.handle].income_growth,
+                    "expense_inflation": effective[s.handle].expense_inflation,
+                    "investment_return": effective[s.handle].investment_return,
+                    "assumption_sources": s.assumption_sources(),
+                }
+                for s in scenarios
+            ],
+            args,
+            table(
                 [
-                    {
-                        "name": s.name,
-                        "parent": names.get(s.parent_handle, "Base"),
-                        "years": s.years,
-                        "income_growth": effective[s.handle].income_growth,
-                        "expense_inflation": effective[s.handle].expense_inflation,
-                        "investment_return": effective[s.handle].investment_return,
-                        "assumption_sources": s.assumption_sources(),
-                    }
+                    [
+                        s.name,
+                        names.get(s.parent_handle, "Base"),
+                        str(s.years),
+                        f"{effective[s.handle].income_growth:.1%}",
+                        f"{effective[s.handle].expense_inflation:.1%}",
+                        f"{effective[s.handle].investment_return:.1%}",
+                    ]
                     for s in scenarios
                 ],
-                args,
-                table(
-                    [
-                        [
-                            s.name,
-                            names.get(s.parent_handle, "Base"),
-                            str(s.years),
-                            f"{effective[s.handle].income_growth:.1%}",
-                            f"{effective[s.handle].expense_inflation:.1%}",
-                            f"{effective[s.handle].investment_return:.1%}",
-                        ]
-                        for s in scenarios
-                    ],
-                    ["name", "parent", "years", "income", "inflation", "return"],
-                    right={2, 3, 4, 5},
-                ),
-            )
-            return 0
-        finally:
-            db.close()
+                ["name", "parent", "years", "income", "inflation", "return"],
+                right={2, 3, 4, 5},
+            ),
+        )
+        return 0
 
-    db = open_book(args.book)
-    try:
+    with book_api(args, "w") as book:
         if args.action == "save":
-            existing = db.get_scenario_by_name(args.name)
+            existing = next((item for item in book.scenarios() if item.name == args.name), None)
             scenario = existing or Scenario(name=args.name)
             scenario.years = args.years or scenario.years
             scenario.start = parse_date(args.start) or scenario.start
@@ -414,61 +413,45 @@ def cmd_scenario(args: argparse.Namespace) -> int:
                     "liability_interest",
                 }
             )
-            result = save_scenario_assumptions(
-                db,
+            saved = book.save_scenario_assumptions(
                 SaveScenarioAssumptions(
                     scenario,
                     existing_handle=existing.handle if existing is not None else None,
                 ),
             )
-            if not result.ok:
-                raise CommandError(service_error_message(result.errors[0]))
             emit(
-                {"name": scenario.name, "handle": scenario.handle},
+                {"name": saved.name, "handle": saved.handle},
                 args,
-                f"Saved scenario {scenario.name!r}",
+                f"Saved scenario {saved.name!r}",
             )
         elif args.action == "reparent":
-            reparented = db.get_scenario_by_name(args.name)
-            if reparented is None:
-                raise CommandError(f"no scenario named {args.name!r}")
+            reparented = _named_scenario(book, args.name)
             parent_name = str(args.parent or "").strip()
             if not parent_name or parent_name.casefold() == "base":
                 reparented.parent_handle = None
                 resolved_parent = "Base"
             else:
-                parent = db.get_scenario_by_name(parent_name)
-                if parent is None:
-                    raise CommandError(f"no scenario named {parent_name!r}")
+                parent = _named_scenario(book, parent_name)
                 reparented.parent_handle = parent.handle
                 resolved_parent = parent.name
             reparented.inherits_base_assumptions = True
-            result = save_scenario(db, SaveScenario(reparented, existing_handle=reparented.handle))
-            if not result.ok:
-                raise CommandError(service_error_message(result.errors[0]))
+            book.save_scenario(SaveScenario(reparented, existing_handle=reparented.handle))
             emit(
                 {"name": reparented.name, "parent": resolved_parent},
                 args,
                 f"Scenario {reparented.name!r} now inherits from {resolved_parent!r}",
             )
         elif args.action == "delete":
-            to_delete = db.get_scenario_by_name(args.name)
-            if to_delete is None:
-                raise CommandError(f"no scenario named {args.name!r}")
-            result = delete_scenario(db, DeleteScenario(to_delete.handle))
-            if not result.ok:
-                raise CommandError(service_error_message(result.errors[0]))
+            book.delete_scenario(_named_scenario(book, args.name).handle)
             emit({"deleted": args.name}, args, f"Deleted scenario {args.name!r}")
         return 0
-    finally:
-        db.close()
 
 
-def _drawdown_json(db: DbSQLite, drawdown: Drawdown) -> dict[str, object]:
+def _drawdown_json(names: dict[str, str], drawdown: Drawdown) -> dict[str, object]:
     return {
         "handle": drawdown.handle,
-        "account": db.full_name(drawdown.account),
-        "into": db.full_name(drawdown.into),
+        "account": names.get(drawdown.account, drawdown.account),
+        "into": names.get(drawdown.into, drawdown.into),
         "start": drawdown.start,
         "end": drawdown.end,
         "annual_amount": drawdown.annual_amount,
@@ -487,13 +470,11 @@ def _drawdown_rate(text: str | None) -> Decimal | None:
 
 
 def cmd_drawdown(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r" if args.action == "list" else "w")
-    try:
-        scenario = db.get_scenario_by_name(args.scenario)
-        if scenario is None:
-            raise CommandError(f"no scenario named {args.scenario!r}")
+    with book_api(args, "r" if args.action == "list" else "w") as book:
+        scenario = _named_scenario(book, args.scenario)
+        names = {record.account.handle: record.full_name for record in book.accounts()}
         if args.action == "list":
-            rows = [_drawdown_json(db, item) for item in scenario.drawdowns]
+            rows = [_drawdown_json(names, item) for item in scenario.drawdowns]
             emit(
                 rows,
                 args,
@@ -526,9 +507,7 @@ def cmd_drawdown(args: argparse.Namespace) -> int:
             ]
             if len(matches) != 1:
                 raise CommandError(f"no single drawdown matches {args.handle!r}")
-            removed = remove_drawdown(db, scenario.handle, matches[0])
-            if not removed.ok:
-                raise CommandError(service_error_message(removed.errors[0]))
+            book.remove_drawdown(scenario.handle, matches[0])
             emit({"removed": matches[0]}, args, f"Removed drawdown {matches[0][:8]}")
             return 0
         if not (args.account and args.into and args.start):
@@ -543,12 +522,11 @@ def cmd_drawdown(args: argparse.Namespace) -> int:
             handle = matches[0]
         start = parse_date(args.start)
         assert start is not None
-        result = save_drawdown(
-            db,
+        saved = book.save_drawdown(
             SaveDrawdown(
                 scenario.handle,
-                resolve_account(db, args.account).handle,
-                resolve_account(db, args.into).handle,
+                book.find_account(args.account).handle,
+                book.find_account(args.into).handle,
                 start,
                 annual_amount=Money(args.annual_amount) if args.annual_amount else None,
                 annual_rate=_drawdown_rate(args.annual_rate),
@@ -557,16 +535,12 @@ def cmd_drawdown(args: argparse.Namespace) -> int:
                 handle=handle,
             ),
         )
-        if not result.ok or result.value is None:
-            raise CommandError(service_error_message(result.errors[0]))
         emit(
-            _drawdown_json(db, result.value),
+            _drawdown_json(names, saved),
             args,
-            f"Saved drawdown {result.value.handle[:8]} in {scenario.name!r}",
+            f"Saved drawdown {saved.handle[:8]} in {scenario.name!r}",
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_compare(args: argparse.Namespace) -> int:
@@ -951,6 +925,7 @@ def register(add: AddCommand) -> None:
     scenario.add_argument("--years", type=int)
     scenario.add_argument("--start")
     assumption_flags(scenario)
+    add_server_options(scenario)
     scenario.set_defaults(func=cmd_scenario)
 
     drawdown = add("drawdown", "List, save or remove a scenario's retirement drawdowns")
@@ -966,6 +941,7 @@ def register(add: AddCommand) -> None:
         "--level", action="store_true", help="do not grow a fixed amount with inflation"
     )
     drawdown.add_argument("--handle", help="drawdown to replace or remove (prefix)")
+    add_server_options(drawdown)
     drawdown.set_defaults(func=cmd_drawdown)
 
     compare = add("compare", "Compare two saved scenarios year by year")

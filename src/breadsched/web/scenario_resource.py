@@ -15,6 +15,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING
 
+from ..api.contract import ApiError
 from ..gen.db.sqlite import DbSQLite
 from ..gen.lib import (
     AccountClass,
@@ -29,27 +30,14 @@ from ..gen.lib import (
     ScheduleGrowthPolicy,
 )
 from ..gen.services import (
-    DeleteAssumptionPeriod,
-    DeleteScenario,
     DuplicateScenario,
     FixedScheduleInput,
-    SaveAssumptionPeriod,
     SaveBaseAssumptions,
     SaveDrawdown,
     SaveFixedScenarioSchedule,
     SaveScenarioAssumptions,
     SuppressScenarioSchedule,
-    delete_assumption_period,
-    delete_scenario,
-    drawdown_accounts,
-    duplicate_scenario,
-    remove_drawdown,
-    save_assumption_period,
-    save_base_assumptions,
-    save_drawdown,
     save_fixed_scenario_schedule,
-    save_scenario_assumptions,
-    suppress_scenario_schedule,
 )
 from .controls import input_money, service_error
 from .schedule_controls import (
@@ -66,6 +54,30 @@ from .schedule_controls import (
 
 if TYPE_CHECKING:
     from .context import Api
+
+
+_MISSING = object()
+
+
+def _stored(api: Api, handle: str, missing: object = _MISSING) -> Scenario:
+    """A saved scenario by handle, through the book server.
+
+    A missing one is a ``KeyError`` (a 404), or ``missing`` when one is given.
+    """
+    try:
+        found = api.book.find_scenario(handle)
+    except ApiError as exc:
+        if exc.status != 404:
+            raise
+        if missing is _MISSING:
+            raise KeyError(handle) from None
+        return missing  # type: ignore[return-value]
+    if found.handle != handle:
+        # Found by name: the caller asked for a handle.
+        if missing is _MISSING:
+            raise KeyError(handle)
+        return missing  # type: ignore[return-value]
+    return found
 
 
 def scenario_payload(scenario: Scenario, *, base: bool = False) -> dict:
@@ -104,10 +116,13 @@ def drawdown_payload(drawdown: Drawdown) -> dict:
     }
 
 
-def scenarios_report(db: DbSQLite, base: Scenario) -> dict:
+def scenarios_report(api: Api, base: Scenario) -> dict:
     """Project Base, saved scenarios, and eligible rate accounts."""
     projection_accounts = []
-    for account in db.iter_accounts():
+    names = {}
+    for record in api.book.accounts():
+        account = record.account
+        names[account.handle] = record.full_name
         if not (
             account.account_class is AccountClass.LIABILITY
             or (account.account_class is AccountClass.ASSET and account.atype.is_investment)
@@ -116,7 +131,7 @@ def scenarios_report(db: DbSQLite, base: Scenario) -> dict:
         projection_accounts.append(
             {
                 "handle": account.handle,
-                "name": db.full_name(account),
+                "name": record.full_name,
                 "class": account.account_class.value,
                 "account_rate": (
                     account.liability.annual_interest
@@ -126,16 +141,16 @@ def scenarios_report(db: DbSQLite, base: Scenario) -> dict:
             }
         )
     projection_accounts.sort(key=lambda item: item["name"].casefold())
-    sources, targets = drawdown_accounts(db)
+    sources, targets = api.book.drawdown_accounts()
 
     def choices(handles: list[str]) -> list[dict]:
-        named = [{"handle": handle, "name": db.full_name(handle)} for handle in handles]
+        named = [{"handle": handle, "name": names.get(handle, handle)} for handle in handles]
         return sorted(named, key=lambda item: item["name"].casefold())
 
     return {
         "scenarios": [
             scenario_payload(base, base=True),
-            *(scenario_payload(item) for item in db.iter_scenarios()),
+            *(scenario_payload(item) for item in api.book.scenarios()),
         ],
         "projection_accounts": projection_accounts,
         "drawdown_sources": choices(sources),
@@ -143,22 +158,20 @@ def scenarios_report(db: DbSQLite, base: Scenario) -> dict:
     }
 
 
-def base_scenario(db: DbSQLite, start: date, end: date) -> Scenario:
+def base_scenario(assumptions: Assumptions, start: date, end: date) -> Scenario:
     scenario = Scenario(
         name="Base scenario",
         start=start,
         years=max(1, end.year - start.year + 1),
     )
-    stored = db.get_metadata("planning.base_assumptions", None)
-    if isinstance(stored, dict):
-        scenario.assumptions = Assumptions.from_dict(stored)
+    scenario.assumptions = assumptions
     return scenario
 
 
-def management_base_scenario(db: DbSQLite) -> Scenario:
+def management_base_scenario(assumptions: Assumptions) -> Scenario:
     today = date.today()
     return base_scenario(
-        db,
+        assumptions,
         date(today.year, 1, 1),
         date(today.year + 9, 12, 31),
     )
@@ -292,26 +305,22 @@ def scenario_event_payload(db: DbSQLite, item: ScenarioSchedule) -> dict:
 
 def scenarios(api: Api) -> dict:
     """Base and saved planning scenarios for the management surface."""
-    return scenarios_report(api.db, management_base_scenario(api.db))
+    return scenarios_report(api, management_base_scenario(api.book.base_assumptions()))
 
 
 def scenario_save(api: Api, payload: dict) -> dict:
     handle = payload.get("handle")
     if not handle:
-        base = management_base_scenario(api.db)
+        base = management_base_scenario(api.book.base_assumptions())
         assumptions = assumptions_from_payload(api.db, payload.get("assumptions"), base.assumptions)
-        base_result = save_base_assumptions(api.db, SaveBaseAssumptions(assumptions))
-        if not base_result.ok:
-            raise service_error(base_result.errors[0])
-        return scenario_payload(management_base_scenario(api.db), base=True)
+        api.book.save_base_assumptions(SaveBaseAssumptions(assumptions))
+        return scenario_payload(management_base_scenario(api.book.base_assumptions()), base=True)
 
-    scenario = api.db.get_scenario(str(handle))
-    if scenario is None:
-        raise KeyError(str(handle))
+    scenario = _stored(api, str(handle))
     name = str(payload.get("name", "")).strip()
     if not name:
         raise ValueError("give the scenario a name first")
-    duplicate = api.db.get_scenario_by_name(name)
+    duplicate = next((item for item in api.book.scenarios() if item.name == name), None)
     if duplicate is not None and duplicate.handle != scenario.handle:
         raise ValueError(f'a scenario named "{name}" already exists')
     scenario.name = name
@@ -353,52 +362,33 @@ def scenario_save(api: Api, payload: dict) -> dict:
             else:
                 scenario.inherit_account_assumption(account_handle)
     scenario.assumptions = updated
-    result = save_scenario_assumptions(
-        api.db,
-        SaveScenarioAssumptions(scenario, existing_handle=scenario.handle),
+    api.book.save_scenario_assumptions(
+        SaveScenarioAssumptions(scenario, existing_handle=scenario.handle)
     )
-    if not result.ok:
-        raise service_error(result.errors[0])
-    reloaded = api.db.get_scenario(scenario.handle)
-    if reloaded is None:  # pragma: no cover - guarded by the successful commit
-        raise KeyError(scenario.handle)
-    return scenario_payload(reloaded)
+    return scenario_payload(_stored(api, scenario.handle))
 
 
 def scenario_duplicate(api: Api, payload: dict) -> dict:
     handle = payload.get("handle")
     if handle:
-        source = api.db.get_scenario(str(handle))
-        if source is None:
-            raise KeyError(str(handle))
+        source = _stored(api, str(handle))
     else:
-        source = management_base_scenario(api.db)
-    result = duplicate_scenario(
-        api.db,
-        DuplicateScenario(source, from_base=not bool(handle)),
-    )
-    if not result.ok:
-        raise service_error(result.errors[0])
-    saved = result.value
-    assert saved is not None
-    clone = api.db.get_scenario(saved.handle)
-    assert clone is not None
-    return scenario_payload(clone)
+        source = management_base_scenario(api.book.base_assumptions())
+    saved = api.book.duplicate_scenario(DuplicateScenario(source, from_base=not bool(handle)))
+    return scenario_payload(_stored(api, saved.handle))
 
 
 def scenario_delete(api: Api, payload: dict) -> dict:
     handle = str(payload.get("handle") or "").strip()
     if not handle:
         raise ValueError("Base scenario cannot be deleted")
-    result = delete_scenario(api.db, DeleteScenario(handle))
-    if not result.ok:
-        raise service_error(result.errors[0])
+    api.book.delete_scenario(handle)
     return {"deleted": handle}
 
 
 def scenario_period_save(api: Api, payload: dict) -> dict:
     handle = str(payload.get("handle", "")).strip()
-    scenario = api.db.get_scenario(handle) if handle else None
+    scenario = _stored(api, handle, missing=None) if handle else None
     if scenario is None:
         raise ValueError("dated assumptions belong to a saved scenario")
     start = date.fromisoformat(str(payload.get("start", "")))
@@ -426,35 +416,22 @@ def scenario_period_save(api: Api, payload: dict) -> dict:
             existing_period.per_account if existing_period is not None else None,
         ),
     )
-    result = save_assumption_period(
-        api.db,
-        SaveAssumptionPeriod(
-            scenario.handle,
-            period,
-            index=None if existing_period is None else index,
-        ),
+    api.book.save_assumption_period(
+        scenario.handle, period, None if existing_period is None else index
     )
-    if not result.ok:
-        raise service_error(result.errors[0])
-    saved = api.db.get_scenario(scenario.handle)
-    assert saved is not None
-    return scenario_payload(saved)
+    return scenario_payload(_stored(api, scenario.handle))
 
 
 def scenario_period_delete(api: Api, payload: dict) -> dict:
     handle = str(payload.get("handle", "")).strip()
-    scenario = api.db.get_scenario(handle) if handle else None
+    scenario = _stored(api, handle, missing=None) if handle else None
     if scenario is None:
         raise ValueError("dated assumptions belong to a saved scenario")
     index = int(payload.get("index", -1))
     if index < 0 or index >= len(scenario.assumption_periods):
         raise ValueError("dated assumption period no longer exists")
-    result = delete_assumption_period(api.db, DeleteAssumptionPeriod(scenario.handle, index))
-    if not result.ok:
-        raise service_error(result.errors[0])
-    saved = api.db.get_scenario(scenario.handle)
-    assert saved is not None
-    return scenario_payload(saved)
+    api.book.delete_assumption_period(scenario.handle, index)
+    return scenario_payload(_stored(api, scenario.handle))
 
 
 def _drawdown_rate(fraction: str, percent: str) -> Decimal | None:
@@ -482,8 +459,7 @@ def scenario_drawdown_save(api: Api, payload: dict) -> dict:
     percent_text = str(payload.get("annual_percent") or "").strip()
     end_text = str(payload.get("end") or "").strip()
     handle = str(payload.get("drawdown") or "").strip() or None
-    result = save_drawdown(
-        api.db,
+    api.book.save_drawdown(
         SaveDrawdown(
             str(payload.get("handle") or "").strip(),
             str(payload.get("account") or "").strip(),
@@ -498,21 +474,13 @@ def scenario_drawdown_save(api: Api, payload: dict) -> dict:
             handle=handle,
         ),
     )
-    if not result.ok:
-        raise service_error(result.errors[0])
-    saved = api.db.get_scenario(str(payload.get("handle")))
-    assert saved is not None
-    return scenario_payload(saved)
+    return scenario_payload(_stored(api, str(payload.get("handle"))))
 
 
 def scenario_drawdown_delete(api: Api, payload: dict) -> dict:
     scenario_handle = str(payload.get("handle") or "").strip()
-    result = remove_drawdown(api.db, scenario_handle, str(payload.get("drawdown") or "").strip())
-    if not result.ok:
-        raise service_error(result.errors[0])
-    saved = api.db.get_scenario(scenario_handle)
-    assert saved is not None
-    return scenario_payload(saved)
+    api.book.remove_drawdown(scenario_handle, str(payload.get("drawdown") or "").strip())
+    return scenario_payload(_stored(api, scenario_handle))
 
 
 def scenario_events(api: Api, handle: str | None) -> dict:
@@ -575,12 +543,9 @@ def scenario_events(api: Api, handle: str | None) -> dict:
 
 def scenario_event_suppress(api: Api, payload: dict) -> dict:
     scenario = scenario_for_events(api.db, payload.get("handle"))
-    result = suppress_scenario_schedule(
-        api.db,
-        SuppressScenarioSchedule(scenario.handle, str(payload.get("source_schedule", "")).strip()),
+    api.book.suppress_scenario_schedule(
+        SuppressScenarioSchedule(scenario.handle, str(payload.get("source_schedule", "")).strip())
     )
-    if not result.ok:
-        raise service_error(result.errors[0])
     return scenario_events(api, scenario.handle)
 
 

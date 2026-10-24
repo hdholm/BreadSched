@@ -298,6 +298,20 @@ def test_receivables_work_through_the_server_holding_the_book(running, book_path
     capsys.readouterr()
 
 
+def test_scenarios_work_through_the_server_holding_the_book(running, book_path, capsys):
+    path = str(book_path)
+    assert main(["scenario", path, "save", "--name", "Lean", "--years", "3"]) == 0
+    assert "Saved scenario 'Lean'" in capsys.readouterr().out
+    assert main(["scenario", path, "list", "--json"]) == 0
+    assert "Lean" in [row["name"] for row in json.loads(capsys.readouterr().out)]
+    assert main(["drawdown", path, "list", "--scenario", "Lean", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == []
+    assert main(["scenario", path, "delete", "--name", "Lean"]) == 0
+    assert all(item.name != "Lean" for item in running.db.iter_scenarios())
+    assert main(["scenario", path, "delete", "--name", "Lean"]) == 2
+    assert "no scenario named 'Lean'" in capsys.readouterr().err
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

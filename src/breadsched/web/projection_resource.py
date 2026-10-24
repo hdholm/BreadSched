@@ -18,6 +18,7 @@ from ..gen.services import (
     save_base_assumptions,
     save_scenario_assumptions,
 )
+from ..gen.services.assumptions import base_assumptions
 from ..presentation import (
     projection_goal_notes,
     reimbursement_outlook_text,
@@ -242,7 +243,7 @@ def projection_draft(
             raise KeyError(scenario_handle)
         scenario = stored.clone()
     else:
-        scenario = management_base_scenario(db)
+        scenario = management_base_scenario(base_assumptions(db))
     if years is not None:
         if years < 1 or years > 100:
             raise ValueError("projection years must be between 1 and 100")

@@ -4190,9 +4190,12 @@ class TestScenarioManagementApi:
         client.post("/api/scenario/duplicate", {"handle": None})
 
         _status, listing = client.get("/api/scenarios")
+        from breadsched.gen.services.assumptions import base_assumptions
+        from breadsched.web.context import Api
         from breadsched.web.scenario_resource import management_base_scenario
 
-        expected = scenarios_report(client.database, management_base_scenario(client.database))
+        base = management_base_scenario(base_assumptions(client.database))
+        expected = scenarios_report(Api(client.database), base)
         assert listing == json.loads(json.dumps(expected, default=str))
         assert listing["scenarios"][1]["assumption_sources"]["income_growth"] == "Base"
         names = [item["name"].casefold() for item in listing["projection_accounts"]]

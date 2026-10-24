@@ -31,6 +31,7 @@ from ..gen.lib import Scenario, ScheduledTransaction, Transaction
 from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
+from ..gen.lib.scenario import AssumptionPeriod, Assumptions, Drawdown
 from ..gen.lib.transaction import ReconcileState
 from ..gen.services import (
     AccountBalance,
@@ -61,6 +62,7 @@ from ..gen.services import (
     TagCount,
     TransactionInput,
 )
+from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.categorization import (
     AddRule,
     AppliedCategories,
@@ -86,7 +88,14 @@ from ..gen.services.savings_goals import (
     SavingsGoalsView,
     SetGoalOverride,
 )
-from ..gen.services.scenarios import SetReimbursementOverride
+from ..gen.services.scenarios import (
+    DuplicateScenario,
+    SaveDrawdown,
+    SavedScenario,
+    SaveScenario,
+    SetReimbursementOverride,
+    SuppressScenarioSchedule,
+)
 from .account_codec import save_account_json
 from .contract import ApiError, to_json
 from .protocol import Change, Listener
@@ -611,3 +620,63 @@ class HttpBookClient:
         path = f"/scenarios/{quote(request.scenario, safe='')}/reimbursements"
         found = self._call("POST", path, body=body)
         return from_data(Scenario, found["scenario"], "scenario")
+
+    # ---------------------------------------------------------------- scenarios
+
+    def scenarios(self) -> list[Scenario]:
+        return from_data(list[Scenario], self._call("GET", "/scenarios")["scenarios"])
+
+    def find_scenario(self, reference: str) -> Scenario:
+        found = self._call("GET", "/scenarios/lookup", {"reference": reference})
+        return from_data(Scenario, found["scenario"], "scenario")
+
+    def save_scenario(self, request: SaveScenario) -> SavedScenario:
+        return from_data(SavedScenario, self._call("POST", "/scenarios", body=to_data(request)))
+
+    def save_scenario_assumptions(self, request: SaveScenarioAssumptions) -> SavedScenario:
+        found = self._call("POST", "/scenario-assumptions", body=to_data(request))
+        return from_data(SavedScenario, found)
+
+    def duplicate_scenario(self, request: DuplicateScenario) -> SavedScenario:
+        found = self._call("POST", "/scenarios/duplicate", body=to_data(request))
+        return from_data(SavedScenario, found)
+
+    def delete_scenario(self, scenario: str) -> SavedScenario:
+        found = self._call("DELETE", f"/scenarios/{quote(scenario, safe='')}")
+        return from_data(SavedScenario, found)
+
+    def suppress_scenario_schedule(self, request: SuppressScenarioSchedule) -> SavedScenario:
+        path = f"/scenarios/{quote(request.scenario, safe='')}/suppressed-schedules"
+        found = self._call("POST", path, body={"source_schedule": request.source_schedule})
+        return from_data(SavedScenario, found)
+
+    def drawdown_accounts(self) -> tuple[list[str], list[str]]:
+        found = self._call("GET", "/drawdown-accounts")
+        return list(found["sources"]), list(found["targets"])
+
+    def save_drawdown(self, request: SaveDrawdown) -> Drawdown:
+        found = self._call("POST", "/drawdowns", body=to_data(request))
+        return from_data(Drawdown, found["drawdown"], "drawdown")
+
+    def remove_drawdown(self, scenario: str, drawdown: str) -> Drawdown:
+        path = f"/scenarios/{quote(scenario, safe='')}/drawdowns/{quote(drawdown, safe='')}"
+        return from_data(Drawdown, self._call("DELETE", path)["drawdown"], "drawdown")
+
+    def base_assumptions(self) -> Assumptions:
+        found = self._call("GET", "/assumptions")
+        return from_data(Assumptions, found["assumptions"], "assumptions")
+
+    def save_base_assumptions(self, request: SaveBaseAssumptions) -> Assumptions:
+        found = self._call("POST", "/assumptions", body=to_data(request))
+        return from_data(Assumptions, found["assumptions"], "assumptions")
+
+    def save_assumption_period(
+        self, scenario: str, period: AssumptionPeriod, index: int | None = None
+    ) -> SavedScenario:
+        path = f"/scenarios/{quote(scenario, safe='')}/periods"
+        found = self._call("POST", path, body={"period": to_data(period), "index": index})
+        return from_data(SavedScenario, found)
+
+    def delete_assumption_period(self, scenario: str, index: int) -> SavedScenario:
+        path = f"/scenarios/{quote(scenario, safe='')}/periods/{index}"
+        return from_data(SavedScenario, self._call("DELETE", path))

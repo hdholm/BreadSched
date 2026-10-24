@@ -10,6 +10,8 @@ from __future__ import annotations
 from calendar import monthrange
 from datetime import date
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.engine.activity import PlanMeasure, PlanSettings, ReportingPeriod
 from ...gen.engine.category_report import CategoryReport
 from ...gen.engine.plan_detail import (
@@ -22,7 +24,6 @@ from ...gen.services import (
     PlanQuery,
     SuppressScenarioSchedule,
     query_plan,
-    suppress_scenario_schedule,
 )
 from ...presentation import (
     PLAN_REIMBURSABLE_HEADING,
@@ -430,10 +431,13 @@ class PlanView(BaseView):
         scenario = self._require_scenario()
         if scenario is None or self.db is None:
             return
-        suppress_scenario_schedule(
-            self.db,
-            SuppressScenarioSchedule(scenario.handle, schedule.handle),
-        )
+        try:
+            book_server(self.db).suppress_scenario_schedule(
+                SuppressScenarioSchedule(scenario.handle, schedule.handle)
+            )
+        except ApiError:
+            # The schedule or scenario is gone; the refresh shows what is left.
+            pass
 
     def _grouping(self) -> ReportingPeriod:
         return (

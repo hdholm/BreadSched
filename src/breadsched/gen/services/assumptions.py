@@ -40,6 +40,12 @@ class SaveScenarioAssumptions:
     existing_handle: str | None = None
 
 
+def base_assumptions(db: DbSQLite) -> Assumptions:
+    """The book-level Base assumptions, or the defaults when none were saved."""
+    stored = db.get_metadata(BASE_ASSUMPTIONS_KEY, None)
+    return Assumptions.from_dict(stored) if isinstance(stored, dict) else Assumptions()
+
+
 def save_base_assumptions(db: DbSQLite, request: SaveBaseAssumptions) -> ServiceResult[Assumptions]:
     """Validate and persist the book-level Base assumptions."""
     errors = _assumption_errors(db, request.assumptions)

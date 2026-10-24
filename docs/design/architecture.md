@@ -246,7 +246,8 @@ A writable `breadsched serve` or `breadsched web` publishes a server record
 command an explicit `--server`, else the recorded server, else an in-process server.
 So `due-review`, `scheduled-next`, `scheduled-advance`, `scheduled --post`,
 `accounts`, `account`, `register`, `balance`, `add`, `edit`, `delete`, `rules`, `tags`,
-`goals`, and `receivables` work while another process holds the book (#358). `cli.common.book_api` and `add_server_options` give each such
+`goals`, `receivables`, `scenario`, and `drawdown` work while another process holds the
+book (#358). `cli.common.book_api` and `add_server_options` give each such
 command the connection and its `--server` and `--token-file` options. `tests/test_book_sharing.py` covers the record's
 life, stale records, the commands through a holding server, an explicit server, and
 `serve`.

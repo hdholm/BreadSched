@@ -23,6 +23,7 @@ from ..gen.lib import Scenario, ScheduledTransaction, Transaction
 from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
+from ..gen.lib.scenario import AssumptionPeriod, Assumptions, Drawdown
 from ..gen.lib.transaction import ReconcileState
 from ..gen.services import (
     AccountBalance,
@@ -89,8 +90,10 @@ from ..gen.services import (
     transactions_with_tag,
 )
 from ..gen.services import advance_days as stored_advance_days
+from ..gen.services import assumptions as assumption_service
 from ..gen.services import receivables as receivable_service
 from ..gen.services import scenarios as scenario_service
+from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.categorization import (
     AddRule,
     AppliedCategories,
@@ -116,7 +119,14 @@ from ..gen.services.savings_goals import (
     SavingsGoalsView,
     SetGoalOverride,
 )
-from ..gen.services.scenarios import SetReimbursementOverride
+from ..gen.services.scenarios import (
+    DuplicateScenario,
+    SaveDrawdown,
+    SavedScenario,
+    SaveScenario,
+    SetReimbursementOverride,
+    SuppressScenarioSchedule,
+)
 from .contract import ApiError, unwrap
 from .protocol import Change, Listener
 
@@ -288,6 +298,61 @@ class LocalBookServer:
 
     def set_tags(self, transaction: str, tags: list[str]) -> Transaction:
         return unwrap(set_tags(self.db, transaction, tags))
+
+    # ---------------------------------------------------------------- scenarios
+
+    def scenarios(self) -> list[Scenario]:
+        return list(self.db.iter_scenarios())
+
+    def find_scenario(self, reference: str) -> Scenario:
+        found = self.db.get_scenario(reference) or self.db.get_scenario_by_name(reference)
+        if found is None:
+            raise ApiError(
+                404, "scenario.not_found", ("scenario",), f"no scenario matches {reference!r}"
+            )
+        return found
+
+    def save_scenario(self, request: SaveScenario) -> SavedScenario:
+        return unwrap(scenario_service.save_scenario(self.db, request))
+
+    def save_scenario_assumptions(self, request: SaveScenarioAssumptions) -> SavedScenario:
+        return unwrap(assumption_service.save_scenario_assumptions(self.db, request))
+
+    def duplicate_scenario(self, request: DuplicateScenario) -> SavedScenario:
+        return unwrap(scenario_service.duplicate_scenario(self.db, request))
+
+    def delete_scenario(self, scenario: str) -> SavedScenario:
+        request = scenario_service.DeleteScenario(scenario)
+        return unwrap(scenario_service.delete_scenario(self.db, request))
+
+    def suppress_scenario_schedule(self, request: SuppressScenarioSchedule) -> SavedScenario:
+        return unwrap(scenario_service.suppress_scenario_schedule(self.db, request))
+
+    def drawdown_accounts(self) -> tuple[list[str], list[str]]:
+        return scenario_service.drawdown_accounts(self.db)
+
+    def save_drawdown(self, request: SaveDrawdown) -> Drawdown:
+        return unwrap(scenario_service.save_drawdown(self.db, request))
+
+    def remove_drawdown(self, scenario: str, drawdown: str) -> Drawdown:
+        return unwrap(scenario_service.remove_drawdown(self.db, scenario, drawdown))
+
+    def base_assumptions(self) -> Assumptions:
+        return assumption_service.base_assumptions(self.db)
+
+    def save_base_assumptions(self, request: SaveBaseAssumptions) -> Assumptions:
+        with self._changing("base-assumptions"):
+            return unwrap(assumption_service.save_base_assumptions(self.db, request))
+
+    def save_assumption_period(
+        self, scenario: str, period: AssumptionPeriod, index: int | None = None
+    ) -> SavedScenario:
+        request = assumption_service.SaveAssumptionPeriod(scenario, period, index)
+        return unwrap(assumption_service.save_assumption_period(self.db, request))
+
+    def delete_assumption_period(self, scenario: str, index: int) -> SavedScenario:
+        request = assumption_service.DeleteAssumptionPeriod(scenario, index)
+        return unwrap(assumption_service.delete_assumption_period(self.db, request))
 
     # -------------------------------------------------------------- receivables
 

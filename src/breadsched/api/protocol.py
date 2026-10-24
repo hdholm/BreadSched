@@ -20,6 +20,7 @@ from ..gen.lib import Scenario, ScheduledTransaction, Transaction
 from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
+from ..gen.lib.scenario import AssumptionPeriod, Assumptions, Drawdown
 from ..gen.lib.transaction import ReconcileState
 from ..gen.services import (
     AccountBalance,
@@ -50,6 +51,7 @@ from ..gen.services import (
     TagCount,
     TransactionInput,
 )
+from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.categorization import (
     AddRule,
     AppliedCategories,
@@ -75,7 +77,14 @@ from ..gen.services.savings_goals import (
     SavingsGoalsView,
     SetGoalOverride,
 )
-from ..gen.services.scenarios import SetReimbursementOverride
+from ..gen.services.scenarios import (
+    DuplicateScenario,
+    SaveDrawdown,
+    SavedScenario,
+    SaveScenario,
+    SetReimbursementOverride,
+    SuppressScenarioSchedule,
+)
 
 __all__ = ["BookApi", "Change", "Listener"]
 
@@ -345,3 +354,51 @@ class BookApi(Protocol):
     def set_reimbursement_override(self, request: SetReimbursementOverride) -> Scenario:
         """Change, in one scenario, what a payer is expected to reimburse and when."""
         ...
+
+    # ---------------------------------------------------------------- scenarios
+
+    def scenarios(self) -> list[Scenario]:
+        """Every scenario as stored."""
+        ...
+
+    def find_scenario(self, reference: str) -> Scenario:
+        """A scenario, as stored, by handle or exact name."""
+        ...
+
+    def save_scenario(self, request: SaveScenario) -> SavedScenario: ...
+
+    def save_scenario_assumptions(self, request: SaveScenarioAssumptions) -> SavedScenario:
+        """Save a scenario after checking its projection assumptions."""
+        ...
+
+    def duplicate_scenario(self, request: DuplicateScenario) -> SavedScenario: ...
+
+    def delete_scenario(self, scenario: str) -> SavedScenario: ...
+
+    def suppress_scenario_schedule(self, request: SuppressScenarioSchedule) -> SavedScenario:
+        """Leave one baseline schedule out of a scenario."""
+        ...
+
+    def drawdown_accounts(self) -> tuple[list[str], list[str]]:
+        """Accounts a drawdown can withdraw from, and pay into."""
+        ...
+
+    def save_drawdown(self, request: SaveDrawdown) -> Drawdown: ...
+
+    def remove_drawdown(self, scenario: str, drawdown: str) -> Drawdown: ...
+
+    def base_assumptions(self) -> Assumptions:
+        """The book's base projection assumptions."""
+        ...
+
+    def save_base_assumptions(self, request: SaveBaseAssumptions) -> Assumptions:
+        """Save the book's base projection assumptions."""
+        ...
+
+    def save_assumption_period(
+        self, scenario: str, period: AssumptionPeriod, index: int | None = None
+    ) -> SavedScenario:
+        """Add (or, at ``index``, replace) one dated assumption regime."""
+        ...
+
+    def delete_assumption_period(self, scenario: str, index: int) -> SavedScenario: ...
