@@ -51,7 +51,10 @@ The rest of this file is unscheduled and comes after the first Beta.
   stream, and an HTTP client. Phase 4 has `breadsched serve`, a user-only server
   record, and command-line commands that use the server holding a book. Phase 5
   has GTK's due review and Enter/Skip Next on the protocol, and an opt-in
-  **Preferences → Sharing** that serves GTK's open book to commands.
+  **Preferences → Sharing** that serves GTK's open book to commands. Decision 0003
+  also documents reaching a book through a TLS reverse proxy (nginx). The server
+  changes it still needs are a configured trusted origin, a Unix-socket listener, a
+  token file, and HTTPS in the HTTP client.
 
 - Split oversized modules/functions where ownership is clear. Split large GUI test
   modules only when the resulting fixture ownership and runtime isolation improve;
@@ -136,9 +139,15 @@ The rest of this file is unscheduled and comes after the first Beta.
 ### Storage, integrity, and recovery
 
 - Write transaction JSON compactly, omitting fields at their default values (as
-  `Split.importer_added` already is), to recover most of the 43% size difference
-  that [decision 0001](docs/design/decisions/0001-transaction-storage.md) measured
-  without its load-time cost. Re-run `scripts/storage_benchmark.py` to confirm.
+  `Split.importer_added` already is). Measured on 2026-10-24 (decision
+  [0001](docs/design/decisions/0001-transaction-storage.md), re-evaluation):
+  - **Gains:** 38% smaller books, half the JSON per transaction, load-all at par,
+    and faster registers.
+  - **Costs:** slower writes, until a precomputed table of defaults per class
+    replaces the per-key filtering.
+  - **Requirements:** pin the defaults with a test and version them with `_schema`.
+  - **Book server:** it would also halve the stored forms the experimental book
+    server sends.
 - Longer term, separate planning resolutions/classifications from imported ledger
   records where doing so materially simplifies synchronization and ownership.
 

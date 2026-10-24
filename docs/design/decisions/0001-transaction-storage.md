@@ -69,3 +69,61 @@ size difference were stable across runs.
 - A compact encoding of transaction JSON (omitting fields at their default values,
   as `Split.importer_added` already is) is the cheaper route to smaller books. It
   is listed after the first Beta in the roadmap.
+
+## Re-evaluation with the experimental book server (2026-10-24)
+
+The experimental book server (decision [0003](0003-book-server.md), branch
+`claude/experimental-book-server`) changes how the book is used. One server holds
+the book for every interface. Each browser or HTTP read opens its own read-only
+snapshot, and the book API sends stored forms of records over the wire: the
+transaction or schedule an edit is based on travels as its serialized JSON. So the
+decision was re-checked for both alternatives, normalized tables and a minimized
+JSON blob, which until now was only a suggestion.
+
+`scripts/storage_benchmark.py` now measures a third layout. It is the current blob
+and `split_index`, but the JSON leaves out every key whose value is the one reading
+would supply if the key were missing. The defaults are learned from `from_dict`
+itself, and the benchmark checks that every transaction reads back exactly. Two
+runs with 30,000 transactions, best of 7, with SQLite 3.45.1 and Python 3.11 on a
+4-core Linux container:
+
+| measure | current | normalized / current | minimized JSON / current |
+|---|---:|---:|---:|
+| file size (MiB) | 52.6 | 0.57 | 0.62 |
+| mean transaction JSON (bytes) | 992–997 | — | 0.51 |
+| bulk write (s) | 1.24–1.65 | 1.46–1.48 | 1.16–1.44 |
+| load every transaction (s) | 1.15–1.17 | 1.48–1.50 | 0.91–1.01 |
+| busiest register (s) | 0.86–0.94 | 1.23–1.39 | 0.72 |
+| account balance (ms) | 51–54 | 0.99–1.06 | 0.95–1.00 |
+| one edit commit (ms, median) | 1.57–1.81 | 1.08 | 0.87–1.25 |
+
+**Normalized tables: still rejected, now more firmly.**
+- **Speed:** the book server puts loading on the request path. Every Plan,
+  Projection, or report request reads a fresh snapshot, so loading 1.5 times
+  slower is paid per request, not once per session.
+- **Revisions:** per-record versions (an open question in 0003) do not need columns.
+  Each stored transaction already carries a change marker in its JSON.
+- **One writer:** sharing a book does not change SQLite's single-writer model, so
+  normalization does not help concurrency either.
+
+**Minimized JSON: worth doing, and more so with the server.**
+- **Smaller, no slower to read:** it keeps the layout and the verified index, and
+  takes most of normalization's size gain (38% smaller files). Loading is no slower
+  and registers were about 28% faster, since half as much JSON is decoded.
+- **Smaller on the wire:** the stored form is also what the book API sends when a
+  record travels (an edit's `source`, a schedule lookup), so the same encoding would
+  halve those payloads for HTTP clients.
+- **Cost:** writes are slower in this script, because each write filters every key
+  in Python. A precomputed table of defaults per class would cut that cost, and
+  writes are not on the interactive path.
+- **Risk:** an omitted key means "the default", so changing a default in `from_dict`
+  would silently change old books. Minimized storage would therefore need the
+  defaults pinned by a test and versioned with `_schema`, and a migration whenever
+  one changes.
+
+**Outcome:**
+- **Normalized tables:** the decision stands for normalized tables.
+- **Minimized JSON:** it is a storage change for `main`, not part of the book-server
+  experiment. Its value rises if the book server is adopted and HTTP clients
+  exchange stored forms. It remains listed after the first Beta in the roadmap, now
+  with these figures.
