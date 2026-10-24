@@ -108,6 +108,8 @@ class RegisterGrid(Gtk.Box):
         self.row_height = 26
         self.char_width = 8.0
         self._syncing = False
+        #: The letters typed into the cell, in the case they were typed (#363).
+        self._typed = ""
         self._widths: dict[str, float] = {}
         self._width = 0
         self._height = 0
@@ -320,6 +322,8 @@ class RegisterGrid(Gtk.Box):
                 self._syncing = False
         cell = (sheet.cursor, sheet.column, id(sheet.draft))
         arrived = cell != self._placed_cell
+        if arrived:
+            self._typed = ""  # the letters typed belong to the cell they were typed in
         self._placed_cell = cell
         heading = "Notes" if notes else sheet.headings()[sheet.column]
         self.editor.update_property(
@@ -509,9 +513,14 @@ class RegisterGrid(Gtk.Box):
         if sheet.column in ("transfer", "description"):
             bounds = self.editor.get_selection_bounds()
             start = bounds[0] if bounds else self.editor.get_position()
-            typed = text[:start] + character
             if not bounds and start < len(text):
                 return False  # typing inside the text: no quick-fill
+            # Build on the letters as typed, not as an earlier completion spelled
+            # them, so a completion that stops matching gives back the typed case (#363).
+            before = text[:start]
+            literal = self._typed if self._typed.casefold() == before.casefold() else before
+            typed = literal + character
+            self._typed = typed
             shown, names = sheet.quickfill(typed)
             self._replace(shown, _typed_end(typed, shown))
             if sheet.column == "transfer":

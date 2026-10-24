@@ -10,6 +10,25 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a293 - 2026-10-24
+
+- **Move a transaction from a register split (#364).** The register refused a split
+  line that left no split in its account, so a purchase entered on the wrong card
+  could be moved only from the full transaction editor. The rule now holds only for
+  a new entry: an edited transaction may move out entirely, and the GTK register
+  and browser register both say that it no longer shows there.
+- **Notes come with a proposal (#363).** `EntrySuggestion` now carries the
+  remembered transaction's notes, and the GTK register and transaction editor fill
+  them into an entry whose notes are still empty (private state is still never
+  copied). In the GTK register grid, a completion that stops matching gives back the
+  letters in the case they were typed, instead of keeping the proposal's case for
+  the part already typed.
+- **Toolbar rearranged (#361).** Open and Import left the GTK main toolbar (they
+  remain in the File menu and start screen); the view icons now come first, then the
+  current view's name in bold dividing them from its own commands; the register
+  gains a **Reconcile** toolbar icon; and the account and transaction counts show
+  only on the Dashboard and Accounts (`viewmanager.SUMMARY_VIEWS`).
+
 ## 0.2.0a292 - 2026-10-23
 
 - **Enter and remind in advance (#352).** A schedule's `advance_days` came from

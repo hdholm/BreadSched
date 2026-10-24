@@ -444,10 +444,24 @@ class TestOpeningABook:
         app.open_book(populated_book)
         accounts, transactions = window.status.get_text().split("\n")
         assert accounts.endswith(" accounts") and transactions.endswith(" transactions")
-        # Stacked right after the view icons, not pushed to the far end.
-        last_view = window.view_buttons[CATEGORIES[-1][0]]
-        assert last_view.get_next_sibling() is window.status
+        # Stacked right after the view's own commands, not pushed to the far end.
+        assert window.view_tools.get_next_sibling() is window.status
         assert window.status.get_hexpand() is False
+
+    def test_the_book_counts_show_only_on_the_summary_views(self, app, window, populated_book):
+        """#361: the counts belong with the Dashboard and Accounts."""
+        from breadsched.gui.viewmanager import SUMMARY_VIEWS
+
+        app.open_book(populated_book)
+        for key, _label, _icon in CATEGORIES:
+            window.show_category(key)
+            assert window.status.get_visible() is (key in SUMMARY_VIEWS), key
+        assert SUMMARY_VIEWS == {"dashboard", "accounts"}
+
+    def test_open_and_import_are_menu_commands_not_toolbar_icons(self, app, window):
+        """#361: Open and Import are reached from the File menu and start screen."""
+        actions = {button.get_action_name() for button in window.tool_buttons.values()}
+        assert not {"app.open", "app.import", "win.open", "win.import"} & actions
 
     def test_the_title_names_the_file(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -1160,6 +1174,46 @@ class TestRegisterGrid:
         grid.key(Gdk.KEY_Tab, 0)
         assert sheet.draft.transfer and (sheet.draft.increase or sheet.draft.decrease)
         assert "Proposed from" in view.entry_status.get_text()
+
+    def test_a_completion_that_stops_matching_gives_back_the_typed_case(
+        self, app, window, populated_book
+    ):
+        """#363: typing past a completion keeps the letters as they were typed."""
+        view = _grid_register(app, window, populated_book)
+        grid, sheet = view.grid, view.sheet
+        earlier = sheet.descriptions[0]
+        assert earlier[:2] != earlier[:2].lower()  # the completion changes the case
+        sheet.column = "description"
+        grid.sync()
+        _type(grid, earlier[:2].lower())
+        assert grid.editor.get_text() == earlier
+        _type(grid, "\u00e9zz")  # no earlier description continues this way
+        assert grid.editor.get_text() == earlier[:2].lower() + "\u00e9zz"
+        assert sheet.draft.description == earlier[:2].lower() + "\u00e9zz"
+
+    def test_a_proposal_fills_empty_notes_from_the_last_entry(self, app, window, populated_book):
+        """#363: the matched transaction's notes come too, never over typed ones."""
+        from breadsched.gui.register_sheet import RegisterSheet
+
+        view = _grid_register(app, window, populated_book)
+        db = view.sheet.db
+        earlier_text = view.sheet.descriptions[0]
+        earlier = next(t for t in db.iter_transactions() if t.description == earlier_text)
+        earlier.notes = "Ask for the receipt"
+        with db.transaction("Notes") as txn:
+            db.commit_transaction(earlier, txn)
+        sheet = RegisterSheet(db, view.sheet.account)
+        sheet.column = "description"
+        sheet.set_text(earlier_text)
+        assert sheet.propose()
+        assert sheet.draft.notes == "Ask for the receipt"
+        assert "its notes" in sheet.message
+        typed = RegisterSheet(db, view.sheet.account)
+        typed.draft.notes = "My own"
+        typed.column = "description"
+        typed.set_text(earlier_text)
+        typed.propose()
+        assert typed.draft.notes == "My own"
 
     def test_escape_puts_the_entry_back(self, app, window, populated_book):
         view = _grid_register(app, window, populated_book)
@@ -7856,7 +7910,7 @@ class TestViewActions:
         window.show_category("fsa-dashboard")
         assert tools() == ["win.fsa-dashboard-manage-claims"]
         window.show_category("register")
-        assert tools() == ["win.register-new-tab"]
+        assert tools() == ["win.register-reconcile", "win.register-new-tab"]
         window.show_category("dashboard")
         assert tools() == ["win.dashboard-configure-groups", "win.dashboard-net-worth-history"]
 
@@ -7874,6 +7928,7 @@ class TestViewActions:
                 ["New scenario…", "Manage scenarios…", "Explore expenses…"],
             ),
             ("projection", ["compare", "export", "open-tab"], ["Compare with…"]),
+            ("register", ["reconcile", "new-tab"], []),
         ),
     )
     def test_stateless_view_commands_are_toolbar_icons_not_buttons(
@@ -8645,7 +8700,9 @@ class TestViewSpecificChrome:
             assert window.view_title.get_label() == label
             assert window.view_heading.get_visible()
 
-    def test_the_view_commands_come_before_the_other_view_icons(self, app, window, populated_book):
+    def test_the_view_icons_come_before_the_view_name_and_commands(
+        self, app, window, populated_book
+    ):
         app.open_book(populated_book)
         window.show_category("accounts")
         order = []
@@ -8653,7 +8710,8 @@ class TestViewSpecificChrome:
         while child is not None:
             order.append(child)
             child = child.get_next_sibling()
-        assert order.index(window.view_tools) < order.index(window.view_buttons["dashboard"])
+        # #361: the view icons, then the bold view name, then the view's commands.
+        assert order.index(window.view_buttons["dashboard"]) < order.index(window.view_heading)
         assert order.index(window.view_heading) < order.index(window.view_tools)
 
     def _sections(self, app):

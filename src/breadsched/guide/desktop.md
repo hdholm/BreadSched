@@ -99,11 +99,13 @@ always shown, so a list with more out of view says so. A long choice list, such 
 every list of accounts, has a search field when it opens: type part of a name to
 keep only the choices that contain it.
 
-The toolbar starts with the commands that work anywhere (open, import, undo, redo,
-new transaction, and print). Next come the name of the view you are in and that
-view's own command icons, then one icon for each other work area; the view you are
-in has no icon, since you are already there. After those icons, two short lines
-count the book's accounts and transactions. The **View** menu lists every area.
+The toolbar starts with the commands that work anywhere (undo, redo, new
+transaction, and print); open and import a book from the **File** menu or the start
+screen. Next comes one icon for each other work area; the view you are in has no
+icon, since you are already there. The name of the view you are in, in bold, then
+divides those icons from that view's own command icons, such as **Reconcile** in a
+register. On the Dashboard and Accounts, two short lines after them count the
+book's accounts and transactions. The **View** menu lists every area.
 The **Actions** menu follows the view too: the current view's commands come first,
 under its name, then the commands that work anywhere, and every other view's
 commands under **Actions → Other Views**. The **Reports** menu lists every report
@@ -300,8 +302,9 @@ accepts that level and moves to the next, so `Ex:Gr` reaches
 `Expenses:Groceries`. The accounts that still match are listed under the cell:
 **Up** and **Down** choose one, and **Tab** or **Enter** takes it (clicking one
 does too). The description completes the same way from earlier entries in this
-register; when you leave it, the earlier transaction's account and amount are
-filled in, and the line under the register says where they came from (see
+register; when you leave it, the earlier transaction's account and amount (and its
+notes, if you have typed none) are filled in, and the line under the register says
+where they came from (see
 [Transactions and registers](../USER_GUIDE.md#transactions-and-registers)).
 
 If something is missing or wrong, the line under the register says what; your
@@ -322,7 +325,11 @@ Increase or Decrease heading, and an empty line waits for another split. Choose
 **Split** in the toolbar to open an ordinary transaction (or the one you are
 typing) the same way, or to fold two lines back into one. An **Imbalance** line
 shows how far the splits are from balancing; **Enter** saves only once they
-balance and one split is in this register's account.
+balance. A new transaction needs one split in this register's account. To move an
+existing one entered in the wrong account, such as a purchase on the wrong credit
+card, change that split line's account to the right one and press **Enter**: the
+transaction moves there and leaves this register, and the line under the register
+says where it went.
 
 ### Shares in an investment register
 
@@ -381,8 +388,8 @@ there. A reconciled entry changes only by reopening its statement (see
 
 In the full editor, a new transaction is proposed the same way: when you leave the
 description and no split has an amount or memo yet, every split of the latest
-matching transaction (with its accounts, amounts, and memos) is filled in, and a
-note says where it came from. Edit anything before choosing **Save**.
+matching transaction (with its accounts, amounts, and memos) is filled in, and its
+notes too if you have typed none; a note says where it came from. Edit anything before choosing **Save**.
 
 ### Tags and linked documents
 
