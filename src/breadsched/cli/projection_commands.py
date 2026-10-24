@@ -7,7 +7,6 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from ..api.protocol import BookApi
-from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
     activity,
     projection,
@@ -169,10 +168,9 @@ def cmd_net_worth_change(args: argparse.Namespace) -> int:
 
 
 def cmd_project(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r")
-    try:
-        scenario = _scenario_for(db, args)
-        result = projection.project(db, scenario)
+    with book_api(args, "r") as book:
+        scenario = _scenario_for(book, args)
+        result = book.project(scenario)
 
         if args.csv:
             from ..plugins.export.csv_export import export_projection
@@ -274,8 +272,6 @@ def cmd_project(args: argparse.Namespace) -> int:
             if args.csv:
                 print(f"  Wrote {args.csv}")
         return 0
-    finally:
-        db.close()
 
 
 def _projection_bridges(result, which: str):
@@ -308,12 +304,10 @@ def _bridge_text(period: str, bridges) -> str:
     return "\n".join(lines)
 
 
-def _scenario_for(db: DbSQLite, args: argparse.Namespace) -> Scenario:
+def _scenario_for(book: BookApi, args: argparse.Namespace) -> Scenario:
     """Load a saved scenario, or build a throwaway one from the flags."""
     if args.scenario:
-        scenario = db.get_scenario_by_name(args.scenario)
-        if scenario is None:
-            raise CommandError(f"no scenario named {args.scenario!r}")
+        scenario = _named_scenario(book, args.scenario)
         if args.years:
             scenario.years = args.years
         return scenario
@@ -532,16 +526,11 @@ def cmd_drawdown(args: argparse.Namespace) -> int:
 
 
 def cmd_compare(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r")
-    try:
-        left_scenario = db.get_scenario_by_name(args.base)
-        right_scenario = db.get_scenario_by_name(args.other)
-        if left_scenario is None:
-            raise CommandError(f"no scenario named {args.base!r}")
-        if right_scenario is None:
-            raise CommandError(f"no scenario named {args.other!r}")
-        left = projection.project(db, left_scenario)
-        right = projection.project(db, right_scenario)
+    with book_api(args, "r") as book:
+        left_scenario = _named_scenario(book, args.base)
+        right_scenario = _named_scenario(book, args.other)
+        left = book.project(left_scenario)
+        right = book.project(right_scenario)
         rows = projection.compare(left, right)
         yearly = [row for row in rows if (row["index"] + 1) % 12 == 0]
         emit(
@@ -571,8 +560,6 @@ def cmd_compare(args: argparse.Namespace) -> int:
                 )
             )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_dashboard(args: argparse.Namespace) -> int:
@@ -904,6 +891,7 @@ def register(add: AddCommand) -> None:
         help="show how opening balances, planned events, and interest and performance "
         "reach each closing balance (the whole projection, or one month)",
     )
+    add_server_options(project_cmd)
     project_cmd.set_defaults(func=cmd_project)
 
     scenario = add("scenario", "Save, list, reparent or delete projection scenarios")
@@ -935,6 +923,7 @@ def register(add: AddCommand) -> None:
     compare = add("compare", "Compare two saved scenarios year by year")
     compare.add_argument("base")
     compare.add_argument("other")
+    add_server_options(compare)
     compare.set_defaults(func=cmd_compare)
 
     net_worth_cmd = add(

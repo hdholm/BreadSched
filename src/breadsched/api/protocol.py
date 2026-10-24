@@ -20,6 +20,7 @@ from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.loans import LoanTerms
 from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
 from ..gen.engine.planning import MatchCandidate, PlannedEvent
+from ..gen.engine.projection import Projection, ProjectionMonthDetail
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
@@ -652,6 +653,16 @@ class BookApi(Protocol):
         rollover: bool = False,
     ) -> ExpenseExplorer:
         """The Plan's categories over time, optionally explaining one category cell."""
+        ...
+
+    # -------------------------------------------------------------- projection
+
+    def project(self, scenario: Scenario) -> Projection:
+        """Project ``scenario`` (saved or a draft) month by month; writes nothing."""
+        ...
+
+    def projection_month(self, scenario: Scenario, month_index: int) -> ProjectionMonthDetail:
+        """Explain one month of ``scenario``'s projection."""
         ...
 
     # --------------------------------------------------------------- net worth

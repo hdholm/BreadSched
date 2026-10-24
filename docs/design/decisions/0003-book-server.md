@@ -342,6 +342,13 @@ Explorer and GTK's Plan view. GTK's Expense Explorer still computes in a backgro
 worker with its own read connection, and changes its drilldown without recomputing
 the Plan, so it has not moved.
 
+Projecting followed: `project(scenario)` and `projection_month(scenario, index)`
+(`POST /api/v1/projection` and `/projection/month`) take a saved scenario or a draft
+and return the engine's own `Projection` and month detail, which the typed codec
+carries whole. They serve the command line's `project` and `compare`. The browser's
+Projection page still builds its drafts and names its accounts from the book, and
+GTK projects in a background worker with its own read connection; both are next.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.
