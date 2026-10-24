@@ -1148,6 +1148,10 @@ class TestBookServerBoundaries:
         "set_quote_source",
         "quote_plan",
         "store_quotes",
+        "save_loan",
+        "validate_loan",
+        "loan_choices",
+        "preview_loan",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1259,6 +1263,9 @@ class TestBookServerBoundaries:
         "quote_plan",
         "store_quotes",
         "set_quote_source",
+        "loan_choices",
+        "preview_loan",
+        "save_loan",
     }
 
     @pytest.mark.parametrize(
@@ -1308,6 +1315,8 @@ class TestBookServerBoundaries:
             ("cli/investment_commands.py", ("cmd_sale_lots",)),
             ("cli/tax_commands.py", ("cmd_tax_marks",)),
             ("cli/quote_commands.py", ("cmd_quotes", "cmd_quote_source")),
+            ("web/loan_resource.py", ("loan_options", "loan_preview", "loan_save")),
+            ("gui/dialogs/loan_dialog.py", ("_on_save",)),
             ("web/quote_resource.py", ("quotes", "quote_source_save", "quotes_update")),
             ("gui/dialogs/online_quotes_dialog.py", ("save_sources", "get_quotes", "_store")),
             ("web/holdings_resource.py", ("sale_lots_view", "sale_lots_save")),

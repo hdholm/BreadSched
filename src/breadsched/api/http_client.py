@@ -27,6 +27,7 @@ from urllib.parse import quote, urlencode, urlparse
 
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
+from ..gen.engine.loans import LoanTerms
 from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
 from ..gen.engine.planning import MatchCandidate, PlannedEvent
 from ..gen.engine.receivables import ReimbursementProposal
@@ -89,6 +90,7 @@ from ..gen.services.import_review import (
     HeldImportResolution,
     ResolveHeldImports,
 )
+from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
@@ -890,3 +892,15 @@ class HttpBookClient:
         path = f"/commodities/{quote(request.commodity, safe='')}/quote-source"
         found = self._call("PATCH", path, body={"source": request.source})
         return str(found["source"])
+
+    # ------------------------------------------------------------------- loans
+
+    def loan_choices(self) -> LoanChoices:
+        return from_data(LoanChoices, self._call("GET", "/loans/choices"))
+
+    def preview_loan(self, terms: LoanTerms) -> LoanPreview:
+        found = self._call("POST", "/loans/preview", body=to_data(terms))
+        return from_data(LoanPreview, found)
+
+    def save_loan(self, request: SaveLoan) -> SavedLoan:
+        return from_data(SavedLoan, self._call("POST", "/loans", body=to_data(request)))
