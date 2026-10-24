@@ -17,10 +17,12 @@ from typing import Protocol
 from ..gen.lib import ScheduledTransaction, Transaction
 from ..gen.services import (
     AccountBalance,
+    AccountRecord,
     AccountRef,
     AdvanceDays,
     BalanceQuery,
     BalanceSummary,
+    ChartLine,
     DueResolution,
     DueScheduleReview,
     DuplicateSchedule,
@@ -32,6 +34,8 @@ from ..gen.services import (
     RegisterQuery,
     ResolveDue,
     ResolveNext,
+    SaveAccount,
+    SavedAccount,
     SavedSchedule,
     SavedTransaction,
     SaveFixedSchedule,
@@ -152,3 +156,25 @@ class BookApi(Protocol):
     def account_balance(self, query: BalanceQuery) -> AccountBalance: ...
 
     def balance_summary(self, as_of: date | None = None) -> BalanceSummary: ...
+
+    # ---------------------------------------------------------------- accounts
+
+    def accounts(self) -> list[AccountRecord]:
+        """Every account as stored, the root included, by full name."""
+        ...
+
+    def account(self, account: str) -> AccountRecord:
+        """One account as stored, by handle."""
+        ...
+
+    def chart(self, as_of: date | None = None, include_hidden: bool = False) -> list[ChartLine]:
+        """The account tree, depth first, each valued with its quote evidence."""
+        ...
+
+    def save_account(self, request: SaveAccount) -> SavedAccount:
+        """Add or change an account (and post an opening balance, if given)."""
+        ...
+
+    def delete_account(self, account: str) -> SavedAccount:
+        """Remove an account nothing uses."""
+        ...

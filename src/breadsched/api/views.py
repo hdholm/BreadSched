@@ -11,12 +11,15 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from ..gen.lib import Account
 from ..gen.lib.money import Money
 from ..gen.services import (
     AccountBalance,
+    AccountRecord,
     AccountRef,
     AdvanceDays,
     BalanceSummary,
+    ChartLine,
     DueItem,
     DueResolution,
     DueScheduleReview,
@@ -25,6 +28,7 @@ from ..gen.services import (
     PostedOccurrence,
     RegisterLine,
     RegisterPage,
+    SavedAccount,
     SavedSchedule,
     SavedTransaction,
 )
@@ -56,6 +60,12 @@ __all__ = [
     "account_balance_from_json",
     "balance_summary_json",
     "balance_summary_from_json",
+    "account_record_json",
+    "account_record_from_json",
+    "chart_json",
+    "chart_from_json",
+    "saved_account_json",
+    "saved_account_from_json",
 ]
 
 
@@ -334,3 +344,62 @@ def balance_summary_from_json(payload: dict[str, Any]) -> BalanceSummary:
         tuple(payload["net_worth_missing_quotes"]),
         tuple(payload["net_worth_incompatible_accounts"]),
     )
+
+
+def account_record_json(record: AccountRecord) -> dict[str, Any]:
+    """An account in its stored form, with its full name."""
+    return {"account": record.account.serialize(), "full_name": record.full_name}
+
+
+def account_record_from_json(payload: dict[str, Any]) -> AccountRecord:
+    return AccountRecord(Account.from_dict(payload["account"]), payload["full_name"])
+
+
+def chart_json(lines: list[ChartLine]) -> dict[str, Any]:
+    """The account tree, depth first, with each line's value and quote evidence."""
+    return {
+        "lines": [
+            {
+                **account_record_json(line.record),
+                "depth": line.depth,
+                "balance": to_json(line.balance),
+                "missing_quotes": list(line.missing_quotes),
+                "quote_date": to_json(line.quote_date),
+                "quote_source": line.quote_source,
+                "quote_age_days": line.quote_age_days,
+                "conversion_path": line.conversion_path,
+                "quote_evidence": line.quote_evidence,
+                "book_balance": to_json(line.book_balance),
+            }
+            for line in lines
+        ]
+    }
+
+
+def chart_from_json(payload: dict[str, Any]) -> list[ChartLine]:
+    def money(raw):
+        return None if raw is None else Money(raw)
+
+    return [
+        ChartLine(
+            account_record_from_json(row),
+            int(row["depth"]),
+            money(row["balance"]),
+            tuple(row["missing_quotes"]),
+            None if row["quote_date"] is None else date.fromisoformat(row["quote_date"]),
+            row["quote_source"],
+            row["quote_age_days"],
+            row["conversion_path"],
+            row["quote_evidence"],
+            money(row["book_balance"]),
+        )
+        for row in payload["lines"]
+    ]
+
+
+def saved_account_json(saved: SavedAccount) -> dict[str, Any]:
+    return {"account": saved.handle, "name": saved.name}
+
+
+def saved_account_from_json(payload: dict[str, Any]) -> SavedAccount:
+    return SavedAccount(payload["account"], payload["name"])

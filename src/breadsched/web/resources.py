@@ -150,11 +150,16 @@ from .schedule_resource import (
 from .tax_resource import tax_marks_save, tax_marks_view, tax_year_report
 from .v1_resource import (
     account_balance_get,
+    account_delete,
+    account_get,
     account_lookup,
+    account_save,
+    accounts_get,
     advance_days_get,
     advance_days_patch,
     balances_get,
     book_get,
+    chart_get,
     currency_get,
     due_review_get,
     due_review_post,
@@ -541,6 +546,11 @@ V1_ROUTES: tuple[tuple[str, str, Callable[..., object]], ...] = (
     ("GET", "/accounts/{handle}/register", register_get),
     ("GET", "/accounts/{handle}/balance", account_balance_get),
     ("GET", "/balances", balances_get),
+    ("GET", "/accounts", accounts_get),
+    ("POST", "/accounts", account_save),
+    ("GET", "/accounts/{handle}", account_get),
+    ("DELETE", "/accounts/{handle}", account_delete),
+    ("GET", "/chart", chart_get),
     ("POST", "/undo", undo_post),
     ("POST", "/redo", redo_post),
 )

@@ -1,4 +1,4 @@
-"""Ledger reads every interface shares: lookups, the editable form, registers, balances.
+"""Ledger reads every interface shares: lookups, accounts, registers, balances.
 
 These are read-only. Each returns a typed result, so the book server can serve the
 same answer in process and over HTTP (#354). A missing account or transaction is a
@@ -13,6 +13,7 @@ from datetime import date
 
 from ..db.sqlite import DbSQLite
 from ..engine import ledger, valuation
+from ..lib.account import Account
 from ..lib.amount import Amount
 from ..lib.money import Money
 from ..lib.transaction import Split, Transaction
@@ -21,14 +22,19 @@ from .transactions import TransactionInput, TransactionSplitInput, transaction_c
 
 __all__ = [
     "AccountBalance",
+    "AccountRecord",
     "AccountRef",
+    "ChartLine",
     "BalanceQuery",
     "BalanceSummary",
     "RegisterLine",
     "RegisterPage",
     "RegisterQuery",
     "account_balance",
+    "account_record",
+    "account_records",
     "balance_summary",
+    "chart_of_accounts",
     "editable_transaction",
     "find_account",
     "find_transaction",
@@ -234,3 +240,87 @@ def balance_summary(db: DbSQLite, as_of: date | None = None) -> BalanceSummary:
         tuple(net_worth.missing_quotes),
         tuple(net_worth.incompatible_accounts),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class AccountRecord:
+    """An account as it is stored, with its full name."""
+
+    account: Account
+    full_name: str
+
+
+def account_record(db: DbSQLite, handle: str) -> ServiceResult[AccountRecord]:
+    account = db.get_account(handle)
+    if account is None:
+        return ServiceResult.failure(ServiceError("account.not_found", ("account",)))
+    return ServiceResult.success(AccountRecord(account, db.full_name(account)))
+
+
+def account_records(db: DbSQLite) -> tuple[AccountRecord, ...]:
+    """Every account, the root included, by full name."""
+    records = [AccountRecord(account, db.full_name(account)) for account in db.iter_accounts()]
+    return tuple(sorted(records, key=lambda record: record.full_name))
+
+
+@dataclass(frozen=True, slots=True)
+class ChartLine:
+    """One account in the chart, with its value and the quotes behind it."""
+
+    record: AccountRecord
+    depth: int
+    #: The account and its descendants in the reporting currency, or None
+    #: when a quote it needs is missing.
+    balance: Money | None
+    missing_quotes: tuple[str, ...]
+    quote_date: date | None
+    quote_source: str | None
+    quote_age_days: int | None
+    conversion_path: str | None
+    quote_evidence: str
+    #: The ledger balance of the account and its descendants in their own
+    #: commodity, or None when they hold unlike commodities.
+    book_balance: Money | None
+
+
+def chart_of_accounts(
+    db: DbSQLite, as_of: date | None = None, include_hidden: bool = False
+) -> tuple[ChartLine, ...]:
+    """The account tree below the root, depth first, valued as of ``as_of``."""
+    lines: list[ChartLine] = []
+
+    def walk(handle: str | None, depth: int) -> None:
+        for account in db.child_accounts(handle):
+            if account.hidden and not include_hidden:
+                continue
+            result = valuation.aggregate_value(
+                db, accounts=[account, *db.descendants(account.handle)], as_of=as_of
+            )
+            valued = valuation.account_value(db, account, as_of=as_of)
+            try:
+                book_balance: Money | None = ledger.balance_recursive_amount(
+                    db, account.handle, as_of=as_of
+                ).value
+            except TypeError as exc:
+                if "cannot combine unlike commodities" not in str(exc):
+                    raise
+                book_balance = None
+            lines.append(
+                ChartLine(
+                    AccountRecord(account, db.full_name(account)),
+                    depth,
+                    result.amount.value if result.amount is not None else None,
+                    tuple(result.missing_quotes),
+                    valued.price_date,
+                    valued.price_source,
+                    valued.quote_age_days,
+                    valued.conversion_path,
+                    valuation.quote_evidence(db, valued),
+                    book_balance,
+                )
+            )
+            walk(account.handle, depth + 1)
+
+    root = db.root_account()
+    walk(root.handle if root else None, 0)
+    return tuple(lines)

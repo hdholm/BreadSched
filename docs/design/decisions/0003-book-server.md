@@ -109,6 +109,22 @@ Ledger reads followed, as a shared service (`gen.services.ledger_reads`):
 - **Still to move:** the browser's and GTK's registers read the book directly; they
   move when their register views do.
 
+Accounts followed:
+- **Reads:** `accounts` (every account as stored, with its full name), `account`
+  (one, by handle), and `chart` (the tree, depth first, each line valued in the
+  reporting currency with its missing quotes, quote date, source, age, conversion
+  path, and quote evidence, and its ledger balance). A foreign balance without a
+  quote stays `None` with the account named in `missing_quotes` on both transports.
+- **Writes:** `save_account` and `delete_account`. Over HTTP, `api.account_codec`
+  carries `SaveAccount` with the account, and the account an edit is based on, in
+  their stored forms. That made the codec about 80 lines, against 200 for
+  transactions: a record whose stored form is complete needs no field-by-field
+  codec.
+- **Resources:** `GET` and `POST /api/v1/accounts`, `GET` and
+  `DELETE /api/v1/accounts/{handle}`, and `GET /api/v1/chart` (`as_of`, `hidden`).
+- **Command line:** `accounts` and `account list|add|edit|remove` use them, with
+  unchanged JSON. The browser's and GTK's account editors still save directly.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

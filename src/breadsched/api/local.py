@@ -20,10 +20,13 @@ from ..gen.db.sqlite import DbSQLite
 from ..gen.lib import ScheduledTransaction, Transaction
 from ..gen.services import (
     AccountBalance,
+    AccountRecord,
     AccountRef,
     AdvanceDays,
     BalanceQuery,
     BalanceSummary,
+    ChartLine,
+    DeleteAccount,
     DeleteSchedule,
     DeleteTransaction,
     DueResolution,
@@ -37,6 +40,8 @@ from ..gen.services import (
     RegisterQuery,
     ResolveDue,
     ResolveNext,
+    SaveAccount,
+    SavedAccount,
     SavedSchedule,
     SavedTransaction,
     SaveFixedSchedule,
@@ -45,7 +50,11 @@ from ..gen.services import (
     SetAdvanceDays,
     TransactionInput,
     account_balance,
+    account_record,
+    account_records,
     balance_summary,
+    chart_of_accounts,
+    delete_account,
     delete_schedule,
     delete_transaction,
     duplicate_schedule,
@@ -59,6 +68,7 @@ from ..gen.services import (
     register_page,
     resolve_due,
     resolve_next,
+    save_account,
     save_fixed_schedule,
     save_formula_schedule,
     save_transaction,
@@ -209,6 +219,23 @@ class LocalBookServer:
 
     def balance_summary(self, as_of: date | None = None) -> BalanceSummary:
         return balance_summary(self.db, as_of)
+
+    # ---------------------------------------------------------------- accounts
+
+    def accounts(self) -> list[AccountRecord]:
+        return list(account_records(self.db))
+
+    def account(self, account: str) -> AccountRecord:
+        return unwrap(account_record(self.db, account))
+
+    def chart(self, as_of: date | None = None, include_hidden: bool = False) -> list[ChartLine]:
+        return list(chart_of_accounts(self.db, as_of, include_hidden))
+
+    def save_account(self, request: SaveAccount) -> SavedAccount:
+        return unwrap(save_account(self.db, request))
+
+    def delete_account(self, account: str) -> SavedAccount:
+        return unwrap(delete_account(self.db, DeleteAccount(account)))
 
 
 def book_server(db: DbSQLite) -> LocalBookServer:
