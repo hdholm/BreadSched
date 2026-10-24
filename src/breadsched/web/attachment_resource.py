@@ -26,7 +26,6 @@ from ..gen.services import (
     contained_location,
     detach,
     relink,
-    set_tags,
 )
 from ..gen.services.contracts import ServiceError
 from ..presentation import service_error_message
@@ -93,7 +92,12 @@ def transaction_tags(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     tags = payload.get("tags")
     if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
         raise ValueError("tags must be a list of text")
-    return _changed(api, set_tags(api.db, _text(payload, "transaction"), tags))
+    transaction = api.book.set_tags(_text(payload, "transaction"), tags)
+    return {
+        "handle": transaction.handle,
+        "tags": list(transaction.tags),
+        "documents": document_json(api.db, transaction),
+    }
 
 
 def _contained(api: Api, location: str) -> str:

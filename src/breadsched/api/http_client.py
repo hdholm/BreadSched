@@ -51,6 +51,7 @@ from ..gen.services import (
     SaveFixedSchedule,
     SaveTransaction,
     SetAdvanceDays,
+    TagCount,
     TransactionInput,
 )
 from ..gen.services.categorization import (
@@ -83,6 +84,7 @@ from .views import (
     saved_account_from_json,
     saved_schedule_from_json,
     saved_transaction_from_json,
+    tag_counts_from_json,
 )
 
 __all__ = ["HttpBookClient"]
@@ -364,3 +366,18 @@ class HttpBookClient:
     ) -> AppliedCategories:
         body = {"transactions": None if transactions is None else list(transactions)}
         return applied_categories_from_json(self._call("POST", "/rules/accept", body=body))
+
+    # -------------------------------------------------------------------- tags
+
+    def tag_counts(self) -> list[TagCount]:
+        return tag_counts_from_json(self._call("GET", "/tags"))
+
+    def transactions_with_tag(self, tag: str) -> list[Transaction]:
+        found = self._call("GET", "/tags/transactions", {"tag": tag})
+        return [Transaction.from_dict(item) for item in found["transactions"]]
+
+    def set_tags(self, transaction: str, tags: list[str]) -> Transaction:
+        path = f"/transactions/{quote(transaction, safe='')}/tags"
+        return Transaction.from_dict(
+            self._call("PATCH", path, body={"tags": list(tags)})["transaction"]
+        )

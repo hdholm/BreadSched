@@ -48,6 +48,7 @@ from ..gen.services import (
     SaveTransaction,
     ServiceError,
     SetAdvanceDays,
+    TagCount,
     TransactionInput,
     account_balance,
     account_record,
@@ -74,7 +75,10 @@ from ..gen.services import (
     save_formula_schedule,
     save_transaction,
     set_advance_days,
+    set_tags,
+    tag_counts,
     transaction_currency,
+    transactions_with_tag,
 )
 from ..gen.services import advance_days as stored_advance_days
 from ..gen.services.categorization import (
@@ -243,6 +247,17 @@ class LocalBookServer:
 
     def delete_account(self, account: str) -> SavedAccount:
         return unwrap(delete_account(self.db, DeleteAccount(account)))
+
+    # -------------------------------------------------------------------- tags
+
+    def tag_counts(self) -> list[TagCount]:
+        return tag_counts(self.db)
+
+    def transactions_with_tag(self, tag: str) -> list[Transaction]:
+        return transactions_with_tag(self.db, tag)
+
+    def set_tags(self, transaction: str, tags: list[str]) -> Transaction:
+        return unwrap(set_tags(self.db, transaction, tags))
 
     # ------------------------------------------------- categorization rules
 
