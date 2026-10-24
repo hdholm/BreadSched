@@ -75,6 +75,7 @@ from ..gen.services.claims import (
     SaveClaim,
     SavedClaim,
 )
+from ..gen.services.dashboard_config import DashboardSettings, SaveDashboardConfig
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
 from ..gen.services.import_review import (
     HeldImportChange,
@@ -591,3 +592,11 @@ class BookApi(Protocol):
     def save_exchange_rate(self, request: SaveExchangeRate) -> CommodityPrice:
         """Save a dated manual quote; one for the same pair and date is replaced."""
         ...
+
+    # ------------------------------------------------------- dashboard settings
+
+    def dashboard_settings(self) -> DashboardSettings:
+        """The Dashboard's groups, with their members, and its horizons."""
+        ...
+
+    def save_dashboard_settings(self, request: SaveDashboardConfig) -> DashboardSettings: ...

@@ -93,6 +93,8 @@ Resources so far, all under ``/api/v1``:
   (``SaveLoan``).
 * ``GET /currencies`` and ``/currencies/lookup`` (``reference``); ``POST /exchange-rates``
   (``SaveExchangeRate``).
+* ``GET`` and ``PATCH /dashboard/settings`` (``SaveDashboardConfig``) – the
+  Dashboard's groups, with their members, and its horizons.
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -148,6 +150,7 @@ from ..gen.services import (
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.categorization import AddRule
 from ..gen.services.claims import ClaimReportQuery, CloseClaim, ReopenClaim, SaveClaim
+from ..gen.services.dashboard_config import SaveDashboardConfig
 from ..gen.services.exchange_rates import SaveExchangeRate
 from ..gen.services.import_review import ResolveHeldImports
 from ..gen.services.loans import SaveLoan
@@ -176,6 +179,8 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "dashboard_settings_get",
+    "dashboard_settings_patch",
     "currencies_get",
     "currency_lookup",
     "exchange_rate_save",
@@ -1235,3 +1240,13 @@ def currency_lookup(api: Api, _path: Path, query: QueryParams) -> dict:
 def exchange_rate_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     request = from_data(SaveExchangeRate, body, "request")
     return {"rate": to_data(api.book.save_exchange_rate(request))}
+
+
+def dashboard_settings_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.dashboard_settings())
+
+
+def dashboard_settings_patch(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(SaveDashboardConfig, body, "request")
+    return to_data(api.book.save_dashboard_settings(request))

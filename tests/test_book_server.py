@@ -1353,6 +1353,45 @@ def test_exchange_rates_alike(target, book):
     assert sorted(repr(price.serialize()) for price in db.iter_prices()) == before
 
 
+def test_dashboard_settings_alike(target, book):
+    from breadsched.gen.services import DashboardGroupInput, SaveDashboardConfig
+
+    api, db = target.api, target.db
+    first = api.dashboard_settings()
+    assert first.liquidity_days == 30 and first.emergency_months == 6
+    saved = api.save_dashboard_settings(
+        SaveDashboardConfig(
+            groups=(
+                DashboardGroupInput("Cash", "liquid", (book.checking, book.savings)),
+                DashboardGroupInput("Debt", "liability", (book.card,)),
+            ),
+            liquidity_days=14,
+            emergency_months=999,
+        )
+    )
+    assert [(group.name, group.accounts) for group in saved.groups] == [
+        ("Cash", (book.checking, book.savings)),
+        ("Debt", (book.card,)),
+    ]
+    assert (saved.liquidity_days, saved.emergency_months) == (14, 36)
+    assert db.get_account(book.checking).group == "Cash"
+    assert api.dashboard_settings() == saved
+
+    before = (repr(db.get_metadata("dashboard")), db.get_account(book.card).group)
+    for groups in (
+        (DashboardGroupInput("Cash", "liquid", (book.checking,)), DashboardGroupInput("Cash")),
+        (
+            DashboardGroupInput("One", "asset", (book.checking,)),
+            DashboardGroupInput("Two", "asset", (book.checking,)),
+        ),
+        (DashboardGroupInput("Odd", "colour"),),
+    ):
+        with pytest.raises(ApiError) as refused:
+            api.save_dashboard_settings(SaveDashboardConfig(groups=groups))
+        assert refused.value.status == 400
+    assert (repr(db.get_metadata("dashboard")), db.get_account(book.card).group) == before
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -1573,6 +1612,7 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("POST", "/api/v1/loans/preview", {"name": "Car"}, 400, "request.invalid"),
         ("POST", "/api/v1/exchange-rates", {"source": "a", "target": "b"}, 400, "request.invalid"),
         ("GET", "/api/v1/currencies/lookup", None, 400, "query.missing"),
+        ("PATCH", "/api/v1/dashboard/settings", {"liquidity_days": "14"}, 400, "request.invalid"),
         ("POST", "/api/v1/loans", {"terms": {}, "opening_balance": "yes"}, 400, "request.invalid"),
         ("PATCH", "/api/v1/commodities/x/quote-source", {}, 400, "request.invalid"),
         (

@@ -70,6 +70,7 @@ from ..gen.services import (
     balance_summary,
     categorization,
     chart_of_accounts,
+    dashboard_config,
     delete_account,
     delete_schedule,
     delete_transaction,
@@ -127,6 +128,7 @@ from ..gen.services.claims import (
     SaveClaim,
     SavedClaim,
 )
+from ..gen.services.dashboard_config import DashboardSettings, SaveDashboardConfig
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
 from ..gen.services.import_review import (
     HeldImportChange,
@@ -555,6 +557,16 @@ class LocalBookServer:
 
     def save_exchange_rate(self, request: SaveExchangeRate) -> CommodityPrice:
         return unwrap(exchange_rates.save_exchange_rate(self.db, request))
+
+    # ------------------------------------------------------- dashboard settings
+
+    def dashboard_settings(self) -> DashboardSettings:
+        return dashboard_config.dashboard_settings(self.db)
+
+    def save_dashboard_settings(self, request: SaveDashboardConfig) -> DashboardSettings:
+        with self._changing("dashboard-config"):
+            saved = unwrap(dashboard_config.save_dashboard_config(self.db, request))
+        return dashboard_config.settings_of(saved)
 
     # -------------------------------------------------------------- receivables
 

@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import dashboard as engine
-from ..gen.services import DashboardGroupInput, SaveDashboardConfig, save_dashboard_config
-from .controls import service_error
+from ..gen.services import DashboardGroupInput, SaveDashboardConfig
+from ..gen.services.dashboard_config import DashboardGroup
 from .savings_goal_resource import goal_json
 
 if TYPE_CHECKING:
@@ -203,19 +203,15 @@ def dashboard_config_save(api: Api, payload: dict) -> dict:
                 accounts=tuple(str(handle) for handle in raw_handles),
             )
         )
-    result = save_dashboard_config(
-        api.db,
+    config = api.book.save_dashboard_settings(
         SaveDashboardConfig(
             groups=tuple(groups),
             liquidity_days=int(payload["liquidity_days"]) if "liquidity_days" in payload else None,
             emergency_months=(
                 int(payload["emergency_months"]) if "emergency_months" in payload else None
             ),
-        ),
+        )
     )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    config = result.value
     return {
         "groups": [group_json(group) for group in config.groups],
         "liquidity_days": config.liquidity_days,
@@ -223,6 +219,6 @@ def dashboard_config_save(api: Api, payload: dict) -> dict:
     }
 
 
-def group_json(group: engine.GroupConfig) -> dict:
+def group_json(group: engine.GroupConfig | DashboardGroup) -> dict:
     """A configured group with its member accounts, as both editors show it."""
     return {"name": group.name, "kind": group.kind, "accounts": list(group.accounts)}

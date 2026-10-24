@@ -1156,6 +1156,8 @@ class TestBookServerBoundaries:
         "currencies",
         "find_currency",
         "save_exchange_rate",
+        "save_dashboard_config",
+        "dashboard_settings",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1273,6 +1275,8 @@ class TestBookServerBoundaries:
         "currencies",
         "find_currency",
         "save_exchange_rate",
+        "dashboard_settings",
+        "save_dashboard_settings",
     }
 
     @pytest.mark.parametrize(
@@ -1327,6 +1331,9 @@ class TestBookServerBoundaries:
             ("cli/ledger_commands.py", ("cmd_rate",)),
             ("web/currency_quote_resource.py", ("save_currency_quote",)),
             ("gui/dialogs/exchange_rate_dialog.py", ("save",)),
+            ("web/dashboard_resource.py", ("dashboard_config_save",)),
+            ("gui/views/dashboard.py", ("_on_setting_changed",)),
+            ("gui/dialogs/dashboard_dialog.py", ("save",)),
             ("web/quote_resource.py", ("quotes", "quote_source_save", "quotes_update")),
             ("gui/dialogs/online_quotes_dialog.py", ("save_sources", "get_quotes", "_store")),
             ("web/holdings_resource.py", ("sale_lots_view", "sale_lots_save")),
