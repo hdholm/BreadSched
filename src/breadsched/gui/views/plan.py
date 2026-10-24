@@ -240,10 +240,8 @@ class PlanView(BaseView):
             super().set_db(None)
             return
         today = date.today()
-        settings = PlanSettings.load(
-            db,
-            date(today.year, 1, 1),
-            date(today.year + 1, 12, 31),
+        settings = book_server(db).plan_settings(
+            date(today.year, 1, 1), date(today.year + 1, 12, 31)
         )
         self._start_date = settings.start
         self._end_date = settings.end
@@ -551,14 +549,21 @@ class PlanView(BaseView):
         self._start_date, self._end_date = self._pending_range()
         self._period_index = self.period.get_selected()
         self._measure_index = self.measure.get_selected()
-        PlanSettings(
-            start=self._start_date,
-            end=self._end_date,
-            period=self._grouping(),
-            measure=self._measure(),
-            scenario=self._scenario_handle,
-            compare=self._compare_handle,
-        ).save(self.db)
+        try:
+            book_server(self.db).save_plan_settings(
+                PlanSettings(
+                    start=self._start_date,
+                    end=self._end_date,
+                    period=self._grouping(),
+                    measure=self._measure(),
+                    scenario=self._scenario_handle,
+                    compare=self._compare_handle,
+                )
+            )
+        except ApiError as error:
+            self.control_status.set_text(str(error))
+            self.control_status.add_css_class("negative")
+            return
         self.control_status.set_text(
             f"Showing {self._start_date:%b %Y} through {self._end_date:%b %Y}."
         )

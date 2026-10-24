@@ -429,6 +429,13 @@ documents, and, for a security account, its shares, valuation, and quote evidenc
 (`gen/services/register_view`), so the browser's register no longer reads the book;
 its simple entry form now names its two accounts through `find_account` and its
 currency through `transaction_currency` as well.
+
+The Plan presentation every interface restores followed: `plan_settings` and
+`save_plan_settings` (`GET`/`PATCH /api/v1/plan/settings`) read and keep the period,
+grouping, measure, and scenarios. Saving now refuses a range that ends before it
+starts or a scenario the book no longer has (`plan.end.before_start`,
+`plan.scenario.not_found`, `plan.comparison.not_found`), so GTK's Plan reports the
+refusal instead of storing it. GTK's Plan view and the browser's Plan page use them.
 GTK's register still does; it needs the bulk reads and pushed changes the
 consequences below name before it can move without a round trip per row.
 

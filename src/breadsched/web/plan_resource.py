@@ -452,12 +452,14 @@ def plan_settings_save(api: Api, payload: dict) -> dict:
     controls = result["controls"]
     start = date.fromisoformat(f"{controls['from']}-01")
     through = date.fromisoformat(f"{controls['through']}-01")
-    PlanSettings(
-        start=start,
-        end=date(through.year, through.month, monthrange(through.year, through.month)[1]),
-        period=ReportingPeriod(str(controls["period"])),
-        measure=PlanMeasure(str(controls["measure"])),
-        scenario=controls["scenario"],
-        compare=(str(payload.get("compare")) if payload.get("compare") else None),
-    ).save(api.db)
+    api.book.save_plan_settings(
+        PlanSettings(
+            start=start,
+            end=date(through.year, through.month, monthrange(through.year, through.month)[1]),
+            period=ReportingPeriod(str(controls["period"])),
+            measure=PlanMeasure(str(controls["measure"])),
+            scenario=controls["scenario"],
+            compare=(str(payload.get("compare")) if payload.get("compare") else None),
+        )
+    )
     return controls

@@ -21,7 +21,7 @@ from typing import Literal, cast
 from ..gen.db.sqlite import DbSQLite
 from ..gen.db.verification import BookVerification
 from ..gen.engine import projection as projection_engine
-from ..gen.engine.activity import ReportingPeriod
+from ..gen.engine.activity import PlanSettings, ReportingPeriod
 from ..gen.engine.category_report import CategoryActivity
 from ..gen.engine.currency import reporting_currency_label
 from ..gen.engine.dashboard import Dashboard
@@ -735,6 +735,13 @@ class LocalBookServer:
 
     def reporting_currency(self) -> str:
         return reporting_currency_label(self.db)
+
+    def plan_settings(self, default_start: date, default_end: date) -> PlanSettings:
+        return plan_service.plan_settings(self.db, default_start, default_end)
+
+    def save_plan_settings(self, settings: PlanSettings) -> PlanSettings:
+        with self._changing("plan-settings"):
+            return unwrap(plan_service.save_plan_settings(self.db, settings))
 
     def plan(self, query: PlanQuery) -> PlanQueryResult:
         return unwrap(plan_service.query_plan(self.db, query))

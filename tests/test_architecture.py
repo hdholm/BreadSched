@@ -1205,6 +1205,7 @@ class TestBookServerBoundaries:
         "verification_report",
         "aggregate_value",
         "register_share_summary",
+        "save_plan_settings",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1360,6 +1361,8 @@ class TestBookServerBoundaries:
         "book_summary",
         "verify_book",
         "register_view",
+        "plan_settings",
+        "save_plan_settings",
     }
 
     @pytest.mark.parametrize(
@@ -1438,6 +1441,8 @@ class TestBookServerBoundaries:
             ("gui/dialogs/gnucash_writeback_dialog.py", ("refresh", "_on_keep_changed", "write")),
             ("web/book_resource.py", ("summary", "verify")),
             ("web/register_resource.py", ("register",)),
+            ("web/plan_resource.py", ("plan_settings_save",)),
+            ("gui/views/plan.py", ("set_db", "_on_apply")),
             ("web/dashboard_resource.py", ("dashboard_report",)),
             ("gui/views/dashboard.py", ("refresh",)),
             ("cli/quote_commands.py", ("cmd_quotes", "cmd_quote_source")),

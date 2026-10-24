@@ -257,3 +257,24 @@ def query_plan(db: DbSQLite, request: PlanQuery) -> ServiceResult[PlanQueryResul
             goal_milestones=plan_goal_milestones(db, scenario, start, end, today),
         )
     )
+
+
+def plan_settings(db: DbSQLite, default_start: date, default_end: date) -> PlanSettings:
+    """The Plan presentation last applied in this book, or the defaults."""
+    return PlanSettings.load(db, default_start, default_end)
+
+
+def save_plan_settings(db: DbSQLite, settings: PlanSettings) -> ServiceResult[PlanSettings]:
+    """Remember the Plan presentation GTK and the browser both restore."""
+    errors = []
+    if settings.end < settings.start:
+        errors.append(ServiceError("plan.end.before_start", ("end",)))
+    known = {item.handle for item in db.iter_scenarios()} | {BASE_SCENARIO}
+    if settings.scenario is not None and settings.scenario not in known:
+        errors.append(ServiceError("plan.scenario.not_found", ("scenario",)))
+    if settings.compare is not None and settings.compare not in known:
+        errors.append(ServiceError("plan.comparison.not_found", ("compare",)))
+    if errors:
+        return ServiceResult.failure(*errors)
+    settings.save(db)
+    return ServiceResult.success(settings)

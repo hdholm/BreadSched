@@ -15,7 +15,7 @@ from datetime import date
 from typing import Protocol
 
 from ..gen.db.verification import BookVerification
-from ..gen.engine.activity import ReportingPeriod
+from ..gen.engine.activity import PlanSettings, ReportingPeriod
 from ..gen.engine.category_report import CategoryActivity
 from ..gen.engine.dashboard import Dashboard
 from ..gen.engine.entry_input import TradeFill
@@ -783,6 +783,14 @@ class BookApi(Protocol):
 
     def reporting_currency(self) -> str:
         """The reporting currency's code for a chart or heading, or "" when it has none."""
+        ...
+
+    def plan_settings(self, default_start: date, default_end: date) -> PlanSettings:
+        """The Plan presentation last applied in this book, or the defaults given."""
+        ...
+
+    def save_plan_settings(self, settings: PlanSettings) -> PlanSettings:
+        """Remember the Plan presentation every interface restores."""
         ...
 
     def plan(self, query: PlanQuery) -> PlanQueryResult:

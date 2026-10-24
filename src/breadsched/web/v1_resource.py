@@ -125,6 +125,8 @@ Resources so far, all under ``/api/v1``:
 * ``GET /budget-jars`` (``start``, ``end``, ``period``, ``today``).
 * ``GET /holdings`` (``as_of``), ``GET /realized-gains`` (``year``, ``account``), and
   ``GET /tax-year`` (``year``; the latest year with a transaction when absent).
+* ``GET`` and ``PATCH /plan/settings`` (``default_start``, ``default_end``;
+  ``PlanSettings``) – the Plan presentation every interface restores.
 * ``GET /reporting-currency`` – the reporting currency's code; ``POST /plan``
   (``PlanQuery``) and ``POST /expense-explorer`` (``query``, ``account``,
   ``period_index``, ``rollover``) – reads whose request is a typed query.
@@ -167,7 +169,7 @@ from ..api.views import (
     savings_goals_json,
     tag_counts_json,
 )
-from ..gen.engine.activity import ReportingPeriod
+from ..gen.engine.activity import PlanSettings, ReportingPeriod
 from ..gen.engine.fsa_claim_report import GROUPINGS
 from ..gen.engine.fsa_claims import FsaClaimStatus
 from ..gen.engine.loans import LoanTerms
@@ -225,6 +227,8 @@ __all__ = [
     "projection_v1",
     "reporting_currency_get",
     "expense_explorer_v1",
+    "plan_settings_get",
+    "plan_settings_patch",
     "plan_v1",
     "activity_get",
     "book_summary_get",
@@ -1589,6 +1593,18 @@ class _Explore:
     account: str | None = None
     period_index: int | None = None
     rollover: bool = False
+
+
+def plan_settings_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    default_start = query.iso_date("default_start", required=True)
+    default_end = query.iso_date("default_end", required=True)
+    query.finish()
+    assert default_start is not None and default_end is not None
+    return to_data(api.book.plan_settings(default_start, default_end))
+
+
+def plan_settings_patch(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.save_plan_settings(from_data(PlanSettings, body, "request")))
 
 
 def plan_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:

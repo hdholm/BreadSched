@@ -26,7 +26,7 @@ from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
 from ..gen.db.verification import BookVerification
-from ..gen.engine.activity import ReportingPeriod
+from ..gen.engine.activity import PlanSettings, ReportingPeriod
 from ..gen.engine.category_report import CategoryActivity
 from ..gen.engine.dashboard import Dashboard
 from ..gen.engine.entry_input import TradeFill
@@ -1126,6 +1126,14 @@ class HttpBookClient:
 
     def reporting_currency(self) -> str:
         return str(self._call("GET", "/reporting-currency")["currency"])
+
+    def plan_settings(self, default_start: date, default_end: date) -> PlanSettings:
+        params = {"default_start": default_start, "default_end": default_end}
+        return from_data(PlanSettings, self._call("GET", "/plan/settings", params))
+
+    def save_plan_settings(self, settings: PlanSettings) -> PlanSettings:
+        found = self._call("PATCH", "/plan/settings", body=to_data(settings))
+        return from_data(PlanSettings, found)
 
     def plan(self, query: PlanQuery) -> PlanQueryResult:
         return from_data(PlanQueryResult, self._call("POST", "/plan", body=to_data(query)))
