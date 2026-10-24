@@ -113,7 +113,8 @@ wherever it is calculated: **Net Worth History…**, **Holdings and Cost Basis�
 **Realized Gains…**, **Tax Year…**, **Explore Expenses…**, and **Budget Jars…**.
 A menu item that asks for more before it acts ends in "…". The toolbar command
 icons are, for example, **New Account**, **Edit Account**, **Security Price**, and
-**Exchange Rate** in Accounts, **Manage FSA Claims** on the FSA Dashboard,
+**Exchange Rate** in Accounts, **Manage FSA Claims** on the FSA Dashboard (also in
+the Actions menu in every view),
 **Configure Dashboard Groups** on the Dashboard, **New Scheduled**, **Suggest**, and
 **New Loan** in Scheduled, **New Scenario**, **Scenarios**, and **Explore** in Plan,
 and **Compare**, **Export**, and **New tab** in Projection. Each icon stands for one
@@ -620,10 +621,25 @@ Actual, and Variance line.
 
 ## FSA claims
 
-On the FSA Dashboard, **Manage FSA Claims** opens the claims editor: each claim's
-service date, provider, description, and EOB amount, the payments and refunds it
-links, and how much of it each FSA funding year covers. **Close claim** and
-**Reopen claim** keep a reason, and **Delete** asks first. See
+**Actions → Manage FSA Claims…** opens the claims editor from any view (on the FSA
+Dashboard it is also a toolbar icon): each claim's service date, provider,
+description, and EOB amount, the payments and refunds it links, and how much of it
+each FSA funding year covers. The window does not block the rest of BreadSched, so it
+can stay open beside a register; transactions you enter meanwhile are offered at
+once, and choosing it again brings the same window forward.
+
+The chooser at the top starts with **New claim**; **New** chooses it and empties the
+form, and a saved claim then appears in the chooser with where it stands. In each
+list of transactions, the ones linked to the claim stay at the top, each with
+**Remove**. Below them, **Add** links another: search by date, description, or
+amount, and choose whether to see transactions within 60 days of the service date
+(the default), in the claim's benefit year, or at any date. Linking a payment made
+with the FSA card links the FSA side too, so the claim counts as reimbursed by it.
+**Close claim** and **Reopen claim** keep a reason, and **Delete** asks first.
+
+The FSA Dashboard's **FSA claims** lists every claim of a benefit year that can still
+be claimed, settled or not, so a claim already filed is easy to tell from a new one,
+and any older claim still open. See
 [FSA and benefit accounts](../USER_GUIDE.md#fsa-and-benefit-accounts).
 
 ## Import files

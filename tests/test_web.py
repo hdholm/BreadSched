@@ -3843,6 +3843,14 @@ class TestDashboardApi:
             claim["attention"][0].startswith("No EOB entered 60 days")
             for claim in payload["claims"]
         )
+        # #366: the listed claims are the report's Dashboard lines, each saying
+        # whether its benefit year is still open.
+        assert [claim["handle"] for claim in payload["claims"]] == [
+            line.handle for line in expected.dashboard_lines
+        ]
+        assert [claim["open_year"] for claim in payload["claims"]] == [
+            line.open_year for line in expected.dashboard_lines
+        ]
         _status, board = client.get("/api/dashboard")
         assert int(board["summary"]["fsa_claims_attention"]) == 3
 
@@ -3953,9 +3961,12 @@ class TestDashboardApi:
         )
         status, error = refused("/api/fsa/claim/close", {"handle": handle})
         assert status == 400 and error["code"] == "claim.close.already_closed"
-        # A closed claim is settled: it leaves the FSA Dashboard's open claims.
+        # A closed claim is settled, but its benefit year is still open, so the FSA
+        # Dashboard keeps listing it, as closed, to tell claims apart (#366).
         _status, board = client.get("/api/fsa/dashboard")
-        assert handle not in [claim["handle"] for claim in board["claims"]]
+        listed = {claim["handle"]: claim for claim in board["claims"]}
+        if listed[handle]["open_year"]:
+            assert listed[handle]["status"] == "Closed"
         client.post("/api/fsa/claim/reopen", {"handle": handle, "note": "Oops"})
         _payload, row = claim_row()
         assert row["closed_on"] is None

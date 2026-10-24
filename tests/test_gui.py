@@ -8018,6 +8018,197 @@ class TestViewActions:
         assert opened == [()]
 
 
+class TestFsaClaimsWindow:
+    """#366: claims are easy to start, find, link, and reach from any view."""
+
+    def _book(self, app, populated_book):
+        from breadsched.gen.lib import FsaFundingYear
+        from breadsched.gen.lib.account import AccountClass
+
+        app.open_book(populated_book)
+        db = app.db
+        today = date.today()
+        start = today.replace(month=1, day=1)
+        assets = next(a for a in db.iter_accounts() if a.name == "Assets")
+        checking = next(a for a in db.iter_accounts() if a.atype is AccountType.BANK)
+        expense = next(a for a in db.iter_accounts() if a.account_class is AccountClass.EXPENSE)
+        fsa = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
+        fsa.fsa.years = [
+            FsaFundingYear(start, start.replace(month=12, day=31), Money("1000"), None)
+        ]
+        made = {
+            "card": Transaction.simple(
+                start, "Clinic on FSA card", expense.handle, fsa.handle, "80"
+            ),
+            "bank": Transaction.simple(
+                start + timedelta(days=2), "Pharmacy", expense.handle, checking.handle, "25"
+            ),
+            "far": Transaction.simple(
+                start + timedelta(days=200), "Optician", expense.handle, checking.handle, "300"
+            ),
+        }
+        with db.transaction("FSA") as txn:
+            db.add_account(fsa, txn)
+            for transaction in made.values():
+                db.add_transaction(transaction, txn)
+        return db, fsa, expense, checking, start, made
+
+    def _link(self, transaction, account):
+        from breadsched.gen.services import ClaimLinkInput
+
+        split = next(item for item in transaction.splits if item.account == account)
+        return ClaimLinkInput(transaction.handle, split.handle)
+
+    def test_new_leaves_no_old_claim_chosen_and_saving_lists_the_claim(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.dialogs.fsa_claims_dialog import NEW_CLAIM, FsaClaimsDialog
+
+        db, _fsa, expense, _checking, start, made = self._book(app, populated_book)
+        dialog = FsaClaimsDialog.present_for(window, db)
+        try:
+            assert dialog.claim_select.get_selected() == 0
+            assert dialog.claim_select.get_model().get_string(0) == NEW_CLAIM
+            dialog.service.set_text(start.isoformat())
+            dialog.provider.set_text("Clinic")
+            dialog.payments.add(self._link(made["bank"], expense.handle))
+            dialog._save(None)
+            assert dialog.status.get_text() == "Claim saved."
+            saved = dialog.current
+            # The chooser now shows the saved claim, with where it stands.
+            assert dialog.claim_select.get_selected() == 1
+            label = dialog.claim_select.get_model().get_string(1)
+            assert label.startswith(f"{start} Clinic — ")
+            dialog.new_claim()
+            assert dialog.claim_select.get_selected() == 0
+            assert dialog.current is None and dialog.provider.get_text() == ""
+            assert dialog.payments.links() == []
+            dialog.claim_select.set_selected(1)
+            assert dialog.current.handle == saved.handle
+            dialog._delete(None)
+            assert dialog.claim_select.get_model().get_n_items() == 1
+            assert dialog.claim_select.get_selected() == 0
+        finally:
+            dialog.destroy()
+
+    def test_a_payment_from_the_fsa_card_reimburses_the_claim(self, app, window, populated_book):
+        from breadsched.gui.dialogs.fsa_claims_dialog import FsaClaimsDialog
+
+        db, fsa, expense, _checking, start, made = self._book(app, populated_book)
+        dialog = FsaClaimsDialog.present_for(window, db)
+        try:
+            dialog.service.set_text(start.isoformat())
+            dialog.provider.set_text("Clinic")
+            dialog.eob.set_text("80")
+            dialog.payments.add(self._link(made["card"], expense.handle))
+            dialog._save(None)
+            assert dialog.standing.get_text().startswith("Fully reimbursed")
+            [row] = dialog._allocation_rows
+            assert row.reimburse.links() == [self._link(made["card"], fsa.handle)]
+        finally:
+            dialog.destroy()
+
+    def test_linked_transactions_stay_pinned_above_a_searchable_list(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.dialogs.fsa_claims_dialog import RANGES, FsaClaimsDialog
+
+        db, _fsa, expense, _checking, start, made = self._book(app, populated_book)
+        dialog = FsaClaimsDialog.present_for(window, db)
+        try:
+            dialog.service.set_text(start.isoformat())
+            payments = dialog.payments
+
+            def offered():
+                return {link.transaction for link, _when, _label in payments.visible_candidates()}
+
+            # Near the service date by default: the optician months later is not offered.
+            assert {made["card"].handle, made["bank"].handle} <= offered()
+            assert made["far"].handle not in offered()
+            payments.range.set_selected([key for key, _label in RANGES].index("all"))
+            assert made["far"].handle in offered()
+            payments.search.set_text("pharm")
+            assert offered() == {made["bank"].handle}
+            payments.search.set_text("")
+            link = self._link(made["bank"], expense.handle)
+            payments.add(link)
+            # Linked: shown on top with Remove, and no longer offered below.
+            assert payments.linked_box.get_visible()
+            assert made["bank"].handle not in offered()
+            assert payments.linked_box.get_row_at_index(0) is not None
+            payments.remove_link(link)
+            assert payments.links() == [] and not payments.linked_box.get_visible()
+            assert made["bank"].handle in offered()
+        finally:
+            dialog.destroy()
+
+    def test_the_window_offers_transactions_entered_while_it_is_open(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.dialogs.fsa_claims_dialog import FsaClaimsDialog
+
+        db, _fsa, expense, checking, start, _made = self._book(app, populated_book)
+        dialog = FsaClaimsDialog.present_for(window, db)
+        try:
+            assert dialog.get_modal() is False
+            dialog.service.set_text(start.isoformat())
+            late = Transaction.simple(start, "Lab work", expense.handle, checking.handle, "15")
+            with db.transaction("Lab") as txn:
+                db.add_transaction(late, txn)
+
+            def offered():
+                return {
+                    link.transaction for link, _when, _label in dialog.payments.visible_candidates()
+                }
+
+            assert _spin(lambda: late.handle in offered())
+        finally:
+            dialog.destroy()
+
+    def test_manage_fsa_claims_is_an_action_in_every_view(self, app, window, populated_book):
+        db, *_ = self._book(app, populated_book)
+        window.show_category("register")
+        sections = TestViewSpecificChrome()._sections(app)
+        assert any("app.fsa-claims" in _menu_actions(section) for _label, section in sections)
+        dialog = app.on_fsa_claims()
+        try:
+            # One claims window per book: asking again brings it forward.
+            assert app.on_fsa_claims() is dialog
+        finally:
+            dialog.destroy()
+        window.show_category("fsa-dashboard")
+        everywhere = [
+            action
+            for _label, section in TestViewSpecificChrome()._sections(app)
+            for action in _menu_actions(section)
+        ]
+        assert "app.fsa-claims" not in everywhere
+        assert "win.fsa-dashboard-manage-claims" in everywhere
+
+    def test_the_dashboard_lists_settled_claims_of_an_open_year(self, app, window, populated_book):
+        from breadsched.gen.services import ClaimInput, SaveClaim, save_claim
+
+        db, _fsa, expense, _checking, start, made = self._book(app, populated_book)
+        saved = save_claim(
+            db,
+            SaveClaim(
+                ClaimInput(
+                    service_date=start,
+                    provider="Clinic",
+                    eob_responsibility=Money("80"),
+                    payments=(self._link(made["card"], expense.handle),),
+                )
+            ),
+        )
+        assert saved.value is not None
+        window.show_category("fsa-dashboard")
+        view = window._views["fsa-dashboard"]
+        view.refresh()
+        assert view.claim_heading.get_label() == "FSA claims"
+        assert view.claim_grid.get_child_at(1, 1).get_label() == "Clinic"
+        assert view.claim_grid.get_child_at(2, 1).get_label() == "Fully reimbursed"
+
+
 class TestOnlineQuotesDialog:
     def test_sources_are_saved_and_quotes_fetched_in_the_background(
         self, app, window, populated_book, tmp_path, monkeypatch

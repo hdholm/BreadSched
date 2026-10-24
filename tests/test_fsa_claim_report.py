@@ -221,3 +221,20 @@ def test_the_command_line_reports_claims_and_attention(db, claims, tmp_path, cap
         "over",
     }
     assert main(["claims", str(path), "--status", "bogus"]) != 0
+
+
+def test_the_dashboard_lists_every_claim_of_an_open_benefit_year(db, claims):
+    """#366: settled claims stay listed while their year can still be claimed."""
+    _health, _spouse, made = claims
+    open_now = claim_report(db, as_of=AS_OF)
+    assert all(line.open_year for line in open_now.lines)
+    # The fully reimbursed claim is listed with the rest, to tell claims apart.
+    assert {line.handle for line in open_now.dashboard_lines} == {
+        claim.handle for claim in made.values()
+    }
+    # Once every run-out has passed, only claims still open or needing attention stay.
+    later = claim_report(db, as_of=date(2028, 1, 15))
+    assert not any(line.open_year for line in later.lines)
+    listed = {line.handle for line in later.dashboard_lines}
+    assert made["done"].handle not in listed
+    assert made["waiting"].handle in listed

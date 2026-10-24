@@ -204,6 +204,7 @@ class BreadSchedApplication(Gtk.Application):
             ("rules", self.on_rules, None),
             ("receivables", self.on_receivables, None),
             ("savings-goals", self.on_savings_goals, None),
+            ("fsa-claims", self.on_fsa_claims, None),
             ("gnucash-writeback", self.on_gnucash_writeback, None),
             ("open-default", self.on_open_default, None),
             ("undo", self.on_undo, "<Control>z"),
@@ -236,6 +237,7 @@ class BreadSchedApplication(Gtk.Application):
             "rules",
             "receivables",
             "savings-goals",
+            "fsa-claims",
             "gnucash-writeback",
             "export",
             "backup",
@@ -272,6 +274,7 @@ class BreadSchedApplication(Gtk.Application):
             "rules",
             "receivables",
             "savings-goals",
+            "fsa-claims",
             "gnucash-writeback",
             "export",
             "backup",
@@ -514,6 +517,15 @@ class BreadSchedApplication(Gtk.Application):
         dialog = SavingsGoalsDialog(self.props.active_window, self.db)
         dialog.present()
         return dialog
+
+    def on_fsa_claims(self, *_args, claim: str | None = None):
+        """Manage FSA claims from any view; the open claims window is brought forward."""
+        if self.db is None:
+            self._report("Open a book before managing FSA claims.")
+            return None
+        from .dialogs.fsa_claims_dialog import FsaClaimsDialog
+
+        return FsaClaimsDialog.present_for(self.props.active_window, self.db, claim)
 
     def on_gnucash_writeback(self, *_args):
         """Preview, then write chosen changes back to the imported GnuCash book."""
@@ -794,6 +806,10 @@ class ActionsMenu:
         general.append("Categorization _Rules…", "app.rules")
         general.append("Rei_mbursable Expenses…", "app.receivables")
         general.append("Savings _Goals…", "app.savings-goals")
+        # Claims are not tied to the FSA Dashboard: they are managed beside any
+        # register (#366). That view lists the command first already.
+        if key != "fsa-dashboard":
+            general.append("Manage _FSA Claims…", "app.fsa-claims")
         self.menu.append_section(None, general)
         others = Gio.Menu()
         for view in VIEW_ACTIONS:

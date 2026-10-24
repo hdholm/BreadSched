@@ -50,6 +50,15 @@ Funds Out lists while it stays open. Each check is saved through
 update. Rows for `after_statement` candidates sit below an "After" heading with the
 `after-statement` style.
 
+The FSA claims window (`dialogs/fsa_claims_dialog`, #366) is likewise not modal and
+one per book (`FsaClaimsDialog.present_for`): it is the application action
+`app.fsa-claims`, listed in every view's Actions menu (on the FSA Dashboard, as that
+view's own command and toolbar icon instead), and it refreshes its candidate
+transactions on `database-changed`. Its chooser's first entry is the new claim. Each
+link list pins the linked splits above a candidate list filtered by search text and
+by range (60 days around the service date, the claim's benefit year, or all) and
+capped at `SHOWN_LIMIT` rows.
+
 Below the toolbar, a tab bar lists each open view, one tab per open register, and
 one per pinned scenario Projection (`ViewManager._tabs`). Register tabs are
 `RegisterView`s in their own stack, and `_views["register"]` always names the one

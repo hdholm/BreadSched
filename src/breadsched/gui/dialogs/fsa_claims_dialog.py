@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Sequence
 from datetime import date
 
@@ -36,41 +37,144 @@ from ..widgets.help import help_row
 
 __all__ = ["FsaClaimsDialog"]
 
+#: The claim chooser's first entry, for entering a claim not yet saved.
+NEW_CLAIM = "New claim"
+
+#: The open claims window for each book.
+_OPEN: weakref.WeakValueDictionary[int, FsaClaimsDialog] = weakref.WeakValueDictionary()
+
+
+#: How the candidate transactions are limited (#366): near the anchor date (the
+#: claim's service date), within the claim's benefit year, or not at all.
+RANGES = (("near", "Within 60 days"), ("year", "Claim year"), ("all", "All dates"))
+NEAR_DAYS = 60
+#: At most this many candidates are listed at once; searching narrows the rest.
+SHOWN_LIMIT = 200
+
 
 class _LinkList(Gtk.Box):
+    """Linked splits pinned on top, and a searchable, limited list to add from.
+
+    A claim's linked transactions stay in view however long the candidate list
+    is, each with **Remove**; the candidates below can be searched by date,
+    description, or amount and limited to dates near the service date or within
+    the claim's benefit year (#366). Earlier, every candidate since the first FSA
+    year was a check box in one small scrolling box.
+    """
+
     def __init__(self, candidates: list[tuple[str, str, date, str]]) -> None:
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=3)
-        self._checks: list[tuple[Gtk.CheckButton, ClaimLinkInput, date]] = []
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self._candidates: list[tuple[ClaimLinkInput, date, str]] = []
+        self._linked: list[ClaimLinkInput] = []
+        self._anchor: date | None = None
+        self._window: tuple[date, date] | None = None
+        self.linked_box = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        self.linked_box.add_css_class("boxed-list")
+        self.append(self.linked_box)
+        filters = Gtk.Box(spacing=6)
+        self.search = Gtk.SearchEntry(
+            hexpand=True, placeholder_text="Search date, description, amount"
+        )
+        self.search.connect("search-changed", lambda *_: self._show_candidates())
+        filters.append(self.search)
+        self.range = bounded_dropdown([label for _key, label in RANGES])
+        self.range.connect("notify::selected", lambda *_: self._show_candidates())
+        filters.append(self.range)
+        self.count = Gtk.Label(xalign=1)
+        self.count.add_css_class("dim")
+        filters.append(self.count)
+        self.append(filters)
+        self.candidate_box = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        scroll = Gtk.ScrolledWindow(child=self.candidate_box, min_content_height=140)
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.append(scroll)
         self.set_candidates(candidates)
 
     def set_candidates(self, candidates: list[tuple[str, str, date, str]]) -> None:
-        child = self.get_first_child()
-        while child is not None:
-            following = child.get_next_sibling()
-            self.remove(child)
-            child = following
-        self._checks.clear()
-        for transaction, split, when, label in candidates:
-            check = Gtk.CheckButton(label=label)
-            self.append(check)
-            self._checks.append((check, ClaimLinkInput(transaction, split), when))
+        self._candidates = [
+            (ClaimLinkInput(transaction, split), when, label)
+            for transaction, split, when, label in candidates
+        ]
+        self._render()
+
+    def set_anchor(self, when: date | None, window: tuple[date, date] | None = None) -> None:
+        """The service date the candidates are near, and the claim's benefit year."""
+        self._anchor = when
+        self._window = window
+        self._show_candidates()
 
     def set_links(self, links: Sequence[SplitLink | ClaimLinkInput]) -> None:
-        selected = {(item.transaction, item.split) for item in links}
-        for check, link, _when in self._checks:
-            check.set_active((link.transaction, link.split) in selected)
+        self._linked = [ClaimLinkInput(item.transaction, item.split) for item in links]
+        self._render()
 
     def links(self) -> list[ClaimLinkInput]:
-        return [link for check, link, _when in self._checks if check.get_active()]
+        return list(self._linked)
 
-    def index_on_or_after(self, when: date) -> int:
-        for index, (_check, _link, candidate_date) in enumerate(self._checks):
-            if candidate_date >= when:
-                return index
-        return max(0, len(self._checks) - 1)
+    def add(self, link: ClaimLinkInput) -> None:
+        if link not in self._linked:
+            self._linked.append(link)
+            self._render()
+
+    def remove_link(self, link: ClaimLinkInput) -> None:
+        if link in self._linked:
+            self._linked.remove(link)
+            self._render()
+
+    def _label(self, link: ClaimLinkInput) -> str:
+        return next(
+            (label for item, _when, label in self._candidates if item == link),
+            "(a transaction outside this list)",
+        )
+
+    def _render(self) -> None:
+        self.linked_box.remove_all()
+        for link in self._linked:
+            row = Gtk.Box(spacing=6)
+            text = Gtk.Label(label=self._label(link), xalign=0, hexpand=True, wrap=True)
+            row.append(text)
+            remove = Gtk.Button(label="Remove")
+            remove.connect("clicked", lambda _b, item=link: self.remove_link(item))
+            row.append(remove)
+            self.linked_box.append(row)
+        self.linked_box.set_visible(bool(self._linked))
+        self._show_candidates()
+
+    def visible_candidates(self) -> list[tuple[ClaimLinkInput, date, str]]:
+        """The unlinked candidates the search and range let through, before the limit."""
+        key = RANGES[min(self.range.get_selected(), len(RANGES) - 1)][0]
+        words = self.search.get_text().casefold().split()
+        shown = []
+        for link, when, label in self._candidates:
+            if link in self._linked:
+                continue
+            if key == "near" and self._anchor is not None:
+                if abs((when - self._anchor).days) > NEAR_DAYS:
+                    continue
+            elif key == "year" and self._window is not None:
+                if not self._window[0] <= when <= self._window[1]:
+                    continue
+            if any(word not in label.casefold() for word in words):
+                continue
+            shown.append((link, when, label))
+        return shown
+
+    def _show_candidates(self) -> None:
+        self.candidate_box.remove_all()
+        shown = self.visible_candidates()
+        for link, _when, label in shown[:SHOWN_LIMIT]:
+            row = Gtk.Box(spacing=6)
+            row.append(Gtk.Label(label=label, xalign=0, hexpand=True, wrap=True))
+            add = Gtk.Button(label="Add")
+            add.connect("clicked", lambda _b, item=link: self.add(item))
+            row.append(add)
+            self.candidate_box.append(row)
+        if len(shown) > SHOWN_LIMIT:
+            self.count.set_text(f"First {SHOWN_LIMIT} of {len(shown)}; search to narrow")
+        else:
+            self.count.set_text(f"{len(shown)} to add")
 
     def __len__(self) -> int:
-        return len(self._checks)
+        return len(self._candidates)
 
 
 def _event_text(event: FsaClaimEvent) -> str:
@@ -104,11 +208,10 @@ class _AllocationRow(Gtk.Frame):
         box.append(top)
         box.append(Gtk.Label(label="Reimbursement/payment splits", xalign=0))
         self.reimburse = _LinkList(candidates)
-        scroll = Gtk.ScrolledWindow(child=self.reimburse, min_content_height=90)
-        box.append(scroll)
+        box.append(self.reimburse)
         box.append(Gtk.Label(label="Repaid to the FSA (money paid back into it)", xalign=0))
         self.repay = _LinkList(list(repayments))
-        box.append(Gtk.ScrolledWindow(child=self.repay, min_content_height=60))
+        box.append(self.repay)
         box.append(Gtk.Label(label="Rejected/failed attempts (date | amount | reason)", xalign=0))
         self.rejections = Gtk.Entry(placeholder_text="2026-03-01 | 125.00 | receipt required")
         box.append(self.rejections)
@@ -179,9 +282,25 @@ class _AllocationRow(Gtk.Frame):
 class FsaClaimsDialog(BoundedWindow):
     """GTK maintenance surface for FSA claims and reconciliation links."""
 
+    @classmethod
+    def present_for(
+        cls, parent: Gtk.Window | None, db: DbSQLite, claim_handle: str | None = None
+    ) -> FsaClaimsDialog:
+        """Show the book's claims window, opening one only if none is open (#366)."""
+        existing = _OPEN.get(id(db))
+        if existing is not None and existing.db is db:
+            if claim_handle is not None:
+                existing.show_claim(claim_handle)
+            existing.present()
+            return existing
+        dialog = cls(parent, db, claim_handle)
+        dialog.present()
+        return dialog
+
     def __init__(self, parent: Gtk.Window, db: DbSQLite, claim_handle: str | None = None) -> None:
         super().__init__(title="FSA claims", transient_for=parent)
         self.db = db
+        _OPEN[id(db)] = self
         self.set_default_size(860, 700)
         self.claims = [summary.claim for summary in book_server(db).fsa_claims().claims]
         self.current: FsaClaim | None = None
@@ -193,13 +312,14 @@ class FsaClaimsDialog(BoundedWindow):
         outer.prepend(help_row("fsa-claims"))
 
         top = Gtk.Box(spacing=6)
-        self.claim_select = bounded_dropdown(
-            [f"{claim.service_date} {claim.provider or 'FSA claim'}" for claim in self.claims]
-        )
+        # The first choice is a new claim, so New (or choosing it) never leaves an
+        # old claim showing as chosen above an empty form (#366).
+        self.claim_select = bounded_dropdown([NEW_CLAIM])
+        self._choosing = False
         self.claim_select.connect("notify::selected", self._load_selected)
         top.append(self.claim_select)
         new = Gtk.Button(label="New")
-        new.connect("clicked", lambda *_: self._load(None))
+        new.connect("clicked", lambda *_: self.new_claim())
         top.append(new)
         delete = delete_button(
             lambda: (
@@ -252,18 +372,14 @@ class FsaClaimsDialog(BoundedWindow):
         outer.append(self.shared)
 
         payments, refunds, reimbursements, repayments = self._candidates()
-        self._payment_candidates = payments
-        self._refund_candidates = refunds
         self.reimbursement_candidates = reimbursements
         self.repayment_candidates = repayments
         outer.append(Gtk.Label(label="Healthcare payments", xalign=0))
         self.payments = _LinkList(payments)
-        self.payments_scroll = Gtk.ScrolledWindow(child=self.payments, min_content_height=90)
-        outer.append(self.payments_scroll)
+        outer.append(self.payments)
         outer.append(Gtk.Label(label="Provider refunds / credits", xalign=0))
         self.refunds = _LinkList(refunds)
-        self.refunds_scroll = Gtk.ScrolledWindow(child=self.refunds, min_content_height=75)
-        outer.append(self.refunds_scroll)
+        outer.append(self.refunds)
         self.service.connect("changed", self._service_changed)
 
         allocation_bar = Gtk.Box(spacing=6)
@@ -306,17 +422,95 @@ class FsaClaimsDialog(BoundedWindow):
         outer.append(actions)
         # The form scrolls; its buttons stay on screen (dialog audit, #148).
         scroll_body(self)
-        selected = 0
-        if claim_handle is not None:
-            selected = next(
-                (index for index, claim in enumerate(self.claims) if claim.handle == claim_handle),
-                0,
-            )
-        if self.claims:
-            self.claim_select.set_selected(selected)
-            self._load(self.claims[selected])
-        else:
-            self._load(None)
+        # The dialog is not modal: it can stay open beside a register, and the
+        # transactions it offers follow the book (#366).
+        self._refresh_source = 0
+        self._handler: int | None = db.connect("database-changed", self._on_book_changed)
+        self.connect("destroy", lambda *_: self._disconnect())
+        self.connect("close-request", self._on_close_request)
+        if claim_handle is None and self.claims:
+            claim_handle = self.claims[0].handle
+        self._reload_claims(claim_handle)
+        self._load(self.current)
+
+    # ----------------------------------------------------------------- life
+
+    def _on_close_request(self, *_args) -> bool:
+        self._disconnect()
+        return False
+
+    def _disconnect(self) -> None:
+        if self._refresh_source:
+            GLib.source_remove(self._refresh_source)
+            self._refresh_source = 0
+        if self._handler is not None:
+            self.db.disconnect(self._handler)
+            self._handler = None
+        if _OPEN.get(id(self.db)) is self:
+            del _OPEN[id(self.db)]
+
+    def _on_book_changed(self, *_args) -> None:
+        if not self._refresh_source:
+            self._refresh_source = GLib.idle_add(self._idle_refresh)
+
+    def _idle_refresh(self) -> bool:
+        self._refresh_source = 0
+        self.refresh_candidates()
+        return False
+
+    def refresh_candidates(self) -> None:
+        """Offer transactions entered or changed elsewhere, keeping what is linked."""
+        if not self.db.is_open:
+            return
+        payments, refunds, reimbursements, repayments = self._candidates()
+        self.reimbursement_candidates = reimbursements
+        self.repayment_candidates = repayments
+        self.payments.set_candidates(payments)
+        self.refunds.set_candidates(refunds)
+        for row in self._allocation_rows:
+            row.reimburse.set_candidates(reimbursements)
+            row.repay.set_candidates(repayments)
+        if self.current is not None:
+            try:
+                self.current = book_server(self.db).find_fsa_claim(self.current.handle)
+            except ApiError:
+                pass
+        self._show_standing()
+
+    def _reload_claims(self, chosen: str | None) -> None:
+        """Rebuild the chooser after a save or delete, showing ``chosen``."""
+        summaries = book_server(self.db).fsa_claims().claims
+        self.claims = [summary.claim for summary in summaries]
+        labels = [
+            f"{summary.claim.service_date} {summary.claim.provider or 'FSA claim'}"
+            f" — {summary.status.label}"
+            for summary in summaries
+        ]
+        self.current = next((claim for claim in self.claims if claim.handle == chosen), None)
+        index = next(
+            (index + 1 for index, claim in enumerate(self.claims) if claim.handle == chosen), 0
+        )
+        self._choosing = True
+        try:
+            self.claim_select.set_model(Gtk.StringList.new([NEW_CLAIM, *labels]))
+            self.claim_select.set_selected(index)
+        finally:
+            self._choosing = False
+
+    def show_claim(self, handle: str) -> None:
+        """Show a saved claim, as Review claim on the Dashboard asks."""
+        self._reload_claims(handle)
+        self._load(self.current)
+
+    def new_claim(self) -> None:
+        """Start a new claim: the chooser shows New claim and the form is empty."""
+        self._choosing = True
+        try:
+            self.claim_select.set_selected(0)
+        finally:
+            self._choosing = False
+        self._load(None)
+        self.status.set_text("")
 
     def _candidates(self):
         payments, refunds, reimbursements, repayments = [], [], [], []
@@ -347,43 +541,24 @@ class FsaClaimsDialog(BoundedWindow):
                     repayments.append(item)
         return payments, refunds, reimbursements, repayments
 
-    def _claim_candidates(
-        self,
-        candidates: list[tuple[str, str, date, str]],
-        service_date: date,
-        selected: Sequence[SplitLink | ClaimLinkInput],
-    ) -> list[tuple[str, str, date, str]]:
-        window = fsa_claims.claim_year_window(self.db, service_date)
-        if window is None:
-            return candidates
-        start, _through = window
-        selected_keys = {(item.transaction, item.split) for item in selected}
-        return [
-            item for item in candidates if start <= item[2] or (item[0], item[1]) in selected_keys
-        ]
+    def _link_lists(self) -> list[_LinkList]:
+        lists = [self.payments, self.refunds]
+        for row in self._allocation_rows:
+            lists.extend((row.reimburse, row.repay))
+        return lists
 
-    def _refresh_claim_candidates(
-        self,
-        service_date: date,
-        payments: Sequence[SplitLink | ClaimLinkInput],
-        refunds: Sequence[SplitLink | ClaimLinkInput],
-    ) -> None:
-        self.payments.set_candidates(
-            self._claim_candidates(self._payment_candidates, service_date, payments)
-        )
-        self.refunds.set_candidates(
-            self._claim_candidates(self._refund_candidates, service_date, refunds)
-        )
-        self.payments.set_links(payments)
-        self.refunds.set_links(refunds)
-        self._scroll_candidates_to(service_date)
+    def _anchor(self, service_date: date) -> None:
+        """Limit every candidate list to around this service date and its year."""
+        window = fsa_claims.claim_year_window(self.db, service_date)
+        for links in self._link_lists():
+            links.set_anchor(service_date, window)
 
     def _service_changed(self, _entry) -> None:
         try:
             service_date = date.fromisoformat(self.service.get_text().strip())
         except ValueError:
             return
-        self._refresh_claim_candidates(service_date, self.payments.links(), self.refunds.links())
+        self._anchor(service_date)
 
     def _clear_allocations(self) -> None:
         child = self.allocations.get_first_child()
@@ -399,26 +574,19 @@ class FsaClaimsDialog(BoundedWindow):
         )
         self.allocations.append(row)
         self._allocation_rows.append(row)
+        try:
+            service_date = date.fromisoformat(self.service.get_text().strip())
+        except ValueError:
+            return
+        window = fsa_claims.claim_year_window(self.db, service_date)
+        for links in (row.reimburse, row.repay):
+            links.set_anchor(service_date, window)
 
     def _load_selected(self, *_args) -> None:
-        if self.claims:
-            self._load(self.claims[self.claim_select.get_selected()])
-
-    def _scroll_candidates_to(self, when: date) -> None:
-        def scroll() -> bool:
-            for links, window in (
-                (self.payments, self.payments_scroll),
-                (self.refunds, self.refunds_scroll),
-            ):
-                if len(links) < 2:
-                    continue
-                index = links.index_on_or_after(when)
-                adjustment = window.get_vadjustment()
-                span = max(0.0, adjustment.get_upper() - adjustment.get_page_size())
-                adjustment.set_value(span * index / (len(links) - 1))
-            return False
-
-        GLib.idle_add(scroll)
+        if self._choosing:
+            return
+        index = self.claim_select.get_selected()
+        self._load(self.claims[index - 1] if 0 < index <= len(self.claims) else None)
 
     def _load(self, claim: FsaClaim | None) -> None:
         self.current = claim
@@ -433,13 +601,13 @@ class FsaClaimsDialog(BoundedWindow):
         self.eob_note.set_text("")
         self.close_reason.set_text("")
         service_date = claim.service_date if claim else date.fromisoformat(self.service.get_text())
-        self._refresh_claim_candidates(
-            service_date, claim.payments if claim else [], claim.refunds if claim else []
-        )
+        self.payments.set_links(claim.payments if claim else [])
+        self.refunds.set_links(claim.refunds if claim else [])
         self._clear_allocations()
         if claim:
             for allocation in claim.allocations:
                 self._add_allocation(allocation)
+        self._anchor(service_date)
         self.payer.set_selected(
             next(
                 (
@@ -556,11 +724,10 @@ class FsaClaimsDialog(BoundedWindow):
         except ApiError as error:
             self.status.set_text(str(error))
             return
-        self.current = book_server(self.db).find_fsa_claim(saved.handle)
-        self.eob_note.set_text("")
+        self._reload_claims(saved.handle)
+        # Reload what was saved: a payment from the FSA card links its FSA side too.
+        self._load(self.current)
         self.status.set_text("Claim saved.")
-        self._show_shared()
-        self._show_standing()
 
     def _delete(self, _button) -> None:
         if self.current is None:
@@ -570,5 +737,6 @@ class FsaClaimsDialog(BoundedWindow):
         except ApiError as error:
             self.status.set_text(str(error))
             return
-        self.status.set_text("Claim deleted.")
+        self._reload_claims(None)
         self._load(None)
+        self.status.set_text("Claim deleted.")

@@ -265,7 +265,13 @@ cash-like.
   claim's payment and its allocation's reimbursement; `direct_refund` links a provider
   refund to the FSA card as both a refund and a repayment, so the claim nets to what
   was actually used. Suggestions rank these ahead of single roles for the same
-  transaction.
+  transaction. A claim save applies the same pairing (`_pair_direct_links`, #366): a
+  linked payment whose transaction has exactly one FSA outflow links it as the
+  reimbursement (in the year the claim already draws on from that account, else the
+  one year covering the service date, else `claim.attachment.funding_year.required`),
+  and a linked refund back to an FSA the claim draws on links the repayment, so a
+  claim form that lists only the healthcare side cannot leave a card payment
+  outstanding.
 - **Repayments.** Splits paying money back into the allocation's FSA account are
   linked as repayments and tagged with the funding year. `year_status` takes a tagged
   positive split off `used` (reported as `repaid`) instead of treating it as payroll
@@ -281,7 +287,10 @@ cash-like.
   stable attention codes: `review`, `eob` (no EOB 30 days after service), `deadline`
   (money still to reimburse within 30 days of a run-out), `rejected`, `over`, and
   `reopened`. The Dashboard carries the claims needing attention as
-  `claim_alerts`.
+  `claim_alerts`. `ClaimLine.open_year` says whether a claim's benefit year can
+  still be claimed, and `ClaimReport.dashboard_lines` (every open-year claim plus
+  older ones still open or needing attention) is what the GTK and web FSA
+  Dashboards list (#366).
 
 The GTK claims dialog, the web claim editor (`web/fsa_claim_resource.py`), and
 `breadsched claims` only parse input and render these results.
