@@ -25,6 +25,7 @@ from ..gen.engine.planning import MatchCandidate, PlannedEvent
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.commodity import CommodityPrice
 from ..gen.lib.fsa_claim import FsaClaim
 from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
@@ -74,6 +75,7 @@ from ..gen.services import (
     delete_transaction,
     duplicate_schedule,
     editable_transaction,
+    exchange_rates,
     find_account,
     find_schedule,
     find_transaction,
@@ -125,6 +127,7 @@ from ..gen.services.claims import (
     SaveClaim,
     SavedClaim,
 )
+from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
 from ..gen.services.import_review import (
     HeldImportChange,
     HeldImportResolution,
@@ -538,6 +541,20 @@ class LocalBookServer:
 
     def save_loan(self, request: SaveLoan) -> SavedLoan:
         return unwrap(loan_service.save_loan(self.db, request))
+
+    # ---------------------------------------------------------- exchange rates
+
+    def currencies(self) -> tuple[CurrencyChoice, ...]:
+        return exchange_rates.currencies(self.db)
+
+    def find_currency(self, reference: str) -> CurrencyChoice:
+        found = exchange_rates.find_currency(self.db, reference)
+        if found.errors and found.errors[0].code == "currency.not_currency":
+            return unwrap(found)
+        return _named(found, reference, "currency")
+
+    def save_exchange_rate(self, request: SaveExchangeRate) -> CommodityPrice:
+        return unwrap(exchange_rates.save_exchange_rate(self.db, request))
 
     # -------------------------------------------------------------- receivables
 

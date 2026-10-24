@@ -445,6 +445,22 @@ def test_quotes_work_through_the_server_holding_the_book(running, book_path, cap
     assert [price.value for price in running.db.iter_prices(commodity.handle)][-1] == Money("10.5")
 
 
+def test_rates_work_through_the_server_holding_the_book(running, book_path, capsys):
+    from breadsched.gen.lib import Commodity
+
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+    with running.db.transaction("Euro") as txn:
+        running.db.add_commodity(euro, txn)
+    command = ["rate", str(book_path), "--from", "EUR", "--to", "USD", "--date", "2026-03-01"]
+    assert main([*command, "--value", "1.08", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["rate"] == "27/25"
+    assert [price.value for price in running.db.iter_prices(commodity=euro.handle)] == [
+        Money("1.08")
+    ]
+    assert main([*command, "--value", "0"]) == 2
+    assert "The rate must be greater than zero" in capsys.readouterr().err
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

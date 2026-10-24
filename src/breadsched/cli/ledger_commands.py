@@ -7,9 +7,6 @@ from dataclasses import replace
 from datetime import date
 
 from ..api.protocol import BookApi
-from ..gen.engine import (
-    valuation,
-)
 from ..gen.lib import (
     Account,
     AccountType,
@@ -24,6 +21,7 @@ from ..gen.services import (
     TransactionInput,
     TransactionSplitInput,
 )
+from ..gen.services.exchange_rates import SaveExchangeRate
 from .common import (
     AddCommand,
     CommandError,
@@ -31,9 +29,7 @@ from .common import (
     book_api,
     boolean,
     emit,
-    open_book,
     parse_date,
-    resolve_currency,
     table,
 )
 
@@ -47,22 +43,10 @@ def cmd_rate(args: argparse.Namespace) -> int:
         value = Money(args.value)
     except (ValueError, TypeError, ZeroDivisionError) as exc:
         raise CommandError("rate must be a positive exact number") from exc
-    db = open_book(args.book)
-    try:
-        source = resolve_currency(db, args.source)
-        target = resolve_currency(db, args.target)
-        try:
-            quote = valuation.save_currency_quote(
-                db,
-                source_handle=source,
-                target_handle=target,
-                quote_date=quote_date,
-                value=value,
-            )
-        except ValueError as exc:
-            raise CommandError(str(exc)) from exc
-    finally:
-        db.close()
+    with book_api(args, "w") as book:
+        source = book.find_currency(args.source).handle
+        target = book.find_currency(args.target).handle
+        quote = book.save_exchange_rate(SaveExchangeRate(source, target, quote_date, value))
     exact_rate = f"{quote.value.numerator}/{quote.value.denominator}"
     emit(
         {
@@ -513,6 +497,7 @@ def register(add: AddCommand) -> None:
     rate.add_argument("--to", dest="target", required=True, help="target currency code or handle")
     rate.add_argument("--date", required=True, help="quote date (YYYY-MM-DD)")
     rate.add_argument("--value", required=True, help="target units per one source unit")
+    add_server_options(rate)
     rate.set_defaults(func=cmd_rate)
 
     add_txn = add("add", "Post a two-split transaction")

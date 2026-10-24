@@ -22,6 +22,7 @@ from ..gen.engine.planning import MatchCandidate, PlannedEvent
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.commodity import CommodityPrice
 from ..gen.lib.fsa_claim import FsaClaim
 from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
@@ -74,6 +75,7 @@ from ..gen.services.claims import (
     SaveClaim,
     SavedClaim,
 )
+from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
 from ..gen.services.import_review import (
     HeldImportChange,
     HeldImportResolution,
@@ -577,3 +579,15 @@ class BookApi(Protocol):
         ...
 
     def save_loan(self, request: SaveLoan) -> SavedLoan: ...
+
+    # ---------------------------------------------------------- exchange rates
+
+    def currencies(self) -> tuple[CurrencyChoice, ...]: ...
+
+    def find_currency(self, reference: str) -> CurrencyChoice:
+        """A currency by exact handle or unambiguous code."""
+        ...
+
+    def save_exchange_rate(self, request: SaveExchangeRate) -> CommodityPrice:
+        """Save a dated manual quote; one for the same pair and date is replaced."""
+        ...

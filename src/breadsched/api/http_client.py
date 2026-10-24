@@ -33,6 +33,7 @@ from ..gen.engine.planning import MatchCandidate, PlannedEvent
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.commodity import CommodityPrice
 from ..gen.lib.fsa_claim import FsaClaim
 from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
@@ -85,6 +86,7 @@ from ..gen.services.claims import (
     SaveClaim,
     SavedClaim,
 )
+from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
 from ..gen.services.import_review import (
     HeldImportChange,
     HeldImportResolution,
@@ -904,3 +906,17 @@ class HttpBookClient:
 
     def save_loan(self, request: SaveLoan) -> SavedLoan:
         return from_data(SavedLoan, self._call("POST", "/loans", body=to_data(request)))
+
+    # ---------------------------------------------------------- exchange rates
+
+    def currencies(self) -> tuple[CurrencyChoice, ...]:
+        found = self._call("GET", "/currencies")
+        return from_data(tuple[CurrencyChoice, ...], found["currencies"], "currencies")
+
+    def find_currency(self, reference: str) -> CurrencyChoice:
+        found = self._call("GET", "/currencies/lookup", {"reference": reference})
+        return from_data(CurrencyChoice, found["currency"], "currency")
+
+    def save_exchange_rate(self, request: SaveExchangeRate) -> CommodityPrice:
+        found = self._call("POST", "/exchange-rates", body=to_data(request))
+        return from_data(CommodityPrice, found["rate"], "rate")

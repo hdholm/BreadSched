@@ -10,11 +10,14 @@ from __future__ import annotations
 
 from datetime import date
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import valuation
 from ...gen.engine.currency import reporting_currency_handle
 from ...gen.lib.commodity import CommodityPrice
 from ...gen.lib.money import Money
+from ...gen.services.exchange_rates import SaveExchangeRate
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
@@ -148,16 +151,11 @@ class ExchangeRateDialog(BoundedWindow):
         except (ValueError, ArithmeticError):
             self._error("Enter the rate as a number, for example 1.25.")
             return None
+        request = SaveExchangeRate(source.handle, target.handle, quote_date, value)
         try:
-            self.saved = valuation.save_currency_quote(
-                self.db,
-                source_handle=source.handle,
-                target_handle=target.handle,
-                quote_date=quote_date,
-                value=value,
-            )
-        except ValueError as exc:
-            self._error(str(exc).capitalize() + ".")
+            self.saved = book_server(self.db).save_exchange_rate(request)
+        except ApiError as error:
+            self._error(f"{error}.")
             return None
         return self.saved
 

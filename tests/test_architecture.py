@@ -1152,6 +1152,10 @@ class TestBookServerBoundaries:
         "validate_loan",
         "loan_choices",
         "preview_loan",
+        "save_currency_quote",
+        "currencies",
+        "find_currency",
+        "save_exchange_rate",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1266,6 +1270,9 @@ class TestBookServerBoundaries:
         "loan_choices",
         "preview_loan",
         "save_loan",
+        "currencies",
+        "find_currency",
+        "save_exchange_rate",
     }
 
     @pytest.mark.parametrize(
@@ -1317,6 +1324,9 @@ class TestBookServerBoundaries:
             ("cli/quote_commands.py", ("cmd_quotes", "cmd_quote_source")),
             ("web/loan_resource.py", ("loan_options", "loan_preview", "loan_save")),
             ("gui/dialogs/loan_dialog.py", ("_on_save",)),
+            ("cli/ledger_commands.py", ("cmd_rate",)),
+            ("web/currency_quote_resource.py", ("save_currency_quote",)),
+            ("gui/dialogs/exchange_rate_dialog.py", ("save",)),
             ("web/quote_resource.py", ("quotes", "quote_source_save", "quotes_update")),
             ("gui/dialogs/online_quotes_dialog.py", ("save_sources", "get_quotes", "_store")),
             ("web/holdings_resource.py", ("sale_lots_view", "sale_lots_save")),
