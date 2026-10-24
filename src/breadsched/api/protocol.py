@@ -16,6 +16,7 @@ from typing import Protocol
 
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
+from ..gen.engine.loans import LoanTerms
 from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
 from ..gen.engine.planning import MatchCandidate, PlannedEvent
 from ..gen.engine.receivables import ReimbursementProposal
@@ -78,6 +79,7 @@ from ..gen.services.import_review import (
     HeldImportResolution,
     ResolveHeldImports,
 )
+from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
@@ -563,3 +565,15 @@ class BookApi(Protocol):
         ...
 
     def set_quote_source(self, request: SetQuoteSource) -> str: ...
+
+    # ------------------------------------------------------------------- loans
+
+    def loan_choices(self) -> LoanChoices:
+        """The accounts a new loan may use, and the book's amount precision."""
+        ...
+
+    def preview_loan(self, terms: LoanTerms) -> LoanPreview:
+        """A loan's payment and first payments after checking its terms; writes nothing."""
+        ...
+
+    def save_loan(self, request: SaveLoan) -> SavedLoan: ...

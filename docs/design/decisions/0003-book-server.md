@@ -295,6 +295,13 @@ quotes the caller fetched, `POST /api/v1/quotes`), and `set_quote_source`
 quotes dialog (whose worker fetches) fetch where they run and hand the answers to
 the server, which stores them with their provenance as before.
 
+Creating a loan followed: `loan_choices` (the accounts a loan may use and the
+book's amount precision), `preview_loan` (a checked payment, total interest, and
+first payments), and `save_loan` (`GET /api/v1/loans/choices`,
+`POST /api/v1/loans/preview`, and `POST /api/v1/loans`) serve the browser's loan
+form and GTK's loan dialog save. GTK still previews in the dialog from the engine,
+which reads only the terms, and there is no loan command.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

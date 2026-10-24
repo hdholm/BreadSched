@@ -89,6 +89,8 @@ Resources so far, all under ``/api/v1``:
 * ``GET /quotes`` – commodities, their quote sources, and what a fetch would ask
   for; ``POST /quotes`` stores quotes the caller fetched (``StoreQuotes``);
   ``PATCH /commodities/{handle}/quote-source`` (``source``).
+* ``GET /loans/choices``; ``POST /loans/preview`` (``LoanTerms``) and ``POST /loans``
+  (``SaveLoan``).
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -128,6 +130,7 @@ from ..api.views import (
 )
 from ..gen.engine.fsa_claim_report import GROUPINGS
 from ..gen.engine.fsa_claims import FsaClaimStatus
+from ..gen.engine.loans import LoanTerms
 from ..gen.lib.money import Money
 from ..gen.lib.scenario import AssumptionPeriod
 from ..gen.services import (
@@ -144,6 +147,7 @@ from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumpti
 from ..gen.services.categorization import AddRule
 from ..gen.services.claims import ClaimReportQuery, CloseClaim, ReopenClaim, SaveClaim
 from ..gen.services.import_review import ResolveHeldImports
+from ..gen.services.loans import SaveLoan
 from ..gen.services.lots import SetSaleLots
 from ..gen.services.payroll import CreatePaycheck, PayChange, SavePayrollTemplate
 from ..gen.services.quotes import SetQuoteSource, StoreQuotes
@@ -169,6 +173,9 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "loan_choices_get",
+    "loan_preview_v1",
+    "loan_save_v1",
     "quote_plan_get",
     "quote_source_patch",
     "quotes_store",
@@ -1193,3 +1200,16 @@ def quotes_store(api: Api, _path: Path, body: dict[str, Any]) -> dict:
 def quote_source_patch(api: Api, path: Path, body: dict[str, Any]) -> dict:
     source = from_data(_Source, body, "request").source
     return {"source": api.book.set_quote_source(SetQuoteSource(path["handle"], source))}
+
+
+def loan_choices_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.loan_choices())
+
+
+def loan_preview_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.preview_loan(from_data(LoanTerms, body, "terms")))
+
+
+def loan_save_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.save_loan(from_data(SaveLoan, body, "request")))

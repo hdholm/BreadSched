@@ -1255,6 +1255,44 @@ def test_plan_review_alike(target, book):
     assert _snapshot(db) == before
 
 
+def test_loans_alike(target, book):
+    from decimal import Decimal
+
+    from breadsched.gen.engine.loans import LoanTerms
+    from breadsched.gen.services.loans import SaveLoan
+
+    api, db = target.api, target.db
+    choices = api.loan_choices()
+    assert book.card in {item.handle for item in choices.liabilities}
+    assert book.checking in {item.handle for item in choices.payment_accounts}
+    terms = LoanTerms(
+        name=" Car ",
+        principal=Money("12000"),
+        annual_rate=Decimal("0.06"),
+        years=5,
+        start=date(2026, 11, 1),
+        liability=book.card,
+        interest_account=book.utilities,
+        payment_account=book.checking,
+        fraction=choices.fraction,
+    )
+    preview = api.preview_loan(terms)
+    assert preview.payment == Money("231.99") and len(preview.rows) == 12
+    assert preview.rows[0].period == 1 and preview.rows[0].interest == Money("60.00")
+    before = _snapshot(db)
+    from dataclasses import replace
+
+    with pytest.raises(ApiError) as refused:
+        api.save_loan(SaveLoan(replace(terms, payment_account=book.rent)))
+    assert refused.value.status == 400
+    with pytest.raises(ApiError):
+        api.preview_loan(replace(terms, years=0))
+    assert _snapshot(db) == before
+    saved = api.save_loan(SaveLoan(terms, opening_balance=False))
+    assert (saved.name, saved.payment) == ("Car", Money("231.99"))
+    assert db.get_scheduled(saved.handle).name == "Car"
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -1472,6 +1510,8 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("POST", "/api/v1/transactions/x/splits/y/lots", {"picks": "all"}, 400, "request.invalid"),
         ("PATCH", "/api/v1/tax-marks", {"accounts": {"a": "yes"}}, 400, "request.invalid"),
         ("POST", "/api/v1/quotes", {"quotes": [{"symbol": "G"}]}, 400, "request.invalid"),
+        ("POST", "/api/v1/loans/preview", {"name": "Car"}, 400, "request.invalid"),
+        ("POST", "/api/v1/loans", {"terms": {}, "opening_balance": "yes"}, 400, "request.invalid"),
         ("PATCH", "/api/v1/commodities/x/quote-source", {}, 400, "request.invalid"),
         (
             "PATCH",

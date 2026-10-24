@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from typing import cast
 
 from ..db.sqlite import DbSQLite
 from ..engine import loans
+from ..engine.currency import reporting_fraction
 from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
 from .contracts import ServiceError, ServiceResult
+from .savings_goals import NamedChoice
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,3 +112,80 @@ def _account_errors(
     if not accepts(account):
         return [ServiceError(role_code, (field,))]
     return []
+
+
+@dataclass(frozen=True, slots=True)
+class LoanRow:
+    period: int
+    payment: Money
+    interest: Money
+    principal: Money
+    balance: Money
+
+
+@dataclass(frozen=True, slots=True)
+class LoanPreview:
+    """A loan's payment, its total interest, and its first payments; nothing is saved."""
+
+    payment: Money
+    total_interest: Money
+    rows: tuple[LoanRow, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class LoanChoices:
+    """The accounts a new loan may use, and the book's amount precision."""
+
+    liabilities: tuple[NamedChoice, ...]
+    expenses: tuple[NamedChoice, ...]
+    payment_accounts: tuple[NamedChoice, ...]
+    fraction: int
+
+
+def loan_choices(db: DbSQLite) -> LoanChoices:
+    accounts = sorted(
+        (
+            account
+            for account in db.iter_accounts()
+            if not account.is_root and not account.placeholder and not account.hidden
+        ),
+        key=db.full_name,
+    )
+
+    def choices(predicate: Callable[[Account], bool]) -> tuple[NamedChoice, ...]:
+        return tuple(
+            NamedChoice(account.handle, db.full_name(account))
+            for account in accounts
+            if predicate(account)
+        )
+
+    return LoanChoices(
+        choices(lambda account: account.account_class is AccountClass.LIABILITY),
+        choices(lambda account: account.account_class is AccountClass.EXPENSE),
+        choices(lambda account: account.atype.is_cash_like),
+        reporting_fraction(db),
+    )
+
+
+def preview_loan(
+    db: DbSQLite, terms: loans.LoanTerms, rows: int = 12
+) -> ServiceResult[LoanPreview]:
+    errors = validate_loan(db, terms)
+    if errors:
+        return ServiceResult.failure(*errors)
+    return ServiceResult.success(
+        LoanPreview(
+            terms.payment(),
+            terms.total_interest(),
+            tuple(
+                LoanRow(
+                    cast(int, row["period"]),
+                    cast(Money, row["payment"]),
+                    cast(Money, row["interest"]),
+                    cast(Money, row["principal"]),
+                    cast(Money, row["balance"]),
+                )
+                for row in loans.schedule_preview(terms, rows=rows)
+            ),
+        )
+    )

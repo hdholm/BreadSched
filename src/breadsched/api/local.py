@@ -19,6 +19,7 @@ from datetime import date
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
+from ..gen.engine.loans import LoanTerms
 from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
 from ..gen.engine.planning import MatchCandidate, PlannedEvent
 from ..gen.engine.receivables import ReimbursementProposal
@@ -98,6 +99,7 @@ from ..gen.services import (
 from ..gen.services import advance_days as stored_advance_days
 from ..gen.services import assumptions as assumption_service
 from ..gen.services import claims as claim_service
+from ..gen.services import loans as loan_service
 from ..gen.services import lots as lot_service
 from ..gen.services import payroll as payroll_service
 from ..gen.services import quotes as quote_service
@@ -128,6 +130,7 @@ from ..gen.services.import_review import (
     HeldImportResolution,
     ResolveHeldImports,
 )
+from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
@@ -524,6 +527,17 @@ class LocalBookServer:
 
     def set_quote_source(self, request: SetQuoteSource) -> str:
         return unwrap(quote_service.set_quote_source(self.db, request))
+
+    # ------------------------------------------------------------------- loans
+
+    def loan_choices(self) -> LoanChoices:
+        return loan_service.loan_choices(self.db)
+
+    def preview_loan(self, terms: LoanTerms) -> LoanPreview:
+        return unwrap(loan_service.preview_loan(self.db, terms))
+
+    def save_loan(self, request: SaveLoan) -> SavedLoan:
+        return unwrap(loan_service.save_loan(self.db, request))
 
     # -------------------------------------------------------------- receivables
 
