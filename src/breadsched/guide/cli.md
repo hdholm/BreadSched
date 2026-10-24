@@ -223,8 +223,9 @@ While `breadsched serve` (or `breadsched web` without `--read-only`) holds a boo
 `plan-unresolved`, `plan-matches`, `plan-resolve`, `plan-reject`, `plan-unexpected`,
 `import-review`, `sale-lots`, `tax-marks`, `quotes`, `quote-source`, `rate`,
 `attachments`, `net-worth`, `net-worth-change`, `project`, `compare`, `holdings`,
-`realized-gains`, `tax-year`, `jars`, and `dashboard` for the same book work through that server instead of stopping because the book is already open for writing. The
-server records its address and token in a file only you can read, in your runtime
+`realized-gains`, `tax-year`, `jars`, `dashboard`, and `activity` for the same book
+work through that server instead of stopping because the book is already open for
+writing. The server records its address and token in a file only you can read, in your runtime
 folder, and removes it when it stops. `--server URL` names a server explicitly; its
 token comes from `--token-file PATH` or the `BREADSCHED_SERVER_TOKEN` environment
 variable. Other commands still need the book to themselves. The desktop application

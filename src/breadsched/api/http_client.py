@@ -72,6 +72,7 @@ from ..gen.services import (
     TagCount,
     TransactionInput,
 )
+from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
 from ..gen.services.budget_jars import JarsView
@@ -593,6 +594,18 @@ class HttpBookClient:
             f"/splits/{quote(request.split, safe='')}/cleared"
         )
         return ReconcileState(self._call("POST", path)["state"])
+
+    # ---------------------------------------------------------------- activity
+
+    def activity(
+        self,
+        start: date,
+        end: date,
+        period: ReportingPeriod = ReportingPeriod.MONTH,
+        as_of: date | None = None,
+    ) -> ActivityView:
+        params = {"start": start, "end": end, "period": ReportingPeriod(period).value}
+        return from_data(ActivityView, self._call("GET", "/activity", {**params, "as_of": as_of}))
 
     # ------------------------------------------------------------- budget jars
 

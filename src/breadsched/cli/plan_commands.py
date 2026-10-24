@@ -16,7 +16,6 @@ from ..api.views import (
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
     activity,
-    category_report,
     estimates,
     schedule,
 )
@@ -445,19 +444,15 @@ def cmd_payroll(args: argparse.Namespace) -> int:
 
 def cmd_activity(args: argparse.Namespace) -> int:
     """Show event-driven plan versus actuals in display-only time buckets."""
-    db = open_book(args.book, "r")
-    try:
-        start = parse_date(args.start)
-        end = parse_date(args.end)
-        if start is None or end is None:
-            raise CommandError("activity requires --start and --end")
-        report = activity.build_activity_report(
-            db,
-            start,
-            end,
-            period=activity.ReportingPeriod(args.period),
-            as_of=parse_date(args.as_of),
+    start = parse_date(args.start)
+    end = parse_date(args.end)
+    if start is None or end is None:
+        raise CommandError("activity requires --start and --end")
+    with book_api(args, "r") as book:
+        view = book.activity(
+            start, end, activity.ReportingPeriod(args.period), parse_date(args.as_of)
         )
+        report = view.report
         rows = [
             [
                 period.label,
@@ -500,7 +495,7 @@ def cmd_activity(args: argparse.Namespace) -> int:
                 f"{signed(report.cash_variance_through_as_of)}. Period columns include "
                 "everything dated in each period, even after that date."
             )
-        notes = category_report.currency_notes(db, report)
+        notes = view.currency_notes
         if not report.completeness.complete:
             # Totals are subtotals of what converted; say so beside them (#236).
             notes = (f"{report.completeness.label}: totals leave out the amounts below.", *notes)
@@ -508,8 +503,6 @@ def cmd_activity(args: argparse.Namespace) -> int:
             text = "\n".join((text, "", *notes))
         emit(report.as_dict(), args, text)
         return 0
-    finally:
-        db.close()
 
 
 def cmd_plan_unresolved(args: argparse.Namespace) -> int:
@@ -984,6 +977,7 @@ def register(add: AddCommand) -> None:
             "convert foreign amounts (default today)"
         ),
     )
+    add_server_options(activity_cmd)
     activity_cmd.set_defaults(func=cmd_activity)
 
     estimate = add("estimate", "Recurring Plan estimates that never post")

@@ -105,6 +105,7 @@ from ..gen.services import (
     transaction_currency,
     transactions_with_tag,
 )
+from ..gen.services import activity as activity_service
 from ..gen.services import advance_days as stored_advance_days
 from ..gen.services import assumptions as assumption_service
 from ..gen.services import attachments as attachment_service
@@ -122,6 +123,7 @@ from ..gen.services import receivables as receivable_service
 from ..gen.services import review as review_service
 from ..gen.services import scenarios as scenario_service
 from ..gen.services import tax as tax_service
+from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
 from ..gen.services.budget_jars import JarsView
@@ -671,6 +673,17 @@ class LocalBookServer:
 
     def net_worth_change(self, start: date, end: date, today: date | None = None) -> NetWorthChange:
         return unwrap(net_worth_service.query_net_worth_change(self.db, start, end, today))
+
+    # ---------------------------------------------------------------- activity
+
+    def activity(
+        self,
+        start: date,
+        end: date,
+        period: ReportingPeriod = ReportingPeriod.MONTH,
+        as_of: date | None = None,
+    ) -> ActivityView:
+        return unwrap(activity_service.activity_view(self.db, start, end, period, as_of))
 
     # ------------------------------------------------------------- budget jars
 

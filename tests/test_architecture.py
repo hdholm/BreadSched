@@ -1185,6 +1185,8 @@ class TestBookServerBoundaries:
         "jars_view",
         "jar_charts",
         "dashboard_board",
+        "build_activity_report",
+        "activity_view",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1323,6 +1325,7 @@ class TestBookServerBoundaries:
         "tax_year",
         "budget_jars",
         "dashboard",
+        "activity",
     }
 
     @pytest.mark.parametrize(
@@ -1382,6 +1385,7 @@ class TestBookServerBoundaries:
             ("web/jars_resource.py", ("jars_report",)),
             ("gui/dialogs/budget_jars_dialog.py", ("refresh",)),
             ("cli/projection_commands.py", ("cmd_dashboard",)),
+            ("cli/plan_commands.py", ("cmd_activity",)),
             ("web/dashboard_resource.py", ("dashboard_report",)),
             ("gui/views/dashboard.py", ("refresh",)),
             ("cli/quote_commands.py", ("cmd_quotes", "cmd_quote_source")),

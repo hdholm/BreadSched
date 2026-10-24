@@ -378,6 +378,12 @@ values without saving them, as before; a negative one is refused. It serves the
 command line's `dashboard`, the browser's Dashboard (whose group editor now lists
 accounts from `accounts`, by full name), and GTK's Dashboard view.
 
+Plan versus actuals followed: `activity(start, end, period, as_of)`
+(`GET /api/v1/activity`) returns a view from `gen/services/activity` with the engine's
+`ActivityReport` and the currency notes that disclose its quotes and exclusions. It
+serves the command line's `activity`; GTK and the browser show these figures through
+the Plan, which is already on the server.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

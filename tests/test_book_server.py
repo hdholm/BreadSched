@@ -1619,6 +1619,30 @@ def test_every_response_names_the_revision_and_a_stale_write_is_refused(remote):
     assert client.set_advance_days(SetAdvanceDays(sched.handle, remind_days=6)).remind_days == 6
 
 
+def test_activity_reads_alike(target, book):
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.engine.activity import ReportingPeriod, build_activity_report
+    from breadsched.gen.services.activity import activity_view
+
+    api, db = target.api, target.db
+    with db.transaction("Activity") as txn:
+        db.add_transaction(
+            Transaction.simple(date(2026, 10, 6), "Rent", book.rent, book.checking, "1800"),
+            txn,
+        )
+    start, end, as_of = date(2026, 10, 1), date(2026, 12, 31), date(2026, 10, 15)
+    view = api.activity(start, end, ReportingPeriod.MONTH, as_of)
+    assert to_data(view) == to_data(activity_view(db, start, end, "month", as_of).value)
+    expected = build_activity_report(db, start, end, as_of=as_of)
+    assert view.report.as_dict() == expected.as_dict()
+    assert [period.planned_amount for period in view.report.periods] == [
+        period.planned_amount for period in expected.periods
+    ]
+    with pytest.raises(ApiError) as refused:
+        api.activity(end, start)
+    assert (refused.value.status, refused.value.code) == (400, "activity.range.invalid")
+
+
 def test_the_dashboard_reads_alike(target, book):
     from breadsched.api.typed_codec import to_data
     from breadsched.gen.engine import dashboard as dashboard_engine
@@ -1844,6 +1868,14 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("GET", "/api/v1/net-worth?start=2026-01-01", None, 400, "query.missing"),
         ("GET", "/api/v1/holdings?as_of=soon", None, 400, "query.date.invalid"),
         ("GET", "/api/v1/dashboard?liquidity_days=soon", None, 400, "query.integer.invalid"),
+        ("GET", "/api/v1/activity?start=2026-01-01", None, 400, "query.missing"),
+        (
+            "GET",
+            "/api/v1/activity?start=2026-01-01&end=2026-02-01&period=week",
+            None,
+            400,
+            "query.invalid",
+        ),
         (
             "GET",
             "/api/v1/dashboard?emergency_months=-2",

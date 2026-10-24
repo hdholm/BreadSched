@@ -502,6 +502,13 @@ def test_projection_works_through_the_server_holding_the_book(running, book_path
     assert isinstance(json.loads(capsys.readouterr().out), list)
 
 
+def test_activity_works_through_the_server_holding_the_book(running, book_path, capsys):
+    command = ["activity", str(book_path), "--start", "2026-01-01", "--end", "2026-03-31"]
+    assert main([*command, "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["start"] == "2026-01-01"
+
+
 def test_the_dashboard_works_through_the_server_holding_the_book(running, book_path, capsys):
     command = ["dashboard", str(book_path), "--liquidity-days", "45", "--json"]
     assert main(command) == 0

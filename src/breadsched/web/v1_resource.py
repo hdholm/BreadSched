@@ -103,6 +103,8 @@ Resources so far, all under ``/api/v1``:
   ``/relink``; ``PATCH /attachment-folders`` (``folder`` or ``gnucash_folder``).
 * ``GET /net-worth`` (``start``, ``end``, ``period``, ``today``) and
   ``GET /net-worth/change`` (``start``, ``end``, ``today``).
+* ``GET /activity`` (``start``, ``end``, ``period``, ``as_of``) – plan versus
+  actuals with the notes that disclose its quotes and exclusions.
 * ``GET /budget-jars`` (``start``, ``end``, ``period``, ``today``).
 * ``GET /holdings`` (``as_of``), ``GET /realized-gains`` (``year``, ``account``), and
   ``GET /tax-year`` (``year``; the latest year with a transaction when absent).
@@ -203,6 +205,7 @@ __all__ = [
     "reporting_currency_get",
     "expense_explorer_v1",
     "plan_v1",
+    "activity_get",
     "budget_jars_get",
     "holdings_get",
     "net_worth_change_get",
@@ -1357,6 +1360,16 @@ def attachment_folders_patch(api: Api, _path: Path, body: dict[str, Any]) -> dic
         return {"folder": api.book.set_attachment_folder(change.folder)}
     assert change.gnucash_folder is not None
     return {"gnucash_folder": api.book.set_source_link_folder(change.gnucash_folder)}
+
+
+def activity_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    start = query.iso_date("start", required=True)
+    end = query.iso_date("end", required=True)
+    period = query.choice("period", tuple(item.value for item in ReportingPeriod), "month")
+    as_of = query.iso_date("as_of")
+    query.finish()
+    assert start is not None and end is not None
+    return to_data(api.book.activity(start, end, ReportingPeriod(period), as_of))
 
 
 def budget_jars_get(api: Api, _path: Path, query: QueryParams) -> dict:
