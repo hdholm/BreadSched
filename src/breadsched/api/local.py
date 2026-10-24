@@ -18,6 +18,7 @@ from datetime import date
 from pathlib import Path
 
 from ..gen.db.sqlite import DbSQLite
+from ..gen.engine.activity import ReportingPeriod
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.loans import LoanTerms
@@ -106,6 +107,7 @@ from ..gen.services import attachments as attachment_service
 from ..gen.services import claims as claim_service
 from ..gen.services import loans as loan_service
 from ..gen.services import lots as lot_service
+from ..gen.services import net_worth as net_worth_service
 from ..gen.services import payroll as payroll_service
 from ..gen.services import quotes as quote_service
 from ..gen.services import receivables as receivable_service
@@ -140,6 +142,7 @@ from ..gen.services.import_review import (
 )
 from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
+from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
@@ -599,6 +602,21 @@ class LocalBookServer:
     def set_source_link_folder(self, folder: str) -> str:
         with self._changing("attachment-folder"):
             return str(unwrap(attachment_service.set_source_link_folder(self.db, folder)))
+
+    # --------------------------------------------------------------- net worth
+
+    def net_worth_history(
+        self,
+        start: date,
+        end: date,
+        period: ReportingPeriod = ReportingPeriod.MONTH,
+        today: date | None = None,
+    ) -> NetWorthHistory:
+        found = net_worth_service.query_net_worth_history(self.db, start, end, period, today)
+        return unwrap(found)
+
+    def net_worth_change(self, start: date, end: date, today: date | None = None) -> NetWorthChange:
+        return unwrap(net_worth_service.query_net_worth_change(self.db, start, end, today))
 
     # -------------------------------------------------------------- receivables
 

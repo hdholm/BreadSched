@@ -1437,6 +1437,39 @@ def test_attachments_alike(target, book, tmp_path):
     assert repr(db.get_transaction(paid.handle).serialize()) == before
 
 
+def test_net_worth_reads_alike(target, book):
+    from breadsched.gen.engine.activity import ReportingPeriod
+    from breadsched.gen.services.net_worth import (
+        query_net_worth_change,
+        query_net_worth_history,
+    )
+
+    api, db = target.api, target.db
+    with db.transaction("Activity") as txn:
+        for when, description, to, source, amount in (
+            (date(2026, 1, 1), "Opening", book.checking, book.opening, "5000"),
+            (date(2026, 1, 15), "Pay", book.checking, book.salary, "3000"),
+            (date(2026, 2, 3), "Card", book.groceries, book.card, "120.45"),
+        ):
+            db.add_transaction(Transaction.simple(when, description, to, source, amount), txn)
+    start, end, today = date(2026, 1, 1), date(2026, 3, 31), date(2026, 3, 15)
+    history = api.net_worth_history(start, end, ReportingPeriod.MONTH, today)
+    assert history == query_net_worth_history(db, start, end, "month", today).value
+    assert [point.net_worth for point in history.points] == [
+        Money("8000.00"),
+        Money("7879.55"),
+        Money("7879.55"),
+    ]
+    assert history.points[-1].partial
+    change = api.net_worth_change(date(2026, 2, 1), date(2026, 2, 28), today)
+    assert change == query_net_worth_change(db, date(2026, 2, 1), date(2026, 2, 28), today).value
+    assert change.change == Money("-120.45")
+    assert [posting.description for posting in change.postings] == ["Card"]
+    with pytest.raises(ApiError) as refused:
+        api.net_worth_history(end, start)
+    assert refused.value.status == 400
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -1659,6 +1692,14 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("GET", "/api/v1/currencies/lookup", None, 400, "query.missing"),
         ("PATCH", "/api/v1/dashboard/settings", {"liquidity_days": "14"}, 400, "request.invalid"),
         ("PATCH", "/api/v1/attachment-folders", {}, 400, "request.invalid"),
+        ("GET", "/api/v1/net-worth?start=2026-01-01", None, 400, "query.missing"),
+        (
+            "GET",
+            "/api/v1/net-worth?start=2026-01-01&end=2026-02-01&period=week",
+            None,
+            400,
+            "query.invalid",
+        ),
         ("POST", "/api/v1/transactions/x/attachments", {}, 400, "request.invalid"),
         ("GET", "/api/v1/attachments?missing=maybe", None, 400, "query.invalid"),
         ("POST", "/api/v1/loans", {"terms": {}, "opening_balance": "yes"}, 400, "request.invalid"),

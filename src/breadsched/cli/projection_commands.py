@@ -32,7 +32,6 @@ from ..presentation import (
     projection_notes,
     reimbursement_outlook_text,
     runway_comparison_text,
-    service_error_message,
 )
 from .common import (
     AddCommand,
@@ -71,18 +70,16 @@ def cmd_net_worth(args: argparse.Namespace) -> int:
     """Show market-valued net worth at each period end through the as-of date."""
     from dataclasses import asdict
 
-    from ..gen.services import query_net_worth_history
+    from ..gen.engine.activity import ReportingPeriod
 
-    db = open_book(args.book, "r")
-    try:
-        start = parse_date(args.start)
-        end = parse_date(args.end)
+    start = parse_date(args.start)
+    end = parse_date(args.end)
+    with book_api(args, "r") as book:
         if start is None or end is None:
             raise CommandError("net-worth requires --start and --end")
-        result = query_net_worth_history(db, start, end, args.period, parse_date(args.as_of))
-        if result.value is None:
-            raise CommandError(service_error_message(result.errors[0]))
-        history = result.value
+        history = book.net_worth_history(
+            start, end, ReportingPeriod(args.period), parse_date(args.as_of)
+        )
 
         def money(value: Money | None) -> str:
             return "—" if value is None else value.format(parens_negative=True)
@@ -118,27 +115,20 @@ def cmd_net_worth(args: argparse.Namespace) -> int:
                 text += f"\n{point.label} withheld: " + "; ".join(point.completeness.detail())
         emit(asdict(history), args, text)
         return 0
-    finally:
-        db.close()
 
 
 def cmd_net_worth_change(args: argparse.Namespace) -> int:
     """List the postings behind a net worth change and the market movement beside them."""
     from dataclasses import asdict
 
-    from ..gen.services import query_net_worth_change
     from ..plugins.export.csv_export import export_net_worth_change
 
-    db = open_book(args.book, "r")
-    try:
-        start = parse_date(args.start)
-        end = parse_date(args.end)
+    start = parse_date(args.start)
+    end = parse_date(args.end)
+    with book_api(args, "r") as book:
         if start is None or end is None:
             raise CommandError("net-worth-change requires --start and --end")
-        result = query_net_worth_change(db, start, end, parse_date(args.as_of))
-        if result.value is None:
-            raise CommandError(service_error_message(result.errors[0]))
-        change = result.value
+        change = book.net_worth_change(start, end, parse_date(args.as_of))
         if args.csv:
             export_net_worth_change(change, args.csv)
 
@@ -176,8 +166,6 @@ def cmd_net_worth_change(args: argparse.Namespace) -> int:
             text += "\n" + "\n".join(change.completeness.detail())
         emit(asdict(change), args, text)
         return 0
-    finally:
-        db.close()
 
 
 def cmd_project(args: argparse.Namespace) -> int:
@@ -965,6 +953,7 @@ def register(add: AddCommand) -> None:
         "--as-of",
         help="last date to value; later periods are omitted (default today)",
     )
+    add_server_options(net_worth_cmd)
     net_worth_cmd.set_defaults(func=cmd_net_worth)
 
     net_worth_change_cmd = add(
@@ -979,6 +968,7 @@ def register(add: AddCommand) -> None:
     net_worth_change_cmd.add_argument(
         "--csv", metavar="PATH", help="also write the postings and totals as CSV"
     )
+    add_server_options(net_worth_change_cmd)
     net_worth_change_cmd.set_defaults(func=cmd_net_worth_change)
 
     dash = add("dashboard", "Overview of balances, bills and liquidity")

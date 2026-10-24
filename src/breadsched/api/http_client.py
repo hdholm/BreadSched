@@ -25,6 +25,7 @@ from datetime import date
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
+from ..gen.engine.activity import ReportingPeriod
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.loans import LoanTerms
@@ -96,6 +97,7 @@ from ..gen.services.import_review import (
 )
 from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
+from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
@@ -964,3 +966,20 @@ class HttpBookClient:
     def set_source_link_folder(self, folder: str) -> str:
         found = self._call("PATCH", "/attachment-folders", body={"gnucash_folder": folder})
         return str(found["gnucash_folder"])
+
+    # --------------------------------------------------------------- net worth
+
+    def net_worth_history(
+        self,
+        start: date,
+        end: date,
+        period: ReportingPeriod = ReportingPeriod.MONTH,
+        today: date | None = None,
+    ) -> NetWorthHistory:
+        params = {"start": start, "end": end, "period": ReportingPeriod(period).value}
+        found = self._call("GET", "/net-worth", {**params, "today": today})
+        return from_data(NetWorthHistory, found)
+
+    def net_worth_change(self, start: date, end: date, today: date | None = None) -> NetWorthChange:
+        params = {"start": start, "end": end, "today": today}
+        return from_data(NetWorthChange, self._call("GET", "/net-worth/change", params))
