@@ -66,8 +66,22 @@ from .planning import (
     runway_comparison_text,
     runway_lines,
 )
+from .schedules import (
+    FIXED_INTERVAL_UNITS,
+    FREQUENCY_UNITS,
+    LEGACY_FREQUENCIES,
+    MAX_INTERVAL,
+    frequency_period,
+    frequency_unit,
+)
 
 __all__ = [
+    "FIXED_INTERVAL_UNITS",
+    "FREQUENCY_UNITS",
+    "LEGACY_FREQUENCIES",
+    "MAX_INTERVAL",
+    "frequency_period",
+    "frequency_unit",
     "CHART_CHROME_DARK",
     "CHART_CHROME_LIGHT",
     "CHART_SERIES_DARK",

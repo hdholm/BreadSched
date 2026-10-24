@@ -1509,3 +1509,37 @@ def test_reconciliation_marks_entries_after_the_statement(page, served):
     assert "after statement" in later.first.inner_text()
     assert not later.first.locator("input[type=checkbox]").is_checked()
     page.wait_for_selector(".detail-dialog >> text=Funds in")
+
+
+def test_a_schedule_repeats_every_n_units_with_a_calculated_amount(page, served):
+    """#370: Every N weeks/months/years, and arithmetic in the amount."""
+    from breadsched.gen.lib import Money
+
+    db, _httpd = served
+    page.wait_for_selector("#nav button")
+    page.evaluate(
+        "() => [...document.querySelectorAll('#nav button')]"
+        ".find((button) => button.textContent === 'Scheduled').click()"
+    )
+    page.get_by_role("button", name="New scheduled…").click()
+    form = page.locator(".detail-dialog form")
+    form.locator("input[name=name]").fill("Every four weeks")
+    form.locator("input[name=amount]").fill("76.84*1.06")
+    expense = next(
+        a for a in db.iter_accounts() if a.account_class.value == "expense" and not a.placeholder
+    )
+    bank = next(a for a in db.iter_accounts() if a.atype.value == "BANK" and not a.placeholder)
+    form.locator("select[name=category]").select_option(expense.handle)
+    form.locator("select[name=funding]").select_option(bank.handle)
+    form.locator("select[name=frequency]").select_option("weeks")
+    form.locator("input[name=interval]").fill("4")
+    form.locator("select[name=frequency]").select_option("once")
+    assert form.locator("input[name=interval]").is_hidden()
+    form.locator("select[name=frequency]").select_option("weeks")
+    assert form.locator("input[name=interval]").is_visible()
+    form.locator("input[name=start]").fill("2026-01-06")
+    form.get_by_role("button", name="Save").click()
+    page.wait_for_function("() => !document.querySelector('.detail-dialog form')")
+    saved = next(item for item in db.iter_scheduled() if item.name == "Every four weeks")
+    assert (saved.recurrence.period.value, saved.recurrence.interval) == ("week", 4)
+    assert saved.amount() == Money("81.45")

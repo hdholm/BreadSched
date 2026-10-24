@@ -349,10 +349,7 @@ function openScheduledEditor(data, source) {
   ], source?.category_planning_flow || "");
   const investmentActivity = select(
     "investment_activity", INVESTMENT_ACTIVITY_OPTIONS, source?.investment_activity || "");
-  const frequency = select("frequency", [["weekly","Weekly"],["biweekly","Fortnightly"],
-    ["semimonthly","Twice a month"],["monthly","Monthly"],
-    ["nth_weekday","Monthly — nth weekday"],["last_weekday","Monthly — last weekday"],["quarterly","Quarterly"],
-    ["semiannual","Twice a year"],["annual","Yearly"],["once","Once"]], source?.frequency_key || "monthly");
+  const frequency = frequencyControl(source);
   const weekend = select("weekend", [["none","Leave on the day"],["previous","Friday before"],["next","Monday after"]], source?.weekend || "none");
   form.append(
     field("Name", el("input", { name:"name", value:source?.name || "", required:"required" })),
@@ -368,7 +365,7 @@ function openScheduledEditor(data, source) {
     field("Funding memo", el("input", { name:"funding_memo", value:source?.funding_memo || "" })),
     additionalSplits.node, splitAmountChanges.node,
     futureEditor.node, seasonalEditor.node, skipEditor.node, oneTimeEditor.node, preview.node,
-    field("Frequency", frequency),
+    field("Repeats", frequency),
     field("First due", el("input", { name:"start", type:"date", value:source?.start || today, required:"required" })),
     field("End date", el("input", { name:"end", type:"date", value:source?.end || "" })),
     field("Occurrences", el("input", { name:"count", type:"number", min:"1", value:source?.count || "" })),
@@ -383,7 +380,7 @@ function openScheduledEditor(data, source) {
     if (!values.start) return;
     try {
       const payload = {
-        frequency:values.frequency, start:values.start, end:values.end || null,
+        frequency:values.frequency, interval:values.interval, start:values.start, end:values.end || null,
         count:values.count || null, weekend:values.weekend, amount:values.amount,
       };
       try {
@@ -424,7 +421,7 @@ function openScheduledEditor(data, source) {
         amount_changes: futureEditor.values().map((item)=>({start:item.when, amount:item.amount})),
         seasonal_amounts: seasonalEditor.values(),
         skipped: skipEditor.values(), occurrence_adjustments: oneTimeEditor.values(),
-        frequency: values.frequency, start: values.start,
+        frequency: values.frequency, interval: values.interval, start: values.start,
         end: values.end || null, count: values.count || null, weekend: values.weekend,
         auto: values.posting === "automatic" && values.kind !== "estimate",
         advance_days: values.advance_days, remind_days: values.remind_days,
@@ -445,11 +442,7 @@ function openFormulaScheduleEditor(source) {
   const field = (label, control) => el("label", {}, label, control);
   const select = (name, items, value) => el("select", { name }, items.map(([key, label]) =>
     el("option", { value:key, selected:key === value ? "selected" : null }, label)));
-  const frequency = select("frequency", [["weekly","Weekly"],["biweekly","Fortnightly"],
-    ["semimonthly","Twice a month"],["monthly","Monthly"],
-    ["nth_weekday","Monthly — nth weekday"],["last_weekday","Monthly — last weekday"],["quarterly","Quarterly"],
-    ["semiannual","Twice a year"],["annual","Yearly"],["once","Once"]],
-    source.frequency_key || "monthly");
+  const frequency = frequencyControl(source);
   const weekend = select("weekend", [["none","Leave on the day"],
     ["previous","Friday before"],["next","Monday after"]], source.weekend || "none");
   const skipped = occurrenceTimelineEditor("Skip occurrences", source.skipped || [], false, ()=>{});
@@ -472,7 +465,7 @@ function openFormulaScheduleEditor(source) {
     field("Variables (name=value; …)", el("input", {name:"variables", value:variableText,
       placeholder:"principal=200000; rate=0.05", spellcheck:"false"})),
     skipped.node,
-    field("Frequency", frequency),
+    field("Repeats", frequency),
     field("First due", el("input", {name:"start", type:"date", value:source.start,
       required:"required"})),
     field("End date", el("input", {name:"end", type:"date", value:source.end || ""})),
@@ -487,7 +480,7 @@ function openFormulaScheduleEditor(source) {
     if (!values.start) return;
     try {
       const result = await post("/api/scheduled/occurrences", {
-        frequency:values.frequency, start:values.start, end:values.end || null,
+        frequency:values.frequency, interval:values.interval, start:values.start, end:values.end || null,
         count:values.count || null, weekend:values.weekend,
       });
       skipped.setOptions(result.occurrences);
@@ -511,7 +504,7 @@ function openFormulaScheduleEditor(source) {
         handle:source.handle, name:values.name, enabled:values.enabled === "true",
         placeholder:values.kind === "estimate", growth_policy:values.growth_policy,
         formulas:formulaInputs.map(({item,input})=>({index:item.index, formula:input.value})),
-        variables, skipped:skipped.values(), frequency:values.frequency, start:values.start,
+        variables, skipped:skipped.values(), frequency:values.frequency, interval:values.interval, start:values.start,
         end:values.end || null, count:values.count || null, weekend:values.weekend,
         auto:values.posting === "automatic" && values.kind !== "estimate",
         advance_days:values.advance_days, remind_days:values.remind_days,
