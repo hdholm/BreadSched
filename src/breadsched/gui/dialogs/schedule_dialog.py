@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 from datetime import date
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import schedule as schedule_engine
 from ...gen.lib import (
@@ -43,8 +45,6 @@ from ...gen.services import (
     SaveFixedSchedule,
     build_fixed_schedule,
     build_formula_schedule,
-    save_fixed_schedule,
-    save_formula_schedule,
 )
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
@@ -1205,12 +1205,14 @@ class ScheduleDialog(BoundedWindow):
         return result.value
 
     def _on_save(self, _button) -> None:
-        result = (
-            save_formula_schedule(self.db, self._formula_request())
-            if self._formula_mode and self.source is not None
-            else save_fixed_schedule(self.db, self._fixed_request())
-        )
-        if result.value is None:
+        # Through the book server, as the browser saves (#359).
+        book = book_server(self.db)
+        try:
+            if self._formula_mode and self.source is not None:
+                book.save_formula_schedule(self._formula_request())
+            else:
+                book.save_fixed_schedule(self._fixed_request())
+        except ApiError as error:
             messages = {
                 "schedule.split_amount_changes.unbalanced": (
                     "Per-leg future amounts do not balance; update the funding or another leg."
@@ -1221,6 +1223,6 @@ class ScheduleDialog(BoundedWindow):
                     "This schedule cannot be edited without changing its meaning."
                 ),
             }
-            self.status.set_text(messages.get(result.errors[0].code, result.errors[0].code))
+            self.status.set_text(messages.get(error.code, str(error)))
             return
         self.close()

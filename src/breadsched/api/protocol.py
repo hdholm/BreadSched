@@ -20,12 +20,14 @@ from ..gen.services import (
     DueResolution,
     DueScheduleReview,
     DuplicateSchedule,
+    FormulaScheduleInput,
     NextOccurrence,
     PostDue,
     PostedDue,
     ResolveDue,
     ResolveNext,
     SavedSchedule,
+    SaveFixedSchedule,
     SetAdvanceDays,
 )
 
@@ -98,4 +100,12 @@ class BookApi(Protocol):
 
     def post_due(self, request: PostDue) -> PostedDue:
         """Post what is due without a review (automatic schedules, or all)."""
+        ...
+
+    def save_fixed_schedule(self, request: SaveFixedSchedule) -> SavedSchedule:
+        """Create or replace a fixed schedule from the editor's typed input."""
+        ...
+
+    def save_formula_schedule(self, request: FormulaScheduleInput) -> SavedSchedule:
+        """Replace a formula schedule's editable inputs, keeping its structure."""
         ...

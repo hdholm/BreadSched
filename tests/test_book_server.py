@@ -38,9 +38,12 @@ from breadsched.gen.sample_book import create_sample_book
 from breadsched.gen.services import (
     DueDecision,
     DuplicateSchedule,
+    FixedScheduleInput,
+    FormulaScheduleInput,
     PostDue,
     ResolveDue,
     ResolveNext,
+    SaveFixedSchedule,
     ServiceError,
     SetAdvanceDays,
 )
@@ -276,6 +279,80 @@ def test_posting_due_without_a_review_alike(target, book):
     assert api.post_due(PostDue(as_of=october_7, only_automatic=False)).posted == ()
 
 
+def _fixed(book, name="Gym", **overrides):
+    values = dict(
+        name=name,
+        recurrence=Recurrence(period=PeriodType.MONTH, interval=1, start=date(2026, 10, 9)),
+        category=book.groceries,
+        funding=book.checking,
+        amount=Money("45.00"),
+    )
+    values.update(overrides)
+    return FixedScheduleInput(**values)
+
+
+def test_saving_a_fixed_schedule_from_an_editor_alike(target, book):
+    api = target.api
+    start = api.revision
+    created = api.save_fixed_schedule(SaveFixedSchedule(_fixed(book, remind_days=5)))
+    stored = target.db.get_scheduled(created.handle)
+    assert (stored.name, stored.amount(), stored.remind_days) == ("Gym", Money("45.00"), 5)
+
+    edited = api.save_fixed_schedule(
+        SaveFixedSchedule(
+            _fixed(book, name="Gym (family)", amount=Money("60.00")),
+            existing_handle=created.handle,
+        )
+    )
+    assert edited.handle == created.handle
+    stored = target.db.get_scheduled(created.handle)
+    assert (stored.name, stored.amount(), stored.remind_days) == ("Gym (family)", Money("60.00"), 5)
+    assert api.revision == start + 2
+
+    before = _snapshot(target.db)
+    for request, code in (
+        (SaveFixedSchedule(_fixed(book, category="missing")), "schedule.account.not_found"),
+        (SaveFixedSchedule(_fixed(book), existing_handle="missing"), "schedule.not_found"),
+        (SaveFixedSchedule(_fixed(book, advance_days=1000)), "schedule.advance_days.invalid"),
+    ):
+        with pytest.raises(ApiError) as refused:
+            api.save_fixed_schedule(request)
+        assert refused.value.code == code
+    assert _snapshot(target.db) == before
+
+
+def test_saving_a_formula_schedule_from_an_editor_alike(target, book):
+    api = target.api
+    loan = ScheduledTransaction(
+        name="Formula loan",
+        recurrence=Recurrence(period=PeriodType.MONTH, start=date(2026, 1, 1)),
+        splits=[
+            ScheduledSplit(book.utilities, formula="payment"),
+            ScheduledSplit(book.checking, formula="-payment"),
+        ],
+    )
+    loan.variables = {"payment": "100"}
+    with target.db.transaction("Formula fixture") as txn:
+        target.db.add_scheduled(loan, txn)
+
+    api.save_formula_schedule(
+        FormulaScheduleInput(
+            existing_handle=loan.handle,
+            name="Adjusted loan",
+            recurrence=loan.recurrence,
+            formulas={0: "payment + 25", 1: "-(payment + 25)"},
+            variables={"payment": "100"},
+            enabled=True,
+            auto_create=False,
+            placeholder=False,
+            growth_policy=loan.growth_policy,
+        )
+    )
+    stored = target.db.get_scheduled(loan.handle)
+    assert stored.name == "Adjusted loan"
+    assert [split.formula for split in stored.splits] == ["payment + 25", "-(payment + 25)"]
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -439,6 +516,18 @@ def test_a_delete_needs_no_body_but_any_body_must_be_json(remote):
         urllib.request.urlopen(form, timeout=10)
     assert caught.value.code == 403
     assert remote.db.get_scheduled(sched.handle) is not None
+
+
+def test_a_malformed_editor_save_is_refused_without_writing(remote):
+    before = _snapshot(remote.db)
+    for route, body in (
+        ("/api/v1/schedules/fixed", {"definition": {"name": "Gym", "amount": 45}}),
+        ("/api/v1/schedules/fixed", {"definition": []}),
+        ("/api/v1/schedules/formula", {"formulas": {"first": "1"}}),
+    ):
+        status, payload, _ = _raw(remote, "POST", route, body)
+        assert (status, payload["code"]) == (400, "request.invalid"), route
+    assert _snapshot(remote.db) == before
 
 
 def test_a_client_that_missed_changes_is_told_to_reload(remote):

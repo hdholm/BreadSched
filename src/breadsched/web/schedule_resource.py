@@ -29,10 +29,8 @@ from ..gen.services import (
     ResolveDue,
     ResolveNext,
     SaveFixedSchedule,
-    save_fixed_schedule,
-    save_formula_schedule,
 )
-from .controls import input_money, service_error
+from .controls import input_money
 from .schedule_controls import (
     frequency_key,
     parse_additional_splits,
@@ -408,8 +406,7 @@ def scheduled_save(api: Api, payload: dict) -> dict:
             raise ValueError("active status must be true or false")
         enabled = payload["enabled"]
 
-    result = save_fixed_schedule(
-        api.db,
+    saved = api.book.save_fixed_schedule(
         SaveFixedSchedule(
             definition=FixedScheduleInput(
                 name=name,
@@ -442,9 +439,7 @@ def scheduled_save(api: Api, payload: dict) -> dict:
             existing_handle=existing.handle if existing is not None else None,
         ),
     )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return {"handle": result.value.handle, "name": result.value.name}
+    return {"handle": saved.handle, "name": saved.name}
 
 
 def scheduled_formula_save(api: Api, payload: dict) -> dict:
@@ -501,8 +496,7 @@ def scheduled_formula_save(api: Api, payload: dict) -> dict:
             raise ValueError("automatic posting status must be true or false")
         auto_create = payload["auto"]
 
-    result = save_formula_schedule(
-        api.db,
+    saved = api.book.save_formula_schedule(
         FormulaScheduleInput(
             existing_handle=existing.handle,
             name=name,
@@ -518,9 +512,7 @@ def scheduled_formula_save(api: Api, payload: dict) -> dict:
             remind_days=_days(payload, "remind_days"),
         ),
     )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return {"handle": result.value.handle, "name": result.value.name}
+    return {"handle": saved.handle, "name": saved.name}
 
 
 def scheduled_delete(api: Api, payload: dict) -> dict:

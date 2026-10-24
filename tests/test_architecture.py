@@ -1011,6 +1011,8 @@ class TestBookServerBoundaries:
         "delete_schedule",
         "duplicate_schedule",
         "post_due",
+        "save_fixed_schedule",
+        "save_formula_schedule",
     }
 
     @pytest.mark.parametrize(
@@ -1029,12 +1031,15 @@ class TestBookServerBoundaries:
                     "scheduled_delete",
                     "scheduled_duplicate",
                     "post_scheduled",
+                    "scheduled_save",
+                    "scheduled_formula_save",
                 ),
             ),
             (
                 "gui/views/scheduled.py",
                 ("resolve_next", "_on_post_clicked"),
             ),
+            ("gui/dialogs/schedule_dialog.py", ("_on_save",)),
         ],
     )
     def test_moved_adapters_call_the_book_server(self, relative, functions):
@@ -1065,6 +1070,8 @@ class TestBookServerBoundaries:
                 "delete_schedule",
                 "duplicate_schedule",
                 "post_due",
+                "save_fixed_schedule",
+                "save_formula_schedule",
             }, name
 
     def test_the_book_server_package_has_no_interface_imports(self):

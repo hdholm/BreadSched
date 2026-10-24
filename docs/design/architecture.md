@@ -209,8 +209,12 @@ So far only scheduled transactions go through it:
   `scheduled --post`, through `open_book_api`;
 - the browser's due review, next-occurrence, schedule delete and duplicate, and
   post-scheduled routes, through `Api.book`, the server over the request's book;
-- GTK's due review, Enter Next and Skip Next, and schedule delete and duplicate,
-  through `api.local.book_server`.
+- GTK's due review, Enter Next and Skip Next, schedule delete and duplicate, and
+  the schedule editor's save, through `api.local.book_server`.
+
+The browser's schedule save routes go through the server as well. Over `/api/v1`,
+an editor's typed request travels in `api.schedule_codec`'s lossless, strictly
+decoded JSON form.
 
 Their command-line JSON is therefore the browser's JSON.
 
