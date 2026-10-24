@@ -1088,6 +1088,16 @@ class TestBookServerBoundaries:
         "delete_savings_goal",
         "set_goal_override",
         "find_savings_goal",
+        "list_payroll_templates",
+        "save_payroll_template",
+        "delete_payroll_template",
+        "template_from_schedule",
+        "create_paycheck_schedule",
+        "paychecks",
+        "paycheck_breakdown",
+        "preview_pay_change",
+        "apply_pay_change",
+        "payroll_view",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1162,6 +1172,14 @@ class TestBookServerBoundaries:
         "delete_savings_goal",
         "set_goal_override",
         "find_savings_goal",
+        "payroll",
+        "paycheck",
+        "template_from_schedule",
+        "save_payroll_template",
+        "delete_payroll_template",
+        "create_paycheck",
+        "preview_pay_change",
+        "apply_pay_change",
     }
 
     @pytest.mark.parametrize(
@@ -1206,6 +1224,33 @@ class TestBookServerBoundaries:
             ),
             ("web/register_entry_resource.py", ("register_cleared_toggle",)),
             ("cli/projection_commands.py", ("cmd_scenario", "cmd_drawdown")),
+            ("cli/plan_commands.py", ("cmd_payroll",)),
+            (
+                "web/payroll_resource.py",
+                (
+                    "payroll",
+                    "payroll_template_save",
+                    "payroll_template_delete",
+                    "payroll_template_from_schedule",
+                    "payroll_create",
+                    "payroll_change_preview",
+                    "payroll_change",
+                ),
+            ),
+            (
+                "gui/dialogs/payroll_dialog.py",
+                (
+                    "refresh",
+                    "_paycheck",
+                    "preview_change",
+                    "save_change",
+                    "_reload_templates",
+                    "fill_from_paycheck",
+                    "save_template",
+                    "delete_template",
+                    "create_paycheck",
+                ),
+            ),
             (
                 "web/scenario_resource.py",
                 (

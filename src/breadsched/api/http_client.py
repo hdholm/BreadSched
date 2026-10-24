@@ -25,6 +25,7 @@ from datetime import date
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
+from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
@@ -69,6 +70,7 @@ from ..gen.services.categorization import (
     CategorizationRules,
     CategoryRule,
 )
+from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.receivables import (
     AcceptedReimbursements,
     CandidateLine,
@@ -680,3 +682,41 @@ class HttpBookClient:
     def delete_assumption_period(self, scenario: str, index: int) -> SavedScenario:
         path = f"/scenarios/{quote(scenario, safe='')}/periods/{index}"
         return from_data(SavedScenario, self._call("DELETE", path))
+
+    # ------------------------------------------------------------------ payroll
+
+    def payroll(self, as_of: date | None = None) -> PayrollView:
+        return from_data(PayrollView, self._call("GET", "/payroll", {"as_of": as_of}))
+
+    def paycheck(self, schedule: str, as_of: date | None = None) -> PaycheckBreakdown:
+        path = f"/schedules/{quote(schedule, safe='')}/paycheck"
+        found = self._call("GET", path, {"as_of": as_of})
+        return from_data(PaycheckBreakdown, found["paycheck"], "paycheck")
+
+    def _template(self, method: str, path: str, body: dict[str, Any]) -> PayrollTemplate:
+        found = self._call(method, path, body=body)
+        return from_data(PayrollTemplate, found["template"], "template")
+
+    def template_from_schedule(
+        self, schedule: str, name: str, as_of: date | None = None
+    ) -> PayrollTemplate:
+        body = {"schedule": schedule, "name": name, "as_of": as_of}
+        return self._template("POST", "/payroll/templates/draft", body)
+
+    def save_payroll_template(self, request: SavePayrollTemplate) -> PayrollTemplate:
+        return self._template("POST", "/payroll/templates", to_data(request))
+
+    def delete_payroll_template(self, name: str) -> PayrollTemplate:
+        return self._template("DELETE", f"/payroll/templates/{quote(name, safe='')}", {})
+
+    def create_paycheck(self, request: CreatePaycheck) -> SavedSchedule:
+        found = self._call("POST", "/payroll/paychecks", body=to_data(request))
+        return from_data(SavedSchedule, found)
+
+    def preview_pay_change(self, request: PayChange) -> PayChangePlan:
+        found = self._call("POST", "/payroll/pay-changes/preview", body=to_data(request))
+        return from_data(PayChangePlan, found["plan"], "plan")
+
+    def apply_pay_change(self, request: PayChange) -> PayChangePlan:
+        found = self._call("POST", "/payroll/pay-changes", body=to_data(request))
+        return from_data(PayChangePlan, found["plan"], "plan")

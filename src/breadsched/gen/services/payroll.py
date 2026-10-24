@@ -35,6 +35,7 @@ from ..lib.recurrence import Recurrence
 from ..lib.scheduled import ScheduledSplitAmountChange, ScheduledTransaction
 from ..lib.transaction import InvestmentActivityKind
 from .contracts import ServiceError, ServiceResult
+from .savings_goals import NamedChoice
 from .schedules import (
     FixedScheduleInput,
     FixedSplitInput,
@@ -49,12 +50,15 @@ __all__ = [
     "TEMPLATES_KEY",
     "CreatePaycheck",
     "PayChange",
+    "PayrollView",
     "SavePayrollTemplate",
     "apply_pay_change",
     "create_paycheck_schedule",
     "delete_payroll_template",
     "list_payroll_templates",
+    "paycheck",
     "paychecks",
+    "payroll_view",
     "preview_pay_change",
     "save_payroll_template",
     "template_from_schedule",
@@ -88,6 +92,23 @@ class PayChange:
     #: Accounts whose amount scales with gross; ``None`` scales the taxes.
     scaled: frozenset[str] | None = None
     amounts: Mapping[str, Money] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class PayrollView:
+    """Paychecks, templates, and the accounts a template's form may choose."""
+
+    paychecks: tuple[PaycheckBreakdown, ...]
+    templates: tuple[PayrollTemplate, ...]
+    #: Full names of the accounts the templates and choices use, by handle.
+    names: dict[str, str]
+    income_accounts: tuple[NamedChoice, ...]
+    deposit_accounts: tuple[NamedChoice, ...]
+    line_accounts: tuple[NamedChoice, ...]
+
+    def name(self, handle: str) -> str:
+        """An account's full name, or its handle when the view does not name it."""
+        return self.names.get(handle, handle)
 
 
 def _failure(exc: PayrollError) -> ServiceResult:
@@ -287,6 +308,60 @@ def paychecks(db: DbSQLite, when: date | None = None) -> list[PaycheckBreakdown]
         if breakdown is not None:
             found.append(breakdown)
     return sorted(found, key=lambda item: item.name.casefold())
+
+
+def paycheck(
+    db: DbSQLite, handle: str, when: date | None = None
+) -> ServiceResult[PaycheckBreakdown]:
+    """One schedule read as a paycheck on ``when`` (default today, or its first payday)."""
+    schedule = db.get_scheduled(handle)
+    if schedule is None:
+        return ServiceResult.failure(ServiceError("schedule.not_found", ("schedule",)))
+    on = when or max(date.today(), schedule.recurrence.start)
+    breakdown = paycheck_breakdown(db, schedule, max(on, schedule.recurrence.start))
+    if breakdown is None:
+        return ServiceResult.failure(ServiceError("payroll.schedule.not_paycheck", ("schedule",)))
+    return ServiceResult.success(breakdown)
+
+
+def payroll_view(db: DbSQLite, when: date | None = None) -> PayrollView:
+    """Paychecks as of ``when``, the saved templates, and the form's account choices."""
+    accounts = [
+        account for account in db.iter_accounts() if not account.placeholder and not account.is_root
+    ]
+
+    def choices(wanted) -> tuple[NamedChoice, ...]:
+        found = (
+            NamedChoice(account.handle, db.full_name(account) or account.name)
+            for account in accounts
+            if wanted(account)
+        )
+        return tuple(sorted(found, key=lambda item: item.name.casefold()))
+
+    templates = tuple(list_payroll_templates(db))
+    income = choices(lambda a: a.account_class is AccountClass.INCOME)
+    deposit = choices(lambda a: a.is_spendable_cash)
+    line_accounts = choices(lambda a: leg_kind(a, db.full_name(a) or "") is not None)
+    used = {
+        handle
+        for template in templates
+        for handle in (
+            template.income_account,
+            template.deposit_account,
+            *(line.account for line in template.lines),
+        )
+    }
+    return PayrollView(
+        paychecks=tuple(paychecks(db, when)),
+        templates=templates,
+        names={
+            **{handle: db.full_name(handle) or handle for handle in sorted(used)},
+            **{item.handle: item.name for item in (*income, *deposit, *line_accounts)},
+        },
+        income_accounts=income,
+        deposit_accounts=deposit,
+        line_accounts=line_accounts,
+    )
 
 
 # ----------------------------------------------------------------- pay change

@@ -64,6 +64,12 @@ Resources so far, all under ``/api/v1``:
   ``GET /drawdown-accounts``, ``POST /drawdowns``, and
   ``DELETE /scenarios/{handle}/drawdowns/{drawdown}``; ``GET`` and ``POST /assumptions``;
   ``POST /scenarios/{handle}/periods`` and ``DELETE /scenarios/{handle}/periods/{index}``.
+* ``GET /payroll`` (``as_of``) – paychecks, templates, and form choices;
+  ``GET /schedules/{handle}/paycheck`` (``as_of``); ``POST /payroll/templates/draft``
+  describes a paycheck as a template without saving it; ``POST /payroll/templates``
+  (``SavePayrollTemplate``) and ``DELETE /payroll/templates/{name}``;
+  ``POST /payroll/paychecks`` (``CreatePaycheck``); ``POST /payroll/pay-changes/preview``
+  and ``POST /payroll/pay-changes`` (``PayChange``).
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -115,6 +121,7 @@ from ..gen.services import (
 )
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.categorization import AddRule
+from ..gen.services.payroll import CreatePaycheck, PayChange, SavePayrollTemplate
 from ..gen.services.receivables import RecordWriteOff, SaveReceivable
 from ..gen.services.reconciliations import (
     StartReconciliation,
@@ -135,6 +142,14 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "pay_change_apply",
+    "pay_change_preview",
+    "paycheck_create",
+    "paycheck_get",
+    "payroll_get",
+    "payroll_template_draft",
+    "payroll_template_remove",
+    "payroll_template_store",
     "assumption_period_delete",
     "assumption_period_save",
     "base_assumptions_get",
@@ -866,3 +881,52 @@ def assumption_period_delete(api: Api, path: Path, body: dict[str, Any]) -> dict
     except ValueError:
         raise ValueError("index must be a whole number") from None
     return to_data(api.book.delete_assumption_period(path["handle"], index))
+
+
+@dataclass(frozen=True, slots=True)
+class _TemplateDraft:
+    schedule: str
+    name: str
+    as_of: date | None = None
+
+
+def payroll_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    as_of = query.iso_date("as_of")
+    query.finish()
+    return to_data(api.book.payroll(as_of))
+
+
+def paycheck_get(api: Api, path: Path, query: QueryParams) -> dict:
+    as_of = query.iso_date("as_of")
+    query.finish()
+    return {"paycheck": to_data(api.book.paycheck(path["handle"], as_of))}
+
+
+def payroll_template_draft(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    draft = from_data(_TemplateDraft, body, "request")
+    template = api.book.template_from_schedule(draft.schedule, draft.name, draft.as_of)
+    return {"template": to_data(template)}
+
+
+def payroll_template_store(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(SavePayrollTemplate, body, "request")
+    return {"template": to_data(api.book.save_payroll_template(request))}
+
+
+def payroll_template_remove(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return {"template": to_data(api.book.delete_payroll_template(path["name"]))}
+
+
+def paycheck_create(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.create_paycheck(from_data(CreatePaycheck, body, "request")))
+
+
+def pay_change_preview(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(PayChange, body, "request")
+    return {"plan": to_data(api.book.preview_pay_change(request))}
+
+
+def pay_change_apply(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(PayChange, body, "request")
+    return {"plan": to_data(api.book.apply_pay_change(request))}
