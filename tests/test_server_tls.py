@@ -152,7 +152,7 @@ def test_serve_takes_its_token_from_the_file_and_does_not_print_it(
     assert started[0].token == token
     assert token not in printed
     assert f"the token is in {token_path}" in printed
-    assert f"Pages from {PUBLIC} may also use it." in printed
+    assert "Pages from the trusted origins given may also use it." in printed
 
     assert main([*command, "--trusted-origin", "http://books.example.lan"]) == 2
     assert "https://host" in capsys.readouterr().err
@@ -231,6 +231,7 @@ def tls_server(request, db, book, certificates):
     """The book server behind a TLS listener, as a proxy would put it."""
     httpd = serve(db, host="127.0.0.1", port=0)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(*certificates.server)
     if request.param == "client-certificates":
         context.verify_mode = ssl.CERT_REQUIRED
