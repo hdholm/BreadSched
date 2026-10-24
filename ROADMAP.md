@@ -48,10 +48,10 @@ The rest of this file is unscheduled and comes after the first Beta.
   events (#357), a shared independent server (#358), and GTK on the protocol (#359).
   Phases 1–2 cover scheduled transactions, transaction saves and deletes, ledger reads
   (lookups, registers, balances), accounts, categorization rules, tags, savings goals,
-  reconciliation, receivables, scenarios with their assumptions, payroll, and FSA
-  claims so far (most through a generic typed JSON codec), and phase 3 has a stored
-  book revision, `/api/v1` resources with `ETag`/`If-Match`, a change stream, and an
-  HTTP client. Phase 4 has `breadsched serve`, a user-only server record, and
+  reconciliation, receivables, scenarios with their assumptions, payroll, FSA claims,
+  and Plan review so far (most through a generic typed JSON codec), and phase 3 has a
+  stored book revision, `/api/v1` resources with `ETag`/`If-Match`, a change stream,
+  and an HTTP client. Phase 4 has `breadsched serve`, a user-only server record, and
   command-line commands that use the server holding a book. Phase 5 has GTK's due
   review and Enter/Skip Next on the protocol, and an opt-in **Preferences → Sharing**
   that serves GTK's open book to commands. Decision 0003 also documents reaching a

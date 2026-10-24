@@ -1123,6 +1123,20 @@ class TestBookServerBoundaries:
         "fsa_years_view",
         "accept_claim_links",
         "iter_claims",
+        "review_queue",
+        "review_detail",
+        "match_review",
+        "reject_review",
+        "skip_review",
+        "mark_review_unexpected",
+        "attach_review_claim",
+        "plan_occurrence",
+        "unresolved_occurrences",
+        "unresolved_events",
+        "event_by_key",
+        "explain_candidates",
+        "attachment_roles",
+        "suggest_claims_for_transaction",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1215,6 +1229,16 @@ class TestBookServerBoundaries:
         "benefit_years",
         "claim_link_proposals",
         "accept_claim_links",
+        "review_queue",
+        "review_detail",
+        "match_review",
+        "reject_review",
+        "skip_review",
+        "mark_review_unexpected",
+        "attach_review_claim",
+        "plan_occurrence",
+        "unresolved_occurrences",
+        "match_candidates",
     }
 
     @pytest.mark.parametrize(
@@ -1260,6 +1284,40 @@ class TestBookServerBoundaries:
             ("web/register_entry_resource.py", ("register_cleared_toggle",)),
             ("cli/projection_commands.py", ("cmd_scenario", "cmd_drawdown")),
             ("cli/plan_commands.py", ("cmd_payroll",)),
+            (
+                "cli/plan_commands.py",
+                (
+                    "cmd_review",
+                    "cmd_plan_unresolved",
+                    "cmd_plan_matches",
+                    "cmd_plan_resolve",
+                    "cmd_plan_reject",
+                    "cmd_plan_unexpected",
+                ),
+            ),
+            (
+                "web/review_resource.py",
+                (
+                    "review",
+                    "review_match",
+                    "review_reject",
+                    "review_skip",
+                    "review_fsa_attach",
+                    "review_unexpected",
+                ),
+            ),
+            (
+                "gui/views/resolution.py",
+                (
+                    "refresh",
+                    "_refresh_candidates",
+                    "_on_match",
+                    "_on_reject",
+                    "_on_skip",
+                    "_on_unexpected",
+                    "do_attach",
+                ),
+            ),
             (
                 "cli/benefit_commands.py",
                 ("cmd_claims", "_claim_link_proposals", "_fsa_years"),
@@ -1455,7 +1513,8 @@ class TestBookServerBoundaries:
                 if isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Attribute)
                 and isinstance(node.func.value, ast.Name)
-                and node.func.value.id in {"ledger", "valuation"}
+                and node.func.value.id
+                in {"ledger", "valuation", "planning", "review_explain", "fsa", "fsa_claims"}
             }
             assert not engines, (name, engines)
 

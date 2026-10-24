@@ -258,6 +258,20 @@ FSA claims followed, all through the typed codec:
 - **Still local:** the GTK claims editor builds its link candidates, funding-year
   windows, and the standing of the claim on screen from the book directly.
 
+Plan review (resolving actuals against planned occurrences) followed:
+- **Reads:** `review_queue` (the pending actuals) and `review_detail(transaction)`
+  (its explained candidates, FSA hint, the reason none is offered, and the FSA
+  claims and roles it could attach through), and for the command line
+  `plan_occurrence(key)`, `unresolved_occurrences(start, end)`, and
+  `match_candidates(transaction, window_days)`.
+- **Writes:** match, reject, skip, mark unexpected, and attach to an FSA claim.
+- **Resources:** `GET /api/v1/review`, `GET /api/v1/review/{transaction}`,
+  `POST /api/v1/review/{transaction}/match`, `/reject`, `/skip`, `/unexpected`, and
+  `/claim`, `GET /api/v1/plan/occurrences` and `/lookup`, and
+  `GET /api/v1/transactions/{handle}/plan-matches`.
+- **Interfaces:** the command line's `review` and `plan-*` commands, the browser's
+  Review, and GTK's Review view.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

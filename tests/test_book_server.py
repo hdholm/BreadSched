@@ -1195,6 +1195,66 @@ def test_fsa_claims_alike(target, book):
     assert db.get_fsa_claim(saved.handle) is None
 
 
+def test_plan_review_alike(target, book):
+    from breadsched.gen.lib.transaction import PlanningResolution
+    from breadsched.gen.services.review import ReviewOccurrence
+
+    api, db = target.api, target.db
+
+    def actual(when, amount):
+        found = Transaction.simple(when, "RENT CO", book.rent, book.checking, amount)
+        found.planning_resolution = PlanningResolution.UNRESOLVED
+        with db.transaction("Import") as txn:
+            db.add_transaction(found, txn)
+        return found
+
+    first, second = actual(date(2026, 10, 7), "1800.00"), actual(date(2026, 11, 9), "1850.00")
+    assert [item.handle for item in api.review_queue()] == [first.handle, second.handle]
+    assert api.review_queue()[0].amount == Money("1800.00")
+    detail = api.review_detail(first.handle)
+    [explained] = detail.candidates[:1]
+    key = explained.candidate.event.key
+    assert explained.candidate.event.planned_date == date(2026, 10, 6)
+    assert detail.no_candidate_reason is None and detail.claims == ()
+    assert [(role.role, role.account_name) for role in detail.roles] == [
+        ("payment", "Expenses:Rent")
+    ]
+    assert api.plan_occurrence(key).expected_amount == Money("1800.00")
+    events = api.unresolved_occurrences(date(2026, 10, 1), date(2026, 11, 30))
+    assert key in {event.key for event in events}
+    assert key in {item.event.key for item in api.match_candidates(first.handle, 3)}
+
+    matched = api.match_review(ReviewOccurrence(first.handle, key))
+    assert (matched.transaction, matched.occurrence) == (first.handle, key)
+    assert db.get_transaction(first.handle).planning_resolution is PlanningResolution.MATCHED
+    assert [item.handle for item in api.review_queue()] == [second.handle]
+    november = api.review_detail(second.handle).candidates[0].candidate.event.key
+    rejected = api.reject_review(ReviewOccurrence(second.handle, november))
+    assert rejected.occurrence == november
+    assert november in db.get_transaction(second.handle).rejected_plan_occurrences
+    unexpected = api.mark_review_unexpected(second.handle)
+    assert unexpected.resolution is PlanningResolution.UNEXPECTED
+    assert api.review_queue() == ()
+
+    before = _snapshot(db)
+    for call, status, code in (
+        (lambda: api.review_detail(first.handle), 400, "review.transaction.not_unresolved"),
+        (lambda: api.review_detail("missing"), 404, "review.transaction.not_found"),
+        (lambda: api.plan_occurrence("nothing"), 404, "review.occurrence.not_found"),
+        (lambda: api.match_review(ReviewOccurrence(first.handle, key)), 400, None),
+        (
+            lambda: api.unresolved_occurrences(date(2026, 11, 1), date(2026, 10, 1)),
+            400,
+            "review.range.invalid",
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert refused.value.status == status
+        assert code is None or refused.value.code == code
+    assert _snapshot(db) == before
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -1407,6 +1467,17 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("GET", "/api/v1/scenarios/lookup", None, 400, "query.missing"),
         ("GET", "/api/v1/payroll?as_of=soon", None, 400, "query.date.invalid"),
         ("GET", "/api/v1/fsa-claims/report?by=colour", None, 400, "query.invalid"),
+        ("GET", "/api/v1/review/missing", None, 404, "review.transaction.not_found"),
+        ("POST", "/api/v1/review/x/match", {}, 400, "request.invalid"),
+        ("POST", "/api/v1/review/x/unexpected", {"why": 1}, 400, "request.invalid"),
+        ("GET", "/api/v1/plan/occurrences?start=2026-01-01", None, 400, "query.missing"),
+        (
+            "GET",
+            "/api/v1/transactions/x/plan-matches?window_days=-1",
+            None,
+            400,
+            "query.integer.out_of_range",
+        ),
         ("GET", "/api/v1/fsa-claims/report?status=lost", None, 400, "query.invalid"),
         ("POST", "/api/v1/fsa-claims", {"definition": {}}, 400, "request.invalid"),
         ("POST", "/api/v1/fsa-claims/x/close", {"on": "soon"}, 400, "request.invalid"),

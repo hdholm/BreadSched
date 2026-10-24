@@ -28,6 +28,7 @@ from urllib.parse import quote, urlencode, urlparse
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
+from ..gen.engine.planning import MatchCandidate, PlannedEvent
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
@@ -96,6 +97,13 @@ from ..gen.services.reconciliations import (
     StartReconciliation,
     ToggleCleared,
     UpdateReconciliation,
+)
+from ..gen.services.review import (
+    PendingActual,
+    ReviewClaimAttachment,
+    ReviewDetail,
+    ReviewMutation,
+    ReviewOccurrence,
 )
 from ..gen.services.savings_goals import (
     AllocateToGoal,
@@ -783,3 +791,52 @@ class HttpBookClient:
         body = {"chosen": [list(item) for item in chosen]}
         found = self._call("POST", "/fsa-claim-proposals/accept", body=body)
         return from_data(AcceptedClaimLinks, found)
+
+    # ------------------------------------------------------------- plan review
+
+    def review_queue(self) -> tuple[PendingActual, ...]:
+        found = self._call("GET", "/review")
+        return from_data(tuple[PendingActual, ...], found["actuals"], "actuals")
+
+    def review_detail(self, transaction: str) -> ReviewDetail:
+        return from_data(ReviewDetail, self._call("GET", f"/review/{quote(transaction, safe='')}"))
+
+    def _review(self, transaction: str, action: str, body: dict[str, Any]) -> ReviewMutation:
+        path = f"/review/{quote(transaction, safe='')}/{action}"
+        return from_data(ReviewMutation, self._call("POST", path, body=body))
+
+    def match_review(self, request: ReviewOccurrence) -> ReviewMutation:
+        return self._review(request.transaction, "match", {"occurrence": request.occurrence})
+
+    def reject_review(self, request: ReviewOccurrence) -> ReviewMutation:
+        return self._review(request.transaction, "reject", {"occurrence": request.occurrence})
+
+    def skip_review(self, request: ReviewOccurrence) -> ReviewMutation:
+        return self._review(request.transaction, "skip", {"occurrence": request.occurrence})
+
+    def mark_review_unexpected(self, transaction: str) -> ReviewMutation:
+        return self._review(transaction, "unexpected", {})
+
+    def attach_review_claim(self, request: ReviewClaimAttachment) -> ReviewMutation:
+        body = {
+            "claim": request.claim,
+            "role": request.role,
+            "split": request.split,
+            "funding_year_start": request.funding_year_start,
+        }
+        return self._review(request.transaction, "claim", body)
+
+    def plan_occurrence(self, key: str) -> PlannedEvent:
+        found = self._call("GET", "/plan/occurrences/lookup", {"key": key})
+        return from_data(PlannedEvent, found["occurrence"], "occurrence")
+
+    def unresolved_occurrences(self, start: date, end: date) -> tuple[PlannedEvent, ...]:
+        found = self._call("GET", "/plan/occurrences", {"start": start, "end": end})
+        return from_data(tuple[PlannedEvent, ...], found["occurrences"], "occurrences")
+
+    def match_candidates(
+        self, transaction: str, window_days: int = 7
+    ) -> tuple[MatchCandidate, ...]:
+        path = f"/transactions/{quote(transaction, safe='')}/plan-matches"
+        found = self._call("GET", path, {"window_days": window_days})
+        return from_data(tuple[MatchCandidate, ...], found["candidates"], "candidates")

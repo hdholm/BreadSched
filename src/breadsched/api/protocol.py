@@ -17,6 +17,7 @@ from typing import Protocol
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
+from ..gen.engine.planning import MatchCandidate, PlannedEvent
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
@@ -85,6 +86,13 @@ from ..gen.services.reconciliations import (
     StartReconciliation,
     ToggleCleared,
     UpdateReconciliation,
+)
+from ..gen.services.review import (
+    PendingActual,
+    ReviewClaimAttachment,
+    ReviewDetail,
+    ReviewMutation,
+    ReviewOccurrence,
 )
 from ..gen.services.savings_goals import (
     AllocateToGoal,
@@ -480,4 +488,36 @@ class BookApi(Protocol):
 
     def accept_claim_links(self, chosen: tuple[tuple[str, str, str], ...]) -> AcceptedClaimLinks:
         """Link the chosen (claim, transaction, split) proposals still on offer."""
+        ...
+
+    # ------------------------------------------------------------- plan review
+
+    def review_queue(self) -> tuple[PendingActual, ...]:
+        """Actuals not yet resolved against the plan, oldest first."""
+        ...
+
+    def review_detail(self, transaction: str) -> ReviewDetail:
+        """The planned items one pending actual could be, why, and its FSA choices."""
+        ...
+
+    def match_review(self, request: ReviewOccurrence) -> ReviewMutation: ...
+
+    def reject_review(self, request: ReviewOccurrence) -> ReviewMutation: ...
+
+    def skip_review(self, request: ReviewOccurrence) -> ReviewMutation: ...
+
+    def mark_review_unexpected(self, transaction: str) -> ReviewMutation: ...
+
+    def attach_review_claim(self, request: ReviewClaimAttachment) -> ReviewMutation: ...
+
+    def plan_occurrence(self, key: str) -> PlannedEvent:
+        """One planned occurrence by its stable key."""
+        ...
+
+    def unresolved_occurrences(self, start: date, end: date) -> tuple[PlannedEvent, ...]: ...
+
+    def match_candidates(
+        self, transaction: str, window_days: int = 7
+    ) -> tuple[MatchCandidate, ...]:
+        """Unresolved occurrences that could explain one actual, best first."""
         ...

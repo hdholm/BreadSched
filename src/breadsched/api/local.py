@@ -20,6 +20,7 @@ from ..gen.db.sqlite import DbSQLite
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
+from ..gen.engine.planning import MatchCandidate, PlannedEvent
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
@@ -98,6 +99,7 @@ from ..gen.services import assumptions as assumption_service
 from ..gen.services import claims as claim_service
 from ..gen.services import payroll as payroll_service
 from ..gen.services import receivables as receivable_service
+from ..gen.services import review as review_service
 from ..gen.services import scenarios as scenario_service
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.categorization import (
@@ -130,6 +132,14 @@ from ..gen.services.reconciliations import (
     StartReconciliation,
     ToggleCleared,
     UpdateReconciliation,
+)
+from ..gen.services.review import (
+    PendingActual,
+    ReviewClaimAttachment,
+    ReviewDetail,
+    ReviewMutation,
+    ReviewOccurrence,
+    ReviewTransaction,
 )
 from ..gen.services.savings_goals import (
     AllocateToGoal,
@@ -434,6 +444,41 @@ class LocalBookServer:
 
     def accept_claim_links(self, chosen: tuple[tuple[str, str, str], ...]) -> AcceptedClaimLinks:
         return unwrap(claim_service.accept_claim_links(self.db, chosen))
+
+    # ------------------------------------------------------------- plan review
+
+    def review_queue(self) -> tuple[PendingActual, ...]:
+        return review_service.review_queue(self.db)
+
+    def review_detail(self, transaction: str) -> ReviewDetail:
+        return unwrap(review_service.review_detail(self.db, transaction))
+
+    def match_review(self, request: ReviewOccurrence) -> ReviewMutation:
+        return unwrap(review_service.match_review(self.db, request))
+
+    def reject_review(self, request: ReviewOccurrence) -> ReviewMutation:
+        return unwrap(review_service.reject_review(self.db, request))
+
+    def skip_review(self, request: ReviewOccurrence) -> ReviewMutation:
+        return unwrap(review_service.skip_review(self.db, request))
+
+    def mark_review_unexpected(self, transaction: str) -> ReviewMutation:
+        request = ReviewTransaction(transaction)
+        return unwrap(review_service.mark_review_unexpected(self.db, request))
+
+    def attach_review_claim(self, request: ReviewClaimAttachment) -> ReviewMutation:
+        return unwrap(review_service.attach_review_claim(self.db, request))
+
+    def plan_occurrence(self, key: str) -> PlannedEvent:
+        return unwrap(review_service.plan_occurrence(self.db, key))
+
+    def unresolved_occurrences(self, start: date, end: date) -> tuple[PlannedEvent, ...]:
+        return unwrap(review_service.unresolved_occurrences(self.db, start, end))
+
+    def match_candidates(
+        self, transaction: str, window_days: int = 7
+    ) -> tuple[MatchCandidate, ...]:
+        return unwrap(review_service.match_candidates(self.db, transaction, window_days))
 
     # -------------------------------------------------------------- receivables
 

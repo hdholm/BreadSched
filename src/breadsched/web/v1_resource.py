@@ -77,6 +77,11 @@ Resources so far, all under ``/api/v1``:
   ``funding_year``, ``provider``, ``status``, ``attention``); ``GET /fsa-years``
   (``as_of``); ``GET /fsa-claim-proposals`` (``account``) and
   ``POST /fsa-claim-proposals/accept``.
+* ``GET /review`` – actuals awaiting Review; ``GET /review/{transaction}`` – what
+  Review offers for one; ``POST /review/{transaction}/match``, ``/reject``, ``/skip``
+  (``occurrence``), ``/unexpected``, and ``/claim``; ``GET /plan/occurrences``
+  (``start``, ``end``) and ``/plan/occurrences/lookup`` (``key``);
+  ``GET /transactions/{handle}/plan-matches`` (``window_days``).
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -138,6 +143,7 @@ from ..gen.services.reconciliations import (
     ToggleCleared,
     UpdateReconciliation,
 )
+from ..gen.services.review import ReviewClaimAttachment, ReviewOccurrence
 from ..gen.services.savings_goals import AllocateToGoal, SaveSavingsGoal, SetGoalOverride
 from ..gen.services.scenarios import (
     DuplicateScenario,
@@ -152,6 +158,16 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "plan_matches_get",
+    "plan_occurrence_lookup",
+    "plan_occurrences_get",
+    "review_claim_v1",
+    "review_detail_get",
+    "review_match_v1",
+    "review_queue_get",
+    "review_reject_v1",
+    "review_skip_v1",
+    "review_unexpected_v1",
     "claim_links_accept",
     "claim_proposals_get",
     "fsa_claim_close_v1",
@@ -1030,3 +1046,77 @@ def claim_proposals_get(api: Api, _path: Path, query: QueryParams) -> dict:
 def claim_links_accept(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     chosen = from_data(_ChosenLinks, body, "request").chosen
     return to_data(api.book.accept_claim_links(chosen))
+
+
+@dataclass(frozen=True, slots=True)
+class _Occurrence:
+    occurrence: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ClaimAttachment:
+    claim: str
+    role: str
+    split: str | None = None
+    funding_year_start: date | None = None
+
+
+def review_queue_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return {"actuals": to_data(api.book.review_queue())}
+
+
+def review_detail_get(api: Api, path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.review_detail(path["transaction"]))
+
+
+def _occurrence(path: Path, body: dict[str, Any]) -> ReviewOccurrence:
+    chosen = from_data(_Occurrence, body, "request")
+    return ReviewOccurrence(path["transaction"], chosen.occurrence)
+
+
+def review_match_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.match_review(_occurrence(path, body)))
+
+
+def review_reject_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.reject_review(_occurrence(path, body)))
+
+
+def review_skip_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.skip_review(_occurrence(path, body)))
+
+
+def review_unexpected_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return to_data(api.book.mark_review_unexpected(path["transaction"]))
+
+
+def review_claim_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    chosen = from_data(_ClaimAttachment, body, "request")
+    request = ReviewClaimAttachment(
+        path["transaction"], chosen.claim, chosen.role, chosen.split, chosen.funding_year_start
+    )
+    return to_data(api.book.attach_review_claim(request))
+
+
+def plan_occurrence_lookup(api: Api, _path: Path, query: QueryParams) -> dict:
+    key = query.text("key", required=True) or ""
+    query.finish()
+    return {"occurrence": to_data(api.book.plan_occurrence(key))}
+
+
+def plan_occurrences_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    start = query.iso_date("start", required=True)
+    end = query.iso_date("end", required=True)
+    query.finish()
+    assert start is not None and end is not None
+    return {"occurrences": to_data(api.book.unresolved_occurrences(start, end))}
+
+
+def plan_matches_get(api: Api, path: Path, query: QueryParams) -> dict:
+    window = query.integer("window_days", default=7, minimum=0, maximum=366)
+    query.finish()
+    assert window is not None
+    return {"candidates": to_data(api.book.match_candidates(path["handle"], window))}
