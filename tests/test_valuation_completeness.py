@@ -397,7 +397,7 @@ class TestSurfaces:
             name="FX", start=date(2026, 10, 1), years=1, assumptions=flat_assumptions()
         )
 
-        payload = projection_report(db, scenario)
+        payload = projection_report(book_server(db), scenario)
 
         assert payload["completeness"]["status"] == "partial"
         assert [row["completeness"]["status"] for row in payload["rows"][:3]] == [
@@ -409,7 +409,7 @@ class TestSurfaces:
             name="Other", start=date(2026, 10, 1), years=1, assumptions=flat_assumptions()
         )
         compared = projection_comparison_report(
-            db, scenario, other, primary_base=False, comparison_base=False
+            book_server(db), scenario, other, primary_base=False, comparison_base=False
         )
         assert compared["comparison"]["delta_completeness"]["status"] == "partial"
         assert compared["comparison"]["rows"][0]["completeness"]["status"] == "complete"

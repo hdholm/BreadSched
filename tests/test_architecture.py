@@ -1369,6 +1369,16 @@ class TestBookServerBoundaries:
             ("web/expense_resource.py", ("expense_report",)),
             ("gui/views/plan.py", ("refresh",)),
             ("cli/projection_commands.py", ("cmd_project", "cmd_compare")),
+            (
+                "web/projection_resource.py",
+                (
+                    "projection_month_report",
+                    "projection_report",
+                    "projection_comparison_report",
+                    "projection_draft",
+                    "projection_save",
+                ),
+            ),
             ("gui/dialogs/net_worth_history_dialog.py", ("_update", "_explain")),
             (
                 "web/attachment_resource.py",

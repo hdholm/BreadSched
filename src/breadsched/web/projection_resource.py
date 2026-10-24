@@ -4,38 +4,33 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..gen.db.sqlite import DbSQLite
+from ..api.contract import ApiError
+from ..api.protocol import BookApi
 from ..gen.engine import projection
 from ..gen.engine.completeness import combine
-from ..gen.engine.currency import reporting_currency_label
-from ..gen.engine.projection import projected_account_names
 from ..gen.engine.projection_bridge import month_bridges, projection_bridges
 from ..gen.engine.projection_result import projection_balances_chart, projection_chart
 from ..gen.lib import Scenario
 from ..gen.services import (
     SaveBaseAssumptions,
     SaveScenarioAssumptions,
-    save_base_assumptions,
-    save_scenario_assumptions,
 )
-from ..gen.services.assumptions import base_assumptions
 from ..presentation import (
     projection_goal_notes,
     reimbursement_outlook_text,
     runway_comparison_text,
     runway_lines,
 )
-from .controls import service_error
 from .scenario_resource import assumptions_from_payload, management_base_scenario
 
 if TYPE_CHECKING:
     from .context import Api
 
 
-def projection_month_report(db: DbSQLite, scenario: Scenario, month_index: int) -> dict:
+def projection_month_report(book: BookApi, scenario: Scenario, month_index: int) -> dict:
     """Calculate and serialize one month of a detached projection draft."""
-    result = projection.project(db, scenario)
-    detail = projection.explain_month(db, result, month_index)
+    result = book.project(scenario)
+    detail = book.projection_month(scenario, month_index)
 
     def account_row(item: projection.ProjectionAccountDetail) -> dict:
         return {
@@ -91,8 +86,22 @@ def projection_month_report(db: DbSQLite, scenario: Scenario, month_index: int) 
     }
 
 
+def _account_names(book: BookApi, result: projection.Projection) -> dict[str, str]:
+    """Each projected investment and debt account's full name, for charts and tables."""
+    handles = {
+        handle
+        for row in result.rows
+        for handle in (*row.ledger.closing_holdings, *row.ledger.closing_liabilities)
+    }
+    return {
+        record.account.handle: record.full_name
+        for record in book.accounts()
+        if record.account.handle in handles
+    }
+
+
 def projection_report(
-    db: DbSQLite,
+    book: BookApi,
     scenario: Scenario,
     *,
     base: bool = False,
@@ -100,7 +109,7 @@ def projection_report(
 ) -> dict:
     """Calculate and serialize a projection with saved scenario choices."""
     if result is None:
-        result = projection.project(db, scenario)
+        result = book.project(scenario)
     assumptions = scenario.effective_assumptions()
     return {
         "scenario": {
@@ -116,7 +125,7 @@ def projection_report(
         "controls": {
             "scenarios": [
                 {"handle": None, "name": "Base scenario"},
-                *[{"handle": item.handle, "name": item.name} for item in db.iter_scenarios()],
+                *[{"handle": item.handle, "name": item.name} for item in book.scenarios()],
             ],
         },
         "summary": result.summary(),
@@ -128,9 +137,9 @@ def projection_report(
         "goal_notes": projection_goal_notes(result),
         "goal_milestones": [item.as_dict() for item in result.goal_milestones],
         "runway": result.runway().as_dict(),
-        "chart": projection_chart(result, None, reporting_currency_label(db)).as_dict(),
+        "chart": projection_chart(result, None, book.reporting_currency()).as_dict(),
         "balances_chart": projection_balances_chart(
-            result, projected_account_names(db, result), reporting_currency_label(db)
+            result, _account_names(book, result), book.reporting_currency()
         ).as_dict()
         if result.rows
         else None,
@@ -154,7 +163,7 @@ def projection_report(
 
 
 def projection_comparison_report(
-    db: DbSQLite,
+    book: BookApi,
     primary: Scenario,
     comparison: Scenario,
     *,
@@ -162,8 +171,8 @@ def projection_comparison_report(
     comparison_base: bool,
 ) -> dict:
     """Calculate and serialize two aligned projection drafts and their differences."""
-    primary_result = projection.project(db, primary)
-    comparison_result = projection.project(db, comparison)
+    primary_result = book.project(primary)
+    comparison_result = book.project(comparison)
     if len(primary_result.rows) != len(comparison_result.rows):
         raise ValueError("projection comparison horizons do not align")
 
@@ -172,10 +181,10 @@ def projection_comparison_report(
 
     primary_summary = primary_result.summary()
     comparison_summary = comparison_result.summary()
-    shown = projection_report(db, primary, base=primary_base, result=primary_result)
+    shown = projection_report(book, primary, base=primary_base, result=primary_result)
     # The chart overlays the compared scenario's net worth, as on the desktop.
     shown["chart"] = projection_chart(
-        primary_result, comparison_result, reporting_currency_label(db)
+        primary_result, comparison_result, book.reporting_currency()
     ).as_dict()
     return {
         "primary": shown,
@@ -234,16 +243,17 @@ def projection_comparison_report(
 
 
 def projection_draft(
-    db: DbSQLite, scenario_handle: str | None = None, years: int | None = None
+    book: BookApi, scenario_handle: str | None = None, years: int | None = None
 ) -> Scenario:
     """Return a detached projection scenario safe for browser-side editing."""
     if scenario_handle:
-        stored = db.get_scenario(scenario_handle)
-        if stored is None:
-            raise KeyError(scenario_handle)
+        try:
+            stored = book.find_scenario(scenario_handle)
+        except ApiError:
+            raise KeyError(scenario_handle) from None
         scenario = stored.clone()
     else:
-        scenario = management_base_scenario(base_assumptions(db))
+        scenario = management_base_scenario(book.base_assumptions())
     if years is not None:
         if years < 1 or years > 100:
             raise ValueError("projection years must be between 1 and 100")
@@ -251,7 +261,7 @@ def projection_draft(
     return scenario
 
 
-def apply_projection_payload(db: DbSQLite, scenario: Scenario, payload: dict) -> Scenario:
+def apply_projection_payload(book: BookApi, scenario: Scenario, payload: dict) -> Scenario:
     """Apply editable projection controls to a detached scenario."""
     years = int(payload.get("years", scenario.years))
     if years < 1 or years > 100:
@@ -259,7 +269,7 @@ def apply_projection_payload(db: DbSQLite, scenario: Scenario, payload: dict) ->
     scenario.years = years
     previous = scenario.effective_assumptions()
     updated = assumptions_from_payload(
-        db, payload.get("assumptions", previous.serialize()), previous
+        book, payload.get("assumptions", previous.serialize()), previous
     )
     if scenario.inherits_base_assumptions:
         for field in scenario.assumption_sources():
@@ -273,9 +283,9 @@ def apply_projection_payload(db: DbSQLite, scenario: Scenario, payload: dict) ->
 
 def projection_explain(api: Api, payload: dict) -> dict:
     """Explain one month of the currently applied projection draft."""
-    scenario = projection_draft(api.db, payload.get("handle"))
-    apply_projection_payload(api.db, scenario, payload)
-    return projection_month_report(api.db, scenario, int(payload["month_index"]))
+    scenario = projection_draft(api.book, payload.get("handle"))
+    apply_projection_payload(api.book, scenario, payload)
+    return projection_month_report(api.book, scenario, int(payload["month_index"]))
 
 
 def scenario_projection(
@@ -283,16 +293,16 @@ def scenario_projection(
 ) -> dict:
     """Calculate a persisted Base/saved scenario without mutating it."""
     return projection_report(
-        api.db, projection_draft(api.db, scenario_handle, years), base=scenario_handle is None
+        api.book, projection_draft(api.book, scenario_handle, years), base=scenario_handle is None
     )
 
 
 def projection_calculate(api: Api, payload: dict) -> dict:
     """Calculate an edited projection draft without persisting the edits."""
     handle = str(payload.get("handle") or "").strip() or None
-    scenario = projection_draft(api.db, handle)
-    apply_projection_payload(api.db, scenario, payload)
-    return projection_report(api.db, scenario, base=handle is None)
+    scenario = projection_draft(api.book, handle)
+    apply_projection_payload(api.book, scenario, payload)
+    return projection_report(api.book, scenario, base=handle is None)
 
 
 def projection_compare(api: Api, payload: dict) -> dict:
@@ -302,13 +312,13 @@ def projection_compare(api: Api, payload: dict) -> dict:
     if handle == compare_handle:
         raise ValueError("choose two different scenarios to compare")
 
-    primary = projection_draft(api.db, handle)
-    apply_projection_payload(api.db, primary, payload)
-    comparison = projection_draft(api.db, compare_handle)
+    primary = projection_draft(api.book, handle)
+    apply_projection_payload(api.book, primary, payload)
+    comparison = projection_draft(api.book, compare_handle)
     comparison.years = primary.years
 
     return projection_comparison_report(
-        api.db,
+        api.book,
         primary,
         comparison,
         primary_base=handle is None,
@@ -319,16 +329,10 @@ def projection_compare(api: Api, payload: dict) -> dict:
 def projection_save(api: Api, payload: dict) -> dict:
     """Persist projection controls explicitly, preserving hidden model fields."""
     handle = str(payload.get("handle") or "").strip() or None
-    scenario = projection_draft(api.db, handle)
-    apply_projection_payload(api.db, scenario, payload)
+    scenario = projection_draft(api.book, handle)
+    apply_projection_payload(api.book, scenario, payload)
     if handle is None:
-        base_result = save_base_assumptions(api.db, SaveBaseAssumptions(scenario.assumptions))
-        if not base_result.ok:
-            raise service_error(base_result.errors[0])
-        return projection_report(api.db, scenario, base=True)
-    result = save_scenario_assumptions(
-        api.db, SaveScenarioAssumptions(scenario, existing_handle=handle)
-    )
-    if not result.ok:
-        raise service_error(result.errors[0])
-    return projection_report(api.db, scenario)
+        api.book.save_base_assumptions(SaveBaseAssumptions(scenario.assumptions))
+        return projection_report(api.book, scenario, base=True)
+    api.book.save_scenario_assumptions(SaveScenarioAssumptions(scenario, existing_handle=handle))
+    return projection_report(api.book, scenario)
