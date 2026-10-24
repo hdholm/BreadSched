@@ -112,22 +112,15 @@ def _sale_lots_data(chosen) -> dict[str, object]:
 
 def sale_lots_view(api: Api, query: QueryParams) -> dict[str, object]:
     """The lots a sale could name and the ones it names now."""
-    from ..gen.services import sale_lots
-    from .controls import service_error
-
     transaction = query.text("transaction", required=True)
     split = query.text("split", required=True)
     query.finish()
-    result = sale_lots(api.db, str(transaction), str(split))
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return _sale_lots_data(result.value)
+    return _sale_lots_data(api.book.sale_lots(str(transaction), str(split)))
 
 
 def sale_lots_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """Name the lots a sale sells; an empty list returns it to the account's method."""
-    from ..gen.services import SetSaleLots, set_sale_lots
-    from .controls import service_error
+    from ..gen.services import SetSaleLots
 
     transaction = payload.get("transaction")
     split = payload.get("split")
@@ -142,7 +135,4 @@ def sale_lots_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     ):
         raise ValueError("picks must be a list of {lot, quantity}")
     picks = tuple((item["lot"], str(item["quantity"])) for item in raw)
-    result = set_sale_lots(api.db, SetSaleLots(transaction, split, picks))
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return _sale_lots_data(result.value)
+    return _sale_lots_data(api.book.set_sale_lots(SetSaleLots(transaction, split, picks)))

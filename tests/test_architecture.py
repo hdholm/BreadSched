@@ -1139,6 +1139,10 @@ class TestBookServerBoundaries:
         "suggest_claims_for_transaction",
         "pending_import_changes",
         "resolve_import_changes",
+        "sale_lots",
+        "set_sale_lots",
+        "tax_marks",
+        "set_tax_marks",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1243,6 +1247,10 @@ class TestBookServerBoundaries:
         "match_candidates",
         "held_imports",
         "resolve_held_imports",
+        "sale_lots",
+        "set_sale_lots",
+        "tax_marks",
+        "set_tax_marks",
     }
 
     @pytest.mark.parametrize(
@@ -1289,6 +1297,12 @@ class TestBookServerBoundaries:
             ("cli/projection_commands.py", ("cmd_scenario", "cmd_drawdown")),
             ("cli/plan_commands.py", ("cmd_payroll",)),
             ("cli/import_commands.py", ("cmd_import_review",)),
+            ("cli/investment_commands.py", ("cmd_sale_lots",)),
+            ("cli/tax_commands.py", ("cmd_tax_marks",)),
+            ("web/holdings_resource.py", ("sale_lots_view", "sale_lots_save")),
+            ("web/tax_resource.py", ("tax_marks_view", "tax_marks_save")),
+            ("gui/dialogs/sale_lots_dialog.py", ("_store",)),
+            ("gui/dialogs/tax_year_dialog.py", ("save",)),
             ("web/import_resource.py", ("import_review", "import_review_resolve")),
             ("gui/dialogs/import_review_dialog.py", ("apply",)),
             ("gui/viewmanager.py", ("prompt_for_held_imports",)),

@@ -401,6 +401,18 @@ def test_held_imports_work_through_the_server_holding_the_book(running, book_pat
     assert "No GnuCash changes are held" in capsys.readouterr().out
 
 
+def test_tax_marks_work_through_the_server_holding_the_book(running, book_path, capsys):
+    path = str(book_path)
+    assert main(["tax-marks", path, "--account", "Assets:Checking=on", "--json"]) == 0
+    marks = json.loads(capsys.readouterr().out)["accounts"]
+    [checking_mark] = [mark for mark in marks if mark["name"] == "Assets:Checking"]
+    assert (checking_mark["relevant"], checking_mark["breadsched"]) == (True, True)
+    checking = running.db.get_account_by_name("Assets:Checking")
+    assert checking.planning.tax_relevant is True
+    assert main(["tax-marks", path, "--tag", "medical=on"]) == 0
+    assert "Tax-relevant tags: medical" in capsys.readouterr().out
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

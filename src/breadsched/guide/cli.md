@@ -220,8 +220,9 @@ While `breadsched serve` (or `breadsched web` without `--read-only`) holds a boo
 `due-review`, `scheduled-next`, `scheduled-advance`, `scheduled --post`, `accounts`,
 `account`, `register`, `balance`, `add`, `edit`, `delete`, `rules`, `tags`, `goals`,
 `receivables` (except `--costs`), `scenario`, `drawdown`, `payroll`, `claims`, `review`,
-`plan-unresolved`, `plan-matches`, `plan-resolve`, `plan-reject`, `plan-unexpected`, and
-`import-review` for the same book work through that server instead of stopping because the book is already open for writing. The
+`plan-unresolved`, `plan-matches`, `plan-resolve`, `plan-reject`, `plan-unexpected`,
+`import-review`, `sale-lots`, and `tax-marks` for the same book work through that
+server instead of stopping because the book is already open for writing. The
 server records its address and token in a file only you can read, in your runtime
 folder, and removes it when it stops. `--server URL` names a server explicitly; its
 token comes from `--token-file PATH` or the `BREADSCHED_SERVER_TOKEN` environment

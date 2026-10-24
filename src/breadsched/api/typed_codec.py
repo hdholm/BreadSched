@@ -9,7 +9,8 @@ any of them as JSON data (:func:`to_data`) and reads it back from its type alone
   ``Decimal`` as text, dates and times in ISO form, an enum as its value;
 * a record that has its own stored form (``serialize`` and ``from_dict``, such as
   every ``PrimaryObject``) in that form;
-* a dataclass as an object of its fields; tuples, lists, and sets as lists; a
+* a dataclass as an object of its fields; tuples, lists, sets, and other
+  sequences as lists (a ``Sequence`` reads back as a tuple); a
   ``dict`` or ``Mapping`` with text keys as an object; ``X | None`` and other unions.
 
 Reading is strict, because a server reads what a client sends: an unknown field, a
@@ -22,7 +23,7 @@ from __future__ import annotations
 import dataclasses
 import types
 import typing
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import Enum
@@ -100,7 +101,7 @@ def from_data(kind: Any, data: Any, where: str = "value") -> Any:
         if data is not None:
             raise _fail(where, "null")
         return None
-    if origin in (tuple, list, set, frozenset):
+    if origin in (tuple, list, set, frozenset, Sequence):
         if not isinstance(data, list):
             raise _fail(where, "a list")
         args = get_args(kind)
@@ -113,7 +114,8 @@ def from_data(kind: Any, data: Any, where: str = "value") -> Any:
             )
         item_kind = args[0] if args else Any
         items = [from_data(item_kind, item, f"{where}[{index}]") for index, item in enumerate(data)]
-        return origin(items)
+        # A ``Sequence`` field is read as a tuple, which a frozen record can hold.
+        return tuple(items) if origin is Sequence else origin(items)
     if origin is dict or origin is Mapping:
         if not isinstance(data, dict):
             raise _fail(where, "an object")
