@@ -428,7 +428,9 @@ with the full name of every account their splits use, each transaction's linked
 documents, and, for a security account, its shares, valuation, and quote evidence
 (`gen/services/register_view`), so the browser's register no longer reads the book;
 its simple entry form now names its two accounts through `find_account` and its
-currency through `transaction_currency` as well.
+currency through `transaction_currency` as well, and its row editor reads the stored
+transaction (`find_transaction`) and a split's security (`account`) through the
+server.
 
 The Plan presentation every interface restores followed: `plan_settings` and
 `save_plan_settings` (`GET`/`PATCH /api/v1/plan/settings`) read and keep the period,

@@ -2,7 +2,8 @@
 
 This adapter only parses the browser's JSON into the shared transaction service's
 request and translates the result. Validation and the complete database write stay
-in ``gen/services/transactions``, so a rejected request never changes the book.
+in ``gen/services/transactions``, so a rejected request never changes the book; the
+stored transaction and its accounts are read through the book server.
 Details the register row does not show (notes, each split's planning purpose and
 investment activity, reconciliation) are carried from the stored transaction, the
 same way the GTK row keeps them.
@@ -14,15 +15,16 @@ from collections.abc import Mapping
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
+from ..api import ApiError
 from ..gen.engine.cost_basis import shares_text
 from ..gen.lib.amount import Amount
 from ..gen.lib.money import Money
+from ..gen.lib.transaction import Transaction
 from ..gen.services import (
     SaveTransaction,
     ToggleCleared,
     TransactionInput,
     TransactionSplitInput,
-    transaction_currency,
 )
 from .controls import input_money
 
@@ -39,13 +41,16 @@ def _text(payload: Mapping[str, Any], key: str, *, optional: bool = False) -> st
     return value
 
 
-def _quantity(db, account: str, raw: object, source) -> Amount | None:
+def _quantity(api: Api, account: str, raw: object, source) -> Amount | None:
     """A split's typed shares as an amount of its account's security, or None."""
     if raw is None or raw == "":
         return None
     if not isinstance(raw, str):
         raise ValueError("quantity must be decimal text")
-    obj = db.get_account(account)
+    try:
+        obj = api.book.account(account).account
+    except ApiError:
+        obj = None
     if obj is None or not obj.commodity:
         raise ValueError("quantity is only for a split in an account that holds a security")
     text = raw.strip()
@@ -55,6 +60,16 @@ def _quantity(db, account: str, raw: object, source) -> Amount | None:
         return Amount(Money(text), obj.commodity)
     except (ValueError, ArithmeticError):
         raise ValueError("quantity must be decimal text") from None
+
+
+def _stored(api: Api, handle: str) -> Transaction | None:
+    """The transaction as stored, through the book server, or None."""
+    try:
+        return api.book.find_transaction(handle)
+    except ApiError as exc:
+        if exc.status == 404:
+            return None
+        raise
 
 
 def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
@@ -68,9 +83,8 @@ def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
     an account that holds a security also gives its signed share ``quantity``
     as decimal text (#323); left as the stored split's shares, it keeps them exactly.
     """
-    db = api.db
     handle = _text(payload, "handle", optional=True) or None
-    existing = db.get_transaction(handle) if handle is not None else None
+    existing = _stored(api, handle) if handle is not None else None
     raw_date = _text(payload, "date") or ""
     try:
         when = date.fromisoformat(raw_date.strip())
@@ -79,7 +93,7 @@ def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
     raw_splits = payload.get("splits")
     if not isinstance(raw_splits, list) or not all(isinstance(item, dict) for item in raw_splits):
         raise ValueError("splits must be a list of objects")
-    currency = transaction_currency(db, existing.currency if existing is not None else None)
+    currency = existing.currency if existing is not None else api.book.transaction_currency()
     sources = {split.handle: split for split in existing.splits} if existing is not None else {}
     splits: list[TransactionSplitInput] = []
     for item in raw_splits:
@@ -100,7 +114,7 @@ def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
         elif not isinstance(raw_value, str):
             raise ValueError("value must be decimal text or [numerator, denominator]")
         value = input_money(dict(payload), raw_value)
-        quantity = _quantity(db, account, item.get("quantity"), source)
+        quantity = _quantity(api, account, item.get("quantity"), source)
         splits.append(
             TransactionSplitInput(
                 account,
