@@ -9057,9 +9057,14 @@ class TestTabs:
             assert tab.button.get_focus_on_click() is False
         window._tabs[-1].button.grab_focus()
         window._on_tab_clicked(window._tabs[-2])
-        _spin(lambda: False, 0.3)
-        focus = window.get_focus()
-        assert focus is not None and focus.is_ancestor(first.grid.editor)
+
+        def in_editor() -> bool:
+            focus = window.get_focus()
+            return focus is not None and focus.is_ancestor(first.grid.editor)
+
+        # focus_entry waits up to a second for the grid to be sized, which a busy
+        # CI display can need; a fixed 0.3 s wait failed there.
+        assert _spin(in_editor, 3.0)
 
     def test_keyboard_shortcuts_step_close_tabs_and_find(self, app, window, populated_book):
         app.open_book(populated_book)
