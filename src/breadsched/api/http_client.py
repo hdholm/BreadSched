@@ -24,9 +24,13 @@ from datetime import date
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
-from ..gen.lib import ScheduledTransaction
+from ..gen.lib import ScheduledTransaction, Transaction
 from ..gen.services import (
+    AccountBalance,
+    AccountRef,
     AdvanceDays,
+    BalanceQuery,
+    BalanceSummary,
     DueResolution,
     DueScheduleReview,
     DuplicateSchedule,
@@ -34,6 +38,8 @@ from ..gen.services import (
     NextOccurrence,
     PostDue,
     PostedDue,
+    RegisterPage,
+    RegisterQuery,
     ResolveDue,
     ResolveNext,
     SavedSchedule,
@@ -41,17 +47,22 @@ from ..gen.services import (
     SaveFixedSchedule,
     SaveTransaction,
     SetAdvanceDays,
+    TransactionInput,
 )
 from .contract import ApiError, to_json
 from .protocol import Change, Listener
 from .schedule_codec import fixed_request_json, formula_request_json
-from .transaction_codec import save_transaction_json
+from .transaction_codec import save_transaction_json, transaction_input_from_json
 from .views import (
+    account_balance_from_json,
+    account_ref_from_json,
     advance_days_from_json,
+    balance_summary_from_json,
     change_from_json,
     due_review_from_json,
     next_occurrence_from_json,
     posted_due_from_json,
+    register_from_json,
     resolution_from_json,
     saved_schedule_from_json,
     saved_transaction_from_json,
@@ -259,3 +270,33 @@ class HttpBookClient:
     def delete_transaction(self, transaction: str) -> SavedTransaction:
         path = f"/transactions/{quote(transaction, safe='')}"
         return saved_transaction_from_json(self._call("DELETE", path))
+
+    # ------------------------------------------------------------ ledger reads
+
+    def transaction_currency(self) -> str:
+        return str(self._call("GET", "/currency")["currency"])
+
+    def find_account(self, reference: str) -> AccountRef:
+        found = self._call("GET", "/accounts/lookup", {"reference": reference})
+        return account_ref_from_json(found["account"])
+
+    def find_transaction(self, reference: str) -> Transaction:
+        found = self._call("GET", "/transactions/lookup", {"reference": reference})
+        return Transaction.from_dict(found["transaction"])
+
+    def editable_transaction(self, transaction: str) -> TransactionInput:
+        path = f"/transactions/{quote(transaction, safe='')}/editable"
+        return transaction_input_from_json(self._call("GET", path)["definition"])
+
+    def register(self, query: RegisterQuery) -> RegisterPage:
+        path = f"/accounts/{quote(query.account, safe='')}/register"
+        params = {"start": query.start, "end": query.end, "tag": query.tag, "limit": query.limit}
+        return register_from_json(self._call("GET", path, params))
+
+    def account_balance(self, query: BalanceQuery) -> AccountBalance:
+        path = f"/accounts/{quote(query.account, safe='')}/balance"
+        params = {"as_of": query.as_of, "recursive": "true" if query.recursive else None}
+        return account_balance_from_json(self._call("GET", path, params))
+
+    def balance_summary(self, as_of: date | None = None) -> BalanceSummary:
+        return balance_summary_from_json(self._call("GET", "/balances", {"as_of": as_of}))

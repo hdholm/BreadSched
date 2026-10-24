@@ -88,9 +88,26 @@ Transactions followed:
   to cents, which would have changed share quantities and prices. Money is now
   written exactly (`contract.exact_money`): decimal text when it terminates, `n/d`
   otherwise.
-- **Still local:** the command line still looks up accounts and transactions in the
-  book it opens. So `add`, `edit`, and `delete` go through the in-process server
-  only, not a shared one, until those lookups join the API.
+- **Lookups joined the API:** finding an account (`find_account`) or a transaction
+  (`find_transaction`, by handle or unique prefix) and the editors' form of a stored
+  transaction (`editable_transaction`) are book API reads. So `add`, `edit`, and
+  `delete` work through a shared server too. `edit` changes the editable form
+  (keeping the two-split rule for amounts) and saves it.
+
+Ledger reads followed, as a shared service (`gen.services.ledger_reads`):
+- **What moved:** an account's register with running balances
+  (`register`: start, end, tag, limit), one account's balance (`account_balance`,
+  optionally with its descendants), and the book's cash and net worth with the
+  quotes it lacked (`balance_summary`). The command line's `register` and `balance`
+  use them, through a shared server when one holds the book.
+- **Resources:** `GET /api/v1/currency`, `/accounts/lookup`, `/transactions/lookup`,
+  `/transactions/{handle}/editable`, `/accounts/{handle}/register`,
+  `/accounts/{handle}/balance`, and `/balances`. A bad query value is a 400 from
+  the strict query parser, never a guess.
+- **JSON:** `register --json` and `balance --json` print what they printed before.
+  The `/api/v1` register adds each line's split handle.
+- **Still to move:** the browser's and GTK's registers read the book directly; they
+  move when their register views do.
 
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same

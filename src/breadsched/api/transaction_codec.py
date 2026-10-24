@@ -27,7 +27,12 @@ from ..gen.services import (
 )
 from .contract import to_json
 
-__all__ = ["save_transaction_from_json", "save_transaction_json"]
+__all__ = [
+    "save_transaction_from_json",
+    "save_transaction_json",
+    "transaction_input_from_json",
+    "transaction_input_json",
+]
 
 
 def _amount(amount: Amount | None) -> dict[str, str] | None:
@@ -40,9 +45,33 @@ def _enum(value: Any) -> str | None:
     return None if value is None else str(value.value)
 
 
+def transaction_input_json(item: TransactionInput) -> dict[str, Any]:
+    """An editor's transaction fields as JSON data."""
+    return {
+        "post_date": item.post_date.isoformat(),
+        "description": item.description,
+        "num": item.num,
+        "notes": item.notes,
+        "currency": item.currency,
+        "investment_activity": _enum(item.investment_activity),
+        "tags": None if item.tags is None else list(item.tags),
+        "splits": [
+            {
+                "account": split.account,
+                "value": _amount(split.value),
+                "quantity": _amount(split.quantity),
+                "handle": split.handle,
+                "memo": split.memo,
+                "planning_flow": _enum(split.planning_flow),
+                "investment_activity": _enum(split.investment_activity),
+            }
+            for split in item.splits
+        ],
+    }
+
+
 def save_transaction_json(request: SaveTransaction) -> dict[str, Any]:
     """``request`` as JSON data, every field included."""
-    item = request.definition
     claim = request.claim_attachment
     return {
         "existing_handle": request.existing_handle,
@@ -54,27 +83,7 @@ def save_transaction_json(request: SaveTransaction) -> dict[str, Any]:
             "role": claim.role,
             "funding_year_start": to_json(claim.funding_year_start),
         },
-        "definition": {
-            "post_date": item.post_date.isoformat(),
-            "description": item.description,
-            "num": item.num,
-            "notes": item.notes,
-            "currency": item.currency,
-            "investment_activity": _enum(item.investment_activity),
-            "tags": None if item.tags is None else list(item.tags),
-            "splits": [
-                {
-                    "account": split.account,
-                    "value": _amount(split.value),
-                    "quantity": _amount(split.quantity),
-                    "handle": split.handle,
-                    "memo": split.memo,
-                    "planning_flow": _enum(split.planning_flow),
-                    "investment_activity": _enum(split.investment_activity),
-                }
-                for split in item.splits
-            ],
-        },
+        "definition": transaction_input_json(request.definition),
     }
 
 
@@ -144,10 +153,9 @@ def _split(raw: Any) -> TransactionSplitInput:
     )
 
 
-def save_transaction_from_json(data: Any) -> SaveTransaction:
-    """A ``SaveTransaction`` from untrusted JSON data, or a ``ValueError``."""
-    outer = _object(data, "request")
-    item = _object(outer.get("definition"), "definition")
+def transaction_input_from_json(data: Any) -> TransactionInput:
+    """An editor's transaction fields from untrusted JSON data, or a ``ValueError``."""
+    item = _object(data, "definition")
     splits = item.get("splits")
     if not isinstance(splits, list):
         raise ValueError("splits must be a list")
@@ -156,6 +164,24 @@ def save_transaction_from_json(data: Any) -> SaveTransaction:
         not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags)
     ):
         raise ValueError("tags must be a list of text")
+    return TransactionInput(
+        post_date=_date(item.get("post_date"), "post_date"),
+        description=_text(item, "description"),
+        splits=tuple(_split(split) for split in splits),
+        num=_text(item, "num"),
+        notes=_text(item, "notes"),
+        currency=_text(item, "currency", optional=True),
+        investment_activity=_choice(
+            InvestmentActivityKind, item.get("investment_activity"), "investment_activity"
+        ),
+        tags=None if tags is None else tuple(tags),
+    )
+
+
+def save_transaction_from_json(data: Any) -> SaveTransaction:
+    """A ``SaveTransaction`` from untrusted JSON data, or a ``ValueError``."""
+    outer = _object(data, "request")
+    definition = transaction_input_from_json(outer.get("definition"))
     claim = outer.get("claim_attachment")
     attachment = None
     if claim is not None:
@@ -174,18 +200,7 @@ def save_transaction_from_json(data: Any) -> SaveTransaction:
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f"source is not valid: {exc}") from None
     return SaveTransaction(
-        TransactionInput(
-            post_date=_date(item.get("post_date"), "post_date"),
-            description=_text(item, "description"),
-            splits=tuple(_split(split) for split in splits),
-            num=_text(item, "num"),
-            notes=_text(item, "notes"),
-            currency=_text(item, "currency", optional=True),
-            investment_activity=_choice(
-                InvestmentActivityKind, item.get("investment_activity"), "investment_activity"
-            ),
-            tags=None if tags is None else tuple(tags),
-        ),
+        definition,
         existing_handle=_text(outer, "existing_handle", optional=True),
         claim_attachment=attachment,
         source=source,

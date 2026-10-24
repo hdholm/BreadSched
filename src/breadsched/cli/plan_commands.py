@@ -3,14 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import os
-from contextlib import AbstractContextManager
 from datetime import date
-from pathlib import Path
 
-from ..api.connect import open_book_api
 from ..api.local import lookup_schedule
-from ..api.protocol import BookApi
 from ..api.views import (
     advance_days_json,
     due_review_json,
@@ -71,6 +66,8 @@ from ..presentation import (
 from .common import (
     AddCommand,
     CommandError,
+    add_server_options,
+    book_api,
     emit,
     find_transaction,
     open_book,
@@ -173,48 +170,12 @@ def cmd_review(args: argparse.Namespace) -> int:
         db.close()
 
 
-#: Environment variable holding the token for ``--server``.
-SERVER_TOKEN_ENV = "BREADSCHED_SERVER_TOKEN"
-
-
-def _add_server_options(parser: argparse.ArgumentParser) -> None:
-    """``--server`` and ``--token-file`` for commands that use the book server (#358)."""
-    parser.add_argument(
-        "--server",
-        metavar="URL",
-        help="use the book server at URL (default: the one holding this book, if any)",
-    )
-    parser.add_argument(
-        "--token-file",
-        metavar="PATH",
-        help=f"file holding the --server token (default: ${SERVER_TOKEN_ENV})",
-    )
-
-
-def _book_api(args: argparse.Namespace, mode: str) -> AbstractContextManager[BookApi]:
-    """The book API for ``args.book``: ``--server``, the server holding it, or here."""
-    url = getattr(args, "server", None)
-    if url is None:
-        return open_book_api(args.book, mode)
-    path = getattr(args, "token_file", None)
-    if path:
-        try:
-            token = Path(path).read_text(encoding="utf-8").strip()
-        except OSError as exc:
-            raise CommandError(f"could not read the token file: {exc}") from exc
-    else:
-        token = os.environ.get(SERVER_TOKEN_ENV, "")
-    if not token:
-        raise CommandError(f"--server needs a token: --token-file or ${SERVER_TOKEN_ENV}")
-    return open_book_api(args.book, mode, url=url, token=token)
-
-
 def cmd_due_review(args: argparse.Namespace) -> int:
     """List or decide due and missed scheduled occurrences, grouped by schedule."""
     if args.post_all and args.skip_all:
         raise CommandError("choose either --post-all or --skip-all, not both")
     as_of = parse_date(args.as_of) or date.today()
-    with _book_api(args, "w") as book:
+    with book_api(args, "w") as book:
         reviews = book.due_review(as_of)
         decisions: dict[tuple[str, date], DueDecision] = {}
         if args.post_all or args.skip_all:
@@ -273,7 +234,7 @@ def cmd_scheduled_next(args: argparse.Namespace) -> int:
     decision = DueDecision.POST if args.enter else DueDecision.SKIP if args.skip else None
     as_of = parse_date(args.as_of)
     mode = "w" if decision is not None else "r"
-    with _book_api(args, mode) as book:
+    with book_api(args, mode) as book:
         sched = book.find_schedule(args.schedule)
         upcoming = book.next_occurrence(sched.handle, as_of=as_of)
         if decision is None:
@@ -306,7 +267,7 @@ def cmd_scheduled_next(args: argparse.Namespace) -> int:
 def cmd_scheduled_advance(args: argparse.Namespace) -> int:
     """Show or set how many days ahead a schedule is entered or reminded (#352)."""
     writing = args.enter_days is not None or args.remind_days is not None
-    with _book_api(args, "w" if writing else "r") as book:
+    with book_api(args, "w" if writing else "r") as book:
         sched = book.find_schedule(args.schedule)
         days = (
             book.set_advance_days(SetAdvanceDays(sched.handle, args.enter_days, args.remind_days))
@@ -326,7 +287,7 @@ def cmd_scheduled(args: argparse.Namespace) -> int:
     as_of = parse_date(args.as_of) or date.today()
     if args.post:
         # Through the book server, so it also works while one holds the book (#358).
-        with _book_api(args, "w") as book:
+        with book_api(args, "w") as book:
             posted = book.post_due(PostDue(as_of=as_of, only_automatic=not args.all)).posted
         emit(
             posted_due_json(PostedDue(posted)),
@@ -973,7 +934,7 @@ def register(add: AddCommand) -> None:
     sched.add_argument("--days", type=int, default=30, help="look this far ahead")
     sched.add_argument("--post", action="store_true", help="write due occurrences")
     sched.add_argument("--all", action="store_true", help="with --post, include manual schedules")
-    _add_server_options(sched)
+    add_server_options(sched)
     sched.set_defaults(func=cmd_scheduled)
 
     next_cmd = add(
@@ -987,7 +948,7 @@ def register(add: AddCommand) -> None:
         "--skip", action="store_true", help="mark the next occurrence done without posting"
     )
     next_cmd.add_argument("--as-of", help="today, for testing (YYYY-MM-DD)")
-    _add_server_options(next_cmd)
+    add_server_options(next_cmd)
     next_cmd.set_defaults(func=cmd_scheduled_next)
 
     advance_cmd = add(
@@ -1001,7 +962,7 @@ def register(add: AddCommand) -> None:
     advance_cmd.add_argument(
         "--remind-days", type=int, help="days before its date an occurrence is a reminder"
     )
-    _add_server_options(advance_cmd)
+    add_server_options(advance_cmd)
     advance_cmd.set_defaults(func=cmd_scheduled_advance)
 
     review_cmd = add(
@@ -1036,7 +997,7 @@ def register(add: AddCommand) -> None:
         action="store_true",
         help="mark every due date (not reminders) as done without posting",
     )
-    _add_server_options(due_review)
+    add_server_options(due_review)
     due_review.set_defaults(func=cmd_due_review)
 
     plan_unresolved = add(

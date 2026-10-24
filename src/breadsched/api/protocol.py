@@ -14,9 +14,13 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
-from ..gen.lib import ScheduledTransaction
+from ..gen.lib import ScheduledTransaction, Transaction
 from ..gen.services import (
+    AccountBalance,
+    AccountRef,
     AdvanceDays,
+    BalanceQuery,
+    BalanceSummary,
     DueResolution,
     DueScheduleReview,
     DuplicateSchedule,
@@ -24,6 +28,8 @@ from ..gen.services import (
     NextOccurrence,
     PostDue,
     PostedDue,
+    RegisterPage,
+    RegisterQuery,
     ResolveDue,
     ResolveNext,
     SavedSchedule,
@@ -31,6 +37,7 @@ from ..gen.services import (
     SaveFixedSchedule,
     SaveTransaction,
     SetAdvanceDays,
+    TransactionInput,
 )
 
 __all__ = ["BookApi", "Change", "Listener"]
@@ -121,3 +128,27 @@ class BookApi(Protocol):
     def delete_transaction(self, transaction: str) -> SavedTransaction:
         """Remove a transaction (never a receivable's own reclassification)."""
         ...
+
+    # ------------------------------------------------------------ ledger reads
+
+    def transaction_currency(self) -> str:
+        """The currency a new transaction is entered in."""
+        ...
+
+    def find_account(self, reference: str) -> AccountRef:
+        """An account by handle, full name, or unique bare name."""
+        ...
+
+    def find_transaction(self, reference: str) -> Transaction:
+        """A transaction, as stored, by handle or unique handle prefix."""
+        ...
+
+    def editable_transaction(self, transaction: str) -> TransactionInput:
+        """The stored transaction in the editors' input form."""
+        ...
+
+    def register(self, query: RegisterQuery) -> RegisterPage: ...
+
+    def account_balance(self, query: BalanceQuery) -> AccountBalance: ...
+
+    def balance_summary(self, as_of: date | None = None) -> BalanceSummary: ...

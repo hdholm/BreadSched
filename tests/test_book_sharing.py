@@ -32,6 +32,7 @@ from breadsched.api.http_client import HttpBookClient
 from breadsched.api.local import LocalBookServer
 from breadsched.cli.main import main
 from breadsched.gen.db.sqlite import DbSQLite
+from breadsched.gen.lib import Money
 from breadsched.gen.sample_book import create_sample_book
 from breadsched.gen.utils.user_paths import runtime_directory
 from breadsched.web.server import serve
@@ -182,6 +183,36 @@ def test_commands_work_through_the_server_holding_the_book(running, book_path, c
     withdraw_server(running.record)
     assert main(["scheduled-next", path, "Sample rent", *as_of, "--skip"]) == 2
     assert "already open for writing" in capsys.readouterr().err
+
+
+def test_ledger_commands_work_through_the_server_holding_the_book(running, book_path, capsys):
+    path = str(book_path)
+    start = running.db.revision()
+    add = ["add", path, "--date", "2026-03-20", "--description", "Corner shop"]
+    add += ["--from", "Assets:Checking", "--to", "Groceries", "--amount", "14.50", "--json"]
+    assert main(add) == 0
+    handle = json.loads(capsys.readouterr().out)["handle"]
+    assert running.db.get_transaction(handle).description == "Corner shop"
+    assert running.db.revision() == start + 1
+
+    assert main(["register", path, "Expenses:Groceries", "--limit", "1", "--json"]) == 0
+    [row] = json.loads(capsys.readouterr().out)
+    assert (row["handle"], row["amount"], row["transfer"]) == (handle, "14.50", "Assets:Checking")
+
+    assert main(["edit", path, handle[:10], "--amount", "16", "--description", "Shop"]) == 0
+    assert "-> 2026-03-20 'Shop'" in capsys.readouterr().out
+    edited = running.db.get_transaction(handle)
+    assert sorted(split.value for split in edited.splits) == [Money("-16"), Money("16")]
+
+    assert main(["balance", path, "Groceries", "--as-of", "2026-03-20", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["account"] == "Expenses:Groceries"
+    assert main(["balance", path, "--json"]) == 0
+    assert set(json.loads(capsys.readouterr().out)) >= {"cash", "net_worth"}
+
+    assert main(["delete", path, handle]) == 0
+    assert "Deleted 2026-03-20 'Shop'" in capsys.readouterr().out
+    assert running.db.get_transaction(handle) is None
+    assert running.db.revision() == start + 3
 
 
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
