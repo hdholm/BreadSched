@@ -168,12 +168,15 @@ from .v1_resource import (
     claim_links_accept,
     claim_proposals_get,
     cleared_toggle,
+    currencies_get,
     currency_get,
+    currency_lookup,
     drawdown_accounts_get,
     drawdown_remove,
     drawdown_save,
     due_review_get,
     due_review_post,
+    exchange_rate_save,
     fsa_claim_close_v1,
     fsa_claim_lookup,
     fsa_claim_remove,
@@ -501,7 +504,7 @@ def _without_body(route: Callable[[Api], object]) -> PostRoute:
 
 
 def _currency_quote(api: Api, body: Mapping[str, Any]) -> object:
-    return save_currency_quote(api.db, body)
+    return save_currency_quote(api, body)
 
 
 POST_ROUTES: dict[str, PostRoute] = {
@@ -708,6 +711,9 @@ V1_ROUTES: tuple[tuple[str, str, Callable[..., object]], ...] = (
     ("GET", "/loans/choices", loan_choices_get),
     ("POST", "/loans/preview", loan_preview_v1),
     ("POST", "/loans", loan_save_v1),
+    ("GET", "/currencies", currencies_get),
+    ("GET", "/currencies/lookup", currency_lookup),
+    ("POST", "/exchange-rates", exchange_rate_save),
     ("GET", "/accounts/{handle}/reconciliation", reconciliation_get),
     ("POST", "/reconciliations", v1_reconciliation_start),
     ("PATCH", "/reconciliations/{handle}", v1_reconciliation_update),

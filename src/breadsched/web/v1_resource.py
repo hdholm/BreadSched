@@ -91,6 +91,8 @@ Resources so far, all under ``/api/v1``:
   ``PATCH /commodities/{handle}/quote-source`` (``source``).
 * ``GET /loans/choices``; ``POST /loans/preview`` (``LoanTerms``) and ``POST /loans``
   (``SaveLoan``).
+* ``GET /currencies`` and ``/currencies/lookup`` (``reference``); ``POST /exchange-rates``
+  (``SaveExchangeRate``).
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -146,6 +148,7 @@ from ..gen.services import (
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.categorization import AddRule
 from ..gen.services.claims import ClaimReportQuery, CloseClaim, ReopenClaim, SaveClaim
+from ..gen.services.exchange_rates import SaveExchangeRate
 from ..gen.services.import_review import ResolveHeldImports
 from ..gen.services.loans import SaveLoan
 from ..gen.services.lots import SetSaleLots
@@ -173,6 +176,9 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "currencies_get",
+    "currency_lookup",
+    "exchange_rate_save",
     "loan_choices_get",
     "loan_preview_v1",
     "loan_save_v1",
@@ -1213,3 +1219,19 @@ def loan_preview_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
 
 def loan_save_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     return to_data(api.book.save_loan(from_data(SaveLoan, body, "request")))
+
+
+def currencies_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return {"currencies": to_data(api.book.currencies())}
+
+
+def currency_lookup(api: Api, _path: Path, query: QueryParams) -> dict:
+    reference = query.text("reference", required=True) or ""
+    query.finish()
+    return {"currency": to_data(api.book.find_currency(reference))}
+
+
+def exchange_rate_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(SaveExchangeRate, body, "request")
+    return {"rate": to_data(api.book.save_exchange_rate(request))}

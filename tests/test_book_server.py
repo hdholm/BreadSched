@@ -1293,6 +1293,66 @@ def test_loans_alike(target, book):
     assert db.get_scheduled(saved.handle).name == "Car"
 
 
+def test_exchange_rates_alike(target, book):
+    from breadsched.gen.lib import Commodity
+    from breadsched.gen.services.exchange_rates import SaveExchangeRate
+
+    api, db = target.api, target.db
+    usd = db.get_commodity_by_mnemonic("USD")
+    if usd is None:
+        usd = Commodity(namespace="CURRENCY", mnemonic="USD", fullname="US Dollar")
+        with db.transaction("USD") as txn:
+            db.add_commodity(usd, txn)
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+    fund = Commodity(namespace="FUND", mnemonic="INDEX")
+    with db.transaction("Currencies") as txn:
+        db.add_commodity(euro, txn)
+        db.add_commodity(fund, txn)
+    assert {"EUR", "USD"} <= {item.mnemonic for item in api.currencies()}
+    assert api.find_currency("eur").handle == euro.handle
+    assert api.find_currency(usd.handle).mnemonic == "USD"
+    saved = api.save_exchange_rate(
+        SaveExchangeRate(euro.handle, usd.handle, date(2026, 1, 2), Money("1.0825"))
+    )
+    assert (saved.value, saved.source) == (Money("1.0825"), "breadsched")
+    again = api.save_exchange_rate(
+        SaveExchangeRate(euro.handle, usd.handle, date(2026, 1, 2), Money("1.09"))
+    )
+    assert again.handle == saved.handle
+    assert [price.value for price in db.iter_prices(commodity=euro.handle)] == [Money("1.09")]
+
+    before = sorted(repr(price.serialize()) for price in db.iter_prices())
+    for call, status, code in (
+        (lambda: api.find_currency("XYZ"), 404, "currency.not_found"),
+        (lambda: api.find_currency(fund.handle), 400, "currency.not_currency"),
+        (
+            lambda: api.save_exchange_rate(
+                SaveExchangeRate(euro.handle, euro.handle, date(2026, 1, 2), Money("1"))
+            ),
+            400,
+            "rate.currency.same",
+        ),
+        (
+            lambda: api.save_exchange_rate(
+                SaveExchangeRate(fund.handle, usd.handle, date(2026, 1, 2), Money("1"))
+            ),
+            400,
+            "rate.source.invalid",
+        ),
+        (
+            lambda: api.save_exchange_rate(
+                SaveExchangeRate(euro.handle, usd.handle, date(2026, 1, 2), Money("0"))
+            ),
+            400,
+            "rate.value.invalid",
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert (refused.value.status, refused.value.code) == (status, code)
+    assert sorted(repr(price.serialize()) for price in db.iter_prices()) == before
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -1511,6 +1571,8 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("PATCH", "/api/v1/tax-marks", {"accounts": {"a": "yes"}}, 400, "request.invalid"),
         ("POST", "/api/v1/quotes", {"quotes": [{"symbol": "G"}]}, 400, "request.invalid"),
         ("POST", "/api/v1/loans/preview", {"name": "Car"}, 400, "request.invalid"),
+        ("POST", "/api/v1/exchange-rates", {"source": "a", "target": "b"}, 400, "request.invalid"),
+        ("GET", "/api/v1/currencies/lookup", None, 400, "query.missing"),
         ("POST", "/api/v1/loans", {"terms": {}, "opening_balance": "yes"}, 400, "request.invalid"),
         ("PATCH", "/api/v1/commodities/x/quote-source", {}, 400, "request.invalid"),
         (

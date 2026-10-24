@@ -302,6 +302,13 @@ first payments), and `save_loan` (`GET /api/v1/loans/choices`,
 form and GTK's loan dialog save. GTK still previews in the dialog from the engine,
 which reads only the terms, and there is no loan command.
 
+Manual exchange rates followed, with a service of their own
+(`services.exchange_rates`) that checks a quote before `engine.valuation` writes it
+and names each refusal with a code: `currencies`, `find_currency` (exact handle or
+unambiguous code), and `save_exchange_rate` (`GET /api/v1/currencies`, `/lookup`,
+and `POST /api/v1/exchange-rates`) serve the command line's `rate`, the browser's
+manual quote, and GTK's exchange-rate dialog save.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.
