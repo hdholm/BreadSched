@@ -333,6 +333,15 @@ The net worth reports followed: `net_worth_history` and `net_worth_change`
 and change, completeness evidence included, to the command line's `net-worth` and
 `net-worth-change`, the browser's net worth page, and GTK's net worth dialog.
 
+The Plan and the Expense Explorer followed, each read taking a typed `PlanQuery`:
+`plan` and `expense_explorer` (`POST /api/v1/plan` and `/expense-explorer`) return
+the services' own `PlanQueryResult` and `ExpenseExplorer`, which the typed codec
+carries whole; `reporting_currency` (`GET /api/v1/reporting-currency`) names the
+currency their charts are drawn in. They serve the browser's Plan and Expense
+Explorer and GTK's Plan view. GTK's Expense Explorer still computes in a background
+worker with its own read connection, and changes its drilldown without recomputing
+the Plan, so it has not moved.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

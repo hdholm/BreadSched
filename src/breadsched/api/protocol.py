@@ -79,6 +79,7 @@ from ..gen.services.claims import (
 )
 from ..gen.services.dashboard_config import DashboardSettings, SaveDashboardConfig
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
+from ..gen.services.expense_explorer import ExpenseExplorer
 from ..gen.services.import_review import (
     HeldImportChange,
     HeldImportResolution,
@@ -88,6 +89,7 @@ from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
+from ..gen.services.plan import PlanQuery, PlanQueryResult
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
     AcceptedReimbursements,
@@ -630,6 +632,26 @@ class BookApi(Protocol):
 
     def set_source_link_folder(self, folder: str) -> str:
         """GnuCash's path head for linked files; empty restores the home folder."""
+        ...
+
+    # ------------------------------------------------------- plan and spending
+
+    def reporting_currency(self) -> str:
+        """The reporting currency's code for a chart or heading, or "" when it has none."""
+        ...
+
+    def plan(self, query: PlanQuery) -> PlanQueryResult:
+        """One complete Plan calculation."""
+        ...
+
+    def expense_explorer(
+        self,
+        query: PlanQuery,
+        account: str | None = None,
+        period_index: int | None = None,
+        rollover: bool = False,
+    ) -> ExpenseExplorer:
+        """The Plan's categories over time, optionally explaining one category cell."""
         ...
 
     # --------------------------------------------------------------- net worth

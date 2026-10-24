@@ -19,6 +19,7 @@ from pathlib import Path
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine.activity import ReportingPeriod
+from ..gen.engine.currency import reporting_currency_label
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.loans import LoanTerms
@@ -105,10 +106,12 @@ from ..gen.services import advance_days as stored_advance_days
 from ..gen.services import assumptions as assumption_service
 from ..gen.services import attachments as attachment_service
 from ..gen.services import claims as claim_service
+from ..gen.services import expense_explorer as expense_service
 from ..gen.services import loans as loan_service
 from ..gen.services import lots as lot_service
 from ..gen.services import net_worth as net_worth_service
 from ..gen.services import payroll as payroll_service
+from ..gen.services import plan as plan_service
 from ..gen.services import quotes as quote_service
 from ..gen.services import receivables as receivable_service
 from ..gen.services import review as review_service
@@ -135,6 +138,7 @@ from ..gen.services.claims import (
 )
 from ..gen.services.dashboard_config import DashboardSettings, SaveDashboardConfig
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
+from ..gen.services.expense_explorer import ExpenseExplorer
 from ..gen.services.import_review import (
     HeldImportChange,
     HeldImportResolution,
@@ -144,6 +148,7 @@ from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
+from ..gen.services.plan import PlanQuery, PlanQueryResult
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
     AcceptedReimbursements,
@@ -602,6 +607,26 @@ class LocalBookServer:
     def set_source_link_folder(self, folder: str) -> str:
         with self._changing("attachment-folder"):
             return str(unwrap(attachment_service.set_source_link_folder(self.db, folder)))
+
+    # ------------------------------------------------------- plan and spending
+
+    def reporting_currency(self) -> str:
+        return reporting_currency_label(self.db)
+
+    def plan(self, query: PlanQuery) -> PlanQueryResult:
+        return unwrap(plan_service.query_plan(self.db, query))
+
+    def expense_explorer(
+        self,
+        query: PlanQuery,
+        account: str | None = None,
+        period_index: int | None = None,
+        rollover: bool = False,
+    ) -> ExpenseExplorer:
+        found = expense_service.query_expense_explorer(
+            self.db, query, account=account, period_index=period_index, rollover=rollover
+        )
+        return unwrap(found)
 
     # --------------------------------------------------------------- net worth
 

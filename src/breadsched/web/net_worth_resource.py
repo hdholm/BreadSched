@@ -11,7 +11,6 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from ..gen.engine.activity import ReportingPeriod
-from ..gen.engine.currency import reporting_currency_label
 from ..gen.lib.recurrence import add_months
 from ..gen.services import net_worth_charts
 from ..plugins.export.csv_export import net_worth_change_csv
@@ -91,7 +90,7 @@ def net_worth_history(api: Api, query: QueryParams) -> dict[str, object]:
 
         raise QueryError("query.invalid", ("period",))
     history = api.book.net_worth_history(start, end, ReportingPeriod(period), today)
-    currency = reporting_currency_label(api.db)
+    currency = api.book.reporting_currency()
     return {
         "currency": currency,
         "charts": [chart.as_dict() for chart in net_worth_charts(history, currency)],
