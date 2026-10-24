@@ -27,6 +27,10 @@ Resources so far, all under ``/api/v1``:
 * ``GET /accounts/{handle}/register`` (``start``, ``end``, ``tag``, ``limit``).
 * ``GET /accounts/{handle}/balance`` (``as_of``, ``recursive``) and ``GET /balances``
   (``as_of``) – one account's balance, or the book's cash and net worth.
+* ``GET /accounts`` and ``GET /accounts/{handle}`` – accounts as stored, with full
+  names; ``GET /chart`` (``as_of``, ``hidden``) – the valued account tree.
+* ``POST /accounts`` (``api.account_codec``'s form of ``SaveAccount``) and
+  ``DELETE /accounts/{handle}``.
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -36,18 +40,22 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
+from ..api.account_codec import save_account_from_json
 from ..api.schedule_codec import fixed_request_from_json, formula_request_from_json
 from ..api.transaction_codec import save_transaction_from_json, transaction_input_json
 from ..api.views import (
     account_balance_json,
+    account_record_json,
     account_ref_json,
     advance_days_json,
     balance_summary_json,
+    chart_json,
     due_review_json,
     next_occurrence_json,
     posted_due_json,
     register_json,
     resolution_json,
+    saved_account_json,
     saved_schedule_json,
     saved_transaction_json,
 )
@@ -67,6 +75,11 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "account_delete",
+    "account_get",
+    "account_save",
+    "accounts_get",
+    "chart_get",
     "account_balance_get",
     "account_lookup",
     "balances_get",
@@ -290,3 +303,29 @@ def balances_get(api: Api, _path: Path, query: QueryParams) -> dict:
     as_of = query.iso_date("as_of")
     query.finish()
     return balance_summary_json(api.book.balance_summary(as_of))
+
+
+def accounts_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return {"accounts": [account_record_json(record) for record in api.book.accounts()]}
+
+
+def account_get(api: Api, path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return account_record_json(api.book.account(path["handle"]))
+
+
+def chart_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    as_of = query.iso_date("as_of")
+    hidden = query.choice("hidden", ("true", "false"), "false") == "true"
+    query.finish()
+    return chart_json(api.book.chart(as_of, hidden))
+
+
+def account_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return saved_account_json(api.book.save_account(save_account_from_json(body)))
+
+
+def account_delete(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return saved_account_json(api.book.delete_account(path["handle"]))

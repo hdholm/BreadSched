@@ -215,6 +215,27 @@ def test_ledger_commands_work_through_the_server_holding_the_book(running, book_
     assert running.db.revision() == start + 3
 
 
+def test_account_commands_work_through_the_server_holding_the_book(running, book_path, capsys):
+    path = str(book_path)
+    add = ["account", path, "add", "--name", "Travel", "--type", "EXPENSE"]
+    assert main([*add, "--parent", "Expenses", "--json"]) == 0
+    handle = json.loads(capsys.readouterr().out)["handle"]
+    assert running.db.full_name(running.db.get_account(handle)) == "Expenses:Travel"
+
+    assert main(["account", path, "edit", "--name", "Expenses:Travel", "--rename", "Trips"]) == 0
+    assert "Edited Expenses:Trips" in capsys.readouterr().out
+    assert main(["account", path, "list", "--json"]) == 0
+    assert "Expenses:Trips" in [row["name"] for row in json.loads(capsys.readouterr().out)]
+    assert main(["accounts", path, "--json"]) == 0
+    chart = json.loads(capsys.readouterr().out)
+    assert next(row for row in chart if row["handle"] == handle)["balance"] == "0.00"
+
+    assert main(["account", path, "remove", "--name", "Expenses:Trips"]) == 0
+    assert running.db.get_account(handle) is None
+    assert main(["account", path, "remove", "--name", "Assets:Checking"]) == 2
+    assert "breadsched:" in capsys.readouterr().err
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

@@ -522,6 +522,109 @@ def test_registers_and_balances_read_alike(target, book):
     assert refused.value.status == 400
 
 
+def test_accounts_read_and_save_alike(target, book):
+    from breadsched.gen.lib import Account, AccountType
+    from breadsched.gen.services import SaveAccount
+
+    api, db = target.api, target.db
+    records = api.accounts()
+    assert [record.full_name for record in records] == sorted(r.full_name for r in records)
+    checking = api.account(book.checking)
+    assert checking.full_name == "Assets:Checking"
+    assert checking.account.serialize() == db.get_account(book.checking).serialize()
+
+    chart = api.chart()
+    assert [line.record.full_name for line in chart][:2] == ["Assets", "Assets:Brokerage"]
+    assert [line.depth for line in chart][:2] == [0, 1]
+    line = next(line for line in chart if line.record.account.handle == book.checking)
+    assert line.balance == Money(0) and line.book_balance == Money(0)
+    assert (line.quote_evidence, line.missing_quotes, line.quote_date) == ("", (), None)
+
+    start = api.revision
+    added = api.save_account(
+        SaveAccount(
+            Account(name=" Travel ", atype=AccountType.EXPENSE, parent=book.expenses),
+        )
+    )
+    assert added.name == "Travel"
+    assert api.account(added.handle).full_name == "Expenses:Travel"
+    stored = api.account(added.handle).account
+    source = type(stored).from_dict(stored.serialize())
+    stored.name = "Holidays"
+    api.save_account(SaveAccount(stored, existing_handle=stored.handle, source=source))
+    assert db.get_account(added.handle).name == "Holidays"
+    assert api.delete_account(added.handle).name == "Holidays"
+    assert db.get_account(added.handle) is None
+    assert api.revision == start + 3
+
+    before = sorted(repr(a.serialize()) for a in db.iter_accounts())
+    for call, status, code in (
+        (lambda: api.account("missing"), 404, "account.not_found"),
+        (lambda: api.delete_account("missing"), 404, "account.not_found"),
+        (lambda: api.delete_account(book.root), 400, "account.root.protected"),
+        (
+            lambda: api.save_account(
+                SaveAccount(Account(name="", atype=AccountType.EXPENSE, parent=book.expenses))
+            ),
+            400,
+            None,
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert refused.value.status == status
+        assert code is None or refused.value.code == code
+    assert sorted(repr(a.serialize()) for a in db.iter_accounts()) == before
+
+
+def test_the_chart_and_totals_carry_quote_evidence_alike(target, book):
+    """A foreign balance is never shown as converted without its quote (AGENTS 10)."""
+    from breadsched.gen.lib import Account, AccountType, Commodity, CommodityPrice, Split
+    from breadsched.gen.services import transaction_currency
+
+    api, db = target.api, target.db
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+    account = Account(
+        name="Foreign cash", atype=AccountType.BANK, parent=book.assets, commodity=euro.handle
+    )
+    transaction = Transaction(post_date=date(2026, 1, 2), description="Opening cash")
+    transaction.currency = euro.handle
+    transaction.splits = [Split(account.handle, Money(10)), Split(book.opening, Money(-10))]
+    with db.transaction("Foreign cash") as txn:
+        db.add_commodity(euro, txn)
+        db.add_account(account, txn)
+        db.add_transaction(transaction, txn)
+
+    def foreign():
+        return next(line for line in api.chart() if line.record.account.handle == account.handle)
+
+    missing = foreign()
+    assert (missing.balance, missing.missing_quotes) == (None, (account.handle,))
+    assert api.balance_summary().cash_missing_quotes == (account.handle,)
+    assert api.balance_summary().cash is None
+
+    with db.transaction("Quote") as txn:
+        db.add_price(
+            CommodityPrice(
+                commodity=transaction_currency(db),
+                currency=euro.handle,
+                quote_date=date(2026, 1, 3),
+                value=Money("0.5"),
+                source="sample-source",
+            ),
+            txn,
+        )
+    quoted = foreign()
+    assert quoted.balance == Money("20")
+    assert (quoted.quote_date, quoted.quote_source, quoted.conversion_path) == (
+        date(2026, 1, 3),
+        "sample-source",
+        "inverse",
+    )
+    assert quoted.quote_evidence.endswith("sample-source · inverse rate")
+    assert quoted.book_balance == Money(10)
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -653,6 +756,18 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("GET", "/api/v1/accounts/x/balance?recursive=yes", None, 400, "query.invalid"),
         ("GET", "/api/v1/balances?as_of=soon", None, 400, "query.date.invalid"),
         ("POST", "/api/v1/balances", {}, 405, "request.method.not_allowed"),
+        ("GET", "/api/v1/chart?hidden=maybe", None, 400, "query.invalid"),
+        ("POST", "/api/v1/accounts", {"account": "Travel"}, 400, "request.invalid"),
+        ("POST", "/api/v1/accounts", {"account": {}}, 400, "request.invalid"),
+        ("POST", "/api/v1/accounts", {"colour": "red"}, 400, "request.invalid"),
+        (
+            "POST",
+            "/api/v1/accounts",
+            {"account": {}, "opening_balance": 5},
+            400,
+            "request.invalid",
+        ),
+        ("DELETE", "/api/v1/accounts/missing", None, 404, "account.not_found"),
     ]
     for method, route, body, status, code in cases:
         got, payload, _ = _raw(remote, method, route, body)

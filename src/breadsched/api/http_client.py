@@ -27,10 +27,12 @@ from urllib.parse import quote, urlencode, urlparse
 from ..gen.lib import ScheduledTransaction, Transaction
 from ..gen.services import (
     AccountBalance,
+    AccountRecord,
     AccountRef,
     AdvanceDays,
     BalanceQuery,
     BalanceSummary,
+    ChartLine,
     DueResolution,
     DueScheduleReview,
     DuplicateSchedule,
@@ -42,6 +44,8 @@ from ..gen.services import (
     RegisterQuery,
     ResolveDue,
     ResolveNext,
+    SaveAccount,
+    SavedAccount,
     SavedSchedule,
     SavedTransaction,
     SaveFixedSchedule,
@@ -49,21 +53,25 @@ from ..gen.services import (
     SetAdvanceDays,
     TransactionInput,
 )
+from .account_codec import save_account_json
 from .contract import ApiError, to_json
 from .protocol import Change, Listener
 from .schedule_codec import fixed_request_json, formula_request_json
 from .transaction_codec import save_transaction_json, transaction_input_from_json
 from .views import (
     account_balance_from_json,
+    account_record_from_json,
     account_ref_from_json,
     advance_days_from_json,
     balance_summary_from_json,
     change_from_json,
+    chart_from_json,
     due_review_from_json,
     next_occurrence_from_json,
     posted_due_from_json,
     register_from_json,
     resolution_from_json,
+    saved_account_from_json,
     saved_schedule_from_json,
     saved_transaction_from_json,
 )
@@ -300,3 +308,24 @@ class HttpBookClient:
 
     def balance_summary(self, as_of: date | None = None) -> BalanceSummary:
         return balance_summary_from_json(self._call("GET", "/balances", {"as_of": as_of}))
+
+    # ---------------------------------------------------------------- accounts
+
+    def accounts(self) -> list[AccountRecord]:
+        found = self._call("GET", "/accounts")
+        return [account_record_from_json(row) for row in found["accounts"]]
+
+    def account(self, account: str) -> AccountRecord:
+        return account_record_from_json(self._call("GET", f"/accounts/{quote(account, safe='')}"))
+
+    def chart(self, as_of: date | None = None, include_hidden: bool = False) -> list[ChartLine]:
+        params = {"as_of": as_of, "hidden": "true" if include_hidden else None}
+        return chart_from_json(self._call("GET", "/chart", params))
+
+    def save_account(self, request: SaveAccount) -> SavedAccount:
+        found = self._call("POST", "/accounts", body=save_account_json(request))
+        return saved_account_from_json(found)
+
+    def delete_account(self, account: str) -> SavedAccount:
+        path = f"/accounts/{quote(account, safe='')}"
+        return saved_account_from_json(self._call("DELETE", path))
