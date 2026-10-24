@@ -93,6 +93,8 @@ Resources so far, all under ``/api/v1``:
   (``SaveLoan``).
 * ``GET /currencies`` and ``/currencies/lookup`` (``reference``); ``POST /exchange-rates``
   (``SaveExchangeRate``).
+* ``GET /dashboard`` (``as_of``, ``liquidity_days``, ``emergency_months``) – the
+  Dashboard computed once, over other horizons without saving them.
 * ``GET`` and ``PATCH /dashboard/settings`` (``SaveDashboardConfig``) – the
   Dashboard's groups, with their members, and its horizons.
 * ``GET /attachments`` (``missing``, ``transaction``) – linked documents checked
@@ -213,6 +215,7 @@ __all__ = [
     "attachment_relink_v1",
     "attachment_remove_v1",
     "attachments_get",
+    "dashboard_get",
     "dashboard_settings_get",
     "dashboard_settings_patch",
     "currencies_get",
@@ -1274,6 +1277,14 @@ def currency_lookup(api: Api, _path: Path, query: QueryParams) -> dict:
 def exchange_rate_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     request = from_data(SaveExchangeRate, body, "request")
     return {"rate": to_data(api.book.save_exchange_rate(request))}
+
+
+def dashboard_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    as_of = query.iso_date("as_of")
+    liquidity_days = query.integer("liquidity_days")
+    emergency_months = query.integer("emergency_months")
+    query.finish()
+    return to_data(api.book.dashboard(as_of, liquidity_days, emergency_months))
 
 
 def dashboard_settings_get(api: Api, _path: Path, query: QueryParams) -> dict:

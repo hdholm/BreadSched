@@ -38,7 +38,6 @@ from .common import (
     add_server_options,
     book_api,
     emit,
-    open_book,
     parse_date,
     table,
 )
@@ -564,14 +563,9 @@ def cmd_compare(args: argparse.Namespace) -> int:
 
 def cmd_dashboard(args: argparse.Namespace) -> int:
     """The overview: what is owned, what is owed, and what must stay liquid."""
-    db = open_book(args.book, "r")
-    try:
-        config = dashboard_engine.DashboardConfig.load(db)
-        if args.liquidity_days:
-            config.liquidity_days = args.liquidity_days
-        if args.emergency_months:
-            config.emergency_months = args.emergency_months
-        board = dashboard_engine.build(db, config, as_of=parse_date(args.as_of))
+    with book_api(args, "r") as book:
+        board = book.dashboard(parse_date(args.as_of), args.liquidity_days, args.emergency_months)
+        config = board.config
         summary = board.summary()
         report = board.report_summary()
 
@@ -860,8 +854,6 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
             if len(display_incomes) > args.limit:
                 print(f"... and {len(display_incomes) - args.limit} more")
         return 0
-    finally:
-        db.close()
 
 
 def assumption_flags(sub: argparse.ArgumentParser) -> None:
@@ -969,4 +961,5 @@ def register(add: AddCommand) -> None:
         "--emergency-months", type=int, help="months of outgoings the emergency fund should cover"
     )
     dash.add_argument("--limit", type=int, default=40, help="bills and income rows to list")
+    add_server_options(dash)
     dash.set_defaults(func=cmd_dashboard)

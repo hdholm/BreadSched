@@ -1619,6 +1619,34 @@ def test_every_response_names_the_revision_and_a_stale_write_is_refused(remote):
     assert client.set_advance_days(SetAdvanceDays(sched.handle, remind_days=6)).remind_days == 6
 
 
+def test_the_dashboard_reads_alike(target, book):
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.engine import dashboard as dashboard_engine
+
+    api, db = target.api, target.db
+    with db.transaction("Opening") as txn:
+        db.add_transaction(
+            Transaction.simple(date(2026, 9, 1), "Opening", book.checking, book.opening, "5000"),
+            txn,
+        )
+    as_of = date(2026, 10, 1)
+    board = api.dashboard(as_of)
+    expected = dashboard_engine.build(db, as_of=as_of)
+    assert to_data(board) == to_data(expected)
+    assert board.report_summary() == expected.report_summary()
+    assert [bill.name for bill in board.display_bills] == [
+        bill.name for bill in expected.display_bills
+    ]
+    saved = board.config.liquidity_days
+    wider = api.dashboard(as_of, liquidity_days=saved + 30, emergency_months=9)
+    assert (wider.config.liquidity_days, wider.config.emergency_months) == (saved + 30, 9)
+    # Other horizons are looked at, never saved.
+    assert api.dashboard_settings().liquidity_days == saved
+    with pytest.raises(ApiError) as refused:
+        api.dashboard(as_of, liquidity_days=-1)
+    assert (refused.value.status, refused.value.code) == (400, "dashboard.liquidity_days.invalid")
+
+
 def test_budget_jars_read_alike(target, book):
     from test_budget_jars import TODAY, _groceries, _pay
 
@@ -1815,6 +1843,14 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("PATCH", "/api/v1/attachment-folders", {}, 400, "request.invalid"),
         ("GET", "/api/v1/net-worth?start=2026-01-01", None, 400, "query.missing"),
         ("GET", "/api/v1/holdings?as_of=soon", None, 400, "query.date.invalid"),
+        ("GET", "/api/v1/dashboard?liquidity_days=soon", None, 400, "query.integer.invalid"),
+        (
+            "GET",
+            "/api/v1/dashboard?emergency_months=-2",
+            None,
+            400,
+            "dashboard.emergency_months.invalid",
+        ),
         ("GET", "/api/v1/budget-jars?start=2026-01-01", None, 400, "query.missing"),
         (
             "GET",

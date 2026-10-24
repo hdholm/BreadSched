@@ -15,6 +15,7 @@ from datetime import date
 from typing import Protocol
 
 from ..gen.engine.activity import ReportingPeriod
+from ..gen.engine.dashboard import Dashboard
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.loans import LoanTerms
@@ -633,6 +634,15 @@ class BookApi(Protocol):
         ...
 
     # ------------------------------------------------------- dashboard settings
+
+    def dashboard(
+        self,
+        as_of: date | None = None,
+        liquidity_days: int | None = None,
+        emergency_months: int | None = None,
+    ) -> Dashboard:
+        """The Dashboard on ``as_of``, optionally over other (unsaved) horizons."""
+        ...
 
     def dashboard_settings(self) -> DashboardSettings:
         """The Dashboard's groups, with their members, and its horizons."""

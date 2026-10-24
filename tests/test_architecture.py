@@ -1184,6 +1184,7 @@ class TestBookServerBoundaries:
         "budget_jars",
         "jars_view",
         "jar_charts",
+        "dashboard_board",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1321,6 +1322,7 @@ class TestBookServerBoundaries:
         "realized_gains",
         "tax_year",
         "budget_jars",
+        "dashboard",
     }
 
     @pytest.mark.parametrize(
@@ -1379,6 +1381,9 @@ class TestBookServerBoundaries:
             ("cli/plan_commands.py", ("cmd_jars",)),
             ("web/jars_resource.py", ("jars_report",)),
             ("gui/dialogs/budget_jars_dialog.py", ("refresh",)),
+            ("cli/projection_commands.py", ("cmd_dashboard",)),
+            ("web/dashboard_resource.py", ("dashboard_report",)),
+            ("gui/views/dashboard.py", ("refresh",)),
             ("cli/quote_commands.py", ("cmd_quotes", "cmd_quote_source")),
             ("web/loan_resource.py", ("loan_options", "loan_preview", "loan_save")),
             ("gui/dialogs/loan_dialog.py", ("_on_save",)),
@@ -1659,7 +1664,15 @@ class TestBookServerBoundaries:
                 and isinstance(node.func, ast.Attribute)
                 and isinstance(node.func.value, ast.Name)
                 and node.func.value.id
-                in {"ledger", "valuation", "planning", "review_explain", "fsa", "fsa_claims"}
+                in {
+                    "ledger",
+                    "valuation",
+                    "planning",
+                    "review_explain",
+                    "fsa",
+                    "fsa_claims",
+                    "dashboard_engine",
+                }
             }
             assert not engines, (name, engines)
 

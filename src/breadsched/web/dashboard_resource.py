@@ -5,26 +5,22 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import dashboard as engine
 from ..gen.services import DashboardGroupInput, SaveDashboardConfig
 from ..gen.services.dashboard_config import DashboardGroup
 from .savings_goal_resource import goal_json
 
 if TYPE_CHECKING:
+    from ..api.protocol import BookApi
     from .context import Api
 
 
 def dashboard_report(
-    db: DbSQLite, liquidity_days: int | None, emergency_months: int | None
+    book: BookApi, liquidity_days: int | None, emergency_months: int | None
 ) -> dict:
-    """Build and serialize Dashboard state for the web presentation."""
-    config = engine.DashboardConfig.load(db)
-    if liquidity_days:
-        config.liquidity_days = liquidity_days
-    if emergency_months:
-        config.emergency_months = emergency_months
-    board = engine.build(db, config)
+    """Serialize the book server's Dashboard for the web presentation."""
+    board = book.dashboard(None, liquidity_days, emergency_months)
+    config = board.config
 
     return {
         "summary": _plain(board.report_summary()),
@@ -49,9 +45,9 @@ def dashboard_report(
             "emergency_months": config.emergency_months,
             "groups": [group_json(group) for group in config.groups],
             "accounts": [
-                {"handle": account.handle, "name": db.full_name(account)}
-                for account in db.iter_accounts()
-                if not account.is_root
+                {"handle": record.account.handle, "name": record.full_name}
+                for record in book.accounts()
+                if not record.account.is_root
             ],
         },
         "groups": [

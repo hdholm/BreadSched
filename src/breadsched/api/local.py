@@ -21,6 +21,7 @@ from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import projection as projection_engine
 from ..gen.engine.activity import ReportingPeriod
 from ..gen.engine.currency import reporting_currency_label
+from ..gen.engine.dashboard import Dashboard
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.loans import LoanTerms
@@ -576,6 +577,15 @@ class LocalBookServer:
         return unwrap(exchange_rates.save_exchange_rate(self.db, request))
 
     # ------------------------------------------------------- dashboard settings
+
+    def dashboard(
+        self,
+        as_of: date | None = None,
+        liquidity_days: int | None = None,
+        emergency_months: int | None = None,
+    ) -> Dashboard:
+        found = dashboard_config.dashboard_board(self.db, as_of, liquidity_days, emergency_months)
+        return unwrap(found)
 
     def dashboard_settings(self) -> DashboardSettings:
         return dashboard_config.dashboard_settings(self.db)

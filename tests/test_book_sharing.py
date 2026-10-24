@@ -502,6 +502,14 @@ def test_projection_works_through_the_server_holding_the_book(running, book_path
     assert isinstance(json.loads(capsys.readouterr().out), list)
 
 
+def test_the_dashboard_works_through_the_server_holding_the_book(running, book_path, capsys):
+    command = ["dashboard", str(book_path), "--liquidity-days", "45", "--json"]
+    assert main(command) == 0
+    board = json.loads(capsys.readouterr().out)
+    assert "summary" in board
+    assert running.db.get_metadata("dashboard", {}).get("liquidity_days") != 45
+
+
 def test_budget_jars_work_through_the_server_holding_the_book(running, book_path, capsys):
     command = ["jars", str(book_path), "--start", "2026-01-01", "--end", "2026-03-31"]
     assert main([*command, "--json"]) == 0

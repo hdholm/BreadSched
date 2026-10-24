@@ -249,7 +249,8 @@ So `due-review`, `scheduled-next`, `scheduled-advance`, `scheduled --post`,
 `goals`, `receivables`, `scenario`, `drawdown`, `payroll`, `claims`, `review`, the
 `plan-*` review commands, `import-review`, `sale-lots`, `tax-marks`, `quotes`,
 `quote-source`, `rate`, `attachments`, `net-worth`, `net-worth-change`, `project`,
-`compare`, `holdings`, `realized-gains`, `tax-year`, and `jars` work while another process holds the book (#358). `cli.common.book_api` and `add_server_options` give each such
+`compare`, `holdings`, `realized-gains`, `tax-year`, `jars`, and `dashboard` work
+while another process holds the book (#358). `cli.common.book_api` and `add_server_options` give each such
 command the connection and its `--server` and `--token-file` options. `tests/test_book_sharing.py` covers the record's
 life, stale records, the commands through a holding server, an explicit server, and
 `serve`.

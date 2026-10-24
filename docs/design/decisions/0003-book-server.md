@@ -369,6 +369,15 @@ labels and charts; a range that ends before it starts is refused there
 (`jars.range.invalid`). It serves the command line's `jars`, the browser's Budget
 jars page, and GTK's Budget Jars dialog.
 
+The Dashboard itself followed: `dashboard(as_of, liquidity_days, emergency_months)`
+(`GET /api/v1/dashboard`) returns the engine's own `Dashboard`, computed once by
+`dashboard_config.dashboard_board`, which the typed codec carries whole with its
+configuration, so the summary, unavailable reasons, groups, and bill and income
+rows every interface shows come from one place. The two horizons look at other
+values without saving them, as before; a negative one is refused. It serves the
+command line's `dashboard`, the browser's Dashboard (whose group editor now lists
+accounts from `accounts`, by full name), and GTK's Dashboard view.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

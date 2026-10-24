@@ -22,6 +22,8 @@ _translation: gettext.NullTranslations = gettext.translation(
 
 _SERVICE_MESSAGES = {
     "dashboard.group.name.empty": "Give each Dashboard group a name",
+    "dashboard.liquidity_days.invalid": "The liquidity horizon cannot be negative",
+    "dashboard.emergency_months.invalid": "The emergency fund horizon cannot be negative",
     "dashboard.group.name.duplicate": "Two Dashboard groups have the same name",
     "dashboard.group.kind.invalid": "Choose a valid Dashboard group kind",
     "dashboard.group.account.not_found": "A Dashboard group names an account that no longer exists",

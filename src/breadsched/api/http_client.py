@@ -26,6 +26,7 @@ from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
 from ..gen.engine.activity import ReportingPeriod
+from ..gen.engine.dashboard import Dashboard
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.loans import LoanTerms
@@ -957,6 +958,19 @@ class HttpBookClient:
         return from_data(CommodityPrice, found["rate"], "rate")
 
     # ------------------------------------------------------- dashboard settings
+
+    def dashboard(
+        self,
+        as_of: date | None = None,
+        liquidity_days: int | None = None,
+        emergency_months: int | None = None,
+    ) -> Dashboard:
+        params = {
+            "as_of": as_of,
+            "liquidity_days": liquidity_days,
+            "emergency_months": emergency_months,
+        }
+        return from_data(Dashboard, self._call("GET", "/dashboard", params))
 
     def dashboard_settings(self) -> DashboardSettings:
         return from_data(DashboardSettings, self._call("GET", "/dashboard/settings"))

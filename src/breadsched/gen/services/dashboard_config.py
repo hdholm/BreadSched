@@ -9,9 +9,10 @@ is never put in two groups and a rejected change leaves the book as it was.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 from ..db.sqlite import DbSQLite
-from ..engine.dashboard import GROUP_KINDS, DashboardConfig, GroupConfig
+from ..engine.dashboard import GROUP_KINDS, Dashboard, DashboardConfig, GroupConfig, build
 from ..lib.money import Money
 from .contracts import ServiceError, ServiceResult
 
@@ -22,6 +23,7 @@ __all__ = [
     "EMERGENCY_MONTHS_RANGE",
     "LIQUIDITY_DAYS_RANGE",
     "SaveDashboardConfig",
+    "dashboard_board",
     "dashboard_settings",
     "save_dashboard_config",
     "settings_of",
@@ -130,3 +132,29 @@ def settings_of(config: DashboardConfig) -> DashboardSettings:
 
 def dashboard_settings(db: DbSQLite) -> DashboardSettings:
     return settings_of(DashboardConfig.load(db))
+
+
+def dashboard_board(
+    db: DbSQLite,
+    as_of: date | None = None,
+    liquidity_days: int | None = None,
+    emergency_months: int | None = None,
+) -> ServiceResult[Dashboard]:
+    """The Dashboard on ``as_of`` (today when none), computed once.
+
+    ``liquidity_days`` and ``emergency_months`` look at other horizons without
+    saving them; ``None`` or 0 keeps the book's own, and a negative one is refused.
+    """
+    errors = []
+    if liquidity_days is not None and liquidity_days < 0:
+        errors.append(ServiceError("dashboard.liquidity_days.invalid", ("liquidity_days",)))
+    if emergency_months is not None and emergency_months < 0:
+        errors.append(ServiceError("dashboard.emergency_months.invalid", ("emergency_months",)))
+    if errors:
+        return ServiceResult.failure(*errors)
+    config = DashboardConfig.load(db)
+    if liquidity_days:
+        config.liquidity_days = liquidity_days
+    if emergency_months:
+        config.emergency_months = emergency_months
+    return ServiceResult.success(build(db, config, as_of=as_of))

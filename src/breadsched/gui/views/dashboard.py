@@ -15,6 +15,7 @@ and how long the fund should last.
 
 from __future__ import annotations
 
+from ...api.local import book_server
 from ...gen.engine import dashboard as engine
 from ...gen.lib.money import Money
 from ...presentation import goal_status_text
@@ -295,7 +296,8 @@ class DashboardView(BaseView):
     def refresh(self) -> None:
         if self.db is None:
             return
-        self.config = engine.DashboardConfig.load(self.db)
+        self.board = book_server(self.db).dashboard()
+        self.config = self.board.config
         self._updating = True
         try:
             self.liquidity_spin.set_value(self.config.liquidity_days)
@@ -303,7 +305,6 @@ class DashboardView(BaseView):
         finally:
             self._updating = False
 
-        self.board = engine.build(self.db, self.config)
         self._render_cards()
         self._render_groups()
 
@@ -523,7 +524,6 @@ class DashboardView(BaseView):
         # service rereads the groups, so a group changed since this view was
         # drawn is kept as stored.
         from ...api import ApiError
-        from ...api.local import book_server
         from ...gen.services import SaveDashboardConfig
 
         request = SaveDashboardConfig(

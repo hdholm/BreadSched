@@ -3647,7 +3647,7 @@ class TestDashboardApi:
     def test_resource_matches_route_and_query_does_not_save_horizons(self, client):
         _status, original = client.get("/api/dashboard")
         _status, requested = client.get("/api/dashboard?liquidity_days=45&emergency_months=9")
-        expected = dashboard_report(client.database, 45, 9)
+        expected = dashboard_report(book_server(client.database), 45, 9)
         assert requested == json.loads(json.dumps(expected, default=str))
         assert requested["config"]["liquidity_days"] == 45
         assert requested["config"]["emergency_months"] == 9

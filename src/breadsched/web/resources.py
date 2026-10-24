@@ -178,6 +178,7 @@ from .v1_resource import (
     currencies_get,
     currency_get,
     currency_lookup,
+    dashboard_get,
     dashboard_settings_get,
     dashboard_settings_patch,
     drawdown_accounts_get,
@@ -388,7 +389,7 @@ def _dashboard(api: Api, query: QueryParams) -> object:
     emergency = query.integer("emergency_months", default=0, minimum=0, maximum=1200)
     query.finish()
     assert liquidity is not None and emergency is not None
-    return dashboard_report(api.db, liquidity, emergency)
+    return dashboard_report(api.book, liquidity, emergency)
 
 
 def _scheduled(api: Api, query: QueryParams) -> object:
@@ -735,6 +736,7 @@ V1_ROUTES: tuple[tuple[str, str, Callable[..., object]], ...] = (
     ("GET", "/currencies", currencies_get),
     ("GET", "/currencies/lookup", currency_lookup),
     ("POST", "/exchange-rates", exchange_rate_save),
+    ("GET", "/dashboard", dashboard_get),
     ("GET", "/dashboard/settings", dashboard_settings_get),
     ("PATCH", "/dashboard/settings", dashboard_settings_patch),
     ("GET", "/attachments", attachments_get),
