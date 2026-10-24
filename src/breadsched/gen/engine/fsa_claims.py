@@ -368,6 +368,7 @@ def save_claim(
     through :func:`close_claim` and :func:`reopen_claim`. Changing an EOB that
     was already entered records the change, dated ``today``, with ``eob_note``.
     """
+    _pair_direct_links(db, claim)
     seen_reimbursements: set[tuple[str, str]] = set()
     assignments: dict[str, list[tuple[str, date]]] = {}
     if claim.receivable is not None:
@@ -687,6 +688,58 @@ def _link(
     links = allocation.reimbursements if role == "reimbursement" else allocation.repayments
     if link not in links:
         links.append(link)
+
+
+def _pair_direct_links(db: DbSQLite, claim: FsaClaim) -> None:
+    """Link the FSA side of a payment or refund made on the FSA card itself (#366).
+
+    A provider paid straight from the FSA card was paid by the FSA: linking the
+    expense split as the claim's payment links that transaction's FSA split as
+    the reimbursement too, exactly as the ``direct_payment`` role does. A refund
+    credited back to the card likewise repays the FSA. A link already on the
+    claim is never added twice, and a transaction with several FSA splits is left
+    for the user to link.
+    """
+    linked = {
+        (link.transaction, link.split)
+        for allocation in claim.allocations
+        for link in (*allocation.reimbursements, *allocation.repayments)
+    }
+    for links, fsa_role in ((claim.payments, "reimbursement"), (claim.refunds, "repayment")):
+        for link in list(links):
+            transaction = db.get_transaction(link.transaction)
+            if transaction is None:
+                continue
+            fsa_sides = [
+                (split, account)
+                for split in transaction.splits
+                if (account := db.get_account(split.account)) is not None
+                and _role_eligible(fsa_role, account, split)
+            ]
+            if len(fsa_sides) != 1:
+                continue
+            split, account = fsa_sides[0]
+            if (transaction.handle, split.handle) in linked:
+                continue
+            if fsa_role == "repayment" and not any(
+                item.account == account.handle for item in claim.allocations
+            ):
+                continue
+            # The year a claim already draws on from this account, when it has one.
+            years = {
+                item.funding_year_start
+                for item in claim.allocations
+                if item.account == account.handle
+            }
+            _link(
+                claim,
+                fsa_role,
+                transaction,
+                split,
+                account,
+                next(iter(years)) if len(years) == 1 else None,
+            )
+            linked.add((transaction.handle, split.handle))
 
 
 def close_claim(db: DbSQLite, handle: str, *, on: date, reason: str = "") -> FsaClaim:

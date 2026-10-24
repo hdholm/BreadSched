@@ -67,11 +67,13 @@ async function showFsaDashboard() {
       {label:"Remaining",num:true},{label:"Carried in",num:true},
       {label:"Carried over",num:true},{label:"Forfeited",num:true}], yearRows)
       : el("p", { class:"note" }, "No open or recently closed FSA benefit years."),
-    el("h2", {}, "Open FSA claims"),
+    el("h2", {}, "FSA claims"),
+    el("p", { class:"note" }, "Every claim in a benefit year that can still be claimed, "
+      + "settled or not, and any older claim still open."),
     claimRows.length ? table(["Service date", "Provider", "Status",
       {label:"Paid",num:true},{label:"Reimbursed",num:true},
       {label:"Remaining",num:true}, "Needs attention", "Action"], claimRows)
-      : el("p", { class:"note" }, "No open FSA claims."),
+      : el("p", { class:"note" }, "No FSA claims in open benefit years."),
     el("h2", {}, "Claims report"),
     el("div", { class:"toolbar" }, el("label", {}, "Group by ", grouping)),
     report.groups.length

@@ -195,6 +195,102 @@ class TestClaimsLinkBothSides:
         assert fsa_claims.attachment_roles(db, posted["card_paid"]) == []
 
 
+class TestClaimFormDirectPayments:
+    """#366: a payment linked on the claim form from the FSA card pays the claim."""
+
+    def _save(self, db, *, payments=(), refunds=(), allocations=(), existing=None):
+        from breadsched.gen.services import ClaimInput, SaveClaim, save_claim
+
+        return save_claim(
+            db,
+            SaveClaim(
+                ClaimInput(
+                    service_date=date(2026, 3, 5),
+                    provider="Clinic",
+                    payments=tuple(payments),
+                    refunds=tuple(refunds),
+                    allocations=tuple(allocations),
+                ),
+                existing_handle=existing,
+            ),
+        )
+
+    def _link(self, transaction, account):
+        from breadsched.gen.services import ClaimLinkInput
+
+        return ClaimLinkInput(transaction.handle, _split(transaction, account).handle)
+
+    def test_linking_only_the_payment_reimburses_it_from_the_fsa(self, db, flows):
+        from breadsched.gen.engine import fsa_claims
+
+        account, medical, posted = flows
+        saved = self._save(db, payments=[self._link(posted["direct"], medical)])
+        assert saved.value is not None
+        claim = db.get_fsa_claim(saved.value.handle)
+        [allocation] = claim.allocations
+        assert (allocation.account, allocation.funding_year_start) == (account.handle, YEAR)
+        assert [link.split for link in allocation.reimbursements] == [
+            _split(posted["direct"], account.handle).handle
+        ]
+        summary = fsa_claims.claim_summary(db, claim)
+        assert (summary.paid, summary.reimbursed) == (Money("80.00"), Money("80.00"))
+        assert summary.remaining_reimbursable == Money(0)
+        # Saving again changes nothing: the pairing is not added twice.
+        again = self._save(
+            db, payments=[self._link(posted["direct"], medical)], existing=claim.handle
+        )
+        assert again.value is not None
+        assert len(db.get_fsa_claim(claim.handle).allocations[0].reimbursements) == 1
+
+    def test_a_refund_back_to_the_card_repays_the_fsa(self, db, flows):
+        from breadsched.gen.engine import fsa_claims
+
+        account, medical, posted = flows
+        saved = self._save(
+            db,
+            payments=[self._link(posted["direct"], medical)],
+            refunds=[self._link(posted["refund"], medical)],
+        )
+        claim = db.get_fsa_claim(saved.value.handle)
+        assert [link.split for link in claim.allocations[0].repayments] == [
+            _split(posted["refund"], account.handle).handle
+        ]
+        summary = fsa_claims.claim_summary(db, claim)
+        assert (summary.net_paid, summary.reimbursed) == (Money("50.00"), Money("50.00"))
+        assert summary.over_reimbursed == Money(0)
+
+    def test_a_payment_by_ordinary_card_still_waits_for_reimbursement(self, db, book, flows):
+        from breadsched.gen.engine import fsa_claims
+
+        _account, medical, posted = flows
+        saved = self._save(db, payments=[self._link(posted["charge"], medical)])
+        claim = db.get_fsa_claim(saved.value.handle)
+        assert claim.allocations == []
+        summary = fsa_claims.claim_summary(db, claim)
+        assert summary.reimbursed == Money(0)
+
+    def test_a_direct_payment_outside_every_fsa_year_is_refused(self, db, flows):
+        from breadsched.gen.services import ClaimInput, SaveClaim, save_claim
+
+        account, medical, _posted = flows
+        late = Transaction.simple(date(2027, 6, 1), "Late clinic", medical, account.handle, "10")
+        with db.transaction("late") as txn:
+            db.add_transaction(late, txn)
+        before = list(db.iter_fsa_claims())
+        result = save_claim(
+            db,
+            SaveClaim(
+                ClaimInput(
+                    service_date=date(2026, 3, 5),
+                    payments=(self._link(late, medical),),
+                )
+            ),
+        )
+        assert result.value is None
+        assert result.errors[0].code == "claim.attachment.funding_year.required"
+        assert list(db.iter_fsa_claims()) == before
+
+
 def test_the_command_line_lists_benefit_years_with_how_each_was_used(db, flows, tmp_path, capsys):
     import json
 

@@ -1302,7 +1302,14 @@ both the healthcare payment and its reimbursement. A provider refund to the FSA 
 is **Refunded to the FSA card**: the claim records it as a refund and as money
 repaid to the FSA, so the claim is not left over-reimbursed. A charge paid by card or
 bank is a **Healthcare payment**, and the money the FSA later sends to your bank is
-an **FSA reimbursement**.
+an **FSA reimbursement**. Linking a payment made with the FSA card as a claim's
+healthcare payment in the claims editor links its FSA side too, the same as **Paid
+from the FSA card**, and a refund to the card linked as a provider refund likewise
+repays the FSA.
+
+The FSA Dashboard lists every claim of a benefit year that can still be claimed,
+settled or not, so you can tell a claim already filed from a new one, as well as any
+older claim still open or needing attention.
 
 An FSA administrator's statement, imported or reconciled, brings FSA transactions
 you did not enter yourself. When one clearly belongs on a claim, the FSA Dashboard
