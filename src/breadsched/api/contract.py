@@ -7,7 +7,7 @@ failure maps to 404 when the code names a missing object (``*.not_found``) and t
 
 :func:`to_json` is the single leaf encoding of money, rates, decimals, dates, and
 enumerations, so the command line's ``--json`` and the browser's responses cannot
-drift apart.
+drift apart. Money is written exactly (:func:`exact_money`), never rounded.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from ..gen.lib.money import Money
 from ..gen.services import ServiceError, ServiceResult
 from ..presentation import service_error_message
 
-__all__ = ["ApiError", "to_json", "unwrap"]
+__all__ = ["ApiError", "exact_money", "to_json", "unwrap"]
 
 T = TypeVar("T")
 
@@ -58,12 +58,34 @@ def unwrap(result: ServiceResult[T]) -> T:
     return result.value
 
 
+#: Beyond this many decimal places an amount is written as a fraction instead.
+_MAX_PLACES = 30
+
+
+def exact_money(value: Money) -> str:
+    """``value`` exactly: decimal text with at least two places, or ``"n/d"``.
+
+    ``Money.to_decimal`` rounds to cents, which would lose a share quantity or a
+    price; ``Money`` reads both forms back unchanged.
+    """
+    numerator, denominator = value.numerator, value.denominator
+    for places in range(_MAX_PLACES + 1):
+        scale = 10**places
+        if scale % denominator == 0:
+            digits = max(places, 2)
+            scaled = abs(numerator) * (scale // denominator) * 10 ** (digits - places)
+            whole, fraction = divmod(scaled, 10**digits)
+            sign = "-" if numerator < 0 else ""
+            return f"{sign}{whole}.{fraction:0{digits}d}"
+    return f"{numerator}/{denominator}"
+
+
 def to_json(value: Any) -> Any:
     """``value`` in its JSON form: money and decimals as strings, dates in ISO."""
     if value is None or isinstance(value, (bool, int, str)):
         return value
     if isinstance(value, Money):
-        return str(value.to_decimal())
+        return exact_money(value)
     if isinstance(value, Decimal):
         return str(value)
     if isinstance(value, (date, datetime)):

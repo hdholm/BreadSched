@@ -21,6 +21,7 @@ from ..gen.lib import ScheduledTransaction
 from ..gen.services import (
     AdvanceDays,
     DeleteSchedule,
+    DeleteTransaction,
     DueResolution,
     DueScheduleReview,
     DuplicateSchedule,
@@ -31,10 +32,13 @@ from ..gen.services import (
     ResolveDue,
     ResolveNext,
     SavedSchedule,
+    SavedTransaction,
     SaveFixedSchedule,
+    SaveTransaction,
     ServiceError,
     SetAdvanceDays,
     delete_schedule,
+    delete_transaction,
     duplicate_schedule,
     find_schedule,
     next_occurrence,
@@ -44,6 +48,7 @@ from ..gen.services import (
     resolve_next,
     save_fixed_schedule,
     save_formula_schedule,
+    save_transaction,
     set_advance_days,
 )
 from ..gen.services import advance_days as stored_advance_days
@@ -159,6 +164,14 @@ class LocalBookServer:
 
     def save_formula_schedule(self, request: FormulaScheduleInput) -> SavedSchedule:
         return unwrap(save_formula_schedule(self.db, request))
+
+    # ------------------------------------------------------------ transactions
+
+    def save_transaction(self, request: SaveTransaction) -> SavedTransaction:
+        return unwrap(save_transaction(self.db, request))
+
+    def delete_transaction(self, transaction: str) -> SavedTransaction:
+        return unwrap(delete_transaction(self.db, DeleteTransaction(transaction)))
 
 
 def book_server(db: DbSQLite) -> LocalBookServer:

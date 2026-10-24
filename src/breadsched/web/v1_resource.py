@@ -18,6 +18,8 @@ Resources so far, all under ``/api/v1``:
 * ``POST /post-due`` (``as_of``, ``all``) – post what is due without a review.
 * ``POST /schedules/fixed`` and ``POST /schedules/formula`` – save from an editor;
   the body is ``api.schedule_codec``'s form of the typed request.
+* ``POST /transactions`` (``api.transaction_codec``'s form of ``SaveTransaction``)
+  and ``DELETE /transactions/{handle}``.
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -28,6 +30,7 @@ from datetime import date
 from typing import TYPE_CHECKING, Any
 
 from ..api.schedule_codec import fixed_request_from_json, formula_request_from_json
+from ..api.transaction_codec import save_transaction_from_json
 from ..api.views import (
     advance_days_json,
     due_review_json,
@@ -35,6 +38,7 @@ from ..api.views import (
     posted_due_json,
     resolution_json,
     saved_schedule_json,
+    saved_transaction_json,
 )
 from ..gen.services import (
     DueDecision,
@@ -62,6 +66,8 @@ __all__ = [
     "schedule_duplicate",
     "schedule_save_fixed",
     "schedule_save_formula",
+    "transaction_delete",
+    "transaction_save",
     "redo_post",
     "schedule_lookup",
     "undo_post",
@@ -205,3 +211,12 @@ def schedule_save_fixed(api: Api, _path: Path, body: dict[str, Any]) -> dict:
 
 def schedule_save_formula(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     return saved_schedule_json(api.book.save_formula_schedule(formula_request_from_json(body)))
+
+
+def transaction_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return saved_transaction_json(api.book.save_transaction(save_transaction_from_json(body)))
+
+
+def transaction_delete(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return saved_transaction_json(api.book.delete_transaction(path["handle"]))

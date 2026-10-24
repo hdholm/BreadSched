@@ -37,12 +37,15 @@ from ..gen.services import (
     ResolveDue,
     ResolveNext,
     SavedSchedule,
+    SavedTransaction,
     SaveFixedSchedule,
+    SaveTransaction,
     SetAdvanceDays,
 )
 from .contract import ApiError, to_json
 from .protocol import Change, Listener
 from .schedule_codec import fixed_request_json, formula_request_json
+from .transaction_codec import save_transaction_json
 from .views import (
     advance_days_from_json,
     change_from_json,
@@ -51,6 +54,7 @@ from .views import (
     posted_due_from_json,
     resolution_from_json,
     saved_schedule_from_json,
+    saved_transaction_from_json,
 )
 
 __all__ = ["HttpBookClient"]
@@ -245,3 +249,13 @@ class HttpBookClient:
     def save_formula_schedule(self, request: FormulaScheduleInput) -> SavedSchedule:
         found = self._call("POST", "/schedules/formula", body=formula_request_json(request))
         return saved_schedule_from_json(found)
+
+    # ------------------------------------------------------------ transactions
+
+    def save_transaction(self, request: SaveTransaction) -> SavedTransaction:
+        found = self._call("POST", "/transactions", body=save_transaction_json(request))
+        return saved_transaction_from_json(found)
+
+    def delete_transaction(self, transaction: str) -> SavedTransaction:
+        path = f"/transactions/{quote(transaction, safe='')}"
+        return saved_transaction_from_json(self._call("DELETE", path))

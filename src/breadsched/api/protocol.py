@@ -27,7 +27,9 @@ from ..gen.services import (
     ResolveDue,
     ResolveNext,
     SavedSchedule,
+    SavedTransaction,
     SaveFixedSchedule,
+    SaveTransaction,
     SetAdvanceDays,
 )
 
@@ -108,4 +110,14 @@ class BookApi(Protocol):
 
     def save_formula_schedule(self, request: FormulaScheduleInput) -> SavedSchedule:
         """Replace a formula schedule's editable inputs, keeping its structure."""
+        ...
+
+    # ------------------------------------------------------------ transactions
+
+    def save_transaction(self, request: SaveTransaction) -> SavedTransaction:
+        """Add a transaction, or replace one, with an optional claim link."""
+        ...
+
+    def delete_transaction(self, transaction: str) -> SavedTransaction:
+        """Remove a transaction (never a receivable's own reclassification)."""
         ...

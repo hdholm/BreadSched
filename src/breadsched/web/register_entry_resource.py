@@ -22,7 +22,6 @@ from ..gen.services import (
     ToggleCleared,
     TransactionInput,
     TransactionSplitInput,
-    save_transaction,
     toggle_cleared,
     transaction_currency,
 )
@@ -126,10 +125,8 @@ def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
         existing_handle=handle,
         source=existing,
     )
-    result = save_transaction(db, request)
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return {"handle": result.value.handle, "date": result.value.post_date}
+    saved = api.book.save_transaction(request)
+    return {"handle": saved.handle, "date": saved.post_date}
 
 
 def register_cleared_toggle(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:

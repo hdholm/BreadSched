@@ -23,12 +23,11 @@ from ..gen.services import (
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
-    save_transaction,
     transaction_currency,
 )
 from ..presentation.investments import register_share_summary, trade_price_text
 from .attachment_resource import document_json
-from .controls import ResourceError, input_money, service_error
+from .controls import ResourceError, input_money
 
 if TYPE_CHECKING:
     from .context import Api
@@ -161,8 +160,7 @@ def transaction_add(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         else None
     )
     currency = transaction_currency(api.db)
-    result = save_transaction(
-        api.db,
+    saved = api.book.save_transaction(
         SaveTransaction(
             TransactionInput(
                 post_date=when,
@@ -178,6 +176,4 @@ def transaction_add(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
             claim_attachment=attachment,
         ),
     )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return {"handle": result.value.handle, "date": when, "amount": amount}
+    return {"handle": saved.handle, "date": when, "amount": amount}

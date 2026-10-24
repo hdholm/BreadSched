@@ -78,6 +78,20 @@ typed requests travel in `api.schedule_codec`'s strict JSON form:
   lines for the fixed and formula schedule requests, each field written once each
   way. Transactions, scenarios, and the Plan will need the same.
 
+Transactions followed:
+- **What moved:** saving and deleting a transaction go through the server from GTK
+  (the register, the transaction editor, and Posted transactions), the browser's
+  register and entry form, and the command line's `add`, `edit`, and `delete`.
+- **Codec:** `api.transaction_codec`, about 200 lines, carries `SaveTransaction` over
+  HTTP. Each split's value and account-commodity quantity stay distinct amounts.
+- **A bug it found:** writing it showed that the book API's money encoding rounded
+  to cents, which would have changed share quantities and prices. Money is now
+  written exactly (`contract.exact_money`): decimal text when it terminates, `n/d`
+  otherwise.
+- **Still local:** the command line still looks up accounts and transactions in the
+  book it opens. So `add`, `edit`, and `delete` go through the in-process server
+  only, not a shared one, until those lookups join the API.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

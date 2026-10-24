@@ -17,11 +17,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 from functools import partial
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import ledger
 from ...gen.lib.transaction import Transaction
-from ...gen.services import DeleteTransaction, delete_transaction
-from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.confirm import delete_button
@@ -189,13 +189,14 @@ class PostedTransactionsDialog(BoundedWindow):
         return False  # let the editor close
 
     def delete(self, handle: str) -> bool:
-        """Delete ``handle`` through the shared service; False with the reason if refused."""
-        result = delete_transaction(self.db, DeleteTransaction(handle))
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+        """Delete ``handle`` through the book server; False with the reason if refused."""
+        try:
+            deleted = book_server(self.db).delete_transaction(handle)
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return False
         self.status.remove_css_class("negative")
-        self.status.set_text(f"Deleted {result.value.description}. Ctrl+Z restores it.")
+        self.status.set_text(f"Deleted {deleted.description}. Ctrl+Z restores it.")
         self.refresh()
         return True

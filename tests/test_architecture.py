@@ -1013,6 +1013,8 @@ class TestBookServerBoundaries:
         "post_due",
         "save_fixed_schedule",
         "save_formula_schedule",
+        "save_transaction",
+        "delete_transaction",
     }
 
     @pytest.mark.parametrize(
@@ -1040,6 +1042,11 @@ class TestBookServerBoundaries:
                 ("resolve_next", "_on_post_clicked"),
             ),
             ("gui/dialogs/schedule_dialog.py", ("_on_save",)),
+            ("cli/ledger_commands.py", ("cmd_add", "cmd_edit", "cmd_delete")),
+            ("web/register_entry_resource.py", ("register_entry_save",)),
+            ("web/register_resource.py", ("transaction_add",)),
+            ("gui/dialogs/posted_dialog.py", ("delete",)),
+            ("gui/register_sheet.py", ("_save_transaction",)),
         ],
     )
     def test_moved_adapters_call_the_book_server(self, relative, functions):
@@ -1072,6 +1079,8 @@ class TestBookServerBoundaries:
                 "post_due",
                 "save_fixed_schedule",
                 "save_formula_schedule",
+                "save_transaction",
+                "delete_transaction",
             }, name
 
     def test_the_book_server_package_has_no_interface_imports(self):
