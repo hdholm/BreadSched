@@ -580,6 +580,19 @@ loopback address from the server record, so the proxy is never in their way.
 local-user gap in item 8. The proxy would then reach the server through the socket
 (`proxy_pass http://unix:/run/user/1000/breadsched/books.sock`).
 
+**Linked documents over HTTP.** A server reached over HTTP (the browser's routes and
+`/api/v1` alike) links or relinks a document only by web address or inside the
+attachment folder (`contained_location`), so a token holder cannot link a file such
+as `~/.ssh/id_ed25519` and then read it back through the document route; only an
+in-process caller (GTK, or a command with no server) may link any file.
+**Still open:** copying a file in (`attach_file`,
+`POST /api/v1/transactions/{handle}/attachments/files`) still reads a path as the
+server sees it, which the command line's `attachments --add FILE` through a local
+server needs. Through a proxy, a token holder could copy in any file the server's
+user can read. Until that is narrowed (for example, refusing it for requests that
+arrive through a trusted origin, or uploading the file's bytes instead), give the
+token only to the user's own devices.
+
 ## Consequences and open questions
 
 - **JSON shapes change** for the moved commands, so scripts that read the old

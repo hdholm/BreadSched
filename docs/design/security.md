@@ -52,6 +52,10 @@ changes still open. For a proxy (#358):
   `--client-cert` (and `--client-key`) when the proxy asks. A certificate that does
   not verify is a `server.unreachable` failure, never a fallback to plain HTTP.
 
+Every request served over HTTP, `/api/v1` included, may link or relink a document
+only by web address or inside the attachment folder; decision 0003 notes the copy
+path (`attach_file`) that still reads any file the server's user can read.
+
 GTK shares its open book only when the user turns on **Preferences → Sharing**. It
 then listens on the loopback interface with the same per-server token, trusted-Host,
 and trusted-Origin checks as the web server, and publishes the same user-only server

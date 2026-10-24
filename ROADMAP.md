@@ -62,7 +62,8 @@ The rest of this file is unscheduled and comes after the first Beta.
   that serves GTK's open book to commands. Decision 0003 also documents reaching a
   book through a TLS reverse proxy (nginx). The server takes a trusted origin and a
   token file for that proxy, and the HTTP client speaks HTTPS with client
-  certificates; a Unix-socket listener is still to come.
+  certificates; a Unix-socket listener is still to come, and copying a document in
+  over HTTP still reads any path the server can.
 
 - Split oversized modules/functions where ownership is clear. Split large GUI test
   modules only when the resulting fixture ownership and runtime isolation improve;

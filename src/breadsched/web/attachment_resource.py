@@ -5,7 +5,8 @@ translates the results; validation and every write stay in the service, so a
 rejected request leaves the stored transaction unchanged. A document is served
 only when the transaction lists it, and the browser can link or relink only a web
 address or a file inside the attachment folder (``contained_location``), so the
-routes cannot be used to read an arbitrary file.
+routes cannot be used to read an arbitrary file. The book server applies that
+confinement for every request served over HTTP, the ``/api/v1`` routes included.
 """
 
 from __future__ import annotations
@@ -20,12 +21,9 @@ from typing import TYPE_CHECKING, Any
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import attachments as attachment_engine
 from ..gen.lib.transaction import Transaction
-from ..gen.services import (
-    contained_location,
-)
 from ..gen.services.contracts import ServiceError
 from ..presentation import service_error_message
-from .controls import ResourceError, service_error
+from .controls import ResourceError
 
 if TYPE_CHECKING:
     from .context import Api
@@ -72,11 +70,26 @@ def _text(payload: Mapping[str, Any], key: str) -> str:
     return value
 
 
+def _documents(api: Api, transaction: Transaction) -> list[dict[str, object]]:
+    report = api.book.attachment_report(transaction=transaction.handle)
+    return [
+        {
+            "location": item.location,
+            "kind": item.kind,
+            "present": item.present,
+            "missing": item.missing,
+            "owner": item.owner,
+            "path": str(item.path) if item.path is not None else None,
+        }
+        for item in report.attachments
+    ]
+
+
 def _changed(api: Api, transaction: Transaction) -> dict[str, object]:
     return {
         "handle": transaction.handle,
         "tags": list(transaction.tags),
-        "documents": document_json(api.db, transaction),
+        "documents": _documents(api, transaction),
     }
 
 
@@ -85,26 +98,14 @@ def transaction_tags(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     tags = payload.get("tags")
     if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
         raise ValueError("tags must be a list of text")
-    transaction = api.book.set_tags(_text(payload, "transaction"), tags)
-    return {
-        "handle": transaction.handle,
-        "tags": list(transaction.tags),
-        "documents": document_json(api.db, transaction),
-    }
-
-
-def _contained(api: Api, location: str) -> str:
-    confined = contained_location(api.db, location)
-    if isinstance(confined, ServiceError):
-        raise service_error(confined)
-    return confined
+    return _changed(api, api.book.set_tags(_text(payload, "transaction"), tags))
 
 
 def transaction_attachment_link(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """Link a web address or a file already in the attachment folder."""
     transaction = _text(payload, "transaction")
-    location = _contained(api, _text(payload, "location"))
-    return _changed(api, api.book.link_attachment(transaction, location))
+    # The book server confines the location to the attachment folder (or a web address).
+    return _changed(api, api.book.link_attachment(transaction, _text(payload, "location")))
 
 
 def transaction_attachment_remove(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
@@ -117,8 +118,7 @@ def transaction_attachment_relink(api: Api, payload: Mapping[str, Any]) -> dict[
     """Point a moved or missing document at its place in the attachment folder."""
     transaction = _text(payload, "transaction")
     location = _text(payload, "location")
-    target = _contained(api, _text(payload, "to"))
-    return _changed(api, api.book.relink_attachment(transaction, location, target))
+    return _changed(api, api.book.relink_attachment(transaction, location, _text(payload, "to")))
 
 
 def attachment_upload(

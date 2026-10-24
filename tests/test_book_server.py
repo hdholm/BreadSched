@@ -1415,12 +1415,13 @@ def test_attachments_alike(target, book, tmp_path):
     (folder / stored).unlink()
     [missing] = api.attachment_report(missing_only=True).attachments
     assert missing.location == stored
-    moved = api.relink_attachment(paid.handle, stored, str(receipt))
-    assert moved.attachments == ["https://example.com/bill", str(receipt)]
-    assert api.unlink_attachment(paid.handle, str(receipt)).attachments == [
+    (folder / "moved.pdf").write_bytes(b"%PDF-1.4")
+    moved = api.relink_attachment(paid.handle, stored, "moved.pdf")
+    assert moved.attachments == ["https://example.com/bill", "moved.pdf"]
+    assert api.unlink_attachment(paid.handle, "moved.pdf").attachments == [
         "https://example.com/bill"
     ]
-    assert receipt.exists()
+    assert receipt.exists() and (folder / "moved.pdf").exists()
 
     before = repr(db.get_transaction(paid.handle).serialize())
     for call, status, code in (
@@ -1873,6 +1874,38 @@ def test_investment_reports_read_alike(target, book):
     assert year.labels()[usd.handle] == "USD"
     # Without a year, the latest year with a transaction.
     assert api.tax_year().report.year == year.available_years[0]
+
+
+def test_documents_served_over_http_stay_in_the_attachment_folder(remote, book, tmp_path):
+    """A token holder may not link (and so read back) a file outside the folder."""
+    client, db = remote.client, remote.db
+    folder = tmp_path / "documents"
+    folder.mkdir()
+    (folder / "receipt.pdf").write_bytes(b"%PDF-1.4")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("not a document", encoding="utf-8")
+    client.set_attachment_folder(str(folder))
+    with db.transaction("Card") as txn:
+        card = Transaction.simple(date(2026, 9, 3), "Card", book.groceries, book.card, "12")
+        db.add_transaction(card, txn)
+    for location in (str(secret), "../secret.txt", str(folder / ".." / "secret.txt")):
+        with pytest.raises(ApiError) as refused:
+            client.link_attachment(card.handle, location)
+        assert (refused.value.status, refused.value.code) == (400, "attachment.outside_folder")
+    assert db.get_transaction(card.handle).attachments == []
+    linked = client.link_attachment(card.handle, "receipt.pdf")
+    assert linked.attachments == ["receipt.pdf"]
+    with pytest.raises(ApiError) as refused:
+        client.relink_attachment(card.handle, "receipt.pdf", str(secret))
+    assert refused.value.code == "attachment.outside_folder"
+    assert db.get_transaction(card.handle).attachments == ["receipt.pdf"]
+    assert client.link_attachment(card.handle, "https://example.com/r").attachments[-1] == (
+        "https://example.com/r"
+    )
+    # In process (GTK, a command without a server) the user may link any file.
+    assert LocalBookServer(db).link_attachment(card.handle, str(secret)).attachments[-1] == str(
+        secret
+    )
 
 
 def test_v1_refuses_what_it_does_not_serve(remote):

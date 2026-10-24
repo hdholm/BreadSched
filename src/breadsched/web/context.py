@@ -25,7 +25,8 @@ class Api:
     def book(self) -> LocalBookServer:
         """The book server over :attr:`db`; adapters moved onto it use only this."""
         if self._book is None:
-            self._book = LocalBookServer(self.db)
+            # Requests come from other processes, so documents stay confined (#358).
+            self._book = LocalBookServer(self.db, confine_documents=True)
         return self._book
 
 

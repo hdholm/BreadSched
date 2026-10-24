@@ -228,8 +228,11 @@ _STEMS = (
 class LocalBookServer:
     """A book server in this process, over one open book."""
 
-    def __init__(self, db: DbSQLite) -> None:
+    def __init__(self, db: DbSQLite, *, confine_documents: bool = False) -> None:
         self.db = db
+        #: Served to other processes: a document may be linked only by web address or
+        #: inside the attachment folder, as the browser may (``contained_location``).
+        self._confine_documents = confine_documents
         self._pending: set[str] = set()
         self._listeners: list[Listener] = []
         known = db._known_signals()
@@ -666,6 +669,7 @@ class LocalBookServer:
         )
 
     def link_attachment(self, transaction: str, location: str) -> Transaction:
+        location = self._document_location(location)
         return unwrap(attachment_service.attach_location(self.db, transaction, location))
 
     def attach_file(self, transaction: str, path: str, copy: bool = True) -> Transaction:
@@ -675,7 +679,16 @@ class LocalBookServer:
         return unwrap(attachment_service.detach(self.db, transaction, location))
 
     def relink_attachment(self, transaction: str, location: str, new: str) -> Transaction:
+        new = self._document_location(new)
         return unwrap(attachment_service.relink(self.db, transaction, location, new))
+
+    def _document_location(self, location: str) -> str:
+        if not self._confine_documents:
+            return location
+        confined = attachment_service.contained_location(self.db, location)
+        if isinstance(confined, ServiceError):
+            raise ApiError.from_service(confined)
+        return confined
 
     def set_attachment_folder(self, folder: str) -> str:
         with self._changing("attachment-folder"):
