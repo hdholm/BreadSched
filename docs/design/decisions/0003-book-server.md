@@ -123,7 +123,11 @@ Accounts followed:
 - **Resources:** `GET` and `POST /api/v1/accounts`, `GET` and
   `DELETE /api/v1/accounts/{handle}`, and `GET /api/v1/chart` (`as_of`, `hidden`).
 - **Command line:** `accounts` and `account list|add|edit|remove` use them, with
-  unchanged JSON. The browser's and GTK's account editors still save directly.
+  unchanged JSON.
+- **Browser:** the chart of accounts (`/api/accounts`) is the server's `chart`, and
+  the account settings saves (type, emergency fund, card payment, FSA years, cost
+  basis) save through the server, with unchanged responses. GTK's account editors
+  still save directly, and the browser's and GTK's registers still read the book.
 
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
