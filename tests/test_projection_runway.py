@@ -6,6 +6,7 @@ from datetime import date
 
 from test_drawdown import flat, nest_egg  # noqa: F401 - the fixture is used by name
 
+from breadsched.api.local import book_server
 from breadsched.gen.engine import projection
 from breadsched.gen.lib import (
     Drawdown,
@@ -102,12 +103,12 @@ def test_web_and_print_show_the_runway(db, book):
 
     _spend(db, book, "1000")
     scenario = _scenario()
-    payload = projection_report(db, scenario)
+    payload = projection_report(book_server(db), scenario)
     assert payload["runway"]["months_covered"] == 3
     assert payload["runway_notes"][0] == "Cash runs out in Apr 2026, after 3 months."
 
     compared = projection_comparison_report(
-        db, scenario, _scenario("Other"), primary_base=False, comparison_base=False
+        book_server(db), scenario, _scenario("Other"), primary_base=False, comparison_base=False
     )
     assert compared["comparison"]["runway"]["months_covered"] == 3
     assert compared["comparison"]["runway_comparison"].endswith("the same runway.")

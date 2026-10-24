@@ -345,9 +345,11 @@ the Plan, so it has not moved.
 Projecting followed: `project(scenario)` and `projection_month(scenario, index)`
 (`POST /api/v1/projection` and `/projection/month`) take a saved scenario or a draft
 and return the engine's own `Projection` and month detail, which the typed codec
-carries whole. They serve the command line's `project` and `compare`. The browser's
-Projection page still builds its drafts and names its accounts from the book, and
-GTK projects in a background worker with its own read connection; both are next.
+carries whole. They serve the command line's `project` and `compare` and the browser's Projection
+page, which now builds its drafts from the server's scenarios and base assumptions,
+names its accounts from `accounts`, checks per-account rates the same way, and saves
+through the assumption operations. GTK still projects in a background worker with its
+own read connection.
 
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same

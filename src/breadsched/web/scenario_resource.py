@@ -16,6 +16,7 @@ from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING
 
 from ..api.contract import ApiError
+from ..api.protocol import BookApi
 from ..gen.db.sqlite import DbSQLite
 from ..gen.lib import (
     AccountClass,
@@ -178,7 +179,7 @@ def management_base_scenario(assumptions: Assumptions) -> Scenario:
 
 
 def per_account_rates(
-    db: DbSQLite,
+    book: BookApi,
     payload: object,
     existing: Mapping[str, Decimal | Rate] | None = None,
 ) -> dict[str, Decimal]:
@@ -190,16 +191,18 @@ def per_account_rates(
     if not isinstance(payload, dict):
         raise ValueError("per_account assumptions must be an object")
     per_account: dict[str, Decimal] = {}
+    records = {record.account.handle: record for record in book.accounts()} if payload else {}
     for handle, raw_rate in payload.items():
-        account = db.get_account(str(handle))
-        if account is None:
+        record = records.get(str(handle))
+        if record is None:
             raise ValueError(f"unknown account assumption: {handle}")
+        account = record.account
         if not (
             account.account_class is AccountClass.LIABILITY
             or (account.account_class is AccountClass.ASSET and account.atype.is_investment)
         ):
             raise ValueError(
-                f"account-specific projection rate is not valid for {db.full_name(account)}"
+                f"account-specific projection rate is not valid for {record.full_name}"
             )
         if raw_rate is None or str(raw_rate).strip() == "":
             continue
@@ -211,7 +214,7 @@ def per_account_rates(
 
 
 def assumptions_from_payload(
-    db: DbSQLite, payload: object, existing: Assumptions | None = None
+    book: BookApi, payload: object, existing: Assumptions | None = None
 ) -> Assumptions:
     if not isinstance(payload, dict):
         raise ValueError("assumptions must be an object")
@@ -231,7 +234,7 @@ def assumptions_from_payload(
             raise ValueError(f"{field} must be between -1 and 1")
         values[field] = value
     per_account = per_account_rates(
-        db,
+        book,
         payload.get("per_account") if "per_account" in payload else None,
         existing.per_account if existing is not None else None,
     )
@@ -312,7 +315,9 @@ def scenario_save(api: Api, payload: dict) -> dict:
     handle = payload.get("handle")
     if not handle:
         base = management_base_scenario(api.book.base_assumptions())
-        assumptions = assumptions_from_payload(api.db, payload.get("assumptions"), base.assumptions)
+        assumptions = assumptions_from_payload(
+            api.book, payload.get("assumptions"), base.assumptions
+        )
         api.book.save_base_assumptions(SaveBaseAssumptions(assumptions))
         return scenario_payload(management_base_scenario(api.book.base_assumptions()), base=True)
 
@@ -326,7 +331,7 @@ def scenario_save(api: Api, payload: dict) -> dict:
     scenario.name = name
     scenario.description = str(payload.get("description", "")).strip()
     previous = scenario.effective_assumptions()
-    updated = assumptions_from_payload(api.db, payload.get("assumptions"), previous)
+    updated = assumptions_from_payload(api.book, payload.get("assumptions"), previous)
     if "parent_handle" in payload:
         requested_parent = payload.get("parent_handle")
         scenario.parent_handle = str(requested_parent).strip() if requested_parent else None
@@ -411,7 +416,7 @@ def scenario_period_save(api: Api, payload: dict) -> dict:
         cash_interest=optional_rate(payload.get("cash_interest")),
         liability_interest=optional_rate(payload.get("liability_interest")),
         per_account=per_account_rates(
-            api.db,
+            api.book,
             payload.get("per_account") if "per_account" in payload else None,
             existing_period.per_account if existing_period is not None else None,
         ),

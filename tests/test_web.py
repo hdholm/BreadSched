@@ -23,6 +23,7 @@ from decimal import Decimal
 import pytest
 from gnucash_fixtures import create_book
 
+from breadsched.api.local import book_server
 from breadsched.cli.main import main as cli
 from breadsched.gen.db.sqlite import DbSQLite
 from breadsched.gen.lib import (
@@ -1628,7 +1629,9 @@ class TestItServes:
         from breadsched.web.projection_resource import projection_draft
 
         expected = projection_report(
-            client.database, projection_draft(client.database, years=2), base=True
+            book_server(client.database),
+            projection_draft(book_server(client.database), years=2),
+            base=True,
         )
         status, actual = client.get("/api/projection?years=2")
         assert status == 200
@@ -1645,10 +1648,14 @@ class TestItServes:
         from breadsched.web.projection_resource import projection_draft
 
         _status, clone = client.post("/api/scenario/duplicate", {"handle": None})
-        primary = projection_draft(client.database, years=1)
-        comparison = projection_draft(client.database, clone["handle"], years=1)
+        primary = projection_draft(book_server(client.database), years=1)
+        comparison = projection_draft(book_server(client.database), clone["handle"], years=1)
         expected = projection_comparison_report(
-            client.database, primary, comparison, primary_base=True, comparison_base=False
+            book_server(client.database),
+            primary,
+            comparison,
+            primary_base=True,
+            comparison_base=False,
         )
         status, actual = client.post(
             "/api/projection/compare",
@@ -1710,9 +1717,9 @@ class TestItServes:
     def test_month_explanation_resource_matches_route_and_leaves_book_unchanged(self, client):
         from breadsched.web.projection_resource import projection_draft
 
-        scenario = projection_draft(client.database, years=2)
+        scenario = projection_draft(book_server(client.database), years=2)
         before = scenario.effective_assumptions().serialize()
-        expected = projection_month_report(client.database, scenario, 5)
+        expected = projection_month_report(book_server(client.database), scenario, 5)
         status, actual = client.post(
             "/api/projection/explain",
             {"handle": None, "years": 2, "month_index": 5},
@@ -1722,7 +1729,10 @@ class TestItServes:
         assert actual["index"] == 5
         assert actual["cash"]["closing"] is not None
         assert (
-            projection_draft(client.database, years=2).effective_assumptions().serialize() == before
+            projection_draft(book_server(client.database), years=2)
+            .effective_assumptions()
+            .serialize()
+            == before
         )
 
     def test_projection_draft_calculation_does_not_persist_saved_changes(self, client):

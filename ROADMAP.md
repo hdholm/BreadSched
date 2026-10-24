@@ -51,8 +51,8 @@ The rest of this file is unscheduled and comes after the first Beta.
   reconciliation, receivables, scenarios with their assumptions, payroll, FSA claims,
   Plan review, held GnuCash changes, sale lots, tax marks, online quotes, new loans,
   manual exchange rates, the Dashboard settings, linked documents, the net worth
-  reports, the Plan and Expense Explorer, and projecting from the command line so far
-  (most through a generic typed JSON codec), and phase 3 has a stored book revision,
+  reports, the Plan and Expense Explorer, and the Projection outside GTK so far (most
+  through a generic typed JSON codec), and phase 3 has a stored book revision,
   `/api/v1` resources with `ETag`/`If-Match`, a change stream, and an HTTP client.
   Phase 4 has `breadsched serve`, a user-only server record, and command-line commands
   that use the server holding a book. Phase 5 has GTK's due review and Enter/Skip Next
