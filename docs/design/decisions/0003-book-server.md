@@ -316,6 +316,18 @@ accounts themselves) and its horizons. They serve the browser's group editor and
 GTK's group dialog and horizon spinners; the server names the change
 `dashboard-config`. The Dashboard itself is still computed from the book.
 
+Linked documents followed: `attachment_report` (all or one transaction's documents,
+checked against the file system), `link_attachment`, `attach_file`,
+`unlink_attachment`, `relink_attachment`, `set_attachment_folder`, and
+`set_source_link_folder` (`GET /api/v1/attachments`,
+`POST /api/v1/transactions/{handle}/attachments`, `/files`, `/remove`, `/relink`, and
+`PATCH /api/v1/attachment-folders`). A file is named by its path as the server sees
+it, so `attachments --add FILE` through a server on another machine needs a path
+that machine can read; the typed codec now carries paths as text. The command line's
+`attachments`, the browser's document links and uploads, and GTK's transaction
+dialog documents go through the server; showing a document's contents still reads
+the file directly.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

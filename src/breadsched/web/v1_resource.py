@@ -95,6 +95,10 @@ Resources so far, all under ``/api/v1``:
   (``SaveExchangeRate``).
 * ``GET`` and ``PATCH /dashboard/settings`` (``SaveDashboardConfig``) – the
   Dashboard's groups, with their members, and its horizons.
+* ``GET /attachments`` (``missing``, ``transaction``) – linked documents checked
+  against the file system; ``POST /transactions/{handle}/attachments`` (``location``),
+  ``/attachments/files`` (``path`` as the server sees it, ``copy``), ``/remove``, and
+  ``/relink``; ``PATCH /attachment-folders`` (``folder`` or ``gnucash_folder``).
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -179,6 +183,12 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "attachment_file_v1",
+    "attachment_folders_patch",
+    "attachment_link_v1",
+    "attachment_relink_v1",
+    "attachment_remove_v1",
+    "attachments_get",
     "dashboard_settings_get",
     "dashboard_settings_patch",
     "currencies_get",
@@ -1250,3 +1260,65 @@ def dashboard_settings_get(api: Api, _path: Path, query: QueryParams) -> dict:
 def dashboard_settings_patch(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     request = from_data(SaveDashboardConfig, body, "request")
     return to_data(api.book.save_dashboard_settings(request))
+
+
+@dataclass(frozen=True, slots=True)
+class _Location:
+    location: str
+
+
+@dataclass(frozen=True, slots=True)
+class _File:
+    path: str
+    copy: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class _Relink:
+    location: str
+    to: str
+
+
+@dataclass(frozen=True, slots=True)
+class _Folders:
+    folder: str | None = None
+    gnucash_folder: str | None = None
+
+
+def attachments_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    missing = query.choice("missing", ("true", "false"), "false") == "true"
+    transaction = query.text("transaction")
+    query.finish()
+    return to_data(api.book.attachment_report(missing, transaction))
+
+
+def attachment_link_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    location = from_data(_Location, body, "request").location
+    return {"transaction": to_data(api.book.link_attachment(path["handle"], location))}
+
+
+def attachment_file_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    chosen = from_data(_File, body, "request")
+    changed = api.book.attach_file(path["handle"], chosen.path, chosen.copy)
+    return {"transaction": to_data(changed)}
+
+
+def attachment_remove_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    location = from_data(_Location, body, "request").location
+    return {"transaction": to_data(api.book.unlink_attachment(path["handle"], location))}
+
+
+def attachment_relink_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    change = from_data(_Relink, body, "request")
+    changed = api.book.relink_attachment(path["handle"], change.location, change.to)
+    return {"transaction": to_data(changed)}
+
+
+def attachment_folders_patch(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    change = from_data(_Folders, body, "request")
+    if (change.folder is None) == (change.gnucash_folder is None):
+        raise ValueError("give folder or gnucash_folder")
+    if change.folder is not None:
+        return {"folder": api.book.set_attachment_folder(change.folder)}
+    assert change.gnucash_folder is not None
+    return {"gnucash_folder": api.book.set_source_link_folder(change.gnucash_folder)}

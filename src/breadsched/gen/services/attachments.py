@@ -243,13 +243,21 @@ def set_source_link_folder(db: DbSQLite, folder: str) -> ServiceResult[Path]:
     return ServiceResult.success(source_link_folder(db))
 
 
-def attachment_report(db: DbSQLite, *, missing_only: bool = False) -> AttachmentReport:
-    """Every linked document in the book, checked against the file system."""
+def attachment_report(
+    db: DbSQLite, *, missing_only: bool = False, transaction: str | None = None
+) -> AttachmentReport:
+    """Every linked document in the book (or one transaction's), checked against the
+    file system."""
     found: list[AttachmentStatus] = []
-    for transaction in db.iter_transactions():
-        if not transaction.attachments and not transaction.source_link:
+    if transaction is not None:
+        one = db.get_transaction(transaction)
+        transactions = [one] if one is not None else []
+    else:
+        transactions = list(db.iter_transactions())
+    for item in transactions:
+        if not item.attachments and not item.source_link:
             continue
-        found.extend(statuses(db, transaction))
+        found.extend(statuses(db, item))
     if missing_only:
         found = [item for item in found if item.missing]
     return AttachmentReport(attachment_folder(db), tuple(found))

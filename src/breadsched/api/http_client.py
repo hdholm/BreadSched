@@ -70,6 +70,7 @@ from ..gen.services import (
     TransactionInput,
 )
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
+from ..gen.services.attachments import AttachmentReport
 from ..gen.services.categorization import (
     AddRule,
     AppliedCategories,
@@ -930,3 +931,36 @@ class HttpBookClient:
     def save_dashboard_settings(self, request: SaveDashboardConfig) -> DashboardSettings:
         found = self._call("PATCH", "/dashboard/settings", body=to_data(request))
         return from_data(DashboardSettings, found)
+
+    # ------------------------------------------------------------- attachments
+
+    def attachment_report(
+        self, missing_only: bool = False, transaction: str | None = None
+    ) -> AttachmentReport:
+        params = {"missing": "true" if missing_only else None, "transaction": transaction}
+        return from_data(AttachmentReport, self._call("GET", "/attachments", params))
+
+    def _attachments(self, transaction: str, action: str, body: dict[str, Any]) -> Transaction:
+        path = f"/transactions/{quote(transaction, safe='')}/attachments{action}"
+        found = self._call("POST", path, body=body)
+        return from_data(Transaction, found["transaction"], "transaction")
+
+    def link_attachment(self, transaction: str, location: str) -> Transaction:
+        return self._attachments(transaction, "", {"location": location})
+
+    def attach_file(self, transaction: str, path: str, copy: bool = True) -> Transaction:
+        return self._attachments(transaction, "/files", {"path": path, "copy": copy})
+
+    def unlink_attachment(self, transaction: str, location: str) -> Transaction:
+        return self._attachments(transaction, "/remove", {"location": location})
+
+    def relink_attachment(self, transaction: str, location: str, new: str) -> Transaction:
+        return self._attachments(transaction, "/relink", {"location": location, "to": new})
+
+    def set_attachment_folder(self, folder: str) -> str:
+        found = self._call("PATCH", "/attachment-folders", body={"folder": folder})
+        return str(found["folder"])
+
+    def set_source_link_folder(self, folder: str) -> str:
+        found = self._call("PATCH", "/attachment-folders", body={"gnucash_folder": folder})
+        return str(found["gnucash_folder"])

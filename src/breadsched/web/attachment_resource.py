@@ -21,11 +21,7 @@ from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import attachments as attachment_engine
 from ..gen.lib.transaction import Transaction
 from ..gen.services import (
-    attach_file,
-    attach_location,
     contained_location,
-    detach,
-    relink,
 )
 from ..gen.services.contracts import ServiceError
 from ..presentation import service_error_message
@@ -76,10 +72,7 @@ def _text(payload: Mapping[str, Any], key: str) -> str:
     return value
 
 
-def _changed(api: Api, result: Any) -> dict[str, object]:
-    if result.value is None:
-        raise service_error(result.errors[0])
-    transaction = result.value
+def _changed(api: Api, transaction: Transaction) -> dict[str, object]:
     return {
         "handle": transaction.handle,
         "tags": list(transaction.tags),
@@ -111,12 +104,13 @@ def transaction_attachment_link(api: Api, payload: Mapping[str, Any]) -> dict[st
     """Link a web address or a file already in the attachment folder."""
     transaction = _text(payload, "transaction")
     location = _contained(api, _text(payload, "location"))
-    return _changed(api, attach_location(api.db, transaction, location))
+    return _changed(api, api.book.link_attachment(transaction, location))
 
 
 def transaction_attachment_remove(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """Unlink a document; the file itself is kept."""
-    return _changed(api, detach(api.db, _text(payload, "transaction"), _text(payload, "location")))
+    transaction = _text(payload, "transaction")
+    return _changed(api, api.book.unlink_attachment(transaction, _text(payload, "location")))
 
 
 def transaction_attachment_relink(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
@@ -124,7 +118,7 @@ def transaction_attachment_relink(api: Api, payload: Mapping[str, Any]) -> dict[
     transaction = _text(payload, "transaction")
     location = _text(payload, "location")
     target = _contained(api, _text(payload, "to"))
-    return _changed(api, relink(api.db, transaction, location, target))
+    return _changed(api, api.book.relink_attachment(transaction, location, target))
 
 
 def attachment_upload(
@@ -146,7 +140,8 @@ def attachment_upload(
         if not staged.startswith(root + os.sep):
             raise _refuse(400, "attachment.filename.invalid", "filename")
         Path(staged).write_bytes(content)
-        return _changed(api, attach_file(db, transaction, Path(staged)))
+        # The web server holds the book, so the staged file is where it can see it.
+        return _changed(api, api.book.attach_file(transaction, staged))
 
 
 def attachment_content(db: DbSQLite, transaction: str, location: str) -> tuple[bytes, str]:
