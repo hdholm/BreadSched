@@ -309,6 +309,13 @@ unambiguous code), and `save_exchange_rate` (`GET /api/v1/currencies`, `/lookup`
 and `POST /api/v1/exchange-rates`) serve the command line's `rate`, the browser's
 manual quote, and GTK's exchange-rate dialog save.
 
+The Dashboard's settings followed: `dashboard_settings` and `save_dashboard_settings`
+(`GET` and `PATCH /api/v1/dashboard/settings`) carry its groups with their member
+accounts (a `DashboardSettings` view, since the stored form keeps the members on the
+accounts themselves) and its horizons. They serve the browser's group editor and
+GTK's group dialog and horizon spinners; the server names the change
+`dashboard-config`. The Dashboard itself is still computed from the book.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

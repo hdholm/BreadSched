@@ -8,10 +8,11 @@ turns two unrelated balances into equity and a loan-to-value ratio.
 
 from __future__ import annotations
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.dashboard import GROUP_KINDS, DashboardConfig, GroupConfig, default_config
-from ...gen.services import DashboardGroupInput, SaveDashboardConfig, save_dashboard_config
-from ...presentation import service_error_message
+from ...gen.services import DashboardGroupInput, SaveDashboardConfig
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
@@ -168,12 +169,12 @@ class DashboardDialog(BoundedWindow):
 
     def save(self) -> bool:
         """Store the groups; False, with the reason shown, if they were refused."""
-        result = save_dashboard_config(self.db, SaveDashboardConfig(groups=self.build()))
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).save_dashboard_settings(SaveDashboardConfig(groups=self.build()))
+        except ApiError as error:
+            self.status.set_text(str(error))
             return False
-        assert result.value is not None
-        self.config = result.value
+        self.config = DashboardConfig.load(self.db)
         return True
 
     def _on_save(self, _button) -> None:

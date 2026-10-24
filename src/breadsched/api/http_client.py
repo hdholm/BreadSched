@@ -86,6 +86,7 @@ from ..gen.services.claims import (
     SaveClaim,
     SavedClaim,
 )
+from ..gen.services.dashboard_config import DashboardSettings, SaveDashboardConfig
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
 from ..gen.services.import_review import (
     HeldImportChange,
@@ -920,3 +921,12 @@ class HttpBookClient:
     def save_exchange_rate(self, request: SaveExchangeRate) -> CommodityPrice:
         found = self._call("POST", "/exchange-rates", body=to_data(request))
         return from_data(CommodityPrice, found["rate"], "rate")
+
+    # ------------------------------------------------------- dashboard settings
+
+    def dashboard_settings(self) -> DashboardSettings:
+        return from_data(DashboardSettings, self._call("GET", "/dashboard/settings"))
+
+    def save_dashboard_settings(self, request: SaveDashboardConfig) -> DashboardSettings:
+        found = self._call("PATCH", "/dashboard/settings", body=to_data(request))
+        return from_data(DashboardSettings, found)
