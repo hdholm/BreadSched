@@ -128,6 +128,7 @@ class TestLayering:
             "calendar",
             "configparser",
             "contextlib",
+            "copy",
             "csv",
             "ctypes",
             "dataclasses",

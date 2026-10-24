@@ -123,7 +123,17 @@ runs with 30,000 transactions, best of 7, with SQLite 3.45.1 and Python 3.11 on 
 
 **Outcome:**
 - **Normalized tables:** the decision stands for normalized tables.
-- **Minimized JSON:** it is a storage change for `main`, not part of the book-server
-  experiment. Its value rises if the book server is adopted and HTTP clients
-  exchange stored forms. It remains listed after the first Beta in the roadmap, now
-  with these figures.
+- **Minimized JSON:** implemented on the experimental branch (`gen.db.compact`).
+  - **What is left out:** only keys that every reader, including earlier
+    versions, already reads with a constant default.
+  - **Always written:** required keys (handles, accounts, dates, values,
+    quantities, the change marker, `_schema`). Omitting a quantity equal to its
+    value would have saved more, but earlier readers require the key.
+  - **Compatibility:** no schema change and no migration. Books written before
+    keep their full blobs, which read and verify alike.
+  - **Pinned defaults:** the defaults are written out in code, and
+    `tests/test_compact_storage.py` fails if `from_dict` ever supplies a different
+    value.
+  - **Exact full records:** storage expands each blob back to the full form when it
+    reads one for comparison or the undo journal, so no-op writes, undo, and redo
+    see exact records.

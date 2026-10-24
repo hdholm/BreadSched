@@ -102,6 +102,20 @@ book connects to it instead of failing on the lock (#358; see
 [decision 0003](decisions/0003-book-server.md)). The lock itself is unchanged and
 still admits one writer.
 
+## Minimized transaction JSON (experimental)
+
+On the experimental book-server branch, a stored transaction leaves out each key
+whose value is the constant default that `Transaction.from_dict` and
+`Split.from_dict` read when the key is missing (`gen.db.compact`; decision
+[0001](decisions/0001-transaction-storage.md), re-evaluation).
+- **What it saves:** about half the JSON per transaction, so books get smaller.
+- **Compatibility:** every version reads the result unchanged, and earlier full
+  blobs keep working beside minimized ones.
+- **Reads inside storage:** `_read` expands a blob back to the full form, so writes
+  that change nothing are still skipped and the undo journal holds complete records.
+- **SQL over the blob:** `json_extract` reads an omitted key as null, which is the
+  default for every key that SQL inspects.
+
 ## Book revision
 
 A book carries a change counter, `DbSQLite.revision()`, stored under the
