@@ -217,9 +217,8 @@ breadsched scheduled-next household.breadsched Rent --enter
 ```
 
 While `breadsched serve` (or `breadsched web` without `--read-only`) holds a book,
-`due-review`, `scheduled-next`, `scheduled-advance`, and `scheduled --post` for the
-same book work through
-that server instead of stopping because the book is already open for writing. The
+`due-review`, `scheduled-next`, `scheduled-advance`, `scheduled --post`, `register`,
+`balance`, `add`, `edit`, and `delete` for the same book work through that server instead of stopping because the book is already open for writing. The
 server records its address and token in a file only you can read, in your runtime
 folder, and removes it when it stops. `--server URL` names a server explicitly; its
 token comes from `--token-file PATH` or the `BREADSCHED_SERVER_TOKEN` environment

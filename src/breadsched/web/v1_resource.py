@@ -20,6 +20,13 @@ Resources so far, all under ``/api/v1``:
   the body is ``api.schedule_codec``'s form of the typed request.
 * ``POST /transactions`` (``api.transaction_codec``'s form of ``SaveTransaction``)
   and ``DELETE /transactions/{handle}``.
+* ``GET /currency`` – the currency a new transaction is entered in.
+* ``GET /accounts/lookup`` and ``GET /transactions/lookup`` (``reference``) – an
+  account, or a transaction as it is stored, by handle, name, or unique prefix.
+* ``GET /transactions/{handle}/editable`` – the transaction in the editors' form.
+* ``GET /accounts/{handle}/register`` (``start``, ``end``, ``tag``, ``limit``).
+* ``GET /accounts/{handle}/balance`` (``as_of``, ``recursive``) and ``GET /balances``
+  (``as_of``) – one account's balance, or the book's cash and net worth.
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -30,20 +37,26 @@ from datetime import date
 from typing import TYPE_CHECKING, Any
 
 from ..api.schedule_codec import fixed_request_from_json, formula_request_from_json
-from ..api.transaction_codec import save_transaction_from_json
+from ..api.transaction_codec import save_transaction_from_json, transaction_input_json
 from ..api.views import (
+    account_balance_json,
+    account_ref_json,
     advance_days_json,
+    balance_summary_json,
     due_review_json,
     next_occurrence_json,
     posted_due_json,
+    register_json,
     resolution_json,
     saved_schedule_json,
     saved_transaction_json,
 )
 from ..gen.services import (
+    BalanceQuery,
     DueDecision,
     DuplicateSchedule,
     PostDue,
+    RegisterQuery,
     ResolveDue,
     ResolveNext,
     SetAdvanceDays,
@@ -54,6 +67,13 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "account_balance_get",
+    "account_lookup",
+    "balances_get",
+    "currency_get",
+    "register_get",
+    "transaction_editable",
+    "transaction_lookup",
     "advance_days_get",
     "advance_days_patch",
     "book_get",
@@ -220,3 +240,53 @@ def transaction_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
 def transaction_delete(api: Api, path: Path, body: dict[str, Any]) -> dict:
     _only(body, set())
     return saved_transaction_json(api.book.delete_transaction(path["handle"]))
+
+
+def currency_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return {"currency": api.book.transaction_currency()}
+
+
+def account_lookup(api: Api, _path: Path, query: QueryParams) -> dict:
+    reference = query.text("reference", required=True) or ""
+    query.finish()
+    return {"account": account_ref_json(api.book.find_account(reference))}
+
+
+def transaction_lookup(api: Api, _path: Path, query: QueryParams) -> dict:
+    reference = query.text("reference", required=True) or ""
+    query.finish()
+    return {"transaction": api.book.find_transaction(reference).serialize()}
+
+
+def transaction_editable(api: Api, path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return {"definition": transaction_input_json(api.book.editable_transaction(path["handle"]))}
+
+
+def register_get(api: Api, path: Path, query: QueryParams) -> dict:
+    request = RegisterQuery(
+        path["handle"],
+        start=query.iso_date("start"),
+        end=query.iso_date("end"),
+        tag=query.text("tag"),
+        limit=query.integer("limit", minimum=0),
+    )
+    query.finish()
+    return register_json(api.book.register(request))
+
+
+def account_balance_get(api: Api, path: Path, query: QueryParams) -> dict:
+    request = BalanceQuery(
+        path["handle"],
+        as_of=query.iso_date("as_of"),
+        recursive=query.choice("recursive", ("true", "false"), "false") == "true",
+    )
+    query.finish()
+    return account_balance_json(api.book.account_balance(request))
+
+
+def balances_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    as_of = query.iso_date("as_of")
+    query.finish()
+    return balance_summary_json(api.book.balance_summary(as_of))

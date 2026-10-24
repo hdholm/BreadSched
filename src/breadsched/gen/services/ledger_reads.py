@@ -1,0 +1,236 @@
+"""Ledger reads every interface shares: lookups, the editable form, registers, balances.
+
+These are read-only. Each returns a typed result, so the book server can serve the
+same answer in process and over HTTP (#354). A missing account or transaction is a
+``*.not_found`` failure; a reference that matches more than one is
+``*.reference.ambiguous``.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+from ..db.sqlite import DbSQLite
+from ..engine import ledger, valuation
+from ..lib.amount import Amount
+from ..lib.money import Money
+from ..lib.transaction import Split, Transaction
+from .contracts import ServiceError, ServiceResult
+from .transactions import TransactionInput, TransactionSplitInput, transaction_currency
+
+__all__ = [
+    "AccountBalance",
+    "AccountRef",
+    "BalanceQuery",
+    "BalanceSummary",
+    "RegisterLine",
+    "RegisterPage",
+    "RegisterQuery",
+    "account_balance",
+    "balance_summary",
+    "editable_transaction",
+    "find_account",
+    "find_transaction",
+    "register_page",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class AccountRef:
+    """Who an account is, without its settings."""
+
+    handle: str
+    name: str
+    full_name: str
+    type: str
+    commodity: str | None
+
+
+def _ref(db: DbSQLite, handle: str) -> AccountRef | None:
+    account = db.get_account(handle)
+    if account is None:
+        return None
+    return AccountRef(
+        account.handle, account.name, db.full_name(account), account.atype.value, account.commodity
+    )
+
+
+def find_account(db: DbSQLite, reference: str) -> ServiceResult[AccountRef]:
+    """An account by handle, full name (``Assets:Checking``), or unique bare name."""
+    account = db.get_account(reference) or db.get_account_by_name(reference)
+    found = _ref(db, account.handle) if account is not None else None
+    if found is None:
+        return ServiceResult.failure(ServiceError("account.not_found", ("account",)))
+    return ServiceResult.success(found)
+
+
+def find_transaction(db: DbSQLite, reference: str) -> ServiceResult[Transaction]:
+    """A transaction by handle or unique handle prefix."""
+    exact = db.get_transaction(reference) if reference else None
+    if exact is not None:
+        return ServiceResult.success(exact)
+    matches = (
+        [item for item in db.iter_transactions() if item.handle.startswith(reference)]
+        if reference
+        else []
+    )
+    if not matches:
+        return ServiceResult.failure(ServiceError("transaction.not_found", ("transaction",)))
+    if len(matches) > 1:
+        return ServiceResult.failure(
+            ServiceError("transaction.reference.ambiguous", ("transaction",))
+        )
+    return ServiceResult.success(matches[0])
+
+
+def editable_transaction(db: DbSQLite, handle: str) -> ServiceResult[TransactionInput]:
+    """The stored transaction in the editors' input form, ready to change and save."""
+    transaction = db.get_transaction(handle)
+    if transaction is None:
+        return ServiceResult.failure(ServiceError("transaction.not_found", ("transaction",)))
+    currency = transaction_currency(db, transaction.currency)
+
+    def split_input(split: Split) -> TransactionSplitInput:
+        account = db.get_account(split.account)
+        quantity_commodity = account.commodity if account is not None else None
+        return TransactionSplitInput(
+            split.account,
+            Amount(split.value, currency),
+            quantity=Amount(split.quantity, quantity_commodity or currency),
+            handle=split.handle,
+            memo=split.memo,
+            planning_flow=split.planning_flow,
+            investment_activity=split.investment_activity,
+        )
+
+    return ServiceResult.success(
+        TransactionInput(
+            post_date=transaction.post_date,
+            description=transaction.description,
+            num=transaction.num,
+            notes=transaction.notes,
+            currency=currency,
+            splits=tuple(split_input(split) for split in transaction.splits),
+        )
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class RegisterQuery:
+    account: str
+    start: date | None = None
+    end: date | None = None
+    #: Only transactions carrying this tag (any case).
+    tag: str | None = None
+    #: Only the last this-many lines.
+    limit: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RegisterLine:
+    transaction: str
+    split: str
+    when: date
+    description: str
+    transfer: str
+    amount: Money
+    balance: Money
+    tags: tuple[str, ...]
+    #: Linked documents, counting an external source link.
+    attachments: int
+
+
+@dataclass(frozen=True, slots=True)
+class RegisterPage:
+    account: AccountRef
+    lines: tuple[RegisterLine, ...]
+
+
+def register_page(db: DbSQLite, query: RegisterQuery) -> ServiceResult[RegisterPage]:
+    """An account's register with running balances, oldest first."""
+    account = _ref(db, query.account)
+    if account is None:
+        return ServiceResult.failure(ServiceError("account.not_found", ("account",)))
+    if query.limit is not None and query.limit < 0:
+        return ServiceResult.failure(ServiceError("register.limit.invalid", ("limit",)))
+    rows = ledger.register(db, account.handle, start=query.start, end=query.end)
+    if query.tag:
+        wanted = " ".join(query.tag.split()).casefold()
+        rows = [row for row in rows if any(t.casefold() == wanted for t in row.transaction.tags)]
+    if query.limit:
+        rows = rows[-query.limit :]
+    return ServiceResult.success(
+        RegisterPage(
+            account,
+            tuple(
+                RegisterLine(
+                    row.transaction.handle,
+                    row.split.handle,
+                    row.post_date,
+                    row.description,
+                    row.transfer_label(db),
+                    row.amount,
+                    row.running,
+                    tuple(row.transaction.tags),
+                    len(row.transaction.attachments) + (1 if row.transaction.source_link else 0),
+                )
+                for row in rows
+            ),
+        )
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class BalanceQuery:
+    account: str
+    as_of: date | None = None
+    #: Include every descendant account.
+    recursive: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class AccountBalance:
+    account: AccountRef
+    amount: Money
+    recursive: bool
+
+
+def account_balance(db: DbSQLite, query: BalanceQuery) -> ServiceResult[AccountBalance]:
+    """One account's ledger balance in its own commodity."""
+    account = _ref(db, query.account)
+    if account is None:
+        return ServiceResult.failure(ServiceError("account.not_found", ("account",)))
+    amount = (
+        ledger.balance_recursive_amount(db, account.handle, as_of=query.as_of).value
+        if query.recursive
+        else ledger.balance_amount(db, account.handle, as_of=query.as_of).value
+    )
+    return ServiceResult.success(AccountBalance(account, amount, query.recursive))
+
+
+@dataclass(frozen=True, slots=True)
+class BalanceSummary:
+    """Cash and net worth in the reporting currency, with what could not be valued."""
+
+    cash: Money | None
+    net_worth: Money | None
+    cash_missing_quotes: tuple[str, ...]
+    net_worth_missing_quotes: tuple[str, ...]
+    net_worth_incompatible_accounts: tuple[str, ...]
+
+
+def balance_summary(db: DbSQLite, as_of: date | None = None) -> BalanceSummary:
+    net_worth = valuation.aggregate_value(db, as_of=as_of, net_worth=True)
+    cash = valuation.aggregate_value(
+        db,
+        accounts=[a for a in db.iter_accounts() if a.atype.is_cash_like and not a.placeholder],
+        as_of=as_of,
+    )
+    return BalanceSummary(
+        cash.amount.value if cash.amount is not None else None,
+        net_worth.amount.value if net_worth.amount is not None else None,
+        tuple(cash.missing_quotes),
+        tuple(net_worth.missing_quotes),
+        tuple(net_worth.incompatible_accounts),
+    )

@@ -376,6 +376,10 @@ _SERVICE_MESSAGES = {
     "net_worth.period.invalid": "Group net worth history by month, quarter, or year",
     "schedule.name.required": "Give the scheduled transaction a name",
     "schedule.not_found": "The scheduled transaction no longer exists",
+    "transaction.reference.ambiguous": (
+        "More than one transaction matches; use more characters of its id"
+    ),
+    "register.limit.invalid": "The number of register lines must not be negative",
     "schedule.reference.ambiguous": ("More than one scheduled transaction matches; use its id"),
     "schedule.identity.changed": "The schedule identity changed while it was edited",
     "schedule.source.not_found": "The baseline schedule no longer exists",

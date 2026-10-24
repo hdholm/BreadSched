@@ -421,6 +421,107 @@ def test_saving_and_deleting_a_transaction_alike(target, book):
     assert _snapshot(target.db) == before
 
 
+def _post(db, handle, when, description, debit, credit, amount, tags=()):
+    transaction = Transaction.simple(when, description, debit, credit, amount)
+    transaction.handle = handle
+    transaction.tags = list(tags)
+    with db.transaction(f"Add {description}") as txn:
+        db.add_transaction(transaction, txn)
+
+
+def test_accounts_and_transactions_are_found_alike(target, book):
+    from breadsched.gen.services import transaction_currency
+
+    api, db = target.api, target.db
+    _post(db, "ab01" + "0" * 28, date(2026, 10, 2), "Shop", book.groceries, book.checking, "12")
+    _post(db, "ab02" + "0" * 28, date(2026, 10, 3), "Pay", book.checking, book.salary, "900")
+
+    assert api.transaction_currency() == transaction_currency(db)
+    for reference in ("Assets:Checking", "Checking", book.checking):
+        found = api.find_account(reference)
+        assert (found.handle, found.full_name, found.type) == (
+            book.checking,
+            "Assets:Checking",
+            "BANK",
+        )
+    stored = db.get_transaction("ab01" + "0" * 28)
+    assert api.find_transaction("ab01").serialize() == stored.serialize()
+
+    editable = api.editable_transaction(stored.handle)
+    assert (editable.post_date, editable.description) == (date(2026, 10, 2), "Shop")
+    assert [(split.account, split.value.value) for split in editable.splits] == [
+        (book.groceries, Money("12")),
+        (book.checking, Money("-12")),
+    ]
+    assert editable.splits[0].handle == stored.splits[0].handle
+
+    for call, status, code, wording in (
+        (lambda: api.find_account("Nowhere"), 404, "account.not_found", "'Nowhere'"),
+        (lambda: api.find_transaction("ff"), 404, "transaction.not_found", "'ff'"),
+        (lambda: api.find_transaction("ab0"), 400, "transaction.reference.ambiguous", "more"),
+        (lambda: api.editable_transaction("missing"), 404, "transaction.not_found", ""),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert (refused.value.status, refused.value.code) == (status, code)
+        assert wording in str(refused.value)
+
+
+def test_registers_and_balances_read_alike(target, book):
+    from breadsched.gen.services import BalanceQuery, RegisterQuery
+
+    api, db = target.api, target.db
+    _post(db, "cd01" + "0" * 28, date(2026, 10, 2), "Shop", book.groceries, book.checking, "12")
+    _post(db, "cd02" + "0" * 28, date(2026, 10, 3), "Pay", book.checking, book.salary, "900.5")
+    _post(
+        db,
+        "cd03" + "0" * 28,
+        date(2026, 10, 9),
+        "Market",
+        book.groceries,
+        book.checking,
+        "30.25",
+        tags=("Food",),
+    )
+
+    page = api.register(RegisterQuery(book.checking))
+    assert page.account.full_name == "Assets:Checking"
+    assert [(line.description, line.amount, line.balance) for line in page.lines] == [
+        ("Shop", Money("-12"), Money("-12")),
+        ("Pay", Money("900.5"), Money("888.5")),
+        ("Market", Money("-30.25"), Money("858.25")),
+    ]
+    assert page.lines[0].transfer == "Expenses:Groceries"
+    # Filtering keeps each line's running balance.
+    tagged = api.register(RegisterQuery(book.checking, tag="food"))
+    assert [(line.description, line.balance) for line in tagged.lines] == [
+        ("Market", Money("858.25"))
+    ]
+    last = api.register(RegisterQuery(book.checking, limit=1, end=date(2026, 10, 5)))
+    assert [line.description for line in last.lines] == ["Pay"]
+
+    balance = api.account_balance(BalanceQuery(book.checking, as_of=date(2026, 10, 5)))
+    assert (balance.account.handle, balance.amount) == (book.checking, Money("888.5"))
+    expenses = api.account_balance(BalanceQuery(book.expenses, recursive=True))
+    assert expenses.amount == Money("42.25") and expenses.recursive
+    assert api.account_balance(BalanceQuery(book.expenses)).amount == Money(0)
+
+    totals = api.balance_summary()
+    assert totals.cash == Money("858.25")
+    assert totals.cash_missing_quotes == ()
+
+    for call, code in (
+        (lambda: api.register(RegisterQuery("missing")), "account.not_found"),
+        (lambda: api.account_balance(BalanceQuery("missing")), "account.not_found"),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert (refused.value.status, refused.value.code) == (404, code)
+    with pytest.raises(ApiError) as refused:
+        api.register(RegisterQuery(book.checking, limit=-1))
+    assert refused.value.status == 400
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -544,6 +645,14 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("GET", "/api/v1/due-review?as_of=soon", None, 400, "query.date.invalid"),
         ("GET", "/api/v1/due-review?colour=red", None, 400, "query.unknown"),
         ("POST", "/api/v1/undo", [], 400, "request.body.object_required"),
+        ("GET", "/api/v1/accounts/lookup", None, 400, "query.missing"),
+        ("GET", "/api/v1/transactions/lookup?reference=", None, 400, "query.missing"),
+        ("GET", f"/api/v1/accounts/{sched.handle}/register", None, 404, "account.not_found"),
+        ("GET", "/api/v1/accounts/x/register?limit=two", None, 400, "query.integer.invalid"),
+        ("GET", "/api/v1/accounts/x/register?limit=-1", None, 400, "query.integer.out_of_range"),
+        ("GET", "/api/v1/accounts/x/balance?recursive=yes", None, 400, "query.invalid"),
+        ("GET", "/api/v1/balances?as_of=soon", None, 400, "query.date.invalid"),
+        ("POST", "/api/v1/balances", {}, 405, "request.method.not_allowed"),
     ]
     for method, route, body, status, code in cases:
         got, payload, _ = _raw(remote, method, route, body)

@@ -17,9 +17,13 @@ from contextlib import contextmanager
 from datetime import date
 
 from ..gen.db.sqlite import DbSQLite
-from ..gen.lib import ScheduledTransaction
+from ..gen.lib import ScheduledTransaction, Transaction
 from ..gen.services import (
+    AccountBalance,
+    AccountRef,
     AdvanceDays,
+    BalanceQuery,
+    BalanceSummary,
     DeleteSchedule,
     DeleteTransaction,
     DueResolution,
@@ -29,6 +33,8 @@ from ..gen.services import (
     NextOccurrence,
     PostDue,
     PostedDue,
+    RegisterPage,
+    RegisterQuery,
     ResolveDue,
     ResolveNext,
     SavedSchedule,
@@ -37,19 +43,27 @@ from ..gen.services import (
     SaveTransaction,
     ServiceError,
     SetAdvanceDays,
+    TransactionInput,
+    account_balance,
+    balance_summary,
     delete_schedule,
     delete_transaction,
     duplicate_schedule,
+    editable_transaction,
+    find_account,
     find_schedule,
+    find_transaction,
     next_occurrence,
     pending_due_review,
     post_due,
+    register_page,
     resolve_due,
     resolve_next,
     save_fixed_schedule,
     save_formula_schedule,
     save_transaction,
     set_advance_days,
+    transaction_currency,
 )
 from ..gen.services import advance_days as stored_advance_days
 from .contract import ApiError, unwrap
@@ -173,6 +187,29 @@ class LocalBookServer:
     def delete_transaction(self, transaction: str) -> SavedTransaction:
         return unwrap(delete_transaction(self.db, DeleteTransaction(transaction)))
 
+    # ------------------------------------------------------------ ledger reads
+
+    def transaction_currency(self) -> str:
+        return transaction_currency(self.db)
+
+    def find_account(self, reference: str) -> AccountRef:
+        return _named(find_account(self.db, reference), reference, "account")
+
+    def find_transaction(self, reference: str) -> Transaction:
+        return _named(find_transaction(self.db, reference), reference, "transaction")
+
+    def editable_transaction(self, transaction: str) -> TransactionInput:
+        return unwrap(editable_transaction(self.db, transaction))
+
+    def register(self, query: RegisterQuery) -> RegisterPage:
+        return unwrap(register_page(self.db, query))
+
+    def account_balance(self, query: BalanceQuery) -> AccountBalance:
+        return unwrap(account_balance(self.db, query))
+
+    def balance_summary(self, as_of: date | None = None) -> BalanceSummary:
+        return balance_summary(self.db, as_of)
+
 
 def book_server(db: DbSQLite) -> LocalBookServer:
     """The one in-process server over ``db``, for code that holds the book itself.
@@ -188,6 +225,21 @@ def book_server(db: DbSQLite) -> LocalBookServer:
         server = LocalBookServer(db)
         db._book_server = server  # type: ignore[attr-defined]
     return server
+
+
+def _named(found, reference: str, kind: str):
+    """``found``'s value, or its failure worded with the reference that was asked for."""
+    if found.value is not None:
+        return found.value
+    error = found.errors[0]
+    if error.code.endswith(".not_found"):
+        raise ApiError(404, error.code, error.fields, f"no {kind} matches {reference!r}")
+    raise ApiError(
+        400,
+        error.code,
+        error.fields,
+        f"{reference!r} matches more than one {kind}; use more characters",
+    )
 
 
 def lookup_schedule(db: DbSQLite, reference: str) -> ScheduledTransaction:
