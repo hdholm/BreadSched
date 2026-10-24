@@ -83,8 +83,21 @@ class FsaDashboardView(BaseView):
         self.fsa_grid = self._grid()
         content.append(self.fsa_grid)
 
-        self.claim_heading = self._heading("Open FSA claims")
+        # Every claim of a benefit year that can still be claimed, settled or not,
+        # so a new claim is easy to tell from one already filed (#366).
+        self.claim_heading = self._heading("FSA claims")
         content.append(self.claim_heading)
+        self.claim_note = Gtk.Label(
+            label=(
+                "Every claim in a benefit year that can still be claimed, settled or "
+                "not, and any older claim still open."
+            ),
+            xalign=0,
+            wrap=True,
+        )
+        self.claim_note.add_css_class("dim")
+        self.claim_note.set_margin_start(12)
+        content.append(self.claim_note)
         self.claim_grid = self._grid()
         content.append(self.claim_grid)
 
@@ -231,8 +244,9 @@ class FsaDashboardView(BaseView):
             f"{waiting} claim{' needs' if waiting == 1 else 's need'} attention." if waiting else ""
         )
         self.attention_label.set_visible(bool(waiting))
-        lines = [line for line in report.lines if line.attention or not line.summary.status.settled]
+        lines = report.dashboard_lines
         self.claim_heading.set_visible(bool(lines))
+        self.claim_note.set_visible(bool(lines))
         self.claim_grid.set_visible(bool(lines))
         if not lines:
             return
@@ -319,7 +333,7 @@ class FsaDashboardView(BaseView):
         from ..dialogs.fsa_claims_dialog import FsaClaimsDialog
 
         assert self.db is not None
-        FsaClaimsDialog(self.get_root(), self.db, claim_handle=claim_handle).present()
+        FsaClaimsDialog.present_for(self.get_root(), self.db, claim_handle)
 
     def _on_fsa_claims(self, _button) -> None:
         self._open_claim()

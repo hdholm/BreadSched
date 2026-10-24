@@ -10,6 +10,34 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a295 - 2026-10-24
+
+- **FSA claims are easier to start, link, and find (#366).**
+  - A payment made with the FSA card and linked only as a claim's healthcare
+    payment left the claim unreimbursed. A claim save now pairs it:
+    `fsa_claims._pair_direct_links` links the transaction's single FSA outflow as
+    the reimbursement, and a refund back to an FSA the claim draws on as the
+    repayment, exactly as the `direct_payment` and `direct_refund` roles do. It uses
+    the year the claim already draws on, else the one year covering the service
+    date, and refuses (`claim.attachment.funding_year.required`) when neither
+    applies.
+  - The GTK claims chooser starts with **New claim**, so **New** no longer leaves an
+    old claim shown as chosen above an empty form. A saved or deleted claim updates
+    the chooser, whose entries show each claim's status.
+  - Each transaction list pins the linked splits on top with **Remove**. Below
+    them, a searchable list to **Add** from is limited to 60 days around the service
+    date (or the claim year, or all dates) and capped at 200 rows; before, every
+    candidate was a check box in one small scrolling box.
+  - **Manage FSA Claims…** is an application action (`app.fsa-claims`) in every
+    view's Actions menu. The window is one per book (`FsaClaimsDialog.present_for`),
+    not modal, and offers transactions entered while it is open.
+  - The GTK and web FSA Dashboards list every claim of a benefit year that can
+    still be claimed, settled or not, plus older claims still open
+    (`ClaimLine.open_year`, `ClaimReport.dashboard_lines`).
+- **Test timing.** The tab-focus GUI test waits for the register's focus (up to
+  3 s) instead of a fixed 0.3 s, matching `focus_entry`'s one-second wait for
+  sizing.
+
 ## 0.2.0a294 - 2026-10-24
 
 - **A GnuCash-like reconcile window (#362).** The GTK reconcile dialog is rebuilt:

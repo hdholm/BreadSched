@@ -39,7 +39,8 @@ def _group(group: ClaimGroup) -> dict[str, object]:
 
 
 def fsa_dashboard(api: Api, query: QueryParams) -> dict[str, object]:
-    """Benefit years, claims still open or needing attention, and claims grouped ``by``."""
+    """Benefit years, the claims to show (``ClaimReport.dashboard_lines``), and claims
+    grouped ``by``."""
     by = query.text("by") or "status"
     query.finish()
     if by not in GROUPINGS:
@@ -62,9 +63,10 @@ def fsa_dashboard(api: Api, query: QueryParams) -> dict[str, object]:
                 "rejected": _amount(line.summary.rejected),
                 "remaining": _amount(line.summary.remaining_reimbursable),
                 "attention": [item.text for item in line.attention],
+                "open_year": line.open_year,
             }
-            for line in report.lines
-            if line.attention or not line.summary.status.settled
+            # Every claim of an open benefit year, and older ones still open (#366).
+            for line in report.dashboard_lines
         ],
         "report": {
             "by": report.by,

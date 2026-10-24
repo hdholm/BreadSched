@@ -36,7 +36,13 @@ from typing import Any
 from ..db.sqlite import DbSQLite
 from ..lib.fsa_claim import FsaClaimEvent
 from ..lib.money import Money
-from .fsa_claims import FsaClaimStatus, FsaClaimSummary, allocation_year, claim_summary
+from .fsa_claims import (
+    FsaClaimStatus,
+    FsaClaimSummary,
+    allocation_year,
+    claim_summary,
+    claim_year_window,
+)
 
 __all__ = [
     "DEADLINE_WARNING_DAYS",
@@ -77,6 +83,9 @@ class ClaimLine:
     #: The earliest claim deadline among the claim's funding years, if any.
     deadline: date | None
     attention: tuple[ClaimAttention, ...]
+    #: Whether the claim's benefit year is still open (claims can still be filed),
+    #: so the Dashboard lists it even when settled, to tell claims apart (#366).
+    open_year: bool = False
 
     @property
     def handle(self) -> str:
@@ -107,6 +116,16 @@ class ClaimReport:
     @property
     def needing_attention(self) -> tuple[ClaimLine, ...]:
         return tuple(line for line in self.lines if line.attention)
+
+    @property
+    def dashboard_lines(self) -> tuple[ClaimLine, ...]:
+        """Every claim in an open benefit year, settled or not, and any older
+        claim still open or needing attention (#366)."""
+        return tuple(
+            line
+            for line in self.lines
+            if line.open_year or line.attention or not line.summary.status.settled
+        )
 
     @property
     def totals(self) -> ClaimGroup:
@@ -221,12 +240,15 @@ def _line(db: DbSQLite, summary: FsaClaimSummary, when: date) -> ClaimLine:
         if index == 0:
             account_name = db.full_name(account)
             year_label = f"{year.start.isoformat()} – {year.through.isoformat()}"
+    window = claim_year_window(db, summary.claim.service_date)
+    ends = [*deadlines, *([window[1]] if window is not None else [])]
     return ClaimLine(
         summary=summary,
         account=account_name,
         funding_year=year_label,
         deadline=min(deadlines) if deadlines else None,
         attention=_attention(db, summary, deadlines, when),
+        open_year=any(end >= when for end in ends),
     )
 
 

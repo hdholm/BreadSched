@@ -303,8 +303,11 @@ what was reimbursed or expected back below the Plan, Actual, and Variance cards.
 clearly belong on one claim, each checked; **Link selected** links them. Import and
 reconciliation say when proposals are waiting.
 
-**FSA Dashboard** lists open claims with a **Needs attention** column, under a line
-counting the claims that need it; the Dashboard shows the count as a tile.
+**FSA Dashboard** lists **FSA claims**: every claim of a benefit year that can still
+be claimed, settled or not, and any older claim still open, with a **Needs
+attention** column, under a line counting the claims that need it; the Dashboard
+shows the count as a tile. A payment made with the FSA card and linked as a claim's
+healthcare payment links its FSA side too, so the claim counts as reimbursed by it.
 **Claims report** totals every claim, grouped by the **Group by** choice: status,
 FSA account, funding year, or provider.
 
