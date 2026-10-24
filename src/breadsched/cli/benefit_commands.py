@@ -5,13 +5,13 @@ from __future__ import annotations
 import argparse
 from datetime import date
 
+from ..api.protocol import BookApi
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import category_report
 from ..gen.lib import (
     FsaClaim,
     FsaClaimEvent,
     Money,
-    Receivable,
     Split,
     Transaction,
 )
@@ -21,23 +21,10 @@ from ..gen.services import (
     SetReimbursementOverride,
     close_claim,
     reopen_claim,
-    set_reimbursement_override,
 )
 from ..gen.services.receivables import (
     RecordWriteOff,
     SaveReceivable,
-    accept_reimbursements,
-    attach_expense_split,
-    attach_reimbursement_split,
-    clear_dispute,
-    delete_receivable,
-    detach_split,
-    list_receivables,
-    mark_disputed,
-    record_write_off,
-    reimbursement_proposals,
-    save_receivable,
-    shared_costs,
 )
 from ..presentation import (
     goal_status_text,
@@ -51,25 +38,11 @@ from .common import (
     add_server_options,
     book_api,
     emit,
-    find_transaction,
     open_book,
     parse_date,
     resolve_account,
     table,
 )
-
-
-def _find_receivable(db: DbSQLite, reference: str) -> Receivable:
-    """Locate a receivable by handle, or by a unique prefix of one."""
-    exact = db.get_receivable(reference)
-    if exact is not None:
-        return exact
-    matches = [item for item in db.iter_receivables() if item.handle.startswith(reference)]
-    if not matches:
-        raise CommandError(f"no receivable matches {reference!r}")
-    if len(matches) > 1:
-        raise CommandError(f"{reference!r} matches {len(matches)} receivables; use more characters")
-    return matches[0]
 
 
 def _receivable_split(transaction: Transaction, index: int) -> Split:
@@ -540,36 +513,36 @@ def _receivable_costs(db: DbSQLite, args: argparse.Namespace) -> int:
     return 0
 
 
-def _scenario_expectation(db: DbSQLite, args: argparse.Namespace) -> int:
+def _scenario_expectation(book: BookApi, args: argparse.Namespace) -> int:
     """Change, in one scenario, what a payer is expected to reimburse and when."""
     if not args.scenario:
         raise CommandError("--scenario NAME is required with --expect")
-    scenario = db.get_scenario_by_name(args.scenario)
+    scenario = next(
+        (handle for handle, name in book.receivables_view().scenarios if name == args.scenario),
+        None,
+    )
     if scenario is None:
         raise CommandError(f"no scenario named {args.scenario!r}")
-    receivable = _find_receivable(db, args.expect)
-    result = set_reimbursement_override(
-        db,
+    receivable = book.find_receivable(args.expect)
+    changed = book.set_reimbursement_override(
         SetReimbursementOverride(
-            scenario.handle,
+            scenario,
             receivable.handle,
             amount=Money(args.amount) if args.amount else None,
             on=date.fromisoformat(args.on) if args.on else None,
         ),
     )
-    if not result.ok or result.value is None:
-        raise CommandError(service_error_message(result.errors[0]))
-    overrides = result.value.reimbursement_overrides
+    overrides = changed.reimbursement_overrides
     change = overrides.get(receivable.handle)
     emit(
         {
-            "scenario": result.value.name,
+            "scenario": changed.name,
             "reimbursement_overrides": {
                 handle: {"amount": item.amount, "on": item.on} for handle, item in overrides.items()
             },
         },
         args,
-        f"{result.value.name}: {receivable.payer} "
+        f"{changed.name}: {receivable.payer} "
         + (
             "reimbursement expected as the receivable says"
             if change is None
@@ -600,19 +573,22 @@ def cmd_receivables(args: argparse.Namespace) -> int:
         or args.accept_proposals
         or args.expect
     )
-    db = open_book(args.book, "r" if read_only else "w")
-    try:
-        if args.costs:
+    if args.costs:
+        # A Plan report, which has not moved onto the book server yet.
+        db = open_book(args.book, "r")
+        try:
             return _receivable_costs(db, args)
+        finally:
+            db.close()
+    with book_api(args, "r" if read_only else "w") as book:
         if args.expect:
-            return _scenario_expectation(db, args)
+            return _scenario_expectation(book, args)
         if args.proposals or args.accept_proposals:
-            proposals = reimbursement_proposals(db).value or ()
+            proposals = book.reimbursement_proposals()
             if args.accept_proposals:
-                accepted = accept_reimbursements(
-                    db, tuple((p.receivable, p.transaction, p.split) for p in proposals)
-                ).value
-                assert accepted is not None
+                accepted = book.accept_reimbursements(
+                    tuple((p.receivable, p.transaction, p.split) for p in proposals)
+                )
                 emit(
                     {"linked": accepted.linked, "unchanged": accepted.unchanged},
                     args,
@@ -658,8 +634,7 @@ def cmd_receivables(args: argparse.Namespace) -> int:
         if args.add:
             if not args.incurred:
                 raise CommandError("--incurred DATE is required with --add")
-            saved = save_receivable(
-                db,
+            receivable = book.save_receivable(
                 SaveReceivable(
                     incurred_date=date.fromisoformat(args.incurred),
                     payer=args.add,
@@ -670,12 +645,9 @@ def cmd_receivables(args: argparse.Namespace) -> int:
                         if args.expected_cash_date
                         else None
                     ),
-                    account=resolve_account(db, args.account).handle if args.account else None,
+                    account=book.find_account(args.account).handle if args.account else None,
                 ),
             )
-            if saved.value is None:
-                raise CommandError(service_error_message(saved.errors[0]))
-            receivable = saved.value
             emit(
                 {"handle": receivable.handle, "payer": receivable.payer},
                 args,
@@ -683,15 +655,13 @@ def cmd_receivables(args: argparse.Namespace) -> int:
             )
             return 0
         if args.attach_expense or args.attach_reimbursement:
-            receivable = _find_receivable(db, args.attach_expense or args.attach_reimbursement)
+            receivable = book.find_receivable(args.attach_expense or args.attach_reimbursement)
             if not args.transaction or not args.split_index:
                 raise CommandError("--transaction and --split-index are required")
-            transaction = find_transaction(db, args.transaction)
+            transaction = book.find_transaction(args.transaction)
             split = _receivable_split(transaction, args.split_index)
-            linker = attach_expense_split if args.attach_expense else attach_reimbursement_split
-            result = linker(db, receivable.handle, transaction.handle, split.handle)
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
+            role = "expense" if args.attach_expense else "reimbursement"
+            book.link_receivable_split(receivable.handle, transaction.handle, split.handle, role)
             emit(
                 {"handle": receivable.handle},
                 args,
@@ -700,40 +670,31 @@ def cmd_receivables(args: argparse.Namespace) -> int:
             )
             return 0
         if args.detach:
-            receivable = _find_receivable(db, args.detach)
+            receivable = book.find_receivable(args.detach)
             if not args.transaction or not args.split_index:
                 raise CommandError("--transaction and --split-index are required")
-            transaction = find_transaction(db, args.transaction)
+            transaction = book.find_transaction(args.transaction)
             split = _receivable_split(transaction, args.split_index)
-            result = detach_split(db, receivable.handle, transaction.handle, split.handle)
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
+            book.detach_receivable_split(receivable.handle, transaction.handle, split.handle)
             emit({"handle": receivable.handle}, args, "Unlinked split from receivable")
             return 0
         if args.dispute:
-            receivable = _find_receivable(db, args.dispute)
+            receivable = book.find_receivable(args.dispute)
             if not args.on:
                 raise CommandError("--on DATE is required with --dispute")
-            result = mark_disputed(
-                db, receivable.handle, date.fromisoformat(args.on), args.note or ""
-            )
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
+            book.mark_disputed(receivable.handle, date.fromisoformat(args.on), args.note or "")
             emit({"handle": receivable.handle}, args, f"Disputed receivable for {receivable.payer}")
             return 0
         if args.clear_dispute:
-            receivable = _find_receivable(db, args.clear_dispute)
-            result = clear_dispute(db, receivable.handle)
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
+            receivable = book.find_receivable(args.clear_dispute)
+            book.clear_dispute(receivable.handle)
             emit({"handle": receivable.handle}, args, "Cleared the dispute")
             return 0
         if args.write_off:
-            receivable = _find_receivable(db, args.write_off)
+            receivable = book.find_receivable(args.write_off)
             if not args.amount or not args.on:
                 raise CommandError("--amount and --on DATE are required with --write-off")
-            result = record_write_off(
-                db,
+            book.record_write_off(
                 RecordWriteOff(
                     receivable=receivable.handle,
                     amount=Money(args.amount),
@@ -741,8 +702,6 @@ def cmd_receivables(args: argparse.Namespace) -> int:
                     reason=args.reason or "",
                 ),
             )
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
             emit(
                 {"handle": receivable.handle},
                 args,
@@ -750,19 +709,14 @@ def cmd_receivables(args: argparse.Namespace) -> int:
             )
             return 0
         if args.delete:
-            receivable = _find_receivable(db, args.delete)
-            deleted = delete_receivable(db, receivable.handle)
-            if deleted.value is None:
-                raise CommandError(service_error_message(deleted.errors[0]))
-            emit({"deleted": deleted.value}, args, f"Deleted receivable for {receivable.payer}")
+            receivable = book.find_receivable(args.delete)
+            deleted = book.delete_receivable(receivable.handle)
+            emit({"deleted": deleted}, args, f"Deleted receivable for {receivable.payer}")
             return 0
-        summaries = list_receivables(db).value or ()
-        shared: dict[str, tuple] = {}
-        for item in summaries:
-            found = shared_costs(db, item.receivable.handle)
-            if found.value is None:
-                raise CommandError(service_error_message(found.errors[0]))
-            shared[item.receivable.handle] = found.value
+        view = book.receivables_view()
+        summaries = [line.summary for line in view.receivables]
+        shared = {line.summary.receivable.handle: line.shared_costs for line in view.receivables}
+        names = {line.summary.receivable.handle: line.account_name for line in view.receivables}
         emit(
             [
                 {
@@ -777,9 +731,7 @@ def cmd_receivables(args: argparse.Namespace) -> int:
                     "remaining": item.remaining.format(),
                     "age_days": item.age_days,
                     "status": item.status.value,
-                    "account": (
-                        db.full_name(item.receivable.account) if item.receivable.account else None
-                    ),
+                    "account": names[item.receivable.handle],
                     "fsa_claims": list(item.fsa_claims),
                     "shared_costs": [
                         {
@@ -829,8 +781,6 @@ def cmd_receivables(args: argparse.Namespace) -> int:
             else "No receivables yet. Add one with --add PAYER --incurred DATE.",
         )
         return 0
-    finally:
-        db.close()
 
 
 def register(add: AddCommand) -> None:
@@ -968,6 +918,7 @@ def register(add: AddCommand) -> None:
         "neither, the scenario expects what the receivable says",
     )
     receivables_cmd.add_argument("--scenario", metavar="NAME", help="saved scenario for --expect")
+    add_server_options(receivables_cmd)
     receivables_cmd.set_defaults(func=cmd_receivables)
 
     goals_cmd = add(

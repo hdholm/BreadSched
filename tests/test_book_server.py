@@ -880,6 +880,97 @@ def test_reconciliation_alike(target, book):
     assert (_snapshot(db), sorted(repr(r.serialize()) for r in db.iter_reconciliations())) == before
 
 
+def test_receivables_alike(target, book):
+    from breadsched.gen.lib import Scenario
+    from breadsched.gen.services.receivables import RecordWriteOff, SaveReceivable
+    from breadsched.gen.services.scenarios import SetReimbursementOverride
+
+    api, db = target.api, target.db
+    _post(db, "cc01" + "0" * 28, date(2026, 3, 2), "Clinic", book.groceries, book.checking, "80")
+    _post(db, "cc02" + "0" * 28, date(2026, 3, 9), "Refund", book.checking, book.groceries, "30")
+    lean = Scenario(name="Lean")
+    with db.transaction("Scenario") as txn:
+        db.add_scenario(lean, txn)
+    clinic = db.get_transaction("cc01" + "0" * 28)
+    [cost] = [split for split in clinic.splits if split.account == book.groceries]
+
+    saved = api.save_receivable(
+        SaveReceivable(
+            date(2026, 3, 2),
+            "Mom",
+            "Clinic visit",
+            expected_amount=Money("50"),
+            expected_cash_date=date.today() + timedelta(days=60),
+        )
+    )
+    assert api.find_receivable(saved.handle[:6]).payer == "Mom"
+    costs, _credits = api.receivable_candidates(saved.handle)
+    assert (clinic.handle, cost.handle) in [
+        (c.candidate.transaction, c.candidate.split) for c in costs
+    ]
+    assert {line.account_name for line in costs} >= {"Expenses:Groceries"}
+    api.link_receivable_split(saved.handle, clinic.handle, cost.handle, "expense")
+
+    view = api.receivables_view(date(2026, 3, 31))
+    [line] = view.receivables
+    assert (line.summary.owed, line.summary.expense_total) == (Money("50"), Money("80"))
+    assert [(link.description, link.account_name, link.value) for link in line.expenses] == [
+        ("Clinic", "Expenses:Groceries", Money("80"))
+    ]
+    assert [name for _handle, name in view.scenarios] == ["Lean"]
+    # Linking the first expense made the default Receivable account.
+    assert [name for _handle, name in view.accounts] == ["Assets:Reimbursements Receivable"]
+    assert line.account_name == "Assets:Reimbursements Receivable"
+    [proposal] = view.proposals
+    assert (proposal.proposal.amount, proposal.account_name) == (Money("30"), "Expenses:Groceries")
+    assert api.reimbursement_proposals(date(2026, 3, 31)) == (proposal.proposal,)
+    accepted = api.accept_reimbursements(
+        ((saved.handle, proposal.proposal.transaction, proposal.proposal.split),)
+    )
+    assert (accepted.linked, accepted.unchanged) == (1, 0)
+
+    assert (
+        api.mark_disputed(saved.handle, date(2026, 4, 1), "Says paid").dispute_note == "Says paid"
+    )
+    assert api.clear_dispute(saved.handle).disputed_on is None
+    written = api.record_write_off(RecordWriteOff(saved.handle, Money("5"), date(2026, 4, 2)))
+    assert written.handle == saved.handle
+    changed = api.set_reimbursement_override(
+        SetReimbursementOverride(lean.handle, saved.handle, Money("0"))
+    )
+    assert changed.reimbursement_overrides[saved.handle].amount == Money("0")
+    [line] = api.receivables_view(date(2026, 4, 30)).receivables
+    assert line.summary.reimbursed == Money("30") and line.summary.written_off == Money("5")
+    assert [change.scenario_name for change in line.scenario_changes] == ["Lean"]
+    detached = api.detach_receivable_split(saved.handle, clinic.handle, cost.handle)
+    assert detached.expenses == []
+
+    before = _snapshot(db), sorted(repr(r.serialize()) for r in db.iter_receivables())
+    for call, status, code in (
+        (lambda: api.save_receivable(SaveReceivable(date(2026, 3, 2), " ")), 400, None),
+        (lambda: api.find_receivable("zz"), 404, "receivable.not_found"),
+        (
+            lambda: api.link_receivable_split(saved.handle, clinic.handle, cost.handle, "gift"),
+            400,
+            None,
+        ),
+        (lambda: api.delete_receivable("missing"), 404, "receivable.not_found"),
+        (
+            lambda: api.record_write_off(
+                RecordWriteOff(saved.handle, Money("-1"), date(2026, 4, 2))
+            ),
+            400,
+            "receivable.write_off.amount_not_positive",
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert refused.value.status == status
+        assert code is None or refused.value.code == code
+    assert (_snapshot(db), sorted(repr(r.serialize()) for r in db.iter_receivables())) == before
+    assert api.delete_receivable(saved.handle) == saved.handle
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -1067,6 +1158,24 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ),
         ("POST", "/api/v1/reconciliations/x/complete", {"now": True}, 400, "request.invalid"),
         ("GET", "/api/v1/accounts/x/reconciliation?as_of=2026-01-01", None, 400, "query.unknown"),
+        ("POST", "/api/v1/receivables", {"payer": "Mom"}, 400, "request.invalid"),
+        (
+            "POST",
+            "/api/v1/receivables",
+            {"incurred_date": "2026-01-01", "payer": "Mom", "expected_amount": 5},
+            400,
+            "request.invalid",
+        ),
+        ("POST", "/api/v1/receivables/x/splits", {"transaction": "t"}, 400, "request.invalid"),
+        ("POST", "/api/v1/receivables/x/dispute", {"on": "soon"}, 400, "request.invalid"),
+        (
+            "POST",
+            "/api/v1/reimbursement-proposals/accept",
+            {"chosen": [["a"]]},
+            400,
+            "request.invalid",
+        ),
+        ("DELETE", "/api/v1/receivables/missing", None, 404, "receivable.not_found"),
     ]
     for method, route, body, status, code in cases:
         got, payload, _ = _raw(remote, method, route, body)

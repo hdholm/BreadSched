@@ -17,8 +17,10 @@ from contextlib import contextmanager
 from datetime import date
 
 from ..gen.db.sqlite import DbSQLite
+from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
 from ..gen.lib.transaction import ReconcileState
@@ -87,11 +89,20 @@ from ..gen.services import (
     transactions_with_tag,
 )
 from ..gen.services import advance_days as stored_advance_days
+from ..gen.services import receivables as receivable_service
+from ..gen.services import scenarios as scenario_service
 from ..gen.services.categorization import (
     AddRule,
     AppliedCategories,
     CategorizationRules,
     CategoryRule,
+)
+from ..gen.services.receivables import (
+    AcceptedReimbursements,
+    CandidateLine,
+    ReceivablesView,
+    RecordWriteOff,
+    SaveReceivable,
 )
 from ..gen.services.reconciliations import (
     ReconciliationView,
@@ -105,6 +116,7 @@ from ..gen.services.savings_goals import (
     SavingsGoalsView,
     SetGoalOverride,
 )
+from ..gen.services.scenarios import SetReimbursementOverride
 from .contract import ApiError, unwrap
 from .protocol import Change, Listener
 
@@ -276,6 +288,66 @@ class LocalBookServer:
 
     def set_tags(self, transaction: str, tags: list[str]) -> Transaction:
         return unwrap(set_tags(self.db, transaction, tags))
+
+    # -------------------------------------------------------------- receivables
+
+    def receivables_view(self, as_of: date | None = None) -> ReceivablesView:
+        return receivable_service.receivables_view(self.db, as_of)
+
+    def receivable_candidates(
+        self, receivable: str | None = None
+    ) -> tuple[tuple[CandidateLine, ...], tuple[CandidateLine, ...]]:
+        return unwrap(receivable_service.receivable_candidate_lines(self.db, receivable))
+
+    def find_receivable(self, reference: str) -> Receivable:
+        found = receivable_service.find_receivable(self.db, reference)
+        return _named(found, reference, "receivable")
+
+    def save_receivable(self, request: SaveReceivable) -> Receivable:
+        return unwrap(receivable_service.save_receivable(self.db, request))
+
+    def link_receivable_split(
+        self, receivable: str, transaction: str, split: str, role: str
+    ) -> Receivable:
+        if role not in ("expense", "reimbursement"):
+            raise ApiError(
+                400, "receivable.role.invalid", ("role",), "choose expense or reimbursement"
+            )
+        link = (
+            receivable_service.attach_expense_split
+            if role == "expense"
+            else receivable_service.attach_reimbursement_split
+        )
+        return unwrap(link(self.db, receivable, transaction, split))
+
+    def detach_receivable_split(self, receivable: str, transaction: str, split: str) -> Receivable:
+        return unwrap(receivable_service.detach_split(self.db, receivable, transaction, split))
+
+    def mark_disputed(self, receivable: str, disputed_on: date, note: str = "") -> Receivable:
+        return unwrap(receivable_service.mark_disputed(self.db, receivable, disputed_on, note))
+
+    def clear_dispute(self, receivable: str) -> Receivable:
+        return unwrap(receivable_service.clear_dispute(self.db, receivable))
+
+    def record_write_off(self, request: RecordWriteOff) -> Receivable:
+        return unwrap(receivable_service.record_write_off(self.db, request))
+
+    def delete_receivable(self, receivable: str) -> str:
+        return unwrap(receivable_service.delete_receivable(self.db, receivable))
+
+    def reimbursement_proposals(
+        self, as_of: date | None = None, account: str | None = None
+    ) -> tuple[ReimbursementProposal, ...]:
+        found = receivable_service.reimbursement_proposals(self.db, as_of=as_of, account=account)
+        return unwrap(found)
+
+    def accept_reimbursements(
+        self, chosen: tuple[tuple[str, str, str], ...]
+    ) -> AcceptedReimbursements:
+        return unwrap(receivable_service.accept_reimbursements(self.db, chosen))
+
+    def set_reimbursement_override(self, request: SetReimbursementOverride) -> Scenario:
+        return unwrap(scenario_service.set_reimbursement_override(self.db, request))
 
     # ---------------------------------------------------------- reconciliation
 

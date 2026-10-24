@@ -14,8 +14,10 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
+from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
 from ..gen.lib.transaction import ReconcileState
@@ -54,6 +56,13 @@ from ..gen.services.categorization import (
     CategorizationRules,
     CategoryRule,
 )
+from ..gen.services.receivables import (
+    AcceptedReimbursements,
+    CandidateLine,
+    ReceivablesView,
+    RecordWriteOff,
+    SaveReceivable,
+)
 from ..gen.services.reconciliations import (
     ReconciliationView,
     StartReconciliation,
@@ -66,6 +75,7 @@ from ..gen.services.savings_goals import (
     SavingsGoalsView,
     SetGoalOverride,
 )
+from ..gen.services.scenarios import SetReimbursementOverride
 
 __all__ = ["BookApi", "Change", "Listener"]
 
@@ -284,4 +294,54 @@ class BookApi(Protocol):
 
     def toggle_cleared(self, request: ToggleCleared) -> ReconcileState:
         """Cycle one split between not cleared and cleared."""
+        ...
+
+    # -------------------------------------------------------------- receivables
+
+    def receivables_view(self, as_of: date | None = None) -> ReceivablesView:
+        """Every receivable's standing with its links, proposals, and form choices."""
+        ...
+
+    def receivable_candidates(
+        self, receivable: str | None = None
+    ) -> tuple[tuple[CandidateLine, ...], tuple[CandidateLine, ...]]:
+        """Recent unlinked splits a receivable could take: (costs, credits)."""
+        ...
+
+    def find_receivable(self, reference: str) -> Receivable:
+        """A receivable, as stored, by handle or unique handle prefix."""
+        ...
+
+    def save_receivable(self, request: SaveReceivable) -> Receivable: ...
+
+    def link_receivable_split(
+        self, receivable: str, transaction: str, split: str, role: str
+    ) -> Receivable:
+        """Link a split as the receivable's ``expense`` or its ``reimbursement``."""
+        ...
+
+    def detach_receivable_split(
+        self, receivable: str, transaction: str, split: str
+    ) -> Receivable: ...
+
+    def mark_disputed(self, receivable: str, disputed_on: date, note: str = "") -> Receivable: ...
+
+    def clear_dispute(self, receivable: str) -> Receivable: ...
+
+    def record_write_off(self, request: RecordWriteOff) -> Receivable: ...
+
+    def delete_receivable(self, receivable: str) -> str: ...
+
+    def reimbursement_proposals(
+        self, as_of: date | None = None, account: str | None = None
+    ) -> tuple[ReimbursementProposal, ...]: ...
+
+    def accept_reimbursements(
+        self, chosen: tuple[tuple[str, str, str], ...]
+    ) -> AcceptedReimbursements:
+        """Link the chosen (receivable, transaction, split) proposals still on offer."""
+        ...
+
+    def set_reimbursement_override(self, request: SetReimbursementOverride) -> Scenario:
+        """Change, in one scenario, what a payer is expected to reimburse and when."""
         ...

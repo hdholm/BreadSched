@@ -178,6 +178,35 @@ reconciliation command):
   `POST /api/v1/reconciliations/{handle}/complete`, `/cancel`, and `/reopen`, and
   `POST /api/v1/transactions/{handle}/splits/{split}/cleared`.
 
+A generic typed codec followed (`api.typed_codec`), because hand-written codecs were
+the main cost of each move (about 300 lines for schedules, 200 for transactions):
+- **What it does:** `to_data` writes any typed request or result as JSON data, and
+  `from_data(type, data)` reads it back from its type alone: money exactly, dates,
+  enums, unions, nested dataclasses, and records in their own stored forms.
+- **Strict reading:** an unknown field, a missing required one, or a value of the
+  wrong type is a `ValueError` naming where it is, so a server never guesses at
+  what a client sent.
+- **Cost now:** an operation needs its route and one line each way.
+
+Receivables were the first area moved with it, in all three interfaces:
+- **One read:** `receivables_view(as_of)` returns each receivable's standing, its
+  linked splits as the ledger has them (with account names), its shared costs with
+  an FSA claim, and its scenario changes; the reimbursement proposals; the splits
+  that could be linked; and the receivable accounts and scenarios to choose from.
+  `receivable_candidates(receivable)` gives one receivable's linkable splits.
+- **Writes:** saving, linking (as an expense or a reimbursement) and unlinking a
+  split, disputing and clearing a dispute, writing off, deleting, accepting
+  proposals, and a scenario's change to an expected reimbursement.
+- **Resources:** `GET` and `POST /api/v1/receivables`, `/lookup`, `/candidates`,
+  `POST /api/v1/receivables/{handle}/splits`,
+  `DELETE /api/v1/receivables/{handle}/splits/{transaction}/{split}`, `POST` and
+  `DELETE /api/v1/receivables/{handle}/dispute`, `/write-offs`,
+  `DELETE /api/v1/receivables/{handle}`, `GET /api/v1/reimbursement-proposals`,
+  `POST /api/v1/reimbursement-proposals/accept`, and
+  `POST /api/v1/scenarios/{handle}/reimbursements`.
+- **Still local:** `receivables --costs`, a Plan report, opens the book itself
+  until the Plan's reports move.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

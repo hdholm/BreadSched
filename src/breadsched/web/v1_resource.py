@@ -47,18 +47,30 @@ Resources so far, all under ``/api/v1``:
   ``statement_date``, ``ending_balance``) starts one; ``PATCH /reconciliations/{handle}``
   (``selected_splits``, ``ending_balance``); ``POST /reconciliations/{handle}/complete``,
   ``/cancel``, and ``/reopen``; ``POST /transactions/{handle}/splits/{split}/cleared``.
+* ``GET /receivables`` (``as_of``) – receivables with their links and the forms'
+  choices; ``GET /receivables/lookup`` (``reference``);
+  ``GET /receivables/candidates`` (``receivable``) – splits it could take;
+  ``POST /receivables`` saves one; ``POST /receivables/{handle}/splits`` links a split and
+  ``DELETE /receivables/{handle}/splits/{transaction}/{split}`` unlinks it;
+  ``POST`` and ``DELETE /receivables/{handle}/dispute``;
+  ``POST /receivables/{handle}/write-offs``; ``DELETE /receivables/{handle}``;
+  ``GET /reimbursement-proposals`` (``as_of``, ``account``) and
+  ``POST /reimbursement-proposals/accept``; ``POST /scenarios/{handle}/reimbursements``.
+  These read and write the generic typed form (``api.typed_codec``).
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from ..api.account_codec import save_account_from_json
 from ..api.schedule_codec import fixed_request_from_json, formula_request_from_json
 from ..api.transaction_codec import save_transaction_from_json, transaction_input_json
+from ..api.typed_codec import from_data, to_data
 from ..api.views import (
     account_balance_json,
     account_record_json,
@@ -94,18 +106,33 @@ from ..gen.services import (
     SetAdvanceDays,
 )
 from ..gen.services.categorization import AddRule
+from ..gen.services.receivables import RecordWriteOff, SaveReceivable
 from ..gen.services.reconciliations import (
     StartReconciliation,
     ToggleCleared,
     UpdateReconciliation,
 )
 from ..gen.services.savings_goals import AllocateToGoal, SaveSavingsGoal, SetGoalOverride
+from ..gen.services.scenarios import SetReimbursementOverride
 from .context import Api
 
 if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "receivable_candidates_get",
+    "receivable_clear_dispute",
+    "receivable_delete",
+    "receivable_detach",
+    "receivable_dispute",
+    "receivable_link",
+    "receivable_lookup",
+    "receivable_save",
+    "receivable_write_off",
+    "receivables_get",
+    "reimbursement_override",
+    "reimbursement_proposals_accept",
+    "reimbursement_proposals_get",
     "cleared_toggle",
     "reconciliation_cancel",
     "reconciliation_complete",
@@ -615,3 +642,112 @@ def cleared_toggle(api: Api, path: Path, body: dict[str, Any]) -> dict:
     _only(body, set())
     state = api.book.toggle_cleared(ToggleCleared(path["handle"], path["split"]))
     return {"state": state.value}
+
+
+@dataclass(frozen=True, slots=True)
+class _SplitLink:
+    transaction: str
+    split: str
+    role: Literal["expense", "reimbursement"]
+
+
+@dataclass(frozen=True, slots=True)
+class _Dispute:
+    on: date
+    note: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class _WriteOff:
+    amount: Money
+    written_off_on: date
+    reason: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class _Accept:
+    chosen: tuple[tuple[str, str, str], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _Expectation:
+    receivable: str
+    amount: Money | None = None
+    on: date | None = None
+
+
+def receivables_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    as_of = query.iso_date("as_of")
+    query.finish()
+    return to_data(api.book.receivables_view(as_of))
+
+
+def receivable_candidates_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    receivable = query.text("receivable")
+    query.finish()
+    costs, credits = api.book.receivable_candidates(receivable)
+    return {"costs": to_data(costs), "credits": to_data(credits)}
+
+
+def receivable_lookup(api: Api, _path: Path, query: QueryParams) -> dict:
+    reference = query.text("reference", required=True) or ""
+    query.finish()
+    return {"receivable": to_data(api.book.find_receivable(reference))}
+
+
+def receivable_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(SaveReceivable, body, "request")
+    return {"receivable": to_data(api.book.save_receivable(request))}
+
+
+def receivable_link(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    link = from_data(_SplitLink, body, "request")
+    saved = api.book.link_receivable_split(path["handle"], link.transaction, link.split, link.role)
+    return {"receivable": to_data(saved)}
+
+
+def receivable_detach(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    saved = api.book.detach_receivable_split(path["handle"], path["transaction"], path["split"])
+    return {"receivable": to_data(saved)}
+
+
+def receivable_dispute(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    dispute = from_data(_Dispute, body, "request")
+    return {"receivable": to_data(api.book.mark_disputed(path["handle"], dispute.on, dispute.note))}
+
+
+def receivable_clear_dispute(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return {"receivable": to_data(api.book.clear_dispute(path["handle"]))}
+
+
+def receivable_write_off(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    write_off = from_data(_WriteOff, body, "request")
+    request = RecordWriteOff(
+        path["handle"], write_off.amount, write_off.written_off_on, write_off.reason
+    )
+    return {"receivable": to_data(api.book.record_write_off(request))}
+
+
+def receivable_delete(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return {"deleted": api.book.delete_receivable(path["handle"])}
+
+
+def reimbursement_proposals_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    as_of = query.iso_date("as_of")
+    account = query.text("account")
+    query.finish()
+    return {"proposals": to_data(api.book.reimbursement_proposals(as_of, account))}
+
+
+def reimbursement_proposals_accept(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    chosen = from_data(_Accept, body, "request").chosen
+    return to_data(api.book.accept_reimbursements(chosen))
+
+
+def reimbursement_override(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    change = from_data(_Expectation, body, "request")
+    request = SetReimbursementOverride(path["handle"], change.receivable, change.amount, change.on)
+    return {"scenario": to_data(api.book.set_reimbursement_override(request))}

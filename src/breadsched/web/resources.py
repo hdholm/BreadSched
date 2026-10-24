@@ -175,9 +175,16 @@ from .v1_resource import (
     next_get,
     next_post,
     post_due_post,
+    receivable_candidates_get,
+    receivable_clear_dispute,
+    receivable_detach,
+    receivable_lookup,
+    receivables_get,
     reconciliation_get,
     redo_post,
     register_get,
+    reimbursement_proposals_accept,
+    reimbursement_proposals_get,
     schedule_delete,
     schedule_duplicate,
     schedule_lookup,
@@ -192,11 +199,17 @@ from .v1_resource import (
     transaction_save,
     undo_post,
 )
+from .v1_resource import receivable_delete as v1_receivable_delete
+from .v1_resource import receivable_dispute as v1_receivable_dispute
+from .v1_resource import receivable_link as v1_receivable_link
+from .v1_resource import receivable_save as v1_receivable_save
+from .v1_resource import receivable_write_off as v1_receivable_write_off
 from .v1_resource import reconciliation_cancel as v1_reconciliation_cancel
 from .v1_resource import reconciliation_complete as v1_reconciliation_complete
 from .v1_resource import reconciliation_reopen as v1_reconciliation_reopen
 from .v1_resource import reconciliation_start as v1_reconciliation_start
 from .v1_resource import reconciliation_update as v1_reconciliation_update
+from .v1_resource import reimbursement_override as v1_reimbursement_override
 from .v1_resource import rule_add as v1_rule_add
 from .v1_resource import rule_delete as v1_rule_delete
 from .v1_resource import rule_move as v1_rule_move
@@ -574,6 +587,19 @@ V1_ROUTES: tuple[tuple[str, str, Callable[..., object]], ...] = (
     ("GET", "/accounts/{handle}", account_get),
     ("DELETE", "/accounts/{handle}", account_delete),
     ("GET", "/chart", chart_get),
+    ("GET", "/receivables", receivables_get),
+    ("POST", "/receivables", v1_receivable_save),
+    ("GET", "/receivables/lookup", receivable_lookup),
+    ("GET", "/receivables/candidates", receivable_candidates_get),
+    ("POST", "/receivables/{handle}/splits", v1_receivable_link),
+    ("DELETE", "/receivables/{handle}/splits/{transaction}/{split}", receivable_detach),
+    ("POST", "/receivables/{handle}/dispute", v1_receivable_dispute),
+    ("DELETE", "/receivables/{handle}/dispute", receivable_clear_dispute),
+    ("POST", "/receivables/{handle}/write-offs", v1_receivable_write_off),
+    ("DELETE", "/receivables/{handle}", v1_receivable_delete),
+    ("GET", "/reimbursement-proposals", reimbursement_proposals_get),
+    ("POST", "/reimbursement-proposals/accept", reimbursement_proposals_accept),
+    ("POST", "/scenarios/{handle}/reimbursements", v1_reimbursement_override),
     ("GET", "/accounts/{handle}/reconciliation", reconciliation_get),
     ("POST", "/reconciliations", v1_reconciliation_start),
     ("PATCH", "/reconciliations/{handle}", v1_reconciliation_update),

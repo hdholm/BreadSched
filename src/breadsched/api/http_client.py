@@ -25,8 +25,10 @@ from datetime import date
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
+from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
 from ..gen.lib.transaction import ReconcileState
@@ -65,6 +67,13 @@ from ..gen.services.categorization import (
     CategorizationRules,
     CategoryRule,
 )
+from ..gen.services.receivables import (
+    AcceptedReimbursements,
+    CandidateLine,
+    ReceivablesView,
+    RecordWriteOff,
+    SaveReceivable,
+)
 from ..gen.services.reconciliations import (
     ReconciliationView,
     StartReconciliation,
@@ -77,11 +86,13 @@ from ..gen.services.savings_goals import (
     SavingsGoalsView,
     SetGoalOverride,
 )
+from ..gen.services.scenarios import SetReimbursementOverride
 from .account_codec import save_account_json
 from .contract import ApiError, to_json
 from .protocol import Change, Listener
 from .schedule_codec import fixed_request_json, formula_request_json
 from .transaction_codec import save_transaction_json, transaction_input_from_json
+from .typed_codec import from_data, to_data
 from .views import (
     account_balance_from_json,
     account_record_from_json,
@@ -528,3 +539,75 @@ class HttpBookClient:
             f"/splits/{quote(request.split, safe='')}/cleared"
         )
         return ReconcileState(self._call("POST", path)["state"])
+
+    # -------------------------------------------------------------- receivables
+
+    def _receivable(self, method: str, path: str, body: Any = None) -> Receivable:
+        found = self._call(method, path, body=body)
+        return from_data(Receivable, found["receivable"], "receivable")
+
+    def receivables_view(self, as_of: date | None = None) -> ReceivablesView:
+        return from_data(ReceivablesView, self._call("GET", "/receivables", {"as_of": as_of}))
+
+    def receivable_candidates(
+        self, receivable: str | None = None
+    ) -> tuple[tuple[CandidateLine, ...], tuple[CandidateLine, ...]]:
+        found = self._call("GET", "/receivables/candidates", {"receivable": receivable})
+        kind = tuple[tuple[CandidateLine, ...], tuple[CandidateLine, ...]]
+        return from_data(kind, [found["costs"], found["credits"]], "candidates")
+
+    def find_receivable(self, reference: str) -> Receivable:
+        found = self._call("GET", "/receivables/lookup", {"reference": reference})
+        return from_data(Receivable, found["receivable"], "receivable")
+
+    def save_receivable(self, request: SaveReceivable) -> Receivable:
+        return self._receivable("POST", "/receivables", to_data(request))
+
+    def link_receivable_split(
+        self, receivable: str, transaction: str, split: str, role: str
+    ) -> Receivable:
+        body = {"transaction": transaction, "split": split, "role": role}
+        return self._receivable("POST", f"/receivables/{quote(receivable, safe='')}/splits", body)
+
+    def detach_receivable_split(self, receivable: str, transaction: str, split: str) -> Receivable:
+        path = "/".join(
+            ("/receivables", quote(receivable, safe=""), "splits", quote(transaction, safe=""))
+        )
+        return self._receivable("DELETE", f"{path}/{quote(split, safe='')}")
+
+    def mark_disputed(self, receivable: str, disputed_on: date, note: str = "") -> Receivable:
+        path = f"/receivables/{quote(receivable, safe='')}/dispute"
+        return self._receivable("POST", path, {"on": disputed_on, "note": note})
+
+    def clear_dispute(self, receivable: str) -> Receivable:
+        return self._receivable("DELETE", f"/receivables/{quote(receivable, safe='')}/dispute")
+
+    def record_write_off(self, request: RecordWriteOff) -> Receivable:
+        body = {
+            "amount": request.amount,
+            "written_off_on": request.written_off_on,
+            "reason": request.reason,
+        }
+        path = f"/receivables/{quote(request.receivable, safe='')}/write-offs"
+        return self._receivable("POST", path, body)
+
+    def delete_receivable(self, receivable: str) -> str:
+        return str(self._call("DELETE", f"/receivables/{quote(receivable, safe='')}")["deleted"])
+
+    def reimbursement_proposals(
+        self, as_of: date | None = None, account: str | None = None
+    ) -> tuple[ReimbursementProposal, ...]:
+        found = self._call("GET", "/reimbursement-proposals", {"as_of": as_of, "account": account})
+        return from_data(tuple[ReimbursementProposal, ...], found["proposals"], "proposals")
+
+    def accept_reimbursements(
+        self, chosen: tuple[tuple[str, str, str], ...]
+    ) -> AcceptedReimbursements:
+        found = self._call("POST", "/reimbursement-proposals/accept", body={"chosen": chosen})
+        return from_data(AcceptedReimbursements, found)
+
+    def set_reimbursement_override(self, request: SetReimbursementOverride) -> Scenario:
+        body = {"receivable": request.receivable, "amount": request.amount, "on": request.on}
+        path = f"/scenarios/{quote(request.scenario, safe='')}/reimbursements"
+        found = self._call("POST", path, body=body)
+        return from_data(Scenario, found["scenario"], "scenario")
