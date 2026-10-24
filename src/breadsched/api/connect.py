@@ -28,15 +28,25 @@ def open_book_api(
     url: str | None = None,
     token: str | None = None,
     directory: Path | None = None,
+    ca_file: str | None = None,
+    client_cert: str | None = None,
+    client_key: str | None = None,
 ) -> Iterator[BookApi]:
     """The book API for ``book`` until the block ends.
 
     ``url`` and ``token`` name a server explicitly; otherwise a server holding the
     book on this host is used if there is one, and the book is opened in this
-    process (``mode`` ``"w"`` or ``"r"``) if not.
+    process (``mode`` ``"w"`` or ``"r"``) if not. The certificate options apply to
+    an ``https://`` server (see ``HttpBookClient``).
     """
     if url is not None:
-        yield HttpBookClient(url, token or "")
+        yield HttpBookClient(
+            url,
+            token or "",
+            ca_file=ca_file,
+            client_cert=client_cert,
+            client_key=client_key,
+        )
         return
     record = find_server(book, directory)
     if record is not None:

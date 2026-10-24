@@ -234,6 +234,22 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return _serve_book(args, open_browser=False, read_only=False)
 
 
+def _add_listener_options(parser: argparse.ArgumentParser) -> None:
+    """Options for serving through a TLS reverse proxy (experimental, #358)."""
+    parser.add_argument(
+        "--trusted-origin",
+        action="append",
+        default=[],
+        metavar="ORIGIN",
+        help="also accept pages from this https:// origin (a TLS proxy in front); repeatable",
+    )
+    parser.add_argument(
+        "--token-file",
+        metavar="PATH",
+        help="keep the token in this private file (created if absent) instead of printing it",
+    )
+
+
 def _serve_book(args: argparse.Namespace, *, open_browser: bool, read_only: bool) -> int:
     """Hold the book and serve it until Ctrl+C.
 
@@ -241,12 +257,24 @@ def _serve_book(args: argparse.Namespace, *, open_browser: bool, read_only: bool
     for the same book connect to it instead of failing on the writer lock.
     """
     from ..api.discovery import publish_server, withdraw_server
-    from ..web.transport import serve
+    from ..web.transport import serve, token_from_file, trusted_origin
 
+    try:
+        origins = tuple(trusted_origin(origin) for origin in args.trusted_origin)
+        token = token_from_file(args.token_file) if args.token_file else None
+    except (OSError, ValueError) as exc:
+        raise CommandError(str(exc)) from exc
     db = open_book(args.book, "r" if read_only else "w")
     try:
         try:
-            httpd = serve(db, host=args.host, port=args.port, open_browser=open_browser)
+            httpd = serve(
+                db,
+                host=args.host,
+                port=args.port,
+                open_browser=open_browser,
+                token=token,
+                trusted_origins=origins,
+            )
         except ValueError as exc:
             raise CommandError(str(exc)) from exc
         except OSError as exc:
@@ -258,7 +286,12 @@ def _serve_book(args: argparse.Namespace, *, open_browser: bool, read_only: bool
             if read_only or lock is None
             else publish_server(args.book, base, httpd.token, lock)
         )
-        print(f"BreadSched is serving {args.book} at {base}/#token={httpd.token}")
+        if token is None:
+            print(f"BreadSched is serving {args.book} at {base}/#token={httpd.token}")
+        else:
+            print(f"BreadSched is serving {args.book} at {base}; the token is in {args.token_file}")
+        for origin in origins:
+            print(f"Pages from {origin} may also use it.")
         if record is not None:
             print("Other BreadSched commands for this book use this server while it runs.")
         print("Press Ctrl+C to stop.")
@@ -365,6 +398,7 @@ def register(add: AddCommand) -> None:
     web.add_argument("--port", type=int, default=8765)
     web.add_argument("--open", action="store_true", help="open a browser window")
     web.add_argument("--read-only", action="store_true")
+    _add_listener_options(web)
     web.set_defaults(func=cmd_web)
 
     serve_cmd = add(
@@ -373,6 +407,7 @@ def register(add: AddCommand) -> None:
     )
     serve_cmd.add_argument("--host", default="127.0.0.1")
     serve_cmd.add_argument("--port", type=int, default=8765)
+    _add_listener_options(serve_cmd)
     serve_cmd.set_defaults(func=cmd_serve)
 
     gui = add("gui", "Open the graphical interface", needs_book=False)
