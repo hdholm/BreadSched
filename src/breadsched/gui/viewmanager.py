@@ -1,12 +1,14 @@
 """The main window.
 
 A menu bar and an icon toolbar above a stack of views, each view owning its own
-toolbar. The main toolbar is arranged around the current view (#182): after the
-commands that work anywhere come the current view's name and its own commands,
-then one icon for each other view (the View menu lists every view). The current
-view has no icon, since choosing it would do nothing, and the Actions menu lists
-the current view's commands first. A category sidebar used to duplicate the view
-list and took width from every view, so it was removed (#155).
+toolbar. The main toolbar is arranged around the current view (#182, #361): after
+the commands that work anywhere comes one icon for each other view (the View menu
+lists every view), then the current view's name in bold, dividing those icons from
+the current view's own commands. The current view has no icon, since choosing it
+would do nothing, and the Actions menu lists the current view's commands first.
+The book's account and transaction counts show only on the Dashboard and
+Accounts. A category sidebar used to duplicate the view list and took width
+from every view, so it was removed (#155).
 A tab bar below the toolbar keeps every opened view one click away, with one
 tab per open register account (#183): each register tab is its own register,
 with its own place, filter, and half-typed entry. Projection can also open one
@@ -45,7 +47,18 @@ from .widgets.presented import when_presented
 from .widgets.window_sizes import remember_size, restore_size
 
 # The catalog is re-exported for callers that import it from the window.
-__all__ = ["CATEGORIES", "TOOLBAR", "VIEW_ACTIONS", "ViewAction", "ViewManager", "view_action_name"]
+#: The views whose toolbar shows the book's account and transaction counts (#361).
+SUMMARY_VIEWS = frozenset({"dashboard", "accounts"})
+
+__all__ = [
+    "CATEGORIES",
+    "SUMMARY_VIEWS",
+    "TOOLBAR",
+    "VIEW_ACTIONS",
+    "ViewAction",
+    "ViewManager",
+    "view_action_name",
+]
 
 #: The ``views.ini`` section keeping each book's open tabs. Keys are a digest of
 #: the book's path, since a path's colons would split an INI key.
@@ -194,9 +207,19 @@ class ViewManager(Gtk.ApplicationWindow):
             self.tool_buttons[action] = button
             self.toolbar.append(button)
 
-        # The current view's name and its own commands (for example "Manage FSA
-        # claims" on the FSA Dashboard), next to the general commands where they
-        # are easiest to find; rebuilt whenever the view changes (#182).
+        separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        separator.set_margin_start(6)
+        separator.set_margin_end(6)
+        self.toolbar.append(separator)
+        for key, label, icon in CATEGORIES:
+            button = _view_button(key, label, icon)
+            self.view_buttons[key] = button
+            self.toolbar.append(button)
+
+        # The current view's name in bold divides the icons that change view from
+        # the current view's own commands (for example "Manage FSA claims" on the
+        # FSA Dashboard), which follow it; rebuilt whenever the view changes
+        # (#182, #361).
         self.view_heading = Gtk.Box(spacing=2)
         separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
         separator.set_margin_start(6)
@@ -213,17 +236,8 @@ class ViewManager(Gtk.ApplicationWindow):
         self.view_tools = Gtk.Box(spacing=2)
         self.toolbar.append(self.view_tools)
 
-        separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
-        separator.set_margin_start(6)
-        separator.set_margin_end(6)
-        self.toolbar.append(separator)
-        for key, label, icon in CATEGORIES:
-            button = _view_button(key, label, icon)
-            self.view_buttons[key] = button
-            self.toolbar.append(button)
-
-        # The book summary sits right after the view icons, stacked on two
-        # lines so it takes one short column instead of a long run of text.
+        # The book summary ends the toolbar, stacked on two lines so it takes one
+        # short column; it shows only where the counts mean something (#361).
         self.status = Gtk.Label(label="No book open")
         self.status.add_css_class("dim")
         self.status.add_css_class("book-summary")
@@ -574,6 +588,7 @@ class ViewManager(Gtk.ApplicationWindow):
         labels = {item_key: label for item_key, label, _icon in CATEGORIES}
         self.view_title.set_label(labels.get(key, ""))
         self.view_heading.set_visible(key in labels)
+        self.status.set_visible(key not in labels or key in SUMMARY_VIEWS)
         # Choosing the view already shown would do nothing, so its icon is hidden.
         for view_key, button in self.view_buttons.items():
             button.set_visible(view_key != key)

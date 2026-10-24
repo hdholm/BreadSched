@@ -9,12 +9,21 @@ from typing import TypeVar
 
 from ..db.sqlite import DbSQLite
 from ..engine import reconciliation
+from ..lib.amount import Amount
 from ..lib.money import Money
 from ..lib.reconciliation import Reconciliation
 from ..lib.transaction import ReconcileState
 from .claims import claim_link_proposals
 from .contracts import ServiceError, ServiceResult
 from .receivables import reimbursement_proposals
+from .transactions import (
+    SavedTransaction,
+    SaveTransaction,
+    TransactionInput,
+    TransactionSplitInput,
+    build_transaction,
+    transaction_currency,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,4 +157,75 @@ def reconciliation_view(db: DbSQLite, account: str) -> ServiceResult[Reconciliat
             len(reimbursement_proposals(db, account=account).value or ()),
             len(claim_link_proposals(db, account=account).value or ()),
         )
+    )
+
+
+def reconciled_balance(db: DbSQLite, account: str, through: date) -> ServiceResult[Money]:
+    """The account's reconciled balance on a statement date (#362)."""
+    if db.get_account(account) is None:
+        return ServiceResult.failure(ServiceError("reconciliation.account.not_found", ("account",)))
+    return ServiceResult.success(reconciliation.reconciled_balance(db, account, through))
+
+
+@dataclass(frozen=True, slots=True)
+class AddStatementEntry:
+    """A charge or credit found on the statement but not yet in the book (#362).
+
+    ``amount`` is in the account's own terms: positive raises its balance, as
+    interest charged raises what a card owes or interest earned raises savings.
+    """
+
+    account: str
+    other_account: str
+    post_date: date
+    description: str
+    amount: Money
+
+
+def add_statement_entry(
+    db: DbSQLite, request: AddStatementEntry
+) -> ServiceResult[SavedTransaction]:
+    """Add a statement line, such as interest, already cleared and checked.
+
+    The transaction, its cleared mark, and its place in the account's open
+    statement are one change, so a single Undo removes the entry.
+    """
+    account = db.get_account(request.account)
+    if account is None:
+        return ServiceResult.failure(ServiceError("reconciliation.account.not_found", ("account",)))
+    if not request.amount:
+        return ServiceResult.failure(ServiceError("reconciliation.entry.amount", ("amount",)))
+    currency = transaction_currency(db)
+    value = request.amount * account.sign()
+    built = build_transaction(
+        db,
+        SaveTransaction(
+            TransactionInput(
+                post_date=request.post_date,
+                description=request.description,
+                splits=(
+                    TransactionSplitInput(request.account, Amount(value, currency)),
+                    TransactionSplitInput(request.other_account, Amount(-value, currency)),
+                ),
+                currency=currency,
+            )
+        ),
+    )
+    if built.value is None:
+        return ServiceResult.failure(*built.errors)
+    transaction = built.value
+    own = next(split for split in transaction.splits if split.account == request.account)
+    own.reconcile = ReconcileState.CLEARED
+    try:
+        session = reconciliation.open_for_account(db, request.account)
+    except reconciliation.ReconciliationError as exc:
+        return ServiceResult.failure(ServiceError(exc.code, exc.fields))
+    if session is not None and request.post_date <= session.statement_date:
+        session.selected_splits = [*session.selected_splits, own.handle]
+    with db.transaction(f"Add {transaction.description}") as txn:
+        db.add_transaction(transaction, txn)
+        if session is not None and own.handle in session.selected_splits:
+            db.commit_reconciliation(session, txn)
+    return ServiceResult.success(
+        SavedTransaction(transaction.handle, transaction.post_date, transaction.description)
     )

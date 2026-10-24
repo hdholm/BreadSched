@@ -99,11 +99,13 @@ always shown, so a list with more out of view says so. A long choice list, such 
 every list of accounts, has a search field when it opens: type part of a name to
 keep only the choices that contain it.
 
-The toolbar starts with the commands that work anywhere (open, import, undo, redo,
-new transaction, and print). Next come the name of the view you are in and that
-view's own command icons, then one icon for each other work area; the view you are
-in has no icon, since you are already there. After those icons, two short lines
-count the book's accounts and transactions. The **View** menu lists every area.
+The toolbar starts with the commands that work anywhere (undo, redo, new
+transaction, and print); open and import a book from the **File** menu or the start
+screen. Next comes one icon for each other work area; the view you are in has no
+icon, since you are already there. The name of the view you are in, in bold, then
+divides those icons from that view's own command icons, such as **Reconcile** in a
+register. On the Dashboard and Accounts, two short lines after them count the
+book's accounts and transactions. The **View** menu lists every area.
 The **Actions** menu follows the view too: the current view's commands come first,
 under its name, then the commands that work anywhere, and every other view's
 commands under **Actions → Other Views**. The **Reports** menu lists every report
@@ -300,8 +302,9 @@ accepts that level and moves to the next, so `Ex:Gr` reaches
 `Expenses:Groceries`. The accounts that still match are listed under the cell:
 **Up** and **Down** choose one, and **Tab** or **Enter** takes it (clicking one
 does too). The description completes the same way from earlier entries in this
-register; when you leave it, the earlier transaction's account and amount are
-filled in, and the line under the register says where they came from (see
+register; when you leave it, the earlier transaction's account and amount (and its
+notes, if you have typed none) are filled in, and the line under the register says
+where they came from (see
 [Transactions and registers](../USER_GUIDE.md#transactions-and-registers)).
 
 If something is missing or wrong, the line under the register says what; your
@@ -322,7 +325,11 @@ Increase or Decrease heading, and an empty line waits for another split. Choose
 **Split** in the toolbar to open an ordinary transaction (or the one you are
 typing) the same way, or to fold two lines back into one. An **Imbalance** line
 shows how far the splits are from balancing; **Enter** saves only once they
-balance and one split is in this register's account.
+balance. A new transaction needs one split in this register's account. To move an
+existing one entered in the wrong account, such as a purchase on the wrong credit
+card, change that split line's account to the right one and press **Enter**: the
+transaction moves there and leaves this register, and the line under the register
+says where it went.
 
 ### Shares in an investment register
 
@@ -381,8 +388,8 @@ there. A reconciled entry changes only by reopening its statement (see
 
 In the full editor, a new transaction is proposed the same way: when you leave the
 description and no split has an amount or memo yet, every split of the latest
-matching transaction (with its accounts, amounts, and memos) is filled in, and a
-note says where it came from. Edit anything before choosing **Save**.
+matching transaction (with its accounts, amounts, and memos) is filled in, and its
+notes too if you have typed none; a note says where it came from. Edit anything before choosing **Save**.
 
 ### Tags and linked documents
 
@@ -401,10 +408,31 @@ See [Tags and linked documents](../USER_GUIDE.md#tags-and-linked-documents).
 
 ## Reconcile a statement
 
-1. Choose **Reconcile…** from the register.
-2. Enter the statement date and ending balance.
-3. Check eligible entries until the exact difference is zero.
-4. Finish the session to mark the selected splits reconciled.
+1. Choose **Reconcile** in the register's toolbar or **Actions → Reconcile…**.
+2. Enter the statement date and ending balance. Compare **Starting balance**, the
+   account's reconciled balance on that date, with the statement's previous balance.
+   A charge or credit on the statement that is not yet in the book, such as interest,
+   can be added here: enter its description, the account it belongs to, and the
+   amount (positive raises the balance, as interest charged on a card does), then
+   choose **Add**. It is added cleared, so it starts checked.
+3. Choose **Start reconciliation**. Entries are listed in two columns, **Funds In**
+   and **Funds Out**, each with its checked total; below them are the starting,
+   reconciled, and ending balances and the difference. Entries dated after the
+   statement are listed below an **After** heading, shaded, in case a date is wrong.
+4. Check entries until the difference is zero. Click a check, or press Enter or
+   double-click a row; to check several at once, Ctrl- or Shift-click to select them
+   and choose **Check Selected** (or **Uncheck Selected**).
+5. Choose **Finish** to mark the checked splits reconciled.
+
+The window does not block the rest of BreadSched: you can enter a missed scheduled
+transaction or correct one in a register while it is open, and the lists follow.
+**New Transaction…** enters one in this account dated on the statement, and **Edit
+Transaction…** opens the selected row's transaction. Choosing Reconcile again brings
+the open window forward.
+
+Checks are saved as you make them. **Postpone** closes the window and keeps the
+statement, which reopens where you left off; **Abandon…** discards the statement
+without changing any transaction.
 
 If a deposit in that account looks like money back on a
 [reimbursable expense](#reimbursable-expenses), the dialog says how many such

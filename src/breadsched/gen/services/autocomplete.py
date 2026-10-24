@@ -5,8 +5,9 @@ Descriptions match exactly on their normalized key
 (``description_keys.match_key``), the same comparison categorization rules use,
 so a proposal is always explainable. The proposal is plain data for a form: the
 user edits or ignores it and saves through the ordinary transaction service. It
-never carries reconcile state, source identifiers, notes, planning purposes or
-links, investment activity, or FSA claims.
+carries the earlier transaction's notes, for an entry whose notes are empty (#363),
+but never reconcile state, source identifiers, planning purposes or links,
+investment activity, or FSA claims.
 
 Candidates are limited to transactions with a split in the entry's account (when
 given), in the entry's currency (the reporting currency when not given), and whose
@@ -59,6 +60,8 @@ class EntrySuggestion:
     transfer_account: str | None
     #: The signed value in ``account`` (positive increases a debit-normal account).
     amount: Money | None
+    #: The earlier transaction's BreadSched notes, for an entry whose notes are empty (#363).
+    notes: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +125,7 @@ def suggest_entry(db: DbSQLite, query: SuggestEntry) -> ServiceResult[EntryPropo
                 splits=splits,
                 transfer_account=transfer,
                 amount=amount,
+                notes=transaction.notes,
             ),
             {
                 split.account: db.full_name(account)

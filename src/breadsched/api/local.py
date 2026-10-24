@@ -38,6 +38,7 @@ from ..gen.engine.schedule import Occurrence
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
 from ..gen.lib.commodity import CommodityPrice
 from ..gen.lib.fsa_claim import FsaClaim
+from ..gen.lib.money import Money
 from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
@@ -188,6 +189,7 @@ from ..gen.services.receivables import (
     SaveReceivable,
 )
 from ..gen.services.reconciliations import (
+    AddStatementEntry,
     ReconciliationView,
     StartReconciliation,
     ToggleCleared,
@@ -935,6 +937,12 @@ class LocalBookServer:
 
     def toggle_cleared(self, request: ToggleCleared) -> ReconcileState:
         return unwrap(reconciliations.toggle_cleared(self.db, request))
+
+    def reconciled_balance(self, account: str, through: date) -> Money:
+        return unwrap(reconciliations.reconciled_balance(self.db, account, through))
+
+    def add_statement_entry(self, request: AddStatementEntry) -> SavedTransaction:
+        return unwrap(reconciliations.add_statement_entry(self.db, request))
 
     # ------------------------------------------------------------ savings goals
 

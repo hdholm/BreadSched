@@ -18,6 +18,7 @@ __all__ = [
     "cancel",
     "complete",
     "open_for_account",
+    "reconciled_balance",
     "reopen",
     "set_selection",
     "start",
@@ -48,6 +49,13 @@ class ReconciliationCandidate:
     amount: Money
     state: ReconcileState
     selected: bool
+    #: Dated after the statement: listed in case its date is wrong (#362), never
+    #: checked by default, but reconciled with the statement if checked.
+    after_statement: bool = False
+
+    #: A debit: money into an asset, or a payment on a liability. GnuCash's
+    #: reconcile window lists these as Funds In and the credits as Funds Out.
+    funds_in: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +67,9 @@ class ReconciliationSummary:
     selected_balance: Money
     difference: Money
     candidates: tuple[ReconciliationCandidate, ...]
+    #: The checked Funds In and Funds Out, each as a positive total (#362).
+    selected_in: Money = Money(0)
+    selected_out: Money = Money(0)
 
     @property
     def balanced(self) -> bool:
@@ -81,15 +92,24 @@ def open_for_account(db: DbSQLite, account: str) -> Reconciliation | None:
     return sessions[0] if sessions else None
 
 
-def _account_split_rows(
-    db: DbSQLite, account_handle: str, through: date
-) -> list[tuple[Transaction, Split]]:
+def _account_split_rows(db: DbSQLite, account_handle: str) -> list[tuple[Transaction, Split]]:
     rows: list[tuple[Transaction, Split]] = []
-    for transaction in db.iter_transactions(account=account_handle, end=through):
+    for transaction in db.iter_transactions(account=account_handle):
         rows.extend(
             (transaction, split) for split in transaction.splits if split.account == account_handle
         )
     return rows
+
+
+def _reconciled_through(transaction: Transaction, split: Split, through: date) -> bool:
+    """Whether a reconciled split belongs to the balance as of a statement date.
+
+    A split dated later belongs too when an earlier statement reconciled it,
+    which happens when its date was wrong (#362).
+    """
+    if transaction.post_date <= through:
+        return True
+    return split.reconcile_date is not None and split.reconcile_date <= through
 
 
 def _candidate_rows(
@@ -100,14 +120,14 @@ def _candidate_rows(
     if account is None:
         raise KeyError(reconciliation.account)
     opening = Money(0)
+    through = reconciliation.statement_date
     selected = set(reconciliation.selected_splits)
     candidates: list[ReconciliationCandidate] = []
-    for transaction, split in _account_split_rows(
-        db, reconciliation.account, reconciliation.statement_date
-    ):
+    for transaction, split in _account_split_rows(db, reconciliation.account):
         amount = split.value * account.sign()
         if split.reconcile in {ReconcileState.RECONCILED, ReconcileState.FROZEN}:
-            opening += amount
+            if _reconciled_through(transaction, split, through):
+                opening += amount
             continue
         if split.reconcile is ReconcileState.VOID:
             continue
@@ -120,10 +140,31 @@ def _candidate_rows(
                 amount=amount,
                 state=split.reconcile,
                 selected=split.handle in selected,
+                after_statement=transaction.post_date > through,
+                funds_in=split.value > 0,
             )
         )
     candidates.sort(key=lambda item: (item.post_date, item.transaction, item.split))
     return opening, tuple(candidates)
+
+
+def reconciled_balance(db: DbSQLite, account: str, through: date) -> Money:
+    """The account's reconciled balance as of a statement date (#362).
+
+    This is the starting balance a new statement on that date would begin from,
+    to compare with the statement's own previous balance before reconciling.
+    """
+    account_obj = db.get_account(account)
+    if account_obj is None:
+        raise KeyError(account)
+    total = Money(0)
+    for transaction, split in _account_split_rows(db, account):
+        if split.reconcile in {
+            ReconcileState.RECONCILED,
+            ReconcileState.FROZEN,
+        } and _reconciled_through(transaction, split, through):
+            total += split.value * account_obj.sign()
+    return total
 
 
 def summary(db: DbSQLite, reconciliation: Reconciliation | str) -> ReconciliationSummary:
@@ -134,15 +175,16 @@ def summary(db: DbSQLite, reconciliation: Reconciliation | str) -> Reconciliatio
             raise KeyError(reconciliation)
         reconciliation = stored
     opening, candidates = _candidate_rows(db, reconciliation)
-    selected_balance = opening + sum(
-        (item.amount for item in candidates if item.selected), Money(0)
-    )
+    checked = [item for item in candidates if item.selected]
+    selected_balance = opening + sum((item.amount for item in checked), Money(0))
     return ReconciliationSummary(
         reconciliation=reconciliation,
         opening_balance=opening,
         selected_balance=selected_balance,
         difference=reconciliation.ending_balance - selected_balance,
         candidates=candidates,
+        selected_in=sum((abs(item.amount) for item in checked if item.funds_in), Money(0)),
+        selected_out=sum((abs(item.amount) for item in checked if not item.funds_in), Money(0)),
     )
 
 
@@ -190,7 +232,9 @@ def start(
     )
     _opening, candidates = _candidate_rows(db, reconciliation)
     reconciliation.selected_splits = [
-        item.split for item in candidates if item.state is ReconcileState.CLEARED
+        item.split
+        for item in candidates
+        if item.state is ReconcileState.CLEARED and not item.after_statement
     ]
     with db.transaction(f"Start reconciliation for {account_obj.name}") as txn:
         db.add_reconciliation(reconciliation, txn)

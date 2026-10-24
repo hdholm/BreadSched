@@ -445,10 +445,24 @@ class TestOpeningABook:
         app.open_book(populated_book)
         accounts, transactions = window.status.get_text().split("\n")
         assert accounts.endswith(" accounts") and transactions.endswith(" transactions")
-        # Stacked right after the view icons, not pushed to the far end.
-        last_view = window.view_buttons[CATEGORIES[-1][0]]
-        assert last_view.get_next_sibling() is window.status
+        # Stacked right after the view's own commands, not pushed to the far end.
+        assert window.view_tools.get_next_sibling() is window.status
         assert window.status.get_hexpand() is False
+
+    def test_the_book_counts_show_only_on_the_summary_views(self, app, window, populated_book):
+        """#361: the counts belong with the Dashboard and Accounts."""
+        from breadsched.gui.viewmanager import SUMMARY_VIEWS
+
+        app.open_book(populated_book)
+        for key, _label, _icon in CATEGORIES:
+            window.show_category(key)
+            assert window.status.get_visible() is (key in SUMMARY_VIEWS), key
+        assert SUMMARY_VIEWS == {"dashboard", "accounts"}
+
+    def test_open_and_import_are_menu_commands_not_toolbar_icons(self, app, window):
+        """#361: Open and Import are reached from the File menu and start screen."""
+        actions = {button.get_action_name() for button in window.tool_buttons.values()}
+        assert not {"app.open", "app.import", "win.open", "win.import"} & actions
 
     def test_the_title_names_the_file(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -1161,6 +1175,46 @@ class TestRegisterGrid:
         grid.key(Gdk.KEY_Tab, 0)
         assert sheet.draft.transfer and (sheet.draft.increase or sheet.draft.decrease)
         assert "Proposed from" in view.entry_status.get_text()
+
+    def test_a_completion_that_stops_matching_gives_back_the_typed_case(
+        self, app, window, populated_book
+    ):
+        """#363: typing past a completion keeps the letters as they were typed."""
+        view = _grid_register(app, window, populated_book)
+        grid, sheet = view.grid, view.sheet
+        earlier = sheet.descriptions[0]
+        assert earlier[:2] != earlier[:2].lower()  # the completion changes the case
+        sheet.column = "description"
+        grid.sync()
+        _type(grid, earlier[:2].lower())
+        assert grid.editor.get_text() == earlier
+        _type(grid, "\u00e9zz")  # no earlier description continues this way
+        assert grid.editor.get_text() == earlier[:2].lower() + "\u00e9zz"
+        assert sheet.draft.description == earlier[:2].lower() + "\u00e9zz"
+
+    def test_a_proposal_fills_empty_notes_from_the_last_entry(self, app, window, populated_book):
+        """#363: the matched transaction's notes come too, never over typed ones."""
+        from breadsched.gui.register_sheet import RegisterSheet
+
+        view = _grid_register(app, window, populated_book)
+        db = view.sheet.db
+        earlier_text = view.sheet.descriptions[0]
+        earlier = next(t for t in db.iter_transactions() if t.description == earlier_text)
+        earlier.notes = "Ask for the receipt"
+        with db.transaction("Notes") as txn:
+            db.commit_transaction(earlier, txn)
+        sheet = RegisterSheet(db, view.sheet.account)
+        sheet.column = "description"
+        sheet.set_text(earlier_text)
+        assert sheet.propose()
+        assert sheet.draft.notes == "Ask for the receipt"
+        assert "its notes" in sheet.message
+        typed = RegisterSheet(db, view.sheet.account)
+        typed.draft.notes = "My own"
+        typed.column = "description"
+        typed.set_text(earlier_text)
+        typed.propose()
+        assert typed.draft.notes == "My own"
 
     def test_escape_puts_the_entry_back(self, app, window, populated_book):
         view = _grid_register(app, window, populated_book)
@@ -7868,7 +7922,7 @@ class TestViewActions:
         window.show_category("fsa-dashboard")
         assert tools() == ["win.fsa-dashboard-manage-claims"]
         window.show_category("register")
-        assert tools() == ["win.register-new-tab"]
+        assert tools() == ["win.register-reconcile", "win.register-new-tab"]
         window.show_category("dashboard")
         assert tools() == ["win.dashboard-configure-groups", "win.dashboard-net-worth-history"]
 
@@ -7886,6 +7940,7 @@ class TestViewActions:
                 ["New scenario…", "Manage scenarios…", "Explore expenses…"],
             ),
             ("projection", ["compare", "export", "open-tab"], ["Compare with…"]),
+            ("register", ["reconcile", "new-tab"], []),
         ),
     )
     def test_stateless_view_commands_are_toolbar_icons_not_buttons(
@@ -8638,6 +8693,217 @@ class TestReceivablesDialog:
             reconcile.destroy()
 
 
+class TestReconcileWindow:
+    """#362: a GnuCash-like reconcile window that can stay open while you work."""
+
+    def _card(self, app, populated_book):
+        from breadsched.gen.lib import Transaction
+
+        app.open_book(populated_book)
+        db = app.db
+        card = db.get_account_by_name("Credit Card")
+        rent = db.get_account_by_name("Expenses:Rent")
+        checking = db.get_account_by_name("Assets:Checking Account")
+        made = {
+            "Groceries": Transaction.simple(
+                date(2030, 1, 5), "Groceries", rent.handle, card.handle, "40"
+            ),
+            "Fuel": Transaction.simple(date(2030, 1, 9), "Fuel", rent.handle, card.handle, "60"),
+            "Payment": Transaction.simple(
+                date(2030, 1, 20), "Payment", card.handle, checking.handle, "30"
+            ),
+            "Late": Transaction.simple(date(2030, 2, 3), "Late", rent.handle, card.handle, "5"),
+        }
+        with db.transaction("Card activity") as txn:
+            for transaction in made.values():
+                db.add_transaction(transaction, txn)
+        return db, card, rent, made
+
+    def _start(self, window, db, card, ending="70"):
+        from breadsched.gui.dialogs.reconciliation_dialog import ReconciliationDialog
+
+        dialog = ReconciliationDialog.present_for(window, db, card)
+        dialog.statement_date.set_text("2030-01-31")
+        dialog.ending_balance.set_text(ending)
+        dialog.start_button.emit("clicked")
+        return dialog
+
+    def _rows(self, column):
+        rows = []
+        row = column.list.get_first_child()
+        while row is not None:
+            rows.append(row)
+            row = row.get_next_sibling()
+        return rows
+
+    def _row_for(self, dialog, split):
+        for column in (dialog.funds_in, dialog.funds_out):
+            for row, handle in column.splits.items():
+                if handle == split:
+                    return column, row
+        raise AssertionError(split)
+
+    def test_the_start_page_shows_the_reconciled_starting_balance(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.engine import reconciliation
+
+        db, card, _rent, _made = self._card(app, populated_book)
+        dialog = self._start(window, db, card)
+        try:
+            assert dialog.get_modal() is False
+            dialog.abandon()
+            dialog.statement_date.set_text("2030-01-31")
+            expected = reconciliation.reconciled_balance(db, card.handle, date(2030, 1, 31))
+            assert dialog.starting_balance.get_text() == expected.format(parens_negative=True)
+            dialog.statement_date.set_text("not a date")
+            assert dialog.starting_balance.get_text() == "—"
+        finally:
+            dialog.destroy()
+
+    def test_interest_is_added_from_the_start_page_and_starts_checked(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.dialogs.reconciliation_dialog import ReconciliationDialog
+
+        db, card, rent, _made = self._card(app, populated_book)
+        dialog = ReconciliationDialog.present_for(window, db, card)
+        try:
+            dialog.statement_date.set_text("2030-01-31")
+            dialog.entry_account.set_selected(dialog.entry_accounts.index(rent))
+            dialog.entry_amount.set_text("2.50")
+            assert dialog.add_statement_entry()
+            assert "Added Interest" in dialog.status.get_text()
+            [added] = [t for t in db.iter_transactions() if t.description == "Interest"]
+            assert added.split_for(card.handle).value == Money("-2.50")
+            dialog.ending_balance.set_text("72.50")
+            dialog.start_button.emit("clicked")
+            state = dialog._statement()
+            interest = added.split_for(card.handle).handle
+            assert interest in state.reconciliation.selected_splits
+            assert dialog._checks[interest].get_active()
+        finally:
+            dialog.destroy()
+
+    def test_funds_in_and_out_are_separate_columns_with_their_own_totals(
+        self, app, window, populated_book
+    ):
+        db, card, _rent, made = self._card(app, populated_book)
+        dialog = self._start(window, db, card)
+        try:
+            payment = made["Payment"].split_for(card.handle).handle
+            charges = [made[name].split_for(card.handle).handle for name in ("Groceries", "Fuel")]
+            assert self._row_for(dialog, payment)[0] is dialog.funds_in
+            assert all(self._row_for(dialog, split)[0] is dialog.funds_out for split in charges)
+            for split in (payment, *charges):
+                dialog._checks[split].set_active(True)
+            assert dialog.funds_in.total.get_text().endswith("30.00")
+            assert dialog.funds_out.total.get_text().endswith("100.00")
+            assert "Difference 0.00" in dialog.totals.get_text()
+            assert dialog.finish.get_sensitive()
+        finally:
+            dialog.destroy()
+
+    def test_several_selected_rows_are_checked_and_unchecked_together(
+        self, app, window, populated_book
+    ):
+        db, card, _rent, made = self._card(app, populated_book)
+        dialog = self._start(window, db, card)
+        try:
+            charges = [made[name].split_for(card.handle).handle for name in ("Groceries", "Fuel")]
+            for split in charges:
+                column, row = self._row_for(dialog, split)
+                column.list.select_row(row)
+            undo_depth = len(db.undo_stack)
+            dialog.check_selected(True)
+            assert len(db.undo_stack) == undo_depth + 1
+            selected = set(dialog._statement().reconciliation.selected_splits)
+            assert set(charges) <= selected
+            assert all(dialog._checks[split].get_active() for split in charges)
+            dialog.check_selected(False)
+            assert not set(charges) & set(dialog._statement().reconciliation.selected_splits)
+            dialog.funds_out.list.unselect_all()
+            dialog.check_selected(True)
+            assert "Select rows first" in dialog.status.get_text()
+        finally:
+            dialog.destroy()
+
+    def test_later_entries_are_listed_below_a_heading_and_shaded(self, app, window, populated_book):
+        db, card, _rent, made = self._card(app, populated_book)
+        dialog = self._start(window, db, card)
+        try:
+            late = made["Late"].split_for(card.handle).handle
+            column, row = self._row_for(dialog, late)
+            assert row.has_css_class("after-statement")
+            assert not dialog._checks[late].get_active()
+            rows = self._rows(column)
+            heading = rows[rows.index(row) - 1]
+            assert heading.get_child().get_text() == "After 2030-01-31"
+            assert not heading.get_selectable()
+            # Every row above the heading is dated on or before the statement.
+            assert all(
+                not item.has_css_class("after-statement") for item in rows[: rows.index(heading)]
+            )
+        finally:
+            dialog.destroy()
+
+    def test_the_window_follows_changes_made_elsewhere(self, app, window, populated_book):
+        from breadsched.gen.lib import Transaction
+        from breadsched.gen.services import ReconciliationAction, cancel_reconciliation
+        from breadsched.gui.dialogs.reconciliation_dialog import ReconciliationDialog
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        db, card, rent, made = self._card(app, populated_book)
+        dialog = self._start(window, db, card)
+        try:
+            # One window per account: Reconcile brings this one forward.
+            assert ReconciliationDialog.present_for(window, db, card) is dialog
+            missed = Transaction.simple(
+                date(2030, 1, 15), "Missed bill", rent.handle, card.handle, "9"
+            )
+            with db.transaction("Missed bill") as txn:
+                db.add_transaction(missed, txn)
+            assert _spin(lambda: missed.split_for(card.handle).handle in dialog._checks)
+            column, row = self._row_for(dialog, made["Fuel"].split_for(card.handle).handle)
+            column.list.select_row(row)
+            editor = dialog.edit_transaction()
+            assert isinstance(editor, TransactionDialog)
+            assert editor.get_transient_for() is dialog
+            editor.destroy()
+            creator = dialog.new_transaction()
+            assert creator.default_account == card.handle
+            creator.destroy()
+            cancel_reconciliation(db, ReconciliationAction(dialog.session))
+            assert _spin(lambda: dialog.session is None)
+            assert dialog.start_button.get_parent() is not None
+        finally:
+            dialog.destroy()
+
+    def test_postpone_keeps_the_checks_and_abandon_changes_nothing(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.engine import reconciliation
+        from breadsched.gui.dialogs.reconciliation_dialog import ReconciliationDialog
+
+        db, card, _rent, made = self._card(app, populated_book)
+        dialog = self._start(window, db, card)
+        fuel = made["Fuel"].split_for(card.handle).handle
+        dialog._checks[fuel].set_active(True)
+        session = dialog.session
+        dialog.close()  # Postpone
+        resumed = ReconciliationDialog.present_for(window, db, card)
+        try:
+            assert resumed is not dialog and resumed.session == session
+            assert resumed._checks[fuel].get_active()
+            before = {t.handle: t.serialize() for t in db.iter_transactions()}
+            assert resumed.abandon()
+            assert reconciliation.open_for_account(db, card.handle) is None
+            assert {t.handle: t.serialize() for t in db.iter_transactions()} == before
+            assert resumed.start_button.get_parent() is not None
+        finally:
+            resumed.destroy()
+
+
 class TestViewSpecificChrome:
     """#182: the toolbar and Actions menu are arranged around the current view."""
 
@@ -8657,7 +8923,9 @@ class TestViewSpecificChrome:
             assert window.view_title.get_label() == label
             assert window.view_heading.get_visible()
 
-    def test_the_view_commands_come_before_the_other_view_icons(self, app, window, populated_book):
+    def test_the_view_icons_come_before_the_view_name_and_commands(
+        self, app, window, populated_book
+    ):
         app.open_book(populated_book)
         window.show_category("accounts")
         order = []
@@ -8665,7 +8933,8 @@ class TestViewSpecificChrome:
         while child is not None:
             order.append(child)
             child = child.get_next_sibling()
-        assert order.index(window.view_tools) < order.index(window.view_buttons["dashboard"])
+        # #361: the view icons, then the bold view name, then the view's commands.
+        assert order.index(window.view_buttons["dashboard"]) < order.index(window.view_heading)
         assert order.index(window.view_heading) < order.index(window.view_tools)
 
     def _sections(self, app):

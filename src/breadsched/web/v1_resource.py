@@ -49,7 +49,11 @@ Resources so far, all under ``/api/v1``:
   history, and waiting proposals; ``POST /reconciliations`` (``account``,
   ``statement_date``, ``ending_balance``) starts one; ``PATCH /reconciliations/{handle}``
   (``selected_splits``, ``ending_balance``); ``POST /reconciliations/{handle}/complete``,
-  ``/cancel``, and ``/reopen``; ``POST /transactions/{handle}/splits/{split}/cleared``.
+  ``/cancel``, and ``/reopen``; ``POST /transactions/{handle}/splits/{split}/cleared``;
+  ``GET /accounts/{handle}/reconciled-balance`` (``through``) – the starting balance a
+  statement on that date begins from; ``POST /accounts/{handle}/statement-entries``
+  (``other_account``, ``post_date``, ``description``, ``amount``) adds a statement
+  line such as interest, cleared and checked.
 * ``GET /receivables`` (``as_of``) – receivables with their links and the forms'
   choices; ``GET /receivables/lookup`` (``reference``); ``GET /receivables/costs``
   (``start``, ``end``) – each category's gross and net cost, as the Plan shows it;
@@ -206,6 +210,7 @@ from ..gen.services.plan import PlanQuery
 from ..gen.services.quotes import SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import RecordWriteOff, SaveReceivable
 from ..gen.services.reconciliations import (
+    AddStatementEntry,
     StartReconciliation,
     ToggleCleared,
     UpdateReconciliation,
@@ -338,7 +343,9 @@ __all__ = [
     "reimbursement_proposals_get",
     "cleared_toggle",
     "reconciliation_cancel",
+    "statement_entry_add",
     "reconciliation_complete",
+    "reconciled_balance_get",
     "reconciliation_get",
     "reconciliation_reopen",
     "reconciliation_start",
@@ -855,6 +862,27 @@ def reconciliation_cancel(api: Api, path: Path, body: dict[str, Any]) -> dict:
 def reconciliation_reopen(api: Api, path: Path, body: dict[str, Any]) -> dict:
     _only(body, set())
     return {"reconciliation": api.book.reopen_reconciliation(path["handle"]).serialize()}
+
+
+def reconciled_balance_get(api: Api, path: Path, query: QueryParams) -> dict:
+    through = query.iso_date("through", required=True)
+    query.finish()
+    assert through is not None
+    return {"balance": api.book.reconciled_balance(path["handle"], through)}
+
+
+def statement_entry_add(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, {"other_account", "post_date", "description", "amount"})
+    amount = _money(body, "amount")
+    assert amount is not None
+    request = AddStatementEntry(
+        path["handle"],
+        _required_text(body, "other_account"),
+        _required_date(body, "post_date"),
+        str(body.get("description") or ""),
+        amount,
+    )
+    return saved_transaction_json(api.book.add_statement_entry(request))
 
 
 def cleared_toggle(api: Api, path: Path, body: dict[str, Any]) -> dict:

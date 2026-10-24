@@ -687,6 +687,12 @@ class TransactionDialog(BoundedWindow):
             editor.account.set_selected(handles.index(split.account))
             editor.memo.set_text(split.memo)
             editor.amount.set_text(str(split.value.to_decimal()))
+        notes = self.notes_view.get_buffer()
+        if (
+            suggestion.notes.strip()
+            and not notes.get_text(notes.get_start_iter(), notes.get_end_iter(), False).strip()
+        ):
+            notes.set_text(suggestion.notes)  # #363: only notes left empty
         self.proposal_note.set_text(
             f"Proposed from {suggestion.when.isoformat()} “{suggestion.description}”. "
             "Edit anything before saving."

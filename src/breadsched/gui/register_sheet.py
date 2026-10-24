@@ -971,8 +971,13 @@ class RegisterSheet:
                 for split in suggestion.splits
             ]
             draft.lines.append(Line())
+            noted = self._propose_notes(suggestion.notes)
             self._rebuild()
-            self._say(f"Proposed {len(suggestion.splits)} splits from {source}.")
+            self._say(
+                f"Proposed {len(suggestion.splits)} splits"
+                + (" and its notes" if noted else "")
+                + f" from {source}."
+            )
             return True
         filled = []
         if not draft.transfer_touched and suggestion.transfer_account is not None:
@@ -984,11 +989,21 @@ class RegisterSheet:
             target = "increase" if suggestion.amount > 0 else "decrease"
             setattr(draft, target, abs(suggestion.amount).format())
             filled.append(abs(suggestion.amount).format())
+        if self._propose_notes(suggestion.notes):
+            filled.append("its notes")
+            self._rebuild()
         if filled:
             self._say(
                 f"Proposed from {source}: {', '.join(filled)}. Edit anything, then press Enter."
             )
         return bool(filled)
+
+    def _propose_notes(self, notes: str) -> bool:
+        """Take an earlier transaction's notes into a new entry whose notes are empty."""
+        if not notes.strip() or self.draft.notes.strip():
+            return False
+        self.draft.notes = notes
+        return True
 
     # ----------------------------------------------------------------- splits
 
@@ -1291,6 +1306,21 @@ class RegisterSheet:
                 if amount
                 else f"Posted {description}."
             )
+        elif not any(split.account == self.account for split in splits):
+            moved = ", ".join(
+                sorted(
+                    {
+                        self.db.full_name(split.account)
+                        for split in splits
+                        if split.account not in {item.account for item in draft.source.splits}
+                    }
+                )
+            )
+            self._say(
+                f"Moved {description} to {moved}; it no longer shows in this register."
+                if moved
+                else f"Saved {description}; it no longer shows in this register."
+            )
         else:
             self._say(f"Saved changes to {description}.")
         self.draft = self._blank_draft()
@@ -1403,7 +1433,9 @@ class RegisterSheet:
             return self._fail(
                 f"The splits are out of balance by {residual.format(parens_negative=True)}."
             )
-        if not any(split.account == self.account for split in splits):
+        # An existing transaction may move out of this account entirely, such as a
+        # purchase entered on the wrong card (#364); a new one must belong here.
+        if self.draft.source is None and not any(split.account == self.account for split in splits):
             return self._fail("One split must be in this register's account.", "transfer", 0)
         return tuple(splits)
 

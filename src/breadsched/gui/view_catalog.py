@@ -21,11 +21,10 @@ __all__ = [
 ]
 
 #: (label, icon, action, tooltip) for the toolbar's actions; a None action inserts
-#: a separator. The view icons (from ``CATEGORIES``) follow these.
+#: a separator. The view icons (from ``CATEGORIES``) follow these. Opening and
+#: importing a book are File menu and start-screen commands, not toolbar icons on
+#: every view (#361).
 TOOLBAR = [
-    ("Open", "document-open-symbolic", "app.open", "Open a book"),
-    ("Import", "folder-download-symbolic", "app.import", "Import a GnuCash book"),
-    (None, None, None, None),
     ("Undo", "edit-undo-symbolic", "app.undo", "Undo the last change"),
     ("Redo", "edit-redo-symbolic", "app.redo", "Redo the last undone change"),
     (None, None, None, None),
@@ -138,7 +137,14 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
         ViewAction("edit-in-place", "Edit Transaction in _Place", "edit_selected_in_place"),
         ViewAction("track-reimbursable", "Track as Rei_mbursable…", "track_selected_reimbursable"),
         ViewAction("new-window", "Open in New _Window", "_on_open_window_clicked"),
-        ViewAction("reconcile", "_Reconcile…", "_on_reconcile_clicked"),
+        ViewAction(
+            "reconcile",
+            "_Reconcile…",
+            "_on_reconcile_clicked",
+            "object-select-symbolic",
+            True,
+            caption="Reconcile",
+        ),
         ViewAction(
             "new-tab",
             "Open Register in New _Tab",
@@ -150,8 +156,10 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
     ),
     # A command whose button changes with the view's state (Reconcile, Save as
     # Scenario) stays in its view; the register keeps its own buttons because a
-    # separate register window has no toolbar. Review Due Transactions… is the
-    # Actions menu's general command, with a button on the Upcoming view.
+    # separate register window has no toolbar. Reconcile is also a register icon
+    # in the main toolbar, where reconciling is looked for first (#361). Review
+    # Due Transactions… is the Actions menu's general command, with a button on
+    # the Upcoming view.
     "scheduled": (
         ViewAction(
             "new-scheduled",

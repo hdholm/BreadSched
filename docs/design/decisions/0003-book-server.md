@@ -167,13 +167,20 @@ Savings goals followed, in all three interfaces:
 
 Statement reconciliation followed, in the browser and GTK (the command line has no
 reconciliation command):
-- **One read:** `reconciliation(account)` returns the open session's calculated
-  state (balances and every candidate entry), the account's sessions newest first,
-  and how many reimbursement and FSA claim link proposals wait on the account.
+- **Reads:** `reconciliation(account)` returns the open session's calculated
+  state (balances, the checked Funds In and Funds Out, and every candidate entry
+  with its column and whether it follows the statement date), the account's
+  sessions newest first, and how many reimbursement and FSA claim link proposals
+  wait on the account; `reconciled_balance(account, through)` is the starting
+  balance a statement on that date begins from (#362).
 - **Writes:** starting, updating (checked entries and the ending balance),
-  completing, cancelling, and reopening a session, and the register's cleared
-  toggle (`toggle_cleared`), used by the browser's and GTK's registers.
+  completing, cancelling, and reopening a session, adding a statement line such as
+  interest already cleared and checked (`add_statement_entry`, #362), and the
+  register's cleared toggle (`toggle_cleared`), used by the browser's and GTK's
+  registers.
 - **Resources:** `GET /api/v1/accounts/{handle}/reconciliation`,
+  `GET /api/v1/accounts/{handle}/reconciled-balance` (`through`),
+  `POST /api/v1/accounts/{handle}/statement-entries`,
   `POST /api/v1/reconciliations`, `PATCH /api/v1/reconciliations/{handle}`,
   `POST /api/v1/reconciliations/{handle}/complete`, `/cancel`, and `/reopen`, and
   `POST /api/v1/transactions/{handle}/splits/{split}/cleared`.

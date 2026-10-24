@@ -880,6 +880,56 @@ def test_reconciliation_alike(target, book):
     assert (_snapshot(db), sorted(repr(r.serialize()) for r in db.iter_reconciliations())) == before
 
 
+def test_statement_entries_and_starting_balances_alike(target, book):
+    """#362: the reconcile window's starting balance and quick add, either way."""
+    from breadsched.gen.services.reconciliations import (
+        AddStatementEntry,
+        StartReconciliation,
+    )
+
+    api, db = target.api, target.db
+    _post(db, "ab20" + "0" * 28, date(2026, 9, 2), "Pay", book.checking, book.salary, "500")
+    _post(db, "ab21" + "0" * 28, date(2026, 10, 9), "Later", book.groceries, book.checking, "20")
+    assert api.reconciled_balance(book.checking, date(2026, 9, 30)) == Money(0)
+    started = api.start_reconciliation(
+        StartReconciliation(book.checking, date(2026, 9, 30), Money("498"))
+    )
+    # The later purchase is listed, marked, and not checked; each side says its column.
+    assert [
+        (c.description, c.after_statement, c.funds_in, c.selected) for c in started.candidates
+    ] == [
+        ("Pay", False, True, False),
+        ("Later", True, False, False),
+    ]
+    saved = api.add_statement_entry(
+        AddStatementEntry(book.checking, book.groceries, date(2026, 9, 30), "Fee", Money("-2"))
+    )
+    state = api.reconciliation(book.checking).current
+    fee = next(c for c in state.candidates if c.transaction == saved.handle)
+    assert fee.selected and not fee.funds_in
+    assert (state.selected_in, state.selected_out) == (Money(0), Money(2))
+
+    before = _snapshot(db)
+    for call, status, code in (
+        (
+            lambda: api.reconciled_balance("missing", date(2026, 9, 30)),
+            404,
+            "reconciliation.account.not_found",
+        ),
+        (
+            lambda: api.add_statement_entry(
+                AddStatementEntry(book.checking, book.groceries, date(2026, 9, 30), "Fee", Money(0))
+            ),
+            400,
+            "reconciliation.entry.amount",
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert (refused.value.status, refused.value.code) == (status, code)
+    assert _snapshot(db) == before
+
+
 def test_receivables_alike(target, book):
     from breadsched.gen.lib import Scenario
     from breadsched.gen.services.receivables import RecordWriteOff, SaveReceivable

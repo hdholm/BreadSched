@@ -42,6 +42,7 @@ from ..gen.engine.schedule import Occurrence
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
 from ..gen.lib.commodity import CommodityPrice
 from ..gen.lib.fsa_claim import FsaClaim
+from ..gen.lib.money import Money
 from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
@@ -128,6 +129,7 @@ from ..gen.services.receivables import (
     SaveReceivable,
 )
 from ..gen.services.reconciliations import (
+    AddStatementEntry,
     ReconciliationView,
     StartReconciliation,
     ToggleCleared,
@@ -668,6 +670,20 @@ class HttpBookClient:
             f"/splits/{quote(request.split, safe='')}/cleared"
         )
         return ReconcileState(self._call("POST", path)["state"])
+
+    def reconciled_balance(self, account: str, through: date) -> Money:
+        path = f"/accounts/{quote(account, safe='')}/reconciled-balance"
+        return Money(self._call("GET", path, {"through": through})["balance"])
+
+    def add_statement_entry(self, request: AddStatementEntry) -> SavedTransaction:
+        path = f"/accounts/{quote(request.account, safe='')}/statement-entries"
+        body = {
+            "other_account": request.other_account,
+            "post_date": request.post_date,
+            "description": request.description,
+            "amount": request.amount,
+        }
+        return saved_transaction_from_json(self._call("POST", path, body=body))
 
     # ----------------------------------------------------- historical estimates
 

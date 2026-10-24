@@ -31,6 +31,7 @@ from ..gen.engine.schedule import Occurrence
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
 from ..gen.lib.commodity import CommodityPrice
 from ..gen.lib.fsa_claim import FsaClaim
+from ..gen.lib.money import Money
 from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
@@ -117,6 +118,7 @@ from ..gen.services.receivables import (
     SaveReceivable,
 )
 from ..gen.services.reconciliations import (
+    AddStatementEntry,
     ReconciliationView,
     StartReconciliation,
     ToggleCleared,
@@ -412,6 +414,14 @@ class BookApi(Protocol):
 
     def toggle_cleared(self, request: ToggleCleared) -> ReconcileState:
         """Cycle one split between not cleared and cleared."""
+        ...
+
+    def reconciled_balance(self, account: str, through: date) -> Money:
+        """The account's reconciled balance on a statement date: its starting balance."""
+        ...
+
+    def add_statement_entry(self, request: AddStatementEntry) -> SavedTransaction:
+        """Add a statement line such as interest, cleared and checked, as one change."""
         ...
 
     # ----------------------------------------------------- historical estimates

@@ -16,9 +16,12 @@ from breadsched.gen.lib import (
     Transaction,
 )
 from breadsched.gen.services import (
+    AddStatementEntry,
     ReconciliationAction,
     StartReconciliation,
     UpdateReconciliation,
+    add_statement_entry,
+    cancel_reconciliation,
     complete_reconciliation,
     start_reconciliation,
     update_reconciliation,
@@ -63,17 +66,18 @@ def test_start_selects_cleared_activity_and_calculates_exact_difference(db, stat
     assert state.opening_balance == Money("1000")
     assert state.selected_balance == Money("800")
     assert state.difference == Money("-50")
-    assert [item.description for item in state.candidates] == [
-        "Cleared expense",
-        "Pending expense",
+    # #362: a later entry is listed, marked, in case its date is wrong.
+    assert [(item.description, item.after_statement) for item in state.candidates] == [
+        ("Cleared expense", False),
+        ("Pending expense", False),
+        ("Future expense", True),
     ]
     assert session.selected_splits == [cleared.split_for(bank.handle).handle]
-    assert all(item.transaction != _future.handle for item in state.candidates)
 
     balanced = reconciliation.set_selection(
         db,
         session.handle,
-        [item.split for item in state.candidates],
+        [item.split for item in state.candidates if not item.after_statement],
     )
     assert balanced.balanced
     assert balanced.selected_balance == Money("750")
@@ -92,7 +96,9 @@ def test_typed_reconciliation_service_preserves_start_update_complete_workflow(d
         db,
         UpdateReconciliation(
             started.value.reconciliation.handle,
-            selected_splits=tuple(item.split for item in started.value.candidates),
+            selected_splits=tuple(
+                item.split for item in started.value.candidates if not item.after_statement
+            ),
         ),
     )
     assert updated.value is not None and updated.value.balanced
@@ -135,7 +141,9 @@ def test_completion_reconciles_selected_splits_atomically_and_can_be_reopened(db
     bank, _cleared, _pending, _future = statement_book
     session = reconciliation.start(db, bank.handle, date(2026, 1, 31), "750")
     state = reconciliation.summary(db, session)
-    reconciliation.set_selection(db, session.handle, [item.split for item in state.candidates])
+    reconciliation.set_selection(
+        db, session.handle, [item.split for item in state.candidates if not item.after_statement]
+    )
 
     completed = reconciliation.complete(db, session.handle)
 
@@ -143,6 +151,8 @@ def test_completion_reconciles_selected_splits_atomically_and_can_be_reopened(db
     assert completed.completed_at is not None
     assert [event.action for event in completed.audit_events] == ["opened", "completed"]
     for candidate in state.candidates:
+        if candidate.after_statement:
+            continue
         transaction = db.get_transaction(candidate.transaction)
         split = next(item for item in transaction.splits if item.handle == candidate.split)
         assert split.reconcile is ReconcileState.RECONCILED
@@ -158,7 +168,11 @@ def test_completion_reconciles_selected_splits_atomically_and_can_be_reopened(db
     ]
     reopened_state = reconciliation.summary(db, reopened)
     assert reopened_state.balanced
-    assert all(item.state is ReconcileState.CLEARED for item in reopened_state.candidates)
+    assert all(
+        item.state is ReconcileState.CLEARED
+        for item in reopened_state.candidates
+        if not item.after_statement
+    )
 
 
 def test_unbalanced_completion_is_refused(db, statement_book):
@@ -238,3 +252,124 @@ def test_reconciled_entries_change_only_through_their_statement(db, statement_bo
     assert missing.errors[0].code == "reconciliation.split.missing"
     gone = toggle_cleared(db, ToggleCleared("no-such-transaction", "x"))
     assert gone.errors[0].code == "transaction.not_found"
+
+
+def test_funds_in_and_out_total_the_checked_entries_separately(db, statement_book):
+    """#362: GnuCash-style columns, each with its own checked total."""
+    bank, _cleared, pending, _future = statement_book
+    session = reconciliation.start(db, bank.handle, date(2026, 1, 31), "750")
+    deposit = Transaction.simple(
+        date(2026, 1, 25), "Refund", bank.handle, pending.splits[0].account, "30"
+    )
+    with db.transaction("Refund") as txn:
+        db.add_transaction(deposit, txn)
+    state = reconciliation.summary(db, session.handle)
+    assert {item.description: item.funds_in for item in state.candidates} == {
+        "Cleared expense": False,
+        "Pending expense": False,
+        "Refund": True,
+        "Future expense": False,
+    }
+    state = reconciliation.set_selection(
+        db, session.handle, [item.split for item in state.candidates if not item.after_statement]
+    )
+    assert state.selected_in == Money("30")
+    assert state.selected_out == Money("250")
+    assert state.selected_balance == Money("780")
+
+
+def test_a_checked_later_entry_is_reconciled_with_the_statement(db, statement_book):
+    """#362: an entry dated after the statement can still belong on it."""
+    bank, _cleared, pending, future = statement_book
+    session = reconciliation.start(db, bank.handle, date(2026, 1, 31), "725")
+    state = reconciliation.set_selection(
+        db, session.handle, [item.split for item in reconciliation.summary(db, session).candidates]
+    )
+    assert state.balanced
+    reconciliation.complete(db, session.handle)
+    stored = db.get_transaction(future.handle).split_for(bank.handle)
+    assert stored.reconcile is ReconcileState.RECONCILED
+    assert stored.reconcile_date == date(2026, 1, 31)
+    # It counts toward the reconciled balance as of that statement, not after it.
+    assert reconciliation.reconciled_balance(db, bank.handle, date(2026, 1, 31)) == Money("725")
+    assert reconciliation.reconciled_balance(db, bank.handle, date(2026, 1, 15)) == Money("800")
+    nxt = reconciliation.start(db, bank.handle, date(2026, 2, 28), "725")
+    assert reconciliation.summary(db, nxt).opening_balance == Money("725")
+    assert reconciliation.summary(db, nxt).candidates == ()
+
+
+def test_the_starting_balance_is_the_reconciled_balance_on_the_statement_date(db, statement_book):
+    """#362: shown before starting, to compare with the statement's previous balance."""
+    bank, *_ = statement_book
+    assert reconciliation.reconciled_balance(db, bank.handle, date(2026, 1, 31)) == Money("1000")
+    assert reconciliation.reconciled_balance(db, bank.handle, date(2025, 12, 1)) == Money("0")
+
+
+def test_a_statement_entry_is_added_cleared_and_checked_in_one_change(db, statement_book):
+    """#362: a quick add for interest or a fee found on the statement."""
+    bank, cleared, pending, _future = statement_book
+    expense = pending.splits[0].account
+    session = reconciliation.start(db, bank.handle, date(2026, 1, 31), "740")
+    undo_depth = len(db.undo_stack)
+    result = add_statement_entry(
+        db, AddStatementEntry(bank.handle, expense, date(2026, 1, 31), "Fee", Money("-10"))
+    )
+    assert result.value is not None
+    added = db.get_transaction(result.value.handle)
+    own = added.split_for(bank.handle)
+    assert own.value == Money("-10") and own.reconcile is ReconcileState.CLEARED
+    assert added.split_for(expense).value == Money("10")
+    state = reconciliation.summary(db, session.handle)
+    assert own.handle in state.reconciliation.selected_splits
+    assert state.selected_balance == Money("790")
+    assert len(db.undo_stack) == undo_depth + 1
+    db.undo()
+    assert db.get_transaction(result.value.handle) is None
+    assert own.handle not in db.get_reconciliation(session.handle).selected_splits
+
+
+def test_a_statement_entry_on_a_card_raises_what_it_owes(db):
+    """Interest charged is a positive amount in the card's own terms."""
+    root = Account(name="Root", atype=AccountType.ROOT)
+    card = Account(name="Card", atype=AccountType.CREDIT, parent=root.handle)
+    interest = Account(name="Interest", atype=AccountType.EXPENSE, parent=root.handle)
+    with db.transaction("Card") as txn:
+        for account in (root, card, interest):
+            db.add_account(account, txn)
+    result = add_statement_entry(
+        db,
+        AddStatementEntry(
+            card.handle, interest.handle, date(2026, 1, 31), "Interest", Money("12.34")
+        ),
+    )
+    assert result.value is not None
+    added = db.get_transaction(result.value.handle)
+    assert added.split_for(card.handle).value == Money("-12.34")
+    assert added.split_for(interest.handle).value == Money("12.34")
+    assert reconciliation.reconciled_balance(db, card.handle, date(2026, 1, 31)) == Money("0")
+    session = reconciliation.start(db, card.handle, date(2026, 1, 31), "12.34")
+    assert reconciliation.summary(db, session).balanced
+
+
+def test_a_rejected_statement_entry_writes_nothing(db, statement_book):
+    bank, *_ = statement_book
+    before = len(list(db.iter_transactions()))
+    for request in (
+        AddStatementEntry(bank.handle, bank.handle, date(2026, 1, 31), "Fee", Money("5")),
+        AddStatementEntry(bank.handle, "missing", date(2026, 1, 31), "Fee", Money("5")),
+        AddStatementEntry(bank.handle, bank.handle, date(2026, 1, 31), "Fee", Money("0")),
+        AddStatementEntry("missing", bank.handle, date(2026, 1, 31), "Fee", Money("5")),
+    ):
+        assert add_statement_entry(db, request).value is None
+    assert len(list(db.iter_transactions())) == before
+
+
+def test_cancelling_abandons_the_statement_without_touching_the_ledger(db, statement_book):
+    """#362: abandon leaves every split as it was."""
+    bank, cleared, pending, _future = statement_book
+    session = reconciliation.start(db, bank.handle, date(2026, 1, 31), "750")
+    reconciliation.set_selection(db, session.handle, [pending.split_for(bank.handle).handle])
+    before = {t.handle: t.serialize() for t in db.iter_transactions()}
+    assert cancel_reconciliation(db, ReconciliationAction(session.handle)).value is not None
+    assert {t.handle: t.serialize() for t in db.iter_transactions()} == before
+    assert reconciliation.open_for_account(db, bank.handle) is None

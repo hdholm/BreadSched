@@ -1,9 +1,9 @@
 """Entry autocomplete: propose an earlier transaction's accounts and amount.
 
 Typing a description (matched by its normalized key) proposes the most recent
-matching transaction's splits. The proposal is data only: the user
+matching transaction's splits and notes. The proposal is data only: the user
 edits or ignores it and saves an ordinary balanced transaction. Reconcile state,
-source identifiers, notes, planning links, and FSA claims are never copied.
+source identifiers, planning links, and FSA claims are never copied.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ def test_no_match_or_empty_key_proposes_nothing(db, book):
     assert suggest_entry(db, SuggestEntry(description="")).value.suggestion is None
 
 
-def test_private_state_is_never_copied(db, book):
+def test_private_state_is_never_copied_but_notes_are(db, book):
     source = _post(db, book, date(2026, 9, 1), "Pharmacy", book.groceries, "12.00")
     source.notes = "private"
     for split in source.splits:
@@ -62,7 +62,9 @@ def test_private_state_is_never_copied(db, book):
     suggestion = suggest_entry(db, SuggestEntry(description="pharmacy")).value.suggestion
 
     assert suggestion is not None
-    assert "notes" not in {item.name for item in fields(suggestion)}
+    # #363: the notes come with the proposal; the interface takes them only into
+    # empty notes.
+    assert suggestion.notes == "private"
     for split in suggestion.splits:
         assert {item.name for item in fields(split)} == {"account", "value", "memo"}
     assert {split.memo for split in suggestion.splits} == {"prescription"}

@@ -653,6 +653,8 @@ def reconciliation_summary_json(state: ReconciliationSummary) -> dict[str, Any]:
         "selected_balance": to_json(state.selected_balance),
         "difference": to_json(state.difference),
         "balanced": state.balanced,
+        "selected_in": to_json(state.selected_in),
+        "selected_out": to_json(state.selected_out),
         "candidates": [
             {
                 "transaction": item.transaction,
@@ -662,6 +664,8 @@ def reconciliation_summary_json(state: ReconciliationSummary) -> dict[str, Any]:
                 "amount": to_json(item.amount),
                 "state": item.state.value,
                 "selected": item.selected,
+                "after_statement": item.after_statement,
+                "funds_in": item.funds_in,
             }
             for item in state.candidates
         ],
@@ -683,9 +687,13 @@ def reconciliation_summary_from_json(payload: dict[str, Any]) -> ReconciliationS
                 Money(row["amount"]),
                 ReconcileState(row["state"]),
                 bool(row["selected"]),
+                after_statement=bool(row["after_statement"]),
+                funds_in=bool(row["funds_in"]),
             )
             for row in payload["candidates"]
         ),
+        selected_in=Money(payload["selected_in"]),
+        selected_out=Money(payload["selected_out"]),
     )
 
 

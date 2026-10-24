@@ -10,6 +10,49 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a294 - 2026-10-24
+
+- **A GnuCash-like reconcile window (#362).** The GTK reconcile dialog is rebuilt:
+  - Before a statement starts it shows the account's reconciled balance on the
+    statement date (`reconciliation.reconciled_balance`), and adds a missing
+    statement line such as interest through the new `add_statement_entry` service.
+    The transaction, its Cleared mark, and its place in the open statement's checks
+    are one undoable change.
+  - A started statement lists **Funds In** and **Funds Out** side by side, each with
+    its checked total (`ReconciliationSummary.selected_in`/`selected_out`), under
+    the starting, reconciled, and ending balances and the difference.
+  - Several rows can be selected and checked or unchecked in one update.
+  - Every unreconciled split is now a candidate. One dated after the statement is
+    marked `after_statement`, listed below an "After" heading and shaded, and never
+    checked by default; if checked, it is reconciled with the statement and counts
+    in later statements' starting balances.
+  - The window is no longer modal, and there is one per account
+    (`ReconciliationDialog.present_for`). It follows every change to the book,
+    and offers **New Transaction…** and **Edit Transaction…**.
+  - **Postpone** keeps the statement, whose checks are already saved, and
+    **Abandon…** cancels it without changing any transaction.
+  - The browser's reconcile page shows the same marks and the Funds In and Funds
+    Out totals.
+
+## 0.2.0a293 - 2026-10-24
+
+- **Move a transaction from a register split (#364).** The register refused a split
+  line that left no split in its account, so a purchase entered on the wrong card
+  could be moved only from the full transaction editor. The rule now holds only for
+  a new entry: an edited transaction may move out entirely, and the GTK register
+  and browser register both say that it no longer shows there.
+- **Notes come with a proposal (#363).** `EntrySuggestion` now carries the
+  remembered transaction's notes, and the GTK register and transaction editor fill
+  them into an entry whose notes are still empty (private state is still never
+  copied). In the GTK register grid, a completion that stops matching gives back the
+  letters in the case they were typed, instead of keeping the proposal's case for
+  the part already typed.
+- **Toolbar rearranged (#361).** Open and Import left the GTK main toolbar (they
+  remain in the File menu and start screen); the view icons now come first, then the
+  current view's name in bold dividing them from its own commands; the register
+  gains a **Reconcile** toolbar icon; and the account and transaction counts show
+  only on the Dashboard and Accounts (`viewmanager.SUMMARY_VIEWS`).
+
 ## 0.2.0a292 - 2026-10-23
 
 - **Enter and remind in advance (#352).** A schedule's `advance_days` came from
