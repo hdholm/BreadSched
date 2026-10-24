@@ -408,10 +408,31 @@ See [Tags and linked documents](../USER_GUIDE.md#tags-and-linked-documents).
 
 ## Reconcile a statement
 
-1. Choose **Reconcile…** from the register.
-2. Enter the statement date and ending balance.
-3. Check eligible entries until the exact difference is zero.
-4. Finish the session to mark the selected splits reconciled.
+1. Choose **Reconcile** in the register's toolbar or **Actions → Reconcile…**.
+2. Enter the statement date and ending balance. Compare **Starting balance**, the
+   account's reconciled balance on that date, with the statement's previous balance.
+   A charge or credit on the statement that is not yet in the book, such as interest,
+   can be added here: enter its description, the account it belongs to, and the
+   amount (positive raises the balance, as interest charged on a card does), then
+   choose **Add**. It is added cleared, so it starts checked.
+3. Choose **Start reconciliation**. Entries are listed in two columns, **Funds In**
+   and **Funds Out**, each with its checked total; below them are the starting,
+   reconciled, and ending balances and the difference. Entries dated after the
+   statement are listed below an **After** heading, shaded, in case a date is wrong.
+4. Check entries until the difference is zero. Click a check, or press Enter or
+   double-click a row; to check several at once, Ctrl- or Shift-click to select them
+   and choose **Check Selected** (or **Uncheck Selected**).
+5. Choose **Finish** to mark the checked splits reconciled.
+
+The window does not block the rest of BreadSched: you can enter a missed scheduled
+transaction or correct one in a register while it is open, and the lists follow.
+**New Transaction…** enters one in this account dated on the statement, and **Edit
+Transaction…** opens the selected row's transaction. Choosing Reconcile again brings
+the open window forward.
+
+Checks are saved as you make them. **Postpone** closes the window and keeps the
+statement, which reopens where you left off; **Abandon…** discards the statement
+without changing any transaction.
 
 If a deposit in that account looks like money back on a
 [reimbursable expense](#reimbursable-expenses), the dialog says how many such

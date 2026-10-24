@@ -1491,3 +1491,21 @@ def test_deleting_a_rule_asks_first(page, served):
     page.get_by_role("button", name="Delete").click()
     page.wait_for_selector("text=No rules yet.")
     assert list_rules(db) == []
+
+
+def test_reconciliation_marks_entries_after_the_statement(page, served):
+    """#362: later entries are listed, marked, and never checked by default."""
+    db, _httpd = served
+    _open_register(page)
+    register = page.locator("select").first.input_value()
+    page.get_by_role("button", name="Reconcile…").click()
+    early = min(t.post_date for t in db.iter_transactions(account=register))
+    page.locator(".detail-dialog input[type=date]").fill(early.isoformat())
+    page.locator(".detail-dialog input[inputmode=decimal]").fill("0")
+    page.get_by_role("button", name="Start reconciliation").click()
+    later = page.locator(".detail-dialog tr.after-statement")
+    later.first.wait_for()
+    assert later.count() >= 1
+    assert "after statement" in later.first.inner_text()
+    assert not later.first.locator("input[type=checkbox]").is_checked()
+    page.wait_for_selector(".detail-dialog >> text=Funds in")

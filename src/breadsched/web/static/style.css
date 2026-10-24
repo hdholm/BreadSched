@@ -245,6 +245,7 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
 
 /* Register: rows edit on click; typed account paths list their matches. */
 tr.editable { cursor: pointer; }
+tr.after-statement td { background: var(--bg); border-top: 1px dashed var(--line); font-style: italic; }
 .completion { display: flex; flex-direction: column; align-items: stretch; gap: 2px; margin-top: 4px; }
 .completion[hidden] { display: none; }
 .completion .action { text-align: left; }

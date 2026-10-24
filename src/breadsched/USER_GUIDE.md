@@ -586,11 +586,21 @@ finish the session to mark the selected splits reconciled
 ([desktop](guide/desktop.md#reconcile-a-statement),
 [browser](guide/web.md#reconcile-a-statement)).
 
+Before you start, the starting balance is what the account has reconciled as of the
+statement date; compare it with the statement's previous balance, since a difference
+there was made before this statement. Entries are listed as Funds In (deposits, or
+payments on a card or loan) and Funds Out (withdrawals, or charges), each with its
+checked total. Entries dated after the statement are listed too, marked, in case a
+date is wrong; they are never checked for you, but one you check is reconciled with
+the statement. Checks are saved with the open statement as you make them, so a
+statement can be left and resumed later.
+
 Between statements, a register's **R** column marks entries cleared (**c**) or not
 (**n**) one at a time, and an open statement picks up the change. Reconciled
 entries (**y**) change only through their statement.
 
-Cancel leaves ledger splits unchanged and retains an audit record. The most recent
+Cancel (**Abandon** on the desktop) leaves ledger splits unchanged and retains an
+audit record; a transaction you added or edited while reconciling stays in the book. The most recent
 completed statement can be reopened for correction; its entries return to Cleared
 until it balances and is finished again. Reopen later completed statements first.
 

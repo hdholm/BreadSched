@@ -1272,12 +1272,15 @@ async function openReconciliation(account) {
         type:"checkbox", checked:item.selected ? "checked" : null,
         value:item.split,
       });
-      return {item, check, row:el("tr", {},
+      // An entry dated after the statement is listed, marked, in case its date
+      // is wrong (#362); it is never checked unless you check it.
+      const state = item.state === "c" ? "cleared" : "not cleared";
+      return {item, check, row:el("tr", {class:item.after_statement ? "after-statement" : null},
         el("td", {}, check),
         el("td", {}, item.date),
         el("td", {}, item.description || "(no description)"),
         el("td", {class:`num ${cls(item.amount)}`}, money(item.amount)),
-        el("td", {class:"muted"}, item.state === "c" ? "cleared" : "not cleared"))};
+        el("td", {class:"muted"}, item.after_statement ? `${state}, after statement` : state))};
     });
     const save = async () => {
       await post("/api/reconciliation/update", {
@@ -1291,7 +1294,8 @@ async function openReconciliation(account) {
       el("p", {class:"note"}, `Statement through ${session.statement_date}`),
       el("label", {}, "Ending balance", ending),
       el("p", {class:session.balanced ? "note" : "note negative"},
-        `Prior reconciled ${money(session.opening_balance)} · Checked `
+        `Prior reconciled ${money(session.opening_balance)} · Funds in `
+        + `${money(session.selected_in)} · Funds out ${money(session.selected_out)} · Checked `
         + `${money(session.selected_balance)} · Difference ${money(session.difference)}`),
       table(["✓", "Date", "Description", {label:"Amount", num:true}, "State"],
         checks.map(({row})=>row)),
