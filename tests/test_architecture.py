@@ -1202,6 +1202,8 @@ class TestBookServerBoundaries:
         "apply_writeback",
         "set_writeback_keep_backups",
         "writeback_keep_backups",
+        "verification_report",
+        "aggregate_value",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1354,6 +1356,8 @@ class TestBookServerBoundaries:
         "apply_writeback",
         "set_writeback_keep_backups",
         "writeback_keep_backups",
+        "book_summary",
+        "verify_book",
     }
 
     @pytest.mark.parametrize(
@@ -1430,6 +1434,7 @@ class TestBookServerBoundaries:
                 ("gnucash_writeback", "gnucash_writeback_apply", "gnucash_writeback_settings"),
             ),
             ("gui/dialogs/gnucash_writeback_dialog.py", ("refresh", "_on_keep_changed", "write")),
+            ("web/book_resource.py", ("summary", "verify")),
             ("web/dashboard_resource.py", ("dashboard_report",)),
             ("gui/views/dashboard.py", ("refresh",)),
             ("cli/quote_commands.py", ("cmd_quotes", "cmd_quote_source")),

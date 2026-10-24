@@ -1620,6 +1620,28 @@ def test_every_response_names_the_revision_and_a_stale_write_is_refused(remote):
     assert client.set_advance_days(SetAdvanceDays(sched.handle, remind_days=6)).remind_days == 6
 
 
+def test_the_book_summary_and_verification_read_alike(target, book):
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.engine import valuation
+
+    api, db = target.api, target.db
+    with db.transaction("Opening") as txn:
+        db.add_transaction(
+            Transaction.simple(date(2026, 9, 1), "Opening", book.checking, book.opening, "5000"),
+            txn,
+        )
+    summary = api.book_summary()
+    counts = db.summary()
+    assert (summary.accounts, summary.transactions) == (counts["account"], counts["txn"])
+    assert summary.path == db.path
+    assert to_data(summary.net_worth) == to_data(valuation.aggregate_value(db, net_worth=True))
+    assert summary.cash.amount is not None and summary.cash.amount.value == Money("5000")
+    assert summary.scenarios == tuple(item.name for item in db.iter_scenarios())
+    verification = api.verify_book()
+    assert verification.ok
+    assert verification.as_dict() == db.verification_report().as_dict()
+
+
 def test_security_prices_are_listed_and_saved_alike(target, book):
     from breadsched.gen.services.security_prices import SaveSecurityPrice
 

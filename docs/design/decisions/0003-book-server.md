@@ -415,6 +415,13 @@ dialog. A previewed change travels without the write it would perform
 (`WritebackChange.operation` is left out), so the server recomputes the plan when it
 writes, as before.
 
+The browser's book summary and Verify page followed: `book_summary` and `verify_book`
+(`GET /api/v1/book/summary` and `/book/verification`) return the book's counts, cash,
+net worth (each with its missing quotes), scenarios, and `BookVerification`. The
+command line's `verify` and GTK's verification dialog still check the file through a
+connection of their own (`DbSQLite.verify_path`), which also works while another
+process holds the book.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

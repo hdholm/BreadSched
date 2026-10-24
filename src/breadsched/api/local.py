@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Literal, cast
 
 from ..gen.db.sqlite import DbSQLite
+from ..gen.db.verification import BookVerification
 from ..gen.engine import projection as projection_engine
 from ..gen.engine.activity import ReportingPeriod
 from ..gen.engine.category_report import CategoryActivity
@@ -78,6 +79,7 @@ from ..gen.services import (
     account_record,
     account_records,
     balance_summary,
+    book_info,
     categorization,
     chart_of_accounts,
     dashboard_config,
@@ -135,6 +137,7 @@ from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
 from ..gen.services.autocomplete import EntryProposal, SuggestEntry, suggest_entry
+from ..gen.services.book_info import BookSummary
 from ..gen.services.budget_jars import JarsView
 from ..gen.services.categorization import (
     AddRule,
@@ -373,6 +376,14 @@ class LocalBookServer:
 
     def next_num(self, account: str, text: str = "", step: int = 1) -> str:
         return unwrap(entry_input.next_entry_num(self.db, account, text, step))
+
+    # -------------------------------------------------------------------- book
+
+    def book_summary(self) -> BookSummary:
+        return book_info.book_summary(self.db)
+
+    def verify_book(self) -> BookVerification:
+        return book_info.verify_book(self.db)
 
     # ------------------------------------------------------------ ledger reads
 

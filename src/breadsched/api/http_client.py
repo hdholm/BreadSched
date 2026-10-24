@@ -25,6 +25,7 @@ from datetime import date
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
+from ..gen.db.verification import BookVerification
 from ..gen.engine.activity import ReportingPeriod
 from ..gen.engine.category_report import CategoryActivity
 from ..gen.engine.dashboard import Dashboard
@@ -79,6 +80,7 @@ from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
 from ..gen.services.autocomplete import EntryProposal, SuggestEntry
+from ..gen.services.book_info import BookSummary
 from ..gen.services.budget_jars import JarsView
 from ..gen.services.categorization import (
     AddRule,
@@ -462,6 +464,14 @@ class HttpBookClient:
     def next_num(self, account: str, text: str = "", step: int = 1) -> str:
         found = self._call("GET", "/entry/num", {"account": account, "text": text, "step": step})
         return str(found["num"])
+
+    # -------------------------------------------------------------------- book
+
+    def book_summary(self) -> BookSummary:
+        return from_data(BookSummary, self._call("GET", "/book/summary"))
+
+    def verify_book(self) -> BookVerification:
+        return from_data(BookVerification, self._call("GET", "/book/verification"))
 
     # ------------------------------------------------------------ ledger reads
 

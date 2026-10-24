@@ -110,6 +110,8 @@ Resources so far, all under ``/api/v1``:
   ``/relink``; ``PATCH /attachment-folders`` (``folder`` or ``gnucash_folder``).
 * ``GET /net-worth`` (``start``, ``end``, ``period``, ``today``) and
   ``GET /net-worth/change`` (``start``, ``end``, ``today``).
+* ``GET /book/summary`` – the book's counts, cash, net worth, and scenarios;
+  ``GET /book/verification`` – its physical and logical checks.
 * ``GET /entry/suggestion`` (``description``, ``account``, ``currency``, ``exclude``),
   ``/entry/amount`` (``text``, ``currency``, ``number_format``), ``/entry/trade``
   (``account``, ``shares``, ``price``, ``amount``, ``changed``, ``currency``,
@@ -223,6 +225,8 @@ __all__ = [
     "expense_explorer_v1",
     "plan_v1",
     "activity_get",
+    "book_summary_get",
+    "book_verification_get",
     "entry_accounts_get",
     "entry_amount_get",
     "entry_num_get",
@@ -1439,6 +1443,16 @@ def attachment_folders_patch(api: Api, _path: Path, body: dict[str, Any]) -> dic
         return {"folder": api.book.set_attachment_folder(change.folder)}
     assert change.gnucash_folder is not None
     return {"gnucash_folder": api.book.set_source_link_folder(change.gnucash_folder)}
+
+
+def book_summary_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.book_summary())
+
+
+def book_verification_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.verify_book())
 
 
 _NUMBER_FORMATS = ("auto", "dot", "comma")

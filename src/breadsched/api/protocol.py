@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
+from ..gen.db.verification import BookVerification
 from ..gen.engine.activity import ReportingPeriod
 from ..gen.engine.category_report import CategoryActivity
 from ..gen.engine.dashboard import Dashboard
@@ -68,6 +69,7 @@ from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
 from ..gen.services.autocomplete import EntryProposal, SuggestEntry
+from ..gen.services.book_info import BookSummary
 from ..gen.services.budget_jars import JarsView
 from ..gen.services.categorization import (
     AddRule,
@@ -259,6 +261,16 @@ class BookApi(Protocol):
 
     def next_num(self, account: str, text: str = "", step: int = 1) -> str:
         """A check number moved ``step`` on; an empty one continues the register."""
+        ...
+
+    # -------------------------------------------------------------------- book
+
+    def book_summary(self) -> BookSummary:
+        """The book's counts, cash, net worth, and scenarios."""
+        ...
+
+    def verify_book(self) -> BookVerification:
+        """Physical and logical checks of the book; writes nothing."""
         ...
 
     # ------------------------------------------------------------ ledger reads
