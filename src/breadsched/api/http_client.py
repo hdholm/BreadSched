@@ -100,6 +100,7 @@ from ..gen.services.dashboard_config import DashboardSettings, SaveDashboardConf
 from ..gen.services.entry_input import EntryAccount, EntryAmount, ReadEntryTrade
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
 from ..gen.services.expense_explorer import ExpenseExplorer
+from ..gen.services.gnucash_writeback import ApplyWriteback, WritebackApplied, WritebackPlan
 from ..gen.services.import_review import (
     HeldImportChange,
     HeldImportResolution,
@@ -1034,6 +1035,22 @@ class HttpBookClient:
     def save_security_price(self, request: SaveSecurityPrice) -> SavedSecurityPrice:
         found = self._call("POST", "/security-prices", body=to_data(request))
         return from_data(SavedSecurityPrice, found, "saved")
+
+    # ------------------------------------------------------ GnuCash write-back
+
+    def writeback_preview(self) -> WritebackPlan:
+        return from_data(WritebackPlan, self._call("GET", "/gnucash/writeback"))
+
+    def writeback_keep_backups(self) -> int:
+        return int(self._call("GET", "/gnucash/writeback/settings")["keep_backups"])
+
+    def set_writeback_keep_backups(self, keep: int) -> int:
+        found = self._call("PATCH", "/gnucash/writeback/settings", body={"keep_backups": keep})
+        return int(found["keep_backups"])
+
+    def apply_writeback(self, request: ApplyWriteback) -> WritebackApplied:
+        found = self._call("POST", "/gnucash/writeback", body=to_data(request))
+        return from_data(WritebackApplied, found)
 
     # ------------------------------------------------------- dashboard settings
 

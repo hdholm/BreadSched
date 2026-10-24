@@ -407,6 +407,14 @@ and the browser adapter checked the price itself. `securities()` and
 the browser's and GTK's security price editors. Both still list the quote currencies
 from the book, in book order, since the first is the editor's default.
 
+GnuCash write-back followed: `writeback_preview`, `apply_writeback`,
+`writeback_keep_backups`, and `set_writeback_keep_backups`
+(`GET`/`POST /api/v1/gnucash/writeback`, `GET`/`PATCH .../settings`) serve the command
+line's `gnucash-writeback`, the browser's write-back page, and GTK's write-back
+dialog. A previewed change travels without the write it would perform
+(`WritebackChange.operation` is left out), so the server recomputes the plan when it
+writes, as before.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

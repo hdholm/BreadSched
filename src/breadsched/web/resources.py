@@ -285,6 +285,10 @@ from .v1_resource import (
     transaction_lookup,
     transaction_save,
     undo_post,
+    writeback_apply,
+    writeback_get,
+    writeback_settings_get,
+    writeback_settings_patch,
 )
 from .v1_resource import receivable_delete as v1_receivable_delete
 from .v1_resource import receivable_dispute as v1_receivable_dispute
@@ -751,6 +755,10 @@ V1_ROUTES: tuple[tuple[str, str, Callable[..., object]], ...] = (
     ("GET", "/securities", securities_get),
     ("POST", "/security-prices", security_price_save),
     ("GET", "/dashboard", dashboard_get),
+    ("GET", "/gnucash/writeback", writeback_get),
+    ("POST", "/gnucash/writeback", writeback_apply),
+    ("GET", "/gnucash/writeback/settings", writeback_settings_get),
+    ("PATCH", "/gnucash/writeback/settings", writeback_settings_patch),
     ("GET", "/dashboard/settings", dashboard_settings_get),
     ("PATCH", "/dashboard/settings", dashboard_settings_patch),
     ("GET", "/attachments", attachments_get),

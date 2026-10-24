@@ -118,6 +118,7 @@ from ..gen.services import attachments as attachment_service
 from ..gen.services import budget_jars as jars_service
 from ..gen.services import claims as claim_service
 from ..gen.services import expense_explorer as expense_service
+from ..gen.services import gnucash_writeback as writeback_service
 from ..gen.services import investment_reports as investment_report_service
 from ..gen.services import loans as loan_service
 from ..gen.services import lots as lot_service
@@ -156,6 +157,7 @@ from ..gen.services.dashboard_config import DashboardSettings, SaveDashboardConf
 from ..gen.services.entry_input import EntryAccount, EntryAmount, ReadEntryTrade
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
 from ..gen.services.expense_explorer import ExpenseExplorer
+from ..gen.services.gnucash_writeback import ApplyWriteback, WritebackApplied, WritebackPlan
 from ..gen.services.import_review import (
     HeldImportChange,
     HeldImportResolution,
@@ -639,6 +641,21 @@ class LocalBookServer:
 
     def save_security_price(self, request: SaveSecurityPrice) -> SavedSecurityPrice:
         return unwrap(security_prices.save_security_price(self.db, request))
+
+    # ------------------------------------------------------ GnuCash write-back
+
+    def writeback_preview(self) -> WritebackPlan:
+        return unwrap(writeback_service.writeback_preview(self.db))
+
+    def writeback_keep_backups(self) -> int:
+        return writeback_service.writeback_keep_backups(self.db)
+
+    def set_writeback_keep_backups(self, keep: int) -> int:
+        with self._changing("writeback-config"):
+            return unwrap(writeback_service.set_writeback_keep_backups(self.db, keep))
+
+    def apply_writeback(self, request: ApplyWriteback) -> WritebackApplied:
+        return unwrap(writeback_service.apply_writeback(self.db, request))
 
     # ------------------------------------------------------- dashboard settings
 

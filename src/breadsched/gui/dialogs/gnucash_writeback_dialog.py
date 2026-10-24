@@ -8,16 +8,13 @@ the book up, writes atomically, and reads back to confirm.
 
 from __future__ import annotations
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.services.gnucash_writeback import (
     ApplyWriteback,
     WritebackPlan,
-    apply_writeback,
-    preview_writeback,
-    set_writeback_keep_backups,
-    writeback_keep_backups,
 )
-from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.help import help_row
@@ -53,7 +50,7 @@ class GnuCashWritebackDialog(BoundedWindow):
         settings = Gtk.Box(spacing=8)
         settings.append(Gtk.Label(label="Backups to keep", xalign=0))
         self.keep = Gtk.SpinButton.new_with_range(1, 1000, 1)
-        self.keep.set_value(writeback_keep_backups(db))
+        self.keep.set_value(book_server(db).writeback_keep_backups())
         self.keep.connect("value-changed", self._on_keep_changed)
         settings.append(self.keep)
         outer.append(settings)
@@ -79,13 +76,13 @@ class GnuCashWritebackDialog(BoundedWindow):
         while child := self.content.get_first_child():
             self.content.remove(child)
         self.checks = []
-        previewed = preview_writeback(self.db)
-        if previewed.value is None:
+        try:
+            self.plan = book_server(self.db).writeback_preview()
+        except ApiError as error:
             self.plan = None
-            self.summary.set_text(service_error_message(previewed.errors[0]))
+            self.summary.set_text(str(error))
             self.write_button.set_sensitive(False)
             return
-        self.plan = previewed.value
         self.summary.set_text(
             f"GnuCash book: {self.plan.source}\n"
             "Tick the transactions to write. Nothing is written until you press "
@@ -136,9 +133,10 @@ class GnuCashWritebackDialog(BoundedWindow):
             self.status.remove_css_class("negative")
 
     def _on_keep_changed(self, spin: Gtk.SpinButton) -> None:
-        result = set_writeback_keep_backups(self.db, int(spin.get_value()))
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            book_server(self.db).set_writeback_keep_backups(int(spin.get_value()))
+        except ApiError as error:
+            self._message(str(error), True)
 
     def write(self) -> int | None:
         """Write the ticked transactions; the count written, or None if refused."""
@@ -146,16 +144,17 @@ class GnuCashWritebackDialog(BoundedWindow):
         if not chosen:
             self._message("Tick one or more transactions to write.", True)
             return None
-        result = apply_writeback(self.db, ApplyWriteback(chosen))
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            applied = book_server(self.db).apply_writeback(ApplyWriteback(chosen))
+        except ApiError as error:
+            self._message(str(error), True)
             self.refresh()
             return None
-        written = len(result.value.written)
+        written = len(applied.written)
         self.refresh()
         self._message(
             f"Wrote {written} transaction(s) to GnuCash and re-imported to confirm. "
-            f"Backup: {result.value.backup}",
+            f"Backup: {applied.backup}",
             False,
         )
         return written

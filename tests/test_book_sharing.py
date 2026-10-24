@@ -502,6 +502,16 @@ def test_projection_works_through_the_server_holding_the_book(running, book_path
     assert isinstance(json.loads(capsys.readouterr().out), list)
 
 
+def test_gnucash_writeback_works_through_the_server_holding_the_book(running, book_path, capsys):
+    path = str(book_path)
+    assert main(["gnucash-writeback", path, "--keep-backups", "4", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"keep_backups": 4}
+    assert running.db.get_metadata("gnucash.writeback.keep_backups") == 4
+    # The sample book was not imported from GnuCash, so there is nothing to write to.
+    assert main(["gnucash-writeback", path]) != 0
+    assert "GnuCash" in capsys.readouterr().err
+
+
 def test_scheduled_and_costs_work_through_the_server_holding_the_book(running, book_path, capsys):
     path = str(book_path)
     assert main(["scheduled", path, "--as-of", "2026-11-10", "--json"]) == 0

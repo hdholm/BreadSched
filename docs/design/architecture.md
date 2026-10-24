@@ -250,11 +250,12 @@ So `due-review`, `scheduled-next`, `scheduled-advance`, `scheduled`, `accounts`,
 `receivables`, `scenario`, `drawdown`, `payroll`, `claims`, `review`, the `plan-*`
 review commands, `import-review`, `sale-lots`, `tax-marks`, `quotes`, `quote-source`,
 `rate`, `attachments`, `net-worth`, `net-worth-change`, `project`, `compare`,
-`holdings`, `realized-gains`, `tax-year`, `jars`, `dashboard`, and `activity` work
-while another process holds the book (#358). `cli.common.book_api` and
-`add_server_options` give each such command the connection and its `--server` and
-`--token-file` options. `tests/test_book_sharing.py` covers the record's life, stale
-records, the commands through a holding server, an explicit server, and `serve`.
+`holdings`, `realized-gains`, `tax-year`, `jars`, `dashboard`, `activity`, and
+`gnucash-writeback` work while another process holds the book (#358).
+`cli.common.book_api` and `add_server_options` give each such command the connection
+and its `--server` and `--token-file` options. `tests/test_book_sharing.py` covers the
+record's life, stale records, the commands through a holding server, an explicit
+server, and `serve`.
 
 GTK reaches the same server in process through `api.local.book_server(db)` for the
 due review, Enter Next and Skip Next, and the Upcoming count (#359).

@@ -97,6 +97,9 @@ Resources so far, all under ``/api/v1``:
   (``SaveExchangeRate``).
 * ``GET /securities`` – each security with its latest price; ``POST /security-prices``
   (``SaveSecurityPrice``) – one dated manual price, creating the security when needed.
+* ``GET`` and ``POST /gnucash/writeback`` (``ApplyWriteback``) – the write-back
+  preview and the write; ``GET`` and ``PATCH /gnucash/writeback/settings``
+  (``keep_backups``).
 * ``GET /dashboard`` (``as_of``, ``liquidity_days``, ``emergency_months``) – the
   Dashboard computed once, over other horizons without saving them.
 * ``GET`` and ``PATCH /dashboard/settings`` (``SaveDashboardConfig``) – the
@@ -184,6 +187,7 @@ from ..gen.services.claims import ClaimReportQuery, CloseClaim, ReopenClaim, Sav
 from ..gen.services.dashboard_config import SaveDashboardConfig
 from ..gen.services.entry_input import ReadEntryTrade
 from ..gen.services.exchange_rates import SaveExchangeRate
+from ..gen.services.gnucash_writeback import ApplyWriteback
 from ..gen.services.import_review import ResolveHeldImports
 from ..gen.services.loans import SaveLoan
 from ..gen.services.lots import SetSaleLots
@@ -237,6 +241,10 @@ __all__ = [
     "attachment_remove_v1",
     "attachments_get",
     "dashboard_get",
+    "writeback_apply",
+    "writeback_get",
+    "writeback_settings_get",
+    "writeback_settings_patch",
     "dashboard_settings_get",
     "dashboard_settings_patch",
     "currencies_get",
@@ -1327,6 +1335,30 @@ def securities_get(api: Api, _path: Path, query: QueryParams) -> dict:
 def security_price_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     request = from_data(SaveSecurityPrice, body, "request")
     return to_data(api.book.save_security_price(request))
+
+
+@dataclass(frozen=True, slots=True)
+class _KeepBackups:
+    keep_backups: int
+
+
+def writeback_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.writeback_preview())
+
+
+def writeback_apply(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.apply_writeback(from_data(ApplyWriteback, body, "request")))
+
+
+def writeback_settings_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return {"keep_backups": api.book.writeback_keep_backups()}
+
+
+def writeback_settings_patch(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    keep = from_data(_KeepBackups, body, "request").keep_backups
+    return {"keep_backups": api.book.set_writeback_keep_backups(keep)}
 
 
 def dashboard_get(api: Api, _path: Path, query: QueryParams) -> dict:

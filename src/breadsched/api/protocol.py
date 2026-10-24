@@ -89,6 +89,7 @@ from ..gen.services.dashboard_config import DashboardSettings, SaveDashboardConf
 from ..gen.services.entry_input import EntryAccount, EntryAmount, ReadEntryTrade
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
 from ..gen.services.expense_explorer import ExpenseExplorer
+from ..gen.services.gnucash_writeback import ApplyWriteback, WritebackApplied, WritebackPlan
 from ..gen.services.import_review import (
     HeldImportChange,
     HeldImportResolution,
@@ -695,6 +696,24 @@ class BookApi(Protocol):
 
     def save_security_price(self, request: SaveSecurityPrice) -> SavedSecurityPrice:
         """Save a dated manual quote, creating the security when none is named."""
+        ...
+
+    # ------------------------------------------------------ GnuCash write-back
+
+    def writeback_preview(self) -> WritebackPlan:
+        """Every local change that could be written to GnuCash, and every one that
+        cannot; writes nothing."""
+        ...
+
+    def writeback_keep_backups(self) -> int: ...
+
+    def set_writeback_keep_backups(self, keep: int) -> int:
+        """How many backups of the GnuCash book a write-back keeps (1 to 1000)."""
+        ...
+
+    def apply_writeback(self, request: ApplyWriteback) -> WritebackApplied:
+        """Write the chosen previewed changes to GnuCash, after a backup, and prove
+        they read back as BreadSched has them."""
         ...
 
     # ------------------------------------------------------- dashboard settings

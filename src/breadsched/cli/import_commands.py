@@ -16,10 +16,6 @@ from ..gen.services import (
 from ..gen.services.csv_import import CsvImportRequest, CsvMapping, import_csv, preview_csv_import
 from ..gen.services.gnucash_writeback import (
     ApplyWriteback,
-    apply_writeback,
-    preview_writeback,
-    set_writeback_keep_backups,
-    writeback_keep_backups,
 )
 from ..gen.services.receivables import (
     reimbursement_proposals,
@@ -34,7 +30,6 @@ from .common import (
     add_server_options,
     book_api,
     emit,
-    find_transaction,
     open_book,
     resolve_account,
     table,
@@ -270,29 +265,20 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
 def cmd_gnucash_writeback(args: argparse.Namespace) -> int:
     """Preview, or write chosen BreadSched changes back to the imported GnuCash book."""
     writing = bool(args.apply or args.all or args.keep_backups is not None)
-    db = open_book(args.book, "w" if writing else "r")
-    try:
+    with book_api(args, "w" if writing else "r") as book:
         if args.keep_backups is not None:
-            kept = set_writeback_keep_backups(db, args.keep_backups)
-            if kept.value is None:
-                raise CommandError(service_error_message(kept.errors[0]))
+            kept = book.set_writeback_keep_backups(args.keep_backups)
             if not (args.apply or args.all):
-                emit({"keep_backups": kept.value}, args, f"Keeping {kept.value} backup(s)")
+                emit({"keep_backups": kept}, args, f"Keeping {kept} backup(s)")
                 return 0
-        previewed = preview_writeback(db)
-        if previewed.value is None:
-            raise CommandError(service_error_message(previewed.errors[0]))
-        plan = previewed.value
+        plan = book.writeback_preview()
         if args.apply or args.all:
             chosen = (
                 [change.transaction for change in plan.changes]
                 if args.all
-                else [find_transaction(db, reference).handle for reference in args.apply]
+                else [book.find_transaction(reference).handle for reference in args.apply]
             )
-            applied = apply_writeback(db, ApplyWriteback(tuple(chosen)))
-            if applied.value is None:
-                raise CommandError(service_error_message(applied.errors[0]))
-            outcome = applied.value
+            outcome = book.apply_writeback(ApplyWriteback(tuple(chosen)))
             emit(
                 {
                     "written": [change.transaction for change in outcome.written],
@@ -306,7 +292,7 @@ def cmd_gnucash_writeback(args: argparse.Namespace) -> int:
         emit(
             {
                 "source": plan.source,
-                "keep_backups": writeback_keep_backups(db),
+                "keep_backups": book.writeback_keep_backups(),
                 "changes": [
                     {
                         "transaction": change.transaction,
@@ -346,8 +332,6 @@ def cmd_gnucash_writeback(args: argparse.Namespace) -> int:
             ),
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_import_review(args: argparse.Namespace) -> int:
@@ -584,6 +568,7 @@ def register(add: AddCommand) -> None:
     writeback.add_argument(
         "--keep-backups", type=int, metavar="N", help="how many write-back backups to keep"
     )
+    add_server_options(writeback)
     writeback.set_defaults(func=cmd_gnucash_writeback)
 
     infer = add("infer", "Suggest loan/asset links and credit-card settings")
