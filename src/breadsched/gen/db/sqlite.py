@@ -38,6 +38,7 @@ from .backups import backup_connection, migration_backup_path, restore_backup, s
 from .base import DbError, DbReadonlyError, DbTxn
 from .book_lock import BookWriterLock
 from .change_verification import ChangeVerification
+from .compact import expand_transaction, minimize_transaction
 from .migrations import MIGRATIONS, MIN_SUPPORTED_SCHEMA_VERSION
 from .storage_verification import derived_column_issues, split_index_issues
 from .verification import BookIssue, BookVerification, verify_domain
@@ -559,7 +560,10 @@ class DbSQLite(ChangeVerification):
                 self._accounts.pop(handle, None)
             return
 
-        blob = json.dumps(data, separators=(",", ":"))
+        # Transactions are stored minimized (decision 0001, #354); every reader
+        # restores the defaults, and _read hands back the full form.
+        stored = minimize_transaction(data) if table == "txn" else data
+        blob = json.dumps(stored, separators=(",", ":"))
         if table == "account":
             conn.execute(
                 "INSERT OR REPLACE INTO account(handle,parent,name,atype,blob) VALUES (?,?,?,?,?)",
@@ -650,7 +654,10 @@ class DbSQLite(ChangeVerification):
             .execute(f"SELECT blob FROM {table} WHERE handle=?", (handle,))
             .fetchone()
         )
-        return json.loads(row["blob"]) if row else None
+        if not row:
+            return None
+        data = json.loads(row["blob"])
+        return expand_transaction(data) if table == "txn" else data
 
     def _write(self, obj: Any, txn: DbTxn, table: str) -> str:
         if self._active_txn is not txn:

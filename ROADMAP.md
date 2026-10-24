@@ -148,6 +148,9 @@ The rest of this file is unscheduled and comes after the first Beta.
   - **Requirements:** pin the defaults with a test and version them with `_schema`.
   - **Book server:** it would also halve the stored forms the experimental book
     server sends.
+  - **Status:** implemented on the experimental branch (`gen.db.compact`), with no
+    schema change. Earlier readers stay compatible because only constant
+    `.get` defaults are left out.
 - Longer term, separate planning resolutions/classifications from imported ledger
   records where doing so materially simplifies synchronization and ownership.
 
