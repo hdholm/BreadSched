@@ -814,6 +814,72 @@ def test_savings_goals_alike(target, book):
     assert goal.handle not in db.get_scenario(lean.handle).goal_overrides
 
 
+def test_reconciliation_alike(target, book):
+    from breadsched.gen.lib.transaction import ReconcileState
+    from breadsched.gen.services.reconciliations import (
+        StartReconciliation,
+        ToggleCleared,
+        UpdateReconciliation,
+    )
+
+    api, db = target.api, target.db
+    _post(db, "ab10" + "0" * 28, date(2026, 9, 2), "Pay", book.checking, book.salary, "500")
+    _post(db, "ab11" + "0" * 28, date(2026, 9, 9), "Shop", book.groceries, book.checking, "120.5")
+    pay = db.get_transaction("ab10" + "0" * 28)
+    [pay_split] = [split for split in pay.splits if split.account == book.checking]
+
+    assert api.toggle_cleared(ToggleCleared(pay.handle, pay_split.handle)) is ReconcileState.CLEARED
+    empty = api.reconciliation(book.checking)
+    assert (empty.account_name, empty.current, empty.history) == ("Assets:Checking", None, ())
+
+    started = api.start_reconciliation(
+        StartReconciliation(book.checking, date(2026, 9, 30), Money("379.5"))
+    )
+    session = started.reconciliation.handle
+    # The cleared deposit starts checked; the purchase does not.
+    assert [(c.description, c.selected) for c in started.candidates] == [
+        ("Pay", True),
+        ("Shop", False),
+    ]
+    assert started.difference == Money("-120.5") and not started.balanced
+    view = api.reconciliation(book.checking)
+    assert view.current is not None and view.current.reconciliation.handle == session
+    assert [item.handle for item in view.history] == [session]
+
+    splits = tuple(candidate.split for candidate in started.candidates)
+    balanced = api.update_reconciliation(UpdateReconciliation(session, selected_splits=splits))
+    assert balanced.balanced and balanced.selected_balance == Money("379.5")
+    finished = api.complete_reconciliation(session)
+    assert finished.status.value == "completed"
+    assert api.reconciliation(book.checking).current is None
+    reopened = api.reopen_reconciliation(session)
+    assert reopened.status.value == "open"
+    assert api.cancel_reconciliation(session).status.value == "cancelled"
+
+    before = _snapshot(db), sorted(repr(r.serialize()) for r in db.iter_reconciliations())
+    for call, status, code in (
+        (lambda: api.reconciliation("missing"), 404, "reconciliation.account.not_found"),
+        (
+            lambda: api.start_reconciliation(
+                StartReconciliation("missing", date(2026, 9, 30), Money(0))
+            ),
+            404,
+            "reconciliation.account.not_found",
+        ),
+        (lambda: api.complete_reconciliation("missing"), 404, "reconciliation.not_found"),
+        (lambda: api.reopen_reconciliation(session), 400, "reconciliation.status.not_completed"),
+        (
+            lambda: api.toggle_cleared(ToggleCleared("missing", "x")),
+            404,
+            "transaction.not_found",
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert (refused.value.status, refused.value.code) == (status, code)
+    assert (_snapshot(db), sorted(repr(r.serialize()) for r in db.iter_reconciliations())) == before
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -991,6 +1057,16 @@ def test_v1_refuses_what_it_does_not_serve(remote):
             "request.invalid",
         ),
         ("DELETE", "/api/v1/goals/missing", None, 404, "savings_goal.not_found"),
+        ("POST", "/api/v1/reconciliations", {"account": "x"}, 400, "request.invalid"),
+        (
+            "PATCH",
+            "/api/v1/reconciliations/x",
+            {"selected_splits": "all"},
+            400,
+            "request.invalid",
+        ),
+        ("POST", "/api/v1/reconciliations/x/complete", {"now": True}, 400, "request.invalid"),
+        ("GET", "/api/v1/accounts/x/reconciliation?as_of=2026-01-01", None, 400, "query.unknown"),
     ]
     for method, route, body, status, code in cases:
         got, payload, _ = _raw(remote, method, route, body)

@@ -165,6 +165,19 @@ Savings goals followed, in all three interfaces:
   `POST /api/v1/goals/{handle}/allocations`, `/close`, `/reopen`, and `/override`,
   and `DELETE /api/v1/goals/{handle}`.
 
+Statement reconciliation followed, in the browser and GTK (the command line has no
+reconciliation command):
+- **One read:** `reconciliation(account)` returns the open session's calculated
+  state (balances and every candidate entry), the account's sessions newest first,
+  and how many reimbursement and FSA claim link proposals wait on the account.
+- **Writes:** starting, updating (checked entries and the ending balance),
+  completing, cancelling, and reopening a session, and the register's cleared
+  toggle (`toggle_cleared`), used by the browser's and GTK's registers.
+- **Resources:** `GET /api/v1/accounts/{handle}/reconciliation`,
+  `POST /api/v1/reconciliations`, `PATCH /api/v1/reconciliations/{handle}`,
+  `POST /api/v1/reconciliations/{handle}/complete`, `/cancel`, and `/reopen`, and
+  `POST /api/v1/transactions/{handle}/splits/{split}/cleared`.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

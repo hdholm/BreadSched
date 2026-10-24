@@ -42,6 +42,11 @@ Resources so far, all under ``/api/v1``:
   and the forms' choices; ``GET /goals/lookup`` (``reference``); ``POST /goals``
   saves one (``handle`` to edit); ``POST /goals/{handle}/allocations``,
   ``/close``, ``/reopen``, and ``/override``; ``DELETE /goals/{handle}``.
+* ``GET /accounts/{handle}/reconciliation`` – the open statement session, the
+  history, and waiting proposals; ``POST /reconciliations`` (``account``,
+  ``statement_date``, ``ending_balance``) starts one; ``PATCH /reconciliations/{handle}``
+  (``selected_splits``, ``ending_balance``); ``POST /reconciliations/{handle}/complete``,
+  ``/cancel``, and ``/reopen``; ``POST /transactions/{handle}/splits/{split}/cleared``.
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -66,6 +71,8 @@ from ..api.views import (
     due_review_json,
     next_occurrence_json,
     posted_due_json,
+    reconciliation_summary_json,
+    reconciliation_view_json,
     register_json,
     resolution_json,
     rule_json,
@@ -87,6 +94,11 @@ from ..gen.services import (
     SetAdvanceDays,
 )
 from ..gen.services.categorization import AddRule
+from ..gen.services.reconciliations import (
+    StartReconciliation,
+    ToggleCleared,
+    UpdateReconciliation,
+)
 from ..gen.services.savings_goals import AllocateToGoal, SaveSavingsGoal, SetGoalOverride
 from .context import Api
 
@@ -94,6 +106,13 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "cleared_toggle",
+    "reconciliation_cancel",
+    "reconciliation_complete",
+    "reconciliation_get",
+    "reconciliation_reopen",
+    "reconciliation_start",
+    "reconciliation_update",
     "goal_allocate",
     "goal_close",
     "goal_delete",
@@ -545,3 +564,54 @@ def goal_override(api: Api, path: Path, body: dict[str, Any]) -> dict:
         purchase_account=_optional_text(body, "purchase_account"),
     )
     return {"scenario": api.book.set_goal_override(request).serialize()}
+
+
+def reconciliation_get(api: Api, path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return reconciliation_view_json(api.book.reconciliation(path["handle"]))
+
+
+def reconciliation_start(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    _only(body, {"account", "statement_date", "ending_balance"})
+    ending = _money(body, "ending_balance")
+    assert ending is not None
+    request = StartReconciliation(
+        _required_text(body, "account"), _required_date(body, "statement_date"), ending
+    )
+    return reconciliation_summary_json(api.book.start_reconciliation(request))
+
+
+def reconciliation_update(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, {"selected_splits", "ending_balance"})
+    raw = body.get("selected_splits")
+    if raw is not None and (
+        not isinstance(raw, list) or not all(isinstance(item, str) for item in raw)
+    ):
+        raise ValueError("selected_splits must be a list of split handles")
+    request = UpdateReconciliation(
+        path["handle"],
+        selected_splits=None if raw is None else tuple(raw),
+        ending_balance=_money(body, "ending_balance", optional=True),
+    )
+    return reconciliation_summary_json(api.book.update_reconciliation(request))
+
+
+def reconciliation_complete(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return {"reconciliation": api.book.complete_reconciliation(path["handle"]).serialize()}
+
+
+def reconciliation_cancel(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return {"reconciliation": api.book.cancel_reconciliation(path["handle"]).serialize()}
+
+
+def reconciliation_reopen(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return {"reconciliation": api.book.reopen_reconciliation(path["handle"]).serialize()}
+
+
+def cleared_toggle(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    state = api.book.toggle_cleared(ToggleCleared(path["handle"], path["split"]))
+    return {"state": state.value}
