@@ -58,3 +58,7 @@ scrollbar.vertical slider {
 scrollbar.horizontal slider {
     min-height: 10px;
 }
+
+/* A reconcile row dated after the statement is listed in case its date is wrong
+   (#362), below a heading and shaded so it is not mistaken for statement activity. */
+.after-statement { background: alpha(@warning_color, 0.12); font-style: italic; }

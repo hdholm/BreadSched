@@ -40,6 +40,16 @@ Buttons stay in a view only where their state depends on it (Review Due
 Transactions…, Save Base as Scenario…, Reconcile…) or where they act on a table's
 selected row.
 
+The reconcile window (`dialogs/reconciliation_dialog`, #362) is the one statement
+dialog that is not modal: `ReconciliationDialog.present_for` keeps one per book and
+account and brings it forward, and the window follows `database-changed` (coalesced
+on idle) so a transaction entered or edited elsewhere appears in its Funds In and
+Funds Out lists while it stays open. Each check is saved through
+`update_reconciliation` at once, so Postpone is a plain close and Abandon is
+`cancel_reconciliation`; multi-selection checks or unchecks several rows in one
+update. Rows for `after_statement` candidates sit below an "After" heading with the
+`after-statement` style.
+
 Below the toolbar, a tab bar lists each open view, one tab per open register, and
 one per pinned scenario Projection (`ViewManager._tabs`). Register tabs are
 `RegisterView`s in their own stack, and `_views["register"]` always names the one

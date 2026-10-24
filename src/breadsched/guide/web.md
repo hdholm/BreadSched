@@ -171,7 +171,10 @@ be opened. See [Tags and linked documents](../USER_GUIDE.md#tags-and-linked-docu
 ## Reconcile a statement
 
 Choose **Reconcile…** in the register, enter the statement date and ending balance,
-check entries until the difference is zero, and finish. If a deposit in that account
+check entries until the difference is zero, and finish. The totals show the checked
+Funds In and Funds Out separately, and entries dated after the statement are listed,
+shaded and marked *after statement*, in case a date is wrong; they are never checked
+for you. If a deposit in that account
 looks like money back on a [reimbursable expense](#reimbursable-expenses), the page
 says how many such credits are waiting.
 

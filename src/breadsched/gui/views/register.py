@@ -626,6 +626,6 @@ class RegisterView(BaseView):
             return
         from ..dialogs.reconciliation_dialog import ReconciliationDialog
 
-        dialog = ReconciliationDialog(self.get_root(), self.db, account)
-        dialog.connect("close-request", self.refresh_on_close)
-        dialog.present()
+        # Not modal, and one per account: the register stays usable while
+        # reconciling, and Reconcile brings an open statement forward (#362).
+        ReconciliationDialog.present_for(self.get_root(), self.db, account)

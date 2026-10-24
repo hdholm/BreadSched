@@ -295,9 +295,16 @@ liability posting accounts participate; income, expense, equity, roots, and
 placeholders do not represent statement balances.
 
 The shared reconciliation service derives the opening balance from previously
-reconciled or frozen splits through the statement date. Non-void, unreconciled and
-cleared splits through that date are candidates; Cleared candidates start checked.
-The displayed difference is always statement ending balance minus the account's
+reconciled or frozen splits through the statement date, including a later-dated split
+an earlier statement reconciled (`reconciliation.reconciled_balance`, also shown before
+a statement starts). Every non-void, unreconciled or cleared split is a candidate; a
+split dated after the statement is marked `after_statement`, in case its date is
+wrong, and never starts checked, while Cleared candidates through the date do (#362).
+Each candidate records its direction (`funds_in`, a debit), and the summary totals the
+checked Funds In and Funds Out separately for a GnuCash-style two-column window.
+`add_statement_entry` posts a missing statement line, such as interest, as one
+undoable change: the transaction, its Cleared mark, and its place in the open
+statement's checks. The displayed difference is always statement ending balance minus the account's
 natural-sign opening-plus-checked balance. GTK and web merely present this shared
 calculation. Their mutations submit typed start, update, complete, cancel, and reopen
 requests through the application-service boundary. Domain failures retain stable

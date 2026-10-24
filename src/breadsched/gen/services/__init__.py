@@ -115,10 +115,12 @@ from .plan import (
     query_plan,
 )
 from .reconciliations import (
+    AddStatementEntry,
     ReconciliationAction,
     StartReconciliation,
     ToggleCleared,
     UpdateReconciliation,
+    add_statement_entry,
     cancel_reconciliation,
     complete_reconciliation,
     reopen_reconciliation,
@@ -284,6 +286,7 @@ __all__ = [
     "PlanQuery",
     "PlanQueryResult",
     "ScenarioChoice",
+    "AddStatementEntry",
     "ReconciliationAction",
     "ReviewClaimAttachment",
     "ReviewMutation",
@@ -363,6 +366,7 @@ __all__ = [
     "save_assumption_period",
     "save_base_assumptions",
     "save_scenario_assumptions",
+    "add_statement_entry",
     "cancel_reconciliation",
     "complete_reconciliation",
     "reopen_reconciliation",

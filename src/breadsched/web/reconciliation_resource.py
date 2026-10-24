@@ -68,6 +68,8 @@ def reconciliation(api: Api, query: QueryParams) -> dict[str, object]:
                 "selected_balance": current_state.selected_balance,
                 "difference": current_state.difference,
                 "balanced": current_state.balanced,
+                "selected_in": current_state.selected_in,
+                "selected_out": current_state.selected_out,
                 "selected_splits": list(current.selected_splits),
                 "candidates": [
                     {
@@ -78,6 +80,8 @@ def reconciliation(api: Api, query: QueryParams) -> dict[str, object]:
                         "amount": item.amount,
                         "state": item.state.value,
                         "selected": item.selected,
+                        "after_statement": item.after_statement,
+                        "funds_in": item.funds_in,
                     }
                     for item in current_state.candidates
                 ],

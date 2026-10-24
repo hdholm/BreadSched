@@ -355,8 +355,20 @@ class TestServiceBoundaries:
             (
                 "gui/dialogs/reconciliation_dialog.py",
                 "ReconciliationDialog",
-                "_on_selection",
+                "_save_checks",
                 "update_reconciliation",
+            ),
+            (
+                "gui/dialogs/reconciliation_dialog.py",
+                "ReconciliationDialog",
+                "abandon",
+                "cancel_reconciliation",
+            ),
+            (
+                "gui/dialogs/reconciliation_dialog.py",
+                "ReconciliationDialog",
+                "add_statement_entry",
+                "add_statement_entry",
             ),
             (
                 "gui/dialogs/reconciliation_dialog.py",

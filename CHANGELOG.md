@@ -10,6 +10,30 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a294 - 2026-10-24
+
+- **A GnuCash-like reconcile window (#362).** The GTK reconcile dialog is rebuilt:
+  - Before a statement starts it shows the account's reconciled balance on the
+    statement date (`reconciliation.reconciled_balance`), and adds a missing
+    statement line such as interest through the new `add_statement_entry` service.
+    The transaction, its Cleared mark, and its place in the open statement's checks
+    are one undoable change.
+  - A started statement lists **Funds In** and **Funds Out** side by side, each with
+    its checked total (`ReconciliationSummary.selected_in`/`selected_out`), under
+    the starting, reconciled, and ending balances and the difference.
+  - Several rows can be selected and checked or unchecked in one update.
+  - Every unreconciled split is now a candidate. One dated after the statement is
+    marked `after_statement`, listed below an "After" heading and shaded, and never
+    checked by default; if checked, it is reconciled with the statement and counts
+    in later statements' starting balances.
+  - The window is no longer modal, and there is one per account
+    (`ReconciliationDialog.present_for`). It follows every change to the book,
+    and offers **New Transaction…** and **Edit Transaction…**.
+  - **Postpone** keeps the statement, whose checks are already saved, and
+    **Abandon…** cancels it without changing any transaction.
+  - The browser's reconcile page shows the same marks and the Funds In and Funds
+    Out totals.
+
 ## 0.2.0a293 - 2026-10-24
 
 - **Move a transaction from a register split (#364).** The register refused a split

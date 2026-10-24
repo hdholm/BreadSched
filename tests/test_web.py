@@ -758,6 +758,12 @@ class TestItServes:
             "/api/reconciliation?" + urllib.parse.urlencode({"account": checking["handle"]})
         )
         current = state["open"]
+        # #362: each candidate says its column and whether it follows the statement.
+        assert all(
+            isinstance(item["funds_in"], bool) and isinstance(item["after_statement"], bool)
+            for item in current["candidates"]
+        )
+        assert {"selected_in", "selected_out"} <= set(current)
         target = Money(current["opening_balance"]) + sum(
             (Money(item["amount"]) for item in current["candidates"]), Money(0)
         )
