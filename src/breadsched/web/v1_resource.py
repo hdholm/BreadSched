@@ -86,6 +86,9 @@ Resources so far, all under ``/api/v1``:
   ``POST /held-imports/resolve`` (``ResolveHeldImports``).
 * ``GET`` and ``POST /transactions/{handle}/splits/{split}/lots`` – the lots a sale
   could name, and naming them (``picks``); ``GET`` and ``PATCH /tax-marks``.
+* ``GET /quotes`` – commodities, their quote sources, and what a fetch would ask
+  for; ``POST /quotes`` stores quotes the caller fetched (``StoreQuotes``);
+  ``PATCH /commodities/{handle}/quote-source`` (``source``).
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -143,6 +146,7 @@ from ..gen.services.claims import ClaimReportQuery, CloseClaim, ReopenClaim, Sav
 from ..gen.services.import_review import ResolveHeldImports
 from ..gen.services.lots import SetSaleLots
 from ..gen.services.payroll import CreatePaycheck, PayChange, SavePayrollTemplate
+from ..gen.services.quotes import SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import RecordWriteOff, SaveReceivable
 from ..gen.services.reconciliations import (
     StartReconciliation,
@@ -165,6 +169,9 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "quote_plan_get",
+    "quote_source_patch",
+    "quotes_store",
     "sale_lots_get",
     "sale_lots_post",
     "tax_marks_get",
@@ -1167,3 +1174,22 @@ def tax_marks_get(api: Api, _path: Path, query: QueryParams) -> dict:
 
 def tax_marks_patch(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     return to_data(api.book.set_tax_marks(from_data(SetTaxMarks, body, "request")))
+
+
+@dataclass(frozen=True, slots=True)
+class _Source:
+    source: str
+
+
+def quote_plan_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.quote_plan())
+
+
+def quotes_store(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.store_quotes(from_data(StoreQuotes, body, "request")))
+
+
+def quote_source_patch(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    source = from_data(_Source, body, "request").source
+    return {"source": api.book.set_quote_source(SetQuoteSource(path["handle"], source))}

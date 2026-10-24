@@ -49,16 +49,16 @@ The rest of this file is unscheduled and comes after the first Beta.
   Phases 1–2 cover scheduled transactions, transaction saves and deletes, ledger reads
   (lookups, registers, balances), accounts, categorization rules, tags, savings goals,
   reconciliation, receivables, scenarios with their assumptions, payroll, FSA claims,
-  Plan review, held GnuCash changes, sale lots, and tax marks so far (most through a
-  generic typed JSON codec), and phase 3 has a stored book revision, `/api/v1`
-  resources with `ETag`/`If-Match`, a change stream, and an HTTP client. Phase 4 has
-  `breadsched serve`, a user-only server record, and command-line commands that use
-  the server holding a book. Phase 5 has GTK's due review and Enter/Skip Next on the
-  protocol, and an opt-in **Preferences → Sharing** that serves GTK's open book to
-  commands. Decision 0003 also documents reaching a book through a TLS reverse proxy
-  (nginx). The server takes a trusted origin and a token file for that proxy, and the
-  HTTP client speaks HTTPS with client certificates; a Unix-socket listener is still
-  to come.
+  Plan review, held GnuCash changes, sale lots, tax marks, and online quotes so far
+  (most through a generic typed JSON codec), and phase 3 has a stored book revision,
+  `/api/v1` resources with `ETag`/`If-Match`, a change stream, and an HTTP client.
+  Phase 4 has `breadsched serve`, a user-only server record, and command-line commands
+  that use the server holding a book. Phase 5 has GTK's due review and Enter/Skip Next
+  on the protocol, and an opt-in **Preferences → Sharing** that serves GTK's open book
+  to commands. Decision 0003 also documents reaching a book through a TLS reverse
+  proxy (nginx). The server takes a trusted origin and a token file for that proxy,
+  and the HTTP client speaks HTTPS with client certificates; a Unix-socket listener is
+  still to come.
 
 - Split oversized modules/functions where ownership is clear. Split large GUI test
   modules only when the resulting fixture ownership and runtime isolation improve;

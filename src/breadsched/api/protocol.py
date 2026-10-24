@@ -80,6 +80,7 @@ from ..gen.services.import_review import (
 )
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
+from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
     AcceptedReimbursements,
     CandidateLine,
@@ -550,3 +551,15 @@ class BookApi(Protocol):
         ...
 
     def set_tax_marks(self, request: SetTaxMarks) -> TaxMarks: ...
+
+    # ------------------------------------------------------------------ quotes
+
+    def quote_plan(self) -> QuotePlan:
+        """Every commodity's quote source, and what a fetch would ask for."""
+        ...
+
+    def store_quotes(self, request: StoreQuotes) -> QuoteUpdate:
+        """Store quotes the caller fetched; the server never reaches the network."""
+        ...
+
+    def set_quote_source(self, request: SetQuoteSource) -> str: ...

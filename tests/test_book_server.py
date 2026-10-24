@@ -1471,6 +1471,15 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("GET", "/api/v1/transactions/x/splits/y/lots", None, 404, "lots.transaction.not_found"),
         ("POST", "/api/v1/transactions/x/splits/y/lots", {"picks": "all"}, 400, "request.invalid"),
         ("PATCH", "/api/v1/tax-marks", {"accounts": {"a": "yes"}}, 400, "request.invalid"),
+        ("POST", "/api/v1/quotes", {"quotes": [{"symbol": "G"}]}, 400, "request.invalid"),
+        ("PATCH", "/api/v1/commodities/x/quote-source", {}, 400, "request.invalid"),
+        (
+            "PATCH",
+            "/api/v1/commodities/x/quote-source",
+            {"source": "tsp"},
+            404,
+            "quotes.commodity.not_found",
+        ),
         ("POST", "/api/v1/held-imports/resolve", {"decisions": [["x"]]}, 400, "request.invalid"),
         (
             "POST",

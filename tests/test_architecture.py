@@ -1143,6 +1143,11 @@ class TestBookServerBoundaries:
         "set_sale_lots",
         "tax_marks",
         "set_tax_marks",
+        "quote_requests",
+        "update_quotes",
+        "set_quote_source",
+        "quote_plan",
+        "store_quotes",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1251,6 +1256,9 @@ class TestBookServerBoundaries:
         "set_sale_lots",
         "tax_marks",
         "set_tax_marks",
+        "quote_plan",
+        "store_quotes",
+        "set_quote_source",
     }
 
     @pytest.mark.parametrize(
@@ -1299,6 +1307,9 @@ class TestBookServerBoundaries:
             ("cli/import_commands.py", ("cmd_import_review",)),
             ("cli/investment_commands.py", ("cmd_sale_lots",)),
             ("cli/tax_commands.py", ("cmd_tax_marks",)),
+            ("cli/quote_commands.py", ("cmd_quotes", "cmd_quote_source")),
+            ("web/quote_resource.py", ("quotes", "quote_source_save", "quotes_update")),
+            ("gui/dialogs/online_quotes_dialog.py", ("save_sources", "get_quotes", "_store")),
             ("web/holdings_resource.py", ("sale_lots_view", "sale_lots_save")),
             ("web/tax_resource.py", ("tax_marks_view", "tax_marks_save")),
             ("gui/dialogs/sale_lots_dialog.py", ("_store",)),

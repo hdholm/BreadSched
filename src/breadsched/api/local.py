@@ -100,6 +100,7 @@ from ..gen.services import assumptions as assumption_service
 from ..gen.services import claims as claim_service
 from ..gen.services import lots as lot_service
 from ..gen.services import payroll as payroll_service
+from ..gen.services import quotes as quote_service
 from ..gen.services import receivables as receivable_service
 from ..gen.services import review as review_service
 from ..gen.services import scenarios as scenario_service
@@ -129,6 +130,7 @@ from ..gen.services.import_review import (
 )
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
+from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
     AcceptedReimbursements,
     CandidateLine,
@@ -511,6 +513,17 @@ class LocalBookServer:
 
     def set_tax_marks(self, request: SetTaxMarks) -> TaxMarks:
         return unwrap(tax_service.set_tax_marks(self.db, request))
+
+    # ------------------------------------------------------------------ quotes
+
+    def quote_plan(self) -> QuotePlan:
+        return quote_service.quote_plan(self.db)
+
+    def store_quotes(self, request: StoreQuotes) -> QuoteUpdate:
+        return unwrap(quote_service.store_quotes(self.db, request))
+
+    def set_quote_source(self, request: SetQuoteSource) -> str:
+        return unwrap(quote_service.set_quote_source(self.db, request))
 
     # -------------------------------------------------------------- receivables
 

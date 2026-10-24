@@ -286,6 +286,15 @@ Sold and tax-marks dialogs. The typed codec now reads a `Sequence` field (a sale
 picks) back as a tuple. The holdings, realized-gains, and tax-year reports still
 read the book directly.
 
+Online quotes followed, split so the book server never reaches the network:
+`quote_plan` (every commodity and its quote source, the requests a fetch would make,
+and the reporting currency; `GET /api/v1/quotes`), `store_quotes` (`StoreQuotes`:
+quotes the caller fetched, `POST /api/v1/quotes`), and `set_quote_source`
+(`PATCH /api/v1/commodities/{handle}/quote-source`). The command line's `quotes` and
+`quote-source`, the browser's quotes page (whose adapter fetches), and GTK's Online
+quotes dialog (whose worker fetches) fetch where they run and hand the answers to
+the server, which stores them with their provenance as before.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

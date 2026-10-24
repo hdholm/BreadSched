@@ -413,6 +413,38 @@ def test_tax_marks_work_through_the_server_holding_the_book(running, book_path, 
     assert "Tax-relevant tags: medical" in capsys.readouterr().out
 
 
+def test_quotes_work_through_the_server_holding_the_book(running, book_path, capsys, monkeypatch):
+    """The command fetches; the server holding the book only stores what it fetched."""
+    from decimal import Decimal
+
+    from breadsched.cli import quote_commands
+    from breadsched.gen.services.quotes import FetchedQuote
+
+    class Fetcher:
+        def fetch(self, requests, currency):
+            return [
+                FetchedQuote(
+                    item.symbol, item.source, Decimal("10.5"), currency, date(2026, 3, 14), "test"
+                )
+                for item in requests
+            ], []
+
+    monkeypatch.setattr(quote_commands, "_fetcher", Fetcher)
+    path = str(book_path)
+    from breadsched.gen.lib import Commodity
+
+    commodity = Commodity(namespace="TSP", mnemonic="G", fraction=10000)
+    with running.db.transaction("Commodity") as txn:
+        running.db.add_commodity(commodity, txn)
+    assert main(["quote-source", path, commodity.mnemonic, "tsp"]) == 0
+    assert running.db.get_commodity(commodity.handle).quote_source == "tsp"
+    capsys.readouterr()
+    assert main(["quotes", path, "--json"]) == 0
+    [stored] = json.loads(capsys.readouterr().out)["stored"]
+    assert (stored["symbol"], stored["changed"]) == (commodity.mnemonic, True)
+    assert [price.value for price in running.db.iter_prices(commodity.handle)][-1] == Money("10.5")
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

@@ -2,21 +2,15 @@
 
 The network fetch runs in a :class:`~breadsched.gui.background.BackgroundJob`
 worker that never touches the book; the answers are stored on the main thread by
-``update_quotes`` through :class:`~breadsched.gen.services.quotes.Prefetched`.
+the book server's ``store_quotes`` (``gen.services.quotes.StoreQuotes``).
 """
 
 from __future__ import annotations
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.currency import reporting_currency_handle
-from ...gen.services.quotes import (
-    Prefetched,
-    QuoteUpdate,
-    SetQuoteSource,
-    quote_requests,
-    set_quote_source,
-    update_quotes,
-)
+from ...gen.services.quotes import QuoteUpdate, SetQuoteSource, StoreQuotes
 from ...gen.utils.settings import Settings
 from ...plugins.quotes import (
     FinanceQuoteInfo,
@@ -27,7 +21,7 @@ from ...plugins.quotes import (
     quote_source_warning,
     save_alphavantage_key,
 )
-from ...presentation import price_text, service_error_message
+from ...presentation import price_text
 from ..background import BackgroundJob
 from ..gi_setup import Gtk, Pango
 from ..widgets.bounded import BoundedWindow, scroll_body
@@ -133,11 +127,9 @@ class OnlineQuotesDialog(BoundedWindow):
         self.grid = Gtk.Grid(column_spacing=10, row_spacing=6)
         body.append(self.grid)
         self.source_entries: dict[str, SourceEntry] = {}
-        reporting = reporting_currency_handle(db)
-        commodities = sorted(
-            (item for item in db.iter_commodities() if item.handle != reporting),
-            key=lambda item: (item.is_currency, item.mnemonic),
-        )
+        commodities = [
+            item for item in book_server(db).quote_plan().commodities if not item.reporting
+        ]
         for column, title in enumerate(("Commodity", "Name", "Quote source")):
             heading = Gtk.Label(label=title, xalign=0)
             heading.add_css_class("heading")
@@ -149,7 +141,7 @@ class OnlineQuotesDialog(BoundedWindow):
             name.set_max_width_chars(28)
             self.grid.attach(name, 1, row, 1, 1)
             entry = SourceEntry(commodity.quote_source, self.source_choices)
-            entry.set_placeholder_text("currency" if commodity.is_currency else "none")
+            entry.set_placeholder_text("currency" if commodity.currency else "none")
             entry.set_tooltip_text(_SOURCES_HINT)
             entry.update_property(
                 [Gtk.AccessibleProperty.LABEL], [f"Quote source for {commodity.mnemonic}"]
@@ -226,16 +218,19 @@ class OnlineQuotesDialog(BoundedWindow):
         """Store every changed quote source and the key; False if any was refused."""
         problems: list[str] = []
         warnings: list[str] = []
+        book = book_server(self.db)
+        stored = {item.handle: item for item in book.quote_plan().commodities}
         for handle, entry in self.source_entries.items():
-            commodity = self.db.get_commodity(handle)
+            commodity = stored.get(handle)
             if commodity is None or commodity.quote_source == entry.get_text().strip():
                 continue
-            result = set_quote_source(self.db, SetQuoteSource(handle, entry.get_text()))
-            if result.value is None:
-                problems.append(f"{commodity.mnemonic}: {service_error_message(result.errors[0])}")
+            try:
+                source = book.set_quote_source(SetQuoteSource(handle, entry.get_text()))
+            except ApiError as error:
+                problems.append(f"{commodity.mnemonic}: {error}")
                 continue
             if self.finance_quote is not None:
-                warning = quote_source_warning(result.value, self.finance_quote)
+                warning = quote_source_warning(source, self.finance_quote)
                 if warning is not None:
                     warnings.append(f"{commodity.mnemonic}: {warning}")
         if alphavantage_key(self.settings) != self.key_entry.get_text().strip():
@@ -248,12 +243,12 @@ class OnlineQuotesDialog(BoundedWindow):
         """Save the sources, fetch off the main thread, then store what came back."""
         if self.job.active or not self.save_sources():
             return
-        requests = quote_requests(self.db)
+        plan = book_server(self.db).quote_plan()
+        requests = plan.requests
         if not requests:
             self.results.set_text("No commodity has a quote source.")
             return
-        reporting = self.db.get_commodity(reporting_currency_handle(self.db))
-        currency = reporting.mnemonic if reporting is not None else "USD"
+        currency = plan.currency or "USD"
         fetcher = self.fetcher_factory(self.key_entry.get_text().strip())
         self.fetch_button.set_sensitive(False)
         self.results.set_text(f"Getting {len(requests)} quote(s)…")
@@ -267,17 +262,18 @@ class OnlineQuotesDialog(BoundedWindow):
     def _store(self, fetched) -> None:
         self.fetch_button.set_sensitive(True)
         quotes, failures = fetched
-        result = update_quotes(self.db, Prefetched(quotes, failures))
-        if result.value is None:
-            self.results.set_text(service_error_message(result.errors[0]))
+        try:
+            update = book_server(self.db).store_quotes(StoreQuotes(tuple(quotes), tuple(failures)))
+        except ApiError as error:
+            self.results.set_text(str(error))
             return
-        self.last_update = result.value
+        self.last_update = update
         lines = [
             f"{item.symbol}: {price_text(item.value)} {item.currency} on {item.when.isoformat()} "
             f"({item.source}){'' if item.changed else ', unchanged'}"
-            for item in result.value.stored
+            for item in update.stored
         ]
-        lines += [f"{item.symbol}: not updated — {item.reason}" for item in result.value.failures]
+        lines += [f"{item.symbol}: not updated — {item.reason}" for item in update.failures]
         self.results.set_text("\n".join(lines) or "No quotes came back.")
 
     def _failed(self, error: BaseException) -> None:
