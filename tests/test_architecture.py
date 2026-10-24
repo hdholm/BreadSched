@@ -310,7 +310,8 @@ class TestServiceBoundaries:
 
     def test_gui_plan_consumes_the_typed_query_service(self):
         calls = calls_in_method(SRC / "gui/views/plan.py", "PlanView", "refresh")
-        assert "query_plan" in calls
+        # Through the book server on the experimental branch (#354).
+        assert "plan" in calls and "query_plan" not in calls
         assert "build_category_report" not in calls
 
     def test_web_plan_delegates_to_a_service_backed_resource(self):
@@ -319,7 +320,9 @@ class TestServiceBoundaries:
 
         assert "plan_report" in route_calls
         assert "query_plan" not in route_calls
-        assert "query_plan" in resource_calls
+        # On the experimental book-server branch (#354) the service is reached
+        # through the book server.
+        assert "plan" in resource_calls and "query_plan" not in resource_calls
         assert "build_category_report" not in resource_calls
 
     @pytest.mark.parametrize(
@@ -1167,6 +1170,8 @@ class TestBookServerBoundaries:
         "set_source_link_folder",
         "query_net_worth_history",
         "query_net_worth_change",
+        "query_plan",
+        "query_expense_explorer",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1295,6 +1300,9 @@ class TestBookServerBoundaries:
         "set_source_link_folder",
         "net_worth_history",
         "net_worth_change",
+        "plan",
+        "expense_explorer",
+        "reporting_currency",
     }
 
     @pytest.mark.parametrize(
@@ -1355,6 +1363,9 @@ class TestBookServerBoundaries:
             ("cli/categorization_commands.py", ("cmd_attachments",)),
             ("cli/projection_commands.py", ("cmd_net_worth", "cmd_net_worth_change")),
             ("web/net_worth_resource.py", ("net_worth_change", "net_worth_history")),
+            ("web/plan_resource.py", ("plan_report",)),
+            ("web/expense_resource.py", ("expense_report",)),
+            ("gui/views/plan.py", ("refresh",)),
             ("gui/dialogs/net_worth_history_dialog.py", ("_update", "_explain")),
             (
                 "web/attachment_resource.py",

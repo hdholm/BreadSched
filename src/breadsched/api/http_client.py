@@ -90,6 +90,7 @@ from ..gen.services.claims import (
 )
 from ..gen.services.dashboard_config import DashboardSettings, SaveDashboardConfig
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
+from ..gen.services.expense_explorer import ExpenseExplorer
 from ..gen.services.import_review import (
     HeldImportChange,
     HeldImportResolution,
@@ -99,6 +100,7 @@ from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
+from ..gen.services.plan import PlanQuery, PlanQueryResult
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
     AcceptedReimbursements,
@@ -966,6 +968,29 @@ class HttpBookClient:
     def set_source_link_folder(self, folder: str) -> str:
         found = self._call("PATCH", "/attachment-folders", body={"gnucash_folder": folder})
         return str(found["gnucash_folder"])
+
+    # ------------------------------------------------------- plan and spending
+
+    def reporting_currency(self) -> str:
+        return str(self._call("GET", "/reporting-currency")["currency"])
+
+    def plan(self, query: PlanQuery) -> PlanQueryResult:
+        return from_data(PlanQueryResult, self._call("POST", "/plan", body=to_data(query)))
+
+    def expense_explorer(
+        self,
+        query: PlanQuery,
+        account: str | None = None,
+        period_index: int | None = None,
+        rollover: bool = False,
+    ) -> ExpenseExplorer:
+        body = {
+            "query": to_data(query),
+            "account": account,
+            "period_index": period_index,
+            "rollover": rollover,
+        }
+        return from_data(ExpenseExplorer, self._call("POST", "/expense-explorer", body=body))
 
     # --------------------------------------------------------------- net worth
 

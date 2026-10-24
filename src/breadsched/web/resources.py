@@ -185,6 +185,7 @@ from .v1_resource import (
     due_review_get,
     due_review_post,
     exchange_rate_save,
+    expense_explorer_v1,
     fsa_claim_close_v1,
     fsa_claim_lookup,
     fsa_claim_remove,
@@ -220,6 +221,7 @@ from .v1_resource import (
     plan_matches_get,
     plan_occurrence_lookup,
     plan_occurrences_get,
+    plan_v1,
     post_due_post,
     quote_plan_get,
     quote_source_patch,
@@ -234,6 +236,7 @@ from .v1_resource import (
     register_get,
     reimbursement_proposals_accept,
     reimbursement_proposals_get,
+    reporting_currency_get,
     review_claim_v1,
     review_detail_get,
     review_match_v1,
@@ -403,7 +406,7 @@ def _plan(api: Api, query: QueryParams) -> object:
         query.text(name) for name in ("from", "through", "period", "scenario", "compare", "measure")
     )
     query.finish()
-    return plan_report(api.db, *values)
+    return plan_report(api.book, *values)
 
 
 def _plan_detail(api: Api, query: QueryParams) -> object:
@@ -429,7 +432,9 @@ def _expense_explorer(api: Api, query: QueryParams) -> object:
     if rollover not in (None, "0", "1"):
         raise QueryError("query.invalid", ("rollover",))
     query.finish()
-    return expense_report(api.db, start, through, period, scenario, account, index, rollover == "1")
+    return expense_report(
+        api.book, start, through, period, scenario, account, index, rollover == "1"
+    )
 
 
 def _projection(api: Api, query: QueryParams) -> object:
@@ -733,6 +738,9 @@ V1_ROUTES: tuple[tuple[str, str, Callable[..., object]], ...] = (
     ("POST", "/transactions/{handle}/attachments/relink", attachment_relink_v1),
     ("PATCH", "/attachment-folders", attachment_folders_patch),
     ("GET", "/net-worth", net_worth_history_get),
+    ("GET", "/reporting-currency", reporting_currency_get),
+    ("POST", "/plan", plan_v1),
+    ("POST", "/expense-explorer", expense_explorer_v1),
     ("GET", "/net-worth/change", net_worth_change_get),
     ("GET", "/accounts/{handle}/reconciliation", reconciliation_get),
     ("POST", "/reconciliations", v1_reconciliation_start),

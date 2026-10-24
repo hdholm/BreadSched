@@ -5,20 +5,19 @@ from __future__ import annotations
 from calendar import monthrange
 from datetime import date
 
-from ..gen.db.sqlite import DbSQLite
+from ..api.contract import ApiError
+from ..api.protocol import BookApi
 from ..gen.engine.activity import ReportingPeriod
-from ..gen.engine.currency import reporting_currency_label
 from ..gen.services import (
     PlanQuery,
     category_trend_chart,
-    query_expense_explorer,
     spending_charts,
 )
 from .controls import ResourceError
 
 
 def expense_report(
-    db: DbSQLite,
+    book: BookApi,
     start_month: str | None = None,
     through_month: str | None = None,
     period: str | None = None,
@@ -38,23 +37,21 @@ def expense_report(
         if through
         else None
     )
-    result = query_expense_explorer(
-        db,
-        PlanQuery(
-            start=start,
-            end=end,
-            period=ReportingPeriod(period) if period else None,
-            scenario=scenario_handle,
-            use_saved=not any((start_month, through_month, period, scenario_handle)),
-        ),
-        account=account_handle,
-        period_index=period_index,
-        rollover=rollover,
-    )
-    if result.value is None:
-        error = result.errors[0]
-        raise ResourceError(400, error.code, error.fields, error.code)
-    explorer = result.value
+    try:
+        explorer = book.expense_explorer(
+            PlanQuery(
+                start=start,
+                end=end,
+                period=ReportingPeriod(period) if period else None,
+                scenario=scenario_handle,
+                use_saved=not any((start_month, through_month, period, scenario_handle)),
+            ),
+            account_handle,
+            period_index,
+            rollover,
+        )
+    except ApiError as error:
+        raise ResourceError(400, error.code, error.fields, error.code) from None
 
     def period_value(item):
         return {
@@ -92,7 +89,7 @@ def expense_report(
 
     detail = explorer.drilldown
     names = {row.account: row.full_name for row in explorer.categories}
-    currency = reporting_currency_label(db)
+    currency = book.reporting_currency()
     trend = next(
         (
             row

@@ -1470,6 +1470,36 @@ def test_net_worth_reads_alike(target, book):
     assert refused.value.status == 400
 
 
+def test_plan_and_spending_alike(target, book):
+    from breadsched.gen.services.expense_explorer import query_expense_explorer
+    from breadsched.gen.services.plan import PlanQuery, query_plan
+
+    api, db = target.api, target.db
+    with db.transaction("Activity") as txn:
+        for when, description, to, source, amount in (
+            (date(2026, 9, 1), "Opening", book.checking, book.opening, "5000"),
+            (date(2026, 10, 2), "Groceries", book.groceries, book.checking, "84.10"),
+            (date(2026, 10, 6), "Rent", book.rent, book.checking, "1800"),
+        ):
+            db.add_transaction(Transaction.simple(when, description, to, source, amount), txn)
+    query = PlanQuery(start=date(2026, 10, 1), end=date(2027, 1, 31), today=date(2026, 10, 15))
+    plan = api.plan(query)
+    assert plan == query_plan(db, query).value
+    assert api.reporting_currency() in ("", "USD")
+    explorer = api.expense_explorer(query, book.groceries, 0)
+    assert (
+        explorer == query_expense_explorer(db, query, account=book.groceries, period_index=0).value
+    )
+    assert explorer.drilldown is not None
+    assert [item.description for item in explorer.drilldown.actual_transactions] == ["Groceries"]
+    with pytest.raises(ApiError) as refused:
+        api.plan(PlanQuery(start=date(2027, 2, 1), end=date(2027, 1, 1), today=date(2026, 10, 15)))
+    assert (refused.value.status, refused.value.code) == (400, "plan.end.before_start")
+    with pytest.raises(ApiError) as missing:
+        api.plan(PlanQuery(scenario="missing", today=date(2026, 10, 15)))
+    assert missing.value.status == 404
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -1693,6 +1723,8 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("PATCH", "/api/v1/dashboard/settings", {"liquidity_days": "14"}, 400, "request.invalid"),
         ("PATCH", "/api/v1/attachment-folders", {}, 400, "request.invalid"),
         ("GET", "/api/v1/net-worth?start=2026-01-01", None, 400, "query.missing"),
+        ("POST", "/api/v1/plan", {"period": "fortnight"}, 400, "request.invalid"),
+        ("POST", "/api/v1/expense-explorer", {"rollover": "yes"}, 400, "request.invalid"),
         (
             "GET",
             "/api/v1/net-worth?start=2026-01-01&end=2026-02-01&period=week",

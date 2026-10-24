@@ -101,6 +101,9 @@ Resources so far, all under ``/api/v1``:
   ``/relink``; ``PATCH /attachment-folders`` (``folder`` or ``gnucash_folder``).
 * ``GET /net-worth`` (``start``, ``end``, ``period``, ``today``) and
   ``GET /net-worth/change`` (``start``, ``end``, ``today``).
+* ``GET /reporting-currency`` – the reporting currency's code; ``POST /plan``
+  (``PlanQuery``) and ``POST /expense-explorer`` (``query``, ``account``,
+  ``period_index``, ``rollover``) – reads whose request is a typed query.
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -163,6 +166,7 @@ from ..gen.services.import_review import ResolveHeldImports
 from ..gen.services.loans import SaveLoan
 from ..gen.services.lots import SetSaleLots
 from ..gen.services.payroll import CreatePaycheck, PayChange, SavePayrollTemplate
+from ..gen.services.plan import PlanQuery
 from ..gen.services.quotes import SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import RecordWriteOff, SaveReceivable
 from ..gen.services.reconciliations import (
@@ -186,6 +190,9 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "reporting_currency_get",
+    "expense_explorer_v1",
+    "plan_v1",
     "net_worth_change_get",
     "net_worth_history_get",
     "attachment_file_v1",
@@ -1346,3 +1353,28 @@ def net_worth_change_get(api: Api, _path: Path, query: QueryParams) -> dict:
     query.finish()
     assert start is not None and end is not None
     return to_data(api.book.net_worth_change(start, end, today))
+
+
+@dataclass(frozen=True, slots=True)
+class _Explore:
+    query: PlanQuery = PlanQuery()
+    account: str | None = None
+    period_index: int | None = None
+    rollover: bool = False
+
+
+def plan_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.plan(from_data(PlanQuery, body, "query")))
+
+
+def expense_explorer_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(_Explore, body, "request")
+    found = api.book.expense_explorer(
+        request.query, request.account, request.period_index, request.rollover
+    )
+    return to_data(found)
+
+
+def reporting_currency_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return {"currency": api.book.reporting_currency()}

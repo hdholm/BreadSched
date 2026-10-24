@@ -12,6 +12,7 @@ from datetime import date
 
 import pytest
 
+from breadsched.api.local import book_server
 from breadsched.gen.engine import valuation
 from breadsched.gen.engine.activity import build_activity_report
 from breadsched.gen.engine.category_report import build_category_report
@@ -193,14 +194,14 @@ def test_web_plan_and_print_disclose_currency(db, euro_book):
     from breadsched.web.plan_resource import plan_report
 
     _book, euro = euro_book
-    missing = plan_report(db, "2026-10", "2026-10")
+    missing = plan_report(book_server(db), "2026-10", "2026-10")
     [note] = missing["currency"]["notes"]
     assert note.startswith("Not included in totals")
     assert missing["currency"]["conversions"] == []
     assert [item["description"] for item in missing["currency"]["unconverted"]] == ["Flat in Lyon"]
 
     _quote(db, euro, "1.10")
-    converted = plan_report(db, "2026-10", "2026-10")
+    converted = plan_report(book_server(db), "2026-10", "2026-10")
     [evidence] = converted["currency"]["conversions"]
     assert (evidence["rate"], evidence["quote_date"], evidence["path"]) == (
         Money("1.10"),

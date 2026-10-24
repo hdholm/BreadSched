@@ -13,6 +13,7 @@ from datetime import date
 import pytest
 from test_projection import flat_assumptions
 
+from breadsched.api.local import book_server
 from breadsched.gen.engine import category_report, dashboard, projection, valuation
 from breadsched.gen.engine.completeness import (
     Completeness,
@@ -374,7 +375,7 @@ class TestSurfaces:
 
         _euro_schedule(db, book, euro)
 
-        payload = plan_report(db, "2026-10", "2026-10")
+        payload = plan_report(book_server(db), "2026-10", "2026-10")
 
         assert payload["completeness"]["horizon"]["status"] == "partial"
         assert payload["completeness"]["horizon"]["label"] == (

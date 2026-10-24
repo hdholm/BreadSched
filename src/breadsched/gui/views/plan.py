@@ -23,7 +23,6 @@ from ...gen.lib import Money, Scenario
 from ...gen.services import (
     PlanQuery,
     SuppressScenarioSchedule,
-    query_plan,
 )
 from ...presentation import (
     PLAN_REIMBURSABLE_HEADING,
@@ -571,22 +570,22 @@ class PlanView(BaseView):
             return
         self._initialize_range_bounds()
         self._populate_scenarios()
-        result = query_plan(
-            self.db,
-            PlanQuery(
-                start=self._start_date,
-                end=self._end_date,
-                period=self._grouping(),
-                measure=self._measure(),
-                scenario=self._scenario_handle,
-                baseline=baseline_scenario(self.manager, self.db),
-            ),
-        )
-        if result.value is None:
-            self.control_status.set_text(result.errors[0].code)
+        try:
+            plan = book_server(self.db).plan(
+                PlanQuery(
+                    start=self._start_date,
+                    end=self._end_date,
+                    period=self._grouping(),
+                    measure=self._measure(),
+                    scenario=self._scenario_handle,
+                    baseline=baseline_scenario(self.manager, self.db),
+                )
+            )
+        except ApiError as error:
+            self.control_status.set_text(error.code)
             self.control_status.add_css_class("negative")
             return
-        self._report = result.value.report
+        self._report = plan.report
         activity = self._report.activity
         position = self._report.cash_position
         minimum_date = (
@@ -617,7 +616,7 @@ class PlanView(BaseView):
             self.currency_note.add_css_class("negative")
         else:
             self.currency_note.remove_css_class("negative")
-        self.goal_milestones = result.value.goal_milestones
+        self.goal_milestones = plan.goal_milestones
         self.goal_note.set_text(
             "Savings goals reaching their target:\n"
             + "\n".join(plan_goal_text(item) for item in self.goal_milestones)
