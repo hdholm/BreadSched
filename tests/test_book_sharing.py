@@ -502,6 +502,19 @@ def test_projection_works_through_the_server_holding_the_book(running, book_path
     assert isinstance(json.loads(capsys.readouterr().out), list)
 
 
+def test_investment_reports_work_through_the_server_holding_the_book(running, book_path, capsys):
+    path = str(book_path)
+    assert main(["holdings", path, "--lots", "--json"]) == 0
+    held = json.loads(capsys.readouterr().out)
+    assert isinstance(held, list)
+    assert main(["realized-gains", path, "--json"]) == 0
+    assert set(json.loads(capsys.readouterr().out)) >= {"sales", "years", "problems"}
+    assert main(["tax-year", path, "--year", "2026", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["year"] == 2026
+    assert main(["realized-gains", path, "--account", "No Such Account"]) != 0
+    assert "No Such Account" in capsys.readouterr().err
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

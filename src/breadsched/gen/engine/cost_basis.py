@@ -27,6 +27,7 @@ has no unrealized gain.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -541,12 +542,15 @@ def holdings_cost_basis(db: DbSQLite, *, as_of: date | None = None) -> list[Hold
     return sorted(found, key=lambda item: db.full_name(item.account).casefold())
 
 
-def holdings_charts(db: DbSQLite, holdings: list[HoldingCostBasis]) -> tuple[ChartModel, ...]:
+def holdings_charts(
+    holdings: Sequence[HoldingCostBasis], names: Mapping[str, str], mnemonics: Mapping[str, str]
+) -> tuple[ChartModel, ...]:
     """Each holding's cost, market value, and unrealized gain, one chart per currency.
 
     The values are the holdings' own (``cost``, ``market_value``, ``unrealized_gain``);
     a holding whose market value cannot be compared with its cost shows its cost
-    alone. A holding without shares or a cost currency is left out.
+    alone. A holding without shares or a cost currency is left out. ``names`` gives
+    each account's full name and ``mnemonics`` each currency's (handle when missing).
     """
     from .chart_model import BARS, ChartModel, ChartSeries
 
@@ -554,10 +558,6 @@ def holdings_charts(db: DbSQLite, holdings: list[HoldingCostBasis]) -> tuple[Cha
     for item in holdings:
         if item.currency is not None and (item.lots or item.market_value):
             by_currency.setdefault(item.currency, []).append(item)
-    labels: dict[str, str] = {}
-    for handle in by_currency:
-        commodity = db.get_commodity(handle)
-        labels[handle] = commodity.mnemonic if commodity is not None else handle
     charts = []
     for handle, items in by_currency.items():
         charts.append(
@@ -565,7 +565,7 @@ def holdings_charts(db: DbSQLite, holdings: list[HoldingCostBasis]) -> tuple[Cha
                 f"holdings:{handle}",
                 "Holdings: cost, market value, and unrealized gain",
                 BARS,
-                tuple(db.full_name(item.account) for item in items),
+                tuple(names.get(item.account.handle, item.account.name) for item in items),
                 (
                     ChartSeries("cost", "Cost", tuple(item.cost for item in items), 1),
                     ChartSeries(
@@ -578,7 +578,7 @@ def holdings_charts(db: DbSQLite, holdings: list[HoldingCostBasis]) -> tuple[Cha
                         3,
                     ),
                 ),
-                labels[handle],
+                mnemonics.get(handle, handle),
             )
         )
     return tuple(charts)

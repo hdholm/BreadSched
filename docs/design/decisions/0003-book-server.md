@@ -351,6 +351,17 @@ names its accounts from `accounts`, checks per-account rates the same way, and s
 through the assumption operations. GTK still projects in a background worker with its
 own read connection.
 
+The investment reports followed: `holdings(as_of)`, `realized_gains(year, account)`,
+and `tax_year(year)` (`GET /api/v1/holdings`, `/realized-gains`, and `/tax-year`)
+return views from `gen/services/investment_reports` that carry the engine's report
+whole with the account names and currency mnemonics its layouts show (and, for
+holdings, the charts), so no adapter reads the book to label them. The engines'
+`currency_labels`, `as_dict`, and `holdings_charts` now take those names and
+mnemonics instead of the book. They serve the command line's `holdings`,
+`realized-gains`, and `tax-year`, the browser's Holdings, Realized Gains, and Tax Year
+pages, and GTK's dialogs of the same names; an unknown account is a 404 rather than a
+report with no sales.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

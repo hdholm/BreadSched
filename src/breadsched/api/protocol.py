@@ -86,6 +86,7 @@ from ..gen.services.import_review import (
     HeldImportResolution,
     ResolveHeldImports,
 )
+from ..gen.services.investment_reports import HoldingsView, RealizedGainsView, TaxYearView
 from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
@@ -345,6 +346,25 @@ class BookApi(Protocol):
 
     def toggle_cleared(self, request: ToggleCleared) -> ReconcileState:
         """Cycle one split between not cleared and cleared."""
+        ...
+
+    # ------------------------------------------------------- investment reports
+
+    def holdings(self, as_of: date | None = None) -> HoldingsView:
+        """Every security holding's open lots, sales, and cost basis on ``as_of``."""
+        ...
+
+    def realized_gains(
+        self, year: int | None = None, account: str | None = None
+    ) -> RealizedGainsView:
+        """Every sale (of one account, or all) with the lots it took, and yearly totals."""
+        ...
+
+    def tax_year(self, year: int | None = None) -> TaxYearView:
+        """One calendar year's gains, tax-relevant totals, and income by source.
+
+        Without ``year``, the latest year with a transaction.
+        """
         ...
 
     # -------------------------------------------------------------- receivables

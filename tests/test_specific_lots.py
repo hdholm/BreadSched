@@ -332,7 +332,7 @@ class TestRealizedGainsReport:
         assert report.sales[1].lots[0].acquired == date(2025, 1, 10)
         assert [sale.sold for sale in realized_gains(db, year=2026).sales] == [date(2026, 2, 1)]
         assert realized_gains(db, account="other").sales == ()
-        data = report.as_dict(db)
+        data = report.as_dict({usd.handle: "USD"})
         assert data["years"][0]["currency"] == "USD"
         assert data["sales"][1]["specific"] is True
         assert data["sales"][1]["lots"][0]["lot"] == third.handle

@@ -1619,6 +1619,53 @@ def test_every_response_names_the_revision_and_a_stale_write_is_refused(remote):
     assert client.set_advance_days(SetAdvanceDays(sched.handle, remind_days=6)).remind_days == 6
 
 
+def test_investment_reports_read_alike(target, book):
+    from test_specific_lots import _fund, _trade
+
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.engine.cost_basis import holdings_cost_basis
+    from breadsched.gen.engine.realized_gains import realized_gains
+    from breadsched.gen.engine.tax_year import tax_year
+    from breadsched.gen.services.investment_reports import (
+        holdings_view,
+        realized_gains_view,
+        tax_year_view,
+    )
+
+    api, db = target.api, target.db
+    account, _fund_commodity, usd = _fund(db, book)
+    _trade(db, account, usd, book.checking, date(2024, 1, 10), "10", "1000")
+    _trade(db, account, usd, book.checking, date(2025, 3, 10), "-4", "-600")
+    _trade(db, account, usd, book.checking, date(2026, 2, 1), "-2", "-260")
+
+    held = api.holdings(date(2025, 12, 31))
+    assert to_data(held) == to_data(holdings_view(db, date(2025, 12, 31)))
+    [item] = held.holdings
+    assert item.quantity == holdings_cost_basis(db, as_of=date(2025, 12, 31))[0].quantity
+    assert held.name(account.handle) == db.full_name(account)
+    assert [chart.currency for chart in held.charts] == ["USD"]
+
+    gains = api.realized_gains(2025, account.handle)
+    assert to_data(gains) == to_data(realized_gains_view(db, 2025, account.handle))
+    assert [sale.sale.gain for sale in gains.report.sales] == [
+        sale.sale.gain for sale in realized_gains(db, year=2025).sales
+    ]
+    assert gains.available_years == (2025, 2026)
+    assert gains.labels() == {usd.handle: "USD"}
+    assert gains.report.as_dict(gains.mnemonics)["years"][0]["currency"] == "USD"
+    assert api.realized_gains().available_years == (2025, 2026)
+    with pytest.raises(ApiError) as refused:
+        api.realized_gains(account="no-such-account")
+    assert refused.value.status == 404
+
+    year = api.tax_year(2025)
+    assert to_data(year) == to_data(tax_year_view(db, 2025))
+    assert to_data(year.report) == to_data(tax_year(db, 2025))
+    assert year.labels()[usd.handle] == "USD"
+    # Without a year, the latest year with a transaction.
+    assert api.tax_year().report.year == year.available_years[0]
+
+
 def test_v1_refuses_what_it_does_not_serve(remote):
     [sched] = remote.db.iter_scheduled()
     before = remote.db.get_scheduled(sched.handle).serialize()
@@ -1745,6 +1792,10 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("PATCH", "/api/v1/dashboard/settings", {"liquidity_days": "14"}, 400, "request.invalid"),
         ("PATCH", "/api/v1/attachment-folders", {}, 400, "request.invalid"),
         ("GET", "/api/v1/net-worth?start=2026-01-01", None, 400, "query.missing"),
+        ("GET", "/api/v1/holdings?as_of=soon", None, 400, "query.date.invalid"),
+        ("GET", "/api/v1/realized-gains?year=last", None, 400, "query.integer.invalid"),
+        ("GET", "/api/v1/realized-gains?account=nope", None, 404, "account.not_found"),
+        ("GET", "/api/v1/tax-year?year=x", None, 400, "query.integer.invalid"),
         ("POST", "/api/v1/plan", {"period": "fortnight"}, 400, "request.invalid"),
         ("POST", "/api/v1/projection", {}, 400, "request.invalid"),
         ("POST", "/api/v1/expense-explorer", {"rollover": "yes"}, 400, "request.invalid"),

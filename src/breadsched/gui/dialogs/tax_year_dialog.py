@@ -9,9 +9,10 @@ from ...api import ApiError
 from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.cost_basis import shares_text
-from ...gen.engine.tax_year import TaxYearReport, currency_labels, tax_year, tax_years
+from ...gen.engine.tax_year import TaxYearReport
 from ...gen.lib.money import Money
 from ...gen.services import SetTaxMarks
+from ...gen.services.investment_reports import TaxYearView
 from ...plugins.export.report_layout import tax_year_layout
 from .. import printing
 from ..gi_setup import Gtk, Pango
@@ -56,11 +57,12 @@ class TaxYearDialog(BoundedWindow):
         super().__init__(title="Tax Year", transient_for=parent)
         self.db = db
         self.set_default_size(900, 640)
-        self.years = list(tax_years(db)) or [date.today().year]
-        self.year = year if year is not None else self.years[0]
+        self.view: TaxYearView = book_server(db).tax_year(year)
+        self.report: TaxYearReport = self.view.report
+        self.year = self.report.year
+        self.years = list(self.view.available_years) or [date.today().year]
         if self.year not in self.years:
             self.years = sorted({*self.years, self.year}, reverse=True)
-        self.report: TaxYearReport = tax_year(db, self.year)
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         for side in ("top", "bottom", "start", "end"):
@@ -132,13 +134,14 @@ class TaxYearDialog(BoundedWindow):
 
     def refresh(self) -> None:
         """Recompute the chosen year and redraw it."""
-        self.report = report = tax_year(self.db, self.year)
+        self.view = book_server(self.db).tax_year(self.year)
+        self.report = report = self.view.report
         child = self.body.get_first_child()
         while child is not None:
             following = child.get_next_sibling()
             self.body.remove(child)
             child = following
-        labels = currency_labels(self.db, report)
+        labels = self.view.labels()
 
         def label(handle: str | None) -> str:
             return labels.get(handle, handle or "")
@@ -234,7 +237,7 @@ class TaxYearDialog(BoundedWindow):
         return dialog
 
     def layout(self):
-        return tax_year_layout(self.report, currency_labels(self.db, self.report))
+        return tax_year_layout(self.report, self.view.labels())
 
     def print_report(self) -> None:
         printing.print_document(self, self.layout())

@@ -109,6 +109,7 @@ from ..gen.services import assumptions as assumption_service
 from ..gen.services import attachments as attachment_service
 from ..gen.services import claims as claim_service
 from ..gen.services import expense_explorer as expense_service
+from ..gen.services import investment_reports as investment_report_service
 from ..gen.services import loans as loan_service
 from ..gen.services import lots as lot_service
 from ..gen.services import net_worth as net_worth_service
@@ -146,6 +147,7 @@ from ..gen.services.import_review import (
     HeldImportResolution,
     ResolveHeldImports,
 )
+from ..gen.services.investment_reports import HoldingsView, RealizedGainsView, TaxYearView
 from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
@@ -657,6 +659,21 @@ class LocalBookServer:
 
     def net_worth_change(self, start: date, end: date, today: date | None = None) -> NetWorthChange:
         return unwrap(net_worth_service.query_net_worth_change(self.db, start, end, today))
+
+    # ------------------------------------------------------- investment reports
+
+    def holdings(self, as_of: date | None = None) -> HoldingsView:
+        return investment_report_service.holdings_view(self.db, as_of)
+
+    def realized_gains(
+        self, year: int | None = None, account: str | None = None
+    ) -> RealizedGainsView:
+        if account is not None:
+            self.account(account)  # an unknown handle is refused, not reported as no sales
+        return investment_report_service.realized_gains_view(self.db, year, account)
+
+    def tax_year(self, year: int | None = None) -> TaxYearView:
+        return investment_report_service.tax_year_view(self.db, year)
 
     # -------------------------------------------------------------- receivables
 

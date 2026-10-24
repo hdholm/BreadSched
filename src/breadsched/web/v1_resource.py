@@ -101,6 +101,8 @@ Resources so far, all under ``/api/v1``:
   ``/relink``; ``PATCH /attachment-folders`` (``folder`` or ``gnucash_folder``).
 * ``GET /net-worth`` (``start``, ``end``, ``period``, ``today``) and
   ``GET /net-worth/change`` (``start``, ``end``, ``today``).
+* ``GET /holdings`` (``as_of``), ``GET /realized-gains`` (``year``, ``account``), and
+  ``GET /tax-year`` (``year``; the latest year with a transaction when absent).
 * ``GET /reporting-currency`` – the reporting currency's code; ``POST /plan``
   (``PlanQuery``) and ``POST /expense-explorer`` (``query``, ``account``,
   ``period_index``, ``rollover``) – reads whose request is a typed query.
@@ -198,8 +200,11 @@ __all__ = [
     "reporting_currency_get",
     "expense_explorer_v1",
     "plan_v1",
+    "holdings_get",
     "net_worth_change_get",
     "net_worth_history_get",
+    "realized_gains_get",
+    "tax_year_get",
     "attachment_file_v1",
     "attachment_folders_patch",
     "attachment_link_v1",
@@ -1339,6 +1344,25 @@ def attachment_folders_patch(api: Api, _path: Path, body: dict[str, Any]) -> dic
         return {"folder": api.book.set_attachment_folder(change.folder)}
     assert change.gnucash_folder is not None
     return {"gnucash_folder": api.book.set_source_link_folder(change.gnucash_folder)}
+
+
+def holdings_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    as_of = query.iso_date("as_of")
+    query.finish()
+    return to_data(api.book.holdings(as_of))
+
+
+def realized_gains_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    year = query.integer("year", minimum=1900, maximum=9999)
+    account = query.text("account")
+    query.finish()
+    return to_data(api.book.realized_gains(year, account))
+
+
+def tax_year_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    year = query.integer("year", minimum=1900, maximum=9999)
+    query.finish()
+    return to_data(api.book.tax_year(year))
 
 
 def net_worth_history_get(api: Api, _path: Path, query: QueryParams) -> dict:

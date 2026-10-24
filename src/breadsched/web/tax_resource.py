@@ -1,18 +1,16 @@
 """Web tax year: the report, and which accounts and tags it totals.
 
-The report is derived in ``gen/engine/tax_year`` and the marks are changed through
-``gen/services/tax``; this adapter only parses queries and payloads and
-serializes them.
+The report is derived in ``gen/engine/tax_year`` and read through the book server
+(``tax_year``); the marks are changed through it too (``set_tax_marks``). This
+adapter only parses queries and payloads and serializes them.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import date
 from typing import TYPE_CHECKING, Any
 
 from ..gen.engine.cost_basis import shares_text
-from ..gen.engine.tax_year import currency_labels, tax_year, tax_years
 from ..gen.services import SetTaxMarks, TaxMarks
 
 if TYPE_CHECKING:
@@ -24,11 +22,10 @@ def tax_year_report(api: Api, query: QueryParams) -> dict[str, object]:
     """One calendar year; without ``year``, the latest year with a transaction."""
     year = query.integer("year", minimum=1900, maximum=9999)
     query.finish()
-    years = tax_years(api.db)
-    if year is None:
-        year = years[0] if years else date.today().year
-    report = tax_year(api.db, year)
-    labels = currency_labels(api.db, report)
+    view = api.book.tax_year(year)
+    report = view.report
+    years = view.available_years
+    labels = view.labels()
 
     def label(handle: str | None) -> str:
         return labels.get(handle, handle or "")

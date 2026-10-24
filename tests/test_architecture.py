@@ -1172,6 +1172,15 @@ class TestBookServerBoundaries:
         "query_net_worth_change",
         "query_plan",
         "query_expense_explorer",
+        "holdings_cost_basis",
+        "holdings_charts",
+        "holdings_view",
+        "realized_gains",
+        "realized_gains_view",
+        "tax_year",
+        "tax_years",
+        "tax_year_view",
+        "currency_labels",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1305,6 +1314,9 @@ class TestBookServerBoundaries:
         "reporting_currency",
         "project",
         "projection_month",
+        "holdings",
+        "realized_gains",
+        "tax_year",
     }
 
     @pytest.mark.parametrize(
@@ -1353,6 +1365,13 @@ class TestBookServerBoundaries:
             ("cli/import_commands.py", ("cmd_import_review",)),
             ("cli/investment_commands.py", ("cmd_sale_lots",)),
             ("cli/tax_commands.py", ("cmd_tax_marks",)),
+            ("cli/investment_commands.py", ("cmd_holdings", "cmd_realized_gains")),
+            ("cli/tax_commands.py", ("cmd_tax_year",)),
+            ("web/holdings_resource.py", ("holdings", "realized_gains_report")),
+            ("web/tax_resource.py", ("tax_year_report",)),
+            ("gui/dialogs/holdings_dialog.py", ("refresh",)),
+            ("gui/dialogs/realized_gains_dialog.py", ("__init__", "refresh")),
+            ("gui/dialogs/tax_year_dialog.py", ("refresh",)),
             ("cli/quote_commands.py", ("cmd_quotes", "cmd_quote_source")),
             ("web/loan_resource.py", ("loan_options", "loan_preview", "loan_save")),
             ("gui/dialogs/loan_dialog.py", ("_on_save",)),

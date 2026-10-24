@@ -97,6 +97,7 @@ from ..gen.services.import_review import (
     HeldImportResolution,
     ResolveHeldImports,
 )
+from ..gen.services.investment_reports import HoldingsView, RealizedGainsView, TaxYearView
 from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
@@ -590,6 +591,20 @@ class HttpBookClient:
             f"/splits/{quote(request.split, safe='')}/cleared"
         )
         return ReconcileState(self._call("POST", path)["state"])
+
+    # ------------------------------------------------------- investment reports
+
+    def holdings(self, as_of: date | None = None) -> HoldingsView:
+        return from_data(HoldingsView, self._call("GET", "/holdings", {"as_of": as_of}))
+
+    def realized_gains(
+        self, year: int | None = None, account: str | None = None
+    ) -> RealizedGainsView:
+        found = self._call("GET", "/realized-gains", {"year": year, "account": account})
+        return from_data(RealizedGainsView, found)
+
+    def tax_year(self, year: int | None = None) -> TaxYearView:
+        return from_data(TaxYearView, self._call("GET", "/tax-year", {"year": year}))
 
     # -------------------------------------------------------------- receivables
 

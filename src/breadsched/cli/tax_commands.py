@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 
 from ..gen.engine.cost_basis import shares_text
-from ..gen.engine.tax_year import currency_labels, tax_year
 from ..gen.services import SetTaxMarks
 from .common import (
     AddCommand,
@@ -13,16 +12,15 @@ from .common import (
     add_server_options,
     book_api,
     emit,
-    open_book,
     table,
 )
 
 
 def cmd_tax_year(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r")
-    try:
-        report = tax_year(db, args.year)
-        labels = currency_labels(db, report)
+    with book_api(args, "r") as book:
+        view = book.tax_year(args.year)
+        report = view.report
+        labels = view.labels()
 
         def label(handle: str | None) -> str:
             return labels.get(handle, handle or "")
@@ -183,8 +181,6 @@ def cmd_tax_year(args: argparse.Namespace) -> int:
         parts.extend(f"note: {problem}" for problem in report.problems)
         emit(payload, args, "\n".join(parts))
         return 0
-    finally:
-        db.close()
 
 
 _ACCOUNT_MARKS = {"on": True, "off": False, "gnucash": None}
@@ -245,6 +241,7 @@ def register(add: AddCommand) -> None:
         "One calendar year's realized gains by term, tax-relevant totals, and income",
     )
     report.add_argument("--year", type=int, required=True, help="the calendar year")
+    add_server_options(report)
     report.set_defaults(func=cmd_tax_year)
 
     marks = add("tax-marks", "Show or change which accounts and tags are tax-relevant")
