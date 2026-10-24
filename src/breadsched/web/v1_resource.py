@@ -26,6 +26,8 @@ Resources so far, all under ``/api/v1``:
   account, or a transaction as it is stored, by handle, name, or unique prefix.
 * ``GET /transactions/{handle}/editable`` – the transaction in the editors' form.
 * ``GET /accounts/{handle}/register`` (``start``, ``end``, ``tag``, ``limit``).
+* ``GET /accounts/{handle}/register-view`` (``limit``) – the newest rows with every name,
+  document, and share detail the browser's register shows.
 * ``GET /accounts/{handle}/balance`` (``as_of``, ``recursive``) and ``GET /balances``
   (``as_of``) – one account's balance, or the book's cash and net worth.
 * ``GET /accounts`` and ``GET /accounts/{handle}`` – accounts as stored, with full
@@ -357,6 +359,7 @@ __all__ = [
     "balances_get",
     "currency_get",
     "register_get",
+    "register_view_get",
     "transaction_editable",
     "transaction_lookup",
     "advance_days_get",
@@ -567,6 +570,13 @@ def register_get(api: Api, path: Path, query: QueryParams) -> dict:
     )
     query.finish()
     return register_json(api.book.register(request))
+
+
+def register_view_get(api: Api, path: Path, query: QueryParams) -> dict:
+    limit = query.integer("limit", default=250, minimum=1, maximum=10000)
+    query.finish()
+    assert limit is not None
+    return to_data(api.book.register_view(path["handle"], limit))
 
 
 def account_balance_get(api: Api, path: Path, query: QueryParams) -> dict:

@@ -422,6 +422,14 @@ command line's `verify` and GTK's verification dialog still check the file throu
 connection of their own (`DbSQLite.verify_path`), which also works while another
 process holds the book.
 
+The browser's register followed: `register_view(account, limit)`
+(`GET /api/v1/accounts/{handle}/register-view`) returns the engine's register rows
+with the full name of every account their splits use, each transaction's linked
+documents, and, for a security account, its shares, valuation, and quote evidence
+(`gen/services/register_view`), so the browser's register no longer reads the book.
+GTK's register still does; it needs the bulk reads and pushed changes the
+consequences below name before it can move without a round trip per row.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

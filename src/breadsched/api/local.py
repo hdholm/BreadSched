@@ -129,6 +129,7 @@ from ..gen.services import payroll as payroll_service
 from ..gen.services import plan as plan_service
 from ..gen.services import quotes as quote_service
 from ..gen.services import receivables as receivable_service
+from ..gen.services import register_view as register_view_service
 from ..gen.services import review as review_service
 from ..gen.services import scenarios as scenario_service
 from ..gen.services import schedules as schedule_service
@@ -186,6 +187,7 @@ from ..gen.services.reconciliations import (
     ToggleCleared,
     UpdateReconciliation,
 )
+from ..gen.services.register_view import RegisterView
 from ..gen.services.review import (
     PendingActual,
     ReviewClaimAttachment,
@@ -401,6 +403,9 @@ class LocalBookServer:
 
     def register(self, query: RegisterQuery) -> RegisterPage:
         return unwrap(register_page(self.db, query))
+
+    def register_view(self, account: str, limit: int = 250) -> RegisterView:
+        return unwrap(register_view_service.register_view(self.db, account, limit))
 
     def account_balance(self, query: BalanceQuery) -> AccountBalance:
         return unwrap(account_balance(self.db, query))

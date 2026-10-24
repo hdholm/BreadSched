@@ -97,15 +97,24 @@ def register_share_summary(db, account) -> str | None:
     ``None`` for an account kept in a currency.
     """
     from ..gen.engine import ledger, valuation
-    from ..gen.engine.cost_basis import shares_text
 
     security = ledger.security_of(db, account)
     if security is None:
         return None
-    held = valuation.quantity_balance(db, account)
-    text = f"{shares_text(held)} {security.mnemonic} shares"
     valued = valuation.account_value(db, account)
-    evidence = valuation.quote_evidence(db, valued)
+    return share_summary_text(
+        security.mnemonic,
+        valuation.quantity_balance(db, account),
+        valued,
+        valuation.quote_evidence(db, valued),
+    )
+
+
+def share_summary_text(mnemonic: str, held, valued, evidence: str) -> str:
+    """:func:`register_share_summary` from its parts (a register view's holding)."""
+    from ..gen.engine.cost_basis import shares_text
+
+    text = f"{shares_text(held)} {mnemonic} shares"
     if valued.source == "market":
         return f"{text} · worth {valued.total.format(parens_negative=True)} · {evidence}"
     return f"{text} · no quote; ledger amount {valued.total.format(parens_negative=True)}"

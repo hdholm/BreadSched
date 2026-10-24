@@ -1620,6 +1620,50 @@ def test_every_response_names_the_revision_and_a_stale_write_is_refused(remote):
     assert client.set_advance_days(SetAdvanceDays(sched.handle, remind_days=6)).remind_days == 6
 
 
+def test_register_views_read_alike(target, book, tmp_path):
+    from test_specific_lots import _fund, _trade
+
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.engine import ledger
+    from breadsched.gen.services.register_view import register_view
+
+    api, db = target.api, target.db
+    with db.transaction("Activity") as txn:
+        for when, description, to, source, amount in (
+            (date(2026, 9, 1), "Opening", book.checking, book.opening, "5000"),
+            (date(2026, 9, 6), "Rent", book.rent, book.checking, "1800"),
+        ):
+            db.add_transaction(Transaction.simple(when, description, to, source, amount), txn)
+    rent = next(item for item in db.iter_transactions() if item.description == "Rent")
+    api.link_attachment(rent.handle, "https://example.com/lease")
+    view = api.register_view(book.checking, 1)
+    assert to_data(view) == to_data(register_view(db, book.checking, 1).value)
+    [row] = view.rows
+    assert row.transaction.handle == rent.handle
+    assert row.running == ledger.register(db, book.checking)[-1].running
+    assert view.transfer(row) == db.full_name(db.get_account(book.rent))
+    assert [item.location for item in view.documents_of(rent.handle)] == [
+        "https://example.com/lease"
+    ]
+    assert view.holding is None
+    assert len(api.register_view(book.checking).rows) == 2
+
+    account, fund, usd = _fund(db, book)
+    _trade(db, account, usd, book.checking, date(2026, 9, 10), "4", "400")
+    held = api.register_view(account.handle)
+    assert held.holding is not None
+    assert (held.holding.security.mnemonic, held.holding.held) == ("INDEX", Money("4"))
+    assert account.handle in held.security_accounts
+    assert held.rows[-1].share_balance == Money("4")
+    for call, status in (
+        (lambda: api.register_view("no-such-account"), 404),
+        (lambda: api.register_view(book.checking, 0), 400),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert refused.value.status == status
+
+
 def test_the_book_summary_and_verification_read_alike(target, book):
     from breadsched.api.typed_codec import to_data
     from breadsched.gen.engine import valuation

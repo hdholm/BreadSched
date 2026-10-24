@@ -117,6 +117,7 @@ from ..gen.services.reconciliations import (
     ToggleCleared,
     UpdateReconciliation,
 )
+from ..gen.services.register_view import RegisterView
 from ..gen.services.review import (
     PendingActual,
     ReviewClaimAttachment,
@@ -292,6 +293,11 @@ class BookApi(Protocol):
         ...
 
     def register(self, query: RegisterQuery) -> RegisterPage: ...
+
+    def register_view(self, account: str, limit: int = 250) -> RegisterView:
+        """The newest ``limit`` rows of a register with every name, document, and share
+        detail they show."""
+        ...
 
     def account_balance(self, query: BalanceQuery) -> AccountBalance: ...
 

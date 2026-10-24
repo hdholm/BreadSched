@@ -128,6 +128,7 @@ from ..gen.services.reconciliations import (
     ToggleCleared,
     UpdateReconciliation,
 )
+from ..gen.services.register_view import RegisterView
 from ..gen.services.review import (
     PendingActual,
     ReviewClaimAttachment,
@@ -494,6 +495,10 @@ class HttpBookClient:
         path = f"/accounts/{quote(query.account, safe='')}/register"
         params = {"start": query.start, "end": query.end, "tag": query.tag, "limit": query.limit}
         return register_from_json(self._call("GET", path, params))
+
+    def register_view(self, account: str, limit: int = 250) -> RegisterView:
+        path = f"/accounts/{quote(account, safe='')}/register-view"
+        return from_data(RegisterView, self._call("GET", path, {"limit": limit}))
 
     def account_balance(self, query: BalanceQuery) -> AccountBalance:
         path = f"/accounts/{quote(query.account, safe='')}/balance"

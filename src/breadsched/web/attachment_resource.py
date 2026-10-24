@@ -14,12 +14,13 @@ from __future__ import annotations
 import mimetypes
 import os
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import attachments as attachment_engine
+from ..gen.engine.attachments import AttachmentStatus
 from ..gen.lib.transaction import Transaction
 from ..gen.services.contracts import ServiceError
 from ..presentation import service_error_message
@@ -48,8 +49,8 @@ def _refuse(status: int, code: str, field: str) -> Exception:
     return ResourceError(status, code, error.fields, service_error_message(error))
 
 
-def document_json(db: DbSQLite, transaction: Transaction) -> list[dict[str, object]]:
-    """Every linked document of a transaction, with whether it can be found."""
+def document_json(statuses: Iterable[AttachmentStatus]) -> list[dict[str, object]]:
+    """Linked documents, with whether each can be found."""
     return [
         {
             "location": item.location,
@@ -59,7 +60,7 @@ def document_json(db: DbSQLite, transaction: Transaction) -> list[dict[str, obje
             "owner": item.owner,
             "path": str(item.path) if item.path is not None else None,
         }
-        for item in attachment_engine.statuses(db, transaction)
+        for item in statuses
     ]
 
 
@@ -71,18 +72,7 @@ def _text(payload: Mapping[str, Any], key: str) -> str:
 
 
 def _documents(api: Api, transaction: Transaction) -> list[dict[str, object]]:
-    report = api.book.attachment_report(transaction=transaction.handle)
-    return [
-        {
-            "location": item.location,
-            "kind": item.kind,
-            "present": item.present,
-            "missing": item.missing,
-            "owner": item.owner,
-            "path": str(item.path) if item.path is not None else None,
-        }
-        for item in report.attachments
-    ]
+    return document_json(api.book.attachment_report(transaction=transaction.handle).attachments)
 
 
 def _changed(api: Api, transaction: Transaction) -> dict[str, object]:

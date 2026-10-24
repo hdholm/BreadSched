@@ -413,6 +413,7 @@ _SERVICE_MESSAGES = {
         "More than one transaction matches; use more characters of its id"
     ),
     "register.limit.invalid": "The number of register lines must not be negative",
+    "register.rows.invalid": "Show at least one register line",
     "schedule.reference.ambiguous": ("More than one scheduled transaction matches; use its id"),
     "schedule.identity.changed": "The schedule identity changed while it was edited",
     "schedule.source.not_found": "The baseline schedule no longer exists",
