@@ -1191,6 +1191,11 @@ class TestBookServerBoundaries:
         "due_listing",
         "build_category_report",
         "reimbursable_costs",
+        "suggest_entry",
+        "read_entry_amount",
+        "read_entry_trade",
+        "complete_entry_account",
+        "next_entry_num",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1332,6 +1337,11 @@ class TestBookServerBoundaries:
         "activity",
         "due_occurrences",
         "reimbursable_costs",
+        "suggest_entry",
+        "entry_amount",
+        "entry_trade",
+        "entry_accounts",
+        "next_num",
     }
 
     @pytest.mark.parametrize(
@@ -1393,6 +1403,13 @@ class TestBookServerBoundaries:
             ("cli/projection_commands.py", ("cmd_dashboard",)),
             ("cli/plan_commands.py", ("cmd_activity", "cmd_scheduled")),
             ("cli/benefit_commands.py", ("_receivable_costs",)),
+            (
+                "web/entry_input_resource.py",
+                ("entry_amount", "entry_trade", "entry_accounts", "entry_num"),
+            ),
+            ("web/autocomplete_resource.py", ("entry_suggestion",)),
+            ("gui/register_sheet.py", ("num_key", "read_amount", "propose")),
+            ("gui/dialogs/transaction_dialog.py", ("propose_from_entry",)),
             ("web/dashboard_resource.py", ("dashboard_report",)),
             ("gui/views/dashboard.py", ("refresh",)),
             ("cli/quote_commands.py", ("cmd_quotes", "cmd_quote_source")),

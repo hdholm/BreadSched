@@ -1619,6 +1619,57 @@ def test_every_response_names_the_revision_and_a_stale_write_is_refused(remote):
     assert client.set_advance_days(SetAdvanceDays(sched.handle, remind_days=6)).remind_days == 6
 
 
+def test_entry_input_reads_alike(target, book):
+    from test_specific_lots import _fund
+
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.services import entry_input
+    from breadsched.gen.services.autocomplete import SuggestEntry, suggest_entry
+    from breadsched.gen.services.entry_input import ReadEntryTrade
+
+    api, db = target.api, target.db
+    with db.transaction("Rent") as txn:
+        db.add_transaction(
+            Transaction.simple(date(2026, 9, 6), "Rent", book.rent, book.checking, "1800"),
+            txn,
+        )
+    proposal = api.suggest_entry(SuggestEntry(description="rent", account=book.checking))
+    assert to_data(proposal) == to_data(
+        suggest_entry(db, SuggestEntry(description="rent", account=book.checking)).value
+    )
+    assert proposal.suggestion is not None
+    assert proposal.name(proposal.suggestion.transfer_account) == db.full_name(
+        db.get_account(book.rent)
+    )
+    assert api.suggest_entry(SuggestEntry(description="nothing like it")).suggestion is None
+
+    assert api.entry_amount("12.5+3").value == Decimal("15.50")
+    assert api.entry_amount("").value is None
+    with pytest.raises(ApiError) as refused:
+        api.entry_amount("12..5")
+    assert refused.value.status == 400
+
+    account, _fund_commodity, usd = _fund(db, book)
+    filled = api.entry_trade(
+        ReadEntryTrade(
+            account.handle, shares="10", price="25", changed="price", currency=usd.handle
+        )
+    )
+    assert filled.amount == Decimal("250.00")
+    with pytest.raises(ApiError) as refused:
+        api.entry_trade(ReadEntryTrade(book.checking, shares="1", price="1"))
+    assert refused.value.code == "entry.account.not_security"
+
+    names = [item.full_name for item in api.entry_accounts("Ex:Re")]
+    expected = entry_input.complete_entry_account(db, "Ex:Re").value
+    assert names == [item.full_name for item in expected]
+    assert db.full_name(db.get_account(book.rent)) in names
+    assert api.next_num(book.checking, "100", 1) == "101"
+    with pytest.raises(ApiError) as refused:
+        api.next_num("no-such-account", "1")
+    assert refused.value.status == 404
+
+
 def test_due_occurrences_and_reimbursable_costs_read_alike(target, book):
     from breadsched.api.typed_codec import to_data
     from breadsched.gen.engine.category_report import build_category_report
@@ -1895,6 +1946,9 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("GET", "/api/v1/dashboard?liquidity_days=soon", None, 400, "query.integer.invalid"),
         ("GET", "/api/v1/activity?start=2026-01-01", None, 400, "query.missing"),
         ("GET", "/api/v1/schedules/due?days=many", None, 400, "query.integer.invalid"),
+        ("GET", "/api/v1/entry/trade", None, 400, "query.missing"),
+        ("GET", "/api/v1/entry/amount?number_format=dash", None, 400, "query.invalid"),
+        ("GET", "/api/v1/entry/num?account=x&step=lots", None, 400, "query.integer.invalid"),
         ("GET", "/api/v1/receivables/costs?start=2026-01-01", None, 400, "query.missing"),
         (
             "GET",

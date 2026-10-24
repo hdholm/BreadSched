@@ -58,9 +58,8 @@ from ..gen.services import (
     TransactionSplitInput,
     transaction_currency,
 )
-from ..gen.services.autocomplete import SuggestEntry, suggest_entry
-from ..gen.services.entry_input import next_entry_num, read_entry_amount, read_entry_trade
-from ..presentation import service_error_message
+from ..gen.services.autocomplete import SuggestEntry
+from ..gen.services.entry_input import ReadEntryTrade
 from ..presentation.investments import trade_price_text
 
 __all__ = [
@@ -768,8 +767,10 @@ class RegisterSheet:
         """The number ``step`` on; None lets the key be typed into other text."""
         if text.strip() and not text.strip()[-1].isdigit():
             return None
-        result = next_entry_num(self.db, self.account, text, step)
-        return result.value if result.value is not None else None
+        try:
+            return book_server(self.db).next_num(self.account, text, step)
+        except ApiError:
+            return None
 
     def _date_base(self) -> date:
         source = self.draft.source
@@ -854,18 +855,19 @@ class RegisterSheet:
         account = (
             self.account_names[holder.account.strip()] if isinstance(holder, Line) else self.account
         )
-        result = read_entry_trade(
-            self.db,
-            account,
-            shares=holder.shares,
-            price=holder.price,
-            amount=amount_text,
-            changed="amount" if column in ("increase", "decrease") else column,  # type: ignore[arg-type]
-            currency=transaction_currency(self.db, source.currency if source else None),
-        )
-        if result.value is None:
-            return self._fail(service_error_message(result.errors[0]))
-        filled = result.value
+        try:
+            filled = book_server(self.db).entry_trade(
+                ReadEntryTrade(
+                    account,
+                    shares=holder.shares,
+                    price=holder.price,
+                    amount=amount_text,
+                    changed="amount" if column in ("increase", "decrease") else column,  # type: ignore[arg-type]
+                    currency=transaction_currency(self.db, source.currency if source else None),
+                )
+            )
+        except ApiError as error:
+            return self._fail(str(error))
         selling = holder.shares.strip().startswith("-")
         if filled.shares is not None and (amount_text or filled.amount):
             holder.shares = shares_text(Money(filled.shares))
@@ -932,20 +934,26 @@ class RegisterSheet:
         """Typed text as an amount, arithmetic evaluated; ``ValueError`` if unreadable."""
         source = self.draft.source
         currency = transaction_currency(self.db, source.currency if source is not None else None)
-        result = read_entry_amount(self.db, text, currency=currency)
-        if result.value is None or result.value.value is None:
+        try:
+            value = book_server(self.db).entry_amount(text, currency).value
+        except ApiError:
+            raise ValueError(text) from None
+        if value is None:
             raise ValueError(text)
-        return Money(result.value.value)
+        return Money(value)
 
     def propose(self) -> bool:
         """Fill a new entry's untouched cells from the latest matching transaction."""
         draft = self.draft
         if draft.source is not None or not self.enabled or not draft.description.strip():
             return False
-        result = suggest_entry(
-            self.db, SuggestEntry(description=draft.description, account=self.account)
-        )
-        suggestion = result.value.suggestion if result.value is not None else None
+        try:
+            proposal = book_server(self.db).suggest_entry(
+                SuggestEntry(description=draft.description, account=self.account)
+            )
+        except ApiError:
+            return False
+        suggestion = proposal.suggestion
         if suggestion is None:
             return False
         source = f"{suggestion.when.isoformat()} “{suggestion.description}”"
@@ -955,7 +963,7 @@ class RegisterSheet:
             draft.expanded = True
             draft.lines = [
                 Line(
-                    account=self.db.full_name(split.account),
+                    account=proposal.name(split.account),
                     memo=split.memo,
                     increase=split.value.format() if split.value > 0 else "",
                     decrease=(-split.value).format() if split.value < 0 else "",
@@ -968,7 +976,7 @@ class RegisterSheet:
             return True
         filled = []
         if not draft.transfer_touched and suggestion.transfer_account is not None:
-            name = self.db.full_name(suggestion.transfer_account)
+            name = proposal.name(suggestion.transfer_account)
             if name in self.transfer_names:
                 draft.transfer = name
                 filled.append(name)

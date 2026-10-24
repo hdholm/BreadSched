@@ -16,6 +16,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
+from typing import Literal, cast
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import projection as projection_engine
@@ -23,6 +24,7 @@ from ..gen.engine.activity import ReportingPeriod
 from ..gen.engine.category_report import CategoryActivity
 from ..gen.engine.currency import reporting_currency_label
 from ..gen.engine.dashboard import Dashboard
+from ..gen.engine.entry_input import TradeFill
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.loans import LoanTerms
@@ -84,6 +86,7 @@ from ..gen.services import (
     delete_transaction,
     duplicate_schedule,
     editable_transaction,
+    entry_input,
     exchange_rates,
     find_account,
     find_schedule,
@@ -129,6 +132,7 @@ from ..gen.services import tax as tax_service
 from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
+from ..gen.services.autocomplete import EntryProposal, SuggestEntry, suggest_entry
 from ..gen.services.budget_jars import JarsView
 from ..gen.services.categorization import (
     AddRule,
@@ -148,6 +152,7 @@ from ..gen.services.claims import (
     SavedClaim,
 )
 from ..gen.services.dashboard_config import DashboardSettings, SaveDashboardConfig
+from ..gen.services.entry_input import EntryAccount, EntryAmount, ReadEntryTrade
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
 from ..gen.services.expense_explorer import ExpenseExplorer
 from ..gen.services.import_review import (
@@ -323,6 +328,44 @@ class LocalBookServer:
 
     def delete_transaction(self, transaction: str) -> SavedTransaction:
         return unwrap(delete_transaction(self.db, DeleteTransaction(transaction)))
+
+    # ------------------------------------------------------------ entry input
+
+    def suggest_entry(self, request: SuggestEntry) -> EntryProposal:
+        return unwrap(suggest_entry(self.db, request))
+
+    def entry_amount(
+        self, text: str, currency: str | None = None, number_format: str = "auto"
+    ) -> EntryAmount:
+        return unwrap(
+            entry_input.read_entry_amount(
+                self.db, text, currency=currency, number_format=_number_format(number_format)
+            )
+        )
+
+    def entry_trade(self, request: ReadEntryTrade) -> TradeFill:
+        return unwrap(
+            entry_input.read_entry_trade(
+                self.db,
+                request.account,
+                shares=request.shares,
+                price=request.price,
+                amount=request.amount,
+                changed=request.changed,
+                currency=request.currency,
+                number_format=request.number_format,
+            )
+        )
+
+    def entry_accounts(
+        self, text: str, exclude: str | None = None, limit: int = 20
+    ) -> tuple[EntryAccount, ...]:
+        return unwrap(
+            entry_input.complete_entry_account(self.db, text, exclude=exclude, limit=limit)
+        )
+
+    def next_num(self, account: str, text: str = "", step: int = 1) -> str:
+        return unwrap(entry_input.next_entry_num(self.db, account, text, step))
 
     # ------------------------------------------------------------ ledger reads
 
@@ -885,6 +928,14 @@ def book_server(db: DbSQLite) -> LocalBookServer:
         server = LocalBookServer(db)
         db._book_server = server  # type: ignore[attr-defined]
     return server
+
+
+def _number_format(value: str) -> Literal["auto", "dot", "comma"]:
+    if value not in ("auto", "dot", "comma"):
+        raise ApiError(
+            400, "entry.number_format.invalid", ("number_format",), "unknown number format"
+        )
+    return cast('Literal["auto", "dot", "comma"]', value)
 
 
 def _named(found, reference: str, kind: str):

@@ -390,6 +390,14 @@ Two command-line reads followed: `due_occurrences(as_of, days)`
 returns the Plan's own reimbursable category rows for `receivables --costs`, so
 both work while another process holds the book.
 
+Reading what is typed into a register followed: `suggest_entry` (with the full names
+of the suggestion's accounts), `entry_amount`, `entry_trade` (`ReadEntryTrade`),
+`entry_accounts`, and `next_num` (`GET /api/v1/entry/...`) serve the browser's
+register and entry form and GTK's register and transaction editor, so a proposal,
+an arithmetic amount, a filled trade, a completed account, and the next check number
+come from the server both ways. Typed dates need no book and stay a local parse.
+GTK's register otherwise still reads the book directly.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

@@ -105,6 +105,12 @@ Resources so far, all under ``/api/v1``:
   ``/relink``; ``PATCH /attachment-folders`` (``folder`` or ``gnucash_folder``).
 * ``GET /net-worth`` (``start``, ``end``, ``period``, ``today``) and
   ``GET /net-worth/change`` (``start``, ``end``, ``today``).
+* ``GET /entry/suggestion`` (``description``, ``account``, ``currency``, ``exclude``),
+  ``/entry/amount`` (``text``, ``currency``, ``number_format``), ``/entry/trade``
+  (``account``, ``shares``, ``price``, ``amount``, ``changed``, ``currency``,
+  ``number_format``), ``/entry/accounts`` (``text``, ``exclude``, ``limit``), and
+  ``/entry/num`` (``account``, ``text``, ``step``) – reading what is typed into a
+  register; none writes.
 * ``GET /activity`` (``start``, ``end``, ``period``, ``as_of``) – plan versus
   actuals with the notes that disclose its quotes and exclusions.
 * ``GET /budget-jars`` (``start``, ``end``, ``period``, ``today``).
@@ -123,7 +129,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from ..api.account_codec import save_account_from_json
 from ..api.schedule_codec import fixed_request_from_json, formula_request_from_json
@@ -170,9 +176,11 @@ from ..gen.services import (
     SetAdvanceDays,
 )
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
+from ..gen.services.autocomplete import SuggestEntry
 from ..gen.services.categorization import AddRule
 from ..gen.services.claims import ClaimReportQuery, CloseClaim, ReopenClaim, SaveClaim
 from ..gen.services.dashboard_config import SaveDashboardConfig
+from ..gen.services.entry_input import ReadEntryTrade
 from ..gen.services.exchange_rates import SaveExchangeRate
 from ..gen.services.import_review import ResolveHeldImports
 from ..gen.services.loans import SaveLoan
@@ -208,6 +216,11 @@ __all__ = [
     "expense_explorer_v1",
     "plan_v1",
     "activity_get",
+    "entry_accounts_get",
+    "entry_amount_get",
+    "entry_num_get",
+    "entry_suggestion_get",
+    "entry_trade_get",
     "budget_jars_get",
     "holdings_get",
     "net_worth_change_get",
@@ -1379,6 +1392,66 @@ def attachment_folders_patch(api: Api, _path: Path, body: dict[str, Any]) -> dic
         return {"folder": api.book.set_attachment_folder(change.folder)}
     assert change.gnucash_folder is not None
     return {"gnucash_folder": api.book.set_source_link_folder(change.gnucash_folder)}
+
+
+_NUMBER_FORMATS = ("auto", "dot", "comma")
+
+
+def entry_suggestion_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    request = SuggestEntry(
+        description=query.text("description") or "",
+        account=query.text("account"),
+        currency=query.text("currency"),
+        exclude=query.text("exclude"),
+    )
+    query.finish()
+    return to_data(api.book.suggest_entry(request))
+
+
+def entry_amount_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    text = query.text("text") or ""
+    currency = query.text("currency")
+    number_format = query.choice("number_format", _NUMBER_FORMATS, "auto")
+    query.finish()
+    return to_data(api.book.entry_amount(text, currency, number_format))
+
+
+def entry_trade_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    request = ReadEntryTrade(
+        account=query.text("account", required=True) or "",
+        shares=query.text("shares") or "",
+        price=query.text("price") or "",
+        amount=query.text("amount") or "",
+        changed=cast(
+            'Literal["shares", "price", "amount"]',
+            query.choice("changed", ("shares", "price", "amount"), "amount"),
+        ),
+        currency=query.text("currency"),
+        number_format=cast(
+            'Literal["auto", "dot", "comma"]',
+            query.choice("number_format", _NUMBER_FORMATS, "auto"),
+        ),
+    )
+    query.finish()
+    return to_data(api.book.entry_trade(request))
+
+
+def entry_accounts_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    text = query.text("text") or ""
+    exclude = query.text("exclude")
+    limit = query.integer("limit", default=20, minimum=1, maximum=200)
+    query.finish()
+    assert limit is not None
+    return {"accounts": to_data(api.book.entry_accounts(text, exclude, limit))}
+
+
+def entry_num_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    account = query.text("account", required=True) or ""
+    text = query.text("text") or ""
+    step = query.integer("step", default=1, minimum=-1000, maximum=1000)
+    query.finish()
+    assert step is not None
+    return {"num": api.book.next_num(account, text, step)}
 
 
 def activity_get(api: Api, _path: Path, query: QueryParams) -> dict:

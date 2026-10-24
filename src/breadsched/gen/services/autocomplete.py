@@ -15,7 +15,8 @@ accounts are all visible and postable, so a proposal can always be saved as is.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import date
 
 from ..db.sqlite import DbSQLite
@@ -64,6 +65,11 @@ class EntrySuggestion:
 class EntryProposal:
     #: ``None`` when no earlier transaction matches.
     suggestion: EntrySuggestion | None
+    #: Full names of the suggestion's accounts, by handle.
+    names: Mapping[str, str] = field(default_factory=dict)
+
+    def name(self, handle: str) -> str:
+        return self.names.get(handle, handle)
 
 
 def suggest_entry(db: DbSQLite, query: SuggestEntry) -> ServiceResult[EntryProposal]:
@@ -116,6 +122,11 @@ def suggest_entry(db: DbSQLite, query: SuggestEntry) -> ServiceResult[EntryPropo
                 splits=splits,
                 transfer_account=transfer,
                 amount=amount,
-            )
+            ),
+            {
+                split.account: db.full_name(account)
+                for split in splits
+                if (account := db.get_account(split.account)) is not None
+            },
         )
     )

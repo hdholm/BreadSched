@@ -17,6 +17,7 @@ from typing import Protocol
 from ..gen.engine.activity import ReportingPeriod
 from ..gen.engine.category_report import CategoryActivity
 from ..gen.engine.dashboard import Dashboard
+from ..gen.engine.entry_input import TradeFill
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.loans import LoanTerms
@@ -66,6 +67,7 @@ from ..gen.services import (
 from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
+from ..gen.services.autocomplete import EntryProposal, SuggestEntry
 from ..gen.services.budget_jars import JarsView
 from ..gen.services.categorization import (
     AddRule,
@@ -84,6 +86,7 @@ from ..gen.services.claims import (
     SavedClaim,
 )
 from ..gen.services.dashboard_config import DashboardSettings, SaveDashboardConfig
+from ..gen.services.entry_input import EntryAccount, EntryAmount, ReadEntryTrade
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
 from ..gen.services.expense_explorer import ExpenseExplorer
 from ..gen.services.import_review import (
@@ -228,6 +231,32 @@ class BookApi(Protocol):
 
     def delete_transaction(self, transaction: str) -> SavedTransaction:
         """Remove a transaction (never a receivable's own reclassification)."""
+        ...
+
+    # ------------------------------------------------------------ entry input
+
+    def suggest_entry(self, request: SuggestEntry) -> EntryProposal:
+        """The latest earlier transaction matching what is being typed; writes nothing."""
+        ...
+
+    def entry_amount(
+        self, text: str, currency: str | None = None, number_format: str = "auto"
+    ) -> EntryAmount:
+        """Typed text as an amount, arithmetic evaluated, in the currency's smallest unit."""
+        ...
+
+    def entry_trade(self, request: ReadEntryTrade) -> TradeFill:
+        """A trade's shares, price, and amount, with the third worked out."""
+        ...
+
+    def entry_accounts(
+        self, text: str, exclude: str | None = None, limit: int = 20
+    ) -> tuple[EntryAccount, ...]:
+        """Visible, postable accounts that typed text completes to."""
+        ...
+
+    def next_num(self, account: str, text: str = "", step: int = 1) -> str:
+        """A check number moved ``step`` on; an empty one continues the register."""
         ...
 
     # ------------------------------------------------------------ ledger reads

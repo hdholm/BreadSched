@@ -28,6 +28,7 @@ from urllib.parse import quote, urlencode, urlparse
 from ..gen.engine.activity import ReportingPeriod
 from ..gen.engine.category_report import CategoryActivity
 from ..gen.engine.dashboard import Dashboard
+from ..gen.engine.entry_input import TradeFill
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.loans import LoanTerms
@@ -77,6 +78,7 @@ from ..gen.services import (
 from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
+from ..gen.services.autocomplete import EntryProposal, SuggestEntry
 from ..gen.services.budget_jars import JarsView
 from ..gen.services.categorization import (
     AddRule,
@@ -95,6 +97,7 @@ from ..gen.services.claims import (
     SavedClaim,
 )
 from ..gen.services.dashboard_config import DashboardSettings, SaveDashboardConfig
+from ..gen.services.entry_input import EntryAccount, EntryAmount, ReadEntryTrade
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
 from ..gen.services.expense_explorer import ExpenseExplorer
 from ..gen.services.import_review import (
@@ -416,6 +419,47 @@ class HttpBookClient:
     def delete_transaction(self, transaction: str) -> SavedTransaction:
         path = f"/transactions/{quote(transaction, safe='')}"
         return saved_transaction_from_json(self._call("DELETE", path))
+
+    # ------------------------------------------------------------ entry input
+
+    def suggest_entry(self, request: SuggestEntry) -> EntryProposal:
+        params = {
+            "description": request.description,
+            "account": request.account,
+            "currency": request.currency,
+            "exclude": request.exclude,
+        }
+        return from_data(EntryProposal, self._call("GET", "/entry/suggestion", params))
+
+    def entry_amount(
+        self, text: str, currency: str | None = None, number_format: str = "auto"
+    ) -> EntryAmount:
+        params = {"text": text, "currency": currency, "number_format": number_format}
+        return from_data(EntryAmount, self._call("GET", "/entry/amount", params))
+
+    def entry_trade(self, request: ReadEntryTrade) -> TradeFill:
+        params = {
+            "account": request.account,
+            "shares": request.shares,
+            "price": request.price,
+            "amount": request.amount,
+            "changed": request.changed,
+            "currency": request.currency,
+            "number_format": request.number_format,
+        }
+        return from_data(TradeFill, self._call("GET", "/entry/trade", params))
+
+    def entry_accounts(
+        self, text: str, exclude: str | None = None, limit: int = 20
+    ) -> tuple[EntryAccount, ...]:
+        found = self._call(
+            "GET", "/entry/accounts", {"text": text, "exclude": exclude, "limit": limit}
+        )
+        return from_data(tuple[EntryAccount, ...], found["accounts"], "accounts")
+
+    def next_num(self, account: str, text: str = "", step: int = 1) -> str:
+        found = self._call("GET", "/entry/num", {"account": account, "text": text, "step": step})
+        return str(found["num"])
 
     # ------------------------------------------------------------ ledger reads
 

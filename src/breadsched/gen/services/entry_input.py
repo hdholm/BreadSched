@@ -33,6 +33,7 @@ from .contracts import ServiceError, ServiceResult
 __all__ = [
     "EntryAccount",
     "EntryAmount",
+    "ReadEntryTrade",
     "complete_entry_account",
     "latest_num",
     "next_entry_num",
@@ -113,6 +114,19 @@ def read_entry_date(text: str, base: date, today: date | None = None) -> Service
         return ServiceResult.success(parse_entry_date(text, base, today))
     except EntryInputError:
         return ServiceResult.failure(ServiceError("entry.date.invalid", ("text",)))
+
+
+@dataclass(frozen=True, slots=True)
+class ReadEntryTrade:
+    """A trade's typed shares, price, and amount, and which one was just changed."""
+
+    account: str
+    shares: str = ""
+    price: str = ""
+    amount: str = ""
+    changed: Literal["shares", "price", "amount"] = "amount"
+    currency: str | None = None
+    number_format: NumberFormat | Literal["auto"] = "auto"
 
 
 def read_entry_trade(

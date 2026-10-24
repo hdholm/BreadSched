@@ -54,7 +54,7 @@ from ...gen.services import (
     build_transaction,
     transaction_currency,
 )
-from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry, suggest_entry
+from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import claim_role_label, service_error_message
 from ..gi_setup import Gio, GLib, Gtk
@@ -663,15 +663,17 @@ class TransactionDialog(BoundedWindow):
             return None  # an existing transaction is never rewritten
         if any(e.amount.get_text().strip() or e.memo.get_text().strip() for e in self.splits):
             return None  # never overwrite what the user typed
-        result = suggest_entry(
-            self.db,
-            SuggestEntry(
-                description=self.description_entry.get_text(),
-                account=self.default_account,
-                currency=transaction_currency(self.db),
-            ),
-        )
-        suggestion = result.value.suggestion if result.value is not None else None
+        try:
+            proposal = book_server(self.db).suggest_entry(
+                SuggestEntry(
+                    description=self.description_entry.get_text(),
+                    account=self.default_account,
+                    currency=transaction_currency(self.db),
+                )
+            )
+        except ApiError:
+            return None
+        suggestion = proposal.suggestion
         if suggestion is None or len(suggestion.splits) < 2:
             return None
         handles = [account.handle for account in self.accounts]
