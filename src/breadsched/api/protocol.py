@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
+from ..gen.engine.activity import ReportingPeriod
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.loans import LoanTerms
@@ -85,6 +86,7 @@ from ..gen.services.import_review import (
 )
 from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
+from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
@@ -628,4 +630,20 @@ class BookApi(Protocol):
 
     def set_source_link_folder(self, folder: str) -> str:
         """GnuCash's path head for linked files; empty restores the home folder."""
+        ...
+
+    # --------------------------------------------------------------- net worth
+
+    def net_worth_history(
+        self,
+        start: date,
+        end: date,
+        period: ReportingPeriod = ReportingPeriod.MONTH,
+        today: date | None = None,
+    ) -> NetWorthHistory:
+        """Market-valued assets and debts at each period end through ``today``."""
+        ...
+
+    def net_worth_change(self, start: date, end: date, today: date | None = None) -> NetWorthChange:
+        """The postings behind a net worth change, and the market movement beside them."""
         ...

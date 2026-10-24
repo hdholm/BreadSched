@@ -479,6 +479,17 @@ def test_attachments_work_through_the_server_holding_the_book(running, book_path
     capsys.readouterr()
 
 
+def test_net_worth_works_through_the_server_holding_the_book(running, book_path, capsys):
+    path = str(book_path)
+    command = ["net-worth", path, "--start", "2026-01-01", "--end", "2026-03-31"]
+    assert main([*command, "--as-of", "2026-03-15", "--json"]) == 0
+    points = json.loads(capsys.readouterr().out)["points"]
+    assert [point["valued_on"] for point in points][-1] == "2026-03-15"
+    change = ["net-worth-change", path, "--start", "2026-02-01", "--end", "2026-02-28"]
+    assert main([*change, "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["closing_on"] == "2026-02-28"
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

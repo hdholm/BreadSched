@@ -99,6 +99,8 @@ Resources so far, all under ``/api/v1``:
   against the file system; ``POST /transactions/{handle}/attachments`` (``location``),
   ``/attachments/files`` (``path`` as the server sees it, ``copy``), ``/remove``, and
   ``/relink``; ``PATCH /attachment-folders`` (``folder`` or ``gnucash_folder``).
+* ``GET /net-worth`` (``start``, ``end``, ``period``, ``today``) and
+  ``GET /net-worth/change`` (``start``, ``end``, ``today``).
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -136,6 +138,7 @@ from ..api.views import (
     savings_goals_json,
     tag_counts_json,
 )
+from ..gen.engine.activity import ReportingPeriod
 from ..gen.engine.fsa_claim_report import GROUPINGS
 from ..gen.engine.fsa_claims import FsaClaimStatus
 from ..gen.engine.loans import LoanTerms
@@ -183,6 +186,8 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "net_worth_change_get",
+    "net_worth_history_get",
     "attachment_file_v1",
     "attachment_folders_patch",
     "attachment_link_v1",
@@ -1322,3 +1327,22 @@ def attachment_folders_patch(api: Api, _path: Path, body: dict[str, Any]) -> dic
         return {"folder": api.book.set_attachment_folder(change.folder)}
     assert change.gnucash_folder is not None
     return {"gnucash_folder": api.book.set_source_link_folder(change.gnucash_folder)}
+
+
+def net_worth_history_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    start = query.iso_date("start", required=True)
+    end = query.iso_date("end", required=True)
+    period = query.choice("period", tuple(item.value for item in ReportingPeriod), "month")
+    today = query.iso_date("today")
+    query.finish()
+    assert start is not None and end is not None
+    return to_data(api.book.net_worth_history(start, end, ReportingPeriod(period), today))
+
+
+def net_worth_change_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    start = query.iso_date("start", required=True)
+    end = query.iso_date("end", required=True)
+    today = query.iso_date("today")
+    query.finish()
+    assert start is not None and end is not None
+    return to_data(api.book.net_worth_change(start, end, today))

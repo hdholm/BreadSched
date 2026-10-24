@@ -1165,6 +1165,8 @@ class TestBookServerBoundaries:
         "attachment_report",
         "set_attachment_folder",
         "set_source_link_folder",
+        "query_net_worth_history",
+        "query_net_worth_change",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1291,6 +1293,8 @@ class TestBookServerBoundaries:
         "relink_attachment",
         "set_attachment_folder",
         "set_source_link_folder",
+        "net_worth_history",
+        "net_worth_change",
     }
 
     @pytest.mark.parametrize(
@@ -1349,6 +1353,9 @@ class TestBookServerBoundaries:
             ("gui/views/dashboard.py", ("_on_setting_changed",)),
             ("gui/dialogs/dashboard_dialog.py", ("save",)),
             ("cli/categorization_commands.py", ("cmd_attachments",)),
+            ("cli/projection_commands.py", ("cmd_net_worth", "cmd_net_worth_change")),
+            ("web/net_worth_resource.py", ("net_worth_change", "net_worth_history")),
+            ("gui/dialogs/net_worth_history_dialog.py", ("_update", "_explain")),
             (
                 "web/attachment_resource.py",
                 (

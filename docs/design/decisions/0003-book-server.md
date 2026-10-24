@@ -328,6 +328,11 @@ that machine can read; the typed codec now carries paths as text. The command li
 dialog documents go through the server; showing a document's contents still reads
 the file directly.
 
+The net worth reports followed: `net_worth_history` and `net_worth_change`
+(`GET /api/v1/net-worth` and `/net-worth/change`) return the services' own history
+and change, completeness evidence included, to the command line's `net-worth` and
+`net-worth-change`, the browser's net worth page, and GTK's net worth dialog.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.
