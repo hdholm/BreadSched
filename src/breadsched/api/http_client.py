@@ -84,6 +84,11 @@ from ..gen.services.claims import (
     SaveClaim,
     SavedClaim,
 )
+from ..gen.services.import_review import (
+    HeldImportChange,
+    HeldImportResolution,
+    ResolveHeldImports,
+)
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.receivables import (
     AcceptedReimbursements,
@@ -840,3 +845,13 @@ class HttpBookClient:
         path = f"/transactions/{quote(transaction, safe='')}/plan-matches"
         found = self._call("GET", path, {"window_days": window_days})
         return from_data(tuple[MatchCandidate, ...], found["candidates"], "candidates")
+
+    # ------------------------------------------------------------ import review
+
+    def held_imports(self) -> tuple[HeldImportChange, ...]:
+        found = self._call("GET", "/held-imports")
+        return from_data(tuple[HeldImportChange, ...], found["changes"], "changes")
+
+    def resolve_held_imports(self, request: ResolveHeldImports) -> HeldImportResolution:
+        found = self._call("POST", "/held-imports/resolve", body=to_data(request))
+        return from_data(HeldImportResolution, found)

@@ -394,6 +394,13 @@ def test_review_works_through_the_server_holding_the_book(running, book_path, ca
     assert "Sample wages" in {item["description"] for item in json.loads(capsys.readouterr().out)}
 
 
+def test_held_imports_work_through_the_server_holding_the_book(running, book_path, capsys):
+    assert main(["import-review", str(book_path), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == []
+    assert main(["import-review", str(book_path)]) == 0
+    assert "No GnuCash changes are held" in capsys.readouterr().out
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

@@ -346,10 +346,9 @@ class ImportDialog(BoundedWindow):
 
     def present_held_review(self) -> Gtk.Window | None:
         """Offer the batched review of GnuCash changes to reconciled transactions."""
-        from ...gen.services import pending_import_changes
         from .import_review_dialog import ImportReviewDialog
 
-        changes = pending_import_changes(self.db)
+        changes = list(book_server(self.db).held_imports())
         if not changes:
             return None
         dialog = ImportReviewDialog(self, self.db, changes)

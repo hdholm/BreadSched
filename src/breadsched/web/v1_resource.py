@@ -82,6 +82,8 @@ Resources so far, all under ``/api/v1``:
   (``occurrence``), ``/unexpected``, and ``/claim``; ``GET /plan/occurrences``
   (``start``, ``end``) and ``/plan/occurrences/lookup`` (``key``);
   ``GET /transactions/{handle}/plan-matches`` (``window_days``).
+* ``GET /held-imports`` – GnuCash changes held back from reconciled transactions;
+  ``POST /held-imports/resolve`` (``ResolveHeldImports``).
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -136,6 +138,7 @@ from ..gen.services import (
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.categorization import AddRule
 from ..gen.services.claims import ClaimReportQuery, CloseClaim, ReopenClaim, SaveClaim
+from ..gen.services.import_review import ResolveHeldImports
 from ..gen.services.payroll import CreatePaycheck, PayChange, SavePayrollTemplate
 from ..gen.services.receivables import RecordWriteOff, SaveReceivable
 from ..gen.services.reconciliations import (
@@ -158,6 +161,8 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "held_imports_get",
+    "held_imports_resolve",
     "plan_matches_get",
     "plan_occurrence_lookup",
     "plan_occurrences_get",
@@ -1120,3 +1125,13 @@ def plan_matches_get(api: Api, path: Path, query: QueryParams) -> dict:
     query.finish()
     assert window is not None
     return {"candidates": to_data(api.book.match_candidates(path["handle"], window))}
+
+
+def held_imports_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return {"changes": to_data(api.book.held_imports())}
+
+
+def held_imports_resolve(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(ResolveHeldImports, body, "request")
+    return to_data(api.book.resolve_held_imports(request))

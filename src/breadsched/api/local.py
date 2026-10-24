@@ -76,6 +76,7 @@ from ..gen.services import (
     find_account,
     find_schedule,
     find_transaction,
+    import_review,
     next_occurrence,
     pending_due_review,
     post_due,
@@ -118,6 +119,11 @@ from ..gen.services.claims import (
     ReopenClaim,
     SaveClaim,
     SavedClaim,
+)
+from ..gen.services.import_review import (
+    HeldImportChange,
+    HeldImportResolution,
+    ResolveHeldImports,
 )
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.receivables import (
@@ -479,6 +485,14 @@ class LocalBookServer:
         self, transaction: str, window_days: int = 7
     ) -> tuple[MatchCandidate, ...]:
         return unwrap(review_service.match_candidates(self.db, transaction, window_days))
+
+    # ------------------------------------------------------------ import review
+
+    def held_imports(self) -> tuple[HeldImportChange, ...]:
+        return tuple(import_review.pending_import_changes(self.db))
+
+    def resolve_held_imports(self, request: ResolveHeldImports) -> HeldImportResolution:
+        return unwrap(import_review.resolve_import_changes(self.db, request))
 
     # -------------------------------------------------------------- receivables
 
