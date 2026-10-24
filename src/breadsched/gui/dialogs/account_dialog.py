@@ -16,6 +16,8 @@ from __future__ import annotations
 from datetime import date
 from decimal import InvalidOperation
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib import (
     Account,
@@ -26,13 +28,9 @@ from ...gen.lib import (
 )
 from ...gen.services import (
     COST_BASIS_METHODS,
-    DeleteAccount,
     SaveAccount,
-    delete_account,
-    save_account,
 )
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
@@ -673,18 +671,18 @@ class AccountDialog(BoundedWindow):
             self.status.set_text("Enter a valid opening balance.")
             self.status.add_css_class("negative")
             return
-        result = save_account(
-            self.db,
-            SaveAccount(
-                account,
-                existing_handle=account.handle if self.editing else None,
-                opening_balance=opening_value if not self.editing else None,
-                opening_date=date.today(),
-                source=self.account,
-            ),
-        )
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).save_account(
+                SaveAccount(
+                    account,
+                    existing_handle=account.handle if self.editing else None,
+                    opening_balance=opening_value if not self.editing else None,
+                    opening_date=date.today(),
+                    source=self.account,
+                ),
+            )
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return
         self.close()
@@ -692,9 +690,10 @@ class AccountDialog(BoundedWindow):
     def _on_delete(self, _button) -> None:
         if not self.editing or self.account is None:
             return
-        result = delete_account(self.db, DeleteAccount(self.account.handle))
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).delete_account(self.account.handle)
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return
         self.close()

@@ -1079,6 +1079,7 @@ class TestBookServerBoundaries:
                 ("resolve_next", "_on_post_clicked"),
             ),
             ("gui/dialogs/schedule_dialog.py", ("_on_save",)),
+            ("gui/dialogs/account_dialog.py", ("_on_save", "_on_delete")),
             (
                 "cli/ledger_commands.py",
                 (
