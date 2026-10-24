@@ -384,6 +384,12 @@ Plan versus actuals followed: `activity(start, end, period, as_of)`
 serves the command line's `activity`; GTK and the browser show these figures through
 the Plan, which is already on the server.
 
+Two command-line reads followed: `due_occurrences(as_of, days)`
+(`GET /api/v1/schedules/due`) lists what is already due for `scheduled` without
+`--post`, and `reimbursable_costs(start, end)` (`GET /api/v1/receivables/costs`)
+returns the Plan's own reimbursable category rows for `receivables --costs`, so
+both work while another process holds the book.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

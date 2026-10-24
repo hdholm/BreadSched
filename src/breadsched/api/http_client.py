@@ -26,6 +26,7 @@ from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
 from ..gen.engine.activity import ReportingPeriod
+from ..gen.engine.category_report import CategoryActivity
 from ..gen.engine.dashboard import Dashboard
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
@@ -35,6 +36,7 @@ from ..gen.engine.planning import MatchCandidate, PlannedEvent
 from ..gen.engine.projection import Projection, ProjectionMonthDetail
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
+from ..gen.engine.schedule import Occurrence
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
 from ..gen.lib.commodity import CommodityPrice
 from ..gen.lib.fsa_claim import FsaClaim
@@ -350,6 +352,12 @@ class HttpBookClient:
 
     def due_review(self, as_of: date | None = None) -> list[DueScheduleReview]:
         return due_review_from_json(self._call("GET", "/due-review", {"as_of": as_of}))
+
+    def due_occurrences(
+        self, as_of: date | None = None, days: int | None = None
+    ) -> tuple[Occurrence, ...]:
+        found = self._call("GET", "/schedules/due", {"as_of": as_of, "days": days})
+        return from_data(tuple[Occurrence, ...], found["occurrences"], "occurrences")
 
     def resolve_due(self, request: ResolveDue) -> DueResolution:
         body = {
@@ -686,6 +694,10 @@ class HttpBookClient:
 
     def delete_receivable(self, receivable: str) -> str:
         return str(self._call("DELETE", f"/receivables/{quote(receivable, safe='')}")["deleted"])
+
+    def reimbursable_costs(self, start: date, end: date) -> tuple[CategoryActivity, ...]:
+        found = self._call("GET", "/receivables/costs", {"start": start, "end": end})
+        return from_data(tuple[CategoryActivity, ...], found["categories"], "categories")
 
     def reimbursement_proposals(
         self, as_of: date | None = None, account: str | None = None

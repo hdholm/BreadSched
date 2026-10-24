@@ -502,6 +502,15 @@ def test_projection_works_through_the_server_holding_the_book(running, book_path
     assert isinstance(json.loads(capsys.readouterr().out), list)
 
 
+def test_scheduled_and_costs_work_through_the_server_holding_the_book(running, book_path, capsys):
+    path = str(book_path)
+    assert main(["scheduled", path, "--as-of", "2026-11-10", "--json"]) == 0
+    assert isinstance(json.loads(capsys.readouterr().out), list)
+    costs = ["receivables", path, "--costs", "2026-01-01", "2026-12-31", "--json"]
+    assert main(costs) == 0
+    assert isinstance(json.loads(capsys.readouterr().out), list)
+
+
 def test_activity_works_through_the_server_holding_the_book(running, book_path, capsys):
     command = ["activity", str(book_path), "--start", "2026-01-01", "--end", "2026-03-31"]
     assert main([*command, "--json"]) == 0

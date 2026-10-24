@@ -16,6 +16,7 @@ from datetime import date
 from ..db.base import DbTxn
 from ..db.sqlite import DbSQLite
 from ..engine import fsa_claims
+from ..engine.category_report import CategoryActivity, build_category_report
 from ..engine.currency import reporting_currency_handle
 from ..engine.receivables import (
     ReceivableError,
@@ -38,6 +39,7 @@ from ..lib.transaction import Transaction
 from .contracts import ServiceError, ServiceResult
 
 __all__ = [
+    "reimbursable_costs",
     "AcceptedReimbursements",
     "CandidateLine",
     "LinkedSplit",
@@ -690,3 +692,19 @@ def receivable_candidate_lines(
         )
 
     return ServiceResult.success((named(costs), named(credits)))
+
+
+def reimbursable_costs(
+    db: DbSQLite, start: date, end: date
+) -> ServiceResult[tuple[CategoryActivity, ...]]:
+    """Each expense category's gross and net cost from ``start`` through ``end``.
+
+    The rows are the Plan's own (``CategoryReport.reimbursable_categories``): only
+    categories whose cost was partly reimbursed or is expected back.
+    """
+    if end < start:
+        return ServiceResult.failure(
+            ServiceError("receivable.costs.range.invalid", ("start", "end"))
+        )
+    report = build_category_report(db, start, end)
+    return ServiceResult.success(report.reimbursable_categories)

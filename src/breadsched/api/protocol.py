@@ -15,6 +15,7 @@ from datetime import date
 from typing import Protocol
 
 from ..gen.engine.activity import ReportingPeriod
+from ..gen.engine.category_report import CategoryActivity
 from ..gen.engine.dashboard import Dashboard
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
@@ -24,6 +25,7 @@ from ..gen.engine.planning import MatchCandidate, PlannedEvent
 from ..gen.engine.projection import Projection, ProjectionMonthDetail
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
+from ..gen.engine.schedule import Occurrence
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
 from ..gen.lib.commodity import CommodityPrice
 from ..gen.lib.fsa_claim import FsaClaim
@@ -178,6 +180,13 @@ class BookApi(Protocol):
         ...
 
     def due_review(self, as_of: date | None = None) -> list[DueScheduleReview]: ...
+
+    def due_occurrences(
+        self, as_of: date | None = None, days: int | None = None
+    ) -> tuple[Occurrence, ...]:
+        """Occurrences already due, plus those within ``days`` ahead (or each
+        schedule's own days in advance)."""
+        ...
 
     def resolve_due(self, request: ResolveDue) -> DueResolution: ...
 
@@ -433,6 +442,10 @@ class BookApi(Protocol):
     def reimbursement_proposals(
         self, as_of: date | None = None, account: str | None = None
     ) -> tuple[ReimbursementProposal, ...]: ...
+
+    def reimbursable_costs(self, start: date, end: date) -> tuple[CategoryActivity, ...]:
+        """Each expense category's gross and net cost in a range, as the Plan shows it."""
+        ...
 
     def accept_reimbursements(
         self, chosen: tuple[tuple[str, str, str], ...]

@@ -217,19 +217,20 @@ breadsched scheduled-next household.breadsched Rent --enter
 ```
 
 While `breadsched serve` (or `breadsched web` without `--read-only`) holds a book,
-`due-review`, `scheduled-next`, `scheduled-advance`, `scheduled --post`, `accounts`,
+`due-review`, `scheduled-next`, `scheduled-advance`, `scheduled`, `accounts`,
 `account`, `register`, `balance`, `add`, `edit`, `delete`, `rules`, `tags`, `goals`,
-`receivables` (except `--costs`), `scenario`, `drawdown`, `payroll`, `claims`, `review`,
+`receivables`, `scenario`, `drawdown`, `payroll`, `claims`, `review`,
 `plan-unresolved`, `plan-matches`, `plan-resolve`, `plan-reject`, `plan-unexpected`,
 `import-review`, `sale-lots`, `tax-marks`, `quotes`, `quote-source`, `rate`,
 `attachments`, `net-worth`, `net-worth-change`, `project`, `compare`, `holdings`,
 `realized-gains`, `tax-year`, `jars`, `dashboard`, and `activity` for the same book
 work through that server instead of stopping because the book is already open for
-writing. The server records its address and token in a file only you can read, in your runtime
-folder, and removes it when it stops. `--server URL` names a server explicitly; its
-token comes from `--token-file PATH` or the `BREADSCHED_SERVER_TOKEN` environment
-variable. Other commands still need the book to themselves. The desktop application
-can share the book it has open the same way (**Edit → Preferences… → Sharing**).
+writing. The server records its address and token in a file only you can read, in your
+runtime folder, and removes it when it stops. `--server URL` names a server
+explicitly; its token comes from `--token-file PATH` or the `BREADSCHED_SERVER_TOKEN`
+environment variable. Other commands still need the book to themselves. The desktop
+application can share the book it has open the same way (**Edit → Preferences… →
+Sharing**).
 
 To reach the book from another device, put a TLS reverse proxy such as nginx in
 front of the server on the same machine; the server itself only listens on this

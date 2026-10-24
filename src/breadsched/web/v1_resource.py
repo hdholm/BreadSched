@@ -10,7 +10,8 @@ whose ``If-Match`` names an older revision, and streams change events.
 Resources so far, all under ``/api/v1``:
 
 * ``GET /book`` – the book's revision.
-* ``GET /due-review`` (``as_of``) and ``POST /due-review`` (``decisions``, ``as_of``).
+* ``GET /due-review`` (``as_of``) and ``POST /due-review`` (``decisions``, ``as_of``);
+  ``GET /schedules/due`` (``as_of``, ``days``) – the occurrences already due.
 * ``GET /schedules/lookup`` (``reference``) – one schedule, as it is stored.
 * ``GET`` and ``POST /schedules/{handle}/next`` (``decision``, ``date``, ``as_of``).
 * ``GET`` and ``PATCH /schedules/{handle}/advance-days``.
@@ -48,7 +49,8 @@ Resources so far, all under ``/api/v1``:
   (``selected_splits``, ``ending_balance``); ``POST /reconciliations/{handle}/complete``,
   ``/cancel``, and ``/reopen``; ``POST /transactions/{handle}/splits/{split}/cleared``.
 * ``GET /receivables`` (``as_of``) – receivables with their links and the forms'
-  choices; ``GET /receivables/lookup`` (``reference``);
+  choices; ``GET /receivables/lookup`` (``reference``); ``GET /receivables/costs``
+  (``start``, ``end``) – each category's gross and net cost, as the Plan shows it;
   ``GET /receivables/candidates`` (``receivable``) – splits it could take;
   ``POST /receivables`` saves one; ``POST /receivables/{handle}/splits`` links a split and
   ``DELETE /receivables/{handle}/splits/{transaction}/{split}`` unlinks it;
@@ -288,6 +290,7 @@ __all__ = [
     "receivable_save",
     "receivable_write_off",
     "receivables_get",
+    "receivable_costs_get",
     "reimbursement_override",
     "reimbursement_proposals_accept",
     "reimbursement_proposals_get",
@@ -330,6 +333,7 @@ __all__ = [
     "advance_days_patch",
     "book_get",
     "due_review_get",
+    "due_occurrences_get",
     "due_review_post",
     "next_get",
     "next_post",
@@ -375,6 +379,13 @@ def _only(body: dict[str, Any], allowed: set[str]) -> None:
 def book_get(api: Api, _path: Path, query: QueryParams) -> dict:
     query.finish()
     return {"revision": api.book.revision}
+
+
+def due_occurrences_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    as_of = query.iso_date("as_of")
+    days = query.integer("days")
+    query.finish()
+    return {"occurrences": to_data(api.book.due_occurrences(as_of, days))}
 
 
 def due_review_get(api: Api, _path: Path, query: QueryParams) -> dict:
@@ -832,6 +843,14 @@ class _Expectation:
     receivable: str
     amount: Money | None = None
     on: date | None = None
+
+
+def receivable_costs_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    start = query.iso_date("start", required=True)
+    end = query.iso_date("end", required=True)
+    query.finish()
+    assert start is not None and end is not None
+    return {"categories": to_data(api.book.reimbursable_costs(start, end))}
 
 
 def receivables_get(api: Api, _path: Path, query: QueryParams) -> dict:

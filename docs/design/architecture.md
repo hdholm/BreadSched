@@ -203,7 +203,8 @@ turns the book's storage signals into numbered `Change` events for its
 subscribers. It imports nothing from the interfaces, and architecture tests check
 that.
 
-So far only scheduled transactions go through it:
+Scheduled transactions went through it first; decision 0003 records each area that
+has followed (accounts, the register, budgets, reports, and more):
 
 - the command line's `due-review`, `scheduled-next`, `scheduled-advance`, and
   `scheduled --post`, through `open_book_api`;
@@ -244,16 +245,16 @@ The same operations are served as versioned resources under `/api/v1` (#357):
 A writable `breadsched serve` or `breadsched web` publishes a server record
 (`api.discovery`; see [Security](security.md)). `api.connect.open_book_api` gives a
 command an explicit `--server`, else the recorded server, else an in-process server.
-So `due-review`, `scheduled-next`, `scheduled-advance`, `scheduled --post`,
-`accounts`, `account`, `register`, `balance`, `add`, `edit`, `delete`, `rules`, `tags`,
-`goals`, `receivables`, `scenario`, `drawdown`, `payroll`, `claims`, `review`, the
-`plan-*` review commands, `import-review`, `sale-lots`, `tax-marks`, `quotes`,
-`quote-source`, `rate`, `attachments`, `net-worth`, `net-worth-change`, `project`,
-`compare`, `holdings`, `realized-gains`, `tax-year`, `jars`, `dashboard`, and
-`activity` work while another process holds the book (#358). `cli.common.book_api` and `add_server_options` give each such
-command the connection and its `--server` and `--token-file` options. `tests/test_book_sharing.py` covers the record's
-life, stale records, the commands through a holding server, an explicit server, and
-`serve`.
+So `due-review`, `scheduled-next`, `scheduled-advance`, `scheduled`, `accounts`,
+`account`, `register`, `balance`, `add`, `edit`, `delete`, `rules`, `tags`, `goals`,
+`receivables`, `scenario`, `drawdown`, `payroll`, `claims`, `review`, the `plan-*`
+review commands, `import-review`, `sale-lots`, `tax-marks`, `quotes`, `quote-source`,
+`rate`, `attachments`, `net-worth`, `net-worth-change`, `project`, `compare`,
+`holdings`, `realized-gains`, `tax-year`, `jars`, `dashboard`, and `activity` work
+while another process holds the book (#358). `cli.common.book_api` and
+`add_server_options` give each such command the connection and its `--server` and
+`--token-file` options. `tests/test_book_sharing.py` covers the record's life, stale
+records, the commands through a holding server, an explicit server, and `serve`.
 
 GTK reaches the same server in process through `api.local.book_server(db)` for the
 due review, Enter Next and Skip Next, and the Upcoming count (#359).

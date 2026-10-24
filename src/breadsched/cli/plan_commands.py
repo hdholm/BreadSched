@@ -17,7 +17,6 @@ from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
     activity,
     estimates,
-    schedule,
 )
 from ..gen.engine.payroll import PaycheckBreakdown, PayrollLine
 from ..gen.lib import (
@@ -265,9 +264,8 @@ def cmd_scheduled(args: argparse.Namespace) -> int:
             ),
         )
         return 0
-    db = open_book(args.book, "r")
-    try:
-        occurrences = schedule.due_occurrences(db, as_of=as_of, horizon_days=args.days)
+    with book_api(args, "r") as book:
+        occurrences = book.due_occurrences(as_of, args.days)
         payload = [
             {"date": occ.when, "name": occ.name, "amount": occ.amount} for occ in occurrences
         ]
@@ -281,8 +279,6 @@ def cmd_scheduled(args: argparse.Namespace) -> int:
             ),
         )
         return 0
-    finally:
-        db.close()
 
 
 def _find_schedule(db: DbSQLite, reference: str) -> ScheduledTransaction:

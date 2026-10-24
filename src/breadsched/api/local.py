@@ -20,6 +20,7 @@ from pathlib import Path
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import projection as projection_engine
 from ..gen.engine.activity import ReportingPeriod
+from ..gen.engine.category_report import CategoryActivity
 from ..gen.engine.currency import reporting_currency_label
 from ..gen.engine.dashboard import Dashboard
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
@@ -30,6 +31,7 @@ from ..gen.engine.planning import MatchCandidate, PlannedEvent
 from ..gen.engine.projection import Projection, ProjectionMonthDetail
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
+from ..gen.engine.schedule import Occurrence
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
 from ..gen.lib.commodity import CommodityPrice
 from ..gen.lib.fsa_claim import FsaClaim
@@ -122,6 +124,7 @@ from ..gen.services import quotes as quote_service
 from ..gen.services import receivables as receivable_service
 from ..gen.services import review as review_service
 from ..gen.services import scenarios as scenario_service
+from ..gen.services import schedules as schedule_service
 from ..gen.services import tax as tax_service
 from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
@@ -274,6 +277,11 @@ class LocalBookServer:
 
     def due_review(self, as_of: date | None = None) -> list[DueScheduleReview]:
         return pending_due_review(self.db, as_of)
+
+    def due_occurrences(
+        self, as_of: date | None = None, days: int | None = None
+    ) -> tuple[Occurrence, ...]:
+        return unwrap(schedule_service.due_listing(self.db, as_of, days))
 
     def resolve_due(self, request: ResolveDue) -> DueResolution:
         return unwrap(resolve_due(self.db, request))
@@ -756,6 +764,9 @@ class LocalBookServer:
 
     def delete_receivable(self, receivable: str) -> str:
         return unwrap(receivable_service.delete_receivable(self.db, receivable))
+
+    def reimbursable_costs(self, start: date, end: date) -> tuple[CategoryActivity, ...]:
+        return unwrap(receivable_service.reimbursable_costs(self.db, start, end))
 
     def reimbursement_proposals(
         self, as_of: date | None = None, account: str | None = None

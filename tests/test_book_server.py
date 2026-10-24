@@ -1619,6 +1619,31 @@ def test_every_response_names_the_revision_and_a_stale_write_is_refused(remote):
     assert client.set_advance_days(SetAdvanceDays(sched.handle, remind_days=6)).remind_days == 6
 
 
+def test_due_occurrences_and_reimbursable_costs_read_alike(target, book):
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.engine.category_report import build_category_report
+    from breadsched.gen.engine.schedule import due_occurrences
+
+    api, db = target.api, target.db
+    as_of = date(2026, 11, 10)
+    due = api.due_occurrences(as_of, 30)
+    expected = due_occurrences(db, as_of=as_of, horizon_days=30)
+    assert [(item.name, item.when, item.amount) for item in due] == [
+        (item.name, item.when, item.amount) for item in expected
+    ]
+    assert [item.when for item in due] == [date(2026, 10, 6), date(2026, 11, 6), date(2026, 12, 6)]
+    with pytest.raises(ApiError) as refused:
+        api.due_occurrences(as_of, -1)
+    assert (refused.value.status, refused.value.code) == (400, "schedule.horizon.invalid")
+
+    start, end = date(2026, 1, 1), date(2026, 12, 31)
+    costs = api.reimbursable_costs(start, end)
+    assert to_data(costs) == to_data(build_category_report(db, start, end).reimbursable_categories)
+    with pytest.raises(ApiError) as refused:
+        api.reimbursable_costs(end, start)
+    assert (refused.value.status, refused.value.code) == (400, "receivable.costs.range.invalid")
+
+
 def test_activity_reads_alike(target, book):
     from breadsched.api.typed_codec import to_data
     from breadsched.gen.engine.activity import ReportingPeriod, build_activity_report
@@ -1869,6 +1894,8 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("GET", "/api/v1/holdings?as_of=soon", None, 400, "query.date.invalid"),
         ("GET", "/api/v1/dashboard?liquidity_days=soon", None, 400, "query.integer.invalid"),
         ("GET", "/api/v1/activity?start=2026-01-01", None, 400, "query.missing"),
+        ("GET", "/api/v1/schedules/due?days=many", None, 400, "query.integer.invalid"),
+        ("GET", "/api/v1/receivables/costs?start=2026-01-01", None, 400, "query.missing"),
         (
             "GET",
             "/api/v1/activity?start=2026-01-01&end=2026-02-01&period=week",

@@ -6,8 +6,6 @@ import argparse
 from datetime import date
 
 from ..api.protocol import BookApi
-from ..gen.db.sqlite import DbSQLite
-from ..gen.engine import category_report
 from ..gen.lib import (
     FsaClaimEvent,
     Money,
@@ -34,7 +32,6 @@ from .common import (
     add_server_options,
     book_api,
     emit,
-    open_book,
     parse_date,
     table,
 )
@@ -463,13 +460,12 @@ def cmd_claims(args: argparse.Namespace) -> int:
         return 0
 
 
-def _receivable_costs(db: DbSQLite, args: argparse.Namespace) -> int:
+def _receivable_costs(book: BookApi, args: argparse.Namespace) -> int:
     """Each expense category's gross and net cost in a date range, as Plan shows it."""
     start, end = (parse_date(value) for value in args.costs)
     if start is None or end is None or end < start:
         raise CommandError("--costs needs a start date and an end date on or after it")
-    report = category_report.build_category_report(db, start, end)
-    rows = report.reimbursable_categories
+    rows = book.reimbursable_costs(start, end)
     payload = [
         {
             "account": row.account,
@@ -549,14 +545,9 @@ def cmd_receivables(args: argparse.Namespace) -> int:
         or args.accept_proposals
         or args.expect
     )
-    if args.costs:
-        # A Plan report, which has not moved onto the book server yet.
-        db = open_book(args.book, "r")
-        try:
-            return _receivable_costs(db, args)
-        finally:
-            db.close()
     with book_api(args, "r" if read_only else "w") as book:
+        if args.costs:
+            return _receivable_costs(book, args)
         if args.expect:
             return _scenario_expectation(book, args)
         if args.proposals or args.accept_proposals:

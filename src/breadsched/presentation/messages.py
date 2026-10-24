@@ -300,6 +300,7 @@ _SERVICE_MESSAGES = {
     "savings_goal.close.before_start": "A goal cannot close before it starts",
     "receivable.payer.required": "Enter who owes this reimbursement",
     "receivable.not_found": "That receivable no longer exists",
+    "receivable.costs.range.invalid": "The costs range must not end before it starts",
     "receivable.reference.ambiguous": (
         "That matches more than one receivable; use more of its handle"
     ),
@@ -399,6 +400,7 @@ _SERVICE_MESSAGES = {
     "jars.period.invalid": "Group the jars by month, quarter, or year",
     "schedule.name.required": "Give the scheduled transaction a name",
     "schedule.not_found": "The scheduled transaction no longer exists",
+    "schedule.horizon.invalid": "The number of days ahead cannot be negative",
     "transaction.reference.ambiguous": (
         "More than one transaction matches; use more characters of its id"
     ),

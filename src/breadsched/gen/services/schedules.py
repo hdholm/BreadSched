@@ -810,3 +810,17 @@ def save_scenario_schedule(
     return ServiceResult.success(
         SavedScenarioSchedule(updated.handle, candidate.source_schedule, candidate.name)
     )
+
+
+def due_listing(
+    db: DbSQLite, as_of: date | None = None, horizon_days: int | None = None
+) -> ServiceResult[tuple[schedule_engine.Occurrence, ...]]:
+    """Occurrences already due on ``as_of``, plus those within ``horizon_days`` ahead.
+
+    Without ``horizon_days``, each schedule's own days in advance apply; a negative
+    horizon is refused.
+    """
+    if horizon_days is not None and horizon_days < 0:
+        return ServiceResult.failure(ServiceError("schedule.horizon.invalid", ("days",)))
+    found = schedule_engine.due_occurrences(db, as_of=as_of, horizon_days=horizon_days)
+    return ServiceResult.success(tuple(found))
