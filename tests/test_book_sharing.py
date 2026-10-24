@@ -283,6 +283,21 @@ def test_goals_work_through_the_server_holding_the_book(running, book_path, caps
     assert running.db.get_savings_goal(handle) is None
 
 
+def test_receivables_work_through_the_server_holding_the_book(running, book_path, capsys):
+    path = str(book_path)
+    assert main(["receivables", path, "--add", "Mom", "--incurred", "2026-03-01", "--json"]) == 0
+    handle = json.loads(capsys.readouterr().out)["handle"]
+    assert running.db.get_receivable(handle).payer == "Mom"
+    assert main(["receivables", path, "--json"]) == 0
+    [row] = json.loads(capsys.readouterr().out)
+    assert (row["handle"], row["payer"]) == (handle, "Mom")
+    assert main(["receivables", path, "--dispute", handle[:8], "--on", "2026-03-05"]) == 0
+    assert running.db.get_receivable(handle).disputed_on == date(2026, 3, 5)
+    assert main(["receivables", path, "--delete", handle]) == 0
+    assert running.db.get_receivable(handle) is None
+    capsys.readouterr()
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

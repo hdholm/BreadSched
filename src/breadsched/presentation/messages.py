@@ -289,6 +289,9 @@ _SERVICE_MESSAGES = {
     "savings_goal.close.before_start": "A goal cannot close before it starts",
     "receivable.payer.required": "Enter who owes this reimbursement",
     "receivable.not_found": "That receivable no longer exists",
+    "receivable.reference.ambiguous": (
+        "That matches more than one receivable; use more of its handle"
+    ),
     "receivable.expected_amount.negative": "The expected amount must not be negative",
     "receivable.transaction.not_found": "That transaction no longer exists",
     "receivable.split.not_found": "That split no longer exists",
