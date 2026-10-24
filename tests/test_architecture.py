@@ -1037,6 +1037,18 @@ class TestBookServerBoundaries:
         "set_tags",
         "tag_counts",
         "transactions_with_tag",
+        "query_savings_goals",
+        "goal_overrides",
+        "goal_accounts",
+        "purchase_accounts",
+        "savings_goals_view",
+        "save_savings_goal",
+        "allocate_to_goal",
+        "close_savings_goal",
+        "reopen_savings_goal",
+        "delete_savings_goal",
+        "set_goal_override",
+        "find_savings_goal",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1070,6 +1082,14 @@ class TestBookServerBoundaries:
         "set_tags",
         "tag_counts",
         "transactions_with_tag",
+        "savings_goals",
+        "save_savings_goal",
+        "allocate_to_goal",
+        "close_savings_goal",
+        "reopen_savings_goal",
+        "delete_savings_goal",
+        "set_goal_override",
+        "find_savings_goal",
     }
 
     @pytest.mark.parametrize(
@@ -1100,6 +1120,23 @@ class TestBookServerBoundaries:
             ("gui/dialogs/account_dialog.py", ("_on_save", "_on_delete")),
             ("cli/categorization_commands.py", ("cmd_rules", "cmd_tags")),
             ("web/attachment_resource.py", ("transaction_tags",)),
+            ("cli/benefit_commands.py", ("cmd_goals",)),
+            (
+                "web/savings_goal_resource.py",
+                (
+                    "savings_goals",
+                    "savings_goal_save",
+                    "savings_goal_allocate",
+                    "savings_goal_close",
+                    "savings_goal_reopen",
+                    "savings_goal_delete",
+                    "savings_goal_override",
+                ),
+            ),
+            (
+                "gui/dialogs/savings_goals_dialog.py",
+                ("refresh", "save", "allocate", "apply_override", "toggle_closed", "delete"),
+            ),
             (
                 "web/rules_resource.py",
                 ("rules", "rule_add", "rule_delete", "rule_move", "rules_accept"),

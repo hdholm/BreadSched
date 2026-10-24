@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 from datetime import date
-from typing import Any
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import category_report
@@ -49,6 +48,8 @@ from ..presentation import (
 from .common import (
     AddCommand,
     CommandError,
+    add_server_options,
+    book_api,
     emit,
     find_transaction,
     open_book,
@@ -77,62 +78,26 @@ def _receivable_split(transaction: Transaction, index: int) -> Split:
     return transaction.splits[index - 1]
 
 
-def _resolve_goal(db: DbSQLite, reference: str) -> str:
-    """A savings goal by exact handle, unique handle prefix, or exact name."""
-    goals = list(db.iter_savings_goals())
-    matches = [goal for goal in goals if goal.handle == reference]
-    matches = matches or [goal for goal in goals if goal.handle.startswith(reference)]
-    matches = matches or [goal for goal in goals if goal.name.casefold() == reference.casefold()]
-    if len(matches) != 1:
-        raise CommandError(
-            f"no savings goal matches {reference!r}"
-            if not matches
-            else f"{reference!r} matches several savings goals"
-        )
-    return matches[0].handle
-
-
 def cmd_goals(args: argparse.Namespace) -> int:
     """List savings goals and what each has set aside, or add, fund, or close one."""
-    from ..gen.services import (
-        AllocateToGoal,
-        SaveSavingsGoal,
-        allocate_to_goal,
-        close_savings_goal,
-        delete_savings_goal,
-        query_savings_goals,
-        reopen_savings_goal,
-        save_savings_goal,
-        set_goal_override,
-    )
-    from ..gen.services.savings_goals import SetGoalOverride
+    from ..gen.services.savings_goals import AllocateToGoal, SaveSavingsGoal, SetGoalOverride
 
     writes = (args.add, args.allocate, args.close, args.reopen, args.delete, args.override)
-    db = open_book(args.book, "w" if any(writes) else "r")
-    try:
-        on = parse_date(args.on) or date.today()
-
-        def check(result: Any) -> Any:
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
-            return result.value
-
+    on = parse_date(args.on) or date.today()
+    with book_api(args, "w" if any(writes) else "r") as book:
         if args.add:
             if not (args.account and args.target and args.by):
                 raise CommandError("--account, --target, and --by are required with --add")
             by = parse_date(args.by)
             assert by is not None
-            goal = check(
-                save_savings_goal(
-                    db,
-                    SaveSavingsGoal(
-                        name=args.add,
-                        account=resolve_account(db, args.account).handle,
-                        target_amount=Money(args.target),
-                        target_date=by,
-                        start_date=parse_date(args.start) or date.today(),
-                        description=args.description or "",
-                    ),
+            goal = book.save_savings_goal(
+                SaveSavingsGoal(
+                    name=args.add,
+                    account=book.find_account(args.account).handle,
+                    target_amount=Money(args.target),
+                    target_date=by,
+                    start_date=parse_date(args.start) or date.today(),
+                    description=args.description or "",
                 )
             )
             emit({"handle": goal.handle}, args, f"Added savings goal {goal.name} ({goal.handle})")
@@ -140,24 +105,21 @@ def cmd_goals(args: argparse.Namespace) -> int:
         if args.override:
             if not args.scenario:
                 raise CommandError("--scenario is required with --override")
-            scenario = db.get_scenario_by_name(args.scenario)
+            view = book.savings_goals(on)
+            scenario = next((item for item in view.scenarios if item.name == args.scenario), None)
             if scenario is None:
                 raise CommandError(f"no scenario named {args.scenario!r}")
-            handle = _resolve_goal(db, args.override)
-            changed = check(
-                set_goal_override(
-                    db,
-                    SetGoalOverride(
-                        scenario.handle,
-                        handle,
-                        target_amount=Money(args.target) if args.target else None,
-                        target_date=parse_date(args.by),
-                        excluded=args.leave_out,
-                        purchase_on=parse_date(args.buy_on),
-                        purchase_account=(
-                            resolve_account(db, args.buy_into).handle if args.buy_into else None
-                        ),
-                    ),
+            handle = book.find_savings_goal(args.override).handle
+            buy_into = book.find_account(args.buy_into) if args.buy_into else None
+            changed = book.set_goal_override(
+                SetGoalOverride(
+                    scenario.handle,
+                    handle,
+                    target_amount=Money(args.target) if args.target else None,
+                    target_date=parse_date(args.by),
+                    excluded=args.leave_out,
+                    purchase_on=parse_date(args.buy_on),
+                    purchase_account=buy_into.handle if buy_into else None,
                 )
             )
             override = changed.goal_overrides.get(handle)
@@ -171,7 +133,7 @@ def cmd_goals(args: argparse.Namespace) -> int:
                     f"by {override.target_date.isoformat()}" if override.target_date else "",
                     (
                         f"bought on {override.purchase_on.isoformat()} into "
-                        f"{db.full_name(override.purchase_account)}"
+                        f"{buy_into.full_name if buy_into else override.purchase_account}"
                         if override.purchase_on and override.purchase_account
                         else ""
                     ),
@@ -190,84 +152,78 @@ def cmd_goals(args: argparse.Namespace) -> int:
         if args.allocate:
             if not args.amount:
                 raise CommandError("--amount is required with --allocate")
-            goal = check(
-                allocate_to_goal(
-                    db,
-                    AllocateToGoal(
-                        _resolve_goal(db, args.allocate), Money(args.amount), on, args.memo or ""
-                    ),
-                )
+            target = book.find_savings_goal(args.allocate).handle
+            goal = book.allocate_to_goal(
+                AllocateToGoal(target, Money(args.amount), on, args.memo or "")
             )
             emit({"handle": goal.handle}, args, f"Allocated {args.amount} to {goal.name}")
             return 0
         if args.close:
-            goal = check(close_savings_goal(db, _resolve_goal(db, args.close), on))
+            goal = book.close_savings_goal(book.find_savings_goal(args.close).handle, on)
             emit({"handle": goal.handle}, args, f"Closed savings goal {goal.name}")
             return 0
         if args.reopen:
-            goal = check(reopen_savings_goal(db, _resolve_goal(db, args.reopen)))
+            goal = book.reopen_savings_goal(book.find_savings_goal(args.reopen).handle)
             emit({"handle": goal.handle}, args, f"Reopened savings goal {goal.name}")
             return 0
         if args.delete:
-            check(delete_savings_goal(db, _resolve_goal(db, args.delete)))
+            book.delete_savings_goal(book.find_savings_goal(args.delete).handle)
             emit({"deleted": True}, args, "Deleted savings goal")
             return 0
-        report = check(
-            query_savings_goals(db, parse_date(args.as_of) or date.today(), include_closed=args.all)
-        )
-        rows = [
-            [
-                item.goal.name,
-                item.account_name,
-                item.goal.target_date.isoformat(),
-                item.target.format(),
-                item.set_aside.format(),
-                item.remaining.format(),
-                goal_status_text(item),
-            ]
-            for item in report.goals
+        report = book.savings_goals(
+            parse_date(args.as_of) or date.today(), include_closed=args.all
+        ).report
+    rows = [
+        [
+            item.goal.name,
+            item.account_name,
+            item.goal.target_date.isoformat(),
+            item.target.format(),
+            item.set_aside.format(),
+            item.remaining.format(),
+            goal_status_text(item),
         ]
-        text = (
-            table(
-                rows,
-                ["goal", "account", "by", "target", "set aside", "remaining", "status"],
-                right={3, 4, 5},
-            )
-            + f"\nSet aside for goals: {report.set_aside.format()}; "
-            f"held from spendable cash: {report.held.format()}"
-            if rows
-            else "No savings goals."
+        for item in report.goals
+    ]
+    text = (
+        table(
+            rows,
+            ["goal", "account", "by", "target", "set aside", "remaining", "status"],
+            right={3, 4, 5},
         )
-        emit(
-            {
-                "as_of": report.as_of,
-                "set_aside": report.set_aside,
-                "held": report.held,
-                "goals": [
-                    {
-                        "handle": item.goal.handle,
-                        "name": item.goal.name,
-                        "account": item.goal.account,
-                        "account_name": item.account_name,
-                        "start_date": item.goal.start_date,
-                        "target_date": item.goal.target_date,
-                        "target": item.target,
-                        "allocated": item.allocated,
-                        "from_income": item.from_income,
-                        "set_aside": item.set_aside,
-                        "remaining": item.remaining,
-                        "status": item.status,
-                        "basis": item.basis,
-                    }
-                    for item in report.goals
-                ],
-            },
-            args,
-            text,
-        )
-        return 0
-    finally:
-        db.close()
+        + f"\nSet aside for goals: {report.set_aside.format()}; "
+        f"held from spendable cash: {report.held.format()}"
+        if rows
+        else "No savings goals."
+    )
+    emit(
+        {
+            "as_of": report.as_of,
+            "set_aside": report.set_aside,
+            "held": report.held,
+            "goals": [
+                {
+                    "handle": item.goal.handle,
+                    "name": item.goal.name,
+                    "account": item.goal.account,
+                    "account_name": item.account_name,
+                    "start_date": item.goal.start_date,
+                    "target_date": item.goal.target_date,
+                    "target": item.target,
+                    "allocated": item.allocated,
+                    "from_income": item.from_income,
+                    "set_aside": item.set_aside,
+                    "remaining": item.remaining,
+                    "status": item.status,
+                    "basis": item.basis,
+                }
+                for item in report.goals
+            ],
+        },
+        args,
+        text,
+    )
+    return 0
 
 
 def _find_claim(db: DbSQLite, reference: str) -> FsaClaim:
@@ -1056,4 +1012,5 @@ def register(add: AddCommand) -> None:
         metavar="ACCOUNT",
         help="with --buy-on: the expense or asset account the purchase goes to",
     )
+    add_server_options(goals_cmd)
     goals_cmd.set_defaults(func=cmd_goals)

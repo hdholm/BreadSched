@@ -12,8 +12,11 @@ from datetime import date
 from typing import Any
 
 from ..gen.engine.categorization import CategoryConflict
+from ..gen.engine.savings_goals import GoalProgress
 from ..gen.lib import Account
 from ..gen.lib.money import Money
+from ..gen.lib.savings_goal import SavingsGoal
+from ..gen.lib.scenario import GoalOverride
 from ..gen.services import (
     AccountBalance,
     AccountRecord,
@@ -42,6 +45,12 @@ from ..gen.services.categorization import (
     CategoryRule,
     ProposalLine,
     RuleLine,
+)
+from ..gen.services.savings_goals import (
+    GoalOverrideLine,
+    NamedChoice,
+    SavingsGoalReport,
+    SavingsGoalsView,
 )
 from .contract import to_json
 from .protocol import Change
@@ -85,6 +94,8 @@ __all__ = [
     "applied_categories_from_json",
     "tag_counts_json",
     "tag_counts_from_json",
+    "savings_goals_json",
+    "savings_goals_from_json",
 ]
 
 
@@ -530,3 +541,97 @@ def tag_counts_json(counts: list[TagCount]) -> dict[str, Any]:
 
 def tag_counts_from_json(payload: dict[str, Any]) -> list[TagCount]:
     return [TagCount(row["tag"], int(row["transactions"])) for row in payload["tags"]]
+
+
+def _goal_progress_json(item: GoalProgress) -> dict[str, Any]:
+    return {
+        "goal": item.goal.serialize(),
+        "as_of": to_json(item.as_of),
+        "account_name": item.account_name,
+        "target": to_json(item.target),
+        "allocated": to_json(item.allocated),
+        "from_income": to_json(item.from_income),
+        "set_aside": to_json(item.set_aside),
+        "remaining": to_json(item.remaining),
+        "status": item.status,
+        "basis": item.basis,
+        "liquid_account": item.liquid_account,
+        "account_balance": to_json(item.account_balance),
+    }
+
+
+def _goal_progress_from_json(row: dict[str, Any]) -> GoalProgress:
+    return GoalProgress(
+        SavingsGoal.from_dict(row["goal"]),
+        date.fromisoformat(row["as_of"]),
+        row["account_name"],
+        Money(row["target"]),
+        Money(row["allocated"]),
+        Money(row["from_income"]),
+        Money(row["set_aside"]),
+        Money(row["remaining"]),
+        row["status"],
+        row["basis"],
+        bool(row["liquid_account"]),
+        Money(row["account_balance"]),
+    )
+
+
+def _choices_json(items: tuple[NamedChoice, ...]) -> list[dict[str, str]]:
+    return [{"handle": item.handle, "name": item.name} for item in items]
+
+
+def _choices_from_json(rows: list[dict[str, str]]) -> tuple[NamedChoice, ...]:
+    return tuple(NamedChoice(row["handle"], row["name"]) for row in rows)
+
+
+def savings_goals_json(view: SavingsGoalsView) -> dict[str, Any]:
+    """Every goal's earmark with its scenario changes, and the forms' choices."""
+    report = view.report
+    return {
+        "as_of": to_json(report.as_of),
+        "set_aside": to_json(report.set_aside),
+        "held": to_json(report.held),
+        "goals": [_goal_progress_json(item) for item in report.goals],
+        "overrides": {
+            goal: [
+                {
+                    "scenario": line.scenario,
+                    "scenario_name": line.scenario_name,
+                    "override": line.override.serialize(),
+                }
+                for line in lines
+            ]
+            for goal, lines in view.overrides.items()
+        },
+        "accounts": _choices_json(view.accounts),
+        "purchase_accounts": _choices_json(view.purchase_accounts),
+        "scenarios": _choices_json(view.scenarios),
+        "currency": view.currency,
+    }
+
+
+def savings_goals_from_json(payload: dict[str, Any]) -> SavingsGoalsView:
+    return SavingsGoalsView(
+        SavingsGoalReport(
+            date.fromisoformat(payload["as_of"]),
+            tuple(_goal_progress_from_json(row) for row in payload["goals"]),
+            Money(payload["set_aside"]),
+            Money(payload["held"]),
+        ),
+        {
+            goal: tuple(
+                GoalOverrideLine(
+                    line["scenario"],
+                    line["scenario_name"],
+                    GoalOverride.from_dict(line["override"]),
+                )
+                for line in lines
+            )
+            for goal, lines in payload["overrides"].items()
+        },
+        _choices_from_json(payload["accounts"]),
+        _choices_from_json(payload["purchase_accounts"]),
+        _choices_from_json(payload["scenarios"]),
+        payload["currency"],
+    )

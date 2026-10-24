@@ -17,7 +17,8 @@ from contextlib import contextmanager
 from datetime import date
 
 from ..gen.db.sqlite import DbSQLite
-from ..gen.lib import ScheduledTransaction, Transaction
+from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.savings_goal import SavingsGoal
 from ..gen.services import (
     AccountBalance,
     AccountRecord,
@@ -74,6 +75,7 @@ from ..gen.services import (
     save_fixed_schedule,
     save_formula_schedule,
     save_transaction,
+    savings_goals,
     set_advance_days,
     set_tags,
     tag_counts,
@@ -86,6 +88,12 @@ from ..gen.services.categorization import (
     AppliedCategories,
     CategorizationRules,
     CategoryRule,
+)
+from ..gen.services.savings_goals import (
+    AllocateToGoal,
+    SaveSavingsGoal,
+    SavingsGoalsView,
+    SetGoalOverride,
 )
 from .contract import ApiError, unwrap
 from .protocol import Change, Listener
@@ -258,6 +266,34 @@ class LocalBookServer:
 
     def set_tags(self, transaction: str, tags: list[str]) -> Transaction:
         return unwrap(set_tags(self.db, transaction, tags))
+
+    # ------------------------------------------------------------ savings goals
+
+    def savings_goals(self, as_of: date, include_closed: bool = False) -> SavingsGoalsView:
+        return savings_goals.savings_goals_view(self.db, as_of, include_closed=include_closed)
+
+    def find_savings_goal(self, reference: str) -> SavingsGoal:
+        return _named(
+            savings_goals.find_savings_goal(self.db, reference), reference, "savings goal"
+        )
+
+    def save_savings_goal(self, request: SaveSavingsGoal) -> SavingsGoal:
+        return unwrap(savings_goals.save_savings_goal(self.db, request))
+
+    def allocate_to_goal(self, request: AllocateToGoal) -> SavingsGoal:
+        return unwrap(savings_goals.allocate_to_goal(self.db, request))
+
+    def close_savings_goal(self, goal: str, closed_on: date) -> SavingsGoal:
+        return unwrap(savings_goals.close_savings_goal(self.db, goal, closed_on))
+
+    def reopen_savings_goal(self, goal: str) -> SavingsGoal:
+        return unwrap(savings_goals.reopen_savings_goal(self.db, goal))
+
+    def delete_savings_goal(self, goal: str) -> str:
+        return unwrap(savings_goals.delete_savings_goal(self.db, goal))
+
+    def set_goal_override(self, request: SetGoalOverride) -> Scenario:
+        return unwrap(savings_goals.set_goal_override(self.db, request))
 
     # ------------------------------------------------- categorization rules
 

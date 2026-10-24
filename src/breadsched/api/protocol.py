@@ -14,7 +14,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
-from ..gen.lib import ScheduledTransaction, Transaction
+from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.savings_goal import SavingsGoal
 from ..gen.services import (
     AccountBalance,
     AccountRecord,
@@ -49,6 +50,12 @@ from ..gen.services.categorization import (
     AppliedCategories,
     CategorizationRules,
     CategoryRule,
+)
+from ..gen.services.savings_goals import (
+    AllocateToGoal,
+    SaveSavingsGoal,
+    SavingsGoalsView,
+    SetGoalOverride,
 )
 
 __all__ = ["BookApi", "Change", "Listener"]
@@ -220,4 +227,30 @@ class BookApi(Protocol):
 
     def set_tags(self, transaction: str, tags: list[str]) -> Transaction:
         """Replace a transaction's tags; returns it as stored."""
+        ...
+
+    # ------------------------------------------------------------ savings goals
+
+    def savings_goals(self, as_of: date, include_closed: bool = False) -> SavingsGoalsView:
+        """Every goal's earmark on ``as_of``, its scenario changes, and the choices."""
+        ...
+
+    def find_savings_goal(self, reference: str) -> SavingsGoal:
+        """A goal, as stored, by handle, unique handle prefix, or name."""
+        ...
+
+    def save_savings_goal(self, request: SaveSavingsGoal) -> SavingsGoal: ...
+
+    def allocate_to_goal(self, request: AllocateToGoal) -> SavingsGoal: ...
+
+    def close_savings_goal(self, goal: str, closed_on: date) -> SavingsGoal: ...
+
+    def reopen_savings_goal(self, goal: str) -> SavingsGoal: ...
+
+    def delete_savings_goal(self, goal: str) -> str:
+        """Delete a goal and its scenario changes; returns its handle."""
+        ...
+
+    def set_goal_override(self, request: SetGoalOverride) -> Scenario:
+        """Change a goal in one scenario; returns the scenario as stored."""
         ...

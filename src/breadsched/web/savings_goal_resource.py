@@ -1,8 +1,9 @@
 """HTTP input and output for savings goals.
 
-This adapter only parses JSON into the shared savings-goal service's requests and
+This adapter only parses JSON into the book server's savings-goal requests and
 translates its results. Validation, earmark arithmetic, and every write stay in
-``gen/services/savings_goals``, so a rejected request never changes the book.
+``gen/services/savings_goals``, behind the book server (``Api.book``), so a rejected
+request never changes the book.
 """
 
 from __future__ import annotations
@@ -11,25 +12,14 @@ from collections.abc import Mapping
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
-from ..gen.engine.currency import reporting_currency_label
 from ..gen.engine.savings_goals import goals_chart
 from ..gen.services.savings_goals import (
     AllocateToGoal,
     SaveSavingsGoal,
     SetGoalOverride,
-    allocate_to_goal,
-    close_savings_goal,
-    delete_savings_goal,
-    goal_accounts,
-    goal_overrides,
-    purchase_accounts,
-    query_savings_goals,
-    reopen_savings_goal,
-    save_savings_goal,
-    set_goal_override,
 )
 from ..presentation import goal_override_text, goal_status_text
-from .controls import input_money, service_error
+from .controls import input_money
 
 if TYPE_CHECKING:
     from ..gen.engine.savings_goals import GoalProgress
@@ -54,12 +44,6 @@ def _date(payload: Mapping[str, Any], key: str, *, optional: bool = False) -> da
         return date.fromisoformat(text)
     except ValueError:
         raise ValueError(f"{key} must be YYYY-MM-DD") from None
-
-
-def _result(api: Api, result) -> Any:
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return result.value
 
 
 def goal_json(item: GoalProgress) -> dict[str, object]:
@@ -92,39 +76,36 @@ def savings_goals(api: Api, query: QueryParams) -> dict[str, object]:
     """Every goal's progress today, with the accounts a goal can be held in."""
     include_closed = query.text("closed") == "1"
     query.finish()
-    report = _result(api, query_savings_goals(api.db, date.today(), include_closed=include_closed))
-    changes = goal_overrides(api.db)
+    view = api.book.savings_goals(date.today(), include_closed)
+    report = view.report
     goals = []
     for item in report.goals:
         entry = goal_json(item)
         entry["overrides"] = [
             {
-                "scenario": scenario.handle,
-                "scenario_name": scenario.name,
-                "target_amount": override.target_amount,
-                "target_date": override.target_date,
-                "excluded": override.excluded,
-                "purchase_on": override.purchase_on,
-                "purchase_account": override.purchase_account,
-                "text": goal_override_text(scenario.name, override),
+                "scenario": line.scenario,
+                "scenario_name": line.scenario_name,
+                "target_amount": line.override.target_amount,
+                "target_date": line.override.target_date,
+                "excluded": line.override.excluded,
+                "purchase_on": line.override.purchase_on,
+                "purchase_account": line.override.purchase_account,
+                "text": goal_override_text(line.scenario_name, line.override),
             }
-            for scenario, override in changes.get(item.goal.handle, [])
+            for line in view.overrides.get(item.goal.handle, ())
         ]
         goals.append(entry)
     return {
-        "chart": goals_chart(report.goals, reporting_currency_label(api.db)).as_dict(),
+        "chart": goals_chart(report.goals, view.currency).as_dict(),
         "as_of": report.as_of,
         "set_aside": report.set_aside,
         "held": report.held,
         "goals": goals,
-        "accounts": [{"handle": handle, "name": name} for handle, name in goal_accounts(api.db)],
+        "accounts": [{"handle": item.handle, "name": item.name} for item in view.accounts],
         "purchase_accounts": [
-            {"handle": handle, "name": name} for handle, name in purchase_accounts(api.db)
+            {"handle": item.handle, "name": item.name} for item in view.purchase_accounts
         ],
-        "scenarios": [
-            {"handle": scenario.handle, "name": scenario.name}
-            for scenario in sorted(api.db.iter_scenarios(), key=lambda item: item.name.casefold())
-        ],
+        "scenarios": [{"handle": item.handle, "name": item.name} for item in view.scenarios],
     }
 
 
@@ -138,7 +119,7 @@ def savings_goal_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]
         description=_text(payload, "description", optional=True) or "",
         handle=_text(payload, "handle", optional=True) or None,
     )
-    goal = _result(api, save_savings_goal(api.db, request))
+    goal = api.book.save_savings_goal(request)
     return {"handle": goal.handle, "name": goal.name}
 
 
@@ -149,24 +130,24 @@ def savings_goal_allocate(api: Api, payload: Mapping[str, Any]) -> dict[str, obj
         allocated_on=_date(payload, "date", optional=True) or date.today(),
         memo=_text(payload, "memo", optional=True) or "",
     )
-    goal = _result(api, allocate_to_goal(api.db, request))
+    goal = api.book.allocate_to_goal(request)
     return {"handle": goal.handle, "allocated": goal.allocated(date.max)}
 
 
 def savings_goal_close(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     handle = _text(payload, "handle") or ""
     on = _date(payload, "date", optional=True) or date.today()
-    goal = _result(api, close_savings_goal(api.db, handle, on))
+    goal = api.book.close_savings_goal(handle, on)
     return {"handle": goal.handle, "closed_on": goal.closed_on}
 
 
 def savings_goal_reopen(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    goal = _result(api, reopen_savings_goal(api.db, _text(payload, "handle") or ""))
+    goal = api.book.reopen_savings_goal(_text(payload, "handle") or "")
     return {"handle": goal.handle}
 
 
 def savings_goal_delete(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    return {"deleted": _result(api, delete_savings_goal(api.db, _text(payload, "handle") or ""))}
+    return {"deleted": api.book.delete_savings_goal(_text(payload, "handle") or "")}
 
 
 def savings_goal_override(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
@@ -186,7 +167,7 @@ def savings_goal_override(api: Api, payload: Mapping[str, Any]) -> dict[str, obj
         purchase_on=_date(payload, "purchase_on", optional=True),
         purchase_account=_text(payload, "purchase_account", optional=True) or None,
     )
-    scenario = _result(api, set_goal_override(api.db, request))
+    scenario = api.book.set_goal_override(request)
     override = scenario.goal_overrides.get(request.goal)
     return {
         "scenario": scenario.handle,

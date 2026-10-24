@@ -38,6 +38,10 @@ Resources so far, all under ``/api/v1``:
 * ``GET /tags`` – every tag with its count; ``GET /tags/transactions`` (``tag``) –
   the transactions carrying one, as stored; ``PATCH /transactions/{handle}/tags``
   (``tags``) replaces a transaction's tags.
+* ``GET /goals`` (``as_of``, ``closed``) – savings goals with their scenario changes
+  and the forms' choices; ``GET /goals/lookup`` (``reference``); ``POST /goals``
+  saves one (``handle`` to edit); ``POST /goals/{handle}/allocations``,
+  ``/close``, ``/reopen``, and ``/override``; ``DELETE /goals/{handle}``.
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -68,8 +72,10 @@ from ..api.views import (
     saved_account_json,
     saved_schedule_json,
     saved_transaction_json,
+    savings_goals_json,
     tag_counts_json,
 )
+from ..gen.lib.money import Money
 from ..gen.services import (
     BalanceQuery,
     DueDecision,
@@ -81,12 +87,21 @@ from ..gen.services import (
     SetAdvanceDays,
 )
 from ..gen.services.categorization import AddRule
+from ..gen.services.savings_goals import AllocateToGoal, SaveSavingsGoal, SetGoalOverride
 from .context import Api
 
 if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "goal_allocate",
+    "goal_close",
+    "goal_delete",
+    "goal_lookup",
+    "goal_override",
+    "goal_reopen",
+    "goal_save",
+    "goals_get",
     "tags_get",
     "tags_patch",
     "tagged_get",
@@ -423,3 +438,110 @@ def tags_patch(api: Api, path: Path, body: dict[str, Any]) -> dict:
     if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
         raise ValueError("tags must be a list of text")
     return {"transaction": api.book.set_tags(path["handle"], tags).serialize()}
+
+
+def _money(body: dict[str, Any], key: str, *, optional: bool = False) -> Money | None:
+    raw = body.get(key)
+    if raw is None and optional:
+        return None
+    if not isinstance(raw, str):
+        raise ValueError(f"{key} must be a decimal amount in text")
+    try:
+        return Money(raw)
+    except (ArithmeticError, TypeError, ValueError):
+        raise ValueError(f"{key} is not an amount") from None
+
+
+def _required_date(body: dict[str, Any], key: str) -> date:
+    found = _optional_date(body, key)
+    if found is None:
+        raise ValueError(f"{key} must be a date (YYYY-MM-DD)")
+    return found
+
+
+def _optional_text(body: dict[str, Any], key: str) -> str | None:
+    value = body.get(key)
+    if value is not None and not isinstance(value, str):
+        raise ValueError(f"{key} must be text")
+    return value
+
+
+def _goal_json(goal) -> dict:
+    return {"goal": goal.serialize()}
+
+
+def goals_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    as_of = query.iso_date("as_of") or date.today()
+    closed = query.choice("closed", ("true", "false"), "false") == "true"
+    query.finish()
+    return savings_goals_json(api.book.savings_goals(as_of, closed))
+
+
+def goal_lookup(api: Api, _path: Path, query: QueryParams) -> dict:
+    reference = query.text("reference", required=True) or ""
+    query.finish()
+    return _goal_json(api.book.find_savings_goal(reference))
+
+
+def goal_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    _only(
+        body,
+        {"handle", "name", "account", "target_amount", "target_date", "start_date", "description"},
+    )
+    target = _money(body, "target_amount")
+    assert target is not None
+    request = SaveSavingsGoal(
+        name=_required_text(body, "name"),
+        account=_required_text(body, "account"),
+        target_amount=target,
+        target_date=_required_date(body, "target_date"),
+        start_date=_required_date(body, "start_date"),
+        description=_optional_text(body, "description") or "",
+        handle=_optional_text(body, "handle"),
+    )
+    return _goal_json(api.book.save_savings_goal(request))
+
+
+def goal_allocate(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, {"amount", "date", "memo"})
+    amount = _money(body, "amount")
+    assert amount is not None
+    request = AllocateToGoal(
+        path["handle"], amount, _required_date(body, "date"), _optional_text(body, "memo") or ""
+    )
+    return _goal_json(api.book.allocate_to_goal(request))
+
+
+def goal_close(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, {"date"})
+    return _goal_json(api.book.close_savings_goal(path["handle"], _required_date(body, "date")))
+
+
+def goal_reopen(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return _goal_json(api.book.reopen_savings_goal(path["handle"]))
+
+
+def goal_delete(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return {"deleted": api.book.delete_savings_goal(path["handle"])}
+
+
+def goal_override(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(
+        body,
+        {"scenario", "target_amount", "target_date", "excluded", "purchase_on", "purchase_account"},
+    )
+    excluded = body.get("excluded", False)
+    if not isinstance(excluded, bool):
+        raise ValueError("excluded must be true or false")
+    request = SetGoalOverride(
+        scenario=_required_text(body, "scenario"),
+        goal=path["handle"],
+        target_amount=_money(body, "target_amount", optional=True),
+        target_date=_optional_date(body, "target_date"),
+        excluded=excluded,
+        purchase_on=_optional_date(body, "purchase_on"),
+        purchase_account=_optional_text(body, "purchase_account"),
+    )
+    return {"scenario": api.book.set_goal_override(request).serialize()}
