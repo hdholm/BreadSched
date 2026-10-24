@@ -16,14 +16,14 @@ The batch is validated and applied by the shared service as one undo step.
 
 from __future__ import annotations
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.services import (
     HeldImportChange,
     HeldImportDecision,
     ResolveHeldImports,
-    resolve_import_changes,
 )
-from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
@@ -162,13 +162,13 @@ class ImportReviewDialog(BoundedWindow):
         )
         if not decisions:
             return 0, 0
-        result = resolve_import_changes(self.db, ResolveHeldImports(decisions))
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            outcome = book_server(self.db).resolve_held_imports(ResolveHeldImports(decisions))
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return None
-        assert result.value is not None
-        return result.value.kept, result.value.applied
+        return outcome.kept, outcome.applied
 
     def _on_apply(self, _button) -> None:
         outcome = self.apply()

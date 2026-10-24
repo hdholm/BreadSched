@@ -1,26 +1,33 @@
 from decimal import Decimal
 from types import SimpleNamespace
 
+import pytest
+
+from breadsched.gen.db.sqlite import DbSQLite
 from breadsched.gui.planning_context import (
     baseline_scenario,
     persist_baseline_assumptions,
 )
 
 
-class _MetadataDb:
-    def __init__(self, path: str) -> None:
-        self.path = path
-        self.metadata: dict[str, object] = {}
+@pytest.fixture
+def books(tmp_path):
+    """Open books by name, closed after the test."""
+    opened: list[DbSQLite] = []
 
-    def get_metadata(self, key: str, default=None):
-        return self.metadata.get(key, default)
+    def open_book(name: str) -> DbSQLite:
+        db = DbSQLite()
+        db.load(str(tmp_path / name))
+        opened.append(db)
+        return db
 
-    def set_metadata(self, key: str, value) -> None:
-        self.metadata[key] = value
+    yield open_book
+    for db in opened:
+        db.close()
 
 
-def test_base_assumptions_round_trip_through_book_metadata() -> None:
-    db = _MetadataDb("household.breadsched")
+def test_base_assumptions_round_trip_through_book_metadata(books) -> None:
+    db = books("household.breadsched")
     manager = SimpleNamespace()
     base = baseline_scenario(manager, db)
     base.assumptions.investment_return = Decimal("0.0475")
@@ -33,9 +40,9 @@ def test_base_assumptions_round_trip_through_book_metadata() -> None:
     assert reopened.assumptions.expense_inflation == Decimal("0.031")
 
 
-def test_base_assumptions_do_not_leak_between_books() -> None:
-    first = _MetadataDb("first.breadsched")
-    second = _MetadataDb("second.breadsched")
+def test_base_assumptions_do_not_leak_between_books(books) -> None:
+    first = books("first.breadsched")
+    second = books("second.breadsched")
     manager = SimpleNamespace()
 
     base = baseline_scenario(manager, first)

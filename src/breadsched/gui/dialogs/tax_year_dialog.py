@@ -5,13 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import date
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.cost_basis import shares_text
 from ...gen.engine.tax_year import TaxYearReport, currency_labels, tax_year, tax_years
 from ...gen.lib.money import Money
-from ...gen.services import SetTaxMarks, set_tax_marks, tax_marks
+from ...gen.services import SetTaxMarks
 from ...plugins.export.report_layout import tax_year_layout
-from ...presentation import service_error_message
 from .. import printing
 from ..gi_setup import Gtk, Pango
 from ..widgets.bounded import BoundedWindow
@@ -249,7 +250,7 @@ class TaxMarksDialog(BoundedWindow):
         self.db = db
         self.on_saved = on_saved
         self.set_default_size(560, 560)
-        self.marks = tax_marks(db)
+        self.marks = book_server(db).tax_marks()
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         for side in ("top", "bottom", "start", "end"):
@@ -318,9 +319,10 @@ class TaxMarksDialog(BoundedWindow):
             for tag, marked in self.marks.tags
             if self.tag_checks[tag].get_active() != marked
         }
-        result = set_tax_marks(self.db, SetTaxMarks(accounts, tags))
-        if result.value is None:
-            self.message.set_label(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).set_tax_marks(SetTaxMarks(accounts, tags))
+        except ApiError as error:
+            self.message.set_label(str(error))
             return False
         if self.on_saved is not None:
             self.on_saved()

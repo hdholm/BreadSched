@@ -6,10 +6,11 @@ from collections.abc import Callable
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib import Drawdown, Money, Scenario
-from ...gen.services import SaveDrawdown, drawdown_accounts, remove_drawdown, save_drawdown
-from ...presentation import service_error_message
+from ...gen.services import SaveDrawdown
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
@@ -105,7 +106,7 @@ class DrawdownsDialog(BoundedWindow):
             self.picker.set_selected(min(selected, count - 1))
         self.edit_button.set_sensitive(bool(count))
         self.remove_button.set_sensitive(bool(count))
-        sources, targets = drawdown_accounts(self.db)
+        sources, targets = book_server(self.db).drawdown_accounts()
         self.add_button.set_sensitive(bool(sources and targets))
         if not (sources and targets):
             self.summary.set_text(
@@ -131,16 +132,18 @@ class DrawdownsDialog(BoundedWindow):
         drawdown = self._selected()
         if drawdown is None:
             return
-        result = remove_drawdown(self.db, self.scenario.handle, drawdown.handle)
-        if result.ok:
-            self._after_commit(None)
-        else:
-            self.summary.set_text(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).remove_drawdown(self.scenario.handle, drawdown.handle)
+        except ApiError as error:
+            self.summary.set_text(str(error))
+            return
+        self._after_commit(None)
 
     def _after_commit(self, handle: str | None) -> None:
-        saved = self.db.get_scenario(self.scenario.handle)
-        if saved is not None:
-            self.scenario = saved
+        try:
+            self.scenario = book_server(self.db).find_scenario(self.scenario.handle)
+        except ApiError:
+            pass
         handles = [item.handle for item in self.scenario.drawdowns]
         self._reload(handles.index(handle) if handle in handles else 0)
         if self.saved_callback is not None:
@@ -168,7 +171,7 @@ class DrawdownEditDialog(BoundedWindow):
         self.drawdown = drawdown
         self.callback = callback
         self.set_default_size(560, -1)
-        sources, targets = drawdown_accounts(db)
+        sources, targets = book_server(db).drawdown_accounts()
         self._sources = sorted(sources, key=lambda handle: db.full_name(handle).casefold())
         self._targets = sorted(targets, key=lambda handle: db.full_name(handle).casefold())
 
@@ -286,22 +289,22 @@ class DrawdownEditDialog(BoundedWindow):
         except (ValueError, InvalidOperation) as exc:
             self._error(f"Check the dates and amounts: {exc}")
             return
-        result = save_drawdown(
-            self.db,
-            SaveDrawdown(
-                self.scenario.handle,
-                self._pick(self.account_picker, self._sources),
-                self._pick(self.into_picker, self._targets),
-                start,
-                annual_amount=amount,
-                annual_rate=rate.normalize() if rate is not None else None,
-                end=end,
-                escalate=self.escalate.get_active(),
-                handle=self.drawdown.handle if self.drawdown is not None else None,
-            ),
-        )
-        if not result.ok or result.value is None:
-            self._error(service_error_message(result.errors[0]))
+        try:
+            saved = book_server(self.db).save_drawdown(
+                SaveDrawdown(
+                    self.scenario.handle,
+                    self._pick(self.account_picker, self._sources),
+                    self._pick(self.into_picker, self._targets),
+                    start,
+                    annual_amount=amount,
+                    annual_rate=rate.normalize() if rate is not None else None,
+                    end=end,
+                    escalate=self.escalate.get_active(),
+                    handle=self.drawdown.handle if self.drawdown is not None else None,
+                )
+            )
+        except ApiError as error:
+            self._error(str(error))
             return
-        self.callback(result.value.handle)
+        self.callback(saved.handle)
         self.close()

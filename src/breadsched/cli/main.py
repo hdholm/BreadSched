@@ -16,6 +16,7 @@ import sqlite3
 import sys
 from collections.abc import Sequence
 
+from ..api import ApiError
 from ..gen.db.base import DbError
 from ..gen.utils import logs
 from . import (
@@ -107,7 +108,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         return args.func(args)
-    except (CommandError, DbError, FileNotFoundError) as exc:
+    except (ApiError, CommandError, DbError, FileNotFoundError) as exc:
         print(f"breadsched: {exc}", file=sys.stderr)
         return 2
     except sqlite3.DatabaseError as exc:

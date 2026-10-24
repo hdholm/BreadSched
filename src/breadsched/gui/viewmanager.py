@@ -488,10 +488,10 @@ class ViewManager(Gtk.ApplicationWindow):
         """Ask about GnuCash changes held back from reconciled transactions."""
         if self.db is None:
             return None
-        from ..gen.services import pending_import_changes
+        from ..api.local import book_server
         from .dialogs.import_review_dialog import ImportReviewDialog
 
-        changes = pending_import_changes(self.db)
+        changes = list(book_server(self.db).held_imports())
         if not changes:
             return None
         dialog = ImportReviewDialog(self, self.db, changes)
@@ -504,14 +504,15 @@ class ViewManager(Gtk.ApplicationWindow):
         Transactions); the dialog, or None when nothing is due."""
         if self.db is None:
             return None
-        from ..gen.engine import schedule as schedule_engine
+        from ..api.local import book_server
         from .dialogs.due_dialog import DueDialog
 
-        # Due and missed, plus what schedules enter or remind in advance (#352).
-        due = [item for item, _stage in schedule_engine.review_occurrences(self.db)]
-        if not due:
+        # Due and missed, plus what schedules enter or remind in advance (#352),
+        # from the book server (#359).
+        reviews = book_server(self.db).due_review()
+        if not reviews:
             return None
-        dialog = DueDialog(self, self.db, due)
+        dialog = DueDialog(self, self.db, reviews)
         dialog.connect("close-request", lambda *_: (self._refresh_views(), False)[1])
         dialog.present()
         return dialog

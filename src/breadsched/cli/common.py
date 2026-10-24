@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections.abc import Callable, Sequence
+from contextlib import AbstractContextManager, nullcontext
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from ..api.connect import open_book_api
+from ..api.http_client import HttpBookClient
+from ..api.protocol import BookApi
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine.completeness import Completeness
 from ..gen.lib import (
@@ -134,3 +139,62 @@ def find_transaction(db: DbSQLite, reference: str) -> Transaction:
             f"{reference!r} matches {len(matches)} transactions; use more characters"
         )
     return matches[0]
+
+
+#: Environment variable holding the token for ``--server``.
+SERVER_TOKEN_ENV = "BREADSCHED_SERVER_TOKEN"
+
+
+def add_server_options(parser: argparse.ArgumentParser) -> None:
+    """``--server`` and ``--token-file`` for commands that use the book server (#358)."""
+    parser.add_argument(
+        "--server",
+        metavar="URL",
+        help="use the book server at URL (default: the one holding this book, if any)",
+    )
+    parser.add_argument(
+        "--token-file",
+        metavar="PATH",
+        help=f"file holding the --server token (default: ${SERVER_TOKEN_ENV})",
+    )
+    parser.add_argument(
+        "--ca-file",
+        metavar="PATH",
+        help="certificate authority for an https:// --server (default: the system's)",
+    )
+    parser.add_argument(
+        "--client-cert",
+        metavar="PATH",
+        help="client certificate (PEM) for an https:// --server that asks for one",
+    )
+    parser.add_argument(
+        "--client-key", metavar="PATH", help="the client certificate's key, if kept apart"
+    )
+
+
+def book_api(args: argparse.Namespace, mode: str) -> AbstractContextManager[BookApi]:
+    """The book API for ``args.book``: ``--server``, the server holding it, or here."""
+    url = getattr(args, "server", None)
+    if url is None:
+        return open_book_api(args.book, mode)
+    path = getattr(args, "token_file", None)
+    if path:
+        try:
+            token = Path(path).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise CommandError(f"could not read the token file: {exc}") from exc
+    else:
+        token = os.environ.get(SERVER_TOKEN_ENV, "")
+    if not token:
+        raise CommandError(f"--server needs a token: --token-file or ${SERVER_TOKEN_ENV}")
+    try:
+        client = HttpBookClient(
+            url,
+            token,
+            ca_file=getattr(args, "ca_file", None),
+            client_cert=getattr(args, "client_cert", None),
+            client_key=getattr(args, "client_key", None),
+        )
+    except (OSError, ValueError) as exc:
+        raise CommandError(f"could not use --server {url}: {exc}") from exc
+    return nullcontext(client)

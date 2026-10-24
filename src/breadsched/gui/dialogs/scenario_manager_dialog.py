@@ -5,21 +5,11 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib import AccountClass, AssumptionPeriod, Rate, Scenario
-from ...gen.services import (
-    DeleteAssumptionPeriod,
-    DeleteScenario,
-    DuplicateScenario,
-    SaveAssumptionPeriod,
-    SaveScenarioAssumptions,
-    delete_assumption_period,
-    delete_scenario,
-    duplicate_scenario,
-    save_assumption_period,
-    save_scenario_assumptions,
-)
-from ...presentation import service_error_message
+from ...gen.services import DuplicateScenario, SaveScenarioAssumptions
 from ..gi_setup import Gtk
 from ..planning_context import (
     baseline_scenario,
@@ -182,7 +172,7 @@ class ScenarioManagerDialog(BoundedWindow):
         self._reload()
 
     def _reload(self, select_handle: str | None = None) -> None:
-        self._scenarios = list(self.db.iter_scenarios())
+        self._scenarios = book_server(self.db).scenarios()
         model = Gtk.StringList()
         model.append("Base scenario")
         selected = 0
@@ -313,7 +303,7 @@ class ScenarioManagerDialog(BoundedWindow):
                 setattr(self._baseline.assumptions, attribute, value)
             self._baseline.assumptions.per_account = dict(self._account_rates)
             persist_baseline_assumptions(self.manager, self.db)
-            self._scenarios = list(self.db.iter_scenarios())
+            self._scenarios = book_server(self.db).scenarios()
             notify_planning_scenario_changed(self.manager)
             self.status.set_text("Base scenario assumptions saved in this book.")
             self.status.remove_css_class("negative")
@@ -322,7 +312,7 @@ class ScenarioManagerDialog(BoundedWindow):
         if not name:
             self._error("Give the scenario a name first.")
             return
-        duplicate = self.db.get_scenario_by_name(name)
+        duplicate = next((item for item in self._scenarios if item.name == name), None)
         if duplicate is not None and duplicate.handle != scenario.handle:
             self._error(f'A scenario named "{name}" already exists.')
             return
@@ -348,12 +338,12 @@ class ScenarioManagerDialog(BoundedWindow):
                 scenario.set_account_assumption_override(handle, self._account_rates[handle])
             else:
                 scenario.inherit_account_assumption(handle)
-        result = save_scenario_assumptions(
-            self.db,
-            SaveScenarioAssumptions(scenario, existing_handle=scenario.handle),
-        )
-        if not result.ok:
-            self._error(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).save_scenario_assumptions(
+                SaveScenarioAssumptions(scenario, existing_handle=scenario.handle)
+            )
+        except ApiError as error:
+            self._error(str(error))
             return
         self._reload(scenario.handle)
         notify_planning_scenario_changed(self.manager)
@@ -403,15 +393,13 @@ class ScenarioManagerDialog(BoundedWindow):
         scenario = self._selected()
         if scenario is None:
             return
-        result = duplicate_scenario(
-            self.db,
-            DuplicateScenario(scenario, from_base=self._base_selected()),
-        )
-        if not result.ok:
-            self._error(service_error_message(result.errors[0]))
+        try:
+            saved = book_server(self.db).duplicate_scenario(
+                DuplicateScenario(scenario, from_base=self._base_selected())
+            )
+        except ApiError as error:
+            self._error(str(error))
             return
-        saved = result.value
-        assert saved is not None
         self._reload(saved.handle)
         self.status.set_text(f'Created "{saved.name}". Rename it or adjust assumptions as needed.')
         self.status.remove_css_class("negative")
@@ -629,9 +617,11 @@ class AssumptionTimelineDialog(BoundedWindow):
         AssumptionPeriodDialog(self, self.db, self._periods[index], self._save_edit).present()
 
     def _save_new(self, period: AssumptionPeriod) -> None:
-        result = save_assumption_period(self.db, SaveAssumptionPeriod(self.scenario.handle, period))
-        if result.ok:
-            self._after_commit(len(self.scenario.assumption_periods))
+        try:
+            book_server(self.db).save_assumption_period(self.scenario.handle, period)
+        except ApiError:
+            return
+        self._after_commit(len(self.scenario.assumption_periods))
 
     def _save_edit(self, period: AssumptionPeriod) -> None:
         index = self._selected_index()
@@ -639,28 +629,30 @@ class AssumptionTimelineDialog(BoundedWindow):
             return
         old = self._periods[index]
         original_index = self.scenario.assumption_periods.index(old)
-        result = save_assumption_period(
-            self.db,
-            SaveAssumptionPeriod(self.scenario.handle, period, index=original_index),
-        )
-        if result.ok:
-            self._after_commit(index)
+        try:
+            book_server(self.db).save_assumption_period(
+                self.scenario.handle, period, original_index
+            )
+        except ApiError:
+            return
+        self._after_commit(index)
 
     def _on_delete(self, _button) -> None:
         index = self._selected_index()
         if index is None:
             return
         original_index = self.scenario.assumption_periods.index(self._periods[index])
-        result = delete_assumption_period(
-            self.db, DeleteAssumptionPeriod(self.scenario.handle, original_index)
-        )
-        if result.ok:
-            self._after_commit(max(0, index - 1))
+        try:
+            book_server(self.db).delete_assumption_period(self.scenario.handle, original_index)
+        except ApiError:
+            return
+        self._after_commit(max(0, index - 1))
 
     def _after_commit(self, selected: int) -> None:
-        saved = self.db.get_scenario(self.scenario.handle)
-        if saved is not None:
-            self.scenario = saved
+        try:
+            self.scenario = book_server(self.db).find_scenario(self.scenario.handle)
+        except ApiError:
+            pass
         self.saved_callback(self.scenario.handle)
         self._reload(selected)
 
@@ -809,7 +801,9 @@ class ScenarioDeleteDialog(BoundedWindow):
         self.scenario = scenario
         self.deleted_callback = deleted_callback
         self.children = [
-            item.name for item in db.iter_scenarios() if item.parent_handle == scenario.handle
+            item.name
+            for item in book_server(db).scenarios()
+            if item.parent_handle == scenario.handle
         ]
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -847,8 +841,9 @@ class ScenarioDeleteDialog(BoundedWindow):
         box.append(buttons)
 
     def _confirm(self, _button) -> None:
-        result = delete_scenario(self.db, DeleteScenario(self.scenario.handle))
-        if not result.ok:
+        try:
+            book_server(self.db).delete_scenario(self.scenario.handle)
+        except ApiError:
             return
         self.close()
         self.deleted_callback()

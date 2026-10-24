@@ -18,6 +18,7 @@ __all__ = [
     "data_directory",
     "documents_directory",
     "portal_document_id",
+    "runtime_directory",
     "sync_service_for_path",
 ]
 
@@ -66,6 +67,25 @@ def data_directory(
     else:
         root = Path(env.get("XDG_DATA_HOME", home / ".local" / "share"))
     return root / APP_DIRECTORY
+
+
+def runtime_directory(
+    *,
+    environ: Mapping[str, str] | None = None,
+    home: Path | None = None,
+    platform: str | None = None,
+) -> Path:
+    """Return BreadSched's per-user directory for files that last one session.
+
+    Linux uses ``$XDG_RUNTIME_DIR`` (user-only, cleared at logout) when it is set;
+    elsewhere, and without it, a ``run`` folder in the data directory.
+    """
+    env = _environment(environ)
+    platform = sys.platform if platform is None else platform
+    runtime = env.get("XDG_RUNTIME_DIR")
+    if platform not in ("win32", "darwin") and runtime:
+        return Path(runtime) / APP_DIRECTORY
+    return data_directory(environ=env, home=home, platform=platform) / "run"
 
 
 def _portal_roots(env: Mapping[str, str]) -> list[Path]:

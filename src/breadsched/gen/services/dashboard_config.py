@@ -12,14 +12,19 @@ from dataclasses import dataclass
 
 from ..db.sqlite import DbSQLite
 from ..engine.dashboard import GROUP_KINDS, DashboardConfig, GroupConfig
+from ..lib.money import Money
 from .contracts import ServiceError, ServiceResult
 
 __all__ = [
+    "DashboardGroup",
     "DashboardGroupInput",
+    "DashboardSettings",
     "EMERGENCY_MONTHS_RANGE",
     "LIQUIDITY_DAYS_RANGE",
     "SaveDashboardConfig",
+    "dashboard_settings",
     "save_dashboard_config",
+    "settings_of",
 ]
 
 #: The horizons' bounds; a value outside is brought within them.
@@ -89,3 +94,39 @@ def save_dashboard_config(
         config.emergency_months = _clamp(request.emergency_months, EMERGENCY_MONTHS_RANGE)
     config.save(db)
     return ServiceResult.success(config)
+
+
+@dataclass(frozen=True, slots=True)
+class DashboardGroup:
+    """One group with its member accounts, which the stored form keeps on the accounts."""
+
+    name: str
+    kind: str
+    accounts: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DashboardSettings:
+    """The Dashboard's groups, with their members, and its horizons."""
+
+    groups: tuple[DashboardGroup, ...]
+    liquidity_days: int
+    emergency_months: int
+    reserve: Money
+    minimum_bill: Money
+
+
+def settings_of(config: DashboardConfig) -> DashboardSettings:
+    return DashboardSettings(
+        tuple(
+            DashboardGroup(group.name, group.kind, tuple(group.accounts)) for group in config.groups
+        ),
+        config.liquidity_days,
+        config.emergency_months,
+        config.reserve,
+        config.minimum_bill,
+    )
+
+
+def dashboard_settings(db: DbSQLite) -> DashboardSettings:
+    return settings_of(DashboardConfig.load(db))

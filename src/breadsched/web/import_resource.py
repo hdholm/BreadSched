@@ -14,8 +14,6 @@ from ..gen.services import (
     ImportBook,
     ResolveHeldImports,
     import_book,
-    pending_import_changes,
-    resolve_import_changes,
 )
 from ..gen.services.claims import claim_link_proposals
 from ..gen.services.receivables import reimbursement_proposals
@@ -77,7 +75,7 @@ def import_review(api: Api) -> dict:
                 "can_use_gnucash": item.can_use_source,
                 "deleted": item.deleted,
             }
-            for item in pending_import_changes(api.db)
+            for item in api.book.held_imports()
         ]
     }
 
@@ -93,11 +91,7 @@ def import_review_resolve(api: Api, payload: dict) -> dict:
         decisions.append(
             (str(item.get("transaction", "")), HeldImportDecision(str(item.get("decision"))))
         )
-    result = resolve_import_changes(api.db, ResolveHeldImports(tuple(decisions)))
-    if not result.ok:
-        raise service_error(result.errors[0])
-    outcome = result.value
-    assert outcome is not None
+    outcome = api.book.resolve_held_imports(ResolveHeldImports(tuple(decisions)))
     return {"kept": outcome.kept, "applied": outcome.applied, "deferred": outcome.deferred}
 
 

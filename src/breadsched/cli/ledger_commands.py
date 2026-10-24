@@ -3,47 +3,33 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from datetime import date
 
-from ..gen.db.sqlite import DbSQLite
-from ..gen.engine import (
-    ledger,
-    valuation,
-)
+from ..api.protocol import BookApi
 from ..gen.lib import (
     Account,
     AccountType,
     Amount,
     Money,
-    Split,
-    Transaction,
 )
 from ..gen.services import (
-    DeleteAccount,
-    DeleteTransaction,
+    BalanceQuery,
+    RegisterQuery,
     SaveAccount,
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
-    delete_account,
-    delete_transaction,
-    save_account,
-    save_transaction,
-    transaction_currency,
 )
-from ..presentation import (
-    service_error_message,
-)
+from ..gen.services.exchange_rates import SaveExchangeRate
 from .common import (
     AddCommand,
     CommandError,
+    add_server_options,
+    book_api,
     boolean,
     emit,
-    find_transaction,
-    open_book,
     parse_date,
-    resolve_account,
-    resolve_currency,
     table,
 )
 
@@ -57,22 +43,10 @@ def cmd_rate(args: argparse.Namespace) -> int:
         value = Money(args.value)
     except (ValueError, TypeError, ZeroDivisionError) as exc:
         raise CommandError("rate must be a positive exact number") from exc
-    db = open_book(args.book)
-    try:
-        source = resolve_currency(db, args.source)
-        target = resolve_currency(db, args.target)
-        try:
-            quote = valuation.save_currency_quote(
-                db,
-                source_handle=source,
-                target_handle=target,
-                quote_date=quote_date,
-                value=value,
-            )
-        except ValueError as exc:
-            raise CommandError(str(exc)) from exc
-    finally:
-        db.close()
+    with book_api(args, "w") as book:
+        source = book.find_currency(args.source).handle
+        target = book.find_currency(args.target).handle
+        quote = book.save_exchange_rate(SaveExchangeRate(source, target, quote_date, value))
     exact_rate = f"{quote.value.numerator}/{quote.value.denominator}"
     emit(
         {
@@ -90,194 +64,147 @@ def cmd_rate(args: argparse.Namespace) -> int:
 
 
 def cmd_accounts(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r")
-    try:
-        as_of = parse_date(args.as_of)
-        payload = []
-        rows = []
-
-        def walk(handle: str | None, depth: int) -> None:
-            for account in db.child_accounts(handle):
-                if account.hidden and not args.all:
-                    continue
-                result = valuation.aggregate_value(
-                    db, accounts=[account, *db.descendants(account.handle)], as_of=as_of
-                )
-                valued = valuation.account_value(db, account, as_of=as_of)
-                total = result.amount.value if result.amount is not None else None
-                try:
-                    book_balance = ledger.balance_recursive_amount(
-                        db, account.handle, as_of=as_of
-                    ).value
-                except TypeError as exc:
-                    if "cannot combine unlike commodities" not in str(exc):
-                        raise
-                    book_balance = None
-                payload.append(
-                    {
-                        "handle": account.handle,
-                        "name": db.full_name(account),
-                        "type": account.atype.value,
-                        "code": account.code,
-                        "description": account.description,
-                        "notes": account.notes,
-                        "source_notes": account.source_notes,
-                        "placeholder": account.placeholder,
-                        "hidden": account.hidden,
-                        "commodity": account.commodity,
-                        "commodity_scu": account.commodity_scu,
-                        "source_guid": account.source_guid,
-                        "source_type": account.source_type or None,
-                        "source_fields": [field.serialize() for field in account.source_fields],
-                        "balance": total,
-                        "missing_quotes": list(result.missing_quotes),
-                        "quote_date": valued.price_date,
-                        "quote_source": valued.price_source,
-                        "quote_age_days": valued.quote_age_days,
-                        "conversion_path": valued.conversion_path,
-                        "quote_evidence": valuation.quote_evidence(db, valued),
-                        "book_balance": book_balance,
-                    }
-                )
-                label = ("  " * depth) + account.name
-                quote_evidence = valuation.quote_evidence(db, valued)
-                rows.append(
-                    [
-                        label,
-                        account.atype.value,
-                        total.format(parens_negative=True)
-                        if total is not None
-                        else "Missing reporting-currency quote",
-                        quote_evidence,
-                    ]
-                )
-                walk(account.handle, depth + 1)
-
-        root = db.root_account()
-        walk(root.handle if root else None, 0)
-        emit(payload, args, table(rows, ["account", "type", "balance", "quote"], right={2}))
-        return 0
-    finally:
-        db.close()
+    with book_api(args, "r") as book:
+        lines = book.chart(parse_date(args.as_of), include_hidden=args.all)
+    payload = []
+    rows = []
+    for line in lines:
+        account = line.record.account
+        payload.append(
+            {
+                "handle": account.handle,
+                "name": line.record.full_name,
+                "type": account.atype.value,
+                "code": account.code,
+                "description": account.description,
+                "notes": account.notes,
+                "source_notes": account.source_notes,
+                "placeholder": account.placeholder,
+                "hidden": account.hidden,
+                "commodity": account.commodity,
+                "commodity_scu": account.commodity_scu,
+                "source_guid": account.source_guid,
+                "source_type": account.source_type or None,
+                "source_fields": [field.serialize() for field in account.source_fields],
+                "balance": line.balance,
+                "missing_quotes": list(line.missing_quotes),
+                "quote_date": line.quote_date,
+                "quote_source": line.quote_source,
+                "quote_age_days": line.quote_age_days,
+                "conversion_path": line.conversion_path,
+                "quote_evidence": line.quote_evidence,
+                "book_balance": line.book_balance,
+            }
+        )
+        rows.append(
+            [
+                ("  " * line.depth) + account.name,
+                account.atype.value,
+                line.balance.format(parens_negative=True)
+                if line.balance is not None
+                else "Missing reporting-currency quote",
+                line.quote_evidence,
+            ]
+        )
+    emit(payload, args, table(rows, ["account", "type", "balance", "quote"], right={2}))
+    return 0
 
 
 def cmd_register(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r")
-    try:
-        account = resolve_account(db, args.account)
-        rows = ledger.register(
-            db, account.handle, start=parse_date(args.start), end=parse_date(args.end)
+    with book_api(args, "r") as book:
+        account = book.find_account(args.account)
+        page = book.register(
+            RegisterQuery(
+                account.handle,
+                start=parse_date(args.start),
+                end=parse_date(args.end),
+                tag=args.tag,
+                limit=args.limit or None,
+            )
         )
-        if args.tag:
-            wanted = " ".join(args.tag.split()).casefold()
-            rows = [
-                row for row in rows if any(t.casefold() == wanted for t in row.transaction.tags)
-            ]
-        if args.limit:
-            rows = rows[-args.limit :]
-        payload = [
-            {
-                "handle": row.transaction.handle,
-                "date": row.post_date,
-                "description": row.description,
-                "transfer": row.transfer_label(db),
-                "amount": row.amount,
-                "balance": row.running,
-                "tags": row.transaction.tags,
-                "attachments": len(row.transaction.attachments)
-                + (1 if row.transaction.source_link else 0),
-            }
-            for row in rows
-        ]
-        text = table(
+    payload = [
+        {
+            "handle": line.transaction,
+            "date": line.when,
+            "description": line.description,
+            "transfer": line.transfer,
+            "amount": line.amount,
+            "balance": line.balance,
+            "tags": list(line.tags),
+            "attachments": line.attachments,
+        }
+        for line in page.lines
+    ]
+    text = table(
+        [
             [
-                [
-                    row.transaction.handle[:8],
-                    row.post_date.isoformat(),
-                    row.description[:40],
-                    row.transfer_label(db)[:30],
-                    row.amount.format(parens_negative=True),
-                    row.running.format(parens_negative=True),
-                ]
-                for row in rows
-            ],
-            ["id", "date", "description", "transfer", "amount", "balance"],
-            right={4, 5},
-        )
-        print(f"{db.full_name(account)}  ({account.atype.value})") if not args.json else None
-        emit(payload, args, text)
-        return 0
-    finally:
-        db.close()
+                line.transaction[:8],
+                line.when.isoformat(),
+                line.description[:40],
+                line.transfer[:30],
+                line.amount.format(parens_negative=True),
+                line.balance.format(parens_negative=True),
+            ]
+            for line in page.lines
+        ],
+        ["id", "date", "description", "transfer", "amount", "balance"],
+        right={4, 5},
+    )
+    if not args.json:
+        print(f"{page.account.full_name}  ({page.account.type})")
+    emit(payload, args, text)
+    return 0
 
 
 def cmd_balance(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r")
-    try:
-        as_of = parse_date(args.as_of)
+    as_of = parse_date(args.as_of)
+    with book_api(args, "r") as book:
         if args.account:
-            account = resolve_account(db, args.account)
-            amount = (
-                ledger.balance_recursive_amount(db, account.handle, as_of=as_of).value
-                if args.recursive
-                else ledger.balance_amount(db, account.handle, as_of=as_of).value
-            )
+            account = book.find_account(args.account)
+            found = book.account_balance(BalanceQuery(account.handle, as_of, args.recursive))
+            name = found.account.full_name
             emit(
-                {"account": db.full_name(account), "balance": amount},
+                {"account": name, "balance": found.amount},
                 args,
-                f"{db.full_name(account)}: {amount.format('', parens_negative=True)}",
+                f"{name}: {found.amount.format('', parens_negative=True)}",
             )
-        else:
-            net_worth = valuation.aggregate_value(db, as_of=as_of, net_worth=True)
-            cash = valuation.aggregate_value(
-                db,
-                accounts=[
-                    a for a in db.iter_accounts() if a.atype.is_cash_like and not a.placeholder
-                ],
-                as_of=as_of,
-            )
-            summary = {
-                "cash": cash.amount.value if cash.amount is not None else None,
-                "net_worth": net_worth.amount.value if net_worth.amount is not None else None,
-            }
-            payload = {
-                **summary,
-                "cash_missing_quotes": list(cash.missing_quotes),
-                "net_worth_missing_quotes": list(net_worth.missing_quotes),
-                "net_worth_incompatible_accounts": list(net_worth.incompatible_accounts),
-            }
-            emit(
-                payload,
-                args,
-                table(
-                    [
-                        [
-                            k.replace("_", " "),
-                            v.format(parens_negative=True)
-                            if v is not None
-                            else "Missing reporting-currency quote",
-                        ]
-                        for k, v in summary.items()
-                    ],
-                    ["measure", "amount"],
-                    right={1},
-                ),
-            )
-        return 0
-    finally:
-        db.close()
+            return 0
+        totals = book.balance_summary(as_of)
+    summary = {"cash": totals.cash, "net_worth": totals.net_worth}
+    payload = {
+        **summary,
+        "cash_missing_quotes": list(totals.cash_missing_quotes),
+        "net_worth_missing_quotes": list(totals.net_worth_missing_quotes),
+        "net_worth_incompatible_accounts": list(totals.net_worth_incompatible_accounts),
+    }
+    emit(
+        payload,
+        args,
+        table(
+            [
+                [
+                    k.replace("_", " "),
+                    v.format(parens_negative=True)
+                    if v is not None
+                    else "Missing reporting-currency quote",
+                ]
+                for k, v in summary.items()
+            ],
+            ["measure", "amount"],
+            right={1},
+        ),
+    )
+    return 0
 
 
 def cmd_add(args: argparse.Namespace) -> int:
-    db = open_book(args.book)
-    try:
-        debit = resolve_account(db, args.to)
-        credit = resolve_account(db, getattr(args, "from"))
+    with book_api(args, "w") as book:
+        debit = book.find_account(args.to)
+        credit = book.find_account(getattr(args, "from"))
         when = parse_date(args.date) or date.today()
         amount = Money(args.amount)
-        currency = transaction_currency(db)
-        result = save_transaction(
-            db,
+        currency = book.transaction_currency()
+        saved = book.save_transaction(
             SaveTransaction(
                 TransactionInput(
                     post_date=when,
@@ -295,18 +222,12 @@ def cmd_add(args: argparse.Namespace) -> int:
                 )
             ),
         )
-        if not result.ok:
-            raise CommandError(service_error_message(result.errors[0]))
-        saved = result.value
-        assert saved is not None
-        emit(
-            {"handle": saved.handle, "date": when, "amount": amount},
-            args,
-            f"Posted {amount.format()} {db.full_name(credit)} -> {db.full_name(debit)} on {when}",
-        )
-        return 0
-    finally:
-        db.close()
+    emit(
+        {"handle": saved.handle, "date": when, "amount": amount},
+        args,
+        f"Posted {amount.format()} {credit.full_name} -> {debit.full_name} on {when}",
+    )
+    return 0
 
 
 def cmd_edit(args: argparse.Namespace) -> int:
@@ -316,119 +237,78 @@ def cmd_edit(args: argparse.Namespace) -> int:
     transaction: with three or more legs there is no single 'the amount', and
     guessing which one to move would silently rewrite someone's books.
     """
-    db = open_book(args.book)
-    try:
-        target = find_transaction(db, args.transaction)
+    with book_api(args, "w") as book:
+        target = book.find_transaction(args.transaction)
         before = target.describe()
-
-        if args.date:
-            parsed_date = parse_date(args.date)
-            if parsed_date is not None:
-                target.post_date = parsed_date
+        edited = book.editable_transaction(target.handle)
+        changes: dict[str, object] = {}
+        if args.date and (parsed_date := parse_date(args.date)) is not None:
+            changes["post_date"] = parsed_date
         if args.description is not None:
-            target.description = args.description
+            changes["description"] = args.description
         if args.num is not None:
-            target.num = args.num
+            changes["num"] = args.num
+        splits = edited.splits
         if args.memo is not None:
-            for split in target.splits:
-                split.memo = args.memo
-
+            splits = tuple(replace(split, memo=args.memo) for split in splits)
         if args.amount is not None:
-            if len(target.splits) != 2:
+            if len(splits) != 2:
                 raise CommandError(
-                    f"this transaction has {len(target.splits)} splits; amounts can "
+                    f"this transaction has {len(splits)} splits; amounts can "
                     "only be changed on a two-split transaction. Edit it in the "
                     "interface, or delete and re-enter it."
                 )
             amount = Money(args.amount)
-            positive = next((s for s in target.splits if s.value > 0), target.splits[0])
-            for split in target.splits:
-                split.value = amount if split is positive else -amount
-                split.quantity = split.value
+            positive = next((s for s in splits if s.value.value > 0), splits[0])
+            splits = tuple(_with_value(s, amount if s is positive else -amount) for s in splits)
+        edited = replace(edited, splits=splits, **changes)  # type: ignore[arg-type]
+        book.save_transaction(SaveTransaction(edited, existing_handle=target.handle, source=target))
+        after = book.find_transaction(target.handle)
+    emit(
+        {"handle": after.handle, "date": after.post_date, "description": after.description},
+        args,
+        f"Edited {before}\n     -> {after.describe()}",
+    )
+    return 0
 
-        result = save_transaction(
-            db,
-            SaveTransaction(
-                _transaction_input(db, target),
-                existing_handle=target.handle,
-                source=target,
-            ),
-        )
-        if not result.ok:
-            raise CommandError(service_error_message(result.errors[0]))
 
-        emit(
-            {"handle": target.handle, "date": target.post_date, "description": target.description},
-            args,
-            f"Edited {before}\n     -> {target.describe()}",
-        )
-        return 0
-    finally:
-        db.close()
+def _with_value(split: TransactionSplitInput, value: Money) -> TransactionSplitInput:
+    """``split`` moving ``value``, its quantity following in the account's commodity."""
+    quantity = split.quantity.commodity if split.quantity is not None else split.value.commodity
+    return replace(
+        split, value=Amount(value, split.value.commodity), quantity=Amount(value, quantity)
+    )
 
 
 def cmd_delete(args: argparse.Namespace) -> int:
-    db = open_book(args.book)
-    try:
-        target = find_transaction(db, args.transaction)
-        description = target.describe()
-        result = delete_transaction(db, DeleteTransaction(target.handle))
-        if not result.ok:
-            raise CommandError(service_error_message(result.errors[0]))
-        emit({"deleted": target.handle}, args, f"Deleted {description}")
-        return 0
-    finally:
-        db.close()
-
-
-def _transaction_input(db: DbSQLite, transaction: Transaction) -> TransactionInput:
-    """Translate one editable CLI model to the shared transaction contract."""
-    currency = transaction_currency(db, transaction.currency)
-
-    def split_input(split: Split) -> TransactionSplitInput:
-        account = db.get_account(split.account)
-        quantity_commodity = account.commodity if account is not None else None
-        return TransactionSplitInput(
-            split.account,
-            Amount(split.value, currency),
-            quantity=Amount(split.quantity, quantity_commodity or currency),
-            handle=split.handle,
-            memo=split.memo,
-            planning_flow=split.planning_flow,
-            investment_activity=split.investment_activity,
-        )
-
-    return TransactionInput(
-        post_date=transaction.post_date,
-        description=transaction.description,
-        num=transaction.num,
-        notes=transaction.notes,
-        currency=currency,
-        splits=tuple(split_input(split) for split in transaction.splits),
-    )
+    with book_api(args, "w") as book:
+        target = book.find_transaction(args.transaction)
+        book.delete_transaction(target.handle)
+    emit({"deleted": target.handle}, args, f"Deleted {target.describe()}")
+    return 0
 
 
 def cmd_account(args: argparse.Namespace) -> int:
     """Add, edit or remove an account."""
-    db = open_book(args.book, "r" if args.action == "list" else "w")
-    try:
+    with book_api(args, "r" if args.action == "list" else "w") as book:
         if args.action == "list":
+            records = book.accounts()
+            names = {record.account.handle: record.full_name for record in records}
             rows = []
-            for account in sorted(db.iter_accounts(), key=db.full_name):
+            for record in records:
+                account = record.account
                 if account.is_root:
                     continue
-                linked = db.get_account(account.liability.linked_asset or "")
-                payment_account = db.get_account(account.card.payment_account or "")
                 rows.append(
                     [
-                        db.full_name(account),
+                        record.full_name,
                         account.atype.value,
                         account.group,
-                        db.full_name(linked) if linked else "",
+                        names.get(account.liability.linked_asset or "", ""),
                         ""
                         if account.atype is not AccountType.CREDIT
                         else ("monthly" if account.card.pays_in_full else "carries"),
-                        db.full_name(payment_account) if payment_account else "",
+                        names.get(account.card.payment_account or "", ""),
                     ]
                 )
             emit(
@@ -454,44 +334,45 @@ def cmd_account(args: argparse.Namespace) -> int:
         if args.action == "add":
             if not args.name:
                 raise CommandError("--name is required")
-            parent = resolve_account(db, args.parent) if args.parent else db.root_account()
-            if parent is None:
-                raise CommandError("this book has no root account")
+            if args.parent:
+                parent = book.find_account(args.parent).handle
+            else:
+                root = next((r.account for r in book.accounts() if r.account.is_root), None)
+                if root is None:
+                    raise CommandError("this book has no root account")
+                parent = root.handle
             account = Account(
                 name=args.name,
                 atype=AccountType.parse(args.type),
-                parent=parent.handle,
+                parent=parent,
                 code=args.code or "",
                 description=args.description or "",
                 placeholder=args.placeholder,
             )
-            _apply_account_options(db, account, args)
-            result = save_account(
-                db,
+            _apply_account_options(book, account, args)
+            saved = book.save_account(
                 SaveAccount(
                     account,
                     opening_balance=Money(args.opening) if args.opening else None,
                     opening_date=parse_date(args.opening_date) or date.today(),
                 ),
             )
-            if not result.ok:
-                raise CommandError(service_error_message(result.errors[0]))
+            name = book.account(saved.handle).full_name
             emit(
-                {"handle": account.handle, "name": db.full_name(account)},
+                {"handle": saved.handle, "name": name},
                 args,
-                f"Added {db.full_name(account)} ({account.atype.value})",
+                f"Added {name} ({account.atype.value})",
             )
             return 0
 
-        account = resolve_account(db, args.name or "")
+        found = book.find_account(args.name or "")
         if args.action == "remove":
-            result = delete_account(db, DeleteAccount(account.handle))
-            if not result.ok:
-                raise CommandError(service_error_message(result.errors[0]))
-            emit({"removed": account.handle}, args, f"Removed {db.full_name(account)}")
+            book.delete_account(found.handle)
+            emit({"removed": found.handle}, args, f"Removed {found.full_name}")
             return 0
 
         # edit
+        account = book.account(found.handle).account
         source = Account.from_dict(account.serialize())
         if args.rename:
             account.name = args.rename
@@ -502,25 +383,15 @@ def cmd_account(args: argparse.Namespace) -> int:
         if args.code is not None:
             account.code = args.code
         if args.parent:
-            account.parent = resolve_account(db, args.parent).handle
-        _apply_account_options(db, account, args)
-        result = save_account(
-            db,
-            SaveAccount(account, existing_handle=account.handle, source=source),
-        )
-        if not result.ok:
-            raise CommandError(service_error_message(result.errors[0]))
-        emit(
-            {"handle": account.handle, "name": db.full_name(account)},
-            args,
-            f"Edited {db.full_name(account)}",
-        )
+            account.parent = book.find_account(args.parent).handle
+        _apply_account_options(book, account, args)
+        book.save_account(SaveAccount(account, existing_handle=account.handle, source=source))
+        name = book.account(account.handle).full_name
+        emit({"handle": account.handle, "name": name}, args, f"Edited {name}")
         return 0
-    finally:
-        db.close()
 
 
-def _apply_account_options(db: DbSQLite, account: Account, args) -> None:
+def _apply_account_options(book: BookApi, account: Account, args) -> None:
     """Shared between add and edit: the relationship fields."""
     if args.dependent_care is not None:
         if account.atype is not AccountType.FSA:
@@ -533,7 +404,7 @@ def _apply_account_options(db: DbSQLite, account: Account, args) -> None:
     if args.group is not None:
         account.group = args.group
     if args.linked_asset:
-        account.liability.linked_asset = resolve_account(db, args.linked_asset).handle
+        account.liability.linked_asset = book.find_account(args.linked_asset).handle
     if args.carries_balance is not None:
         account.card.pays_in_full = not args.carries_balance
     if args.usual_payment:
@@ -546,8 +417,8 @@ def _apply_account_options(db: DbSQLite, account: Account, args) -> None:
         if args.payment_account.strip().lower() == "none":
             account.card.payment_account = None
             return
-        payment = resolve_account(db, args.payment_account)
-        if not payment.atype.is_cash_like:
+        payment = book.find_account(args.payment_account)
+        if not AccountType(payment.type).is_cash_like:
             raise CommandError("--payment-account must name a Bank or Cash account")
         account.card.payment_account = payment.handle
     elif account.atype is not AccountType.CREDIT:
@@ -559,6 +430,7 @@ def register(add: AddCommand) -> None:
     accounts = add("accounts", "Show the chart of accounts with balances")
     accounts.add_argument("--as-of", help="balances as at this date (YYYY-MM-DD)")
     accounts.add_argument("--all", action="store_true", help="include hidden accounts")
+    add_server_options(accounts)
     accounts.set_defaults(func=cmd_accounts)
 
     account = add("account", "Add, edit, list or remove accounts")
@@ -599,6 +471,7 @@ def register(add: AddCommand) -> None:
     )
     account.add_argument("--opening", help="opening balance to post")
     account.add_argument("--opening-date")
+    add_server_options(account)
     account.set_defaults(func=cmd_account)
 
     register = add("register", "Show one account's register with a running balance")
@@ -609,12 +482,14 @@ def register(add: AddCommand) -> None:
     register.add_argument(
         "--tag", help="only transactions with this tag (the running balance is unchanged)"
     )
+    add_server_options(register)
     register.set_defaults(func=cmd_register)
 
     balance = add("balance", "Show a balance, or the book's headline totals")
     balance.add_argument("account", nargs="?")
     balance.add_argument("--as-of")
     balance.add_argument("--recursive", action="store_true", help="include child accounts")
+    add_server_options(balance)
     balance.set_defaults(func=cmd_balance)
 
     rate = add("rate", "Save a dated manual exchange rate (target units per source unit)")
@@ -622,6 +497,7 @@ def register(add: AddCommand) -> None:
     rate.add_argument("--to", dest="target", required=True, help="target currency code or handle")
     rate.add_argument("--date", required=True, help="quote date (YYYY-MM-DD)")
     rate.add_argument("--value", required=True, help="target units per one source unit")
+    add_server_options(rate)
     rate.set_defaults(func=cmd_rate)
 
     add_txn = add("add", "Post a two-split transaction")
@@ -632,6 +508,7 @@ def register(add: AddCommand) -> None:
     add_txn.add_argument("--amount", required=True)
     add_txn.add_argument("--memo", default="")
     add_txn.add_argument("--num", default="")
+    add_server_options(add_txn)
     add_txn.set_defaults(func=cmd_add)
 
     edit = add("edit", "Change a transaction that is already recorded")
@@ -641,8 +518,10 @@ def register(add: AddCommand) -> None:
     edit.add_argument("--num")
     edit.add_argument("--memo", help="set the memo on every split")
     edit.add_argument("--amount", help="two-split transactions only")
+    add_server_options(edit)
     edit.set_defaults(func=cmd_edit)
 
     delete = add("delete", "Remove a transaction")
     delete.add_argument("transaction", help="transaction handle, or a unique prefix")
+    add_server_options(delete)
     delete.set_defaults(func=cmd_delete)

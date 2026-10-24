@@ -11,6 +11,7 @@ from __future__ import annotations
 import sys
 from importlib import resources
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .. import APP_ID, APP_NAME, __version__  # noqa: E402
 from ..gen.db.sqlite import SCHEMA_VERSION, DbSQLite, stored_schema_version  # noqa: E402
@@ -24,6 +25,9 @@ from .view_catalog import CATEGORIES as MENU_CATEGORIES  # noqa: E402
 from .view_catalog import VIEW_ACTIONS, view_action_name  # noqa: E402
 from .viewmanager import ViewManager  # noqa: E402
 from .widgets.presented import when_presented
+
+if TYPE_CHECKING:
+    from .book_sharing import SharedBook
 
 __all__ = ["BreadSchedApplication", "main"]
 
@@ -69,6 +73,8 @@ class BreadSchedApplication(Gtk.Application):
         super().__init__(application_id=application_id, flags=flags)
         self.db: DbSQLite | None = None
         self.book_path: str | None = None
+        #: The open book shared with other commands, when that is on (#359).
+        self.shared_book: SharedBook | None = None
         #: Deliberate preferences, and remembered interface state. Kept apart so a
         #: user can delete the second without losing the first.
         self.settings = Settings("settings", directory=settings_directory)
@@ -250,10 +256,12 @@ class BreadSchedApplication(Gtk.Application):
             for window in self.get_windows():
                 if isinstance(window, ViewManager):
                     window.book_closing()
+            self.stop_sharing()
             self.db.close()
         self.db = DbSQLite()
         self.db.load(path)
         self.book_path = path
+        self.update_sharing()
         # Remembered so the next start reopens it. Written immediately rather than
         # at shutdown: a crash should not cost the setting.
         self.settings.set("general", "last_book_path", str(Path(path).resolve()))
@@ -280,6 +288,27 @@ class BreadSchedApplication(Gtk.Application):
         for window in self.get_windows():
             if isinstance(window, ViewManager):
                 window.book_opened(self.db, path)
+
+    # --------------------------------------------------------------- sharing
+
+    def update_sharing(self) -> None:
+        """Share the open book with other commands exactly when the preference is on."""
+        from .book_sharing import SETTING, share_book
+
+        wanted = self.settings.get_bool(*SETTING) and self.db is not None
+        if wanted and self.shared_book is None and self.book_path and self.db is not None:
+            self.shared_book = share_book(self.db, self.book_path)
+        elif not wanted:
+            self.stop_sharing()
+
+    def stop_sharing(self) -> None:
+        if self.shared_book is not None:
+            self.shared_book.stop()
+            self.shared_book = None
+
+    def do_shutdown(self) -> None:
+        self.stop_sharing()
+        Gtk.Application.do_shutdown(self)
 
     def require_db(self) -> DbSQLite | None:
         return self.db
@@ -640,7 +669,8 @@ class BreadSchedApplication(Gtk.Application):
         return dialog
 
     def preferences_changed(self) -> None:
-        """Show saved preferences in every window's menus (View → Double Line)."""
+        """Apply saved preferences: menus (View → Double Line) and book sharing."""
+        self.update_sharing()
         double_line = self.view_settings.get_bool("register", "double_line")
         for window in self.get_windows():
             action = getattr(window, "double_line_action", None)

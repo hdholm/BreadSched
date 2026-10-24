@@ -39,6 +39,10 @@ __all__ = [
     "DueDecision",
     "DueItem",
     "NextOccurrence",
+    "PostDue",
+    "PostedDue",
+    "PostedOccurrence",
+    "post_due",
     "ResolveNext",
     "next_occurrence",
     "resolve_next",
@@ -246,4 +250,48 @@ def resolve_next(db: DbSQLite, request: ResolveNext) -> ServiceResult[DueResolut
         {(definition.handle, occurrence.when): occurrence},
         ((definition.handle, occurrence.when, request.decision),),
         f"{verb} next occurrence of {definition.name}",
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class PostDue:
+    """Post what is due without a review: automatic schedules only, or every one.
+
+    Plan-only estimates are never posted. ``as_of`` defaults to today.
+    """
+
+    as_of: date | None = None
+    only_automatic: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class PostedOccurrence:
+    transaction: str
+    schedule: str
+    when: date
+    description: str
+
+
+@dataclass(frozen=True, slots=True)
+class PostedDue:
+    posted: tuple[PostedOccurrence, ...]
+
+
+def post_due(db: DbSQLite, request: PostDue) -> ServiceResult[PostedDue]:
+    """Post every due occurrence the request allows as one undoable change."""
+    try:
+        written = schedule_engine.post_due(
+            db, as_of=request.as_of, only_auto=request.only_automatic
+        )
+    except UnbalancedError:
+        return ServiceResult.failure(ServiceError("schedule.due.unbalanced", ("schedule",)))
+    return ServiceResult.success(
+        PostedDue(
+            tuple(
+                PostedOccurrence(
+                    txn.handle, txn.scheduled_from or "", txn.post_date, txn.description
+                )
+                for txn in written
+            )
+        )
     )

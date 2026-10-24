@@ -39,7 +39,7 @@ def module_exists(dotted: list[str]) -> bool:
     return (candidate / "__init__.py").exists() or candidate.with_suffix(".py").exists()
 
 
-CORE_DIRS = ["gen", "cli", "plugins"]
+CORE_DIRS = ["gen", "api", "cli", "plugins"]
 GUI_DIR = SRC / "gui"
 
 
@@ -127,6 +127,8 @@ class TestLayering:
             "bisect",
             "calendar",
             "configparser",
+            "contextlib",
+            "copy",
             "csv",
             "ctypes",
             "dataclasses",
@@ -137,6 +139,7 @@ class TestLayering:
             "gzip",
             "hashlib",
             "html",
+            "http",
             "io",
             "json",
             "logging",
@@ -149,6 +152,7 @@ class TestLayering:
             "subprocess",
             "sys",
             "time",
+            "types",
             "typing",
             "unicodedata",
             "urllib",
@@ -166,6 +170,7 @@ class TestLayering:
             "re",
             "shutil",
             "socket",
+            "ssl",
             "tempfile",
             "textwrap",
             "threading",
@@ -305,7 +310,8 @@ class TestServiceBoundaries:
 
     def test_gui_plan_consumes_the_typed_query_service(self):
         calls = calls_in_method(SRC / "gui/views/plan.py", "PlanView", "refresh")
-        assert "query_plan" in calls
+        # Through the book server on the experimental branch (#354).
+        assert "plan" in calls and "query_plan" not in calls
         assert "build_category_report" not in calls
 
     def test_web_plan_delegates_to_a_service_backed_resource(self):
@@ -314,7 +320,9 @@ class TestServiceBoundaries:
 
         assert "plan_report" in route_calls
         assert "query_plan" not in route_calls
-        assert "query_plan" in resource_calls
+        # On the experimental book-server branch (#354) the service is reached
+        # through the book server.
+        assert "plan" in resource_calls and "query_plan" not in resource_calls
         assert "build_category_report" not in resource_calls
 
     @pytest.mark.parametrize(
@@ -412,19 +420,31 @@ class TestServiceBoundaries:
     @pytest.mark.parametrize(
         ("relative", "class_name", "method_name", "service_call"),
         (
-            ("gui/dialogs/fsa_claims_dialog.py", "FsaClaimsDialog", "_save", "save_claim"),
-            ("gui/dialogs/fsa_claims_dialog.py", "FsaClaimsDialog", "_delete", "delete_claim"),
-            ("gui/dialogs/fsa_claims_dialog.py", "FsaClaimsDialog", "_close_claim", "close_claim"),
+            ("gui/dialogs/fsa_claims_dialog.py", "FsaClaimsDialog", "_save", "save_fsa_claim"),
+            (
+                "gui/dialogs/fsa_claims_dialog.py",
+                "FsaClaimsDialog",
+                "_delete",
+                "delete_fsa_claim",
+            ),
+            (
+                "gui/dialogs/fsa_claims_dialog.py",
+                "FsaClaimsDialog",
+                "_close_claim",
+                "close_fsa_claim",
+            ),
             (
                 "gui/dialogs/fsa_claims_dialog.py",
                 "FsaClaimsDialog",
                 "_reopen_claim",
-                "reopen_claim",
+                "reopen_fsa_claim",
             ),
-            ("web/fsa_claim_resource.py", None, "fsa_claim_save", "save_claim"),
-            ("web/fsa_claim_resource.py", None, "fsa_claim_delete", "delete_claim"),
-            ("web/fsa_claim_resource.py", None, "fsa_claim_close", "close_claim"),
-            ("web/fsa_claim_resource.py", None, "fsa_claim_reopen", "reopen_claim"),
+            # On the experimental book-server branch (#354) these reach the claim
+            # services through the book server.
+            ("web/fsa_claim_resource.py", None, "fsa_claim_save", "save_fsa_claim"),
+            ("web/fsa_claim_resource.py", None, "fsa_claim_delete", "delete_fsa_claim"),
+            ("web/fsa_claim_resource.py", None, "fsa_claim_close", "close_fsa_claim"),
+            ("web/fsa_claim_resource.py", None, "fsa_claim_reopen", "reopen_fsa_claim"),
         ),
     )
     def test_claim_mutations_use_typed_services(
@@ -994,13 +1014,648 @@ class TestPresentationPackage:
                 assert getattr(presentation, name) is getattr(module, name)
 
 
+class TestBookServerBoundaries:
+    """Interfaces moved onto the book server reach the book only through it (#356)."""
+
+    #: Service calls the book server now owns for these adapters.
+    OWNED = {
+        "pending_due_review",
+        "resolve_due",
+        "resolve_next",
+        "next_occurrence",
+        "set_advance_days",
+        "advance_days",
+        "find_schedule",
+        "delete_schedule",
+        "duplicate_schedule",
+        "post_due",
+        "save_fixed_schedule",
+        "save_formula_schedule",
+        "save_transaction",
+        "delete_transaction",
+        "save_account",
+        "delete_account",
+        "find_account",
+        "find_transaction",
+        "editable_transaction",
+        "register_page",
+        "account_balance",
+        "balance_summary",
+        "account_record",
+        "account_records",
+        "chart_of_accounts",
+        "list_rules",
+        "add_rule",
+        "move_rule",
+        "delete_rule",
+        "preview_category_proposals",
+        "apply_category_proposals",
+        "categorization_rules",
+        "set_tags",
+        "tag_counts",
+        "transactions_with_tag",
+        "query_savings_goals",
+        "goal_overrides",
+        "goal_accounts",
+        "purchase_accounts",
+        "savings_goals_view",
+        "reconciliation_view",
+        "save_scenario",
+        "save_scenario_assumptions",
+        "duplicate_scenario",
+        "delete_scenario",
+        "suppress_scenario_schedule",
+        "drawdown_accounts",
+        "save_drawdown",
+        "remove_drawdown",
+        "save_base_assumptions",
+        "save_assumption_period",
+        "delete_assumption_period",
+        "base_assumptions",
+        "save_receivable",
+        "attach_expense_split",
+        "attach_reimbursement_split",
+        "detach_split",
+        "mark_disputed",
+        "clear_dispute",
+        "record_write_off",
+        "delete_receivable",
+        "list_receivables",
+        "receivable_candidates",
+        "shared_costs",
+        "accept_reimbursements",
+        "receivables_view",
+        "find_receivable",
+        "set_reimbursement_override",
+        "receivable_accounts",
+        "reimbursement_proposals",
+        "claim_link_proposals",
+        "start_reconciliation",
+        "update_reconciliation",
+        "complete_reconciliation",
+        "cancel_reconciliation",
+        "reopen_reconciliation",
+        "toggle_cleared",
+        "save_savings_goal",
+        "allocate_to_goal",
+        "close_savings_goal",
+        "reopen_savings_goal",
+        "delete_savings_goal",
+        "set_goal_override",
+        "find_savings_goal",
+        "list_payroll_templates",
+        "save_payroll_template",
+        "delete_payroll_template",
+        "template_from_schedule",
+        "create_paycheck_schedule",
+        "paychecks",
+        "paycheck_breakdown",
+        "preview_pay_change",
+        "apply_pay_change",
+        "payroll_view",
+        "fsa_claims_view",
+        "claim_candidates",
+        "find_claim",
+        "save_claim",
+        "delete_claim",
+        "close_claim",
+        "reopen_claim",
+        "fsa_claim_report",
+        "claim_report",
+        "dashboard_statuses",
+        "fsa_years_view",
+        "accept_claim_links",
+        "iter_claims",
+        "review_queue",
+        "review_detail",
+        "match_review",
+        "reject_review",
+        "skip_review",
+        "mark_review_unexpected",
+        "attach_review_claim",
+        "plan_occurrence",
+        "unresolved_occurrences",
+        "unresolved_events",
+        "event_by_key",
+        "explain_candidates",
+        "attachment_roles",
+        "suggest_claims_for_transaction",
+        "pending_import_changes",
+        "resolve_import_changes",
+        "sale_lots",
+        "set_sale_lots",
+        "tax_marks",
+        "set_tax_marks",
+        "quote_requests",
+        "update_quotes",
+        "set_quote_source",
+        "quote_plan",
+        "store_quotes",
+        "save_loan",
+        "validate_loan",
+        "loan_choices",
+        "preview_loan",
+        "save_currency_quote",
+        "currencies",
+        "find_currency",
+        "save_exchange_rate",
+        "save_dashboard_config",
+        "dashboard_settings",
+        "attach_location",
+        "attach_file",
+        "detach",
+        "relink",
+        "attachment_report",
+        "set_attachment_folder",
+        "set_source_link_folder",
+        "query_net_worth_history",
+        "query_net_worth_change",
+        "query_plan",
+        "query_expense_explorer",
+    }
+
+    #: Book server operations a moved adapter reaches through ``book``.
+    OPERATIONS = {
+        "due_review",
+        "resolve_due",
+        "resolve_next",
+        "find_schedule",
+        "delete_schedule",
+        "duplicate_schedule",
+        "post_due",
+        "save_fixed_schedule",
+        "save_formula_schedule",
+        "save_transaction",
+        "delete_transaction",
+        "find_account",
+        "find_transaction",
+        "register",
+        "account_balance",
+        "balance_summary",
+        "accounts",
+        "account",
+        "chart",
+        "save_account",
+        "delete_account",
+        "categorization_rules",
+        "add_rule",
+        "move_rule",
+        "delete_rule",
+        "apply_category_proposals",
+        "set_tags",
+        "tag_counts",
+        "transactions_with_tag",
+        "savings_goals",
+        "reconciliation",
+        "save_scenario",
+        "save_scenario_assumptions",
+        "duplicate_scenario",
+        "delete_scenario",
+        "suppress_scenario_schedule",
+        "drawdown_accounts",
+        "save_drawdown",
+        "remove_drawdown",
+        "save_base_assumptions",
+        "save_assumption_period",
+        "delete_assumption_period",
+        "base_assumptions",
+        "scenarios",
+        "find_scenario",
+        "receivables_view",
+        "find_receivable",
+        "save_receivable",
+        "link_receivable_split",
+        "detach_receivable_split",
+        "mark_disputed",
+        "clear_dispute",
+        "record_write_off",
+        "delete_receivable",
+        "accept_reimbursements",
+        "set_reimbursement_override",
+        "receivable_candidates",
+        "start_reconciliation",
+        "update_reconciliation",
+        "complete_reconciliation",
+        "cancel_reconciliation",
+        "reopen_reconciliation",
+        "toggle_cleared",
+        "save_savings_goal",
+        "allocate_to_goal",
+        "close_savings_goal",
+        "reopen_savings_goal",
+        "delete_savings_goal",
+        "set_goal_override",
+        "find_savings_goal",
+        "payroll",
+        "paycheck",
+        "template_from_schedule",
+        "save_payroll_template",
+        "delete_payroll_template",
+        "create_paycheck",
+        "preview_pay_change",
+        "apply_pay_change",
+        "fsa_claims",
+        "find_fsa_claim",
+        "save_fsa_claim",
+        "delete_fsa_claim",
+        "close_fsa_claim",
+        "reopen_fsa_claim",
+        "fsa_claim_report",
+        "benefit_years",
+        "claim_link_proposals",
+        "accept_claim_links",
+        "review_queue",
+        "review_detail",
+        "match_review",
+        "reject_review",
+        "skip_review",
+        "mark_review_unexpected",
+        "attach_review_claim",
+        "plan_occurrence",
+        "unresolved_occurrences",
+        "match_candidates",
+        "held_imports",
+        "resolve_held_imports",
+        "sale_lots",
+        "set_sale_lots",
+        "tax_marks",
+        "set_tax_marks",
+        "quote_plan",
+        "store_quotes",
+        "set_quote_source",
+        "loan_choices",
+        "preview_loan",
+        "save_loan",
+        "currencies",
+        "find_currency",
+        "save_exchange_rate",
+        "dashboard_settings",
+        "save_dashboard_settings",
+        "attachment_report",
+        "link_attachment",
+        "attach_file",
+        "unlink_attachment",
+        "relink_attachment",
+        "set_attachment_folder",
+        "set_source_link_folder",
+        "net_worth_history",
+        "net_worth_change",
+        "plan",
+        "expense_explorer",
+        "reporting_currency",
+        "project",
+        "projection_month",
+    }
+
+    @pytest.mark.parametrize(
+        ("relative", "functions"),
+        [
+            (
+                "cli/plan_commands.py",
+                ("cmd_due_review", "cmd_scheduled_next", "cmd_scheduled_advance", "cmd_scheduled"),
+            ),
+            (
+                "web/schedule_resource.py",
+                (
+                    "due_review",
+                    "due_review_resolve",
+                    "scheduled_next",
+                    "scheduled_delete",
+                    "scheduled_duplicate",
+                    "post_scheduled",
+                    "scheduled_save",
+                    "scheduled_formula_save",
+                ),
+            ),
+            (
+                "gui/views/scheduled.py",
+                ("resolve_next", "_on_post_clicked"),
+            ),
+            ("gui/dialogs/schedule_dialog.py", ("_on_save",)),
+            ("gui/dialogs/account_dialog.py", ("_on_save", "_on_delete")),
+            ("cli/categorization_commands.py", ("cmd_rules", "cmd_tags")),
+            ("web/attachment_resource.py", ("transaction_tags",)),
+            ("cli/benefit_commands.py", ("cmd_goals",)),
+            (
+                "web/reconciliation_resource.py",
+                (
+                    "reconciliation",
+                    "reconciliation_start",
+                    "reconciliation_update",
+                    "reconciliation_complete",
+                    "reconciliation_cancel",
+                    "reconciliation_reopen",
+                ),
+            ),
+            ("web/register_entry_resource.py", ("register_cleared_toggle",)),
+            ("cli/projection_commands.py", ("cmd_scenario", "cmd_drawdown")),
+            ("cli/plan_commands.py", ("cmd_payroll",)),
+            ("cli/import_commands.py", ("cmd_import_review",)),
+            ("cli/investment_commands.py", ("cmd_sale_lots",)),
+            ("cli/tax_commands.py", ("cmd_tax_marks",)),
+            ("cli/quote_commands.py", ("cmd_quotes", "cmd_quote_source")),
+            ("web/loan_resource.py", ("loan_options", "loan_preview", "loan_save")),
+            ("gui/dialogs/loan_dialog.py", ("_on_save",)),
+            ("cli/ledger_commands.py", ("cmd_rate",)),
+            ("web/currency_quote_resource.py", ("save_currency_quote",)),
+            ("gui/dialogs/exchange_rate_dialog.py", ("save",)),
+            ("web/dashboard_resource.py", ("dashboard_config_save",)),
+            ("gui/views/dashboard.py", ("_on_setting_changed",)),
+            ("gui/dialogs/dashboard_dialog.py", ("save",)),
+            ("cli/categorization_commands.py", ("cmd_attachments",)),
+            ("cli/projection_commands.py", ("cmd_net_worth", "cmd_net_worth_change")),
+            ("web/net_worth_resource.py", ("net_worth_change", "net_worth_history")),
+            ("web/plan_resource.py", ("plan_report",)),
+            ("web/expense_resource.py", ("expense_report",)),
+            ("gui/views/plan.py", ("refresh",)),
+            ("cli/projection_commands.py", ("cmd_project", "cmd_compare")),
+            (
+                "web/projection_resource.py",
+                (
+                    "projection_month_report",
+                    "projection_report",
+                    "projection_comparison_report",
+                    "projection_draft",
+                    "projection_save",
+                ),
+            ),
+            ("gui/dialogs/net_worth_history_dialog.py", ("_update", "_explain")),
+            (
+                "web/attachment_resource.py",
+                (
+                    "transaction_attachment_link",
+                    "transaction_attachment_remove",
+                    "transaction_attachment_relink",
+                    "attachment_upload",
+                ),
+            ),
+            (
+                "gui/dialogs/transaction_dialog.py",
+                ("attach_path", "link_location", "remove_document", "relink_document"),
+            ),
+            ("web/quote_resource.py", ("quotes", "quote_source_save", "quotes_update")),
+            ("gui/dialogs/online_quotes_dialog.py", ("save_sources", "get_quotes", "_store")),
+            ("web/holdings_resource.py", ("sale_lots_view", "sale_lots_save")),
+            ("web/tax_resource.py", ("tax_marks_view", "tax_marks_save")),
+            ("gui/dialogs/sale_lots_dialog.py", ("_store",)),
+            ("gui/dialogs/tax_year_dialog.py", ("save",)),
+            ("web/import_resource.py", ("import_review", "import_review_resolve")),
+            ("gui/dialogs/import_review_dialog.py", ("apply",)),
+            ("gui/viewmanager.py", ("prompt_for_held_imports",)),
+            ("gui/dialogs/import_dialog.py", ("present_held_review",)),
+            (
+                "cli/plan_commands.py",
+                (
+                    "cmd_review",
+                    "cmd_plan_unresolved",
+                    "cmd_plan_matches",
+                    "cmd_plan_resolve",
+                    "cmd_plan_reject",
+                    "cmd_plan_unexpected",
+                ),
+            ),
+            (
+                "web/review_resource.py",
+                (
+                    "review",
+                    "review_match",
+                    "review_reject",
+                    "review_skip",
+                    "review_fsa_attach",
+                    "review_unexpected",
+                ),
+            ),
+            (
+                "gui/views/resolution.py",
+                (
+                    "refresh",
+                    "_refresh_candidates",
+                    "_on_match",
+                    "_on_reject",
+                    "_on_skip",
+                    "_on_unexpected",
+                    "do_attach",
+                ),
+            ),
+            (
+                "cli/benefit_commands.py",
+                ("cmd_claims", "_claim_link_proposals", "_fsa_years"),
+            ),
+            (
+                "web/fsa_claim_resource.py",
+                (
+                    "fsa_claims",
+                    "fsa_claim_save",
+                    "fsa_claim_delete",
+                    "fsa_claim_close",
+                    "fsa_claim_reopen",
+                ),
+            ),
+            ("web/fsa_resource.py", ("fsa_dashboard", "fsa_claim_links_accept")),
+            (
+                "gui/views/fsa_dashboard.py",
+                (
+                    "_render_proposals",
+                    "_on_link_selected",
+                    "_render_years",
+                    "_render_claims",
+                    "_render_report",
+                ),
+            ),
+            (
+                "gui/dialogs/fsa_claims_dialog.py",
+                ("_close_claim", "_reopen_claim", "_after_closing", "_save", "_delete"),
+            ),
+            (
+                "web/payroll_resource.py",
+                (
+                    "payroll",
+                    "payroll_template_save",
+                    "payroll_template_delete",
+                    "payroll_template_from_schedule",
+                    "payroll_create",
+                    "payroll_change_preview",
+                    "payroll_change",
+                ),
+            ),
+            (
+                "gui/dialogs/payroll_dialog.py",
+                (
+                    "refresh",
+                    "_paycheck",
+                    "preview_change",
+                    "save_change",
+                    "_reload_templates",
+                    "fill_from_paycheck",
+                    "save_template",
+                    "delete_template",
+                    "create_paycheck",
+                ),
+            ),
+            (
+                "web/scenario_resource.py",
+                (
+                    "scenarios",
+                    "scenario_save",
+                    "scenario_duplicate",
+                    "scenario_delete",
+                    "scenario_period_save",
+                    "scenario_period_delete",
+                    "scenario_drawdown_save",
+                    "scenario_drawdown_delete",
+                    "scenario_event_suppress",
+                ),
+            ),
+            ("gui/dialogs/scenario_dialog.py", ("_on_save",)),
+            ("gui/dialogs/drawdown_dialog.py", ("_on_remove", "_on_save")),
+            ("gui/planning_context.py", ("persist_baseline_assumptions",)),
+            (
+                "web/receivable_resource.py",
+                (
+                    "receivables",
+                    "receivable_save",
+                    "receivable_link",
+                    "receivable_unlink",
+                    "receivable_dispute",
+                    "receivable_scenario",
+                    "receivable_write_off",
+                    "receivable_accept",
+                    "receivable_delete",
+                ),
+            ),
+            (
+                "gui/dialogs/receivables_dialog.py",
+                (
+                    "refresh",
+                    "accept_selected",
+                    "save",
+                    "apply_scenario",
+                    "delete",
+                    "link",
+                    "unlink",
+                    "dispute",
+                    "clear_dispute",
+                    "write_off",
+                ),
+            ),
+            ("gui/register_sheet.py", ("toggle_reconcile",)),
+            (
+                "gui/dialogs/reconciliation_dialog.py",
+                (
+                    "_render",
+                    "_on_start",
+                    "_on_selection",
+                    "_on_update_target",
+                    "_on_finish",
+                    "_on_cancel",
+                    "_on_reopen",
+                ),
+            ),
+            (
+                "web/savings_goal_resource.py",
+                (
+                    "savings_goals",
+                    "savings_goal_save",
+                    "savings_goal_allocate",
+                    "savings_goal_close",
+                    "savings_goal_reopen",
+                    "savings_goal_delete",
+                    "savings_goal_override",
+                ),
+            ),
+            (
+                "gui/dialogs/savings_goals_dialog.py",
+                ("refresh", "save", "allocate", "apply_override", "toggle_closed", "delete"),
+            ),
+            (
+                "web/rules_resource.py",
+                ("rules", "rule_add", "rule_delete", "rule_move", "rules_accept"),
+            ),
+            (
+                "gui/dialogs/rules_dialog.py",
+                ("refresh", "add_rule", "move", "delete", "accept_selected"),
+            ),
+            (
+                "cli/ledger_commands.py",
+                (
+                    "cmd_add",
+                    "cmd_edit",
+                    "cmd_delete",
+                    "cmd_register",
+                    "cmd_balance",
+                    "cmd_accounts",
+                    "cmd_account",
+                ),
+            ),
+            (
+                "web/account_resource.py",
+                (
+                    "accounts",
+                    "account_cost_basis_save",
+                    "account_type_save",
+                    "account_emergency_fund_save",
+                    "account_card_save",
+                    "account_fsa_years_save",
+                ),
+            ),
+            ("web/register_entry_resource.py", ("register_entry_save",)),
+            ("web/register_resource.py", ("transaction_add",)),
+            ("gui/dialogs/posted_dialog.py", ("delete",)),
+            ("gui/register_sheet.py", ("_save_transaction",)),
+        ],
+    )
+    def test_moved_adapters_call_the_book_server(self, relative, functions):
+        tree = ast.parse((SRC / relative).read_text(encoding="utf-8"))
+        bodies = {
+            node.name: node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name in functions
+        }
+        assert set(bodies) == set(functions)
+        for name, body in bodies.items():
+            direct = {
+                node.func.id
+                for node in ast.walk(body)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            }
+            assert not direct & self.OWNED, (name, direct & self.OWNED)
+            reached = {
+                node.func.attr
+                for node in ast.walk(body)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            }
+            assert reached & self.OPERATIONS, name
+            # Nor do they compute what the server serves from the engines themselves.
+            engines = {
+                node.func.value.id
+                for node in ast.walk(body)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id
+                in {"ledger", "valuation", "planning", "review_explain", "fsa", "fsa_claims"}
+            }
+            assert not engines, (name, engines)
+
+    def test_the_book_server_package_has_no_interface_imports(self):
+        for module in modules_under("api"):
+            assert "gi" not in imported_names(module), module
+            text = module.read_text(encoding="utf-8")
+            # A client may speak HTTP; serving it is the web transport's job.
+            assert "http.server" not in text, module
+            assert (
+                "from ..web" not in text and "from ..cli" not in text and "from ..gui" not in text
+            )
+
+
 class TestWebBoundaries:
     def test_the_request_context_holds_only_the_book(self):
-        """Every handler is a resource adapter; ``Api`` carries the open book alone."""
+        """Every handler is a resource adapter; ``Api`` carries the open book alone,
+        and the book server over it (#356)."""
         tree = ast.parse((SRC / "web/context.py").read_text(encoding="utf-8"))
         [api] = [node for node in tree.body if isinstance(node, ast.ClassDef)]
         methods = [node.name for node in api.body if isinstance(node, ast.FunctionDef)]
-        assert methods == ["__init__"]
+        assert methods == ["__init__", "book"]
         resources = (SRC / "web/resources.py").read_text(encoding="utf-8")
         assert "getattr(api" not in resources
 
@@ -1028,7 +1683,11 @@ class TestWebBoundaries:
         source = (SRC / "web/transport.py").read_text(encoding="utf-8")
         assert 'reader.load(path, mode="r")' in source
         assert '"writer_db": db' in source
-        assert "with self.lock:" in source
+        # Every writer request runs through one executor: the transport's lock by
+        # default, or a host's own thread (GTK's main loop, #359).
+        assert "with lock:" in source
+        assert "self._exclusive(lambda: route(self.api_object, body))" in source
+        assert source.count("route(self.api_object") == 1
 
 
 class TestCliBoundaries:

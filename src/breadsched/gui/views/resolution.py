@@ -2,36 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import date
-
-from ...gen.engine import fsa_claims, review_explain
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.lib.money import Money
-from ...gen.lib.transaction import PlanningResolution
-from ...gen.services import (
-    ReviewClaimAttachment,
-    ReviewOccurrence,
-    ReviewTransaction,
-    attach_review_claim,
-    mark_review_unexpected,
-    match_review,
-    reject_review,
-    skip_review,
-)
-from ...presentation import REVIEW_ACTION_HELP, claim_role_label, service_error_message
+from ...gen.services import ReviewClaimAttachment, ReviewOccurrence
+from ...gen.services.review import ReviewDetail
+from ...presentation import REVIEW_ACTION_HELP, claim_role_label
 from ..gi_setup import Gtk, Pango
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ._base import BaseView
 
 __all__ = ["ResolutionView"]
-
-
-def _gross_amount(transaction) -> Money:
-    total = Money(0)
-    for split in transaction.splits:
-        if split.value > 0:
-            total = total + split.value
-    return total
 
 
 class ResolutionView(BaseView):
@@ -51,6 +33,7 @@ class ResolutionView(BaseView):
         super().__init__(manager)
         self._transaction_handle: str | None = None
         self._candidate_key: str | None = None
+        self._detail: ReviewDetail | None = None
         self._build()
 
     def _build(self) -> None:
@@ -152,24 +135,12 @@ class ResolutionView(BaseView):
         while (row := widget.get_row_at_index(0)) is not None:
             widget.remove(row)
 
-    def _unresolved_transactions(self):
-        if self.db is None:
-            return []
-        return sorted(
-            (
-                transaction
-                for transaction in self.db.iter_transactions()
-                if transaction.planning_resolution is PlanningResolution.UNRESOLVED
-            ),
-            key=lambda transaction: (transaction.post_date, transaction.handle),
-        )
-
     def refresh(self) -> None:
         if self.db is None:
             return
         selected = self._transaction_handle
         self._clear_list(self.actual_list)
-        transactions = self._unresolved_transactions()
+        transactions = book_server(self.db).review_queue()
         selected_row = None
         for transaction in transactions:
             row = Gtk.ListBoxRow()
@@ -180,13 +151,12 @@ class ResolutionView(BaseView):
             box.set_margin_start(8)
             box.set_margin_end(8)
             description = Gtk.Label(
-                label=f"{transaction.post_date.isoformat()}  {transaction.description}",
+                label=f"{transaction.date.isoformat()}  {transaction.description}",
                 xalign=0,
             )
             description.set_ellipsize(Pango.EllipsizeMode.END)
             box.append(description)
-            amount = _gross_amount(transaction)
-            amount_label = Gtk.Label(label=amount.format(), xalign=0)
+            amount_label = Gtk.Label(label=transaction.amount.format(), xalign=0)
             amount_label.add_css_class("numeric")
             amount_label.add_css_class("dim")
             box.append(amount_label)
@@ -214,23 +184,26 @@ class ResolutionView(BaseView):
 
     def _refresh_candidates(self) -> None:
         self._clear_list(self.candidate_list)
+        self._detail = None
         if self.db is None or self._transaction_handle is None:
             self.actual_summary.set_text("")
             self.variance.set_text("")
             self._set_action_sensitivity()
             return
-        transaction = self.db.get_transaction(self._transaction_handle)
-        if transaction is None:
+        try:
+            detail = book_server(self.db).review_detail(self._transaction_handle)
+        except ApiError:
             return
-        amount = _gross_amount(transaction)
+        self._detail = detail
+        actual = detail.actual
         self.actual_summary.set_text(
-            f"{transaction.post_date.isoformat()} · {transaction.description}\n"
-            f"Actual amount: {amount.format()}"
+            f"{actual.date.isoformat()} · {actual.description}\n"
+            f"Actual amount: {actual.amount.format()}"
         )
-        hint = review_explain.fsa_hint(self.db, transaction)
+        hint = detail.fsa_hint
         self.fsa_hint.set_text(hint or "")
         self.fsa_hint.set_visible(hint is not None)
-        for explained in review_explain.explain_candidates(self.db, transaction):
+        for explained in detail.candidates:
             candidate = explained.candidate
             row = Gtk.ListBoxRow()
             row.candidate = candidate
@@ -251,7 +224,7 @@ class ResolutionView(BaseView):
         if first is not None:
             self.candidate_list.select_row(first)
         else:
-            self.variance.set_text(review_explain.no_candidate_reason(self.db, transaction))
+            self.variance.set_text(detail.no_candidate_reason or "")
             self._set_action_sensitivity()
 
     def _on_candidate_selected(self, _listbox, row) -> None:
@@ -261,15 +234,11 @@ class ResolutionView(BaseView):
             self.variance.set_text("")
         else:
             signed_days = 0
-            if self.db is not None and self._transaction_handle is not None:
-                transaction = self.db.get_transaction(self._transaction_handle)
-                if transaction is not None:
-                    signed_days = (transaction.post_date - candidate.event.planned_date).days
             amount_variance = Money(0)
-            if self.db is not None and self._transaction_handle is not None:
-                transaction = self.db.get_transaction(self._transaction_handle)
-                if transaction is not None:
-                    amount_variance = _gross_amount(transaction) - candidate.event.expected_amount
+            if self._detail is not None:
+                actual = self._detail.actual
+                signed_days = (actual.date - candidate.event.planned_date).days
+                amount_variance = actual.amount - candidate.event.expected_amount
             amount_text = amount_variance.format()
             if amount_variance > 0:
                 amount_text = f"+{amount_text}"
@@ -284,10 +253,7 @@ class ResolutionView(BaseView):
         self.match_button.set_sensitive(has_actual and has_candidate)
         self.reject_button.set_sensitive(has_actual and has_candidate)
         self.skip_button.set_sensitive(has_candidate)
-        has_fsa = False
-        if has_actual and self.db is not None and self._transaction_handle is not None:
-            transaction = self.db.get_transaction(self._transaction_handle)
-            has_fsa = transaction is not None and bool(self._fsa_options(transaction)[1])
+        has_fsa = has_actual and self._detail is not None and bool(self._detail.roles)
         self.fsa_button.set_sensitive(has_fsa)
         self.unexpected_button.set_sensitive(has_actual)
         help_keys: tuple[str, ...]
@@ -304,11 +270,11 @@ class ResolutionView(BaseView):
     def _on_match(self, _button) -> None:
         if self.db is None or self._transaction_handle is None or self._candidate_key is None:
             return
-        result = match_review(
-            self.db, ReviewOccurrence(self._transaction_handle, self._candidate_key)
-        )
-        if not result.ok:
-            self.variance.set_text(service_error_message(result.errors[0]))
+        request = ReviewOccurrence(self._transaction_handle, self._candidate_key)
+        try:
+            book_server(self.db).match_review(request)
+        except ApiError as error:
+            self.variance.set_text(str(error))
             return
         self._transaction_handle = None
         self.refresh()
@@ -316,11 +282,11 @@ class ResolutionView(BaseView):
     def _on_reject(self, _button) -> None:
         if self.db is None or self._transaction_handle is None or self._candidate_key is None:
             return
-        result = reject_review(
-            self.db, ReviewOccurrence(self._transaction_handle, self._candidate_key)
-        )
-        if not result.ok:
-            self.variance.set_text(service_error_message(result.errors[0]))
+        request = ReviewOccurrence(self._transaction_handle, self._candidate_key)
+        try:
+            book_server(self.db).reject_review(request)
+        except ApiError as error:
+            self.variance.set_text(str(error))
             return
         self._candidate_key = None
         self._refresh_candidates()
@@ -328,32 +294,24 @@ class ResolutionView(BaseView):
     def _on_skip(self, _button) -> None:
         if self.db is None or self._transaction_handle is None or self._candidate_key is None:
             return
-        result = skip_review(
-            self.db, ReviewOccurrence(self._transaction_handle, self._candidate_key)
-        )
-        if not result.ok:
-            self.variance.set_text(service_error_message(result.errors[0]))
+        request = ReviewOccurrence(self._transaction_handle, self._candidate_key)
+        try:
+            book_server(self.db).skip_review(request)
+        except ApiError as error:
+            self.variance.set_text(str(error))
             return
         self._candidate_key = None
         self._refresh_candidates()
 
-    def _fsa_options(self, transaction):
-        if self.db is None:
-            return [], []
-        claims = fsa_claims.suggest_claims_for_transaction(self.db, transaction)
-        roles: list[tuple[str, str, str, list[date]]] = [
-            (item.role, item.split, self.db.full_name(item.account), list(item.years))
-            for item in fsa_claims.attachment_roles(self.db, transaction)
-        ]
-        return claims, roles
-
     def _on_fsa_attach(self, _button) -> None:
-        if self.db is None or self._transaction_handle is None:
+        if self.db is None or self._detail is None:
             return
-        transaction = self.db.get_transaction(self._transaction_handle)
-        if transaction is None:
-            return
-        claims, roles = self._fsa_options(transaction)
+        transaction = self._detail.actual
+        claims = self._detail.claims
+        roles = [
+            (item.role, item.split, item.account_name, list(item.years))
+            for item in self._detail.roles
+        ]
         if not claims or not roles:
             return
         dialog = BoundedWindow(
@@ -363,16 +321,7 @@ class ResolutionView(BaseView):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(12)
         dialog.set_child(box)
-        claim_pick = bounded_dropdown(
-            [
-                (
-                    f"{item.claim.service_date} "
-                    f"{item.claim.provider or item.claim.description or 'FSA claim'} "
-                    f"— {item.reason}"
-                )
-                for item in claims
-            ]
-        )
+        claim_pick = bounded_dropdown([f"{item.label} — {item.reason}" for item in claims])
         role_pick = bounded_dropdown(
             [f"{claim_role_label(role)} · {account}" for role, _split, account, _years in roles]
         )
@@ -412,18 +361,11 @@ class ResolutionView(BaseView):
                 from datetime import date as _date
 
                 year = _date.fromisoformat(item)
-            result = attach_review_claim(
-                self.db,
-                ReviewClaimAttachment(
-                    transaction.handle,
-                    claim.handle,
-                    role,
-                    split,
-                    year,
-                ),
-            )
-            if not result.ok:
-                status.set_text(service_error_message(result.errors[0]))
+            request = ReviewClaimAttachment(transaction.handle, claim, role, split, year)
+            try:
+                book_server(self.db).attach_review_claim(request)
+            except ApiError as error:
+                status.set_text(str(error))
                 return
             dialog.close()
             self.refresh()
@@ -434,7 +376,7 @@ class ResolutionView(BaseView):
                 return
             suggestion = claims[selected]
             for index, (role, split, _account, _years) in enumerate(roles):
-                if role == suggestion.role and split == suggestion.split_handle:
+                if role == suggestion.role and split == suggestion.split:
                     role_pick.set_selected(index)
                     break
 
@@ -446,9 +388,10 @@ class ResolutionView(BaseView):
     def _on_unexpected(self, _button) -> None:
         if self.db is None or self._transaction_handle is None:
             return
-        result = mark_review_unexpected(self.db, ReviewTransaction(self._transaction_handle))
-        if not result.ok:
-            self.variance.set_text(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).mark_review_unexpected(self._transaction_handle)
+        except ApiError as error:
+            self.variance.set_text(str(error))
             return
         self._transaction_handle = None
         self.refresh()

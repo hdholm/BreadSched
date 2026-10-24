@@ -15,6 +15,7 @@ from decimal import Decimal
 import pytest
 from test_receivable_receipts import DUE, TODAY, _post, _receivable
 
+from breadsched.api.local import book_server
 from breadsched.gen.engine import planning, projection
 from breadsched.gen.engine.reimbursement_outlook import reimbursement_outlook
 from breadsched.gen.lib import Assumptions, Money, Scenario, Transaction
@@ -244,7 +245,7 @@ def test_web_projection_and_print_show_the_gross_and_net_cost(db, book):
     assert _change(db, scenario, receivable, amount=Money("90.00")).ok
     stored = db.get_scenario(scenario.handle)
 
-    payload = projection_report(db, stored)
+    payload = projection_report(book_server(db), stored)
     [item] = payload["reimbursements"]
     assert (item["receivable"], item["expected"], item["net_cost"]) == (
         receivable.handle,

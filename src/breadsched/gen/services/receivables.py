@@ -32,12 +32,22 @@ from ..engine.receivables import (
 from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
 from ..lib.receivable import Receivable, ReceivableWriteOff
+from ..lib.scenario import ReimbursementOverride
 from ..lib.split_link import SplitLink
 from ..lib.transaction import Transaction
 from .contracts import ServiceError, ServiceResult
 
 __all__ = [
     "AcceptedReimbursements",
+    "CandidateLine",
+    "LinkedSplit",
+    "ReceivableLine",
+    "ReceivablesView",
+    "ReimbursementChange",
+    "ReimbursementProposalLine",
+    "find_receivable",
+    "receivable_candidate_lines",
+    "receivables_view",
     "ReceivableCandidate",
     "ReimbursementProposal",
     "RecordWriteOff",
@@ -521,3 +531,162 @@ def accept_reimbursements(
         if attach_reimbursement_split(db, receivable, transaction, split).value is not None:
             linked += 1
     return ServiceResult.success(AcceptedReimbursements(linked, len(chosen) - linked))
+
+
+def find_receivable(db: DbSQLite, reference: str) -> ServiceResult[Receivable]:
+    """A receivable by handle, or by a unique prefix of one."""
+    exact = db.get_receivable(reference) if reference else None
+    if exact is not None:
+        return ServiceResult.success(exact)
+    matches = (
+        [item for item in db.iter_receivables() if item.handle.startswith(reference)]
+        if reference
+        else []
+    )
+    if not matches:
+        return ServiceResult.failure(ServiceError("receivable.not_found", ("receivable",)))
+    if len(matches) > 1:
+        return ServiceResult.failure(
+            ServiceError("receivable.reference.ambiguous", ("receivable",))
+        )
+    return ServiceResult.success(matches[0])
+
+
+@dataclass(frozen=True, slots=True)
+class LinkedSplit:
+    """A split linked to a receivable, as the ledger has it now (None once gone)."""
+
+    transaction: str
+    split: str
+    when: date | None
+    description: str | None
+    account_name: str | None
+    value: Money | None
+
+
+@dataclass(frozen=True, slots=True)
+class ReimbursementChange:
+    """How one scenario changes what a payer is expected to reimburse."""
+
+    scenario: str
+    scenario_name: str
+    override: ReimbursementOverride
+
+
+@dataclass(frozen=True, slots=True)
+class ReceivableLine:
+    summary: ReceivableSummary
+    account_name: str | None
+    expenses: tuple[LinkedSplit, ...]
+    reimbursements: tuple[LinkedSplit, ...]
+    shared_costs: tuple[fsa_claims.SharedCost, ...]
+    scenario_changes: tuple[ReimbursementChange, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateLine:
+    candidate: ReceivableCandidate
+    account_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReimbursementProposalLine:
+    proposal: ReimbursementProposal
+    account_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReceivablesView:
+    """Everything a receivables screen shows, and the choices its forms offer."""
+
+    receivables: tuple[ReceivableLine, ...]
+    proposals: tuple[ReimbursementProposalLine, ...]
+    #: Splits that could be linked as an expense, or as money back.
+    costs: tuple[CandidateLine, ...]
+    credits: tuple[CandidateLine, ...]
+    #: Receivable accounts and scenarios as (handle, full name) pairs.
+    accounts: tuple[tuple[str, str], ...]
+    scenarios: tuple[tuple[str, str], ...]
+
+
+def receivables_view(db: DbSQLite, as_of: date | None = None) -> ReceivablesView:
+    """Every receivable's standing with its links, proposals, and the form choices."""
+
+    def name(handle: str) -> str:
+        return db.full_name(handle) or handle
+
+    def linked(links) -> tuple[LinkedSplit, ...]:
+        rows = []
+        for link in links:
+            transaction = db.get_transaction(link.transaction)
+            split = (
+                next((item for item in transaction.splits if item.handle == link.split), None)
+                if transaction is not None
+                else None
+            )
+            rows.append(
+                LinkedSplit(
+                    link.transaction,
+                    link.split,
+                    transaction.post_date if transaction is not None else None,
+                    transaction.description if transaction is not None else None,
+                    db.full_name(split.account) if split is not None else None,
+                    split.value if split is not None else None,
+                )
+            )
+        return tuple(rows)
+
+    scenarios = sorted(db.iter_scenarios(), key=lambda item: item.name.casefold())
+    lines = []
+    for summary in list_receivables(db, as_of=as_of).value or ():
+        receivable = summary.receivable
+        lines.append(
+            ReceivableLine(
+                summary,
+                db.full_name(receivable.account) if receivable.account else None,
+                linked(receivable.expenses),
+                linked(receivable.reimbursements),
+                shared_costs(db, receivable.handle, as_of=as_of).value or (),
+                tuple(
+                    ReimbursementChange(
+                        scenario.handle,
+                        scenario.name,
+                        scenario.reimbursement_overrides[receivable.handle],
+                    )
+                    for scenario in scenarios
+                    if receivable.handle in scenario.reimbursement_overrides
+                ),
+            )
+        )
+    costs, credits = receivable_candidate_lines(db).value or ((), ())
+    return ReceivablesView(
+        tuple(lines),
+        tuple(
+            ReimbursementProposalLine(item, name(item.account))
+            for item in reimbursement_proposals(db, as_of=as_of).value or ()
+        ),
+        costs,
+        credits,
+        tuple(
+            (account.handle, db.full_name(account) or account.name)
+            for account in receivable_accounts(db)
+        ),
+        tuple((scenario.handle, scenario.name) for scenario in scenarios),
+    )
+
+
+def receivable_candidate_lines(
+    db: DbSQLite, receivable: str | None = None
+) -> ServiceResult[tuple[tuple[CandidateLine, ...], tuple[CandidateLine, ...]]]:
+    """``receivable_candidates`` with each split's account name: (costs, credits)."""
+    found = receivable_candidates(db, receivable)
+    if found.value is None:
+        return ServiceResult.failure(*found.errors)
+    costs, credits = found.value
+
+    def named(items) -> tuple[CandidateLine, ...]:
+        return tuple(
+            CandidateLine(item, db.full_name(item.account) or item.account) for item in items
+        )
+
+    return ServiceResult.success((named(costs), named(credits)))

@@ -38,6 +38,7 @@ from .backups import backup_connection, migration_backup_path, restore_backup, s
 from .base import DbError, DbReadonlyError, DbTxn
 from .book_lock import BookWriterLock
 from .change_verification import ChangeVerification
+from .compact import expand_transaction, minimize_transaction
 from .migrations import MIGRATIONS, MIN_SUPPORTED_SCHEMA_VERSION
 from .storage_verification import derived_column_issues, split_index_issues
 from .verification import BookIssue, BookVerification, verify_domain
@@ -141,6 +142,9 @@ CREATE TABLE IF NOT EXISTS schema_migration (
 );
 """
 
+#: Metadata key of the book's change counter (see :meth:`DbSQLite.revision`).
+REVISION_KEY = "book_revision"
+
 #: table -> (object class, signal stem)
 _TABLES: dict[str, tuple[type, str]] = {
     "commodity": (Commodity, "commodity"),
@@ -196,6 +200,15 @@ class DbSQLite(ChangeVerification):
         self.migration_backup: str | None = None
 
     # ------------------------------------------------------------- life cycle
+
+    @property
+    def writer_lock_token(self) -> str | None:
+        """The random token of the writer lock this book holds, if it holds one.
+
+        It identifies the lock's holder without relying on the host name, which can
+        change while a process runs (#358).
+        """
+        return self._book_lock.token if self._book_lock is not None else None
 
     def _release_book_lock(self) -> None:
         lock, self._book_lock = self._book_lock, None
@@ -547,7 +560,10 @@ class DbSQLite(ChangeVerification):
                 self._accounts.pop(handle, None)
             return
 
-        blob = json.dumps(data, separators=(",", ":"))
+        # Transactions are stored minimized (decision 0001, #354); every reader
+        # restores the defaults, and _read hands back the full form.
+        stored = minimize_transaction(data) if table == "txn" else data
+        blob = json.dumps(stored, separators=(",", ":"))
         if table == "account":
             conn.execute(
                 "INSERT OR REPLACE INTO account(handle,parent,name,atype,blob) VALUES (?,?,?,?,?)",
@@ -638,7 +654,10 @@ class DbSQLite(ChangeVerification):
             .execute(f"SELECT blob FROM {table} WHERE handle=?", (handle,))
             .fetchone()
         )
-        return json.loads(row["blob"]) if row else None
+        if not row:
+            return None
+        data = json.loads(row["blob"])
+        return expand_transaction(data) if table == "txn" else data
 
     def _write(self, obj: Any, txn: DbTxn, table: str) -> str:
         if self._active_txn is not txn:
@@ -702,6 +721,8 @@ class DbSQLite(ChangeVerification):
                 raise DbError(
                     f"transaction would leave an invalid book: {first.code}: {first.message}"
                 )
+            if txn.records:
+                self._advance_revision()
             conn.commit()
             self._active_txn = None
             if txn.records:
@@ -787,6 +808,7 @@ class DbSQLite(ChangeVerification):
                     raise DbError(
                         f"undo/redo would leave an invalid book: {first.code}: {first.message}"
                     )
+                self._advance_revision()
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -1244,6 +1266,20 @@ class DbSQLite(ChangeVerification):
                 yield obj
 
     # ---------------------------------------------------------------- metadata
+
+    def revision(self) -> int:
+        """How many recorded changes the book has committed, across every process.
+
+        Each committed database transaction that changed a record, and each undo or
+        redo, raises it by one in the same SQL transaction; it is kept outside the
+        undo records so undoing a change still moves it forward (#357). Metadata
+        written outside a database transaction (presentation settings) does not
+        count.
+        """
+        return int(self.get_metadata(REVISION_KEY, 0) or 0)
+
+    def _advance_revision(self) -> None:
+        self._set_metadata_uncommitted(REVISION_KEY, self.revision() + 1)
 
     def get_metadata(self, key: str, default: Any = None) -> Any:
         conn = self._conn

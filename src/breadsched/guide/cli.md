@@ -139,7 +139,13 @@ every source failed. See
 ```bash
 breadsched estimate household.breadsched suggest --json
 breadsched scheduled household.breadsched
+breadsched scheduled household.breadsched --post --all --json
 ```
+
+`scheduled --post` posts what is due without a review: automatic schedules, or
+every schedule with `--all` (never plan-only estimates). With `--json` it answers
+as the browser does, with `posted` and each `transaction`'s schedule, date, and
+description.
 
 ### Paychecks and pay changes
 
@@ -181,8 +187,10 @@ breadsched due-review household.breadsched --post-all
 
 `--post` and `--skip` take a schedule id prefix or exact name, optionally with
 `@YYYY-MM-DD` for one date; `--post-all` and `--skip-all` decide everything due or
-entered in advance, but leave reminders. With `--json`, each date's `stage` is
-`overdue`, `due`, `advance`, or `reminder`. See
+entered in advance, but leave reminders. With `--json`, the output is what the browser's
+due review returns (`schedules`, each date with its `stage`: `overdue`, `due`,
+`advance`, or `reminder`), and a decision reports `posted`, `skipped`, `deferred`,
+and the new `transactions`. See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
 ### Enter or skip the next occurrence
@@ -199,6 +207,38 @@ breadsched scheduled-advance household.breadsched Rent --enter-days 3 --remind-d
 or with `--enter-days` and `--remind-days` sets, how many days ahead its
 occurrences are entered or reminded (0 to 999). See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
+
+### Share a book with a running server (experimental)
+
+```bash
+breadsched serve household.breadsched --port 8765
+breadsched due-review household.breadsched
+breadsched scheduled-next household.breadsched Rent --enter
+```
+
+While `breadsched serve` (or `breadsched web` without `--read-only`) holds a book,
+`due-review`, `scheduled-next`, `scheduled-advance`, `scheduled --post`, `accounts`,
+`account`, `register`, `balance`, `add`, `edit`, `delete`, `rules`, `tags`, `goals`,
+`receivables` (except `--costs`), `scenario`, `drawdown`, `payroll`, `claims`, `review`,
+`plan-unresolved`, `plan-matches`, `plan-resolve`, `plan-reject`, `plan-unexpected`,
+`import-review`, `sale-lots`, `tax-marks`, `quotes`, `quote-source`, `rate`,
+`attachments`, `net-worth`, `net-worth-change`, `project`, and `compare` for the same
+book work through that server instead of stopping because the book is already open for writing. The
+server records its address and token in a file only you can read, in your runtime
+folder, and removes it when it stops. `--server URL` names a server explicitly; its
+token comes from `--token-file PATH` or the `BREADSCHED_SERVER_TOKEN` environment
+variable. Other commands still need the book to themselves. The desktop application
+can share the book it has open the same way (**Edit → Preferences… → Sharing**).
+
+To reach the book from another device, put a TLS reverse proxy such as nginx in
+front of the server on the same machine; the server itself only listens on this
+machine. `--trusted-origin https://books.example.lan` lets pages from the proxy's
+address use the book, and `--token-file PATH` keeps the token in a private file
+instead of printing it. Another machine's commands then use
+`--server https://books.example.lan` with `--token-file`, and `--ca-file`,
+`--client-cert`, and `--client-key` when the proxy uses its own certificate
+authority or asks for a client certificate. See the design notes (decision 0003)
+for a complete nginx configuration and the checks the proxy must keep.
 
 ## Import files
 

@@ -32,6 +32,8 @@ from datetime import date
 from decimal import Decimal
 from fractions import Fraction
 
+from ..api import ApiError
+from ..api.local import book_server
 from ..gen.engine import ledger
 from ..gen.engine.cost_basis import shares_text
 from ..gen.engine.entry_input import (
@@ -54,8 +56,6 @@ from ..gen.services import (
     ToggleCleared,
     TransactionInput,
     TransactionSplitInput,
-    save_transaction,
-    toggle_cleared,
     transaction_currency,
 )
 from ..gen.services.autocomplete import SuggestEntry, suggest_entry
@@ -1270,11 +1270,11 @@ class RegisterSheet:
             splits, amount = built
         self.saving = True
         try:
-            result = self._save_transaction(when, description, currency, splits)
+            saved = self._save_transaction(when, description, currency, splits)
+        except ApiError as error:
+            return self._fail(str(error))
         finally:
             self.saving = False
-        if not result.ok:
-            return self._fail(service_error_message(result.errors[0]))
         if draft.source is None:
             self.last_date = when
             heading = self.debit_heading if amount > 0 else self.credit_heading
@@ -1286,19 +1286,18 @@ class RegisterSheet:
         else:
             self._say(f"Saved changes to {description}.")
         self.draft = self._blank_draft()
-        changed = {result.value.handle} if result.value is not None else set()
+        changed = {saved.handle}
         if draft.source is not None:
             changed.add(draft.source.handle)
         self.reload(keep_cursor=False, changed=changed)
-        if result.value is not None and draft.source is not None:
+        if draft.source is not None:
             self.select_transaction(draft.source.handle)
         return True
 
     def _save_transaction(self, when, description: str, currency: str, splits):
-        """Write the draft as one balanced transaction through the shared service."""
+        """Write the draft as one balanced transaction through the book server (#359)."""
         draft = self.draft
-        return save_transaction(
-            self.db,
+        return book_server(self.db).save_transaction(
             SaveTransaction(
                 TransactionInput(
                     post_date=when,
@@ -1440,13 +1439,13 @@ class RegisterSheet:
         row = self.rows[index]
         if row.kind != TRANSACTION or row.register_row is None:
             return False
-        result = toggle_cleared(
-            self.db,
-            ToggleCleared(row.register_row.transaction.handle, row.register_row.split.handle),
-        )
-        if result.value is None:
-            return self._fail(service_error_message(result.errors[0]))
-        state = "cleared" if result.value is ReconcileState.CLEARED else "not cleared"
+        try:
+            toggled = book_server(self.db).toggle_cleared(
+                ToggleCleared(row.register_row.transaction.handle, row.register_row.split.handle),
+            )
+        except ApiError as error:
+            return self._fail(str(error))
+        state = "cleared" if toggled is ReconcileState.CLEARED else "not cleared"
         self._say(f"Marked {row.register_row.description} {state}.")
         self.reload(changed={row.register_row.transaction.handle})
         return True

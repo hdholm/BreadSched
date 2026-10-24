@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..gen.engine.cost_basis import shares_text
 from ..gen.engine.tax_year import currency_labels, tax_year, tax_years
-from ..gen.services import SetTaxMarks, TaxMarks, set_tax_marks, tax_marks
+from ..gen.services import SetTaxMarks, TaxMarks
 
 if TYPE_CHECKING:
     from .context import Api
@@ -114,14 +114,12 @@ def _marks_data(marks: TaxMarks) -> dict[str, object]:
 def tax_marks_view(api: Api, query: QueryParams) -> dict[str, object]:
     """Every account and tag with whether the tax year totals it."""
     query.finish()
-    return _marks_data(tax_marks(api.db))
+    return _marks_data(api.book.tax_marks())
 
 
 def tax_marks_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """Change marks: ``accounts`` maps a handle to true, false, or null (follow GnuCash);
     ``tags`` maps a tag to true or false."""
-    from .controls import service_error
-
     accounts = payload.get("accounts", {})
     tags = payload.get("tags", {})
     if not isinstance(accounts, dict) or not all(
@@ -133,7 +131,4 @@ def tax_marks_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         isinstance(key, str) and isinstance(value, bool) for key, value in tags.items()
     ):
         raise ValueError("tags must map a tag to true or false")
-    result = set_tax_marks(api.db, SetTaxMarks(accounts, tags))
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return _marks_data(result.value)
+    return _marks_data(api.book.set_tax_marks(SetTaxMarks(accounts, tags)))

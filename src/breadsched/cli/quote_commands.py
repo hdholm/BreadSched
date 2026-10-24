@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from ..gen.services.quotes import SetQuoteSource, quote_requests, set_quote_source, update_quotes
+from ..gen.services.quotes import SetQuoteSource, StoreQuotes
 from ..gen.utils.settings import Settings
 from ..plugins.quotes import (
     OnlineQuotes,
@@ -13,8 +13,8 @@ from ..plugins.quotes import (
     quote_source_choices,
     quote_source_warning,
 )
-from ..presentation import price_text, service_error_message
-from .common import AddCommand, CommandError, emit, open_book, table
+from ..presentation import price_text
+from .common import AddCommand, CommandError, add_server_options, book_api, emit, table
 
 
 def _fetcher() -> OnlineQuotes:
@@ -22,10 +22,10 @@ def _fetcher() -> OnlineQuotes:
 
 
 def cmd_quotes(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r" if args.dry_run else "w")
-    try:
+    with book_api(args, "r" if args.dry_run else "w") as book:
+        plan = book.quote_plan()
+        requests = plan.requests
         if args.list:
-            requests = quote_requests(db)
             info = finance_quote_info()
             listed = [{"symbol": item.symbol, "source": item.source} for item in requests]
             text = (
@@ -44,10 +44,13 @@ def cmd_quotes(args: argparse.Namespace) -> int:
                 f"{text}\n\n{info.reason}.\nSources: {', '.join(sources)}",
             )
             return 0
-        result = update_quotes(db, _fetcher(), dry_run=args.dry_run)
-        if result.value is None:
-            raise CommandError(service_error_message(result.errors[0]))
-        update = result.value
+        # Fetched here, where the network is; the book server only stores them.
+        fetched: tuple[list, list] = ([], [])
+        if requests and plan.currency is not None:
+            fetched = _fetcher().fetch(requests, plan.currency)
+        quotes, failures = fetched
+        request = StoreQuotes(tuple(quotes), tuple(failures), dry_run=args.dry_run)
+        update = book.store_quotes(request)
         rows = [
             [
                 item.symbol,
@@ -88,33 +91,28 @@ def cmd_quotes(args: argparse.Namespace) -> int:
             "\n".join(lines) or "No commodity has an online quote source.",
         )
         return 1 if update.failures and not update.stored else 0
-    finally:
-        db.close()
 
 
 def cmd_quote_source(args: argparse.Namespace) -> int:
-    db = open_book(args.book)
-    try:
+    with book_api(args, "w") as book:
         wanted = args.commodity.strip().upper()
-        matches = [item for item in db.iter_commodities() if item.mnemonic.upper() == wanted]
+        matches = [
+            item for item in book.quote_plan().commodities if item.mnemonic.upper() == wanted
+        ]
         if not matches:
             raise CommandError(f"no commodity {args.commodity!r}")
         if len(matches) > 1:
             raise CommandError(f"{args.commodity!r} names {len(matches)} commodities")
-        result = set_quote_source(db, SetQuoteSource(matches[0].handle, args.source or ""))
-        if result.value is None:
-            raise CommandError(service_error_message(result.errors[0]))
-        warning = quote_source_warning(result.value, finance_quote_info())
+        source = book.set_quote_source(SetQuoteSource(matches[0].handle, args.source or ""))
+        warning = quote_source_warning(source, finance_quote_info())
         emit(
-            {"commodity": matches[0].mnemonic, "source": result.value, "warning": warning},
+            {"commodity": matches[0].mnemonic, "source": source, "warning": warning},
             args,
             f"{matches[0].mnemonic}: "
-            + (f"online quotes from {result.value}" if result.value else "no online quotes")
+            + (f"online quotes from {source}" if source else "no online quotes")
             + (f"\nWarning: {warning}" if warning else ""),
         )
         return 0
-    finally:
-        db.close()
 
 
 def register(add: AddCommand) -> None:
@@ -126,6 +124,7 @@ def register(add: AddCommand) -> None:
     quotes.add_argument(
         "--list", action="store_true", help="list the commodities and their sources only"
     )
+    add_server_options(quotes)
     quotes.set_defaults(func=cmd_quotes)
     source = add(
         "quote-source",
@@ -134,4 +133,5 @@ def register(add: AddCommand) -> None:
     )
     source.add_argument("commodity", help="the commodity's symbol, such as G or VTSAX")
     source.add_argument("source", nargs="?", default="", help="the quote source")
+    add_server_options(source)
     source.set_defaults(func=cmd_quote_source)

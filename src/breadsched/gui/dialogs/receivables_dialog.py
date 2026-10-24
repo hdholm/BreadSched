@@ -12,32 +12,20 @@ from __future__ import annotations
 
 from datetime import date
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib.money import Money
 from ...gen.lib.receivable import Receivable
 from ...gen.services.receivables import (
+    ReceivablesView,
     RecordWriteOff,
     SaveReceivable,
-    accept_reimbursements,
-    attach_expense_split,
-    attach_reimbursement_split,
-    clear_dispute,
-    delete_receivable,
-    detach_split,
-    list_receivables,
-    mark_disputed,
-    receivable_accounts,
-    receivable_candidates,
-    record_write_off,
-    reimbursement_proposals,
-    save_receivable,
-    shared_costs,
 )
-from ...gen.services.scenarios import SetReimbursementOverride, set_reimbursement_override
+from ...gen.services.scenarios import SetReimbursementOverride
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import (
     reimbursement_override_text,
-    service_error_message,
     shared_cost_text,
 )
 from ..gi_setup import Gtk
@@ -87,6 +75,7 @@ class ReceivablesDialog(BoundedWindow):
         self.set_destroy_with_parent(True)
         self.set_default_size(960, 680)
         self.db = db
+        self.book = book_server(db)
         #: The receivable loaded in the form, or None while adding one.
         self.editing: str | None = None
         #: A cost split to link once the new receivable in the form is saved.
@@ -291,7 +280,10 @@ class ReceivablesDialog(BoundedWindow):
             self.status.remove_css_class("negative")
 
     def _prefill_from(self, expense: tuple[str, str]) -> None:
-        transaction = self.db.get_transaction(expense[0])
+        try:
+            transaction = self.book.find_transaction(expense[0])
+        except ApiError:
+            transaction = None
         split = (
             next((item for item in transaction.splits if item.handle == expense[1]), None)
             if transaction is not None
@@ -311,7 +303,8 @@ class ReceivablesDialog(BoundedWindow):
 
     def refresh(self) -> None:
         """Reload every receivable's recomputed standing and the loaded one's links."""
-        summaries = list_receivables(self.db, as_of=date.today()).value or ()
+        view = self.book.receivables_view(date.today())
+        summaries = [line.summary for line in view.receivables]
         _clear(self.rows)
         titles = (
             "Payer",
@@ -346,11 +339,11 @@ class ReceivablesDialog(BoundedWindow):
             open_button = Gtk.Button(label="Open")
             open_button.connect("clicked", lambda _b, handle=item.handle: self.edit(handle))
             self.rows.attach(open_button, 10, row, 1, 1)
-        self._refresh_proposals()
-        self._refresh_detail()
+        self._refresh_proposals(view)
+        self._refresh_detail(view)
 
-    def _refresh_proposals(self) -> None:
-        proposals = reimbursement_proposals(self.db, as_of=date.today()).value or ()
+    def _refresh_proposals(self, view: ReceivablesView) -> None:
+        proposals = [line.proposal for line in view.proposals]
         _clear(self.proposal_rows)
         self.proposal_checks = {}
         _heading(
@@ -389,78 +382,61 @@ class ReceivablesDialog(BoundedWindow):
     def accept_selected(self):
         """Link the checked proposals that are still on offer."""
         chosen = tuple(key for key, check in self.proposal_checks.items() if check.get_active())
-        result = accept_reimbursements(self.db, chosen)
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            accepted = self.book.accept_reimbursements(chosen)
+        except ApiError as error:
+            self._message(str(error), True)
             return None
         self.refresh()
         self._message(
-            f"Linked {result.value.linked} reimbursement(s); "
-            f"{result.value.unchanged} left unchanged.",
+            f"Linked {accepted.linked} reimbursement(s); {accepted.unchanged} left unchanged.",
             False,
         )
-        return result.value
+        return accepted
 
-    def _refresh_detail(self) -> None:
-        receivable = self.db.get_receivable(self.editing) if self.editing else None
+    def _refresh_detail(self, view: ReceivablesView | None = None) -> None:
+        if view is None:
+            view = self.book.receivables_view(date.today())
+        line = next(
+            (item for item in view.receivables if item.summary.receivable.handle == self.editing),
+            None,
+        )
+        receivable = line.summary.receivable if line is not None else None
         self.detail.set_visible(receivable is not None)
         self.delete_button.set_sensitive(receivable is not None)
         _clear(self.links)
         self.warning.set_visible(False)
         self.shared.set_visible(False)
-        if receivable is None:
+        if receivable is None or line is None:
             return
-        shared = shared_costs(self.db, receivable.handle)
-        lines = (
-            [shared_cost_text(item) for item in shared.value]
-            if shared.value is not None
-            else [service_error_message(shared.errors[0])]
-        )
+        lines = [shared_cost_text(item) for item in line.shared_costs]
         self.shared.set_text("\n".join(lines))
         self.shared.set_visible(bool(lines))
-        overlaps = next(
-            (
-                summary.fsa_claims
-                for summary in list_receivables(self.db).value or ()
-                if summary.receivable.handle == receivable.handle
-            ),
-            (),
-        )
-        if overlaps:
+        if line.summary.fsa_claims:
             self.warning.set_text(
                 "An expense linked here is also on an FSA claim. Check that the same "
                 "cost is not expected back from both."
             )
             self.warning.set_visible(True)
         _heading(self.links, ("Role", "Date", "Description", "Account", "Amount"), {4})
-        linked = [("Expense", link) for link in receivable.expenses] + [
-            ("Reimbursement", link) for link in receivable.reimbursements
+        linked = [("Expense", link) for link in line.expenses] + [
+            ("Reimbursement", link) for link in line.reimbursements
         ]
         if not linked:
             self.links.attach(Gtk.Label(label="Nothing linked yet.", xalign=0), 0, 1, 5, 1)
         for row, (role, link) in enumerate(linked, start=1):
-            transaction = self.db.get_transaction(link.transaction)
-            split = (
-                next((item for item in transaction.splits if item.handle == link.split), None)
-                if transaction is not None
-                else None
-            )
             self.links.attach(Gtk.Label(label=role, xalign=0), 0, row, 1, 1)
-            if transaction is None or split is None:
+            if link.when is None or link.value is None:
                 missing = Gtk.Label(label="Linked split no longer exists", xalign=0)
                 missing.add_css_class("negative")
                 self.links.attach(missing, 1, row, 4, 1)
             else:
                 for column, text in enumerate(
-                    (
-                        transaction.post_date.isoformat(),
-                        transaction.description,
-                        self.db.full_name(split.account),
-                    ),
+                    (link.when.isoformat(), link.description or "", link.account_name or ""),
                     start=1,
                 ):
                     self.links.attach(Gtk.Label(label=text, xalign=0), column, row, 1, 1)
-                self.links.attach(_amount(split.value), 4, row, 1, 1)
+                self.links.attach(_amount(link.value), 4, row, 1, 1)
             unlink = Gtk.Button(label="Unlink")
             unlink.connect("clicked", lambda _b, item=link: self.unlink(item))
             self.links.attach(unlink, 5, row, 1, 1)
@@ -469,20 +445,18 @@ class ReceivablesDialog(BoundedWindow):
             receivable.disputed_on.isoformat() if receivable.disputed_on else ""
         )
         self.dispute_note.set_text(receivable.dispute_note)
-        self._fill_scenarios(receivable)
+        self._fill_scenarios(view, line.scenario_changes)
 
-    def _fill_scenarios(self, receivable: Receivable) -> None:
-        scenarios = sorted(self.db.iter_scenarios(), key=lambda item: item.name.casefold())
+    def _fill_scenarios(self, view: ReceivablesView, scenario_changes) -> None:
         selected = self.scenario_picker.get_selected()
-        self._scenarios = [item.handle for item in scenarios]
-        self.scenario_picker.set_model(Gtk.StringList.new([item.name for item in scenarios]))
+        self._scenarios = [handle for handle, _name in view.scenarios]
+        self.scenario_picker.set_model(Gtk.StringList.new([name for _h, name in view.scenarios]))
         if self._scenarios:
             self.scenario_picker.set_selected(min(selected, len(self._scenarios) - 1))
         self.scenario_button.set_sensitive(bool(self._scenarios))
         changes = [
-            reimbursement_override_text(item.name, item.reimbursement_overrides[receivable.handle])
-            for item in scenarios
-            if receivable.handle in item.reimbursement_overrides
+            reimbursement_override_text(change.scenario_name, change.override)
+            for change in scenario_changes
         ]
         self.scenario_changes.set_text(
             "Scenario changes: " + "; ".join(changes)
@@ -494,29 +468,34 @@ class ReceivablesDialog(BoundedWindow):
 
     def _fill_pickers(self, receivable: Receivable) -> None:
         """Offer recent unlinked expense-account splits, costs and credits apart."""
-        costs, credits = receivable_candidates(self.db, receivable.handle).value or ((), ())
+        costs, credits = self.book.receivable_candidates(receivable.handle)
         for picker, items, attribute in (
             (self.cost_picker, costs, "_costs"),
             (self.credit_picker, credits, "_credits"),
         ):
-            setattr(self, attribute, [(item.transaction, item.split) for item in items])
+            setattr(
+                self,
+                attribute,
+                [(line.candidate.transaction, line.candidate.split) for line in items],
+            )
             names = Gtk.StringList()
-            for item in items:
+            for line in items:
+                item = line.candidate
                 names.append(
                     f"{item.when.isoformat()} · {item.description} · "
-                    f"{self.db.full_name(item.account)} · {item.value.format()}"
+                    f"{line.account_name} · {item.value.format()}"
                 )
             if not items:
                 names.append("(no unlinked expense-account splits)")
             picker.set_model(names)
 
     def _fill_accounts(self, current: str | None) -> None:
-        accounts = receivable_accounts(self.db)
-        self._accounts = [None, *(account.handle for account in accounts)]
+        accounts = self.book.receivables_view(date.today()).accounts
+        self._accounts = [None, *(handle for handle, _name in accounts)]
         names = Gtk.StringList()
         names.append("Default Receivable account")
-        for account in accounts:
-            names.append(self.db.full_name(account) or account.name)
+        for _handle, name in accounts:
+            names.append(name)
         self.account_picker.set_model(names)
         self.account_picker.set_selected(
             self._accounts.index(current) if current in self._accounts else 0
@@ -524,7 +503,7 @@ class ReceivablesDialog(BoundedWindow):
 
     def edit(self, handle: str | None) -> None:
         """Load a receivable into the form, or clear the form to add one."""
-        receivable = self.db.get_receivable(handle) if handle is not None else None
+        receivable = self._stored(handle) if handle is not None else None
         self.editing = receivable.handle if receivable is not None else None
         today = date.today().isoformat()
         self.payer_entry.set_text(receivable.payer if receivable else "")
@@ -542,6 +521,12 @@ class ReceivablesDialog(BoundedWindow):
         if receivable is not None:
             self.pending_expense = None
         self._refresh_detail()
+
+    def _stored(self, handle: str) -> Receivable | None:
+        try:
+            return self.book.find_receivable(handle)
+        except ApiError:
+            return None
 
     # ----------------------------------------------------------------- parsing
 
@@ -582,16 +567,18 @@ class ReceivablesDialog(BoundedWindow):
         except ValueError as error:
             self._message(str(error), True)
             return None
-        result = save_receivable(self.db, request)
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            receivable = self.book.save_receivable(request)
+        except ApiError as error:
+            self._message(str(error), True)
             return None
-        receivable = result.value
         message = f"Saved {receivable.payer}."
         if self.pending_expense is not None and self.editing is None:
-            linked = attach_expense_split(self.db, receivable.handle, *self.pending_expense)
-            if linked.value is None:
-                message += f" The expense was not linked: {service_error_message(linked.errors[0])}"
+            try:
+                transaction, split = self.pending_expense
+                self.book.link_receivable_split(receivable.handle, transaction, split, "expense")
+            except ApiError as error:
+                message += f" The expense was not linked: {error}"
             else:
                 message += " The expense is linked."
             self.pending_expense = None
@@ -610,21 +597,21 @@ class ReceivablesDialog(BoundedWindow):
         except ValueError as error:
             self._message(str(error), True)
             return False
-        result = set_reimbursement_override(
-            self.db,
-            SetReimbursementOverride(
-                self._scenarios[self.scenario_picker.get_selected()], self.editing, amount, when
-            ),
-        )
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            changed = self.book.set_reimbursement_override(
+                SetReimbursementOverride(
+                    self._scenarios[self.scenario_picker.get_selected()], self.editing, amount, when
+                ),
+            )
+        except ApiError as error:
+            self._message(str(error), True)
             return False
-        override = result.value.reimbursement_overrides.get(self.editing)
+        override = changed.reimbursement_overrides.get(self.editing)
         self._refresh_detail()
         self._message(
-            reimbursement_override_text(result.value.name, override) + "."
+            reimbursement_override_text(changed.name, override) + "."
             if override is not None
-            else f"{result.value.name} expects what the receivable says.",
+            else f"{changed.name} expects what the receivable says.",
             False,
         )
         return True
@@ -633,9 +620,10 @@ class ReceivablesDialog(BoundedWindow):
         """Delete the loaded receivable; its transactions are untouched."""
         if self.editing is None:
             return False
-        result = delete_receivable(self.db, self.editing)
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            self.book.delete_receivable(self.editing)
+        except ApiError as error:
+            self._message(str(error), True)
             return False
         self.edit(None)
         self.refresh()
@@ -655,10 +643,11 @@ class ReceivablesDialog(BoundedWindow):
         if not 0 <= index < len(choices):
             self._message("There is no split to link.", True)
             return False
-        attach = attach_expense_split if role == "expense" else attach_reimbursement_split
-        result = attach(self.db, self.editing, *choices[index])
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            transaction, split = choices[index]
+            self.book.link_receivable_split(self.editing, transaction, split, role)
+        except ApiError as error:
+            self._message(str(error), True)
             return False
         self.refresh()
         self._message(f"Linked the {role}.", False)
@@ -667,9 +656,10 @@ class ReceivablesDialog(BoundedWindow):
     def unlink(self, link) -> bool:
         if self.editing is None:
             return False
-        result = detach_split(self.db, self.editing, link.transaction, link.split)
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            self.book.detach_receivable_split(self.editing, link.transaction, link.split)
+        except ApiError as error:
+            self._message(str(error), True)
             return False
         self.refresh()
         self._message("Unlinked; the transaction itself is unchanged.", False)
@@ -683,9 +673,10 @@ class ReceivablesDialog(BoundedWindow):
         except ValueError as error:
             self._message(str(error), True)
             return False
-        result = mark_disputed(self.db, self.editing, when, self.dispute_note.get_text())
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            self.book.mark_disputed(self.editing, when, self.dispute_note.get_text())
+        except ApiError as error:
+            self._message(str(error), True)
             return False
         self.refresh()
         self._message("Marked disputed.", False)
@@ -694,9 +685,10 @@ class ReceivablesDialog(BoundedWindow):
     def clear_dispute(self) -> bool:
         if self.editing is None:
             return False
-        result = clear_dispute(self.db, self.editing)
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            self.book.clear_dispute(self.editing)
+        except ApiError as error:
+            self._message(str(error), True)
             return False
         self.refresh()
         self._message("Dispute cleared.", False)
@@ -711,12 +703,12 @@ class ReceivablesDialog(BoundedWindow):
         except ValueError as error:
             self._message(str(error), True)
             return False
-        result = record_write_off(
-            self.db,
-            RecordWriteOff(self.editing, amount, when, self.write_off_reason.get_text()),
-        )
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            self.book.record_write_off(
+                RecordWriteOff(self.editing, amount, when, self.write_off_reason.get_text())
+            )
+        except ApiError as error:
+            self._message(str(error), True)
             return False
         self.edit(self.editing)
         self.refresh()

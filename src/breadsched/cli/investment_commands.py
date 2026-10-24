@@ -4,21 +4,22 @@ from __future__ import annotations
 
 import argparse
 
+from ..api import ApiError
 from ..gen.engine.cost_basis import holdings_cost_basis, shares_text
 from ..gen.engine.realized_gains import realized_gains
-from ..gen.services import SetSaleLots, sale_lots, set_sale_lots
+from ..gen.services import SetSaleLots
 from ..presentation import (
     holding_cost_text,
     lot_move_text,
     lot_text,
     sale_text,
-    service_error_message,
 )
 from .common import (
     AddCommand,
     CommandError,
+    add_server_options,
+    book_api,
     emit,
-    find_transaction,
     open_book,
     parse_date,
     resolve_account,
@@ -125,14 +126,20 @@ def cmd_realized_gains(args: argparse.Namespace) -> int:
 
 
 def cmd_sale_lots(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r" if not (args.lot or args.clear) else "w")
-    try:
-        txn = find_transaction(db, args.transaction)
+    with book_api(args, "r" if not (args.lot or args.clear) else "w") as book:
+        txn = book.find_transaction(args.transaction)
+
+        def sells(split) -> bool:
+            try:
+                book.sale_lots(txn.handle, split.handle)
+            except ApiError:
+                return False
+            return True
+
         sales = [
             split
             for split in txn.splits
-            if (args.split is None or split.handle.startswith(args.split))
-            and sale_lots(db, txn.handle, split.handle).value is not None
+            if (args.split is None or split.handle.startswith(args.split)) and sells(split)
         ]
         if len(sales) != 1:
             raise CommandError(
@@ -147,13 +154,10 @@ def cmd_sale_lots(args: argparse.Namespace) -> int:
                 lot, separator, shares = text.partition("=")
                 if not separator:
                     raise CommandError(f"{text!r} is not LOT=SHARES")
-                picks.append((find_transaction(db, lot.strip()).handle, shares.strip()))
-            result = set_sale_lots(db, SetSaleLots(txn.handle, split.handle, tuple(picks)))
+                picks.append((book.find_transaction(lot.strip()).handle, shares.strip()))
+            chosen = book.set_sale_lots(SetSaleLots(txn.handle, split.handle, tuple(picks)))
         else:
-            result = sale_lots(db, txn.handle, split.handle)
-        if result.value is None:
-            raise CommandError("; ".join(service_error_message(error) for error in result.errors))
-        chosen = result.value
+            chosen = book.sale_lots(txn.handle, split.handle)
         payload = {
             "transaction": txn.handle,
             "split": split.handle,
@@ -184,7 +188,7 @@ def cmd_sale_lots(args: argparse.Namespace) -> int:
             "gain": chosen.sale.gain,
         }
         lines = [
-            f"{db.full_name(chosen.account)}: {sale_text(chosen.sale)}",
+            f"{book.find_account(chosen.account.handle).full_name}: {sale_text(chosen.sale)}",
             "Lots held before the sale:",
             *(f"  [{lot.transaction[:8]}] {lot_text(lot)}" for lot in chosen.offered),
             "Lots sold:",
@@ -192,8 +196,6 @@ def cmd_sale_lots(args: argparse.Namespace) -> int:
         ]
         emit(payload, args, "\n".join(lines))
         return 0
-    finally:
-        db.close()
 
 
 def register(add: AddCommand) -> None:
@@ -232,4 +234,5 @@ def register(add: AddCommand) -> None:
         action="store_true",
         help="sell by the account's method again (first-in, first-out or average cost)",
     )
+    add_server_options(lots)
     lots.set_defaults(func=cmd_sale_lots)

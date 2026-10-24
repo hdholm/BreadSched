@@ -685,6 +685,12 @@ work. They are kept in your own settings, not in a book:
   size. BreadSched remembers the main window's size (and whether it was maximized)
   and an independent register window's size each time you close them, and the
   size of any other window you resize, for every book.
+- **Sharing** (experimental): **Let other BreadSched commands use the open book**
+  lets commands such as `breadsched due-review` and `breadsched scheduled-next` work
+  on the book open in this window, through it, instead of stopping because the book
+  is already open. Their changes appear here at once and can be undone here. It is
+  off unless you turn it on; see
+  [Share a book with a running server](cli.md#share-a-book-with-a-running-server-experimental).
 
 **Save** stores them all and redraws open registers; **Cancel** or Escape changes
 nothing.

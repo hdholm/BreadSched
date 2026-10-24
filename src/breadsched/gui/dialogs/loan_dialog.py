@@ -12,14 +12,15 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.currency import reporting_fraction
 from ...gen.engine.loans import LoanTerms, schedule_preview
 from ...gen.lib import Money
 from ...gen.lib.account import AccountClass
-from ...gen.services import SaveLoan, save_loan
+from ...gen.services import SaveLoan
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
@@ -232,11 +233,10 @@ class LoanDialog(BoundedWindow):
         terms = self.terms()
         if terms is None:
             return
-        result = save_loan(
-            self.db,
-            SaveLoan(terms, opening_balance=self.opening_check.get_active()),
-        )
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        request = SaveLoan(terms, opening_balance=self.opening_check.get_active())
+        try:
+            book_server(self.db).save_loan(request)
+        except ApiError as error:
+            self.status.set_text(str(error))
             return
         self.close()

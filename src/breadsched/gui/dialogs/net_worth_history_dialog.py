@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.activity import ReportingPeriod
 from ...gen.engine.currency import reporting_currency_label
@@ -14,8 +16,6 @@ from ...gen.services.net_worth import (
     NetWorthHistory,
     NetWorthPoint,
     net_worth_charts,
-    query_net_worth_change,
-    query_net_worth_history,
 )
 from ..gi_setup import GLib, Gtk
 from ..widgets.bounded import BoundedWindow
@@ -91,11 +91,14 @@ class NetWorthHistoryDialog(BoundedWindow):
             self.content.remove(child)
         _label, period, back = GROUPINGS[self.grouping.get_selected()]
         start, end = history_request(back, self._today)
-        result = query_net_worth_history(self._db, start, end, period, self._today)
-        if result.value is None:
-            self.content.append(self._label(result.errors[0].code))
+        try:
+            history = book_server(self._db).net_worth_history(
+                start, end, ReportingPeriod(period), self._today
+            )
+        except ApiError as error:
+            self.content.append(self._label(str(error)))
             return
-        self.history = history = result.value
+        self.history = history
         explanation = self._label(
             "Assets less debts, market-valued at each period end (the last on "
             f"{history.as_of.isoformat()}). A point with a missing quote is left out "
@@ -172,11 +175,12 @@ class NetWorthHistoryDialog(BoundedWindow):
     def _explain(self, _button, point: NetWorthPoint) -> None:
         """Show the postings behind ``point``'s change, reconciled to market movement."""
         self._close_change()
-        result = query_net_worth_change(self._db, point.start, point.end, self._today)
-        if result.value is None:
-            self.change_box.append(self._label(result.errors[0].code))
+        try:
+            change = book_server(self._db).net_worth_change(point.start, point.end, self._today)
+        except ApiError as error:
+            self.change_box.append(self._label(str(error)))
             return
-        self.change = change = result.value
+        self.change = change
         heading = f"Net worth change {change.start.isoformat()} through {change.closing_on}"
         self.change_box.append(
             self._label(heading + (" (to date)" if change.partial else ""), heading=True)

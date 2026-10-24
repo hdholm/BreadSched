@@ -58,6 +58,15 @@ _SERVICE_MESSAGES = {
     "account.root.protected": "The root account cannot be deleted",
     "account.in_use": "Accounts with history or children cannot be deleted",
     "claim.not_found": "The FSA claim no longer exists",
+    "currency.not_found": "No currency matches; use its code or exact handle",
+    "currency.not_currency": "That commodity is not a currency",
+    "currency.reference.ambiguous": "More than one currency matches; use its exact handle",
+    "rate.source.invalid": "The source must be a known currency",
+    "rate.target.invalid": "The target must be a known currency",
+    "rate.currency.same": "Choose two different currencies",
+    "rate.value.invalid": "The rate must be greater than zero",
+    "claim.reference.ambiguous": "That matches more than one FSA claim; use more of its handle",
+    "claim.report.grouping": "Group claims by status, account, year, or provider",
     "claim.link.transaction.not_found": "A linked transaction no longer exists",
     "claim.link.split.not_found": "A linked transaction entry no longer exists",
     "claim.split.owned_posting": (
@@ -256,6 +265,9 @@ _SERVICE_MESSAGES = {
     ),
     "savings_goal.dates.invalid": "The target date must be after the start date",
     "savings_goal.not_found": "That savings goal no longer exists",
+    "savings_goal.reference.ambiguous": (
+        "That matches more than one savings goal; use its name or more of its handle"
+    ),
     "scenario.drawdown.account": "Choose a non-cash asset account to withdraw from",
     "scenario.drawdown.into": "Choose a spendable cash account to pay the withdrawals into",
     "scenario.drawdown.method": "Give either a yearly amount or a yearly percentage, not both",
@@ -286,6 +298,9 @@ _SERVICE_MESSAGES = {
     "savings_goal.close.before_start": "A goal cannot close before it starts",
     "receivable.payer.required": "Enter who owes this reimbursement",
     "receivable.not_found": "That receivable no longer exists",
+    "receivable.reference.ambiguous": (
+        "That matches more than one receivable; use more of its handle"
+    ),
     "receivable.expected_amount.negative": "The expected amount must not be negative",
     "receivable.transaction.not_found": "That transaction no longer exists",
     "receivable.split.not_found": "That split no longer exists",
@@ -352,6 +367,8 @@ _SERVICE_MESSAGES = {
     "review.occurrence.not_found": "The planned occurrence no longer exists",
     "review.occurrence.resolved": "The planned occurrence is already resolved",
     "review.occurrence.not_skippable": "This planned occurrence cannot be skipped",
+    "review.range.invalid": "The end date must be on or after the start date",
+    "review.window.invalid": "The match window must not be negative",
     "review.claim.not_found": "The FSA claim no longer exists",
     "claim.attachment.split.ineligible": "Choose one eligible transaction split",
     "claim.attachment.funding_year.required": ("Choose an FSA funding year for this reimbursement"),
@@ -376,6 +393,11 @@ _SERVICE_MESSAGES = {
     "net_worth.period.invalid": "Group net worth history by month, quarter, or year",
     "schedule.name.required": "Give the scheduled transaction a name",
     "schedule.not_found": "The scheduled transaction no longer exists",
+    "transaction.reference.ambiguous": (
+        "More than one transaction matches; use more characters of its id"
+    ),
+    "register.limit.invalid": "The number of register lines must not be negative",
+    "schedule.reference.ambiguous": ("More than one scheduled transaction matches; use its id"),
     "schedule.identity.changed": "The schedule identity changed while it was edited",
     "schedule.source.not_found": "The baseline schedule no longer exists",
     "schedule.account.not_found": "A scheduled account no longer exists",

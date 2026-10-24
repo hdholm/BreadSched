@@ -23,6 +23,7 @@ from decimal import Decimal
 import pytest
 from gnucash_fixtures import create_book
 
+from breadsched.api.local import book_server
 from breadsched.cli.main import main as cli
 from breadsched.gen.db.sqlite import DbSQLite
 from breadsched.gen.lib import (
@@ -1628,7 +1629,9 @@ class TestItServes:
         from breadsched.web.projection_resource import projection_draft
 
         expected = projection_report(
-            client.database, projection_draft(client.database, years=2), base=True
+            book_server(client.database),
+            projection_draft(book_server(client.database), years=2),
+            base=True,
         )
         status, actual = client.get("/api/projection?years=2")
         assert status == 200
@@ -1645,10 +1648,14 @@ class TestItServes:
         from breadsched.web.projection_resource import projection_draft
 
         _status, clone = client.post("/api/scenario/duplicate", {"handle": None})
-        primary = projection_draft(client.database, years=1)
-        comparison = projection_draft(client.database, clone["handle"], years=1)
+        primary = projection_draft(book_server(client.database), years=1)
+        comparison = projection_draft(book_server(client.database), clone["handle"], years=1)
         expected = projection_comparison_report(
-            client.database, primary, comparison, primary_base=True, comparison_base=False
+            book_server(client.database),
+            primary,
+            comparison,
+            primary_base=True,
+            comparison_base=False,
         )
         status, actual = client.post(
             "/api/projection/compare",
@@ -1710,9 +1717,9 @@ class TestItServes:
     def test_month_explanation_resource_matches_route_and_leaves_book_unchanged(self, client):
         from breadsched.web.projection_resource import projection_draft
 
-        scenario = projection_draft(client.database, years=2)
+        scenario = projection_draft(book_server(client.database), years=2)
         before = scenario.effective_assumptions().serialize()
-        expected = projection_month_report(client.database, scenario, 5)
+        expected = projection_month_report(book_server(client.database), scenario, 5)
         status, actual = client.post(
             "/api/projection/explain",
             {"handle": None, "years": 2, "month_index": 5},
@@ -1722,7 +1729,10 @@ class TestItServes:
         assert actual["index"] == 5
         assert actual["cash"]["closing"] is not None
         assert (
-            projection_draft(client.database, years=2).effective_assumptions().serialize() == before
+            projection_draft(book_server(client.database), years=2)
+            .effective_assumptions()
+            .serialize()
+            == before
         )
 
     def test_projection_draft_calculation_does_not_persist_saved_changes(self, client):
@@ -3098,7 +3108,8 @@ class TestDueReview:
             outcome = call(
                 {"decisions": [{"schedule": rent["schedule"], "date": second, "decision": "post"}]}
             )
-            assert outcome == {"posted": 1, "skipped": 0, "deferred": 0}
+            assert (outcome["posted"], outcome["skipped"], outcome["deferred"]) == (1, 0, 0)
+            assert len(outcome["transactions"]) == 1
             assert db.summary()["txn"] == before + 1
             remaining = next(item for item in call()["schedules"] if item["name"] == "Sample rent")
             assert second not in [item["date"] for item in remaining["items"]]
@@ -3133,7 +3144,12 @@ class TestDueReview:
 
         item = definition()
         assert (item["advance_days"], item["remind_days"]) == (0, 7)
-        assert item["next"] == {"date": first.isoformat(), "amount": "40.00"}
+        assert item["next"] == {
+            "schedule": handle,
+            "name": "Early bill",
+            "date": first.isoformat(),
+            "amount": "40.00",
+        }
         _status, review = client.get("/api/due-review")
         bill = next(row for row in review["schedules"] if row["schedule"] == handle)
         assert [(row["date"], row["stage"]) for row in bill["items"]] == [
@@ -3178,7 +3194,8 @@ class TestDueReview:
             "/api/scheduled/next",
             {"schedule": handle, "decision": "skip", "date": first.isoformat()},
         )
-        assert status == 200 and skipped == {"posted": 0, "skipped": 1, "transactions": []}
+        assert status == 200
+        assert skipped == {"posted": 0, "skipped": 1, "deferred": 0, "transactions": []}
         second = definition()["next"]["date"]
         assert second > first.isoformat()
         status, entered = client.post(
@@ -4183,9 +4200,12 @@ class TestScenarioManagementApi:
         client.post("/api/scenario/duplicate", {"handle": None})
 
         _status, listing = client.get("/api/scenarios")
+        from breadsched.gen.services.assumptions import base_assumptions
+        from breadsched.web.context import Api
         from breadsched.web.scenario_resource import management_base_scenario
 
-        expected = scenarios_report(client.database, management_base_scenario(client.database))
+        base = management_base_scenario(base_assumptions(client.database))
+        expected = scenarios_report(Api(client.database), base)
         assert listing == json.loads(json.dumps(expected, default=str))
         assert listing["scenarios"][1]["assumption_sources"]["income_growth"] == "Base"
         names = [item["name"].casefold() for item in listing["projection_accounts"]]

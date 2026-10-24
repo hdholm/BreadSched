@@ -14,6 +14,8 @@ over toolbars:
 * **Dashboard** – **Configure Dashboard Groups…**, which opens that window for the
   open book (groups belong to the book, not to these settings).
 * **Windows** – forget the remembered window sizes (#349).
+* **Sharing** – let other BreadSched commands use the open book through this window
+  (``general.share_book``; experimental, #359).
 
 **Save** writes them all; **Cancel** (or Escape) changes nothing.
 """
@@ -21,6 +23,7 @@ over toolbars:
 from __future__ import annotations
 
 from ...plugins.quotes import alphavantage_key, save_alphavantage_key
+from ..book_sharing import SETTING as SHARE_SETTING
 from ..gi_setup import Gio, GLib, Gtk
 from ..views.register import BANDING_CHOICES, apply_register_display
 from ..widgets.bounded import BoundedWindow
@@ -123,6 +126,18 @@ class PreferencesDialog(BoundedWindow):
         grid.attach(self.forget_sizes, 0, row, 2, 1)
         row += 1
 
+        heading("Sharing")
+        self.share_book = Gtk.CheckButton(
+            label="Let other BreadSched commands use the open book (experimental)"
+        )
+        self.share_book.set_tooltip_text(
+            "Commands such as breadsched due-review work through this window "
+            "instead of finding the book already open"
+        )
+        self.share_book.set_active(self.settings.get_bool(*SHARE_SETTING))
+        grid.attach(self.share_book, 0, row, 2, 1)
+        row += 1
+
         self.status = Gtk.Label(xalign=0, wrap=True)
         self.status.add_css_class("dim")
         box.append(self.status)
@@ -172,6 +187,7 @@ class PreferencesDialog(BoundedWindow):
 
     def save(self) -> bool:
         """Write every setting; False, with the reason shown, if one could not be saved."""
+        self.settings.set(*SHARE_SETTING, self.share_book.get_active())
         if self.book_path:
             self.settings.set("general", "last_book_path", self.book_path)
         else:

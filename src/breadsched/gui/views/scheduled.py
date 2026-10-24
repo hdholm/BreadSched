@@ -16,21 +16,18 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import schedule
 from ...gen.engine.schedule import AccountPaymentDefinition
 from ...gen.lib import ScheduledTransaction
 from ...gen.lib.money import Money
 from ...gen.services import (
-    DeleteSchedule,
     DueDecision,
     DuplicateSchedule,
     ResolveNext,
     ServiceError,
-    delete_schedule,
-    duplicate_schedule,
-    next_occurrence,
-    resolve_next,
 )
 from ...presentation import service_error_message
 from ..gi_setup import Gio, Gtk, Pango
@@ -362,7 +359,7 @@ class ScheduledView(BaseView):
         """Name the date Enter Next and Skip Next act on, or why they cannot."""
         sched = self._selected_schedule()
         upcoming = (
-            next_occurrence(self.db, sched.handle)
+            book_server(self.db).next_occurrence(sched.handle)
             if sched is not None and self.db is not None
             else None
         )
@@ -385,13 +382,16 @@ class ScheduledView(BaseView):
         sched = self._selected_schedule()
         if sched is None or self.db is None:
             return False
-        upcoming = next_occurrence(self.db, sched.handle)
+        # Through the book server, as the command line and the browser do (#359).
+        book = book_server(self.db)
+        upcoming = book.next_occurrence(sched.handle)
         if upcoming is None:
             self.status.set_text(service_error_message(ServiceError("schedule.next.none")))
             return False
-        result = resolve_next(self.db, ResolveNext(sched.handle, decision, when=upcoming.when))
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            outcome = book.resolve_next(ResolveNext(sched.handle, decision, when=upcoming.when))
+        except ApiError as error:
+            self.status.set_text(str(error))
             return False
         self.refresh()
         when = upcoming.when.isoformat()
@@ -401,7 +401,7 @@ class ScheduledView(BaseView):
             self.status.set_text(f"Entered {sched.name} of {when}. Ctrl+Z removes it.")
             from ..dialogs.posted_dialog import PostedTransactionsDialog
 
-            dialog = PostedTransactionsDialog(self.get_root(), self.db, result.value.transactions)
+            dialog = PostedTransactionsDialog(self.get_root(), self.db, outcome.transactions)
             dialog.connect("close-request", self.refresh_on_close)
             dialog.present()
         return True
@@ -579,12 +579,11 @@ class ScheduleDuplicateDialog(BoundedWindow):
         self.status.set_text("" if valid else "Give the copied schedule a name.")
 
     def _confirm(self, _button) -> None:
-        result = duplicate_schedule(
-            self.db,
-            DuplicateSchedule(self.scheduled.handle, name=self.name_entry.get_text()),
-        )
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        request = DuplicateSchedule(self.scheduled.handle, name=self.name_entry.get_text())
+        try:
+            book_server(self.db).duplicate_schedule(request)
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return
         self.close()
@@ -628,9 +627,10 @@ class ScheduleDeleteDialog(BoundedWindow):
         box.append(buttons)
 
     def _confirm(self, _button) -> None:
-        result = delete_schedule(self.db, DeleteSchedule(self.scheduled.handle))
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).delete_schedule(self.scheduled.handle)
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return
         self.close()
@@ -725,7 +725,9 @@ class UpcomingView(BaseView):
 
         overdue = [o for o in occurrences if o.when <= today]
         # Enter- and remind-in-advance occurrences are reviewed too (#352).
-        reviewable = schedule.review_occurrences(self.db, as_of=today)
+        reviewable = [
+            item for review in book_server(self.db).due_review(today) for item in review.items
+        ]
         if overdue:
             self.status.set_text(
                 f"{len(overdue)} occurrence(s) overdue, oldest {overdue[0].when.isoformat()}"
@@ -737,7 +739,7 @@ class UpcomingView(BaseView):
                 f"{self._horizon} days"
             )
             self.status.remove_css_class("negative")
-        early = len(reviewable) - len([o for o, _stage in reviewable if o.when <= today])
+        early = len([item for item in reviewable if item.when > today])
         if early:
             self.status.set_text(f"{self.status.get_text()}; {early} to enter or remind in advance")
         self.post_button.set_sensitive(bool(reviewable))
@@ -783,10 +785,10 @@ class UpcomingView(BaseView):
             return
         from ..dialogs.due_dialog import DueDialog
 
-        due = [item for item, _stage in schedule.review_occurrences(self.db)]
-        if not due:
+        reviews = book_server(self.db).due_review()
+        if not reviews:
             self.status.set_text("Nothing is due")
             return
-        dialog = DueDialog(self.get_root(), self.db, due)
+        dialog = DueDialog(self.get_root(), self.db, reviews)
         dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
