@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from ..gen.engine.categorization import CategoryConflict
 from ..gen.lib import Account
 from ..gen.lib.money import Money
 from ..gen.services import (
@@ -31,6 +32,15 @@ from ..gen.services import (
     SavedAccount,
     SavedSchedule,
     SavedTransaction,
+)
+from ..gen.services.categorization import (
+    AppliedCategories,
+    CategorizationRules,
+    CategoryChoice,
+    CategoryProposal,
+    CategoryRule,
+    ProposalLine,
+    RuleLine,
 )
 from .contract import to_json
 from .protocol import Change
@@ -66,6 +76,12 @@ __all__ = [
     "chart_from_json",
     "saved_account_json",
     "saved_account_from_json",
+    "rule_json",
+    "rule_from_json",
+    "categorization_rules_json",
+    "categorization_rules_from_json",
+    "applied_categories_json",
+    "applied_categories_from_json",
 ]
 
 
@@ -417,3 +433,89 @@ def saved_account_json(saved: SavedAccount) -> dict[str, Any]:
 
 def saved_account_from_json(payload: dict[str, Any]) -> SavedAccount:
     return SavedAccount(payload["account"], payload["name"])
+
+
+def rule_json(rule: CategoryRule) -> dict[str, Any]:
+    return rule.serialize()
+
+
+def rule_from_json(payload: dict[str, Any]) -> CategoryRule:
+    return CategoryRule.from_dict(payload)
+
+
+def categorization_rules_json(view: CategorizationRules) -> dict[str, Any]:
+    """The rules, their proposals, and the category choices, with account names."""
+    return {
+        "rules": [
+            {
+                "position": line.position,
+                **rule_json(line.rule),
+                "category_name": line.category_name,
+            }
+            for line in view.rules
+        ],
+        "proposals": [
+            {
+                "transaction": line.proposal.transaction,
+                "date": to_json(line.proposal.when),
+                "description": line.proposal.description,
+                "amount": to_json(line.proposal.amount),
+                "placeholder": line.proposal.placeholder,
+                "category": line.proposal.category,
+                "category_name": line.category_name,
+                "rule_position": line.proposal.rule_position,
+                "rule": rule_json(line.proposal.rule),
+                "conflicts": [
+                    {
+                        "rule_position": conflict.rule_position,
+                        "category": conflict.category,
+                        "category_name": name,
+                    }
+                    for conflict, name in zip(
+                        line.proposal.conflicts, line.conflict_names, strict=True
+                    )
+                ],
+            }
+            for line in view.proposals
+        ],
+        "categories": [{"handle": item.handle, "name": item.name} for item in view.categories],
+    }
+
+
+def categorization_rules_from_json(payload: dict[str, Any]) -> CategorizationRules:
+    return CategorizationRules(
+        tuple(
+            RuleLine(int(row["position"]), rule_from_json(row), row["category_name"])
+            for row in payload["rules"]
+        ),
+        tuple(
+            ProposalLine(
+                CategoryProposal(
+                    row["transaction"],
+                    date.fromisoformat(row["date"]),
+                    row["description"],
+                    Money(row["amount"]),
+                    row["placeholder"],
+                    row["category"],
+                    int(row["rule_position"]),
+                    rule_from_json(row["rule"]),
+                    tuple(
+                        CategoryConflict(int(item["rule_position"]), item["category"])
+                        for item in row["conflicts"]
+                    ),
+                ),
+                row["category_name"],
+                tuple(item["category_name"] for item in row["conflicts"]),
+            )
+            for row in payload["proposals"]
+        ),
+        tuple(CategoryChoice(item["handle"], item["name"]) for item in payload["categories"]),
+    )
+
+
+def applied_categories_json(applied: AppliedCategories) -> dict[str, Any]:
+    return {"assigned": applied.assigned, "unchanged": applied.unchanged}
+
+
+def applied_categories_from_json(payload: dict[str, Any]) -> AppliedCategories:
+    return AppliedCategories(int(payload["assigned"]), int(payload["unchanged"]))

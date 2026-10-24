@@ -179,6 +179,11 @@ from .v1_resource import (
     transaction_save,
     undo_post,
 )
+from .v1_resource import rule_add as v1_rule_add
+from .v1_resource import rule_delete as v1_rule_delete
+from .v1_resource import rule_move as v1_rule_move
+from .v1_resource import rules_accept as v1_rules_accept
+from .v1_resource import rules_get as v1_rules_get
 
 if TYPE_CHECKING:
     from .context import Api
@@ -551,6 +556,11 @@ V1_ROUTES: tuple[tuple[str, str, Callable[..., object]], ...] = (
     ("GET", "/accounts/{handle}", account_get),
     ("DELETE", "/accounts/{handle}", account_delete),
     ("GET", "/chart", chart_get),
+    ("GET", "/rules", v1_rules_get),
+    ("POST", "/rules", v1_rule_add),
+    ("POST", "/rules/accept", v1_rules_accept),
+    ("PATCH", "/rules/{handle}", v1_rule_move),
+    ("DELETE", "/rules/{handle}", v1_rule_delete),
     ("POST", "/undo", undo_post),
     ("POST", "/redo", redo_post),
 )

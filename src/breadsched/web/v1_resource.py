@@ -31,6 +31,10 @@ Resources so far, all under ``/api/v1``:
   names; ``GET /chart`` (``as_of``, ``hidden``) – the valued account tree.
 * ``POST /accounts`` (``api.account_codec``'s form of ``SaveAccount``) and
   ``DELETE /accounts/{handle}``.
+* ``GET`` and ``POST /rules`` (``category``, ``description``, ``position``) – the
+  categorization rules with their proposals, and adding one; ``PATCH /rules/{handle}``
+  (``position``) moves one and ``DELETE /rules/{handle}`` removes it.
+  ``POST /rules/accept`` (``transactions``, or all) accepts proposals.
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -48,13 +52,16 @@ from ..api.views import (
     account_record_json,
     account_ref_json,
     advance_days_json,
+    applied_categories_json,
     balance_summary_json,
+    categorization_rules_json,
     chart_json,
     due_review_json,
     next_occurrence_json,
     posted_due_json,
     register_json,
     resolution_json,
+    rule_json,
     saved_account_json,
     saved_schedule_json,
     saved_transaction_json,
@@ -69,12 +76,18 @@ from ..gen.services import (
     ResolveNext,
     SetAdvanceDays,
 )
+from ..gen.services.categorization import AddRule
 from .context import Api
 
 if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "rule_add",
+    "rule_delete",
+    "rule_move",
+    "rules_accept",
+    "rules_get",
     "account_delete",
     "account_get",
     "account_save",
@@ -329,3 +342,58 @@ def account_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
 def account_delete(api: Api, path: Path, body: dict[str, Any]) -> dict:
     _only(body, set())
     return saved_account_json(api.book.delete_account(path["handle"]))
+
+
+def _required_text(body: dict[str, Any], key: str) -> str:
+    value = body.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be text")
+    return value
+
+
+def _position(body: dict[str, Any], key: str) -> int | None:
+    value = body.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{key} must be a whole number")
+    return value
+
+
+def rules_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return categorization_rules_json(api.book.categorization_rules())
+
+
+def rule_add(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    _only(body, {"category", "description", "position"})
+    request = AddRule(
+        category=_required_text(body, "category"),
+        description=_required_text(body, "description"),
+        position=_position(body, "position"),
+    )
+    return rule_json(api.book.add_rule(request))
+
+
+def rule_move(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, {"position"})
+    position = _position(body, "position")
+    if position is None:
+        raise ValueError("position must be a whole number")
+    return rule_json(api.book.move_rule(path["handle"], position))
+
+
+def rule_delete(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return rule_json(api.book.delete_rule(path["handle"]))
+
+
+def rules_accept(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    _only(body, {"transactions"})
+    raw = body.get("transactions")
+    if raw is not None and (
+        not isinstance(raw, list) or not all(isinstance(item, str) for item in raw)
+    ):
+        raise ValueError("transactions must be a list of text")
+    chosen = None if raw is None else tuple(raw)
+    return applied_categories_json(api.book.apply_category_proposals(chosen))
