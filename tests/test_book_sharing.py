@@ -207,6 +207,24 @@ def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, 
     assert "request.untrusted" in capsys.readouterr().err
 
 
+def test_starting_a_server_does_no_reverse_name_lookup(book_path, monkeypatch):
+    """``HTTPServer`` looked up the loopback address's name on every start, which
+    stalls where reverse DNS is slow; serve's record then appeared too late."""
+
+    def refuse(*_args):
+        raise AssertionError("socket.getfqdn was called")
+
+    monkeypatch.setattr(socket, "getfqdn", refuse)
+    db = DbSQLite()
+    db.load(str(book_path))
+    try:
+        httpd = serve(db, host="127.0.0.1", port=0)
+        assert httpd.server_name == "127.0.0.1" and httpd.server_port > 0
+        httpd.server_close()
+    finally:
+        db.close()
+
+
 def test_serve_publishes_its_record_until_it_stops(book_path, monkeypatch, capsys):
     import breadsched.web.transport as transport
 
