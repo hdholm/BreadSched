@@ -272,6 +272,12 @@ Plan review (resolving actuals against planned occurrences) followed:
 - **Interfaces:** the command line's `review` and `plan-*` commands, the browser's
   Review, and GTK's Review view.
 
+GnuCash changes held back from reconciled transactions followed: `held_imports` and
+`resolve_held_imports` (`GET /api/v1/held-imports` and
+`POST /api/v1/held-imports/resolve`) serve the command line's `import-review`, the
+browser's held-change review, and GTK's review dialog and its prompts. Importing a
+file still opens the book itself, since the file is read where the command runs.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

@@ -73,6 +73,11 @@ from ..gen.services.claims import (
     SaveClaim,
     SavedClaim,
 )
+from ..gen.services.import_review import (
+    HeldImportChange,
+    HeldImportResolution,
+    ResolveHeldImports,
+)
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.receivables import (
     AcceptedReimbursements,
@@ -521,3 +526,11 @@ class BookApi(Protocol):
     ) -> tuple[MatchCandidate, ...]:
         """Unresolved occurrences that could explain one actual, best first."""
         ...
+
+    # ------------------------------------------------------------ import review
+
+    def held_imports(self) -> tuple[HeldImportChange, ...]:
+        """GnuCash changes held back from transactions reconciled here."""
+        ...
+
+    def resolve_held_imports(self, request: ResolveHeldImports) -> HeldImportResolution: ...

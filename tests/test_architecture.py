@@ -1137,6 +1137,8 @@ class TestBookServerBoundaries:
         "explain_candidates",
         "attachment_roles",
         "suggest_claims_for_transaction",
+        "pending_import_changes",
+        "resolve_import_changes",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1239,6 +1241,8 @@ class TestBookServerBoundaries:
         "plan_occurrence",
         "unresolved_occurrences",
         "match_candidates",
+        "held_imports",
+        "resolve_held_imports",
     }
 
     @pytest.mark.parametrize(
@@ -1284,6 +1288,11 @@ class TestBookServerBoundaries:
             ("web/register_entry_resource.py", ("register_cleared_toggle",)),
             ("cli/projection_commands.py", ("cmd_scenario", "cmd_drawdown")),
             ("cli/plan_commands.py", ("cmd_payroll",)),
+            ("cli/import_commands.py", ("cmd_import_review",)),
+            ("web/import_resource.py", ("import_review", "import_review_resolve")),
+            ("gui/dialogs/import_review_dialog.py", ("apply",)),
+            ("gui/viewmanager.py", ("prompt_for_held_imports",)),
+            ("gui/dialogs/import_dialog.py", ("present_held_review",)),
             (
                 "cli/plan_commands.py",
                 (

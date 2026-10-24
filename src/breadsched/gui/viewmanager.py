@@ -488,10 +488,10 @@ class ViewManager(Gtk.ApplicationWindow):
         """Ask about GnuCash changes held back from reconciled transactions."""
         if self.db is None:
             return None
-        from ..gen.services import pending_import_changes
+        from ..api.local import book_server
         from .dialogs.import_review_dialog import ImportReviewDialog
 
-        changes = pending_import_changes(self.db)
+        changes = list(book_server(self.db).held_imports())
         if not changes:
             return None
         dialog = ImportReviewDialog(self, self.db, changes)

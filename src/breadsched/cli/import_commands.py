@@ -12,8 +12,6 @@ from ..gen.services import (
     ImportBook,
     ResolveHeldImports,
     import_book,
-    pending_import_changes,
-    resolve_import_changes,
 )
 from ..gen.services.csv_import import CsvImportRequest, CsvMapping, import_csv, preview_csv_import
 from ..gen.services.gnucash_writeback import (
@@ -33,6 +31,8 @@ from ..presentation import (
 from .common import (
     AddCommand,
     CommandError,
+    add_server_options,
+    book_api,
     emit,
     find_transaction,
     open_book,
@@ -352,9 +352,8 @@ def cmd_gnucash_writeback(args: argparse.Namespace) -> int:
 
 def cmd_import_review(args: argparse.Namespace) -> int:
     """List or decide GnuCash changes held back from reconciled transactions."""
-    db = open_book(args.book)
-    try:
-        pending = pending_import_changes(db)
+    with book_api(args, "w") as book:
+        pending = book.held_imports()
         decisions: dict[str, HeldImportDecision] = {}
         if args.keep_all:
             decisions.update((item.transaction, HeldImportDecision.KEEP_LOCAL) for item in pending)
@@ -365,13 +364,9 @@ def cmd_import_review(args: argparse.Namespace) -> int:
             (args.use_gnucash, HeldImportDecision.USE_SOURCE),
         ):
             for reference in references or ():
-                decisions[find_transaction(db, reference).handle] = decision
+                decisions[book.find_transaction(reference).handle] = decision
         if decisions:
-            resolved = resolve_import_changes(db, ResolveHeldImports(tuple(decisions.items())))
-            if not resolved.ok:
-                raise CommandError(service_error_message(resolved.errors[0]))
-            assert resolved.value is not None
-            outcome = resolved.value
+            outcome = book.resolve_held_imports(ResolveHeldImports(tuple(decisions.items())))
             emit(
                 {"kept": outcome.kept, "applied": outcome.applied, "deferred": outcome.deferred},
                 args,
@@ -410,8 +405,6 @@ def cmd_import_review(args: argparse.Namespace) -> int:
             else "No GnuCash changes are held for reconciled transactions.",
         )
         return 0
-    finally:
-        db.close()
 
 
 def _inference_note(suggestions: list, applied: bool) -> str:
@@ -574,6 +567,7 @@ def register(add: AddCommand) -> None:
     held.add_argument(
         "--use-gnucash-all", action="store_true", help="apply every held GnuCash version"
     )
+    add_server_options(held)
     held.set_defaults(func=cmd_import_review)
 
     writeback = add(
