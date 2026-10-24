@@ -18,7 +18,6 @@ from ..gen.engine import (
     activity,
     category_report,
     estimates,
-    planning,
     schedule,
 )
 from ..gen.engine.payroll import PaycheckBreakdown, PayrollLine
@@ -37,13 +36,9 @@ from ..gen.services import (
     ResolveDue,
     ResolveNext,
     ReviewOccurrence,
-    ReviewTransaction,
     SaveSchedule,
     SetAdvanceDays,
     delete_schedule,
-    mark_review_unexpected,
-    match_review,
-    reject_review,
     save_schedule,
 )
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
@@ -56,7 +51,6 @@ from .common import (
     add_server_options,
     book_api,
     emit,
-    find_transaction,
     open_book,
     parse_date,
     resolve_account,
@@ -88,35 +82,25 @@ def _due_references(reviews, reference: str) -> list[tuple[str, date]]:
 
 def cmd_review(args: argparse.Namespace) -> int:
     """Unresolved transactions, the planned items Review offers, and why."""
-    from ..gen.engine import review_explain
-    from ..gen.lib.transaction import PlanningResolution
     from ..presentation import REVIEW_ACTION_HELP
 
-    db = open_book(args.book, "r")
-    try:
-        pending = sorted(
-            (
-                transaction
-                for transaction in db.iter_transactions()
-                if transaction.planning_resolution is PlanningResolution.UNRESOLVED
-            ),
-            key=lambda transaction: (transaction.post_date, transaction.handle),
-        )
+    with book_api(args, "r") as book:
+        pending = list(book.review_queue())
         if args.transaction:
             pending = [item for item in pending if item.handle.startswith(args.transaction)]
             if not pending:
                 raise CommandError(f"no unresolved transaction matches {args.transaction!r}")
         items = []
         lines: list[str] = []
-        for transaction in pending:
-            explained = review_explain.explain_candidates(db, transaction)
-            hint = review_explain.fsa_hint(db, transaction)
-            reason = None if explained else review_explain.no_candidate_reason(db, transaction)
+        for actual in pending:
+            detail = book.review_detail(actual.handle)
+            explained, hint = detail.candidates, detail.fsa_hint
+            reason = detail.no_candidate_reason
             items.append(
                 {
-                    "handle": transaction.handle,
-                    "date": transaction.post_date,
-                    "description": transaction.description,
+                    "handle": actual.handle,
+                    "date": actual.date,
+                    "description": actual.description,
                     "fsa_hint": hint,
                     "no_candidate_reason": reason,
                     "candidates": [
@@ -131,10 +115,7 @@ def cmd_review(args: argparse.Namespace) -> int:
                     ],
                 }
             )
-            lines.append(
-                f"{transaction.post_date.isoformat()}  {transaction.description}  "
-                f"[{transaction.handle[:8]}]"
-            )
+            lines.append(f"{actual.date.isoformat()}  {actual.description}  [{actual.handle[:8]}]")
             if hint:
                 lines.append(f"  {hint}")
             for item in explained:
@@ -153,8 +134,6 @@ def cmd_review(args: argparse.Namespace) -> int:
         lines.extend(REVIEW_ACTION_HELP[key] for key in ("match", "reject", "skip", "unexpected"))
         emit({"transactions": items, "actions": REVIEW_ACTION_HELP}, args, "\n".join(lines))
         return 0
-    finally:
-        db.close()
 
 
 def cmd_due_review(args: argparse.Namespace) -> int:
@@ -535,13 +514,12 @@ def cmd_activity(args: argparse.Namespace) -> int:
 
 def cmd_plan_unresolved(args: argparse.Namespace) -> int:
     """List unresolved scheduled expectations over an exact date horizon."""
-    db = open_book(args.book, "r")
-    try:
-        start = parse_date(args.start)
-        end = parse_date(args.end)
-        if start is None or end is None:
-            raise CommandError("plan-unresolved requires --start and --end")
-        events = planning.unresolved_events(db, start, end)
+    start = parse_date(args.start)
+    end = parse_date(args.end)
+    if start is None or end is None:
+        raise CommandError("plan-unresolved requires --start and --end")
+    with book_api(args, "r") as book:
+        events = book.unresolved_occurrences(start, end)
         rows = [
             [
                 event.key,
@@ -557,16 +535,13 @@ def cmd_plan_unresolved(args: argparse.Namespace) -> int:
             table(rows, ["occurrence", "planned", "description", "expected"], right={3}),
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_plan_matches(args: argparse.Namespace) -> int:
     """Show unresolved scheduled occurrences that could explain one actual."""
-    db = open_book(args.book, "r")
-    try:
-        transaction = find_transaction(db, args.transaction)
-        candidates = planning.match_candidates(db, transaction, window_days=args.window_days)
+    with book_api(args, "r") as book:
+        transaction = book.find_transaction(args.transaction)
+        candidates = book.match_candidates(transaction.handle, args.window_days)
         payload = [
             {
                 "occurrence": candidate.event.as_dict(),
@@ -595,83 +570,59 @@ def cmd_plan_matches(args: argparse.Namespace) -> int:
         )
         emit(payload, args, text)
         return 0
-    finally:
-        db.close()
 
 
 def cmd_plan_resolve(args: argparse.Namespace) -> int:
     """Resolve one actual transaction against a selected scheduled occurrence."""
-    db = open_book(args.book)
-    try:
-        transaction = find_transaction(db, args.transaction)
-        result = match_review(db, ReviewOccurrence(transaction.handle, args.occurrence))
-        if not result.ok:
-            raise CommandError(service_error_message(result.errors[0]))
-        saved_transaction = db.get_transaction(transaction.handle)
-        assert saved_transaction is not None
-        event = planning.event_by_key(db, args.occurrence)
-        assert event is not None
+    with book_api(args, "w") as book:
+        transaction = book.find_transaction(args.transaction)
+        matched = book.match_review(ReviewOccurrence(transaction.handle, args.occurrence))
+        assert matched.resolution is not None
+        event = book.plan_occurrence(args.occurrence)
         emit(
             {
-                "transaction": saved_transaction.handle,
-                "resolution": saved_transaction.planning_resolution.value,
+                "transaction": matched.transaction,
+                "resolution": matched.resolution.value,
                 "occurrence": event.key,
                 "planned_for": event.planned_date,
                 "planned_amount": event.expected_amount,
             },
             args,
-            f"Matched {saved_transaction.handle[:8]} to {event.key}",
+            f"Matched {matched.transaction[:8]} to {event.key}",
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_plan_reject(args: argparse.Namespace) -> int:
     """Persistently reject one suggested occurrence for an unresolved actual."""
-    db = open_book(args.book)
-    try:
-        transaction = find_transaction(db, args.transaction)
-        result = reject_review(db, ReviewOccurrence(transaction.handle, args.occurrence))
-        if not result.ok:
-            raise CommandError(service_error_message(result.errors[0]))
-        saved_transaction = db.get_transaction(transaction.handle)
-        assert saved_transaction is not None
+    with book_api(args, "w") as book:
+        transaction = book.find_transaction(args.transaction)
+        book.reject_review(ReviewOccurrence(transaction.handle, args.occurrence))
+        saved = book.find_transaction(transaction.handle)
         emit(
             {
-                "transaction": saved_transaction.handle,
+                "transaction": saved.handle,
                 "rejected_occurrence": args.occurrence,
-                "rejected": list(saved_transaction.rejected_plan_occurrences),
+                "rejected": list(saved.rejected_plan_occurrences),
             },
             args,
-            f"Rejected {args.occurrence} for {saved_transaction.handle[:8]}",
+            f"Rejected {args.occurrence} for {saved.handle[:8]}",
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_plan_unexpected(args: argparse.Namespace) -> int:
     """Explicitly declare an actual transaction to have no planned occurrence."""
-    db = open_book(args.book)
-    try:
-        transaction = find_transaction(db, args.transaction)
-        result = mark_review_unexpected(db, ReviewTransaction(transaction.handle))
-        if not result.ok:
-            raise CommandError(service_error_message(result.errors[0]))
-        saved_transaction = db.get_transaction(transaction.handle)
-        assert saved_transaction is not None
+    with book_api(args, "w") as book:
+        transaction = book.find_transaction(args.transaction)
+        marked = book.mark_review_unexpected(transaction.handle)
+        assert marked.resolution is not None
         emit(
-            {
-                "transaction": saved_transaction.handle,
-                "resolution": saved_transaction.planning_resolution.value,
-            },
+            {"transaction": marked.transaction, "resolution": marked.resolution.value},
             args,
-            f"Marked {saved_transaction.handle[:8]} as unexpected",
+            f"Marked {marked.transaction[:8]} as unexpected",
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_estimate(args: argparse.Namespace) -> int:
@@ -935,6 +886,7 @@ def register(add: AddCommand) -> None:
         "List unresolved transactions, the planned items Review offers for each, and why",
     )
     review_cmd.add_argument("--transaction", metavar="ID", help="only this transaction (id prefix)")
+    add_server_options(review_cmd)
     review_cmd.set_defaults(func=cmd_review)
 
     due_review = add(
@@ -971,6 +923,7 @@ def register(add: AddCommand) -> None:
     )
     plan_unresolved.add_argument("--start", required=True, help="first date (YYYY-MM-DD)")
     plan_unresolved.add_argument("--end", required=True, help="last date (YYYY-MM-DD)")
+    add_server_options(plan_unresolved)
     plan_unresolved.set_defaults(func=cmd_plan_unresolved)
 
     plan_matches = add(
@@ -979,16 +932,19 @@ def register(add: AddCommand) -> None:
     )
     plan_matches.add_argument("transaction", help="transaction handle, or a unique prefix")
     plan_matches.add_argument("--window-days", type=int, default=7)
+    add_server_options(plan_matches)
     plan_matches.set_defaults(func=cmd_plan_matches)
 
     plan_resolve = add("plan-resolve", "Match an actual transaction to a planned occurrence")
     plan_resolve.add_argument("transaction", help="transaction handle, or a unique prefix")
     plan_resolve.add_argument("occurrence", help="stable scheduled occurrence key")
+    add_server_options(plan_resolve)
     plan_resolve.set_defaults(func=cmd_plan_resolve)
 
     plan_reject = add("plan-reject", "Reject a planned occurrence as a match candidate")
     plan_reject.add_argument("transaction", help="transaction handle, or a unique prefix")
     plan_reject.add_argument("occurrence", help="stable scheduled occurrence key")
+    add_server_options(plan_reject)
     plan_reject.set_defaults(func=cmd_plan_reject)
 
     plan_unexpected = add(
@@ -996,6 +952,7 @@ def register(add: AddCommand) -> None:
         "Declare an actual transaction to be intentionally outside the plan",
     )
     plan_unexpected.add_argument("transaction", help="transaction handle, or a unique prefix")
+    add_server_options(plan_unexpected)
     plan_unexpected.set_defaults(func=cmd_plan_unexpected)
 
     jars = add("jars", "Budget jars: each schedule and goal filled from income and drawn")

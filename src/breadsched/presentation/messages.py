@@ -360,6 +360,8 @@ _SERVICE_MESSAGES = {
     "review.occurrence.not_found": "The planned occurrence no longer exists",
     "review.occurrence.resolved": "The planned occurrence is already resolved",
     "review.occurrence.not_skippable": "This planned occurrence cannot be skipped",
+    "review.range.invalid": "The end date must be on or after the start date",
+    "review.window.invalid": "The match window must not be negative",
     "review.claim.not_found": "The FSA claim no longer exists",
     "claim.attachment.split.ineligible": "Choose one eligible transaction split",
     "claim.attachment.funding_year.required": ("Choose an FSA funding year for this reimbursement"),

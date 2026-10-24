@@ -375,6 +375,25 @@ def test_claims_work_through_the_server_holding_the_book(running, book_path, cap
     assert json.loads(capsys.readouterr().out)["proposals"] == []
 
 
+def test_review_works_through_the_server_holding_the_book(running, book_path, capsys):
+    from breadsched.gen.lib.transaction import PlanningResolution
+
+    path = str(book_path)
+    assert main(["review", path, "--json"]) == 0
+    pending = json.loads(capsys.readouterr().out)["transactions"]
+    assert pending and all(item["no_candidate_reason"] for item in pending[:3])
+    first = pending[0]["handle"]
+    assert main(["plan-matches", path, first[:10], "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == []
+    assert main(["plan-unexpected", path, first[:10]]) == 0
+    assert f"Marked {first[:8]} as unexpected" in capsys.readouterr().out
+    marked = running.db.get_transaction(first).planning_resolution
+    assert marked is PlanningResolution.UNEXPECTED
+    command = ["plan-unresolved", path, "--start", "2026-04-01", "--end", "2026-04-30"]
+    assert main([*command, "--json"]) == 0
+    assert "Sample wages" in {item["description"] for item in json.loads(capsys.readouterr().out)}
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

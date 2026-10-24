@@ -5525,7 +5525,9 @@ class TestResolutionView:
         app.open_book(populated_book)
         window.show_category("resolution")
         view = window._views["resolution"]
-        assert view._unresolved_transactions() == []
+        from breadsched.api.local import book_server
+
+        assert book_server(app.db).review_queue() == ()
         assert view.actual_summary.get_text() == "No unresolved actual transactions."
 
     def _add_matching_actual(self, populated_book):
@@ -5571,7 +5573,9 @@ class TestResolutionView:
         resolved = app.db.get_transaction(actual_handle)
         assert resolved.planning_resolution is PlanningResolution.MATCHED
         assert resolved.planned_occurrence == occurrence_key
-        assert all(txn.handle != actual_handle for txn in view._unresolved_transactions())
+        from breadsched.api.local import book_server
+
+        assert all(txn.handle != actual_handle for txn in book_server(app.db).review_queue())
 
     def test_candidates_and_actions_are_explained(self, app, window, populated_book):
         from breadsched.presentation import REVIEW_ACTION_HELP
