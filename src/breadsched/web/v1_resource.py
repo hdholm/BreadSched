@@ -84,6 +84,8 @@ Resources so far, all under ``/api/v1``:
   ``GET /transactions/{handle}/plan-matches`` (``window_days``).
 * ``GET /held-imports`` – GnuCash changes held back from reconciled transactions;
   ``POST /held-imports/resolve`` (``ResolveHeldImports``).
+* ``GET`` and ``POST /transactions/{handle}/splits/{split}/lots`` – the lots a sale
+  could name, and naming them (``picks``); ``GET`` and ``PATCH /tax-marks``.
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -139,6 +141,7 @@ from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumpti
 from ..gen.services.categorization import AddRule
 from ..gen.services.claims import ClaimReportQuery, CloseClaim, ReopenClaim, SaveClaim
 from ..gen.services.import_review import ResolveHeldImports
+from ..gen.services.lots import SetSaleLots
 from ..gen.services.payroll import CreatePaycheck, PayChange, SavePayrollTemplate
 from ..gen.services.receivables import RecordWriteOff, SaveReceivable
 from ..gen.services.reconciliations import (
@@ -155,12 +158,17 @@ from ..gen.services.scenarios import (
     SetReimbursementOverride,
     SuppressScenarioSchedule,
 )
+from ..gen.services.tax import SetTaxMarks
 from .context import Api
 
 if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "sale_lots_get",
+    "sale_lots_post",
+    "tax_marks_get",
+    "tax_marks_patch",
     "held_imports_get",
     "held_imports_resolve",
     "plan_matches_get",
@@ -1135,3 +1143,27 @@ def held_imports_get(api: Api, _path: Path, query: QueryParams) -> dict:
 def held_imports_resolve(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     request = from_data(ResolveHeldImports, body, "request")
     return to_data(api.book.resolve_held_imports(request))
+
+
+@dataclass(frozen=True, slots=True)
+class _Picks:
+    picks: tuple[tuple[str, str], ...] = ()
+
+
+def sale_lots_get(api: Api, path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.sale_lots(path["handle"], path["split"]))
+
+
+def sale_lots_post(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    picks = from_data(_Picks, body, "request").picks
+    return to_data(api.book.set_sale_lots(SetSaleLots(path["handle"], path["split"], picks)))
+
+
+def tax_marks_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.tax_marks())
+
+
+def tax_marks_patch(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.set_tax_marks(from_data(SetTaxMarks, body, "request")))

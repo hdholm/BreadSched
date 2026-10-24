@@ -78,6 +78,7 @@ from ..gen.services.import_review import (
     HeldImportResolution,
     ResolveHeldImports,
 )
+from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.receivables import (
     AcceptedReimbursements,
@@ -113,6 +114,7 @@ from ..gen.services.scenarios import (
     SetReimbursementOverride,
     SuppressScenarioSchedule,
 )
+from ..gen.services.tax import SetTaxMarks, TaxMarks
 
 __all__ = ["BookApi", "Change", "Listener"]
 
@@ -534,3 +536,17 @@ class BookApi(Protocol):
         ...
 
     def resolve_held_imports(self, request: ResolveHeldImports) -> HeldImportResolution: ...
+
+    # ------------------------------------------------------------ lots and tax
+
+    def sale_lots(self, transaction: str, split: str) -> SaleLots:
+        """A sale, the lots open just before it, and the lots it names."""
+        ...
+
+    def set_sale_lots(self, request: SetSaleLots) -> SaleLots: ...
+
+    def tax_marks(self) -> TaxMarks:
+        """Every account and tag with its tax mark."""
+        ...
+
+    def set_tax_marks(self, request: SetTaxMarks) -> TaxMarks: ...

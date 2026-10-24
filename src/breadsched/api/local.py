@@ -98,10 +98,12 @@ from ..gen.services import (
 from ..gen.services import advance_days as stored_advance_days
 from ..gen.services import assumptions as assumption_service
 from ..gen.services import claims as claim_service
+from ..gen.services import lots as lot_service
 from ..gen.services import payroll as payroll_service
 from ..gen.services import receivables as receivable_service
 from ..gen.services import review as review_service
 from ..gen.services import scenarios as scenario_service
+from ..gen.services import tax as tax_service
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.categorization import (
     AddRule,
@@ -125,6 +127,7 @@ from ..gen.services.import_review import (
     HeldImportResolution,
     ResolveHeldImports,
 )
+from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.receivables import (
     AcceptedReimbursements,
@@ -161,6 +164,7 @@ from ..gen.services.scenarios import (
     SetReimbursementOverride,
     SuppressScenarioSchedule,
 )
+from ..gen.services.tax import SetTaxMarks, TaxMarks
 from .contract import ApiError, unwrap
 from .protocol import Change, Listener
 
@@ -493,6 +497,20 @@ class LocalBookServer:
 
     def resolve_held_imports(self, request: ResolveHeldImports) -> HeldImportResolution:
         return unwrap(import_review.resolve_import_changes(self.db, request))
+
+    # ------------------------------------------------------------ lots and tax
+
+    def sale_lots(self, transaction: str, split: str) -> SaleLots:
+        return unwrap(lot_service.sale_lots(self.db, transaction, split))
+
+    def set_sale_lots(self, request: SetSaleLots) -> SaleLots:
+        return unwrap(lot_service.set_sale_lots(self.db, request))
+
+    def tax_marks(self) -> TaxMarks:
+        return tax_service.tax_marks(self.db)
+
+    def set_tax_marks(self, request: SetTaxMarks) -> TaxMarks:
+        return unwrap(tax_service.set_tax_marks(self.db, request))
 
     # -------------------------------------------------------------- receivables
 

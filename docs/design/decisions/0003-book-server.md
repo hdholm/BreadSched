@@ -278,6 +278,14 @@ GnuCash changes held back from reconciled transactions followed: `held_imports` 
 browser's held-change review, and GTK's review dialog and its prompts. Importing a
 file still opens the book itself, since the file is read where the command runs.
 
+A sale's lots and the tax marks followed: `sale_lots` and `set_sale_lots`
+(`GET` and `POST /api/v1/transactions/{handle}/splits/{split}/lots`) and `tax_marks`
+and `set_tax_marks` (`GET` and `PATCH /api/v1/tax-marks`) serve the command line's
+`sale-lots` and `tax-marks`, the browser's lot chooser and tax marks, and GTK's Choose Lots
+Sold and tax-marks dialogs. The typed codec now reads a `Sequence` field (a sale's
+picks) back as a tuple. The holdings, realized-gains, and tax-year reports still
+read the book directly.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

@@ -93,6 +93,17 @@ def test_a_mapping_reads_as_an_object():
         from_data(PayChange, {**data, "amounts": {"a": 2}})
 
 
+def test_a_sequence_reads_back_as_a_tuple():
+    from breadsched.gen.services.lots import SetSaleLots
+
+    request = SetSaleLots("t", "s", (("lot", "1.5"),))
+    data = to_data(request)
+    assert data["picks"] == [["lot", "1.5"]]
+    assert from_data(SetSaleLots, data) == request
+    with pytest.raises(ValueError, match=r"value\.picks\[0\] must be a list of 2 values"):
+        from_data(SetSaleLots, {**data, "picks": [["lot"]]})
+
+
 def test_missing_fields_take_their_defaults():
     data = to_data(_outer())
     del data["note"], data["tags"]

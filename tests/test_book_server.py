@@ -1468,6 +1468,9 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("GET", "/api/v1/payroll?as_of=soon", None, 400, "query.date.invalid"),
         ("GET", "/api/v1/fsa-claims/report?by=colour", None, 400, "query.invalid"),
         ("GET", "/api/v1/review/missing", None, 404, "review.transaction.not_found"),
+        ("GET", "/api/v1/transactions/x/splits/y/lots", None, 404, "lots.transaction.not_found"),
+        ("POST", "/api/v1/transactions/x/splits/y/lots", {"picks": "all"}, 400, "request.invalid"),
+        ("PATCH", "/api/v1/tax-marks", {"accounts": {"a": "yes"}}, 400, "request.invalid"),
         ("POST", "/api/v1/held-imports/resolve", {"decisions": [["x"]]}, 400, "request.invalid"),
         (
             "POST",

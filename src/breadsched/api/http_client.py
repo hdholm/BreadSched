@@ -89,6 +89,7 @@ from ..gen.services.import_review import (
     HeldImportResolution,
     ResolveHeldImports,
 )
+from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.receivables import (
     AcceptedReimbursements,
@@ -124,6 +125,7 @@ from ..gen.services.scenarios import (
     SetReimbursementOverride,
     SuppressScenarioSchedule,
 )
+from ..gen.services.tax import SetTaxMarks, TaxMarks
 from .account_codec import save_account_json
 from .contract import ApiError, to_json
 from .protocol import Change, Listener
@@ -855,3 +857,22 @@ class HttpBookClient:
     def resolve_held_imports(self, request: ResolveHeldImports) -> HeldImportResolution:
         found = self._call("POST", "/held-imports/resolve", body=to_data(request))
         return from_data(HeldImportResolution, found)
+
+    # ------------------------------------------------------------ lots and tax
+
+    def _lots_path(self, transaction: str, split: str) -> str:
+        return f"/transactions/{quote(transaction, safe='')}/splits/{quote(split, safe='')}/lots"
+
+    def sale_lots(self, transaction: str, split: str) -> SaleLots:
+        return from_data(SaleLots, self._call("GET", self._lots_path(transaction, split)))
+
+    def set_sale_lots(self, request: SetSaleLots) -> SaleLots:
+        path = self._lots_path(request.transaction, request.split)
+        body = {"picks": [list(pick) for pick in request.picks]}
+        return from_data(SaleLots, self._call("POST", path, body=body))
+
+    def tax_marks(self) -> TaxMarks:
+        return from_data(TaxMarks, self._call("GET", "/tax-marks"))
+
+    def set_tax_marks(self, request: SetTaxMarks) -> TaxMarks:
+        return from_data(TaxMarks, self._call("PATCH", "/tax-marks", body=to_data(request)))

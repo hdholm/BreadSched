@@ -6,9 +6,16 @@ import argparse
 
 from ..gen.engine.cost_basis import shares_text
 from ..gen.engine.tax_year import currency_labels, tax_year
-from ..gen.services import SetTaxMarks, set_tax_marks, tax_marks
-from ..presentation import service_error_message
-from .common import AddCommand, CommandError, emit, open_book, resolve_account, table
+from ..gen.services import SetTaxMarks
+from .common import (
+    AddCommand,
+    CommandError,
+    add_server_options,
+    book_api,
+    emit,
+    open_book,
+    table,
+)
 
 
 def cmd_tax_year(args: argparse.Namespace) -> int:
@@ -185,27 +192,23 @@ _ACCOUNT_MARKS = {"on": True, "off": False, "gnucash": None}
 
 def cmd_tax_marks(args: argparse.Namespace) -> int:
     changes = bool(args.account or args.tag)
-    db = open_book(args.book, "w" if changes else "r")
-    try:
+    with book_api(args, "w" if changes else "r") as book:
         if changes:
             accounts: dict[str, bool | None] = {}
             for item in args.account or ():
                 name, _sep, mark = item.rpartition("=")
                 if not name or mark not in _ACCOUNT_MARKS:
                     raise CommandError(f"--account takes ACCOUNT=on|off|gnucash, not {item!r}")
-                accounts[resolve_account(db, name).handle] = _ACCOUNT_MARKS[mark]
+                accounts[book.find_account(name).handle] = _ACCOUNT_MARKS[mark]
             tags: dict[str, bool] = {}
             for item in args.tag or ():
                 name, _sep, mark = item.rpartition("=")
                 if not name or mark not in ("on", "off"):
                     raise CommandError(f"--tag takes TAG=on|off, not {item!r}")
                 tags[name] = mark == "on"
-            result = set_tax_marks(db, SetTaxMarks(accounts, tags))
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
-            marks = result.value
+            marks = book.set_tax_marks(SetTaxMarks(accounts, tags))
         else:
-            marks = tax_marks(db)
+            marks = book.tax_marks()
         payload = {
             "accounts": [
                 {
@@ -233,8 +236,6 @@ def cmd_tax_marks(args: argparse.Namespace) -> int:
         lines.append("Tax-relevant tags: " + (", ".join(marked) if marked else "none"))
         emit(payload, args, "\n".join(lines))
         return 0
-    finally:
-        db.close()
 
 
 def register(add: AddCommand) -> None:
@@ -254,4 +255,5 @@ def register(add: AddCommand) -> None:
         help="mark an account (with those beneath it); gnucash follows GnuCash's mark",
     )
     marks.add_argument("--tag", action="append", metavar="TAG=on|off", help="mark a tag")
+    add_server_options(marks)
     marks.set_defaults(func=cmd_tax_marks)
