@@ -23,7 +23,6 @@ from ..gen.services import (
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
-    transaction_currency,
 )
 from ..presentation.investments import share_summary_text, trade_price_text
 from .attachment_resource import document_json
@@ -132,10 +131,11 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
 def transaction_add(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """Post a two-split transaction from the simple entry form."""
 
-    debit = api.db.get_account_by_name(payload["to"])
-    credit = api.db.get_account_by_name(payload["from"])
-    if debit is None or credit is None:
-        raise ResourceError(400, "transaction.account.not_found", ("from", "to"))
+    try:
+        debit = api.book.find_account(str(payload["to"]))
+        credit = api.book.find_account(str(payload["from"]))
+    except ApiError:
+        raise ResourceError(400, "transaction.account.not_found", ("from", "to")) from None
     when = date.fromisoformat(payload.get("date") or date.today().isoformat())
     amount = input_money(dict(payload), payload["amount"])
     if amount <= 0:
@@ -160,7 +160,7 @@ def transaction_add(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         if claim_handle and claim_role
         else None
     )
-    currency = transaction_currency(api.db)
+    currency = api.book.transaction_currency()
     saved = api.book.save_transaction(
         SaveTransaction(
             TransactionInput(

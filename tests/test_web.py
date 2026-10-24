@@ -2700,6 +2700,22 @@ class TestWriting:
         assert security["price"] == "125.25"
         assert security["price_date"] == "2026-03-01"
 
+    def test_the_entry_form_refuses_an_unknown_account_and_writes_nothing(self, client):
+        before = sorted(txn.handle for txn in client.database.iter_transactions())
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/transaction",
+                {
+                    "date": "2026-02-01",
+                    "from": "Assets:Nowhere",
+                    "to": "Expenses:Rent",
+                    "amount": "5",
+                },
+            )
+        assert caught.value.code == 400
+        assert json.loads(caught.value.read())["code"] == "transaction.account.not_found"
+        assert sorted(txn.handle for txn in client.database.iter_transactions()) == before
+
     def test_a_transaction_can_be_posted(self, client):
         status, payload = client.post(
             "/api/transaction",

@@ -426,7 +426,9 @@ The browser's register followed: `register_view(account, limit)`
 (`GET /api/v1/accounts/{handle}/register-view`) returns the engine's register rows
 with the full name of every account their splits use, each transaction's linked
 documents, and, for a security account, its shares, valuation, and quote evidence
-(`gen/services/register_view`), so the browser's register no longer reads the book.
+(`gen/services/register_view`), so the browser's register no longer reads the book;
+its simple entry form now names its two accounts through `find_account` and its
+currency through `transaction_currency` as well.
 GTK's register still does; it needs the bulk reads and pushed changes the
 consequences below name before it can move without a round trip per row.
 
