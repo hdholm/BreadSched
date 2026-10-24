@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import date
+from pathlib import Path
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
@@ -101,6 +102,7 @@ from ..gen.services import (
 )
 from ..gen.services import advance_days as stored_advance_days
 from ..gen.services import assumptions as assumption_service
+from ..gen.services import attachments as attachment_service
 from ..gen.services import claims as claim_service
 from ..gen.services import loans as loan_service
 from ..gen.services import lots as lot_service
@@ -111,6 +113,7 @@ from ..gen.services import review as review_service
 from ..gen.services import scenarios as scenario_service
 from ..gen.services import tax as tax_service
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
+from ..gen.services.attachments import AttachmentReport
 from ..gen.services.categorization import (
     AddRule,
     AppliedCategories,
@@ -567,6 +570,35 @@ class LocalBookServer:
         with self._changing("dashboard-config"):
             saved = unwrap(dashboard_config.save_dashboard_config(self.db, request))
         return dashboard_config.settings_of(saved)
+
+    # ------------------------------------------------------------- attachments
+
+    def attachment_report(
+        self, missing_only: bool = False, transaction: str | None = None
+    ) -> AttachmentReport:
+        return attachment_service.attachment_report(
+            self.db, missing_only=missing_only, transaction=transaction
+        )
+
+    def link_attachment(self, transaction: str, location: str) -> Transaction:
+        return unwrap(attachment_service.attach_location(self.db, transaction, location))
+
+    def attach_file(self, transaction: str, path: str, copy: bool = True) -> Transaction:
+        return unwrap(attachment_service.attach_file(self.db, transaction, Path(path), copy=copy))
+
+    def unlink_attachment(self, transaction: str, location: str) -> Transaction:
+        return unwrap(attachment_service.detach(self.db, transaction, location))
+
+    def relink_attachment(self, transaction: str, location: str, new: str) -> Transaction:
+        return unwrap(attachment_service.relink(self.db, transaction, location, new))
+
+    def set_attachment_folder(self, folder: str) -> str:
+        with self._changing("attachment-folder"):
+            return str(unwrap(attachment_service.set_attachment_folder(self.db, folder)))
+
+    def set_source_link_folder(self, folder: str) -> str:
+        with self._changing("attachment-folder"):
+            return str(unwrap(attachment_service.set_source_link_folder(self.db, folder)))
 
     # -------------------------------------------------------------- receivables
 

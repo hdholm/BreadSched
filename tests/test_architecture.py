@@ -1158,6 +1158,13 @@ class TestBookServerBoundaries:
         "save_exchange_rate",
         "save_dashboard_config",
         "dashboard_settings",
+        "attach_location",
+        "attach_file",
+        "detach",
+        "relink",
+        "attachment_report",
+        "set_attachment_folder",
+        "set_source_link_folder",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1277,6 +1284,13 @@ class TestBookServerBoundaries:
         "save_exchange_rate",
         "dashboard_settings",
         "save_dashboard_settings",
+        "attachment_report",
+        "link_attachment",
+        "attach_file",
+        "unlink_attachment",
+        "relink_attachment",
+        "set_attachment_folder",
+        "set_source_link_folder",
     }
 
     @pytest.mark.parametrize(
@@ -1334,6 +1348,20 @@ class TestBookServerBoundaries:
             ("web/dashboard_resource.py", ("dashboard_config_save",)),
             ("gui/views/dashboard.py", ("_on_setting_changed",)),
             ("gui/dialogs/dashboard_dialog.py", ("save",)),
+            ("cli/categorization_commands.py", ("cmd_attachments",)),
+            (
+                "web/attachment_resource.py",
+                (
+                    "transaction_attachment_link",
+                    "transaction_attachment_remove",
+                    "transaction_attachment_relink",
+                    "attachment_upload",
+                ),
+            ),
+            (
+                "gui/dialogs/transaction_dialog.py",
+                ("attach_path", "link_location", "remove_document", "relink_document"),
+            ),
             ("web/quote_resource.py", ("quotes", "quote_source_save", "quotes_update")),
             ("gui/dialogs/online_quotes_dialog.py", ("save_sources", "get_quotes", "_store")),
             ("web/holdings_resource.py", ("sale_lots_view", "sale_lots_save")),

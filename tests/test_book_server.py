@@ -1392,6 +1392,51 @@ def test_dashboard_settings_alike(target, book):
     assert (repr(db.get_metadata("dashboard")), db.get_account(book.card).group) == before
 
 
+def test_attachments_alike(target, book, tmp_path):
+    api, db = target.api, target.db
+    paid = Transaction.simple(date(2026, 3, 8), "Dentist", book.rent, book.checking, "200")
+    with db.transaction("Dentist") as txn:
+        db.add_transaction(paid, txn)
+    folder = tmp_path / "documents"
+    assert api.set_attachment_folder(str(folder)) == str(folder)
+    receipt = tmp_path / "receipt.pdf"
+    receipt.write_bytes(b"%PDF-1.4")
+    linked = api.link_attachment(paid.handle, "https://example.com/bill")
+    assert linked.attachments == ["https://example.com/bill"]
+    copied = api.attach_file(paid.handle, str(receipt))
+    stored = copied.attachments[-1]
+    assert (folder / stored).read_bytes() == b"%PDF-1.4"
+    report = api.attachment_report(transaction=paid.handle)
+    assert report.folder == folder
+    assert {(item.location, item.kind, item.present) for item in report.attachments} == {
+        ("https://example.com/bill", "web", None),
+        (stored, "file", True),
+    }
+    (folder / stored).unlink()
+    [missing] = api.attachment_report(missing_only=True).attachments
+    assert missing.location == stored
+    moved = api.relink_attachment(paid.handle, stored, str(receipt))
+    assert moved.attachments == ["https://example.com/bill", str(receipt)]
+    assert api.unlink_attachment(paid.handle, str(receipt)).attachments == [
+        "https://example.com/bill"
+    ]
+    assert receipt.exists()
+
+    before = repr(db.get_transaction(paid.handle).serialize())
+    for call, status, code in (
+        (lambda: api.link_attachment(paid.handle, "https://example.com/bill"), 400, None),
+        (lambda: api.unlink_attachment(paid.handle, "nothing"), 404, "attachment.not_found"),
+        (lambda: api.link_attachment("missing", "x"), 404, "transaction.not_found"),
+        (lambda: api.attach_file(paid.handle, str(tmp_path / "none.pdf")), 404, None),
+        (lambda: api.set_source_link_folder("relative/folder"), 400, None),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert refused.value.status == status
+        assert code is None or refused.value.code == code
+    assert repr(db.get_transaction(paid.handle).serialize()) == before
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -1613,6 +1658,9 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("POST", "/api/v1/exchange-rates", {"source": "a", "target": "b"}, 400, "request.invalid"),
         ("GET", "/api/v1/currencies/lookup", None, 400, "query.missing"),
         ("PATCH", "/api/v1/dashboard/settings", {"liquidity_days": "14"}, 400, "request.invalid"),
+        ("PATCH", "/api/v1/attachment-folders", {}, 400, "request.invalid"),
+        ("POST", "/api/v1/transactions/x/attachments", {}, 400, "request.invalid"),
+        ("GET", "/api/v1/attachments?missing=maybe", None, 400, "query.invalid"),
         ("POST", "/api/v1/loans", {"terms": {}, "opening_balance": "yes"}, 400, "request.invalid"),
         ("PATCH", "/api/v1/commodities/x/quote-source", {}, 400, "request.invalid"),
         (

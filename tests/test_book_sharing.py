@@ -461,6 +461,24 @@ def test_rates_work_through_the_server_holding_the_book(running, book_path, caps
     assert "The rate must be greater than zero" in capsys.readouterr().err
 
 
+def test_attachments_work_through_the_server_holding_the_book(running, book_path, capsys, tmp_path):
+    path = str(book_path)
+    transaction = next(iter(running.db.iter_transactions()))
+    receipt = tmp_path / "receipt.pdf"
+    receipt.write_bytes(b"%PDF-1.4")
+    add = ["attachments", path, "--transaction", transaction.handle, "--add", str(receipt)]
+    assert main([*add, "--json"]) == 0
+    stored = json.loads(capsys.readouterr().out)["attachments"][-1]
+    assert running.db.get_transaction(transaction.handle).attachments[-1] == stored
+    assert main(["attachments", path, "--transaction", transaction.handle, "--json"]) == 0
+    [document] = json.loads(capsys.readouterr().out)["attachments"]
+    assert (document["location"], document["present"]) == (stored, True)
+    remove = ["attachments", path, "--transaction", transaction.handle, "--remove", stored]
+    assert main(remove) == 0
+    assert running.db.get_transaction(transaction.handle).attachments == []
+    capsys.readouterr()
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

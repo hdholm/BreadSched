@@ -6,7 +6,8 @@ any of them as JSON data (:func:`to_data`) and reads it back from its type alone
 (:func:`from_data`):
 
 * ``None``, ``bool``, ``int``, ``str``; ``Money`` exactly (``contract.exact_money``),
-  ``Decimal`` as text, dates and times in ISO form, an enum as its value;
+  ``Decimal`` as text, dates and times in ISO form, a path as text, an enum as its
+  value;
 * a record that has its own stored form (``serialize`` and ``from_dict``, such as
   every ``PrimaryObject``) in that form;
 * a dataclass as an object of its fields; tuples, lists, sets, and other
@@ -28,6 +29,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 from functools import cache
+from pathlib import Path, PurePath
 from typing import Any, TypeVar, Union, get_args, get_origin, get_type_hints
 
 from ..gen.lib.money import Money
@@ -53,6 +55,8 @@ def to_data(value: Any) -> Any:
         return str(value)
     if isinstance(value, (date, datetime)):
         return value.isoformat()
+    if isinstance(value, PurePath):
+        return str(value)
     if isinstance(value, Enum):
         return to_data(value.value)
     if _stored_form(type(value)):
@@ -162,6 +166,10 @@ def from_data(kind: Any, data: Any, where: str = "value") -> Any:
             return datetime.fromisoformat(data)
         except ValueError:
             raise _fail(where, "a date and time") from None
+    if kind is Path:
+        if not isinstance(data, str):
+            raise _fail(where, "a path in text")
+        return Path(data)
     if kind is date:
         if not isinstance(data, str):
             raise _fail(where, "a date (YYYY-MM-DD)")

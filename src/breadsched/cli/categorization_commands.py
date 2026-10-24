@@ -4,21 +4,15 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any
 
 from ..api.protocol import BookApi
 from ..gen.services.categorization import AddRule
-from ..presentation import (
-    service_error_message,
-)
 from .common import (
     AddCommand,
     CommandError,
     add_server_options,
     book_api,
     emit,
-    find_transaction,
-    open_book,
     table,
 )
 
@@ -211,63 +205,41 @@ def cmd_tags(args: argparse.Namespace) -> int:
 def cmd_attachments(args: argparse.Namespace) -> int:
     """List linked documents and which are missing, or link, unlink, and relink them."""
     from ..gen.engine import attachments as attachment_engine
-    from ..gen.services import (
-        attach_file,
-        attach_location,
-        attachment_report,
-        detach,
-        relink,
-        set_attachment_folder,
-        set_source_link_folder,
-    )
 
     writes = (args.add, args.remove, args.relink, args.folder, args.gnucash_folder)
-    db = open_book(args.book, "w" if any(item is not None for item in writes) else "r")
-    try:
-
-        def check(result: Any) -> Any:
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
-            return result.value
-
+    with book_api(args, "w" if any(item is not None for item in writes) else "r") as book:
         if args.folder is not None:
-            folder = check(set_attachment_folder(db, args.folder))
-            emit({"folder": str(folder)}, args, f"Attachment folder: {folder}")
+            chosen = book.set_attachment_folder(args.folder)
+            emit({"folder": chosen}, args, f"Attachment folder: {chosen}")
             return 0
         if args.gnucash_folder is not None:
-            folder = check(set_source_link_folder(db, args.gnucash_folder))
-            emit({"folder": str(folder)}, args, f"GnuCash linked files resolve from: {folder}")
+            chosen = book.set_source_link_folder(args.gnucash_folder)
+            emit({"folder": chosen}, args, f"GnuCash linked files resolve from: {chosen}")
             return 0
-        target = find_transaction(db, args.transaction) if args.transaction else None
+        target = book.find_transaction(args.transaction) if args.transaction else None
         if any(item is not None for item in (args.add, args.remove, args.relink)):
             if target is None:
                 raise CommandError("--transaction is required to change attachments")
             if args.add is not None:
                 if attachment_engine.is_web_address(args.add):
-                    changed = check(attach_location(db, target.handle, args.add))
+                    changed = book.link_attachment(target.handle, args.add)
                 else:
-                    changed = check(
-                        attach_file(db, target.handle, Path(args.add), copy=not args.link)
-                    )
+                    # The file is read where the server holding the book runs.
+                    path = str(Path(args.add).resolve())
+                    changed = book.attach_file(target.handle, path, copy=not args.link)
                 text = f"Linked {changed.attachments[-1]}"
             elif args.remove is not None:
-                changed = check(detach(db, target.handle, args.remove))
+                changed = book.unlink_attachment(target.handle, args.remove)
                 text = f"Unlinked {args.remove}; the file itself is kept"
             else:
                 if not args.to:
                     raise CommandError("--to is required with --relink")
-                changed = check(relink(db, target.handle, args.relink, args.to))
+                changed = book.relink_attachment(target.handle, args.relink, args.to)
                 text = f"Relinked {args.relink} to {args.to}"
             emit({"handle": changed.handle, "attachments": changed.attachments}, args, text)
             return 0
-        if target is not None:
-            found = attachment_engine.statuses(db, target)
-            if args.missing:
-                found = [item for item in found if item.missing]
-            folder = attachment_engine.attachment_folder(db)
-        else:
-            report = attachment_report(db, missing_only=args.missing)
-            found, folder = list(report.attachments), report.folder
+        report = book.attachment_report(args.missing, target.handle if target else None)
+        found, folder = list(report.attachments), report.folder
 
         def state(item: attachment_engine.AttachmentStatus) -> str:
             if item.present is None:
@@ -311,8 +283,6 @@ def cmd_attachments(args: argparse.Namespace) -> int:
             text,
         )
         return 0
-    finally:
-        db.close()
 
 
 def register(add: AddCommand) -> None:
@@ -388,4 +358,5 @@ def register(add: AddCommand) -> None:
         help="where relative GnuCash linked documents live (GnuCash's 'Path head for linked "
         "files'; '' restores the home folder)",
     )
+    add_server_options(attachments_cmd)
     attachments_cmd.set_defaults(func=cmd_attachments)

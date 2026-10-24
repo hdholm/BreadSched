@@ -51,11 +51,7 @@ from ...gen.services import (
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
-    attach_file,
-    attach_location,
     build_transaction,
-    detach,
-    relink,
     transaction_currency,
 )
 from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry, suggest_entry
@@ -525,13 +521,15 @@ class TransactionDialog(BoundedWindow):
         controls.append(link)
         self.documents.append(controls)
 
-    def _document_changed(self, result) -> bool:
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+    def _document_changed(self, change) -> bool:
+        try:
+            changed = change(book_server(self.db))
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return False
         # Later saves build on the stored transaction, including its documents.
-        self.transaction = result.value
+        self.transaction = changed
         self._show_documents()
         return True
 
@@ -539,26 +537,28 @@ class TransactionDialog(BoundedWindow):
         """Copy a file into the attachment folder (or link it in place) and link it."""
         if self.transaction is None:
             return False
-        copy = attachment_engine.attachment_folder(self.db) is not None
-        return self._document_changed(
-            attach_file(self.db, self.transaction.handle, path, copy=copy)
-        )
+        handle = self.transaction.handle
+        copy = book_server(self.db).attachment_report(transaction=handle).folder is not None
+        return self._document_changed(lambda book: book.attach_file(handle, str(path), copy))
 
     def link_location(self, location: str) -> bool:
         if self.transaction is None:
             return False
-        return self._document_changed(attach_location(self.db, self.transaction.handle, location))
+        handle = self.transaction.handle
+        return self._document_changed(lambda book: book.link_attachment(handle, location))
 
     def remove_document(self, location: str) -> bool:
         if self.transaction is None:
             return False
-        return self._document_changed(detach(self.db, self.transaction.handle, location))
+        handle = self.transaction.handle
+        return self._document_changed(lambda book: book.unlink_attachment(handle, location))
 
     def relink_document(self, location: str, path: Path) -> bool:
         if self.transaction is None:
             return False
         new = attachment_engine.location_for(self.db, path)
-        return self._document_changed(relink(self.db, self.transaction.handle, location, new))
+        handle = self.transaction.handle
+        return self._document_changed(lambda book: book.relink_attachment(handle, location, new))
 
     def open_document(self, item: attachment_engine.AttachmentStatus) -> str | None:
         """Open a document with the desktop's default application."""

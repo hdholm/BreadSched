@@ -59,6 +59,7 @@ from ..gen.services import (
     TransactionInput,
 )
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
+from ..gen.services.attachments import AttachmentReport
 from ..gen.services.categorization import (
     AddRule,
     AppliedCategories,
@@ -600,3 +601,31 @@ class BookApi(Protocol):
         ...
 
     def save_dashboard_settings(self, request: SaveDashboardConfig) -> DashboardSettings: ...
+
+    # ------------------------------------------------------------- attachments
+
+    def attachment_report(
+        self, missing_only: bool = False, transaction: str | None = None
+    ) -> AttachmentReport:
+        """Linked documents (all, or one transaction's) checked against the file system."""
+        ...
+
+    def link_attachment(self, transaction: str, location: str) -> Transaction:
+        """Link a web address, an absolute path, or a path inside the attachment folder."""
+        ...
+
+    def attach_file(self, transaction: str, path: str, copy: bool = True) -> Transaction:
+        """Link a file as the server sees it, copying it into the folder by default."""
+        ...
+
+    def unlink_attachment(self, transaction: str, location: str) -> Transaction: ...
+
+    def relink_attachment(self, transaction: str, location: str, new: str) -> Transaction: ...
+
+    def set_attachment_folder(self, folder: str) -> str:
+        """Where relative locations resolve; empty restores the default. Returns it."""
+        ...
+
+    def set_source_link_folder(self, folder: str) -> str:
+        """GnuCash's path head for linked files; empty restores the home folder."""
+        ...
