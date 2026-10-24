@@ -5,11 +5,13 @@ Part of the [BreadSched design](../../DESIGN.md).
 ## GTK window, toolbar, and tabs
 
 The main window has no sidebar, which duplicated the View menu and took width from
-every view. The toolbar is arranged around the current view: actions that work
-anywhere (`view_catalog.TOOLBAR`: open or import a book, undo, redo, new
-transaction, print), the current view's name and its own command icons
-(`view_tools`), one toggle per other view (`view_catalog.CATEGORIES`), and the book's
-account and transaction counts. The toolbar scrolls horizontally rather than setting
+every view. The toolbar is arranged around the current view (#182, #361): actions
+that work anywhere (`view_catalog.TOOLBAR`: undo, redo, new transaction, print;
+opening and importing a book are File-menu and start-screen commands), one toggle
+per other view (`view_catalog.CATEGORIES`), the current view's name in bold
+(`view_heading`) as the divider, its own command icons (`view_tools`, including the
+register's Reconcile), and, only on `viewmanager.SUMMARY_VIEWS` (Dashboard and
+Accounts), the book's account and transaction counts. The toolbar scrolls horizontally rather than setting
 the window's minimum width. The View menu and the view icons both target the
 stateful `win.show-category` action, and `show_category()` is the single navigation
 entry point, so the active icon and menu item always agree however a view was
@@ -168,9 +170,11 @@ Entry autocomplete comes from one service, `services/autocomplete.suggest_entry`
 so GTK and web never infer different templates. A description matches on its
 normalized key (`description_keys.match_key`); candidates
 must use the entry's account and currency and only visible, postable accounts, and
-the latest wins. The proposal carries accounts, values, and memos only (never
-reconcile state, source identity, notes, planning purpose, investment activity, or
-claims), fills only fields the user has not touched, names its source, and never
+the latest wins. The proposal carries accounts, values, memos, and the earlier
+transaction's notes (never reconcile state, source identity, planning purpose,
+investment activity, or claims), fills only fields the user has not touched (GTK's
+register and transaction editor take the notes only into empty notes, #363; the
+browser's register has no notes cell for a new entry), names its source, and never
 writes. The web route is `GET /api/entry/suggest`.
 
 ### Register grid and blank entry row
@@ -220,12 +224,16 @@ parallel transaction models:
   in a `Gtk.ListBox` under the cell, which scrolls to keep the chosen one in view
   as Up and Down move through it (#334). `quickfill_description` completes a new
   entry's description from the register's earlier descriptions, most recent first;
-  leaving the description then asks `suggest_entry` for the rest.
+  leaving the description then asks `suggest_entry` for the rest. The grid keeps the
+  letters as typed, so a completion that stops matching gives back the typed case
+  rather than the earlier description's (#363).
 - **Commit.** Two balancing `TransactionSplitInput`s with a positive exact amount
   (direction from the cell typed in), or one per split line, go through
   `save_transaction` as one atomic change and one undo step. Fewer than two splits,
-  an imbalance, an incomplete line, or no split in the register's account is refused
-  with the typed values kept and the cursor on the offending cell.
+  an imbalance, an incomplete line, or a new entry with no split in the register's
+  account is refused with the typed values kept and the cursor on the offending
+  cell. An existing transaction may move out of the register's account entirely
+  (#364), in GTK and the browser alike; the message names where it went.
 - **Split lines.** A transaction of more than two splits opens with its split lines
   (memo, account, and amount each) and a trailing empty line; the Split button
   toggles them for a two-split one. Viewing the lines is not an edit. Collapsing is

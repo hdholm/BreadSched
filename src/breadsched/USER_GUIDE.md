@@ -521,9 +521,12 @@ earlier transaction in this account whose description matches (ignoring case,
 punctuation, and words containing digits, such as store numbers). It fills only what
 you have not yet typed or chosen: the transfer account (or every split line of a
 multi-split entry) and the amount under the same heading, and says where they came
-from. Nothing is saved until you confirm. Notes, reconciliation, planning
-links, and FSA claims are never copied, and editing an existing transaction never
-proposes anything.
+from. In the desktop register and transaction editor, the earlier transaction's
+notes also fill the new entry's notes when you have typed none. Nothing is saved
+until you confirm. Reconciliation, planning links, and FSA claims are never copied,
+and editing an existing transaction never proposes anything. If you keep typing past
+a completed description (or account) that no longer matches, the letters you typed
+stay as you typed them.
 
 Editing in place keeps planning purposes, investment classifications,
 reconciliation, and FSA links, which the row does not show; notes are shown and

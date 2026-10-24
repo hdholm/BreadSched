@@ -126,7 +126,10 @@ settings and never shown again (`/api/quotes`, `/api/quotes/source`,
 
 The register has a blank row at the bottom for a new entry, **Split** for split
 lines with an imbalance line, and in-place editing of any row: click it (or choose
-**Edit**), then **Enter** saves and **Escape** cancels. **Up** and **Down** in a
+**Edit**), then **Enter** saves and **Escape** cancels. A new entry needs one split
+in the register's account; to move an existing transaction to another account, such
+as a purchase entered on the wrong card, change that split's account and save, and
+the register says it moved out. **Up** and **Down** in a
 field save the row you are leaving if you changed it and edit the one above or
 below; below the last transaction is the blank row, and a row that cannot be saved
 keeps you there with the reason. While you type an account path into an account

@@ -504,7 +504,9 @@ function registerEntry(data, usable, row) {
       if (total !== 0n) {
         return fail(`The splits are out of balance by ${entryText(total)}.`, null);
       }
-      if (!splits.some((split) => split.account === state.account)) {
+      // An edited transaction may move out of this account entirely, such as a
+      // purchase entered on the wrong card (#364); a new one must belong here.
+      if (!editing && !splits.some((split) => split.account === state.account)) {
         return fail("One split must be in this register's account.", null);
       }
     } else {
@@ -539,7 +541,10 @@ function registerEntry(data, usable, row) {
         description:draft.description.trim(), splits,
       });
       delete state.entryDrafts[key];
-      if (editing) {
+      if (editing && !splits.some((split) => split.account === state.account)) {
+        state.editing = null;
+        say(`Saved ${draft.description.trim()}; it moved out of this register.`);
+      } else if (editing) {
         state.editing = null;
         say(`Saved changes to ${draft.description.trim()}.`);
       } else {

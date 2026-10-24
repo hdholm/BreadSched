@@ -263,6 +263,43 @@ class TestMovingAndEditing:
         # Split identity and memos survive the edit.
         assert {s.memo for s in stored.splits} >= {"To checking", "To savings"}
 
+    def test_a_split_can_move_a_transaction_to_another_account(self, db, book):
+        """#364: a purchase entered on the wrong card moves from its split lines."""
+        shop = Transaction.simple(date(2026, 2, 3), "Shop", book.groceries, book.card, "40")
+        with db.transaction("Shop") as txn:
+            db.add_transaction(shop, txn)
+        sheet = RegisterSheet(db, book.card, today=TODAY)
+        sheet.select_transaction(shop.handle)
+        assert sheet.toggle_split()
+        header = sheet.header_index()
+        assert sheet.text(header + 1, "transfer") == "Liabilities:Credit Card"
+        sheet.move_to(header + 1, "transfer")
+        sheet.set_text("Assets:Checking")
+        assert sheet.enter(), sheet.message
+        assert sheet.message == (
+            "Moved Shop to Assets:Checking; it no longer shows in this register."
+        )
+        stored = db.get_transaction(shop.handle)
+        assert {split.account for split in stored.splits} == {book.groceries, book.checking}
+        assert all(
+            row.register_row is None or row.register_row.transaction.handle != shop.handle
+            for row in sheet.rows
+        )
+
+    def test_a_new_transaction_still_needs_a_split_in_this_account(self, db, book):
+        sheet = _sheet(db, book)
+        _type(sheet, "description", "Shop")
+        _type(sheet, "transfer", "Expenses:Groceries")
+        _type(sheet, "decrease", "40")
+        assert sheet.toggle_split()
+        header = sheet.header_index()
+        sheet.move_to(header + 1, "transfer")
+        sheet.set_text("Liabilities:Credit Card")
+        before = sorted(txn.handle for txn in db.iter_transactions())
+        assert not sheet.enter()
+        assert sheet.message == "One split must be in this register's account."
+        assert sorted(txn.handle for txn in db.iter_transactions()) == before
+
     def test_a_simple_entry_can_be_split_and_joined_again(self, db, book):
         sheet = _sheet(db, book)
         _type(sheet, "description", "Shop")

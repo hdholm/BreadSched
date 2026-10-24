@@ -445,6 +445,43 @@ def test_a_register_row_is_edited_in_place(page, served):
     assert db.get_transaction(original.handle).description == "Edited in place"
 
 
+def test_an_edited_split_moves_a_transaction_to_another_account(page, served):
+    """#364: an edit may move every split out of the register's account."""
+    db, _httpd = served
+    _open_register(page)
+    register = page.locator("select").first.input_value()
+    _blank(page, "description").fill("Wrong card")
+    page.locator("tr.entry-row input.num").nth(1).fill("9.00")
+    page.locator("tr.entry-row input.num").nth(1).press("Enter")
+    page.wait_for_selector("text=Posted Wrong card.")
+    original = next(t for t in db.iter_transactions() if t.description == "Wrong card")
+    others = {split.account for split in original.splits} - {register}
+    target = next(
+        a.handle
+        for a in db.iter_accounts()
+        if not a.placeholder
+        and not a.is_root
+        and not a.hidden
+        and a.handle != register
+        and a.handle not in others
+    )
+
+    page.locator("tr:has-text('Wrong card')").get_by_role("button", name="Edit", exact=True).click()
+    page.locator("[aria-label='Edited transaction description']").wait_for()
+    page.locator("tr:has([aria-label='Edited transaction description'])").get_by_role(
+        "button", name="Split", exact=True
+    ).click()
+    page.wait_for_selector("[aria-label='Edited split 1 account']")
+    page.locator("[aria-label='Edited split 1 account']").select_option(target)
+    page.locator("[aria-label='Edited transaction description']").press("Enter")
+    page.wait_for_selector("text=Saved Wrong card; it moved out of this register.")
+
+    stored = db.get_transaction(original.handle)
+    assert register not in {split.account for split in stored.splits}
+    assert target in {split.account for split in stored.splits}
+    assert page.locator("tr:has-text('Wrong card')").count() == 0
+
+
 def test_a_register_expense_becomes_a_reimbursable(page, served):
     from breadsched.gen.lib import AccountClass, Money, Transaction
 
