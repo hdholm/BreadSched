@@ -1105,6 +1105,96 @@ def test_payroll_alike(target, book):
     assert api.payroll().templates == ()
 
 
+def test_fsa_claims_alike(target, book):
+    from breadsched.gen.engine.fsa_claims import FsaClaimStatus
+    from breadsched.gen.lib import Account, AccountType, FsaFundingYear
+    from breadsched.gen.services.claims import (
+        ClaimAllocationInput,
+        ClaimInput,
+        ClaimLinkInput,
+        ClaimReportQuery,
+        CloseClaim,
+        ReopenClaim,
+        SaveClaim,
+    )
+
+    api, db = target.api, target.db
+    year = date(2026, 1, 1)
+    fsa = Account(name="Health FSA", atype=AccountType.FSA, parent=book.assets)
+    fsa.fsa.years = [FsaFundingYear(year, date(2026, 12, 31), Money("1500.00"))]
+    medical = Account(name="Medical", atype=AccountType.EXPENSE, parent=book.expenses)
+    with db.transaction("FSA") as txn:
+        db.add_account(fsa, txn)
+        db.add_account(medical, txn)
+    paid = Transaction.simple(date(2026, 3, 8), "Dentist", medical.handle, book.card, "200")
+    back = Transaction.simple(
+        date(2026, 3, 25), "Dentist claim paid", book.checking, fsa.handle, "200"
+    )
+    with db.transaction("Dentist") as txn:
+        db.add_transaction(paid, txn)
+        db.add_transaction(back, txn)
+    [cost] = [split for split in paid.splits if split.account == medical.handle]
+
+    saved = api.save_fsa_claim(
+        SaveClaim(
+            ClaimInput(
+                date(2026, 3, 8),
+                provider="Dentist",
+                eob_responsibility=Money("200"),
+                payments=(ClaimLinkInput(paid.handle, cost.handle),),
+                allocations=(ClaimAllocationInput(fsa.handle, year),),
+            )
+        )
+    )
+    view = api.fsa_claims(date(2026, 4, 1))
+    [summary] = view.claims
+    assert (summary.claim.handle, summary.paid) == (saved.handle, Money("200.00"))
+    assert view.name(fsa.handle) == "Assets:Health FSA"
+    assert paid.handle in {item.transaction for item in view.candidates.payments}
+    assert back.handle in {item.transaction for item in view.candidates.reimbursements}
+    assert [item.handle for item in view.candidates.fsa_accounts] == [fsa.handle]
+    assert api.find_fsa_claim(saved.handle[:10]).provider == "Dentist"
+
+    [proposal] = api.claim_link_proposals()
+    assert (proposal.claim, proposal.transaction) == (saved.handle, back.handle)
+    assert api.claim_link_proposals(book.savings) == ()
+    accepted = api.accept_claim_links(((proposal.claim, proposal.transaction, proposal.split),))
+    assert (accepted.linked, accepted.unchanged) == (1, 0)
+    report = api.fsa_claim_report(ClaimReportQuery(as_of=date(2026, 4, 1), by="provider"))
+    assert [group.label for group in report.groups] == ["Dentist"]
+    assert report.lines[0].summary.reimbursed == Money("200.00")
+    assert api.fsa_claim_report(ClaimReportQuery(status=FsaClaimStatus.OPEN)).lines == ()
+    years = api.benefit_years(date(2026, 4, 1))
+    assert [years.name(item.account.handle) for item in years.years] == ["Assets:Health FSA"]
+
+    api.close_fsa_claim(CloseClaim(saved.handle, date(2026, 4, 2), "done"))
+    assert db.get_fsa_claim(saved.handle).closed_on == date(2026, 4, 2)
+    api.reopen_fsa_claim(ReopenClaim(saved.handle, date(2026, 4, 3), "again"))
+    assert db.get_fsa_claim(saved.handle).closed_on is None
+
+    before = db.get_fsa_claim(saved.handle).serialize()
+    for call, status, code in (
+        (lambda: api.find_fsa_claim("nothing"), 404, "claim.not_found"),
+        (lambda: api.delete_fsa_claim("missing"), 404, "claim.not_found"),
+        (lambda: api.close_fsa_claim(CloseClaim("missing", date(2026, 4, 2))), 404, None),
+        (lambda: api.fsa_claim_report(ClaimReportQuery(by="colour")), 400, None),
+        (
+            lambda: api.save_fsa_claim(
+                SaveClaim(ClaimInput(date(2026, 3, 8)), existing_handle="missing")
+            ),
+            404,
+            "claim.not_found",
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert refused.value.status == status
+        assert code is None or refused.value.code == code
+    assert db.get_fsa_claim(saved.handle).serialize() == before
+    assert api.delete_fsa_claim(saved.handle).handle == saved.handle
+    assert db.get_fsa_claim(saved.handle) is None
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -1316,6 +1406,18 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("DELETE", "/api/v1/scenarios/x/periods/first", None, 400, "request.invalid"),
         ("GET", "/api/v1/scenarios/lookup", None, 400, "query.missing"),
         ("GET", "/api/v1/payroll?as_of=soon", None, 400, "query.date.invalid"),
+        ("GET", "/api/v1/fsa-claims/report?by=colour", None, 400, "query.invalid"),
+        ("GET", "/api/v1/fsa-claims/report?status=lost", None, 400, "query.invalid"),
+        ("POST", "/api/v1/fsa-claims", {"definition": {}}, 400, "request.invalid"),
+        ("POST", "/api/v1/fsa-claims/x/close", {"on": "soon"}, 400, "request.invalid"),
+        ("DELETE", "/api/v1/fsa-claims/missing", None, 404, "claim.not_found"),
+        (
+            "POST",
+            "/api/v1/fsa-claim-proposals/accept",
+            {"chosen": [["a", "b"]]},
+            400,
+            "request.invalid",
+        ),
         ("POST", "/api/v1/payroll/templates", {"template": "Acme"}, 400, "request.invalid"),
         ("POST", "/api/v1/payroll/templates/draft", {"schedule": "x"}, 400, "request.invalid"),
         ("DELETE", "/api/v1/payroll/templates/Nobody", None, 404, "payroll.template.not_found"),

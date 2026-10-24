@@ -70,6 +70,13 @@ Resources so far, all under ``/api/v1``:
   (``SavePayrollTemplate``) and ``DELETE /payroll/templates/{name}``;
   ``POST /payroll/paychecks`` (``CreatePaycheck``); ``POST /payroll/pay-changes/preview``
   and ``POST /payroll/pay-changes`` (``PayChange``).
+* ``GET /fsa-claims`` (``as_of``) – claims with their standing and what they could
+  link; ``GET /fsa-claims/lookup`` (``reference``); ``POST /fsa-claims``
+  (``SaveClaim``); ``DELETE /fsa-claims/{handle}``; ``POST /fsa-claims/{handle}/close``
+  and ``/reopen``; ``GET /fsa-claims/report`` (``as_of``, ``by``, ``account``,
+  ``funding_year``, ``provider``, ``status``, ``attention``); ``GET /fsa-years``
+  (``as_of``); ``GET /fsa-claim-proposals`` (``account``) and
+  ``POST /fsa-claim-proposals/accept``.
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -107,6 +114,8 @@ from ..api.views import (
     savings_goals_json,
     tag_counts_json,
 )
+from ..gen.engine.fsa_claim_report import GROUPINGS
+from ..gen.engine.fsa_claims import FsaClaimStatus
 from ..gen.lib.money import Money
 from ..gen.lib.scenario import AssumptionPeriod
 from ..gen.services import (
@@ -121,6 +130,7 @@ from ..gen.services import (
 )
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.categorization import AddRule
+from ..gen.services.claims import ClaimReportQuery, CloseClaim, ReopenClaim, SaveClaim
 from ..gen.services.payroll import CreatePaycheck, PayChange, SavePayrollTemplate
 from ..gen.services.receivables import RecordWriteOff, SaveReceivable
 from ..gen.services.reconciliations import (
@@ -142,6 +152,16 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "claim_links_accept",
+    "claim_proposals_get",
+    "fsa_claim_close_v1",
+    "fsa_claim_lookup",
+    "fsa_claim_remove",
+    "fsa_claim_reopen_v1",
+    "fsa_claim_report_get",
+    "fsa_claim_store",
+    "fsa_claims_get",
+    "benefit_years_get",
     "pay_change_apply",
     "pay_change_preview",
     "paycheck_create",
@@ -930,3 +950,83 @@ def pay_change_preview(api: Api, _path: Path, body: dict[str, Any]) -> dict:
 def pay_change_apply(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     request = from_data(PayChange, body, "request")
     return {"plan": to_data(api.book.apply_pay_change(request))}
+
+
+@dataclass(frozen=True, slots=True)
+class _Closing:
+    on: date
+    reason: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class _Reopening:
+    on: date
+    note: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class _ChosenLinks:
+    chosen: tuple[tuple[str, str, str], ...]
+
+
+def fsa_claims_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    as_of = query.iso_date("as_of")
+    query.finish()
+    return to_data(api.book.fsa_claims(as_of))
+
+
+def fsa_claim_lookup(api: Api, _path: Path, query: QueryParams) -> dict:
+    reference = query.text("reference", required=True) or ""
+    query.finish()
+    return {"claim": to_data(api.book.find_fsa_claim(reference))}
+
+
+def fsa_claim_store(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.save_fsa_claim(from_data(SaveClaim, body, "request")))
+
+
+def fsa_claim_remove(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return to_data(api.book.delete_fsa_claim(path["handle"]))
+
+
+def fsa_claim_close_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    closing = from_data(_Closing, body, "request")
+    return to_data(api.book.close_fsa_claim(CloseClaim(path["handle"], closing.on, closing.reason)))
+
+
+def fsa_claim_reopen_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    change = from_data(_Reopening, body, "request")
+    return to_data(api.book.reopen_fsa_claim(ReopenClaim(path["handle"], change.on, change.note)))
+
+
+def fsa_claim_report_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    status = query.choice("status", tuple(item.value for item in FsaClaimStatus), "")
+    request = ClaimReportQuery(
+        as_of=query.iso_date("as_of"),
+        by=query.choice("by", GROUPINGS, "status"),
+        account=query.text("account"),
+        funding_year=query.iso_date("funding_year"),
+        provider=query.text("provider"),
+        status=FsaClaimStatus(status) if status else None,
+        attention_only=query.choice("attention", ("true", "false"), "false") == "true",
+    )
+    query.finish()
+    return to_data(api.book.fsa_claim_report(request))
+
+
+def benefit_years_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    as_of = query.iso_date("as_of")
+    query.finish()
+    return to_data(api.book.benefit_years(as_of))
+
+
+def claim_proposals_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    account = query.text("account")
+    query.finish()
+    return {"proposals": to_data(api.book.claim_link_proposals(account))}
+
+
+def claim_links_accept(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    chosen = from_data(_ChosenLinks, body, "request").chosen
+    return to_data(api.book.accept_claim_links(chosen))

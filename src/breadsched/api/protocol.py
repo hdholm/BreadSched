@@ -14,10 +14,13 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
+from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
+from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.fsa_claim import FsaClaim
 from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
@@ -58,6 +61,16 @@ from ..gen.services.categorization import (
     AppliedCategories,
     CategorizationRules,
     CategoryRule,
+)
+from ..gen.services.claims import (
+    AcceptedClaimLinks,
+    ClaimReportQuery,
+    CloseClaim,
+    FsaClaimsView,
+    FsaYearsView,
+    ReopenClaim,
+    SaveClaim,
+    SavedClaim,
 )
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.receivables import (
@@ -434,3 +447,37 @@ class BookApi(Protocol):
         ...
 
     def apply_pay_change(self, request: PayChange) -> PayChangePlan: ...
+
+    # --------------------------------------------------------------- FSA claims
+
+    def fsa_claims(self, as_of: date | None = None) -> FsaClaimsView:
+        """Every claim's links and standing, and the splits a claim could link."""
+        ...
+
+    def find_fsa_claim(self, reference: str) -> FsaClaim:
+        """A claim, as stored, by handle or unique handle prefix."""
+        ...
+
+    def save_fsa_claim(self, request: SaveClaim) -> SavedClaim: ...
+
+    def delete_fsa_claim(self, claim: str) -> SavedClaim: ...
+
+    def close_fsa_claim(self, request: CloseClaim) -> SavedClaim: ...
+
+    def reopen_fsa_claim(self, request: ReopenClaim) -> SavedClaim: ...
+
+    def fsa_claim_report(self, query: ClaimReportQuery) -> ClaimReport:
+        """Claims grouped and totalled, with the reasons any needs attention."""
+        ...
+
+    def benefit_years(self, as_of: date | None = None) -> FsaYearsView:
+        """Open and recently closed FSA benefit years, with how each was used."""
+        ...
+
+    def claim_link_proposals(self, account: str | None = None) -> tuple[FsaClaimProposal, ...]:
+        """FSA movements that clearly belong on one claim; writes nothing."""
+        ...
+
+    def accept_claim_links(self, chosen: tuple[tuple[str, str, str], ...]) -> AcceptedClaimLinks:
+        """Link the chosen (claim, transaction, split) proposals still on offer."""
+        ...

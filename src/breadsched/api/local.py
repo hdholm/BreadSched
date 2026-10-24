@@ -17,10 +17,13 @@ from contextlib import contextmanager
 from datetime import date
 
 from ..gen.db.sqlite import DbSQLite
+from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
+from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.fsa_claim import FsaClaim
 from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
@@ -92,6 +95,7 @@ from ..gen.services import (
 )
 from ..gen.services import advance_days as stored_advance_days
 from ..gen.services import assumptions as assumption_service
+from ..gen.services import claims as claim_service
 from ..gen.services import payroll as payroll_service
 from ..gen.services import receivables as receivable_service
 from ..gen.services import scenarios as scenario_service
@@ -101,6 +105,17 @@ from ..gen.services.categorization import (
     AppliedCategories,
     CategorizationRules,
     CategoryRule,
+)
+from ..gen.services.claims import (
+    AcceptedClaimLinks,
+    ClaimReportQuery,
+    CloseClaim,
+    DeleteClaim,
+    FsaClaimsView,
+    FsaYearsView,
+    ReopenClaim,
+    SaveClaim,
+    SavedClaim,
 )
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.receivables import (
@@ -387,6 +402,38 @@ class LocalBookServer:
 
     def apply_pay_change(self, request: PayChange) -> PayChangePlan:
         return unwrap(payroll_service.apply_pay_change(self.db, request))
+
+    # --------------------------------------------------------------- FSA claims
+
+    def fsa_claims(self, as_of: date | None = None) -> FsaClaimsView:
+        return claim_service.fsa_claims_view(self.db, as_of)
+
+    def find_fsa_claim(self, reference: str) -> FsaClaim:
+        return _named(claim_service.find_claim(self.db, reference), reference, "FSA claim")
+
+    def save_fsa_claim(self, request: SaveClaim) -> SavedClaim:
+        return unwrap(claim_service.save_claim(self.db, request))
+
+    def delete_fsa_claim(self, claim: str) -> SavedClaim:
+        return unwrap(claim_service.delete_claim(self.db, DeleteClaim(claim)))
+
+    def close_fsa_claim(self, request: CloseClaim) -> SavedClaim:
+        return unwrap(claim_service.close_claim(self.db, request))
+
+    def reopen_fsa_claim(self, request: ReopenClaim) -> SavedClaim:
+        return unwrap(claim_service.reopen_claim(self.db, request))
+
+    def fsa_claim_report(self, query: ClaimReportQuery) -> ClaimReport:
+        return unwrap(claim_service.fsa_claim_report(self.db, query))
+
+    def benefit_years(self, as_of: date | None = None) -> FsaYearsView:
+        return claim_service.fsa_years_view(self.db, as_of)
+
+    def claim_link_proposals(self, account: str | None = None) -> tuple[FsaClaimProposal, ...]:
+        return unwrap(claim_service.claim_link_proposals(self.db, account=account))
+
+    def accept_claim_links(self, chosen: tuple[tuple[str, str, str], ...]) -> AcceptedClaimLinks:
+        return unwrap(claim_service.accept_claim_links(self.db, chosen))
 
     # -------------------------------------------------------------- receivables
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import date
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import fsa_claims
 from ...gen.lib import (
@@ -21,16 +23,11 @@ from ...gen.services import (
     ClaimLinkInput,
     ClaimRejectionInput,
     CloseClaim,
-    DeleteClaim,
     ReopenClaim,
     SaveClaim,
-    close_claim,
-    delete_claim,
-    reopen_claim,
-    save_claim,
 )
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import service_error_message, shared_cost_text
+from ...presentation import shared_cost_text
 from ..gi_setup import GLib, Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
@@ -186,7 +183,7 @@ class FsaClaimsDialog(BoundedWindow):
         super().__init__(title="FSA claims", transient_for=parent)
         self.db = db
         self.set_default_size(860, 700)
-        self.claims = fsa_claims.iter_claims(db)
+        self.claims = [summary.claim for summary in book_server(db).fsa_claims().claims]
         self.current: FsaClaim | None = None
         self._allocation_rows: list[_AllocationRow] = []
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -491,26 +488,28 @@ class FsaClaimsDialog(BoundedWindow):
     def _close_claim(self, _button) -> None:
         if self.current is None:
             return
-        result = close_claim(
-            self.db,
-            CloseClaim(self.current.handle, date.today(), self.close_reason.get_text().strip()),
+        request = CloseClaim(
+            self.current.handle, date.today(), self.close_reason.get_text().strip()
         )
-        self._after_closing(result, "Claim closed.")
+        self._after_closing(lambda: book_server(self.db).close_fsa_claim(request), "Claim closed.")
 
     def _reopen_claim(self, _button) -> None:
         if self.current is None:
             return
-        result = reopen_claim(
-            self.db,
-            ReopenClaim(self.current.handle, date.today(), self.close_reason.get_text().strip()),
+        request = ReopenClaim(
+            self.current.handle, date.today(), self.close_reason.get_text().strip()
         )
-        self._after_closing(result, "Claim reopened.")
+        self._after_closing(
+            lambda: book_server(self.db).reopen_fsa_claim(request), "Claim reopened."
+        )
 
-    def _after_closing(self, result, message: str) -> None:
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+    def _after_closing(self, change, message: str) -> None:
+        try:
+            saved = change()
+        except ApiError as error:
+            self.status.set_text(str(error))
             return
-        self.current = self.db.get_fsa_claim(result.value.handle)
+        self.current = book_server(self.db).find_fsa_claim(saved.handle)
         self.close_reason.set_text("")
         self.status.set_text(message)
         self._show_standing()
@@ -535,30 +534,29 @@ class FsaClaimsDialog(BoundedWindow):
     def _save(self, _button) -> None:
         try:
             eob_text = self.eob.get_text().strip()
-            result = save_claim(
-                self.db,
-                SaveClaim(
-                    ClaimInput(
-                        service_date=date.fromisoformat(self.service.get_text().strip()),
-                        provider=self.provider.get_text().strip(),
-                        description=self.description.get_text().strip(),
-                        eob_responsibility=Money(parse_user_amount(eob_text)) if eob_text else None,
-                        payments=tuple(self.payments.links()),
-                        refunds=tuple(self.refunds.links()),
-                        allocations=tuple(row.value() for row in self._allocation_rows),
-                        receivable=self._selected_receivable(),
-                        eob_note=self.eob_note.get_text().strip(),
-                    ),
-                    existing_handle=self.current.handle if self.current else None,
+            request = SaveClaim(
+                ClaimInput(
+                    service_date=date.fromisoformat(self.service.get_text().strip()),
+                    provider=self.provider.get_text().strip(),
+                    description=self.description.get_text().strip(),
+                    eob_responsibility=Money(parse_user_amount(eob_text)) if eob_text else None,
+                    payments=tuple(self.payments.links()),
+                    refunds=tuple(self.refunds.links()),
+                    allocations=tuple(row.value() for row in self._allocation_rows),
+                    receivable=self._selected_receivable(),
+                    eob_note=self.eob_note.get_text().strip(),
                 ),
+                existing_handle=self.current.handle if self.current else None,
             )
         except (ValueError, IndexError) as exc:
             self.status.set_text(str(exc))
             return
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            saved = book_server(self.db).save_fsa_claim(request)
+        except ApiError as error:
+            self.status.set_text(str(error))
             return
-        self.current = self.db.get_fsa_claim(result.value.handle)
+        self.current = book_server(self.db).find_fsa_claim(saved.handle)
         self.eob_note.set_text("")
         self.status.set_text("Claim saved.")
         self._show_shared()
@@ -567,9 +565,10 @@ class FsaClaimsDialog(BoundedWindow):
     def _delete(self, _button) -> None:
         if self.current is None:
             return
-        result = delete_claim(self.db, DeleteClaim(self.current.handle))
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).delete_fsa_claim(self.current.handle)
+        except ApiError as error:
+            self.status.set_text(str(error))
             return
         self.status.set_text("Claim deleted.")
         self._load(None)

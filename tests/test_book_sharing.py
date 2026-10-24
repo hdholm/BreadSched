@@ -334,6 +334,47 @@ def test_payroll_works_through_the_server_holding_the_book(running, book_path, c
     capsys.readouterr()
 
 
+def test_claims_work_through_the_server_holding_the_book(running, book_path, capsys):
+    from breadsched.gen.engine import fsa_claims
+    from breadsched.gen.lib import (
+        Account,
+        AccountType,
+        FsaClaim,
+        FsaClaimAllocation,
+        FsaFundingYear,
+    )
+
+    db, year = running.db, date(2026, 1, 1)
+    assets = db.get_account_by_name("Assets")
+    fsa = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
+    fsa.fsa.years = [FsaFundingYear(year, date(2026, 12, 31), Money("1500.00"))]
+    with db.transaction("FSA") as txn:
+        db.add_account(fsa, txn)
+    claim = fsa_claims.save_claim(
+        db,
+        FsaClaim(
+            service_date=date(2026, 3, 5),
+            provider="Clinic",
+            eob_responsibility=Money("80"),
+            allocations=[FsaClaimAllocation(fsa.handle, year)],
+        ),
+    )
+    path = str(book_path)
+    assert main(["claims", path, "--as-of", "2026-03-15", "--json"]) == 0
+    [line] = json.loads(capsys.readouterr().out)["claims"]
+    assert (line["handle"], line["provider"]) == (claim.handle, "Clinic")
+    assert main(["claims", path, "--years", "--as-of", "2026-03-15", "--json"]) == 0
+    [row] = json.loads(capsys.readouterr().out)["years"]
+    assert row["account"] == "Assets:Health FSA"
+    assert main(["claims", path, "--close", claim.handle[:8], "--on", "2026-03-20"]) == 0
+    assert "Closed the Clinic claim" in capsys.readouterr().out
+    assert db.get_fsa_claim(claim.handle).closed_on == date(2026, 3, 20)
+    assert main(["claims", path, "--history", claim.handle, "--json"]) == 0
+    assert [e["kind"] for e in json.loads(capsys.readouterr().out)["events"]] == ["closed"]
+    assert main(["claims", path, "--proposals", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["proposals"] == []
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

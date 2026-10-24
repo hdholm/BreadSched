@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from datetime import date
 
 from ..db.sqlite import DbSQLite
-from ..engine import fsa_claim_proposals, fsa_claims
+from ..engine import fsa, fsa_claim_proposals, fsa_claims
+from ..engine.fsa import FsaYearStatus
+from ..engine.fsa_claim_report import GROUPINGS, ClaimReport, claim_report
+from ..engine.fsa_claims import FsaClaimStatus, FsaClaimSummary
+from ..lib.account import AccountClass, AccountType, FsaFundingYear
 from ..lib.base import create_handle
 from ..lib.fsa_claim import (
     FsaClaim,
@@ -16,6 +20,7 @@ from ..lib.fsa_claim import (
 from ..lib.money import Money
 from ..lib.split_link import SplitLink
 from .contracts import ServiceError, ServiceResult
+from .savings_goals import NamedChoice
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,3 +218,199 @@ def accept_claim_links(
             continue
         linked += 1
     return ServiceResult.success(AcceptedClaimLinks(linked, len(chosen) - linked))
+
+
+# --------------------------------------------------------------------- reads
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimCandidate:
+    """One split a claim could link, with what an editor shows for it."""
+
+    transaction: str
+    split: str
+    date: date
+    description: str
+    account: str
+    account_name: str
+    #: The split's size, without its sign.
+    amount: Money
+
+
+@dataclass(frozen=True, slots=True)
+class FsaAccountChoice:
+    handle: str
+    name: str
+    years: tuple[FsaFundingYear, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimCandidates:
+    """Splits a claim could link, by role, and the accounts and payers to choose."""
+
+    payments: tuple[ClaimCandidate, ...]
+    refunds: tuple[ClaimCandidate, ...]
+    reimbursements: tuple[ClaimCandidate, ...]
+    #: Money paid back into an FSA, such as an over-reimbursement.
+    repayments: tuple[ClaimCandidate, ...]
+    fsa_accounts: tuple[FsaAccountChoice, ...]
+    #: A payer covering part of a claim's expense (issue #192), labelled.
+    receivables: tuple[NamedChoice, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class FsaClaimsView:
+    """Every claim's stored links and recomputed standing, and what it could link."""
+
+    claims: tuple[FsaClaimSummary, ...]
+    #: Full names of the allocation accounts, by handle.
+    names: dict[str, str]
+    candidates: ClaimCandidates
+
+    def name(self, handle: str) -> str:
+        return self.names.get(handle, handle)
+
+
+def claim_candidates(db: DbSQLite) -> ClaimCandidates:
+    """Splits from the first FSA year on that could be a claim's payment, refund,
+    reimbursement, or repayment."""
+    payments: list[ClaimCandidate] = []
+    refunds: list[ClaimCandidate] = []
+    reimbursements: list[ClaimCandidate] = []
+    repayments: list[ClaimCandidate] = []
+    fsa_accounts = [account for account in db.iter_accounts() if account.atype is AccountType.FSA]
+    years = [year for account in fsa_accounts for year in account.fsa.years]
+    start = min((year.start for year in years), default=None)
+    for transaction in db.iter_transactions():
+        if start is not None and transaction.post_date < start:
+            continue
+        for split in transaction.splits:
+            account = db.get_account(split.account)
+            if account is None:
+                continue
+            item = ClaimCandidate(
+                transaction.handle,
+                split.handle,
+                transaction.post_date,
+                transaction.description,
+                account.handle,
+                db.full_name(account) or account.name,
+                abs(split.value),
+            )
+            if account.account_class is AccountClass.EXPENSE and split.value > 0:
+                payments.append(item)
+            if account.account_class is AccountClass.EXPENSE and split.value < 0:
+                refunds.append(item)
+            if account.atype is AccountType.FSA and split.value < 0:
+                reimbursements.append(item)
+            if account.atype is AccountType.FSA and split.value > 0:
+                repayments.append(item)
+    receivables = sorted(db.iter_receivables(), key=lambda item: (item.incurred_date, item.payer))
+    return ClaimCandidates(
+        tuple(payments),
+        tuple(refunds),
+        tuple(reimbursements),
+        tuple(repayments),
+        tuple(
+            FsaAccountChoice(
+                account.handle, db.full_name(account) or account.name, tuple(account.fsa.years)
+            )
+            for account in fsa_accounts
+        ),
+        tuple(
+            NamedChoice(
+                item.handle,
+                f"{item.payer} — {item.description or 'expense'} "
+                f"({item.incurred_date.isoformat()})",
+            )
+            for item in receivables
+        ),
+    )
+
+
+def fsa_claims_view(db: DbSQLite, as_of: date | None = None) -> FsaClaimsView:
+    summaries = tuple(
+        fsa_claims.claim_summary(db, claim, as_of=as_of) for claim in fsa_claims.iter_claims(db)
+    )
+    accounts = {
+        allocation.account for summary in summaries for allocation in summary.claim.allocations
+    }
+    return FsaClaimsView(
+        summaries,
+        {
+            handle: db.full_name(handle) or handle
+            for handle in sorted(accounts)
+            if db.get_account(handle) is not None
+        },
+        claim_candidates(db),
+    )
+
+
+def find_claim(db: DbSQLite, reference: str) -> ServiceResult[FsaClaim]:
+    """A claim by handle, or by a unique prefix of one."""
+    exact = db.get_fsa_claim(reference) if reference else None
+    if exact is not None:
+        return ServiceResult.success(exact)
+    matches = (
+        [item for item in db.iter_fsa_claims() if item.handle.startswith(reference)]
+        if reference
+        else []
+    )
+    if not matches:
+        return ServiceResult.failure(ServiceError("claim.not_found", ("claim",)))
+    if len(matches) > 1:
+        return ServiceResult.failure(ServiceError("claim.reference.ambiguous", ("claim",)))
+    return ServiceResult.success(matches[0])
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimReportQuery:
+    as_of: date | None = None
+    #: One of ``engine.fsa_claim_report.GROUPINGS``.
+    by: str = "status"
+    account: str | None = None
+    funding_year: date | None = None
+    provider: str | None = None
+    status: FsaClaimStatus | None = None
+    attention_only: bool = False
+
+
+def fsa_claim_report(db: DbSQLite, query: ClaimReportQuery) -> ServiceResult[ClaimReport]:
+    """Claims grouped and totalled, with the reasons any needs attention."""
+    if query.by not in GROUPINGS:
+        return ServiceResult.failure(ServiceError("claim.report.grouping", ("by",)))
+    return ServiceResult.success(
+        claim_report(
+            db,
+            as_of=query.as_of or date.today(),
+            by=query.by,
+            account=query.account,
+            funding_year=query.funding_year,
+            provider=query.provider,
+            status=query.status,
+            attention_only=query.attention_only,
+        )
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class FsaYearsView:
+    """Open and recently closed FSA benefit years, with how each was used."""
+
+    years: tuple[FsaYearStatus, ...]
+    #: Full names of the FSA accounts, by handle.
+    names: dict[str, str]
+
+    def name(self, handle: str) -> str:
+        return self.names.get(handle, handle)
+
+
+def fsa_years_view(db: DbSQLite, as_of: date | None = None) -> FsaYearsView:
+    statuses = tuple(fsa.dashboard_statuses(db, as_of=as_of or date.today()))
+    return FsaYearsView(
+        statuses,
+        {
+            status.account.handle: db.full_name(status.account) or status.account.name
+            for status in statuses
+        },
+    )

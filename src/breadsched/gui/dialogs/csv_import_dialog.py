@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import re
 
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib.account import AccountClass
-from ...gen.services.claims import claim_link_proposals
 from ...gen.services.csv_import import (
     CsvImportRequest,
     CsvMapping,
@@ -360,7 +360,7 @@ class CsvImportDialog(BoundedWindow):
         """Waiting receivable reimbursements and FSA claim links, if any."""
         notices = [
             reimbursement_notice(len(reimbursement_proposals(self.db).value or ())),
-            claim_link_notice(len(claim_link_proposals(self.db).value or ())),
+            claim_link_notice(len(book_server(self.db).claim_link_proposals())),
         ]
         return " ".join(item for item in notices if item) or None
 

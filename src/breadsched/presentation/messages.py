@@ -58,6 +58,8 @@ _SERVICE_MESSAGES = {
     "account.root.protected": "The root account cannot be deleted",
     "account.in_use": "Accounts with history or children cannot be deleted",
     "claim.not_found": "The FSA claim no longer exists",
+    "claim.reference.ambiguous": "That matches more than one FSA claim; use more of its handle",
+    "claim.report.grouping": "Group claims by status, account, year, or provider",
     "claim.link.transaction.not_found": "A linked transaction no longer exists",
     "claim.link.split.not_found": "A linked transaction entry no longer exists",
     "claim.split.owned_posting": (
