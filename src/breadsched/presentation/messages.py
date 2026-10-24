@@ -256,6 +256,9 @@ _SERVICE_MESSAGES = {
     ),
     "savings_goal.dates.invalid": "The target date must be after the start date",
     "savings_goal.not_found": "That savings goal no longer exists",
+    "savings_goal.reference.ambiguous": (
+        "That matches more than one savings goal; use its name or more of its handle"
+    ),
     "scenario.drawdown.account": "Choose a non-cash asset account to withdraw from",
     "scenario.drawdown.into": "Choose a spendable cash account to pay the withdrawals into",
     "scenario.drawdown.method": "Give either a yearly amount or a yearly percentage, not both",

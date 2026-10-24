@@ -735,6 +735,85 @@ def test_tags_read_and_change_alike(target, book):
     assert (_snapshot(db), db.get_transaction("ef01" + "0" * 28).tags) == before
 
 
+def test_savings_goals_alike(target, book):
+    from breadsched.gen.lib import Scenario
+    from breadsched.gen.services.savings_goals import (
+        AllocateToGoal,
+        SaveSavingsGoal,
+        SetGoalOverride,
+    )
+
+    api, db = target.api, target.db
+    lean = Scenario(name="Lean")
+    with db.transaction("Scenario") as txn:
+        db.add_scenario(lean, txn)
+    start, by = date(2026, 1, 1), date(2026, 12, 31)
+    goal = api.save_savings_goal(
+        SaveSavingsGoal("Holiday", book.savings, Money("1200"), by, start, "Trip")
+    )
+    assert api.find_savings_goal("holiday").handle == goal.handle
+    assert api.find_savings_goal(goal.handle[:6]).serialize() == goal.serialize()
+    funded = api.allocate_to_goal(AllocateToGoal(goal.handle, Money("300.25"), start, "Gift"))
+    assert funded.allocated(date.max) == Money("300.25")
+    changed = api.set_goal_override(
+        SetGoalOverride(lean.handle, goal.handle, target_amount=Money("900"))
+    )
+    assert changed.goal_overrides[goal.handle].target_amount == Money("900")
+
+    view = api.savings_goals(date(2026, 6, 30))
+    [item] = view.report.goals
+    assert (item.goal.name, item.account_name, item.target) == (
+        "Holiday",
+        "Assets:Savings",
+        Money("1200"),
+    )
+    assert item.allocated == Money("300.25") and item.status == "saving"
+    assert view.report.set_aside == item.set_aside
+    [line] = view.overrides[goal.handle]
+    assert (line.scenario_name, line.override.target_amount) == ("Lean", Money("900"))
+    assert "Assets:Savings" in [choice.name for choice in view.accounts]
+    assert "Expenses:Groceries" in [choice.name for choice in view.purchase_accounts]
+    assert [choice.name for choice in view.scenarios] == ["Lean"]
+
+    closed = api.close_savings_goal(goal.handle, date(2026, 7, 1))
+    assert closed.closed_on == date(2026, 7, 1)
+    assert api.savings_goals(date(2026, 7, 2)).report.goals == ()
+    assert len(api.savings_goals(date(2026, 7, 2), include_closed=True).report.goals) == 1
+    assert api.reopen_savings_goal(goal.handle).closed_on is None
+
+    before = _snapshot(db), sorted(repr(g.serialize()) for g in db.iter_savings_goals())
+    for call, status, code in (
+        (
+            lambda: api.save_savings_goal(SaveSavingsGoal("", book.savings, Money("5"), by, start)),
+            400,
+            "savings_goal.name.required",
+        ),
+        (
+            lambda: api.save_savings_goal(
+                SaveSavingsGoal("Car", book.groceries, Money("5"), by, start)
+            ),
+            400,
+            "savings_goal.account.invalid",
+        ),
+        (
+            lambda: api.allocate_to_goal(AllocateToGoal(goal.handle, Money("5000"), start)),
+            400,
+            "savings_goal.allocation.exceeds_target",
+        ),
+        (lambda: api.reopen_savings_goal(goal.handle), 400, "savings_goal.open"),
+        (lambda: api.find_savings_goal("nothing"), 404, "savings_goal.not_found"),
+        (lambda: api.delete_savings_goal("missing"), 404, "savings_goal.not_found"),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert (refused.value.status, refused.value.code) == (status, code)
+    assert (_snapshot(db), sorted(repr(g.serialize()) for g in db.iter_savings_goals())) == before
+
+    assert api.delete_savings_goal(goal.handle) == goal.handle
+    assert db.get_savings_goal(goal.handle) is None
+    assert goal.handle not in db.get_scenario(lean.handle).goal_overrides
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -887,6 +966,31 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("GET", "/api/v1/tags/transactions", None, 400, "query.missing"),
         ("PATCH", "/api/v1/transactions/x/tags", {"tags": "food"}, 400, "request.invalid"),
         ("PATCH", "/api/v1/transactions/x/tags", {"tags": [1]}, 400, "request.invalid"),
+        ("GET", "/api/v1/goals?closed=1", None, 400, "query.invalid"),
+        ("POST", "/api/v1/goals", {"name": "Car"}, 400, "request.invalid"),
+        (
+            "POST",
+            "/api/v1/goals",
+            {
+                "name": "Car",
+                "account": "x",
+                "target_amount": 500,
+                "target_date": "2027-01-01",
+                "start_date": "2026-01-01",
+            },
+            400,
+            "request.invalid",
+        ),
+        ("POST", "/api/v1/goals/x/allocations", {"amount": "5"}, 400, "request.invalid"),
+        ("POST", "/api/v1/goals/x/close", {"date": "soon"}, 400, "request.invalid"),
+        (
+            "POST",
+            "/api/v1/goals/x/override",
+            {"scenario": "s", "excluded": 1},
+            400,
+            "request.invalid",
+        ),
+        ("DELETE", "/api/v1/goals/missing", None, 404, "savings_goal.not_found"),
     ]
     for method, route, body, status, code in cases:
         got, payload, _ = _raw(remote, method, route, body)

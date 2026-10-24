@@ -24,7 +24,8 @@ from datetime import date
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
-from ..gen.lib import ScheduledTransaction, Transaction
+from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.savings_goal import SavingsGoal
 from ..gen.services import (
     AccountBalance,
     AccountRecord,
@@ -60,6 +61,12 @@ from ..gen.services.categorization import (
     CategorizationRules,
     CategoryRule,
 )
+from ..gen.services.savings_goals import (
+    AllocateToGoal,
+    SaveSavingsGoal,
+    SavingsGoalsView,
+    SetGoalOverride,
+)
 from .account_codec import save_account_json
 from .contract import ApiError, to_json
 from .protocol import Change, Listener
@@ -84,6 +91,7 @@ from .views import (
     saved_account_from_json,
     saved_schedule_from_json,
     saved_transaction_from_json,
+    savings_goals_from_json,
     tag_counts_from_json,
 )
 
@@ -381,3 +389,53 @@ class HttpBookClient:
         return Transaction.from_dict(
             self._call("PATCH", path, body={"tags": list(tags)})["transaction"]
         )
+
+    # ------------------------------------------------------------ savings goals
+
+    def _goal(self, method: str, path: str, body: dict[str, Any] | None = None) -> SavingsGoal:
+        return SavingsGoal.from_dict(self._call(method, path, body=body)["goal"])
+
+    def savings_goals(self, as_of: date, include_closed: bool = False) -> SavingsGoalsView:
+        params = {"as_of": as_of, "closed": "true" if include_closed else None}
+        return savings_goals_from_json(self._call("GET", "/goals", params))
+
+    def find_savings_goal(self, reference: str) -> SavingsGoal:
+        found = self._call("GET", "/goals/lookup", {"reference": reference})
+        return SavingsGoal.from_dict(found["goal"])
+
+    def save_savings_goal(self, request: SaveSavingsGoal) -> SavingsGoal:
+        body = {
+            "handle": request.handle,
+            "name": request.name,
+            "account": request.account,
+            "target_amount": request.target_amount,
+            "target_date": request.target_date,
+            "start_date": request.start_date,
+            "description": request.description,
+        }
+        return self._goal("POST", "/goals", body)
+
+    def allocate_to_goal(self, request: AllocateToGoal) -> SavingsGoal:
+        body = {"amount": request.amount, "date": request.allocated_on, "memo": request.memo}
+        return self._goal("POST", f"/goals/{quote(request.goal, safe='')}/allocations", body)
+
+    def close_savings_goal(self, goal: str, closed_on: date) -> SavingsGoal:
+        return self._goal("POST", f"/goals/{quote(goal, safe='')}/close", {"date": closed_on})
+
+    def reopen_savings_goal(self, goal: str) -> SavingsGoal:
+        return self._goal("POST", f"/goals/{quote(goal, safe='')}/reopen")
+
+    def delete_savings_goal(self, goal: str) -> str:
+        return str(self._call("DELETE", f"/goals/{quote(goal, safe='')}")["deleted"])
+
+    def set_goal_override(self, request: SetGoalOverride) -> Scenario:
+        body = {
+            "scenario": request.scenario,
+            "target_amount": request.target_amount,
+            "target_date": request.target_date,
+            "excluded": request.excluded,
+            "purchase_on": request.purchase_on,
+            "purchase_account": request.purchase_account,
+        }
+        path = f"/goals/{quote(request.goal, safe='')}/override"
+        return Scenario.from_dict(self._call("POST", path, body=body)["scenario"])

@@ -152,6 +152,19 @@ browser's tag editor use them. The browser's answer still lists the transaction'
 documents from the book it serves: linked documents have not moved, because linking
 a file copies it from the client's disk, which a separate server cannot read.
 
+Savings goals followed, in all three interfaces:
+- **One read:** `savings_goals(as_of, include_closed)` returns the report (each goal
+  in its stored form with its earmark), each goal's scenario changes, the accounts a
+  goal can be held in or buy into, the scenarios, and the reporting currency for the
+  chart. The command line's `goals`, the browser's goals screen, and GTK's goals
+  dialog format that one answer; the chart is drawn from it on each side.
+- **Writes:** saving, allocating, closing, reopening, deleting, and a scenario's
+  change to a goal (`set_goal_override`, answered with the scenario as stored).
+  `find_savings_goal` takes a handle, unique handle prefix, or name.
+- **Resources:** `GET` and `POST /api/v1/goals`, `GET /api/v1/goals/lookup`,
+  `POST /api/v1/goals/{handle}/allocations`, `/close`, `/reopen`, and `/override`,
+  and `DELETE /api/v1/goals/{handle}`.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.

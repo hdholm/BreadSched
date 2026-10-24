@@ -266,6 +266,23 @@ def test_tags_work_through_the_server_holding_the_book(running, book_path, capsy
     assert row["handle"] == target.handle
 
 
+def test_goals_work_through_the_server_holding_the_book(running, book_path, capsys):
+    path = str(book_path)
+    add = ["goals", path, "--add", "Holiday", "--account", "Savings", "--target", "1000"]
+    assert main([*add, "--by", "2026-12-31", "--start", "2026-03-01", "--json"]) == 0
+    handle = json.loads(capsys.readouterr().out)["handle"]
+    assert running.db.get_savings_goal(handle).name == "Holiday"
+    assert (
+        main(["goals", path, "--allocate", "holiday", "--amount", "50", "--on", "2026-03-15"]) == 0
+    )
+    assert "Allocated 50 to Holiday" in capsys.readouterr().out
+    assert main(["goals", path, "--as-of", "2026-03-15", "--json"]) == 0
+    [goal] = json.loads(capsys.readouterr().out)["goals"]
+    assert (goal["account_name"], goal["allocated"]) == ("Assets:Savings", "50.00")
+    assert main(["goals", path, "--delete", handle[:8]]) == 0
+    assert running.db.get_savings_goal(handle) is None
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"
