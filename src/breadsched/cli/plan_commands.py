@@ -15,6 +15,7 @@ from ..api.views import (
     advance_days_json,
     due_review_json,
     next_occurrence_json,
+    posted_due_json,
     resolution_json,
 )
 from ..gen.db.sqlite import DbSQLite
@@ -36,6 +37,8 @@ from ..gen.lib import (
 from ..gen.services import (
     DeleteSchedule,
     DueDecision,
+    PostDue,
+    PostedDue,
     ResolveDue,
     ResolveNext,
     ReviewOccurrence,
@@ -320,23 +323,24 @@ def cmd_scheduled_advance(args: argparse.Namespace) -> int:
 
 
 def cmd_scheduled(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r" if not args.post else "w")
+    as_of = parse_date(args.as_of) or date.today()
+    if args.post:
+        # Through the book server, so it also works while one holds the book (#358).
+        with _book_api(args, "w") as book:
+            posted = book.post_due(PostDue(as_of=as_of, only_automatic=not args.all)).posted
+        emit(
+            posted_due_json(PostedDue(posted)),
+            args,
+            f"Posted {len(posted)} scheduled transaction(s)"
+            + (
+                ""
+                if not posted
+                else ":\n" + "\n".join(f"  {item.when}  {item.description}" for item in posted)
+            ),
+        )
+        return 0
+    db = open_book(args.book, "r")
     try:
-        as_of = parse_date(args.as_of) or date.today()
-        if args.post:
-            posted = schedule.post_due(db, as_of=as_of, only_auto=not args.all)
-            emit(
-                [{"date": t.post_date, "description": t.description} for t in posted],
-                args,
-                f"Posted {len(posted)} scheduled transaction(s)"
-                + (
-                    ""
-                    if not posted
-                    else ":\n" + "\n".join(f"  {t.post_date}  {t.description}" for t in posted)
-                ),
-            )
-            return 0
-
         occurrences = schedule.due_occurrences(db, as_of=as_of, horizon_days=args.days)
         payload = [
             {"date": occ.when, "name": occ.name, "amount": occ.amount} for occ in occurrences
@@ -969,6 +973,7 @@ def register(add: AddCommand) -> None:
     sched.add_argument("--days", type=int, default=30, help="look this far ahead")
     sched.add_argument("--post", action="store_true", help="write due occurrences")
     sched.add_argument("--all", action="store_true", help="with --post, include manual schedules")
+    _add_server_options(sched)
     sched.set_defaults(func=cmd_scheduled)
 
     next_cmd = add(

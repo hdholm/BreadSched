@@ -139,7 +139,13 @@ every source failed. See
 ```bash
 breadsched estimate household.breadsched suggest --json
 breadsched scheduled household.breadsched
+breadsched scheduled household.breadsched --post --all --json
 ```
+
+`scheduled --post` posts what is due without a review: automatic schedules, or
+every schedule with `--all` (never plan-only estimates). With `--json` it answers
+as the browser does, with `posted` and each `transaction`'s schedule, date, and
+description.
 
 ### Paychecks and pay changes
 
@@ -211,7 +217,8 @@ breadsched scheduled-next household.breadsched Rent --enter
 ```
 
 While `breadsched serve` (or `breadsched web` without `--read-only`) holds a book,
-`due-review`, `scheduled-next`, and `scheduled-advance` for the same book work through
+`due-review`, `scheduled-next`, `scheduled-advance`, and `scheduled --post` for the
+same book work through
 that server instead of stopping because the book is already open for writing. The
 server records its address and token in a file only you can read, in your runtime
 folder, and removes it when it stops. `--server URL` names a server explicitly; its

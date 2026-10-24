@@ -342,6 +342,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_PATCH(self) -> None:  # noqa: N802 - required by the base class
         self._v1("PATCH")
 
+    def do_DELETE(self) -> None:  # noqa: N802 - required by the base class
+        self._v1("DELETE")
+
     # ---------------------------------------------------------------- /api/v1
 
     def _revision_headers(self, revision: int) -> dict[str, str]:
@@ -360,7 +363,9 @@ class Handler(BaseHTTPRequestHandler):
     def _v1(self, method: str) -> None:
         """Serve one versioned book-server resource (#357)."""
         write = method != "GET"
-        if not self._trusted_api_request(write=write):
+        # A DELETE may carry no body at all; any body it does carry must be JSON.
+        bodiless = method == "DELETE" and not self.headers.get_all("Content-Length")
+        if not self._trusted_api_request(write=write and not bodiless):
             if write:
                 self._discard_body()
             self._error(403, "request.untrusted")
@@ -393,11 +398,11 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.query:
                 self._discard_body()
                 raise QueryError("query.unknown", ())
-            length = self._content_length()
+            length = 0 if bodiless else self._content_length()
             if length is None:
                 return
             try:
-                body: Any = json.loads(self.rfile.read(length) or b"{}")
+                body: Any = json.loads((self.rfile.read(length) if length else b"") or b"{}")
             except (json.JSONDecodeError, UnicodeDecodeError):
                 self._error(400, "request.body.json_invalid", ("body",))
                 return

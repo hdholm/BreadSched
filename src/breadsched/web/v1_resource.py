@@ -14,6 +14,8 @@ Resources so far, all under ``/api/v1``:
 * ``GET /schedules/lookup`` (``reference``) – one schedule, as it is stored.
 * ``GET`` and ``POST /schedules/{handle}/next`` (``decision``, ``date``, ``as_of``).
 * ``GET`` and ``PATCH /schedules/{handle}/advance-days``.
+* ``DELETE /schedules/{handle}`` and ``POST /schedules/{handle}/duplicate`` (``name``).
+* ``POST /post-due`` (``as_of``, ``all``) – post what is due without a review.
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -27,9 +29,18 @@ from ..api.views import (
     advance_days_json,
     due_review_json,
     next_occurrence_json,
+    posted_due_json,
     resolution_json,
+    saved_schedule_json,
 )
-from ..gen.services import DueDecision, ResolveDue, ResolveNext, SetAdvanceDays
+from ..gen.services import (
+    DueDecision,
+    DuplicateSchedule,
+    PostDue,
+    ResolveDue,
+    ResolveNext,
+    SetAdvanceDays,
+)
 from .context import Api
 
 if TYPE_CHECKING:
@@ -43,6 +54,9 @@ __all__ = [
     "due_review_post",
     "next_get",
     "next_post",
+    "post_due_post",
+    "schedule_delete",
+    "schedule_duplicate",
     "redo_post",
     "schedule_lookup",
     "undo_post",
@@ -155,3 +169,26 @@ def undo_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:
 def redo_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     _only(body, set())
     return {"done": api.book.redo(), "revision": api.book.revision}
+
+
+def schedule_delete(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, set())
+    return saved_schedule_json(api.book.delete_schedule(path["handle"]))
+
+
+def schedule_duplicate(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, {"name"})
+    name = body.get("name")
+    if name is not None and not isinstance(name, str):
+        raise ValueError("name must be text")
+    request = DuplicateSchedule(path["handle"], name=name or None)
+    return saved_schedule_json(api.book.duplicate_schedule(request))
+
+
+def post_due_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    _only(body, {"as_of", "all"})
+    everything = body.get("all", False)
+    if not isinstance(everything, bool):
+        raise ValueError("all must be true or false")
+    request = PostDue(as_of=_optional_date(body, "as_of"), only_automatic=not everything)
+    return posted_due_json(api.book.post_due(request))

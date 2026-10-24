@@ -18,6 +18,9 @@ from ..gen.services import (
     DueResolution,
     DueScheduleReview,
     NextOccurrence,
+    PostedDue,
+    PostedOccurrence,
+    SavedSchedule,
 )
 from .contract import to_json
 from .protocol import Change
@@ -31,8 +34,12 @@ __all__ = [
     "due_review_json",
     "next_occurrence_from_json",
     "next_occurrence_json",
+    "posted_due_from_json",
+    "posted_due_json",
     "resolution_from_json",
     "resolution_json",
+    "saved_schedule_from_json",
+    "saved_schedule_json",
 ]
 
 
@@ -89,6 +96,27 @@ def advance_days_json(days: AdvanceDays) -> dict[str, Any]:
         "name": days.name,
         "advance_days": days.advance_days,
         "remind_days": days.remind_days,
+    }
+
+
+def saved_schedule_json(saved: SavedSchedule) -> dict[str, Any]:
+    """The schedule a delete or duplicate acted on."""
+    return {"schedule": saved.handle, "name": saved.name}
+
+
+def posted_due_json(posted: PostedDue) -> dict[str, Any]:
+    """What posting without a review wrote, one transaction per occurrence."""
+    return {
+        "posted": len(posted.posted),
+        "transactions": [
+            {
+                "transaction": item.transaction,
+                "schedule": item.schedule,
+                "date": to_json(item.when),
+                "description": item.description,
+            }
+            for item in posted.posted
+        ],
     }
 
 
@@ -155,3 +183,21 @@ def advance_days_from_json(payload: dict[str, Any]) -> AdvanceDays:
 
 def change_from_json(payload: dict[str, Any]) -> Change:
     return Change(int(payload["revision"]), frozenset(payload["kinds"]), payload.get("label"))
+
+
+def saved_schedule_from_json(payload: dict[str, Any]) -> SavedSchedule:
+    return SavedSchedule(payload["schedule"], payload["name"])
+
+
+def posted_due_from_json(payload: dict[str, Any]) -> PostedDue:
+    return PostedDue(
+        tuple(
+            PostedOccurrence(
+                item["transaction"],
+                item["schedule"],
+                date.fromisoformat(item["date"]),
+                item["description"],
+            )
+            for item in payload["transactions"]
+        )
+    )

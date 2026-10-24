@@ -61,8 +61,16 @@ open fails on the lock.
 Scheduled transactions are the pilot area. These now go through `LocalBookServer`
 and `breadsched.api.views`:
 
-- the command line's `due-review`, `scheduled-next`, and `scheduled-advance`;
-- the browser's due review, next-occurrence routes, and each definition's `next`.
+- the command line's `due-review`, `scheduled-next`, `scheduled-advance`, and
+  `scheduled --post`;
+- the browser's due review, next-occurrence routes, each definition's `next`,
+  schedule delete and duplicate, and post-scheduled;
+- GTK's due review, Enter Next and Skip Next, and schedule delete and duplicate
+  (phase 5, below).
+
+Posting without a review gained a service of its own (`due_review.post_due`), so
+the browser's post-scheduled and `scheduled --post --json` now answer with the same
+`{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.
 
 As a result:
 

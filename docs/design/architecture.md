@@ -205,10 +205,12 @@ that.
 
 So far only scheduled transactions go through it:
 
-- the command line's `due-review`, `scheduled-next`, and `scheduled-advance`, through
-  `open_book_server`;
-- the browser's due review and next-occurrence routes, through `Api.book`, the
-  server over the request's book.
+- the command line's `due-review`, `scheduled-next`, `scheduled-advance`, and
+  `scheduled --post`, through `open_book_api`;
+- the browser's due review, next-occurrence, schedule delete and duplicate, and
+  post-scheduled routes, through `Api.book`, the server over the request's book;
+- GTK's due review, Enter Next and Skip Next, and schedule delete and duplicate,
+  through `api.local.book_server`.
 
 Their command-line JSON is therefore the browser's JSON.
 

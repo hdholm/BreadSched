@@ -37,6 +37,8 @@ from breadsched.gen.lib import (
 from breadsched.gen.sample_book import create_sample_book
 from breadsched.gen.services import (
     DueDecision,
+    DuplicateSchedule,
+    PostDue,
     ResolveDue,
     ResolveNext,
     ServiceError,
@@ -84,6 +86,13 @@ def target(request, db, book):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def _snapshot(db):
+    return (
+        sorted(txn.handle for txn in db.iter_transactions()),
+        sorted(repr(item.serialize()) for item in db.iter_scheduled()),
+    )
 
 
 def _until(condition, timeout: float = 5.0) -> None:
@@ -209,6 +218,62 @@ def test_advance_days_read_and_write_alike(target):
     with pytest.raises(ApiError) as gone:
         api.advance_days("missing")
     assert gone.value.status == 404
+
+
+def test_duplicating_and_deleting_a_schedule_alike(target):
+    api = target.api
+    [sched] = target.db.iter_scheduled()
+    start = api.revision
+
+    copy = api.duplicate_schedule(DuplicateSchedule(sched.handle, name="Rent (flat 2)"))
+    assert copy.name == "Rent (flat 2)" and copy.handle != sched.handle
+
+    def legs(item):
+        return [(split.account, split.amount) for split in item.splits]
+
+    assert legs(target.db.get_scheduled(copy.handle)) == legs(sched)
+    deleted = api.delete_schedule(copy.handle)
+    assert (deleted.handle, deleted.name) == (copy.handle, "Rent (flat 2)")
+    assert target.db.get_scheduled(copy.handle) is None
+    assert api.revision == start + 2
+
+    before = _snapshot(target.db)
+    for call, code, status in (
+        (lambda: api.delete_schedule("missing"), "schedule.not_found", 404),
+        (lambda: api.duplicate_schedule(DuplicateSchedule("missing")), "schedule.not_found", 404),
+        (
+            lambda: api.duplicate_schedule(DuplicateSchedule(sched.handle, name="  ")),
+            "schedule.name.required",
+            400,
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert (refused.value.code, refused.value.status) == (code, status)
+    assert _snapshot(target.db) == before
+
+
+def test_posting_due_without_a_review_alike(target, book):
+    api = target.api
+    [manual] = target.db.iter_scheduled()
+    automatic = ScheduledTransaction.from_dict({**manual.serialize(), "handle": "auto"})
+    automatic.name = "Gym"
+    automatic.auto_create = True
+    with target.db.transaction("Automatic") as txn:
+        target.db.add_scheduled(automatic, txn)
+    october_7 = date(2026, 10, 7)
+
+    only_automatic = api.post_due(PostDue(as_of=october_7))
+    assert [(item.schedule, item.when) for item in only_automatic.posted] == [
+        ("auto", date(2026, 10, 6))
+    ]
+    everything = api.post_due(PostDue(as_of=october_7, only_automatic=False))
+    assert [(item.schedule, item.description) for item in everything.posted] == [
+        (manual.handle, "Rent")
+    ]
+    posted = target.db.get_transaction(everything.posted[0].transaction)
+    assert posted.post_date == date(2026, 10, 6) and posted.scheduled_from == manual.handle
+    assert api.post_due(PostDue(as_of=october_7, only_automatic=False)).posted == ()
 
 
 # ------------------------------------------------------------ in process only
@@ -346,6 +411,36 @@ def test_v1_refuses_what_it_does_not_serve(remote):
     assert untrusted.value.code == 403
 
 
+def test_a_delete_needs_no_body_but_any_body_must_be_json(remote):
+    [sched] = remote.db.iter_scheduled()
+    copy = remote.client.duplicate_schedule(DuplicateSchedule(sched.handle))
+    request = urllib.request.Request(
+        f"{remote.base}/api/v1/schedules/{copy.handle}",
+        headers={"X-BreadSched-Token": remote.token},
+        method="DELETE",
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        assert json.loads(response.read())["schedule"] == copy.handle
+    assert remote.db.get_scheduled(copy.handle) is None
+    status, payload, _ = _raw(
+        remote,
+        "DELETE",
+        f"/api/v1/schedules/{sched.handle}",
+        body={"colour": "red"},
+    )
+    assert (status, payload["code"]) == (400, "request.invalid")
+    form = urllib.request.Request(
+        f"{remote.base}/api/v1/schedules/{sched.handle}",
+        data=b"x=1",
+        headers={"X-BreadSched-Token": remote.token, "Content-Type": "text/plain"},
+        method="DELETE",
+    )
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        urllib.request.urlopen(form, timeout=10)
+    assert caught.value.code == 403
+    assert remote.db.get_scheduled(sched.handle) is not None
+
+
 def test_a_client_that_missed_changes_is_told_to_reload(remote):
     client = remote.client
     start = client.revision
@@ -437,6 +532,36 @@ def test_the_command_line_and_the_browser_give_the_same_json(tmp_path, capsys):
     cli_outcome = json.loads(capsys.readouterr().out)
     assert set(cli_outcome) == set(web_outcome) == {"posted", "skipped", "deferred", "transactions"}
     assert (web_outcome["skipped"], cli_outcome["skipped"]) == (1, len(rent["items"]) - 1)
+
+
+def test_posting_without_a_review_answers_alike_everywhere(tmp_path, capsys):
+    """``scheduled --post --json`` and the browser's post-scheduled share one form."""
+    path = tmp_path / "post.breadsched"
+    create_sample_book(path, as_of=date(2026, 3, 15))
+    command = ["scheduled", str(path), "--post", "--all", "--as-of", "2026-05-01", "--json"]
+    assert main(command) == 0
+    cli = json.loads(capsys.readouterr().out)
+    assert cli["posted"] == len(cli["transactions"]) > 0
+    assert set(cli["transactions"][0]) == {"transaction", "schedule", "date", "description"}
+
+    db = DbSQLite()
+    db.load(str(path))
+    httpd, base = _serve(db)
+    try:
+        request = urllib.request.Request(
+            base + "/api/post-scheduled",
+            data=b"{}",
+            headers={"X-BreadSched-Token": httpd.token, "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            web = json.loads(response.read())
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        db.close()
+    assert set(web) == set(cli) == {"posted", "transactions"}
+    assert web["posted"] == len(web["transactions"])
 
 
 def test_open_book_server_closes_the_book(tmp_path):
