@@ -93,7 +93,12 @@ def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
     raw_splits = payload.get("splits")
     if not isinstance(raw_splits, list) or not all(isinstance(item, dict) for item in raw_splits):
         raise ValueError("splits must be a list of objects")
-    currency = existing.currency if existing is not None else api.book.transaction_currency()
+    # The stored transaction's currency when it has one, as transaction_currency did.
+    currency = (
+        existing.currency
+        if existing is not None and existing.currency is not None
+        else api.book.transaction_currency()
+    )
     sources = {split.handle: split for split in existing.splits} if existing is not None else {}
     splits: list[TransactionSplitInput] = []
     for item in raw_splits:
