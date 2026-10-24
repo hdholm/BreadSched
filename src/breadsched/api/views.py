@@ -32,6 +32,7 @@ from ..gen.services import (
     SavedAccount,
     SavedSchedule,
     SavedTransaction,
+    TagCount,
 )
 from ..gen.services.categorization import (
     AppliedCategories,
@@ -82,6 +83,8 @@ __all__ = [
     "categorization_rules_from_json",
     "applied_categories_json",
     "applied_categories_from_json",
+    "tag_counts_json",
+    "tag_counts_from_json",
 ]
 
 
@@ -519,3 +522,11 @@ def applied_categories_json(applied: AppliedCategories) -> dict[str, Any]:
 
 def applied_categories_from_json(payload: dict[str, Any]) -> AppliedCategories:
     return AppliedCategories(int(payload["assigned"]), int(payload["unchanged"]))
+
+
+def tag_counts_json(counts: list[TagCount]) -> dict[str, Any]:
+    return {"tags": [{"tag": item.tag, "transactions": item.transactions} for item in counts]}
+
+
+def tag_counts_from_json(payload: dict[str, Any]) -> list[TagCount]:
+    return [TagCount(row["tag"], int(row["transactions"])) for row in payload["tags"]]

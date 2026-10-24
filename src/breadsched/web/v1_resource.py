@@ -35,6 +35,9 @@ Resources so far, all under ``/api/v1``:
   categorization rules with their proposals, and adding one; ``PATCH /rules/{handle}``
   (``position``) moves one and ``DELETE /rules/{handle}`` removes it.
   ``POST /rules/accept`` (``transactions``, or all) accepts proposals.
+* ``GET /tags`` – every tag with its count; ``GET /tags/transactions`` (``tag``) –
+  the transactions carrying one, as stored; ``PATCH /transactions/{handle}/tags``
+  (``tags``) replaces a transaction's tags.
 * ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
@@ -65,6 +68,7 @@ from ..api.views import (
     saved_account_json,
     saved_schedule_json,
     saved_transaction_json,
+    tag_counts_json,
 )
 from ..gen.services import (
     BalanceQuery,
@@ -83,6 +87,9 @@ if TYPE_CHECKING:
     from .resources import QueryParams
 
 __all__ = [
+    "tags_get",
+    "tags_patch",
+    "tagged_get",
     "rule_add",
     "rule_delete",
     "rule_move",
@@ -397,3 +404,22 @@ def rules_accept(api: Api, _path: Path, body: dict[str, Any]) -> dict:
         raise ValueError("transactions must be a list of text")
     chosen = None if raw is None else tuple(raw)
     return applied_categories_json(api.book.apply_category_proposals(chosen))
+
+
+def tags_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return tag_counts_json(api.book.tag_counts())
+
+
+def tagged_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    tag = query.text("tag", required=True) or ""
+    query.finish()
+    return {"transactions": [item.serialize() for item in api.book.transactions_with_tag(tag)]}
+
+
+def tags_patch(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, {"tags"})
+    tags = body.get("tags")
+    if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
+        raise ValueError("tags must be a list of text")
+    return {"transaction": api.book.set_tags(path["handle"], tags).serialize()}

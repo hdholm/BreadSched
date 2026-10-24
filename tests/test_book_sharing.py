@@ -253,6 +253,19 @@ def test_rules_work_through_the_server_holding_the_book(running, book_path, caps
     assert running.db.get_metadata("categorization_rules", []) == []
 
 
+def test_tags_work_through_the_server_holding_the_book(running, book_path, capsys):
+    path = str(book_path)
+    target = next(iter(running.db.iter_transactions()))
+    assert main(["tags", path, "--transaction", target.handle[:12], "--set", "Trip, Work"]) == 0
+    assert "Tags: Trip, Work" in capsys.readouterr().out
+    assert running.db.get_transaction(target.handle).tags == ["Trip", "Work"]
+    assert main(["tags", path, "--json"]) == 0
+    assert {"tag": "Trip", "transactions": 1} in json.loads(capsys.readouterr().out)
+    assert main(["tags", path, "trip", "--json"]) == 0
+    [row] = json.loads(capsys.readouterr().out)
+    assert row["handle"] == target.handle
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

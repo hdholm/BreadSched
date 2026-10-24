@@ -708,6 +708,33 @@ def test_categorization_rules_alike(target, book, tmp_path):
     assert api.categorization_rules().proposals == ()
 
 
+def test_tags_read_and_change_alike(target, book):
+    api, db = target.api, target.db
+    _post(db, "ef01" + "0" * 28, date(2026, 10, 2), "Shop", book.groceries, book.checking, "5")
+    _post(db, "ef02" + "0" * 28, date(2026, 10, 3), "Cafe", book.groceries, book.checking, "4")
+    tagged = api.set_tags("ef01" + "0" * 28, ["Food ", " food", "Weekly  shop"])
+    assert tagged.tags == ["Food", "Weekly shop"]
+    # The book's first spelling of a tag is kept.
+    assert api.set_tags("ef02" + "0" * 28, ["FOOD"]).tags == ["Food"]
+    assert [(item.tag, item.transactions) for item in api.tag_counts()] == [
+        ("Food", 2),
+        ("Weekly shop", 1),
+    ]
+    found = api.transactions_with_tag("food")
+    assert sorted(item.handle[:4] for item in found) == ["ef01", "ef02"]
+    assert found[0].serialize() == db.get_transaction(found[0].handle).serialize()
+
+    before = _snapshot(db), db.get_transaction("ef01" + "0" * 28).tags
+    for call, status, code in (
+        (lambda: api.set_tags("ef01" + "0" * 28, ["a,b"]), 400, "tag.invalid"),
+        (lambda: api.set_tags("missing", ["x"]), 404, "transaction.not_found"),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert (refused.value.status, refused.value.code) == (status, code)
+    assert (_snapshot(db), db.get_transaction("ef01" + "0" * 28).tags) == before
+
+
 # ------------------------------------------------------------ in process only
 
 
@@ -857,6 +884,9 @@ def test_v1_refuses_what_it_does_not_serve(remote):
         ("PATCH", "/api/v1/rules/x", {}, 400, "request.invalid"),
         ("POST", "/api/v1/rules/accept", {"transactions": "all"}, 400, "request.invalid"),
         ("DELETE", "/api/v1/rules/missing", None, 404, "rule.not_found"),
+        ("GET", "/api/v1/tags/transactions", None, 400, "query.missing"),
+        ("PATCH", "/api/v1/transactions/x/tags", {"tags": "food"}, 400, "request.invalid"),
+        ("PATCH", "/api/v1/transactions/x/tags", {"tags": [1]}, 400, "request.invalid"),
     ]
     for method, route, body, status, code in cases:
         got, payload, _ = _raw(remote, method, route, body)

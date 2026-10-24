@@ -1034,6 +1034,9 @@ class TestBookServerBoundaries:
         "preview_category_proposals",
         "apply_category_proposals",
         "categorization_rules",
+        "set_tags",
+        "tag_counts",
+        "transactions_with_tag",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
@@ -1064,6 +1067,9 @@ class TestBookServerBoundaries:
         "move_rule",
         "delete_rule",
         "apply_category_proposals",
+        "set_tags",
+        "tag_counts",
+        "transactions_with_tag",
     }
 
     @pytest.mark.parametrize(
@@ -1092,7 +1098,8 @@ class TestBookServerBoundaries:
             ),
             ("gui/dialogs/schedule_dialog.py", ("_on_save",)),
             ("gui/dialogs/account_dialog.py", ("_on_save", "_on_delete")),
-            ("cli/categorization_commands.py", ("cmd_rules",)),
+            ("cli/categorization_commands.py", ("cmd_rules", "cmd_tags")),
+            ("web/attachment_resource.py", ("transaction_tags",)),
             (
                 "web/rules_resource.py",
                 ("rules", "rule_add", "rule_delete", "rule_move", "rules_accept"),

@@ -154,18 +154,12 @@ def cmd_rules(args: argparse.Namespace) -> int:
 
 def cmd_tags(args: argparse.Namespace) -> int:
     """List the book's tags, the transactions carrying one, or set a transaction's tags."""
-    from ..gen.services import set_tags, tag_counts, transactions_with_tag
-
-    db = open_book(args.book, "w" if args.set is not None else "r")
-    try:
+    with book_api(args, "w" if args.set is not None else "r") as book:
         if args.set is not None:
             if not args.transaction:
                 raise CommandError("--transaction is required with --set")
-            target = find_transaction(db, args.transaction)
-            result = set_tags(db, target.handle, args.set.split(","))
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
-            tags = result.value.tags
+            target = book.find_transaction(args.transaction)
+            tags = book.set_tags(target.handle, args.set.split(",")).tags
             emit(
                 {"handle": target.handle, "tags": tags},
                 args,
@@ -174,7 +168,8 @@ def cmd_tags(args: argparse.Namespace) -> int:
             return 0
         if args.tag:
             found = sorted(
-                transactions_with_tag(db, args.tag), key=lambda item: (item.post_date, item.handle)
+                book.transactions_with_tag(args.tag),
+                key=lambda item: (item.post_date, item.handle),
             )
             emit(
                 [
@@ -198,21 +193,19 @@ def cmd_tags(args: argparse.Namespace) -> int:
                 else f"No transaction is tagged {args.tag!r}.",
             )
             return 0
-        counts = tag_counts(db)
-        emit(
-            [{"tag": item.tag, "transactions": item.transactions} for item in counts],
-            args,
-            table(
-                [[item.tag, str(item.transactions)] for item in counts],
-                ["tag", "transactions"],
-                right={1},
-            )
-            if counts
-            else "No tags.",
+        counts = book.tag_counts()
+    emit(
+        [{"tag": item.tag, "transactions": item.transactions} for item in counts],
+        args,
+        table(
+            [[item.tag, str(item.transactions)] for item in counts],
+            ["tag", "transactions"],
+            right={1},
         )
-        return 0
-    finally:
-        db.close()
+        if counts
+        else "No tags.",
+    )
+    return 0
 
 
 def cmd_attachments(args: argparse.Namespace) -> int:
@@ -357,6 +350,7 @@ def register(add: AddCommand) -> None:
     tags_cmd.add_argument(
         "--set", metavar="TAGS", help="replace the transaction's tags (comma-separated; '' clears)"
     )
+    add_server_options(tags_cmd)
     tags_cmd.set_defaults(func=cmd_tags)
 
     attachments_cmd = add(

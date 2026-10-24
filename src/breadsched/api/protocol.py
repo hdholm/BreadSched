@@ -41,6 +41,7 @@ from ..gen.services import (
     SaveFixedSchedule,
     SaveTransaction,
     SetAdvanceDays,
+    TagCount,
     TransactionInput,
 )
 from ..gen.services.categorization import (
@@ -205,4 +206,18 @@ class BookApi(Protocol):
         self, transactions: tuple[str, ...] | None = None
     ) -> AppliedCategories:
         """Accept the current proposals: all of them, or only these transactions'."""
+        ...
+
+    # -------------------------------------------------------------------- tags
+
+    def tag_counts(self) -> list[TagCount]:
+        """Every tag in the book with how many transactions carry it."""
+        ...
+
+    def transactions_with_tag(self, tag: str) -> list[Transaction]:
+        """The transactions carrying ``tag`` (any case), as stored."""
+        ...
+
+    def set_tags(self, transaction: str, tags: list[str]) -> Transaction:
+        """Replace a transaction's tags; returns it as stored."""
         ...

@@ -145,6 +145,13 @@ Categorization rules followed, in all three interfaces at once:
   `DELETE /api/v1/rules/{handle}`, and `POST /api/v1/rules/accept`. The browser's
   `/api/rules` responses are unchanged.
 
+Tags followed: `tag_counts`, `transactions_with_tag` (stored forms), and `set_tags`
+(`GET /api/v1/tags`, `GET /api/v1/tags/transactions`, and
+`PATCH /api/v1/transactions/{handle}/tags`). The command line's `tags` and the
+browser's tag editor use them. The browser's answer still lists the transaction's
+documents from the book it serves: linked documents have not moved, because linking
+a file copies it from the client's disk, which a separate server cannot read.
+
 Posting without a review gained a service of its own (`due_review.post_due`), so
 the browser's post-scheduled and `scheduled --post --json` now answer with the same
 `{"posted", "transactions": [{"transaction", "schedule", "date", "description"}]}`.
