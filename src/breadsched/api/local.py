@@ -17,8 +17,11 @@ from contextlib import contextmanager
 from datetime import date
 
 from ..gen.db.sqlite import DbSQLite
+from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
+from ..gen.lib.transaction import ReconcileState
 from ..gen.services import (
     AccountBalance,
     AccountRecord,
@@ -68,6 +71,7 @@ from ..gen.services import (
     next_occurrence,
     pending_due_review,
     post_due,
+    reconciliations,
     register_page,
     resolve_due,
     resolve_next,
@@ -88,6 +92,12 @@ from ..gen.services.categorization import (
     AppliedCategories,
     CategorizationRules,
     CategoryRule,
+)
+from ..gen.services.reconciliations import (
+    ReconciliationView,
+    StartReconciliation,
+    ToggleCleared,
+    UpdateReconciliation,
 )
 from ..gen.services.savings_goals import (
     AllocateToGoal,
@@ -266,6 +276,32 @@ class LocalBookServer:
 
     def set_tags(self, transaction: str, tags: list[str]) -> Transaction:
         return unwrap(set_tags(self.db, transaction, tags))
+
+    # ---------------------------------------------------------- reconciliation
+
+    def reconciliation(self, account: str) -> ReconciliationView:
+        return unwrap(reconciliations.reconciliation_view(self.db, account))
+
+    def start_reconciliation(self, request: StartReconciliation) -> ReconciliationSummary:
+        return unwrap(reconciliations.start_reconciliation(self.db, request))
+
+    def update_reconciliation(self, request: UpdateReconciliation) -> ReconciliationSummary:
+        return unwrap(reconciliations.update_reconciliation(self.db, request))
+
+    def complete_reconciliation(self, reconciliation: str) -> Reconciliation:
+        action = reconciliations.ReconciliationAction(reconciliation)
+        return unwrap(reconciliations.complete_reconciliation(self.db, action))
+
+    def cancel_reconciliation(self, reconciliation: str) -> Reconciliation:
+        action = reconciliations.ReconciliationAction(reconciliation)
+        return unwrap(reconciliations.cancel_reconciliation(self.db, action))
+
+    def reopen_reconciliation(self, reconciliation: str) -> Reconciliation:
+        action = reconciliations.ReconciliationAction(reconciliation)
+        return unwrap(reconciliations.reopen_reconciliation(self.db, action))
+
+    def toggle_cleared(self, request: ToggleCleared) -> ReconcileState:
+        return unwrap(reconciliations.toggle_cleared(self.db, request))
 
     # ------------------------------------------------------------ savings goals
 

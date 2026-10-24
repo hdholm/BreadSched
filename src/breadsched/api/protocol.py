@@ -14,8 +14,11 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
+from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
+from ..gen.lib.transaction import ReconcileState
 from ..gen.services import (
     AccountBalance,
     AccountRecord,
@@ -50,6 +53,12 @@ from ..gen.services.categorization import (
     AppliedCategories,
     CategorizationRules,
     CategoryRule,
+)
+from ..gen.services.reconciliations import (
+    ReconciliationView,
+    StartReconciliation,
+    ToggleCleared,
+    UpdateReconciliation,
 )
 from ..gen.services.savings_goals import (
     AllocateToGoal,
@@ -253,4 +262,26 @@ class BookApi(Protocol):
 
     def set_goal_override(self, request: SetGoalOverride) -> Scenario:
         """Change a goal in one scenario; returns the scenario as stored."""
+        ...
+
+    # ---------------------------------------------------------- reconciliation
+
+    def reconciliation(self, account: str) -> ReconciliationView:
+        """An account's open statement session, its history, and waiting proposals."""
+        ...
+
+    def start_reconciliation(self, request: StartReconciliation) -> ReconciliationSummary: ...
+
+    def update_reconciliation(self, request: UpdateReconciliation) -> ReconciliationSummary:
+        """Replace the checked entries and/or the ending balance."""
+        ...
+
+    def complete_reconciliation(self, reconciliation: str) -> Reconciliation: ...
+
+    def cancel_reconciliation(self, reconciliation: str) -> Reconciliation: ...
+
+    def reopen_reconciliation(self, reconciliation: str) -> Reconciliation: ...
+
+    def toggle_cleared(self, request: ToggleCleared) -> ReconcileState:
+        """Cycle one split between not cleared and cleared."""
         ...

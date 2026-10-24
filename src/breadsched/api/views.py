@@ -12,11 +12,14 @@ from datetime import date
 from typing import Any
 
 from ..gen.engine.categorization import CategoryConflict
+from ..gen.engine.reconciliation import ReconciliationCandidate, ReconciliationSummary
 from ..gen.engine.savings_goals import GoalProgress
 from ..gen.lib import Account
 from ..gen.lib.money import Money
+from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
 from ..gen.lib.scenario import GoalOverride
+from ..gen.lib.transaction import ReconcileState
 from ..gen.services import (
     AccountBalance,
     AccountRecord,
@@ -46,6 +49,7 @@ from ..gen.services.categorization import (
     ProposalLine,
     RuleLine,
 )
+from ..gen.services.reconciliations import ReconciliationView
 from ..gen.services.savings_goals import (
     GoalOverrideLine,
     NamedChoice,
@@ -96,6 +100,10 @@ __all__ = [
     "tag_counts_from_json",
     "savings_goals_json",
     "savings_goals_from_json",
+    "reconciliation_summary_json",
+    "reconciliation_summary_from_json",
+    "reconciliation_view_json",
+    "reconciliation_view_from_json",
 ]
 
 
@@ -634,4 +642,73 @@ def savings_goals_from_json(payload: dict[str, Any]) -> SavingsGoalsView:
         _choices_from_json(payload["purchase_accounts"]),
         _choices_from_json(payload["scenarios"]),
         payload["currency"],
+    )
+
+
+def reconciliation_summary_json(state: ReconciliationSummary) -> dict[str, Any]:
+    """A statement session as stored, with its balances and every candidate entry."""
+    return {
+        "reconciliation": state.reconciliation.serialize(),
+        "opening_balance": to_json(state.opening_balance),
+        "selected_balance": to_json(state.selected_balance),
+        "difference": to_json(state.difference),
+        "balanced": state.balanced,
+        "candidates": [
+            {
+                "transaction": item.transaction,
+                "split": item.split,
+                "date": to_json(item.post_date),
+                "description": item.description,
+                "amount": to_json(item.amount),
+                "state": item.state.value,
+                "selected": item.selected,
+            }
+            for item in state.candidates
+        ],
+    }
+
+
+def reconciliation_summary_from_json(payload: dict[str, Any]) -> ReconciliationSummary:
+    return ReconciliationSummary(
+        Reconciliation.from_dict(payload["reconciliation"]),
+        Money(payload["opening_balance"]),
+        Money(payload["selected_balance"]),
+        Money(payload["difference"]),
+        tuple(
+            ReconciliationCandidate(
+                row["transaction"],
+                row["split"],
+                date.fromisoformat(row["date"]),
+                row["description"],
+                Money(row["amount"]),
+                ReconcileState(row["state"]),
+                bool(row["selected"]),
+            )
+            for row in payload["candidates"]
+        ),
+    )
+
+
+def reconciliation_view_json(view: ReconciliationView) -> dict[str, Any]:
+    return {
+        "account": view.account,
+        "account_name": view.account_name,
+        "current": (
+            reconciliation_summary_json(view.current) if view.current is not None else None
+        ),
+        "history": [item.serialize() for item in view.history],
+        "reimbursement_proposals": view.reimbursement_proposals,
+        "claim_link_proposals": view.claim_link_proposals,
+    }
+
+
+def reconciliation_view_from_json(payload: dict[str, Any]) -> ReconciliationView:
+    current = payload["current"]
+    return ReconciliationView(
+        payload["account"],
+        payload["account_name"],
+        reconciliation_summary_from_json(current) if current is not None else None,
+        tuple(Reconciliation.from_dict(item) for item in payload["history"]),
+        int(payload["reimbursement_proposals"]),
+        int(payload["claim_link_proposals"]),
     )

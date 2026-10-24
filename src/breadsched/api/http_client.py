@@ -24,8 +24,11 @@ from datetime import date
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
+from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
+from ..gen.lib.transaction import ReconcileState
 from ..gen.services import (
     AccountBalance,
     AccountRecord,
@@ -61,6 +64,12 @@ from ..gen.services.categorization import (
     CategorizationRules,
     CategoryRule,
 )
+from ..gen.services.reconciliations import (
+    ReconciliationView,
+    StartReconciliation,
+    ToggleCleared,
+    UpdateReconciliation,
+)
 from ..gen.services.savings_goals import (
     AllocateToGoal,
     SaveSavingsGoal,
@@ -85,6 +94,8 @@ from .views import (
     due_review_from_json,
     next_occurrence_from_json,
     posted_due_from_json,
+    reconciliation_summary_from_json,
+    reconciliation_view_from_json,
     register_from_json,
     resolution_from_json,
     rule_from_json,
@@ -439,3 +450,47 @@ class HttpBookClient:
         }
         path = f"/goals/{quote(request.goal, safe='')}/override"
         return Scenario.from_dict(self._call("POST", path, body=body)["scenario"])
+
+    # ---------------------------------------------------------- reconciliation
+
+    def reconciliation(self, account: str) -> ReconciliationView:
+        path = f"/accounts/{quote(account, safe='')}/reconciliation"
+        return reconciliation_view_from_json(self._call("GET", path))
+
+    def start_reconciliation(self, request: StartReconciliation) -> ReconciliationSummary:
+        body = {
+            "account": request.account,
+            "statement_date": request.statement_date,
+            "ending_balance": request.ending_balance,
+        }
+        return reconciliation_summary_from_json(self._call("POST", "/reconciliations", body=body))
+
+    def update_reconciliation(self, request: UpdateReconciliation) -> ReconciliationSummary:
+        body = {
+            "selected_splits": (
+                None if request.selected_splits is None else list(request.selected_splits)
+            ),
+            "ending_balance": request.ending_balance,
+        }
+        path = f"/reconciliations/{quote(request.handle, safe='')}"
+        return reconciliation_summary_from_json(self._call("PATCH", path, body=body))
+
+    def _session(self, reconciliation: str, action: str) -> Reconciliation:
+        path = f"/reconciliations/{quote(reconciliation, safe='')}/{action}"
+        return Reconciliation.from_dict(self._call("POST", path)["reconciliation"])
+
+    def complete_reconciliation(self, reconciliation: str) -> Reconciliation:
+        return self._session(reconciliation, "complete")
+
+    def cancel_reconciliation(self, reconciliation: str) -> Reconciliation:
+        return self._session(reconciliation, "cancel")
+
+    def reopen_reconciliation(self, reconciliation: str) -> Reconciliation:
+        return self._session(reconciliation, "reopen")
+
+    def toggle_cleared(self, request: ToggleCleared) -> ReconcileState:
+        path = (
+            f"/transactions/{quote(request.transaction, safe='')}"
+            f"/splits/{quote(request.split, safe='')}/cleared"
+        )
+        return ReconcileState(self._call("POST", path)["state"])

@@ -56,7 +56,6 @@ from ..gen.services import (
     ToggleCleared,
     TransactionInput,
     TransactionSplitInput,
-    toggle_cleared,
     transaction_currency,
 )
 from ..gen.services.autocomplete import SuggestEntry, suggest_entry
@@ -1440,13 +1439,13 @@ class RegisterSheet:
         row = self.rows[index]
         if row.kind != TRANSACTION or row.register_row is None:
             return False
-        result = toggle_cleared(
-            self.db,
-            ToggleCleared(row.register_row.transaction.handle, row.register_row.split.handle),
-        )
-        if result.value is None:
-            return self._fail(service_error_message(result.errors[0]))
-        state = "cleared" if result.value is ReconcileState.CLEARED else "not cleared"
+        try:
+            toggled = book_server(self.db).toggle_cleared(
+                ToggleCleared(row.register_row.transaction.handle, row.register_row.split.handle),
+            )
+        except ApiError as error:
+            return self._fail(str(error))
+        state = "cleared" if toggled is ReconcileState.CLEARED else "not cleared"
         self._say(f"Marked {row.register_row.description} {state}.")
         self.reload(changed={row.register_row.transaction.handle})
         return True

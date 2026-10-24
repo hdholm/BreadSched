@@ -160,6 +160,7 @@ from .v1_resource import (
     balances_get,
     book_get,
     chart_get,
+    cleared_toggle,
     currency_get,
     due_review_get,
     due_review_post,
@@ -174,6 +175,7 @@ from .v1_resource import (
     next_get,
     next_post,
     post_due_post,
+    reconciliation_get,
     redo_post,
     register_get,
     schedule_delete,
@@ -190,6 +192,11 @@ from .v1_resource import (
     transaction_save,
     undo_post,
 )
+from .v1_resource import reconciliation_cancel as v1_reconciliation_cancel
+from .v1_resource import reconciliation_complete as v1_reconciliation_complete
+from .v1_resource import reconciliation_reopen as v1_reconciliation_reopen
+from .v1_resource import reconciliation_start as v1_reconciliation_start
+from .v1_resource import reconciliation_update as v1_reconciliation_update
 from .v1_resource import rule_add as v1_rule_add
 from .v1_resource import rule_delete as v1_rule_delete
 from .v1_resource import rule_move as v1_rule_move
@@ -567,6 +574,13 @@ V1_ROUTES: tuple[tuple[str, str, Callable[..., object]], ...] = (
     ("GET", "/accounts/{handle}", account_get),
     ("DELETE", "/accounts/{handle}", account_delete),
     ("GET", "/chart", chart_get),
+    ("GET", "/accounts/{handle}/reconciliation", reconciliation_get),
+    ("POST", "/reconciliations", v1_reconciliation_start),
+    ("PATCH", "/reconciliations/{handle}", v1_reconciliation_update),
+    ("POST", "/reconciliations/{handle}/complete", v1_reconciliation_complete),
+    ("POST", "/reconciliations/{handle}/cancel", v1_reconciliation_cancel),
+    ("POST", "/reconciliations/{handle}/reopen", v1_reconciliation_reopen),
+    ("POST", "/transactions/{handle}/splits/{split}/cleared", cleared_toggle),
     ("GET", "/goals", goals_get),
     ("POST", "/goals", goal_save),
     ("GET", "/goals/lookup", goal_lookup),

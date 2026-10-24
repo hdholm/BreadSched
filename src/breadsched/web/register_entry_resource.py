@@ -22,10 +22,9 @@ from ..gen.services import (
     ToggleCleared,
     TransactionInput,
     TransactionSplitInput,
-    toggle_cleared,
     transaction_currency,
 )
-from .controls import input_money, service_error
+from .controls import input_money
 
 if TYPE_CHECKING:
     from .context import Api
@@ -130,12 +129,9 @@ def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
 
 
 def register_cleared_toggle(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    """The R column: mark one split cleared or not cleared through the shared service."""
+    """The R column: mark one split cleared or not cleared through the book server."""
     request = ToggleCleared(
         transaction=_text(payload, "transaction") or "",
         split=_text(payload, "split") or "",
     )
-    result = toggle_cleared(api.db, request)
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return {"reconcile": result.value.value}
+    return {"reconcile": api.book.toggle_cleared(request).value}
