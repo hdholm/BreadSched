@@ -11,7 +11,8 @@ As in GnuCash's basic ledger, each transaction is one line: date, number,
 description, transfer account, reconcile state, the two amount columns named for
 the account type, and the running balance. A transaction with more than two
 splits, or one the user splits, opens its split lines (memo, account, amounts)
-beneath it while the cursor is on it, with an imbalance line until it balances.
+beneath it while the cursor is on it; until it balances, its empty last line shows
+the rest and takes it when given an account (#369).
 Typing reads the shared rules in ``engine/entry_input``: date and number keys,
 arithmetic amounts, accounts completed ``:`` segment by segment, and
 descriptions quick-filled from earlier ones, which then propose the earlier
@@ -44,7 +45,7 @@ from ..gen.engine.entry_input import (
     quickfill_description,
     trade_price,
 )
-from ..gen.lib.account import AccountType
+from ..gen.lib.account import AccountClass, AccountType
 from ..gen.lib.amount import Amount
 from ..gen.lib.commodity import Commodity
 from ..gen.lib.money import Money
@@ -447,10 +448,23 @@ class RegisterSheet:
         self._restore(anchor)
 
     def _line_rows(self) -> list[SheetRow]:
-        rows = [SheetRow(SPLIT, line=index, current=True) for index in range(len(self.draft.lines))]
-        if self.residual():
-            rows.append(SheetRow(IMBALANCE, current=True))
-        return rows
+        # The rest of an unbalanced entry is shown on its empty last line, ready
+        # for an account (#369), not on a separate imbalance line.
+        return [SheetRow(SPLIT, line=index, current=True) for index in range(len(self.draft.lines))]
+
+    def balancing_line(self) -> int | None:
+        """The empty last split line, when it shows what is left to balance (#369)."""
+        lines = self.draft.lines
+        if not self.draft.expanded or not lines or lines[-1].has_input() or not self.residual():
+            return None
+        return len(lines) - 1
+
+    def _balancing_cells(self) -> tuple[str, str]:
+        """(increase, decrease) text that would balance the entry, as the line shows it."""
+        rest = -self.residual()
+        if rest > 0:
+            return rest.format(), ""
+        return "", (-rest).format()
 
     def _anchor(self) -> tuple[str, int | None]:
         """What the cursor is on: the draft's header line, or one of its split lines."""
@@ -574,6 +588,9 @@ class RegisterSheet:
         draft = self.draft
         if row.kind == SPLIT:
             assert row.line is not None
+            if row.line == self.balancing_line() and column in ("increase", "decrease"):
+                increase, decrease = self._balancing_cells()
+                return increase if column == "increase" else decrease
             return draft.lines[row.line].cell(column)
         if row.kind == NOTES:
             if column != "description":
@@ -702,6 +719,15 @@ class RegisterSheet:
         if row.kind == SPLIT:
             assert row.line is not None
             line = self.draft.lines[row.line]
+            # Choosing an account (or a memo) for the line holding the rest takes
+            # the rest as its amount, as GnuCash does (#369).
+            balancing = (
+                self._balancing_cells()
+                if row.line == self.balancing_line()
+                and self.column in ("description", "transfer")
+                and text.strip()
+                else None
+            )
             attribute = {
                 "description": "memo",
                 "transfer": "account",
@@ -711,6 +737,8 @@ class RegisterSheet:
                 "price": "price",
             }[self.column]
             setattr(line, attribute, text)
+            if balancing is not None:
+                line.increase, line.decrease = balancing
             if self.column in ("increase", "decrease") and text.strip():
                 setattr(line, "decrease" if self.column == "increase" else "increase", "")
             self._grow_lines()
@@ -725,10 +753,6 @@ class RegisterSheet:
         lines = self.draft.lines
         if not lines or lines[-1].has_input():
             lines.append(Line())
-            self._rebuild()
-        elif self.residual() and not any(row.kind == IMBALANCE for row in self.rows):
-            self._rebuild()
-        elif not self.residual() and any(row.kind == IMBALANCE for row in self.rows):
             self._rebuild()
 
     def cell_text(self) -> str:
@@ -1163,6 +1187,8 @@ class RegisterSheet:
         )
         step = -1 if backwards else 1
         target = position + step
+        if not backwards and 0 <= target < len(order):
+            target = self._expense_hop(order, position, target)
         if 0 <= target < len(order):
             self.cursor, self.column = order[target]
             return True
@@ -1170,6 +1196,28 @@ class RegisterSheet:
             return True
         # Past the last cell, like Enter: save and move to the next transaction.
         return self.enter()
+
+    def _expense_hop(self, order: list[tuple[int, str]], position: int, target: int) -> int:
+        """Tab from an expense transfer goes to the money-out column (#369).
+
+        Money spent on an expense leaves this account, so it belongs in Withdrawal
+        or Charge, not Deposit or Payment: from the transfer cell of a two-split
+        entry whose transfer is an expense, Tab skips to that column. Only this one
+        step changes; every other Tab follows the usual order.
+        """
+        cursor, column = order[position]
+        if column != "transfer" or self.security is not None or order[target][1] != "increase":
+            return target
+        row = self.rows[cursor] if 0 <= cursor < len(self.rows) else None
+        if row is None or row.kind == SPLIT or self.draft.expanded:
+            return target
+        name = self._resolve_account(self.draft.transfer.strip(), self.account_names)
+        account = self.db.get_account(self.account_names[name]) if name is not None else None
+        if account is None or account.account_class is not AccountClass.EXPENSE:
+            return target
+        return next(
+            (i for i in range(target, len(order)) if order[i] == (cursor, "decrease")), target
+        )
 
     def _tab_order(self) -> list[tuple[int, str]]:
         header = self.header_index()
@@ -1423,8 +1471,12 @@ class RegisterSheet:
             return self._fail("A transaction needs at least two splits.", "transfer", 0)
         residual = self.residual()
         if residual:
+            rest_line = self.balancing_line()
             return self._fail(
-                f"The splits are out of balance by {residual.format(parens_negative=True)}."
+                f"The splits are out of balance by {residual.format(parens_negative=True)}; "
+                "choose an account for the last line, which holds the rest.",
+                "transfer",
+                rest_line if rest_line is not None else 0,
             )
         # An existing transaction may move out of this account entirely, such as a
         # purchase entered on the wrong card (#364); a new one must belong here.

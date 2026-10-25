@@ -426,6 +426,15 @@ function registerEntry(data, usable, row) {
     (value) => { draft.transfer = value; draft.transferTouched = true; });
   if (!draft.transfer) draft.transfer = transfer.value;
   const [increase, decrease] = amountPair(draft, noun);
+  // An expense takes money out of this account, so Tab from an expense transfer
+  // goes to the Withdrawal or Charge column, once (#369).
+  transfer.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab" || event.shiftKey || security || draft.split) return;
+    const chosen = transfers.find((item) => item.handle === transfer.value);
+    if (chosen?.class !== "expense") return;
+    event.preventDefault();
+    decrease.focus();
+  });
   const [sharesInput, priceInput] = security
     ? tradeInputs(draft, noun, increase, decrease, () => state.account) : [null, null];
   const imbalance = el("td", { class:"num" });
@@ -446,6 +455,10 @@ function registerEntry(data, usable, row) {
       return null;
     });
   }
+  function lineIsEmpty(line) {
+    return !line.account && !line.memo.trim() && !line.increase.trim()
+      && !line.decrease.trim() && !(line.shares || "").trim();
+  }
   function updateImbalance() {
     if (!draft.split) return;
     const values = lineUnits();
@@ -453,6 +466,42 @@ function registerEntry(data, usable, row) {
     const total = values.reduce((sum, value) => sum + (value ?? 0n), 0n);
     imbalance.textContent = total === 0n ? "Balanced" : money(entryText(total).replace(",", "."));
     imbalance.className = total === 0n ? "num" : "num neg";
+    // The empty last line shows the rest, in the column that balances it; choosing
+    // its account takes it (#369).
+    const last = draft.lines[draft.lines.length - 1];
+    for (const line of draft.lines) {
+      if (!line.nodes) continue;
+      line.nodes.up.placeholder = "0.00";
+      line.nodes.down.placeholder = "0.00";
+      line.nodes.up.classList.remove("rest");
+      line.nodes.down.classList.remove("rest");
+    }
+    const rest = total === 0n ? null : -total;
+    if (last?.nodes && rest !== null && lineIsEmpty(last)) {
+      const node = rest > 0n ? last.nodes.up : last.nodes.down;
+      node.placeholder = entryText(rest > 0n ? rest : -rest);
+      node.classList.add("rest");
+    }
+  }
+  function takeRest(line) {
+    // A line given an account with no amount yet takes what balances the entry.
+    if (line.increase.trim() || line.decrease.trim()) return;
+    const others = draft.lines.filter((item) => item !== line);
+    const units = others.map((item) => {
+      const up = entryUnits(item.increase);
+      const down = entryUnits(item.decrease);
+      if (up === undefined || down === undefined) return undefined;
+      return up !== null ? up : down !== null ? -down : 0n;
+    });
+    if (units.some((value) => value === undefined)) return;
+    const total = units.reduce((sum, value) => sum + value, 0n);
+    if (total === 0n) return;
+    if (total < 0n) line.increase = entryText(-total); else line.decrease = entryText(total);
+    if (line.nodes) {
+      line.nodes.up.value = line.increase;
+      line.nodes.down.value = line.decrease;
+    }
+    touch();
   }
   function fail(message, node) {
     say(message, "error");
@@ -704,9 +753,13 @@ function registerEntry(data, usable, row) {
       };
       memo.addEventListener("input", () => { line.memo = memo.value; touch(); grow(); });
       const account = accountSelect(line.account, accounts, `${label} account`, (value) => {
-        line.account = value; grow();
+        line.account = value;
+        if (value) takeRest(line);
+        grow();
+        updateImbalance();
       }, "(choose account)");
       const [up, down] = amountPair(line, label);
+      line.nodes = { up, down };
       up.addEventListener("input", grow);
       down.addEventListener("input", grow);
       const [lineShares, linePrice] = security

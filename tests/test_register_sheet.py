@@ -239,19 +239,26 @@ class TestMovingAndEditing:
         sheet.move_to(header + 2, "increase")  # the savings line
         sheet.set_text("250")
         assert sheet.residual() == Money(-50)
-        assert any(row.kind == IMBALANCE for row in sheet.rows)
-        assert not sheet.enter()
-        assert "out of balance by (50.00)" in sheet.message
-        # Putting the 50 on a new line to groceries balances it.
+        # #369: no separate imbalance line; the empty last line holds the rest.
+        assert not any(row.kind == IMBALANCE for row in sheet.rows)
         new_line = next(
             i
             for i, row in enumerate(sheet.rows)
             if row.kind == SPLIT and not sheet.draft.lines[row.line].has_input()
         )
-        sheet.move_to(new_line, "transfer")
+        assert sheet.rows[new_line].line == sheet.balancing_line()
+        assert (sheet.text(new_line, "increase"), sheet.text(new_line, "decrease")) == (
+            "50.00",
+            "",
+        )
+        assert not sheet.enter()
+        assert "out of balance by (50.00)" in sheet.message
+        # The cursor waits on that line's account.
+        assert (sheet.cursor, sheet.column) == (new_line, "transfer")
+        # Choosing an account takes the rest as its amount.
         sheet.set_text("Expenses:Groceries")
-        sheet.column = "increase"
-        sheet.set_text("50")
+        assert sheet.draft.lines[sheet.rows[new_line].line].increase == "50.00"
+        assert sheet.residual() == Money(0) and sheet.balancing_line() is None
         assert sheet.enter()
         stored = db.get_transaction(pay.handle)
         assert sorted(s.value for s in stored.splits) == [
@@ -262,6 +269,47 @@ class TestMovingAndEditing:
         ]
         # Split identity and memos survive the edit.
         assert {s.memo for s in stored.splits} >= {"To checking", "To savings"}
+
+    def test_typing_over_the_rest_keeps_what_was_typed(self, db, book):
+        """#369: the shown rest is only a proposal; a typed amount wins."""
+        pay = _three_way(db, book)
+        sheet = _sheet(db, book)
+        sheet.select_transaction(pay.handle)
+        header = sheet.header_index()
+        sheet.move_to(header + 2, "increase")
+        sheet.set_text("250")
+        line = sheet.balancing_line()
+        index = next(
+            i for i, row in enumerate(sheet.rows) if row.kind == SPLIT and row.line == line
+        )
+        sheet.move_to(index, "increase")
+        sheet.set_text("20")
+        assert sheet.draft.lines[line].increase == "20"
+        assert sheet.residual() == Money(-30)
+        # The rest moves to the new empty line beneath.
+        assert sheet.balancing_line() == line + 1
+        rest = next(
+            i for i, row in enumerate(sheet.rows) if row.kind == SPLIT and row.line == line + 1
+        )
+        assert sheet.text(rest, "increase") == "30.00"
+
+    def test_tab_from_an_expense_transfer_goes_to_the_money_out_column(self, db, book):
+        """#369: an expense is a withdrawal or charge, so Tab skips Deposit/Payment once."""
+        sheet = RegisterSheet(db, book.card, today=TODAY)
+        sheet.to_blank()
+        header = sheet.header_index()
+        sheet.move_to(header, "transfer")
+        sheet.set_text("Expenses:Groceries")
+        assert sheet.tab()
+        assert (sheet.cursor, sheet.column) == (header, "decrease")
+        assert sheet.headings()["decrease"] == "Charge"
+        # Back again, and an ordinary transfer keeps the usual order.
+        assert sheet.tab(backwards=True)
+        assert sheet.column == "increase"
+        sheet.move_to(header, "transfer")
+        sheet.set_text("Assets:Checking")
+        assert sheet.tab()
+        assert sheet.column == "increase"
 
     def test_a_split_can_move_a_transaction_to_another_account(self, db, book):
         """#364: a purchase entered on the wrong card moves from its split lines."""
