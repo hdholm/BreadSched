@@ -404,35 +404,67 @@ class RegisterView(BaseView):
         return self.sheet.draft.source if self.sheet is not None else None
 
     def track_selected_reimbursable(self, *_args):
-        """Open reimbursable expenses to track the cursor transaction's cost."""
-        transaction = self.cursor_transaction()
-        if self.db is None or transaction is None:
-            self.set_entry_status(
-                "Put the cursor on a transaction to track as reimbursable.", error=True
+        """Open reimbursable expenses to track the cursor transaction's cost.
+
+        Typing not yet entered is saved first, so a transaction just typed (or
+        just changed to an expense) can be tracked at once. Every refusal is an
+        alert as well as the status line: the command is chosen from a menu, and
+        a line under the register was too easy to miss (#371). The dialog opens
+        over this register's own window, never over another one the user left
+        open, such as the guide.
+        """
+        if self.db is None or self.sheet is None:
+            return self._refuse_tracking("Open a register before tracking a reimbursable expense.")
+        sheet = self.sheet
+        handle = sheet.draft.source.handle if sheet.draft.source is not None else None
+        if sheet.draft.dirty():
+            if not sheet.leave():
+                self.grid.sync()
+                return self._refuse_tracking(
+                    f"Save the transaction first: {sheet.message or 'it could not be saved.'}"
+                )
+            handle = sheet.last_saved
+            if handle is not None:
+                sheet.select_transaction(handle)
+            self.grid.sync()
+        transaction = self.db.get_transaction(handle) if handle is not None else None
+        if transaction is None:
+            return self._refuse_tracking(
+                "Put the cursor on a transaction to track as reimbursable."
             )
-            return None
-        transaction = self.db.get_transaction(transaction.handle)
         accounts = {account.handle: account for account in self.db.iter_accounts()}
         cost = next(
             (
                 split
-                for split in (transaction.splits if transaction is not None else ())
+                for split in transaction.splits
                 if split.value > 0
                 and accounts.get(split.account) is not None
                 and accounts[split.account].account_class is AccountClass.EXPENSE
             ),
             None,
         )
-        if transaction is None or cost is None:
-            self.set_entry_status(
-                "Only a transaction with an expense can be tracked as reimbursable.", error=True
+        if cost is None:
+            return self._refuse_tracking(
+                f"“{transaction.description}” has no expense to track: only money spent "
+                "on an expense account can be owed back."
             )
-            return None
-        application = self.manager.get_application() if self.manager is not None else None
+        root = self.get_root()
+        application = (root.get_application() if isinstance(root, Gtk.Window) else None) or (
+            self.manager.get_application() if self.manager is not None else None
+        )
         opener = getattr(application, "on_receivables", None)
         if opener is None:
-            return None
-        return opener(expense=(transaction.handle, cost.handle))
+            return self._refuse_tracking("Reimbursable expenses cannot be opened from here.")
+        parent = root if isinstance(root, Gtk.Window) else None
+        return opener(expense=(transaction.handle, cost.handle), parent=parent)
+
+    def _refuse_tracking(self, text: str) -> None:
+        self.set_entry_status(text, error=True)
+        root = self.get_root()
+        Gtk.AlertDialog(message="Not tracked as reimbursable", detail=text).show(
+            root if isinstance(root, Gtk.Window) else None
+        )
+        return None
 
     def open_in_new_tab(self) -> None:
         """Open another register tab beside this one (#228)."""

@@ -10,6 +10,34 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a298 - 2026-10-25
+
+- **Track as Reimbursable always answers (#371).** The GTK command saves typing
+  not yet entered, then opens **Reimbursable expenses** over the register's own
+  window. Before, it opened over the application's active window, which could be
+  another one such as the guide, so nothing seemed to happen. A transaction it
+  cannot track (no expense, or a save refused) is an alert as well as the
+  register's status line. The dialog says nothing is recorded until **Add
+  receivable** and puts the cursor in **Payer**.
+- **Held in explains its accounts (#371).** GTK and the browser say that **Held in**
+  lists only Receivable accounts and name any account that looks like a receivable
+  but is not offered: an Asset account named for receivables or under one, or a
+  placeholder (`services.receivables.unoffered_receivable_accounts`). The guides
+  say to change such an account's type to Receivable.
+- **GnuCash Assets:Receivables import as receivables (#371).** A new GnuCash Asset
+  account under an asset account named Receivable, Receivables, or Accounts
+  Receivable imports as a Receivable account; GnuCash keeps its own type for
+  write-back, and an account already in the book keeps its type on re-import.
+- **One click checks a reconciliation row; a double-click edits it (#374, #375).**
+  In the GTK reconcile window a click on a row checks or unchecks it and selects
+  only that row, in both columns, so **Edit Transaction…** and **Check Selected**
+  act on the row in view rather than an earlier Funds In row. Ctrl- and
+  Shift-click select without checking, and a double-click opens the transaction
+  with its check left as it was. Enter and Space still toggle the check.
+- **Edit a transaction while reconciling in the browser (#374).** Each statement
+  row has **Edit**, which saves the checks and opens the row in the register;
+  **Back to reconciliation** returns to the statement.
+
 ## 0.2.0a297 - 2026-10-25
 
 - **The rest of a split entry waits on its own line (#369).** An unbalanced split

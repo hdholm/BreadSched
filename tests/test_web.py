@@ -6406,6 +6406,8 @@ class TestReceivablesRoutes:
 
         _status, listed = client.get("/api/receivables")
         assert listed["receivables"] == []
+        # #371: Held in explains that it lists Receivable accounts only.
+        assert listed["account_note"].startswith("Held in lists accounts of type Receivable.")
         assert {"transaction": rent_txn.handle, "split": cost.handle} in [
             {"transaction": c["transaction"], "split": c["split"]} for c in listed["costs"]
         ]

@@ -1511,6 +1511,36 @@ def test_reconciliation_marks_entries_after_the_statement(page, served):
     page.wait_for_selector(".detail-dialog >> text=Funds in")
 
 
+def test_a_reconciliation_row_opens_its_transaction_in_the_register(page, served):
+    """#374: Edit on a statement row saves the checks and edits the row in place."""
+    db, _httpd = served
+    _open_register(page)
+    register = page.locator("select").first.input_value()
+    page.get_by_role("button", name="Reconcile…").click()
+    latest = max(t.post_date for t in db.iter_transactions(account=register))
+    page.locator(".detail-dialog input[type=date]").fill(latest.isoformat())
+    page.locator(".detail-dialog input[inputmode=decimal]").fill("0")
+    page.get_by_role("button", name="Start reconciliation").click()
+    first = page.locator(".detail-dialog tbody tr").first
+    first.wait_for()
+    first.locator("input[type=checkbox]").check()
+    split = first.locator("input[type=checkbox]").get_attribute("value")
+    first.get_by_role("button", name="Edit").click()
+    page.locator(".detail-dialog").wait_for(state="detached")
+    page.locator("tr.entry-row").first.wait_for()
+    from breadsched.gen.lib import ReconciliationStatus
+
+    session = next(
+        item
+        for item in db.iter_reconciliations(register)
+        if item.status is ReconciliationStatus.OPEN
+    )
+    assert split in session.selected_splits
+    page.get_by_role("button", name="Back to reconciliation").click()
+    page.locator(".detail-dialog").wait_for()
+    assert page.locator(f".detail-dialog input[value='{split}']").is_checked()
+
+
 def test_a_schedule_repeats_every_n_units_with_a_calculated_amount(page, served):
     """#370: Every N weeks/months/years, and arithmetic in the amount."""
     from breadsched.gen.lib import Money

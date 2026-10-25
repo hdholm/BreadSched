@@ -25,6 +25,7 @@ from ...gen.services.receivables import (
 from ...gen.services.scenarios import SetReimbursementOverride
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import (
+    receivable_account_note,
     reimbursement_override_text,
     shared_cost_text,
 )
@@ -135,6 +136,10 @@ class ReceivablesDialog(BoundedWindow):
         ):
             form.attach(Gtk.Label(label=label, xalign=0), 0, row, 1, 1)
             form.attach(widget, 1, row, 1, 1)
+        # Only an account of type Receivable can hold what is owed (#371).
+        self.account_note = Gtk.Label(xalign=0, wrap=True)
+        self.account_note.add_css_class("dim")
+        form.attach(self.account_note, 1, 7, 1, 1)
         actions = Gtk.Box(spacing=8)
         self.save_button = Gtk.Button(label="Add receivable")
         self.save_button.add_css_class("suggested-action")
@@ -296,10 +301,12 @@ class ReceivablesDialog(BoundedWindow):
         self.description_entry.set_text(transaction.description)
         self.expected_entry.set_text(split.value.format())
         self._message(
-            f"Enter who owes this back; saving links the {split.value.format()} expense "
-            f"from {transaction.post_date.isoformat()} “{transaction.description}”.",
+            f"Tracking the {split.value.format()} expense from "
+            f"{transaction.post_date.isoformat()} “{transaction.description}”. Enter who "
+            "owes it back and choose Add receivable; nothing is recorded until then.",
             False,
         )
+        self.payer_entry.grab_focus()
 
     def refresh(self) -> None:
         """Reload every receivable's recomputed standing and the loaded one's links."""
@@ -490,7 +497,8 @@ class ReceivablesDialog(BoundedWindow):
             picker.set_model(names)
 
     def _fill_accounts(self, current: str | None) -> None:
-        accounts = self.book.receivables_view(date.today()).accounts
+        view = self.book.receivables_view(date.today())
+        accounts = view.accounts
         self._accounts = [None, *(handle for handle, _name in accounts)]
         names = Gtk.StringList()
         names.append("Default Receivable account")
@@ -499,6 +507,9 @@ class ReceivablesDialog(BoundedWindow):
         self.account_picker.set_model(names)
         self.account_picker.set_selected(
             self._accounts.index(current) if current in self._accounts else 0
+        )
+        self.account_note.set_text(
+            receivable_account_note([name for _handle, name in view.unoffered_accounts])
         )
 
     def edit(self, handle: str | None) -> None:

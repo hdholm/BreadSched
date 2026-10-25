@@ -8783,6 +8783,84 @@ class TestReceivablesDialog:
         finally:
             dialog.destroy()
 
+    def test_tracking_saves_typing_first_and_opens_over_the_register_window(
+        self, app, window, populated_book
+    ):
+        # #371: Track as Reimbursable opened nothing when another window (such
+        # as the guide) was the application's active one, or the cursor was on
+        # typing not yet entered.
+        db, _rent_txn, _rent, _cost = self._book(app, populated_book)
+        window.open_register(db.get_account_by_name("Assets:Checking Account").handle)
+        view = window._views["register"]
+        view.sheet.to_blank()
+        for column, text in (
+            ("description", "Clinic visit"),
+            ("transfer", "Expenses:Rent"),
+            ("decrease", "85"),
+        ):
+            view.sheet.column = column
+            view.sheet.set_text(text)
+        other = Gtk.Window(application=app)
+        other.present()
+        dialog = view.track_selected_reimbursable()
+        try:
+            assert dialog is not None
+            assert dialog.get_transient_for() is window
+            saved = next(t for t in db.iter_transactions() if t.description == "Clinic visit")
+            assert dialog.description_entry.get_text() == "Clinic visit"
+            assert dialog.expected_entry.get_text() == "85.00"
+            assert "nothing is recorded until then" in dialog.status.get_text()
+            dialog.payer_entry.set_text("Insurer")
+            receivable = dialog.save()
+            stored = db.get_receivable(receivable.handle)
+            assert [link.transaction for link in stored.expenses] == [saved.handle]
+        finally:
+            dialog.destroy()
+            other.destroy()
+
+    def test_a_transaction_without_an_expense_is_refused_aloud(self, app, window, populated_book):
+        from breadsched.gen.lib.account import AccountClass
+
+        db, _rent_txn, _rent, _cost = self._book(app, populated_book)
+        window.open_register(db.get_account_by_name("Assets:Checking Account").handle)
+        view = window._views["register"]
+        income = next(
+            row
+            for row in view.sheet.ledger_rows
+            if any(
+                db.get_account(split.account).account_class is AccountClass.INCOME
+                for split in row.transaction.splits
+            )
+        )
+        assert view.sheet.select_transaction(income.transaction.handle)
+        assert view.track_selected_reimbursable() is None
+        assert "has no expense to track" in view.entry_status.get_text()
+        assert view.entry_status.has_css_class("negative")
+
+    def test_held_in_names_receivable_accounts_it_cannot_offer(self, app, window, populated_book):
+        from breadsched.gen.lib import Account, AccountType
+        from breadsched.gui.dialogs.receivables_dialog import ReceivablesDialog
+
+        db, _rent_txn, _rent, _cost = self._book(app, populated_book)
+        assets = db.get_account_by_name("Assets")
+        with db.transaction("Receivable accounts") as txn:
+            for name, atype in (
+                ("Owed back", AccountType.RECEIVABLE),
+                ("Receivables", AccountType.ASSET),
+            ):
+                db.add_account(Account(name=name, atype=atype, parent=assets.handle), txn)
+        dialog = ReceivablesDialog(window, db)
+        try:
+            names = dialog.account_picker.get_model()
+            offered = [names.get_string(index) for index in range(names.get_n_items())]
+            assert "Assets:Owed back" in offered
+            assert "Assets:Receivables" not in offered
+            note = dialog.account_note.get_text()
+            assert "accounts of type Receivable" in note
+            assert "Not offered: Assets:Receivables." in note
+        finally:
+            dialog.destroy()
+
     def test_an_fsa_claim_is_linked_to_cover_the_rest_of_a_receivable(
         self, app, window, populated_book
     ):
@@ -9202,6 +9280,72 @@ class TestReconcileWindow:
             cancel_reconciliation(db, ReconciliationAction(dialog.session))
             assert _spin(lambda: dialog.session is None)
             assert dialog.start_button.get_parent() is not None
+        finally:
+            dialog.destroy()
+
+    def test_a_click_checks_one_row_and_selects_only_it_in_both_lists(
+        self, app, window, populated_book
+    ):
+        # #375: a selected Funds In row stayed selected when a Funds Out row was
+        # clicked, so Edit Transaction always opened the deposit. #374: one click
+        # checks, Ctrl or Shift only selects.
+        db, card, _rent, made = self._card(app, populated_book)
+        dialog = self._start(window, db, card)
+        try:
+            payment = made["Payment"].split_for(card.handle).handle
+            groceries, fuel = (
+                made[name].split_for(card.handle).handle for name in ("Groceries", "Fuel")
+            )
+            _in, payment_row = self._row_for(dialog, payment)
+            _out, groceries_row = self._row_for(dialog, groceries)
+            _out, fuel_row = self._row_for(dialog, fuel)
+            dialog.click_row(payment_row)
+            assert dialog._checks[payment].get_active()
+            assert dialog.selected_splits() == [payment]
+            dialog.click_row(groceries_row)
+            assert dialog._checks[groceries].get_active()
+            assert dialog.selected_splits() == [groceries]
+            assert payment in dialog._statement().reconciliation.selected_splits
+            dialog.click_row(payment_row, ctrl=True)
+            assert dialog._checks[payment].get_active()
+            assert set(dialog.selected_splits()) == {payment, groceries}
+            dialog.click_row(fuel_row, shift=True)
+            assert not dialog._checks[fuel].get_active()
+            assert set(dialog.funds_out.selected_splits()) == {groceries, fuel}
+            dialog.click_row(groceries_row)
+            assert not dialog._checks[groceries].get_active()
+            assert dialog.selected_splits() == [groceries]
+            # A keyboard move in the other list empties this one.
+            dialog.funds_in.list.select_row(payment_row)
+            assert dialog.selected_splits() == [payment]
+        finally:
+            dialog.destroy()
+
+    def test_a_double_click_edits_the_row_and_leaves_its_check(self, app, window, populated_book):
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        db, card, _rent, made = self._card(app, populated_book)
+        dialog = self._start(window, db, card)
+        try:
+            payment = made["Payment"].split_for(card.handle).handle
+            fuel = made["Fuel"].split_for(card.handle).handle
+            _in, payment_row = self._row_for(dialog, payment)
+            _out, fuel_row = self._row_for(dialog, fuel)
+            dialog.click_row(payment_row)
+            dialog.click_row(fuel_row)
+            assert dialog._checks[fuel].get_active()
+            editor = dialog.click_row(fuel_row, 2)
+            assert isinstance(editor, TransactionDialog)
+            assert editor.transaction.handle == made["Fuel"].handle
+            assert not dialog._checks[fuel].get_active()
+            editor.destroy()
+            # Edit Transaction opens the row clicked last, not the first selected.
+            dialog.click_row(payment_row)
+            dialog.click_row(fuel_row, ctrl=True)
+            assert set(dialog.selected_splits()) == {payment, fuel}
+            editor = dialog.edit_transaction()
+            assert editor.transaction.handle == made["Fuel"].handle
+            editor.destroy()
         finally:
             dialog.destroy()
 

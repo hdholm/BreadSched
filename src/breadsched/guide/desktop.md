@@ -429,15 +429,18 @@ See [Tags and linked documents](../USER_GUIDE.md#tags-and-linked-documents).
    and **Funds Out**, each with its checked total; below them are the starting,
    reconciled, and ending balances and the difference. Entries dated after the
    statement are listed below an **After** heading, shaded, in case a date is wrong.
-4. Check entries until the difference is zero. Click a check, or press Enter or
-   double-click a row; to check several at once, Ctrl- or Shift-click to select them
-   and choose **Check Selected** (or **Uncheck Selected**).
+4. Check entries until the difference is zero. Click a row (or its check) to check
+   or uncheck it, or press Enter or Space on it. A click selects only that row, in
+   both columns; Ctrl-click adds or removes a row and Shift-click selects a range in
+   one column, without checking anything. Then choose **Check Selected** (or
+   **Uncheck Selected**) to check them all at once. Double-click a row to edit its
+   transaction; the double-click leaves its check as it was.
 5. Choose **Finish** to mark the checked splits reconciled.
 
 The window does not block the rest of BreadSched: you can enter a missed scheduled
 transaction or correct one in a register while it is open, and the lists follow.
 **New Transaction…** enters one in this account dated on the statement, and **Edit
-Transaction…** opens the selected row's transaction. Choosing Reconcile again brings
+Transaction…** opens the transaction of the selected row you clicked last. Choosing Reconcile again brings
 the open window forward.
 
 Checks are saved as you make them. **Postpone** closes the window and keeps the
@@ -572,13 +575,18 @@ See [Savings goals](../USER_GUIDE.md#savings-goals).
 ## Reimbursable expenses
 
 Select the transaction in a register and choose **Actions → Track as
-Reimbursable…**. The date, description, and expense amount are filled in; enter who
-owes you and choose **Add receivable**, and the expense is linked.
+Reimbursable…**. Typing not yet entered is saved first. The date, description, and
+expense amount are filled in; enter who owes you and choose **Add receivable**, and
+the expense is linked. Nothing is recorded until then. If the transaction cannot be
+tracked (it has no expense, or it could not be saved), an alert says why.
 
 **Actions → Reimbursable Expenses…** lists every receivable with its expense, what
 is reimbursed, written off, and still remaining, its status, and its age. Choose
 **Open** on one to change it. **Held in** chooses the receivable account (the default
-is one per currency). **Link expense** adds more expense splits and **Link
+is one per currency). It lists only accounts whose type is **Receivable**; the note
+under it names any account that looks like a receivable but is not offered (an
+**Asset** account named for receivables, or a placeholder). To use such an account,
+change its type to **Receivable** in **Edit Account**. **Link expense** adds more expense splits and **Link
 reimbursement** links a credit that paid money back. **Proposed reimbursements**
 lists credits that clearly belong to one open receivable, checked; choose **Accept
 selected** to link them. Record a dispute or write off part of the balance on the

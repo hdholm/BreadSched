@@ -16,7 +16,11 @@ from typing import TYPE_CHECKING, Any
 from ..api.contract import ApiError
 from ..gen.services.receivables import RecordWriteOff, SaveReceivable
 from ..gen.services.scenarios import SetReimbursementOverride
-from ..presentation import reimbursement_override_text, shared_cost_text
+from ..presentation import (
+    receivable_account_note,
+    reimbursement_override_text,
+    shared_cost_text,
+)
 from .controls import input_money
 
 if TYPE_CHECKING:
@@ -147,6 +151,9 @@ def receivables(api: Api, query: QueryParams) -> dict[str, object]:
         "costs": [_candidate(line) for line in view.costs],
         "credits": [_candidate(line) for line in view.credits],
         "accounts": [{"handle": handle, "name": name} for handle, name in view.accounts],
+        "account_note": receivable_account_note(
+            [name for _handle, name in view.unoffered_accounts]
+        ),
     }
 
 

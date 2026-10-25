@@ -212,6 +212,7 @@ async function showReimbursables() {
     el("label", {}, "Payer", payer), el("label", {}, "Description", description),
     el("label", {}, "Incurred", incurred), el("label", {}, "Expected back", expected),
     el("label", {}, "Expected by", expectedBy), el("label", {}, "Held in", heldIn),
+    data.account_note ? el("p", { class:"note" }, data.account_note) : null,
     el("div", { class:"toolbar" },
       el("button", { class:"action primary", type:"submit" },
         selected ? "Save changes" : "Add receivable"),

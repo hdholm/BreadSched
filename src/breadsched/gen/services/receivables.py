@@ -59,6 +59,7 @@ __all__ = [
     "attach_expense_split",
     "default_receivable_account",
     "receivable_accounts",
+    "unoffered_receivable_accounts",
     "sync_all_receivables",
     "sync_linked_receivables",
     "attach_reimbursement_split",
@@ -109,6 +110,39 @@ def receivable_accounts(db: DbSQLite) -> tuple[Account, ...]:
         account
         for account in db.iter_accounts()
         if account.atype is AccountType.RECEIVABLE and not account.placeholder
+    ]
+    return tuple(sorted(found, key=lambda account: db.full_name(account) or account.name))
+
+
+def unoffered_receivable_accounts(db: DbSQLite) -> tuple[Account, ...]:
+    """Accounts that look like receivables but cannot hold one, by full name (#371).
+
+    A placeholder Receivable account, or an asset account named for receivables
+    (or under one) that is not of type Receivable: the reimbursables editors name
+    them so a user can change the account's type rather than wonder where it went.
+    """
+    accounts = {account.handle: account for account in db.iter_accounts()}
+
+    def named_receivable(account: Account | None) -> bool:
+        while account is not None and not account.is_root:
+            if "receivable" in account.name.casefold():
+                return True
+            account = accounts.get(account.parent) if account.parent else None
+        return False
+
+    found = [
+        account
+        for account in accounts.values()
+        if not account.is_root
+        and (
+            (account.atype is AccountType.RECEIVABLE and account.placeholder)
+            or (
+                account.atype is not AccountType.RECEIVABLE
+                and account.account_class is AccountClass.ASSET
+                and not account.placeholder
+                and named_receivable(account)
+            )
+        )
     ]
     return tuple(sorted(found, key=lambda account: db.full_name(account) or account.name))
 
@@ -609,6 +643,8 @@ class ReceivablesView:
     #: Receivable accounts and scenarios as (handle, full name) pairs.
     accounts: tuple[tuple[str, str], ...]
     scenarios: tuple[tuple[str, str], ...]
+    #: Accounts that look like receivables but cannot hold one (#371).
+    unoffered_accounts: tuple[tuple[str, str], ...] = ()
 
 
 def receivables_view(db: DbSQLite, as_of: date | None = None) -> ReceivablesView:
@@ -674,6 +710,10 @@ def receivables_view(db: DbSQLite, as_of: date | None = None) -> ReceivablesView
             for account in receivable_accounts(db)
         ),
         tuple((scenario.handle, scenario.name) for scenario in scenarios),
+        tuple(
+            (account.handle, db.full_name(account) or account.name)
+            for account in unoffered_receivable_accounts(db)
+        ),
     )
 
 

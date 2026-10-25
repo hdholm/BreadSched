@@ -496,14 +496,22 @@ class BreadSchedApplication(Gtk.Application):
         dialog.present()
         return dialog
 
-    def on_receivables(self, *_args, expense: tuple[str, str] | None = None):
-        """Open reimbursable expenses, optionally to track one expense split."""
+    def on_receivables(
+        self,
+        *_args,
+        expense: tuple[str, str] | None = None,
+        parent: Gtk.Window | None = None,
+    ):
+        """Open reimbursable expenses, optionally to track one expense split.
+
+        ``parent`` is the window the command came from; otherwise the active one.
+        """
         if self.db is None:
             self._report("Open a book before tracking reimbursable expenses.")
             return None
         from .dialogs.receivables_dialog import ReceivablesDialog
 
-        dialog = ReceivablesDialog(self.props.active_window, self.db, expense=expense)
+        dialog = ReceivablesDialog(parent or self.props.active_window, self.db, expense=expense)
         dialog.present()
         return dialog
 

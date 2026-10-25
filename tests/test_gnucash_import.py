@@ -175,6 +175,8 @@ class TestSqliteImport:
                 "fsa",
                 "money_market",
                 "receivable",
+                "receivables",
+                "insurance_claims",
                 "mortgage",
                 "payable",
                 "unusual",
@@ -185,6 +187,11 @@ class TestSqliteImport:
         assert accounts["fund"].atype is AccountType.INVESTMENT
         assert accounts["money_market"].atype is AccountType.BANK
         assert accounts["receivable"].atype is AccountType.RECEIVABLE
+        # An Asset account under Assets:Receivables is a receivable (#371); the
+        # parent keeps its own type, and both keep GnuCash's for write-back.
+        assert accounts["insurance_claims"].atype is AccountType.RECEIVABLE
+        assert accounts["insurance_claims"].source_type == "ASSET"
+        assert accounts["receivables"].atype is AccountType.ASSET
         assert accounts["mortgage"].atype is AccountType.LIABILITY
         assert accounts["payable"].atype is AccountType.LIABILITY
         assert accounts["unusual"].atype is AccountType.TECHNICAL
@@ -208,6 +215,8 @@ class TestSqliteImport:
         mortgage.liability.annual_interest = Decimal("0.0525")
         fsa.atype = AccountType.FSA
         fsa.fsa.dependent_care = True
+        claims = accounts["insurance_claims"]
+        claims.atype = AccountType.ASSET
         fund = accounts["fund"]
         fund.investment.cost_basis_method = "average"
         fsa.notes = "Local enrollment context"
@@ -219,7 +228,7 @@ class TestSqliteImport:
             )
         ]
         with db.transaction("Local household semantics") as txn:
-            for account in (brokerage, mortgage, fsa, fund):
+            for account in (brokerage, mortgage, fsa, fund, claims):
                 db.commit_account(account, txn)
 
         with sqlite3.connect(source.path) as gnc:
@@ -246,6 +255,8 @@ class TestSqliteImport:
         assert refreshed_mortgage.liability.linked_asset == source.ids.house
         assert refreshed_mortgage.liability.annual_interest == Decimal("0.0525")
         assert refreshed_fsa.atype is AccountType.FSA
+        # A type chosen in BreadSched survives the next import.
+        assert db.get_account(source.ids.insurance_claims).atype is AccountType.ASSET
         assert refreshed_fsa.notes == "Local enrollment context"
         assert refreshed_fsa.source_notes == "Source enrollment note"
         assert refreshed_fsa.fsa.years[0].election == Money("2400")
