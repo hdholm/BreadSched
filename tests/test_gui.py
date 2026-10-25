@@ -5399,12 +5399,14 @@ class TestDueReview:
         assert first in db.get_scheduled(sched.handle).skipped
         assert "Skipped Rent" in view.status.get_text()
 
-        before = {id(w) for w in Gtk.Window.list_toplevels()}
+        # Hold the windows themselves: ids of wrappers freed after the snapshot can
+        # be reused by the new dialog's, which then looked as if it was open before.
+        before = list(Gtk.Window.list_toplevels())
         assert view.resolve_next(DueDecision.POST) is True
         opened = [
             w
             for w in Gtk.Window.list_toplevels()
-            if isinstance(w, PostedTransactionsDialog) and id(w) not in before
+            if isinstance(w, PostedTransactionsDialog) and all(w is not old for old in before)
         ]
         try:
             assert len(opened) == 1
@@ -5466,9 +5468,11 @@ class TestDueReview:
             items = Gtk.Window.get_toplevels()
             return [items.get_item(i) for i in range(items.get_n_items())]
 
-        before = {id(w) for w in dialogs()}
+        before = dialogs()  # held, so no id can be reused by the new dialog
         due_book.activate_action("post-scheduled")
-        opened = [w for w in dialogs() if isinstance(w, DueDialog) and id(w) not in before]
+        opened = [
+            w for w in dialogs() if isinstance(w, DueDialog) and all(w is not old for old in before)
+        ]
         try:
             assert len(opened) == 1 and opened[0].choosers
         finally:
