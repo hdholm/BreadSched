@@ -970,6 +970,8 @@ class TestCli:
             "income",
             "missed_bills",
             "missed_income",
+            "reimbursables",
+            "sections",
             "missing_quotes",
             "liquid_missing_quotes",
             "completeness",
@@ -990,6 +992,33 @@ class TestCli:
         payload = json.loads(capsys.readouterr().out)
         assert payload["summary"]["emergency_fund"] is None
         assert payload["unavailable_reasons"]["emergency_fund"] == "No committed outgoings"
+
+    def test_the_text_output_follows_the_chosen_sections(self, tmp_path, capsys):
+        """The command line shows the sections Configure Dashboard chose (#381)."""
+        import json
+
+        from breadsched.cli.main import main as cli
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.gen.sample_book import create_sample_book
+        from breadsched.gen.services import SaveDashboardConfig, save_dashboard_config
+
+        path = tmp_path / "dash.breadsched"
+        create_sample_book(path, as_of=date.today())
+        cli(["dashboard", str(path)])
+        assert "Pending bills" in capsys.readouterr().out
+        db = DbSQLite()
+        db.load(str(path))
+        try:
+            assert save_dashboard_config(db, SaveDashboardConfig(sections={"bills": False})).ok
+        finally:
+            db.close()
+        cli(["dashboard", str(path)])
+        assert "Pending bills" not in capsys.readouterr().out
+        cli(["dashboard", str(path), "--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["sections"]["bills"] is False
+        assert payload["bills"]  # JSON always carries every section's rows
+        assert payload["reimbursables"] == []
 
 
 class TestLoansPairWithTheirAssets:
@@ -1983,6 +2012,41 @@ class TestGroupMembershipIsStoredOnce:
         )
         assert [error.code for error in result.errors] == ["dashboard.group.account.duplicate"]
         assert db.get_account(saved.checking).group == "Cash"
+
+    def test_sections_are_stored_on_the_book_and_default_to_all_but_reimbursables(self, db, saved):
+        """Configure Dashboard shows and hides each section (#381)."""
+        from breadsched.gen.engine.dashboard import SECTIONS, DashboardConfig
+        from breadsched.gen.services import SaveDashboardConfig, save_dashboard_config
+
+        fresh = DashboardConfig.load(db)
+        assert {name: fresh.shows(name) for name in SECTIONS} == {
+            "groups": True,
+            "bills": True,
+            "income": True,
+            "reimbursables": False,
+            "goals": True,
+        }
+        result = save_dashboard_config(
+            db, SaveDashboardConfig(sections={"bills": False, "reimbursables": True})
+        )
+        assert result.ok, result.errors
+        stored = DashboardConfig.load(db)
+        assert stored.shows("bills") is False and stored.shows("reimbursables") is True
+        # A section not named is left as it was, and groups are untouched.
+        assert stored.shows("income") is True
+        assert db.get_account(saved.checking).group == "Cash"
+        # A book saved before #381 has no sections: every default applies.
+        assert DashboardConfig.from_dict({"groups": []}).shows("goals") is True
+
+    def test_an_unknown_section_is_refused_and_nothing_is_stored(self, db, saved):
+        from breadsched.gen.services import SaveDashboardConfig, save_dashboard_config
+
+        before = db.get_metadata("dashboard")
+        result = save_dashboard_config(
+            db, SaveDashboardConfig(sections={"cards": False}, liquidity_days=60)
+        )
+        assert [error.code for error in result.errors] == ["dashboard.section.invalid"]
+        assert db.get_metadata("dashboard") == before
 
     def test_horizons_alone_keep_groups_changed_elsewhere(self, db, saved):
         from breadsched.gen.services import SaveDashboardConfig, save_dashboard_config

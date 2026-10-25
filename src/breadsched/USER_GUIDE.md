@@ -788,6 +788,21 @@ yet moved there is held from Available, and the card says how much that is.
 **Reimbursements due** shows what payers still owe you on
 [reimbursable expenses](#reimbursable-expenses), with the part that is disputed or
 past its expected date. It is part of net worth and never of liquidity.
+A **Pending reimbursables** table can list each of them, as Pending bills lists
+bills: the expense, payer, when it was incurred, when the money is expected (marked
+overdue once that date passes), what is still owed, and its status. It is off until
+you turn it on.
+
+**Configure Dashboard** holds everything the Dashboard can be told
+([desktop](guide/desktop.md#configure-the-dashboard),
+[browser](guide/web.md#configure-the-dashboard)): the two horizons (how many days of
+bills cash must cover, and how many months of outgoings the emergency fund should
+last), which sections show (account groups, pending bills, expected income, pending
+reimbursables, and savings goals), the groups and their accounts, and each table's
+columns. The horizons, sections, and groups belong to the book, so everyone who opens
+it sees the same Dashboard; the columns are each person's own choice. The command
+line's `breadsched dashboard` and the printed Dashboard show the sections chosen
+there.
 
 Dashboard groups accept account-style paths such as `Investments:Plan A`. Generated
 headings total their children without double-counting account subtrees. Link an

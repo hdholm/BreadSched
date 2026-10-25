@@ -6052,20 +6052,69 @@ class TestDashboardView:
         for index in range(columns.get_n_items()):
             assert columns.get_item(index).get_resizable() is True
 
-    def test_the_horizons_are_on_the_toolbar(self, view):
-        assert view.liquidity_spin.get_value() > 0
-        assert view.emergency_spin.get_value() > 0
+    def _configure(self, view, app):
+        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
 
-    def test_changing_a_horizon_is_saved_on_the_book(self, view, app):
+        return DashboardDialog(
+            view.get_root(), app.db, tables=view.column_tables(), settings=view._settings()
+        )
+
+    def test_the_horizons_moved_into_configure_dashboard(self, view, app):
+        """The toolbar no longer holds the horizons; the dialog does (#381)."""
+        assert not hasattr(view, "liquidity_spin")
+        dialog = self._configure(view, app)
+        assert dialog.liquidity_spin.get_value() == view.config.liquidity_days
+        assert dialog.emergency_spin.get_value() == view.config.emergency_months
+        dialog.destroy()
+
+    def test_changing_a_horizon_is_saved_on_the_book_and_changes_the_verdict(self, view, app):
         from breadsched.gen.engine.dashboard import DashboardConfig
 
-        view.emergency_spin.set_value(9)
-        assert DashboardConfig.load(app.db).emergency_months == 9
-
-    def test_changing_a_horizon_changes_the_verdict(self, view):
         before = view.board.emergency_fund
-        view.emergency_spin.set_value(12)
+        dialog = self._configure(view, app)
+        dialog.emergency_spin.set_value(12)
+        dialog.liquidity_spin.set_value(45)
+        assert dialog.save() is True
+        dialog.destroy()
+        stored = DashboardConfig.load(app.db)
+        assert (stored.emergency_months, stored.liquidity_days) == (12, 45)
+        view.refresh()
         assert view.board.emergency_fund > before
+
+    def test_sections_are_shown_and_hidden_from_configure_dashboard(self, view, app):
+        assert view.bills_section.get_visible() is True
+        # Pending reimbursables is off until chosen.
+        assert view.reimbursables_section.get_visible() is False
+        dialog = self._configure(view, app)
+        dialog.section_checks["bills"].set_active(False)
+        dialog.section_checks["reimbursables"].set_active(True)
+        assert dialog.save() is True
+        dialog.destroy()
+        view.refresh()
+        assert view.bills_section.get_visible() is False
+        assert view.reimbursables_section.get_visible() is True
+
+    def test_columns_are_chosen_in_configure_dashboard_and_remembered_per_user(self, view, app):
+        # Each table's heading no longer carries a column menu of its own.
+        assert view.bills_section.chooser.get_visible() is False
+        dialog = self._configure(view, app)
+        [frequency] = [
+            check for check in dialog.column_checks["dashboard"] if check.get_label() == "Frequency"
+        ]
+        frequency.set_active(False)
+        columns = view.bills_view.get_columns()
+        shown = {
+            columns.get_item(i).get_title(): columns.get_item(i).get_visible()
+            for i in range(columns.get_n_items())
+        }
+        assert shown["Frequency"] is False
+        assert "Frequency" in view._settings().get_list("columns:dashboard", "hidden")
+        # The first column names each row and cannot be hidden.
+        assert dialog.column_checks["dashboard"][0].get_sensitive() is False
+        # Not part of the book.
+        assert "Frequency" not in str(app.db.get_metadata("dashboard"))
+        frequency.set_active(True)
+        dialog.destroy()
 
     def test_the_group_dialog_builds_and_saves(self, view, app):
         from breadsched.gen.engine.dashboard import DashboardConfig
@@ -6075,7 +6124,11 @@ class TestDashboardView:
         row = dialog.add_group()
         row["name"].set_text("Property")
         row["kind"].set_selected(3)
-        row["checks"][0].set_active(True)
+        # Accounts are added through the group's searchable picker (#381).
+        row["picker"].set_selected(1)
+        dialog._add_picked(row)
+        assert row["accounts"] == [dialog.accounts[0].handle]
+        assert row["picker"].get_selected() == 0
         dialog._on_save(None)
 
         saved = DashboardConfig.load(app.db)
@@ -6093,10 +6146,31 @@ class TestDashboardView:
         for name in ("One", "Two"):
             row = dialog.add_group()
             row["name"].set_text(name)
-            row["checks"][0].set_active(True)
+            # The dialog itself moves an account between groups, so only a request
+            # built by hand can name one twice; the service still refuses it.
+            row["accounts"].append(dialog.accounts[0].handle)
         assert dialog.save() is False
         assert dialog.status.get_text() == "An account can be in only one Dashboard group"
         assert [(a.handle, a.group) for a in app.db.iter_accounts()] == before
+        dialog.destroy()
+
+    def test_adding_an_account_to_a_group_moves_it_from_another(self, view, app):
+        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+
+        dialog = DashboardDialog(view.get_root(), app.db)
+        first, second = dialog.add_group(), dialog.add_group()
+        first["name"].set_text("First")
+        handle = dialog.accounts[0].handle
+        dialog.add_account(first, handle)
+        dialog.add_account(second, handle)
+        assert first["accounts"] == [] and second["accounts"] == [handle]
+        assert dialog.status.get_text().startswith("Moved ")
+        assert dialog.status.get_text().endswith(" from First.")
+        # Each member has its own remove button.
+        line = second["members"].get_first_child()
+        assert line.handle == handle
+        dialog.remove_account(second, handle)
+        assert second["accounts"] == [] and second["members"].get_first_child() is None
         dialog.destroy()
 
     def test_an_empty_book_still_renders(self, app, window, tmp_path):
@@ -6958,10 +7032,10 @@ class TestRepaintsAreDeferred:
         view = window._views["dashboard"]
         view._refresh_pending = False
 
-        view.emergency_spin.set_value(9)
+        view.schedule_refresh()
         assert view._refresh_pending is True
         view.flush_refresh()
-        assert view.config.emergency_months == 9
+        assert view._refresh_pending is False
 
 
 #: Criticals seen since the writer was installed. Module level because GLib only
@@ -7029,8 +7103,13 @@ class TestNoGtkCriticals:
         app.open_book(populated_book)
         window.show_category("dashboard")
         view = window._views["dashboard"]
-        view.emergency_spin.set_value(9)
-        view.liquidity_spin.set_value(45)
+        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+
+        dialog = DashboardDialog(window, app.db, tables=view.column_tables())
+        dialog.emergency_spin.set_value(9)
+        dialog.liquidity_spin.set_value(45)
+        dialog._on_save(None)
+        view.refresh()
         view.flush_refresh()
         assert criticals == []
 
@@ -8051,7 +8130,7 @@ class TestViewActions:
         window.show_category("register")
         assert tools() == ["win.register-reconcile", "win.register-new-tab"]
         window.show_category("dashboard")
-        assert tools() == ["win.dashboard-configure-groups", "win.dashboard-net-worth-history"]
+        assert tools() == ["win.dashboard-configure", "win.dashboard-net-worth-history"]
 
     @pytest.mark.parametrize(
         ("key", "icons", "gone"),
@@ -10220,7 +10299,7 @@ class TestBoundedSizes:
         makers = {
             "account": lambda: AccountDialog(window, db, db.get_account(chain[-1])),
             "csv-import": lambda: CsvImportDialog(window, db),
-            "dashboard-groups": lambda: DashboardDialog(window, db),
+            "dashboard": lambda: DashboardDialog(window, db),
             "reconcile": lambda: ReconciliationDialog(window, db, bank),
             "rules": lambda: RulesDialog(window, db),
             "goals": lambda: SavingsGoalsDialog(window, db),

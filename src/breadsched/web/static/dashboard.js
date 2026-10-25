@@ -85,61 +85,183 @@ async function showFsaDashboard() {
       : el("p", { class:"note" }, "No FSA claims yet."));
 }
 
-function openDashboardGroupsEditor(config) {
+// Dashboard tables and their columns, as Configure Dashboard lists them (#381).
+// Which columns show is each browser's own choice (localStorage), never the book's,
+// as the desktop keeps it in each user's settings; the first column always shows.
+const DASHBOARD_TABLES = {
+  bills: { title:"Pending bills", headers:["Item", "Due", "Due in", "Frequency",
+    { label:"Amount", num:true }, { label:"Monthly", num:true },
+    { label:"Hold now", num:true }, { label:"Annual", num:true }, "Kind"] },
+  income: { title:"Expected income", headers:["Item", "Due", "Due in", "Frequency",
+    { label:"Amount", num:true }, { label:"Monthly", num:true },
+    { label:"Annual", num:true }] },
+  reimbursables: { title:"Pending reimbursables", headers:["Expense", "Payer", "Incurred",
+    "Expected", { label:"Still owed", num:true }, "Status"] },
+  goals: { title:"Savings goals", headers:["Goal", "Target date", { label:"Target", num:true },
+    { label:"Set aside", num:true }, { label:"Remaining", num:true }, "Status"] },
+};
+
+function dashboardHiddenColumns(id) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(`breadsched.dashboard.columns.${id}`) || "[]");
+    return Array.isArray(stored) ? stored : [];
+  } catch (_error) { return []; }
+}
+
+function setDashboardHiddenColumns(id, hidden) {
+  try { localStorage.setItem(`breadsched.dashboard.columns.${id}`, JSON.stringify(hidden)); }
+  catch (_error) { /* private browsing: the choice lasts this page only */ }
+}
+
+// A Dashboard table showing only its chosen columns.
+function dashboardTable(id, rows) {
+  const headers = DASHBOARD_TABLES[id].headers;
+  const hidden = new Set(dashboardHiddenColumns(id));
+  const keep = headers.map((header, index) => index === 0 || !hidden.has(header.label ?? header));
+  return table(headers.filter((_h, index) => keep[index]),
+    rows.map((row) => row.filter((_cell, index) => keep[index])));
+}
+
+function openDashboardConfigEditor(config) {
   const backdrop = el("div", { class:"detail-backdrop" });
+  const numberField = (value, [min, max]) => el("input", {
+    type:"number", min:String(min), max:String(max), value:String(value) });
+  const liquidity = numberField(config.liquidity_days, [1, 365]);
+  const emergency = numberField(config.emergency_months, [1, 36]);
+  const sectionChecks = Object.entries(config.section_titles).map(([name, title]) => {
+    const check = el("input", { type:"checkbox", name:`section-${name}`,
+      checked:config.sections[name] ? "checked" : null });
+    check._section = name;
+    return el("label", { class:"check" }, check, ` ${title}`);
+  });
+
+  const names = new Map(config.accounts.map((account) => [account.handle, account.name]));
+  const byName = new Map(config.accounts.map((account) => [account.name, account.handle]));
+  const listId = "dashboard-config-accounts";
+  const datalist = el("datalist", { id:listId },
+    config.accounts.map((account) => el("option", { value:account.name })));
+  const status = el("p", { class:"note", role:"status" });
   const rows = el("div", { class:"stack" });
   const kinds = [
     ["liquid", "Liquid"], ["retirement", "Retirement"], ["asset", "Asset"],
     ["property", "Property"], ["liability", "Liability"],
   ];
+  const groupRows = () => Array.from(rows.children);
+  const removeAccount = (row, handle) => {
+    row._accounts = row._accounts.filter((item) => item !== handle);
+    row._members.querySelector(`[data-handle="${CSS.escape(handle)}"]`)?.remove();
+  };
+  const addAccount = (row, handle) => {
+    if (!names.has(handle) || row._accounts.includes(handle)) return;
+    status.textContent = "";
+    for (const other of groupRows()) {
+      if (other !== row && other._accounts.includes(handle)) {
+        removeAccount(other, handle);
+        status.textContent = `Moved ${names.get(handle)} from `
+          + `${other._groupFields.name.value.trim() || "another group"}.`;
+      }
+    }
+    row._accounts.push(handle);
+    row._members.append(el("li", { "data-handle":handle }, names.get(handle), " ",
+      el("button", { class:"action", type:"button", title:`Remove ${names.get(handle)}`,
+        "aria-label":`Remove ${names.get(handle)}`, onclick:()=>removeAccount(row, handle) },
+      "×")));
+  };
   const addGroup = (source=null) => {
-    const name = el("input", {
-      placeholder:"Investments:Plan A", value:source?.name || "",
-    });
+    const name = el("input", { placeholder:"Investments:Plan A", value:source?.name || "" });
     const kind = el("select", {}, kinds.map(([value, label]) => el("option", {
       value, selected:value === (source?.kind || "asset") ? "selected" : null,
     }, label)));
-    const accounts = el("select", { multiple:"multiple", size:"7" },
-      config.accounts.map((account) => el("option", {
-        value:account.handle,
-        selected:(source?.accounts || []).includes(account.handle) ? "selected" : null,
-      }, account.name)));
+    // Type part of a name to search the accounts; the group lists only its own.
+    const picker = el("input", { list:listId, placeholder:"Add an account…",
+      "aria-label":"Add an account" });
+    const members = el("ul", { class:"group-members" });
     const row = el("div", { class:"card" },
       el("div", { class:"row" }, name, kind,
-        el("button", { class:"action", type:"button", onclick:()=>row.remove() }, "Remove")),
-      el("label", {}, "Accounts", accounts));
-    row._groupFields = { name, kind, accounts };
+        el("button", { class:"action", type:"button", onclick:()=>row.remove() }, "Remove group")),
+      members,
+      el("div", { class:"row" }, picker, el("button", { class:"action", type:"button",
+        onclick:()=>{
+          const handle = byName.get(picker.value);
+          if (!handle) { status.textContent = "Choose an account from the list."; return; }
+          addAccount(row, handle);
+          picker.value = "";
+        } }, "Add")));
+    row._groupFields = { name, kind };
+    row._members = members;
+    row._accounts = [];
     rows.append(row);
+    (source?.accounts || []).forEach((handle) => addAccount(row, handle));
   };
   (config.groups || []).forEach(addGroup);
+
+  // Column choices apply at once and stay in this browser.
+  const columnChoices = Object.entries(DASHBOARD_TABLES).map(([id, spec]) => {
+    const hidden = new Set(dashboardHiddenColumns(id));
+    return el("fieldset", {}, el("legend", {}, spec.title),
+      ...spec.headers.map((header, index) => {
+        const label = header.label ?? header;
+        const check = el("input", { type:"checkbox", name:`column-${id}-${index}`,
+          checked:hidden.has(label) ? null : "checked", disabled:index === 0 ? "disabled" : null,
+          onchange:(event)=>{
+            const now = new Set(dashboardHiddenColumns(id));
+            if (event.target.checked) now.delete(label); else now.add(label);
+            setDashboardHiddenColumns(id, Array.from(now));
+          } });
+        return el("label", { class:"check" }, check, ` ${label}`);
+      }));
+  });
+
   const save = async () => {
-    const groups = Array.from(rows.children).map((row) => ({
+    const groups = groupRows().map((row) => ({
       name:row._groupFields.name.value.trim(),
       kind:row._groupFields.kind.value,
-      accounts:Array.from(row._groupFields.accounts.selectedOptions).map(
-        (option) => option.value),
+      accounts:row._accounts,
     }));
     if (groups.some((group) => !group.name)) {
       say("Every dashboard group needs a name.", "error");
       return;
     }
-    await post("/api/dashboard/config", {
-      groups,
-      liquidity_days:state.liquidityDays || config.liquidity_days,
-      emergency_months:state.emergencyMonths || config.emergency_months,
-    });
+    const sections = {};
+    for (const label of sectionChecks) {
+      const check = label.querySelector("input");
+      sections[check._section] = check.checked;
+    }
+    try {
+      await post("/api/dashboard/config", {
+        groups, sections,
+        liquidity_days:Number(liquidity.value), emergency_months:Number(emergency.value),
+      });
+    } catch (error) { say(error.message, "error"); return; }
     backdrop.remove();
     render();
   };
-  backdrop.append(el("section", { class:"detail-dialog wide" },
-    el("div", { class:"detail-heading" }, el("h2", {}, "Dashboard groups")),
+  backdrop.append(el("section", { class:"detail-dialog wide dashboard-config" },
+    el("div", { class:"detail-heading" }, helpHeading("Configure Dashboard", "dashboard")),
+    el("h3", {}, "Horizons"),
+    el("div", { class:"row" }, el("label", {}, "Liquid for ", liquidity, " days of bills")),
+    el("div", { class:"row" },
+      el("label", {}, "Emergency fund covers ", emergency, " months of outgoings")),
+    el("h3", {}, "Sections"),
+    el("div", { class:"stack" }, sectionChecks),
+    el("p", { class:"note" }, "The summary cards are always shown. Pending reimbursables "
+      + "lists each reimbursable expense still owed, as Pending bills lists bills."),
+    el("h3", {}, "Groups"),
     el("p", { class:"note" },
-      "Colon-separated names create totalled headings. Selecting a parent account includes its subaccounts once."),
+      "Colon-separated names create totalled headings. Choosing a parent account includes its subaccounts once."),
+    datalist,
     rows,
     el("div", { class:"toolbar" },
-      el("button", { class:"action", type:"button", onclick:()=>addGroup() }, "Add group"),
+      el("button", { class:"action", type:"button", onclick:()=>addGroup() }, "Add group")),
+    status,
+    el("h3", {}, "Columns"),
+    el("p", { class:"note" }, "Your own choice, kept in this browser rather than in the book; "
+      + "it applies as soon as you tick a box."),
+    ...columnChoices,
+    el("div", { class:"toolbar" },
       el("button", { class:"action primary", type:"button", onclick:save }, "Save"),
-      el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Cancel"))));
+      el("button", { class:"action", type:"button", onclick:()=>{ backdrop.remove(); render(); } },
+        "Cancel"))));
   document.body.append(backdrop);
 }
 
@@ -229,17 +351,12 @@ async function netWorthChange(point, slot) {
 }
 
 // The dashboard: what is owned and owed, the liquidity verdict, and the bills.
-// The two horizons are inputs rather than fixed constants, because how much must
-// stay liquid and how long the fund should last are the household's judgement,
-// not the program's.
+// The two horizons are the household's judgement, not the program's; they are set,
+// with the sections, groups, and columns, in Configure Dashboard (#381).
 async function showDashboard() {
-  const query = new URLSearchParams();
-  if (state.liquidityDays) query.set("liquidity_days", state.liquidityDays);
-  if (state.emergencyMonths) query.set("emergency_months", state.emergencyMonths);
-  const data = await get("/api/dashboard?" + query.toString());
+  const data = await get("/api/dashboard");
   const s = data.summary;
-  state.liquidityDays = data.config.liquidity_days;
-  state.emergencyMonths = data.config.emergency_months;
+  const shows = (section) => data.config.sections[section];
 
   const short = s.emergency_shortfall !== null && Number(s.emergency_shortfall) > 0;
   const dashboardMoney = (field) => s[field] === null
@@ -278,20 +395,9 @@ async function showDashboard() {
             ? ` (${money(s.goals_held)} held from spendable cash)` : ""))
       : null);
 
-  const controls = el("div", { class: "row" },
-    el("label", {}, "Liquid for "),
-    el("input", {
-      type: "number", min: "7", max: "365", value: data.config.liquidity_days,
-      onchange: (e) => { state.liquidityDays = e.target.value; render(); },
-    }),
-    el("label", {}, " days   Emergency "),
-    el("input", {
-      type: "number", min: "1", max: "36", value: data.config.emergency_months,
-      onchange: (e) => { state.emergencyMonths = e.target.value; render(); },
-    }),
-    el("label", {}, " months"),
+  const controls = el("div", { class: "toolbar" },
     el("button", { class:"action", type:"button",
-      onclick:()=>openDashboardGroupsEditor(data.config) }, "Configure groups…"));
+      onclick:()=>openDashboardConfigEditor(data.config) }, "Configure Dashboard…"));
 
   const groupCards = el("div", { class:"balance-groups" }, data.groups.map((g) =>
     el("div", {
@@ -352,6 +458,15 @@ async function showDashboard() {
     itemCell(item), dueCell(item), dueIn(item), item.frequency,
     money(item.amount), money(item.monthly), money(item.annual),
   ]);
+  const reimbursables = data.reimbursables || [];
+  const reimbursableRows = reimbursables.map((item) => [
+    el("button", { class:"action", type:"button", onclick:()=>switchTo("Reimbursable Expenses") },
+      item.description || item.payer || "Reimbursable expense"),
+    item.payer, item.incurred,
+    item.expected === null ? "—" : (item.overdue ? `${item.expected} (overdue)` : item.expected),
+    el("span", { class:item.attention ? "neg" : null }, money(item.remaining)),
+    item.status_label,
+  ]);
 
   return el("div", {}, cards,
     completenessDetails(data.completeness, "Net worth"),
@@ -360,27 +475,27 @@ async function showDashboard() {
         !== JSON.stringify(data.completeness?.excluded)
       ? completenessDetails(data.liquid_completeness, "Liquid cash") : null,
     ...(data.coverage_notes || []).map((note) => el("p", { class: "note" }, note)), controls,
-    el("h2", {}, "Balances"),
-    groupCards,
-    el("h2", {}, `Pending bills (${bills.length})`),
+    ...(shows("groups") ? [el("h2", {}, "Balances"), groupCards] : []),
     ...(bills.some((item) => item.days_until <= 0) || income.some((item) => item.days_until <= 0)
       ? [el("div", { class:"toolbar" }, el("button", { class:"action", type:"button",
           onclick:() => openDueReviewDialog().catch((error) => say(error.message, "error")) },
           "Review due transactions…"))]
       : []),
-    table(["Item", "Due", "Due in", "Frequency",
-           { label: "Amount", num: true }, { label: "Monthly", num: true },
-           { label: "Hold now", num: true }, { label: "Annual", num: true }, "Kind"],
-          billRows),
-    el("h2", {}, `Expected income (${income.length})`),
-    table(["Item", "Due", "Due in", "Frequency",
-           { label: "Amount", num: true }, { label: "Monthly", num: true },
-           { label: "Annual", num: true }], incomeRows),
-    ...((data.goals || []).length
+    ...(shows("bills")
+      ? [el("h2", {}, `Pending bills (${bills.length})`), dashboardTable("bills", billRows)]
+      : []),
+    ...(shows("income")
+      ? [el("h2", {}, `Expected income (${income.length})`), dashboardTable("income", incomeRows)]
+      : []),
+    ...(shows("reimbursables")
+      ? [el("h2", {}, `Pending reimbursables (${reimbursables.length})`),
+        el("div", { class: "dashboard-reimbursables" },
+          dashboardTable("reimbursables", reimbursableRows))]
+      : []),
+    ...(shows("goals") && (data.goals || []).length
       ? [el("h2", {}, `Savings goals (${data.goals.length})`),
         el("div", { class: "dashboard-goals" },
-          table(["Goal", "Target date", { label: "Target", num: true },
-                 { label: "Set aside", num: true }, { label: "Remaining", num: true }, "Status"],
+          dashboardTable("goals",
             data.goals.map((goal) => [
               el("button", { class: "action", type: "button", onclick: () => switchTo("Savings Goals") },
                 goal.name),

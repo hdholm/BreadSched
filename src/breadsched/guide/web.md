@@ -33,9 +33,8 @@ the first tab carries on; this is the browser's counterpart of the desktop's
 scenario tabs. Reloading a tab needs the address the server printed at start-up,
 because the page removes its access token from the address bar.
 
-On the Dashboard, a requested liquidity or emergency-fund horizon changes the
-displayed calculation for that request. Reopening the view uses the saved Dashboard
-settings; use the Dashboard settings controls to save a new horizon. Expand a
+On the Dashboard, **Configure Dashboard…** sets the horizons, sections, groups, and
+columns (see [Configure the Dashboard](#configure-the-dashboard)). Expand a
 missed-schedule row to see each missed date and amount. When savings goals have set
 money aside, a **Set aside for goals** tile shows the total (see
 [Savings goals](../USER_GUIDE.md#savings-goals)).
@@ -55,13 +54,26 @@ In **Accounts**, choose an account to change its settings: its type, a card's
 payment terms, an FSA's funding years, emergency-fund inclusion, or an investment's
 cost method. See [Accounts](../USER_GUIDE.md#accounts).
 
-## Dashboard groups
+## Configure the Dashboard
 
-On the **Dashboard**, the group settings name the groups it shows, give each a kind,
-and choose its accounts. An account is in at most one group, the Dashboard group its
-account shows; saving with an account in two groups says so and changes nothing.
-Groups only arrange what the Dashboard shows; its totals cover the whole book. See
-[Dashboard and near-term cash](../USER_GUIDE.md#dashboard-and-near-term-cash).
+On the **Dashboard**, **Configure Dashboard…** opens one dialog for everything the
+Dashboard can be told:
+
+- **Horizons**: **Liquid for** so many days of bills, and how many months of
+  outgoings the **Emergency fund covers**.
+- **Sections**: Account groups, Pending bills, Expected income, Pending
+  reimbursables (off until you turn it on), and Savings goals. The summary cards
+  always show.
+- **Groups**: each group's name, kind, and accounts. A group lists only its own
+  accounts, each with a **×** to remove it; type part of a name in **Add an
+  account…**, choose it from the list, and choose **Add**. An account is in at most
+  one group, so adding it to one takes it out of another, and the dialog says so.
+- **Columns**: the columns each Dashboard table shows. These are kept in this
+  browser, not in the book, and apply as soon as you tick a box.
+
+**Save** stores the horizons, sections, and groups in the book and redraws the
+Dashboard. Groups only arrange what the Dashboard shows; its totals cover the whole
+book. See [Dashboard and near-term cash](../USER_GUIDE.md#dashboard-and-near-term-cash).
 
 ## Exchange rates and security prices
 
@@ -426,7 +438,7 @@ The browser interface has no preferences window: each setting the desktop's **Ed
 → Preferences…** keeps has its own place here. The book is the one named when the
 server starts (`breadsched web household.breadsched`). The Alpha Vantage API key is
 entered in [Online quotes](#online-quotes) and stored in the same settings file the
-desktop uses. Dashboard groups are arranged in [Dashboard groups](#dashboard-groups). The
+desktop uses. Dashboard groups are arranged in [Configure the Dashboard](#configure-the-dashboard). The
 desktop's Double Line and row shading settings apply to desktop registers only.
 
 ## Protect and recover a book

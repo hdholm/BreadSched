@@ -89,7 +89,7 @@ HELP_TOPICS: dict[str, str] = {
     "reimbursables": "Reimbursable expenses",
     "goals": "Savings goals",
     "accounts": "Accounts",
-    "dashboard-groups": "Dashboard groups",
+    "dashboard": "Configure the Dashboard",
     "prices": "Exchange rates and security prices",
     "loans": "Loans",
     "fsa-claims": "FSA claims",

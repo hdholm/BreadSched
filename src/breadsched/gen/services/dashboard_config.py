@@ -1,4 +1,4 @@
-"""Validated changes to the Dashboard's groups and horizons (#337).
+"""Validated changes to the Dashboard's groups, horizons, and sections (#337, #381).
 
 A group's members are stored once, as each member account's ``Account.group``;
 the book's dashboard configuration keeps the group names, kinds, and order and the
@@ -8,10 +8,11 @@ is never put in two groups and a rejected change leaves the book as it was.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ..db.sqlite import DbSQLite
-from ..engine.dashboard import GROUP_KINDS, DashboardConfig, GroupConfig
+from ..engine.dashboard import GROUP_KINDS, SECTIONS, DashboardConfig, GroupConfig
 from .contracts import ServiceError, ServiceResult
 
 __all__ = [
@@ -40,6 +41,8 @@ class SaveDashboardConfig:
     groups: tuple[DashboardGroupInput, ...] | None = None
     liquidity_days: int | None = None
     emergency_months: int | None = None
+    #: Sections to show or hide by ``SECTIONS`` name; one not named is unchanged.
+    sections: Mapping[str, bool] | None = None
 
 
 def _clamp(value: int, bounds: tuple[int, int]) -> int:
@@ -83,6 +86,10 @@ def save_dashboard_config(
         if errors:
             return ServiceResult.failure(*errors)
         config.groups = groups
+    if request.sections is not None:
+        if any(name not in SECTIONS for name in request.sections):
+            return ServiceResult.failure(ServiceError("dashboard.section.invalid", ("sections",)))
+        config.sections = {**config.sections, **{k: bool(v) for k, v in request.sections.items()}}
     if request.liquidity_days is not None:
         config.liquidity_days = _clamp(request.liquidity_days, LIQUIDITY_DAYS_RANGE)
     if request.emergency_months is not None:

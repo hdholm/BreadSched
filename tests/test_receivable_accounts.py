@@ -390,3 +390,19 @@ def test_accounts_that_look_like_receivables_but_cannot_hold_one_are_named(db, b
         insurance.handle,
         parked.handle,
     }
+
+
+def test_the_dashboard_lists_each_pending_reimbursable_soonest_first(db, book):
+    """The rows behind Reimbursements due, as Pending bills lists bills (#381)."""
+    undated, _expense = _track(db, book)
+    late, _expense = _track(db, book, amount="40.00", expected_cash_date=date(2026, 9, 20))
+    board = _board(db)
+    assert [item.receivable.handle for item in board.reimbursables] == [
+        late.handle,
+        undated.handle,
+    ]
+    assert sum((item.remaining for item in board.reimbursables), Money(0)) == board.receivables_owed
+    [overdue] = [
+        item for item in board.reimbursables if dashboard.reimbursable_overdue(item, board.as_of)
+    ]
+    assert overdue.receivable.handle == late.handle
