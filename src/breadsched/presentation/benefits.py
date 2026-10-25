@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -95,3 +96,14 @@ def shared_cost_text(shared: SharedCost) -> str:
             "adjust the expected amount, the EOB, or write off the difference"
         )
     return text
+
+
+def receivable_account_note(unoffered: Sequence[str]) -> str:
+    """Why the reimbursables editors offer the accounts they do (#371)."""
+    shown = f"Not offered: {', '.join(unoffered)}. " if unoffered else ""
+    return (
+        "Held in lists accounts of type Receivable. "
+        + shown
+        + "To hold receivables in another account, change its type to Receivable "
+        "with Edit Account."
+    )

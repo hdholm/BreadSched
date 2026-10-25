@@ -29,9 +29,14 @@ from ..gen.services.receivables import (
     reimbursement_proposals,
     save_receivable,
     shared_costs,
+    unoffered_receivable_accounts,
 )
 from ..gen.services.scenarios import SetReimbursementOverride, set_reimbursement_override
-from ..presentation import reimbursement_override_text, shared_cost_text
+from ..presentation import (
+    receivable_account_note,
+    reimbursement_override_text,
+    shared_cost_text,
+)
 from .controls import input_money, service_error
 
 if TYPE_CHECKING:
@@ -194,6 +199,12 @@ def receivables(api: Api, query: QueryParams) -> dict[str, object]:
             {"handle": account.handle, "name": api.db.full_name(account) or account.name}
             for account in receivable_accounts(api.db)
         ],
+        "account_note": receivable_account_note(
+            [
+                api.db.full_name(account) or account.name
+                for account in unoffered_receivable_accounts(api.db)
+            ]
+        ),
     }
 
 

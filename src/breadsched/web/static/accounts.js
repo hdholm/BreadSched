@@ -1280,15 +1280,29 @@ async function openReconciliation(account) {
         el("td", {}, item.date),
         el("td", {}, item.description || "(no description)"),
         el("td", {class:`num ${cls(item.amount)}`}, money(item.amount)),
-        el("td", {class:"muted"}, item.after_statement ? `${state}, after statement` : state))};
+        el("td", {class:"muted"}, item.after_statement ? `${state}, after statement` : state),
+        // Edit opens the row's transaction in the register, checks kept (#374).
+        el("td", {}, el("button", {class:"action", type:"button",
+          title:"Save the checks and edit this transaction in the register",
+          onclick:()=>editFromReconciliation(item).catch((error)=>say(error.message, "error")),
+        }, "Edit")))};
+    });
+    const saveChecks = () => post("/api/reconciliation/update", {
+      handle:session.handle,
+      ending_balance:ending.value.trim(),
+      selected_splits:checks.filter(({check})=>check.checked).map(({item})=>item.split),
     });
     const save = async () => {
-      await post("/api/reconciliation/update", {
-        handle:session.handle,
-        ending_balance:ending.value.trim(),
-        selected_splits:checks.filter(({check})=>check.checked).map(({item})=>item.split),
-      });
+      await saveChecks();
       await reload();
+    };
+    const editFromReconciliation = async (item) => {
+      await saveChecks();
+      backdrop.remove();
+      state.account = account.handle;
+      state.reconcileReturn = account.handle;
+      current = "Register";
+      await editRow(item.split);
     };
     content = el("div", {class:"stack"},
       el("p", {class:"note"}, `Statement through ${session.statement_date}`),
@@ -1297,7 +1311,7 @@ async function openReconciliation(account) {
         `Prior reconciled ${money(session.opening_balance)} · Funds in `
         + `${money(session.selected_in)} · Funds out ${money(session.selected_out)} · Checked `
         + `${money(session.selected_balance)} · Difference ${money(session.difference)}`),
-      table(["✓", "Date", "Description", {label:"Amount", num:true}, "State"],
+      table(["✓", "Date", "Description", {label:"Amount", num:true}, "State", ""],
         checks.map(({row})=>row)),
       el("div", {class:"toolbar"},
         el("button", {class:"action", type:"button", onclick:()=>save().catch(
@@ -1420,6 +1434,12 @@ async function showRegister() {
         const account = usable.find((item)=>item.handle === state.account);
         if (account) openReconciliation(account).catch((error)=>say(error.message,"error"));
       }}, "Reconcile…"),
+      state.reconcileReturn === state.account ? el("button", {class:"action primary",
+        type:"button", onclick:()=>{
+          const account = usable.find((item)=>item.handle === state.account);
+          state.reconcileReturn = null;
+          if (account) openReconciliation(account).catch((error)=>say(error.message,"error"));
+        }}, "Back to reconciliation") : null,
       el("span", { class: "muted" }, `${data.rows.length} entries`)),
     data.summary ? el("p", { class: "note register-summary" }, data.summary) : null,
     table(["Date", "Num", "Description", "Transfer", "R",

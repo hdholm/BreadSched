@@ -472,6 +472,8 @@ def gnucash_account_matrix_path(tmp_path):
         fsa=new_guid(),
         money_market=new_guid(),
         receivable=new_guid(),
+        receivables=new_guid(),
+        insurance_claims=new_guid(),
         debts=new_guid(),
         mortgage=new_guid(),
         payable=new_guid(),
@@ -487,6 +489,9 @@ def gnucash_account_matrix_path(tmp_path):
     write_account(conn, ids.fsa, "Health FSA", "ASSET", ids.assets, usd)
     write_account(conn, ids.money_market, "Money Market", "MONEYMRKT", ids.assets, usd)
     write_account(conn, ids.receivable, "Receivable", "RECEIVABLE", ids.assets, usd)
+    # A household's receivables kept as plain Asset accounts (#371).
+    write_account(conn, ids.receivables, "Receivables", "ASSET", ids.assets, usd, placeholder=1)
+    write_account(conn, ids.insurance_claims, "Insurance claims", "ASSET", ids.receivables, usd)
     write_account(conn, ids.debts, "Debts", "LIABILITY", ids.root, usd, placeholder=1)
     write_account(conn, ids.mortgage, "Mortgage", "LIABILITY", ids.debts, usd)
     write_account(conn, ids.payable, "Payable", "PAYABLE", ids.debts, usd)
