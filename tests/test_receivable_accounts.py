@@ -31,10 +31,12 @@ from breadsched.gen.services.receivables import (
     delete_receivable,
     detach_split,
     mark_disputed,
+    receivable_accounts,
     receivable_candidates,
     record_write_off,
     reimbursement_proposals,
     save_receivable,
+    unoffered_receivable_accounts,
 )
 from breadsched.gen.services.transactions import (
     DeleteTransaction,
@@ -367,3 +369,24 @@ def test_an_expense_changed_outside_the_services_is_caught_up_after_import(db, b
     assert balance_amount(db, receivable.account).value == Money("175.00")
     assert balance_amount(db, book.groceries).value == Money(0)
     assert sync_all_receivables(db) == 0
+
+
+def test_accounts_that_look_like_receivables_but_cannot_hold_one_are_named(db, book):
+    # #371: an Asset account named for receivables, or a placeholder Receivable,
+    # is not offered as Held in; the editors name it so its type can be changed.
+    def add(name, atype, parent, placeholder=False):
+        account = Account(name=name, atype=atype, parent=parent, placeholder=placeholder)
+        with db.transaction(name) as txn:
+            db.add_account(account, txn)
+        return account
+
+    usable = add("Owed back", AccountType.RECEIVABLE, book.assets)
+    group = add("Receivables", AccountType.ASSET, book.assets, placeholder=True)
+    insurance = add("Insurance", AccountType.ASSET, group.handle)
+    parked = add("Accounts Receivable", AccountType.RECEIVABLE, book.assets, placeholder=True)
+    add("Car", AccountType.ASSET, book.assets)
+    assert [a.handle for a in receivable_accounts(db)] == [usable.handle]
+    assert {a.handle for a in unoffered_receivable_accounts(db)} == {
+        insurance.handle,
+        parked.handle,
+    }

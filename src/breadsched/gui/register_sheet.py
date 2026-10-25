@@ -268,6 +268,8 @@ class RegisterSheet:
         self.double_line = False
         #: True while a save is being written, so change signals wait for it.
         self.saving = False
+        #: The transaction the last successful save wrote (#371).
+        self.last_saved: str | None = None
         #: The cursor's row index and column.
         self.cursor = 0
         self.column = "date"
@@ -1364,6 +1366,7 @@ class RegisterSheet:
         else:
             self._say(f"Saved changes to {description}.")
         self.draft = self._blank_draft()
+        self.last_saved = result.value.handle if result.value is not None else None
         changed = {result.value.handle} if result.value is not None else set()
         if draft.source is not None:
             changed.add(draft.source.handle)

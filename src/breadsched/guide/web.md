@@ -176,7 +176,9 @@ Choose **Reconcile…** in the register, enter the statement date and ending bal
 check entries until the difference is zero, and finish. The totals show the checked
 Funds In and Funds Out separately, and entries dated after the statement are listed,
 shaded and marked *after statement*, in case a date is wrong; they are never checked
-for you. If a deposit in that account
+for you. **Edit** on a row saves the checks and opens that transaction for editing
+in the register; **Back to reconciliation** above the register returns to the
+statement. If a deposit in that account
 looks like money back on a [reimbursable expense](#reimbursable-expenses), the page
 says how many such credits are waiting.
 
@@ -294,7 +296,11 @@ section, and **Plan** lists goals reaching their target in its range. See
 
 Choose **Reimbursable…** on a register row to start a receivable from that expense,
 or open **Reimbursable Expenses** to list, open, link, dispute, and write off receivables.
-**Held in** chooses the receivable account (the default is one per currency).
+**Held in** chooses the receivable account (the default is one per currency). It
+lists only accounts whose type is **Receivable**; the note under it names any account
+that looks like a receivable but is not offered (an **Asset** account named for
+receivables, or a placeholder). To use such an account, change its type to
+**Receivable** when editing the account.
 **Proposed reimbursements** lists credits that clearly belong to one open
 receivable, checked; choose **Accept selected** to link them. A warning appears when
 a linked expense is also on an FSA claim, and the open receivable shows what is

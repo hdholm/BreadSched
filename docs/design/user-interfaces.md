@@ -48,7 +48,19 @@ Funds Out lists while it stays open. Each check is saved through
 `update_reconciliation` at once, so Postpone is a plain close and Abandon is
 `cancel_reconciliation`; multi-selection checks or unchecks several rows in one
 update. Rows for `after_statement` candidates sit below an "After" heading with the
-`after-statement` style.
+`after-statement` style. The mouse is the dialog's own: a capture-phase click
+gesture on each list claims a row click for `ReconciliationDialog.click_row` (a
+click on the check is left to the check). A plain click selects only that row,
+across both lists, and toggles its check. Ctrl and Shift select without checking.
+A double-click puts the check back and edits (#374, #375). Keyboard selection in
+one list empties the other, so the edit and check commands act on the row in view.
+The browser's reconcile table has an **Edit** per row that saves the checks and
+opens the row in the register with **Back to reconciliation**.
+
+GTK's **Track as Reimbursable…** saves the register's unsaved typing first and
+opens the dialog over the register's own window, never over another one that was
+active, such as the guide. Each refusal is an alert as well as the register's status
+line (#371).
 
 The FSA claims window (`dialogs/fsa_claims_dialog`, #366) is likewise not modal and
 one per book (`FsaClaimsDialog.present_for`): it is the application action

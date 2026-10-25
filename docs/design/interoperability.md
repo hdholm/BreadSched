@@ -52,7 +52,8 @@ The representative account-fidelity fixture is generated against the GnuCash
 SQLite schema and exercises these rules together rather than only as isolated
 fields: nested STOCK/MUTUAL holdings with a security commodity and non-default
 precision; assets locally modeled as FSA; liabilities locally modeled as Loan;
-historical money-market, receivable, and payable types; an unknown valid source
+historical money-market, receivable, and payable types; an Asset account under an
+asset account named Receivables, imported as a local Receivable (#371); an unknown valid source
 type; hidden state; typed slots; hierarchy changes; and a second source refresh.
 Any expansion of imported-account editing must extend this matrix with the source
 form and the expected local/source ownership result.

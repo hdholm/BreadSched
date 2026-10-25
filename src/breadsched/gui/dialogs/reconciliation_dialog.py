@@ -40,7 +40,7 @@ from ...gen.services.claims import claim_link_proposals
 from ...gen.services.receivables import reimbursement_proposals
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import claim_link_notice, reimbursement_notice, service_error_message
-from ..gi_setup import GLib, Gtk, Pango
+from ..gi_setup import Gdk, GLib, Gtk, Pango
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -134,6 +134,11 @@ class ReconciliationDialog(BoundedWindow):
         self._keys: tuple = ()
         self._checks: dict[str, Gtk.CheckButton] = {}
         self._updating = False
+        #: True while a click or a rebuild sets the selection in both lists.
+        self._extending = False
+        #: The list and row a Shift-click extends from, and the row clicked last.
+        self._anchor: tuple[_Column, Gtk.ListBoxRow] | None = None
+        self._last_split: str | None = None
         self._refresh_source = 0
         self._handler: int | None = db.connect("database-changed", self._on_book_changed)
         self.connect("destroy", self._on_destroy)
@@ -338,6 +343,14 @@ class ReconciliationDialog(BoundedWindow):
         self.funds_out = _Column("Funds Out")
         for column in (self.funds_in, self.funds_out):
             column.list.connect("row-activated", self._on_row_activated)
+            column.list.connect("selected-rows-changed", self._on_selection_changed)
+            # Clicks are the dialog's own (#374, #375): one click checks a row and
+            # selects only it, Ctrl or Shift selects without checking, and a
+            # double-click edits. A click on the check itself is the check's.
+            clicks = Gtk.GestureClick(button=1)
+            clicks.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+            clicks.connect("pressed", self._on_list_pressed, column)
+            column.list.add_controller(clicks)
             columns.append(column.box)
         self.body.append(columns)
 
@@ -380,6 +393,14 @@ class ReconciliationDialog(BoundedWindow):
         """Rebuild both lists, keeping the rows that were selected."""
         selected = set(self.selected_splits()) if self._checks else set()
         self._checks = {}
+        self._anchor = None
+        self._extending = True
+        try:
+            self._fill_lists(state, selected)
+        finally:
+            self._extending = False
+
+    def _fill_lists(self, state: reconciliation.ReconciliationSummary, selected: set) -> None:
         statement = state.reconciliation.statement_date
         for column, funds_in in ((self.funds_in, True), (self.funds_out, False)):
             column.list.remove_all()
@@ -485,10 +506,91 @@ class ReconciliationDialog(BoundedWindow):
         self._save_checks({split for split, check in self._checks.items() if check.get_active()})
 
     def _on_row_activated(self, _list, row: Gtk.ListBoxRow) -> None:
-        # Enter or a double-click on a row toggles its check, as in GnuCash.
+        # Enter (or Space) on a row toggles its check; the mouse is _on_list_pressed's.
         split = self.funds_in.splits.get(row) or self.funds_out.splits.get(row)
         if split is not None:
             self._checks[split].set_active(not self._checks[split].get_active())
+
+    def _on_list_pressed(self, gesture, n_press: int, x: float, y: float, column) -> None:
+        target = column.list.pick(x, y, Gtk.PickFlags.DEFAULT)
+        while target is not None and target is not column.list:
+            if isinstance(target, Gtk.CheckButton):
+                return
+            target = target.get_parent()
+        row = column.list.get_row_at_y(int(y))
+        if row is None or row not in column.splits:
+            return
+        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        state = gesture.get_current_event_state()
+        self.click_row(
+            row,
+            n_press,
+            ctrl=bool(state & Gdk.ModifierType.CONTROL_MASK),
+            shift=bool(state & Gdk.ModifierType.SHIFT_MASK),
+        )
+
+    def click_row(
+        self, row: Gtk.ListBoxRow, n_press: int = 1, *, ctrl: bool = False, shift: bool = False
+    ):
+        """A mouse click on a row, as either list receives it (#374, #375).
+
+        A plain click selects only that row, in both lists, and toggles its check.
+        Ctrl adds or removes the row from the selection and Shift extends it from
+        the last row clicked in the same list; neither checks anything. The second
+        click of a double-click puts the check back and opens the transaction.
+        """
+        column = self.funds_in if row in self.funds_in.splits else self.funds_out
+        split = column.splits.get(row)
+        if split is None:
+            return None
+        if n_press >= 2:
+            if ctrl or shift:
+                return None
+            self._toggle(split)
+            return self.edit_transaction(split)
+        self._extending = ctrl or shift
+        try:
+            if shift and self._anchor is not None and self._anchor[0] is column:
+                column.list.unselect_all()
+                first, last = sorted((self._anchor[1].get_index(), row.get_index()))
+                for index in range(first, last + 1):
+                    item = column.list.get_row_at_index(index)
+                    if item is not None and item in column.splits:
+                        column.list.select_row(item)
+            elif shift:
+                column.list.select_row(row)
+                self._anchor = (column, row)
+            elif ctrl:
+                if row.is_selected():
+                    column.list.unselect_row(row)
+                else:
+                    column.list.select_row(row)
+                self._anchor = (column, row)
+            else:
+                for other in (self.funds_in, self.funds_out):
+                    other.list.unselect_all()
+                column.list.select_row(row)
+                self._anchor = (column, row)
+                self._toggle(split)
+        finally:
+            self._extending = False
+        self._last_split = split
+        row.grab_focus()
+        return None
+
+    def _toggle(self, split: str) -> None:
+        check = self._checks.get(split)
+        if check is not None:
+            check.set_active(not check.get_active())
+
+    def _on_selection_changed(self, changed: Gtk.ListBox) -> None:
+        # Moving the selection in one list by keyboard leaves the other empty, so
+        # the selected row is always the one the commands act on (#375).
+        if self._extending or not changed.get_selected_rows():
+            return
+        for column in (self.funds_in, self.funds_out):
+            if column.list is not changed:
+                column.list.unselect_all()
 
     def check_selected(self, checked: bool) -> None:
         """Check, or uncheck, every selected row in one change."""
@@ -514,16 +616,21 @@ class ReconciliationDialog(BoundedWindow):
         dialog.present()
         return dialog
 
-    def edit_transaction(self) -> Gtk.Window | None:
-        """Edit the transaction of the selected row; the lists follow the change."""
+    def edit_transaction(self, split: str | None = None) -> Gtk.Window | None:
+        """Edit the transaction of ``split``, else of the row clicked last among the
+        selected ones; the lists follow the change."""
         from .transaction_dialog import TransactionDialog
 
         chosen = self.selected_splits()
+        if split is None:
+            split = self._last_split if self._last_split in chosen else next(iter(chosen), None)
         state = self._statement()
-        if not chosen or state is None:
+        if split is None or state is None:
             self.status.set_text("Select a row to edit its transaction.")
             return None
-        candidate = next(item for item in state.candidates if item.split == chosen[0])
+        candidate = next((item for item in state.candidates if item.split == split), None)
+        if candidate is None:
+            return None
         transaction = self.db.get_transaction(candidate.transaction)
         if transaction is None:
             return None

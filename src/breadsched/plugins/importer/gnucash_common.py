@@ -27,6 +27,7 @@ from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import import_review
 from ...gen.lib.account import (
     Account,
+    AccountClass,
     AccountType,
     GnuCashAccountField,
     GnuCashAccountType,
@@ -64,6 +65,10 @@ __all__ = [
 
 #: How many example records each skip reason names in an import report.
 PROBLEM_EXAMPLES = 3
+
+#: An asset account so named holds receivables; its new Asset subaccounts are
+#: imported as Receivable accounts (#371).
+RECEIVABLE_PARENT_NAMES = frozenset({"receivable", "receivables", "accounts receivable"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -768,6 +773,10 @@ class ImportSink:
             LOG.debug("merged imported %r into the existing account", name)
             return account
 
+        if parsed is GnuCashAccountType.ASSET and self._under_receivables(mapped_parent):
+            # A household's Assets:Receivables holds money owed back, such as
+            # reimbursable expenses, so its accounts arrive as Receivables (#371).
+            account_type = AccountType.RECEIVABLE
         account = Account(
             handle=guid,
             name=name,
@@ -790,6 +799,18 @@ class ImportSink:
         self._known_accounts.add(guid)
         self.result.accounts += 1
         return account
+
+    def _under_receivables(self, parent: str | None) -> bool:
+        """Whether ``parent`` is, or is under, an asset account named for receivables."""
+        account = self.db.get_account(parent) if parent else None
+        while account is not None and not account.is_root:
+            if (
+                account.account_class is AccountClass.ASSET
+                and account.name.strip().casefold() in RECEIVABLE_PARENT_NAMES
+            ):
+                return True
+            account = self.db.get_account(account.parent) if account.parent else None
+        return False
 
     @staticmethod
     def _preserve_breadsched_account_state(imported: Account, existing: Account) -> None:

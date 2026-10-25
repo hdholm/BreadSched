@@ -304,7 +304,10 @@ and default household-planning behavior:
   expense twice.
 - **Receivable** holds money others owe you back, such as a reimbursable expense.
   It counts toward net worth but never toward liquidity, because it cannot be spent
-  until it arrives. A GnuCash A/Receivable account imports as this type.
+  until it arrives. A GnuCash A/Receivable account imports as this type, and so does
+  a new GnuCash Asset account under an asset account named Receivable, Receivables,
+  or Accounts Receivable (such as Assets:Receivables:Insurance). An account already
+  in the book keeps its type when the file is imported again.
 - **Credit card** is a revolving purchase and payment channel.
 - **Loan** is amortizing debt with principal and interest behavior.
 - **Liability** is an obligation without credit-card or loan assumptions.
@@ -1432,10 +1435,11 @@ write-off returns the unpaid balance to the expense. A dispute posts nothing.
 BreadSched keeps these moving transactions itself and recomputes them whenever the
 receivable or a linked transaction changes, including after an import; they are
 marked in their notes, and editing or deleting one as a transaction, or linking one
-to a receivable or an FSA claim, is refused (change the receivable instead). You can choose the receivable account; by default
-BreadSched uses, or creates, a "Reimbursements Receivable" account under Assets for
-the expense's currency. An imported GnuCash receivable is used only when you
-choose it.
+to a receivable or an FSA claim, is refused (change the receivable instead). You can choose the receivable account, which must have the
+**Receivable** type: an Asset account cannot hold one, because its balance would count
+as money you can spend. By default BreadSched uses, or creates, a "Reimbursements
+Receivable" account under Assets for the expense's currency. An imported GnuCash
+receivable is used only when you choose it.
 
 When money comes back, record it as a credit to the same expense account, as an
 ordinary refund, and link it to the receivable. BreadSched proposes such a credit
