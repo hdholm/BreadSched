@@ -12,6 +12,7 @@ from collections.abc import Callable
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
+from ...gen.engine.entry_input import parse_amount_text
 from ...gen.lib import (
     AccountClass,
     FormulaError,
@@ -41,10 +42,10 @@ from ...gen.services import (
     save_fixed_scenario_schedule,
     save_formula_scenario_schedule,
 )
-from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
+from ..widgets.frequency import FrequencyPicker
 from ..widgets.help import help_row
 from ..widgets.schedule_timeline import (
     DatedAmountListEditor,
@@ -54,19 +55,6 @@ from ..widgets.schedule_timeline import (
 )
 
 __all__ = ["ScenarioScheduleDialog", "ScenarioSchedulePickerDialog"]
-
-_FREQUENCIES = [
-    ("Weekly", PeriodType.WEEK, 1),
-    ("Fortnightly", PeriodType.WEEK, 2),
-    ("Twice a month", PeriodType.SEMI_MONTH, 1),
-    ("Monthly", PeriodType.MONTH, 1),
-    ("Monthly — nth weekday", PeriodType.NTH_WEEKDAY, 1),
-    ("Monthly — last weekday", PeriodType.LAST_WEEKDAY, 1),
-    ("Quarterly", PeriodType.MONTH, 3),
-    ("Twice a year", PeriodType.MONTH, 6),
-    ("Yearly", PeriodType.YEAR, 1),
-    ("Once", PeriodType.ONCE, 1),
-]
 
 _WEEKEND = [
     ("Leave on the day", WeekendAdjust.NONE),
@@ -131,15 +119,6 @@ class ScenarioScheduleDialog(BoundedWindow):
             key=db.full_name,
         )
         self._names = [db.full_name(account) for account in self._accounts]
-        self._frequency_options = list(_FREQUENCIES)
-        if initial is not None:
-            recurrence = initial.recurrence
-            key = (recurrence.period, recurrence.interval)
-            if not any((period, interval) == key for _label, period, interval in _FREQUENCIES):
-                self._frequency_options.insert(
-                    0,
-                    (recurrence.describe(), recurrence.period, recurrence.interval),
-                )
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         for side in ("top", "bottom", "start", "end"):
@@ -266,17 +245,9 @@ class ScenarioScheduleDialog(BoundedWindow):
         grid.attach(self.occurrence_adjustments_editor, 1, row, 1, 1)
         row += 1
 
-        self.frequency = bounded_dropdown([item[0] for item in self._frequency_options])
-        default_frequency = next(
-            (
-                index
-                for index, (_label, period, interval) in enumerate(self._frequency_options)
-                if period is PeriodType.MONTH and interval == 1
-            ),
-            0,
-        )
-        self.frequency.set_selected(default_frequency)
-        self.frequency.connect("notify::selected", self._recurrence_changed)
+        # Every N days, weeks, months, or years, as in the schedule editor (#370).
+        self.frequency = FrequencyPicker(PeriodType.MONTH, 1)
+        self.frequency.connect_changed(self._recurrence_changed)
         grid.attach(Gtk.Label(label="Frequency", xalign=0), 0, row, 1, 1)
         grid.attach(self.frequency, 1, row, 1, 1)
         row += 1
@@ -364,15 +335,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         elif source.recurrence.count is not None:
             self.ends.set_selected(2)
             self.count_entry.set_text(str(source.recurrence.count))
-        frequency_index = next(
-            (
-                index
-                for index, (_label, period, interval) in enumerate(self._frequency_options)
-                if period is source.recurrence.period and interval == source.recurrence.interval
-            ),
-            0,
-        )
-        self.frequency.set_selected(frequency_index)
+        self.frequency.set_value(source.recurrence.period, source.recurrence.interval)
         weekend_index = next(
             (
                 index
@@ -648,7 +611,7 @@ class ScenarioScheduleDialog(BoundedWindow):
             start = date.fromisoformat(self.start_entry.get_text().strip())
         except ValueError:
             return None
-        _label, period, interval = self._frequency_options[self.frequency.get_selected()]
+        period, interval = self.frequency.value()
         end = None
         count = None
         if period is not PeriodType.ONCE:
@@ -704,7 +667,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         if not text:
             return None
         try:
-            amount = Money(parse_user_amount(text))
+            amount = Money(parse_amount_text(text))
         except (ValueError, ArithmeticError):
             return None
         return abs(amount) if amount else None
@@ -717,7 +680,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         try:
             for when_text, amount_text in values:
                 when = date.fromisoformat(when_text)
-                amount = Money(parse_user_amount(amount_text))
+                amount = Money(parse_amount_text(amount_text))
                 if amount <= 0:
                     return None
                 changes.append(ScheduledAmountChange(when, amount))
@@ -749,7 +712,7 @@ class ScenarioScheduleDialog(BoundedWindow):
             return None
         try:
             amounts = [
-                ScheduledMonthAmount(month, Money(parse_user_amount(raw_amount)))
+                ScheduledMonthAmount(month, Money(parse_amount_text(raw_amount)))
                 for month, raw_amount in values
             ]
         except (ValueError, ArithmeticError):
@@ -770,7 +733,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         try:
             for when_text, amount_text in values:
                 when = date.fromisoformat(when_text)
-                amount = Money(parse_user_amount(amount_text))
+                amount = Money(parse_amount_text(amount_text))
                 if amount <= 0:
                     return None
                 changes.append(ScheduledOccurrenceAdjustment(when, amount))
@@ -814,7 +777,7 @@ class ScenarioScheduleDialog(BoundedWindow):
             formula_problem = self._validate_formula_inputs()
             if formula_problem:
                 problems.append(formula_problem)
-        period = self._frequency_options[self.frequency.get_selected()][1]
+        period = self.frequency.value()[0]
         bounded = period is not PeriodType.ONCE
         self.ends.set_sensitive(bounded)
         self.end_entry.set_sensitive(bounded and self.ends.get_selected() == 1)
@@ -831,7 +794,7 @@ class ScenarioScheduleDialog(BoundedWindow):
                 _direction,
             ) in self.additional_splits.values():
                 try:
-                    extra_amount = Money(parse_user_amount(raw_amount))
+                    extra_amount = Money(parse_amount_text(raw_amount))
                 except (ValueError, ArithmeticError):
                     problems.append("check additional split amounts")
                     break
@@ -903,7 +866,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         additional = tuple(
             FixedSplitInput(
                 account=self._accounts[account_index].handle,
-                amount=Money(parse_user_amount(raw_amount)),
+                amount=Money(parse_amount_text(raw_amount)),
                 planning_flow=_PLANNING_FLOWS[purpose_index][1],
                 investment_activity=_INVESTMENT_ACTIVITIES[activity_index][1],
                 memo=memo,

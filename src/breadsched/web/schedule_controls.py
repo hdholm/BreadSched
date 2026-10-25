@@ -28,21 +28,15 @@ from ..gen.lib import (
 )
 from ..gen.services import FixedSplitInput
 from ..gen.services.schedule_editing import ScheduleEditorView, editor_view
-from .controls import input_money
+from ..presentation import (
+    FIXED_INTERVAL_UNITS,
+    LEGACY_FREQUENCIES,
+    MAX_INTERVAL,
+    frequency_period,
+    frequency_unit,
+)
+from .controls import input_amount
 
-#: Editor frequency keys: (period, interval).
-FREQUENCIES = {
-    "weekly": (PeriodType.WEEK, 1),
-    "biweekly": (PeriodType.WEEK, 2),
-    "semimonthly": (PeriodType.SEMI_MONTH, 1),
-    "monthly": (PeriodType.MONTH, 1),
-    "nth_weekday": (PeriodType.NTH_WEEKDAY, 1),
-    "last_weekday": (PeriodType.LAST_WEEKDAY, 1),
-    "quarterly": (PeriodType.MONTH, 3),
-    "semiannual": (PeriodType.MONTH, 6),
-    "annual": (PeriodType.YEAR, 1),
-    "once": (PeriodType.ONCE, 1),
-}
 #: Editor weekend keys.
 WEEKENDS = {
     "none": WeekendAdjust.NONE,
@@ -113,10 +107,9 @@ def simple_parts(view: ScheduleEditorView) -> dict | None:
 
 
 def frequency_key(recurrence: Recurrence) -> str | None:
-    for key, (period, interval) in FREQUENCIES.items():
-        if recurrence.period is period and recurrence.interval == interval:
-            return key
-    return None
+    """The editor's unit for a rule (with ``recurrence.interval`` as its "every N"),
+    or None for a period no editor offers (#370)."""
+    return frequency_unit(recurrence.period)
 
 
 def schedule_recurrence(
@@ -128,10 +121,36 @@ def schedule_recurrence(
     With ``existing`` of the same period and interval, its day-of-month details
     (which the browser editors do not show) are kept.
     """
-    frequency = str(payload.get("frequency") or "monthly")
-    if frequency not in FREQUENCIES:
-        raise ValueError("unsupported schedule frequency")
-    period, interval = FREQUENCIES[frequency]
+    frequency = str(payload.get("frequency") or "months")
+    # The earlier preset keys (weekly, biweekly, quarterly, …) still arrive from
+    # older pages and saved drafts; each names a unit and an interval.
+    legacy = LEGACY_FREQUENCIES.get(frequency)
+    unit, default_interval = legacy if legacy is not None else (frequency, 1)
+    try:
+        period = frequency_period(unit)
+    except ValueError:
+        raise ValueError("unsupported schedule frequency") from None
+    if unit in FIXED_INTERVAL_UNITS:
+        # Twice a month keeps an imported rule's interval, which the editors do
+        # not show; once has none.
+        interval = (
+            existing.recurrence.interval
+            if unit == "semimonthly"
+            and existing is not None
+            and existing.recurrence.period is period
+            else 1
+        )
+    else:
+        raw_interval = payload.get("interval")
+        if legacy is not None or raw_interval is None or str(raw_interval).strip() == "":
+            interval = default_interval
+        else:
+            try:
+                interval = int(str(raw_interval).strip())
+            except ValueError:
+                raise ValueError("repeat every must be a whole number") from None
+        if not 1 <= interval <= MAX_INTERVAL:
+            raise ValueError(f"repeat every must be from 1 to {MAX_INTERVAL}")
     try:
         start = date.fromisoformat(str(payload.get("start") or ""))
     except ValueError as exc:
@@ -200,7 +219,7 @@ def parse_amount_changes(payload: dict, schedule_start: date) -> list[ScheduledA
             raise ValueError("future amount entry is invalid")
         try:
             when = date.fromisoformat(str(raw.get("start") or ""))
-            amount = abs(input_money(payload, raw.get("amount") or ""))
+            amount = abs(input_amount(payload, raw.get("amount") or ""))
         except (ValueError, ArithmeticError):
             raise ValueError("future amounts require YYYY-MM-DD dates and valid amounts") from None
         if when < schedule_start:
@@ -228,7 +247,7 @@ def parse_seasonal_amounts(payload: dict) -> list[ScheduledMonthAmount]:
             if raw_month is None:
                 raise ValueError
             month = int(raw_month)
-            amount = abs(input_money(payload, raw.get("amount") or ""))
+            amount = abs(input_amount(payload, raw.get("amount") or ""))
             item = ScheduledMonthAmount(month, amount)
         except (TypeError, ValueError, ArithmeticError):
             raise ValueError(
@@ -274,7 +293,7 @@ def parse_occurrence_adjustments(
             raise ValueError("one-time amount entry is invalid")
         try:
             when = date.fromisoformat(str(raw.get("when") or ""))
-            amount = abs(input_money(payload, raw.get("amount") or ""))
+            amount = abs(input_amount(payload, raw.get("amount") or ""))
         except (ValueError, ArithmeticError):
             raise ValueError(
                 "one-time amounts require YYYY-MM-DD dates and valid amounts"
@@ -300,7 +319,7 @@ def parse_additional_splits(payload: dict) -> tuple[FixedSplitInput, ...]:
             raise ValueError("additional split entry is invalid")
         handle = str(raw.get("account") or "").strip()
         try:
-            amount = input_money(payload, raw.get("amount") or "0")
+            amount = input_amount(payload, raw.get("amount") or "0")
         except (ValueError, ArithmeticError) as exc:
             raise ValueError("additional split amount must be a valid number") from exc
         raw_purpose = str(raw.get("planning_flow") or "").strip()
@@ -347,7 +366,7 @@ def parse_split_amount_changes(
             raise ValueError("per-leg amount change must reference a selected split account")
         try:
             when = date.fromisoformat(str(raw.get("start") or ""))
-            amount = input_money(payload, raw.get("amount") or "0")
+            amount = input_amount(payload, raw.get("amount") or "0")
         except (ValueError, ArithmeticError):
             raise ValueError(
                 "per-leg amounts require YYYY-MM-DD dates and valid signed amounts"

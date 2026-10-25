@@ -40,7 +40,7 @@ from ..gen.services import (
     SuppressScenarioSchedule,
     save_fixed_scenario_schedule,
 )
-from .controls import input_money, service_error
+from .controls import input_amount, input_money, service_error
 from .schedule_controls import (
     frequency_key,
     parse_additional_splits,
@@ -286,6 +286,7 @@ def scenario_event_payload(db: DbSQLite, item: ScenarioSchedule) -> dict:
         "investment_activity": simple["investment_activity"] if simple else None,
         "additional_splits": simple["additional_splits"] if simple else [],
         "frequency": frequency_key(item.recurrence),
+        "interval": item.recurrence.interval,
         "start": item.recurrence.start.isoformat(),
         "end": item.recurrence.end.isoformat() if item.recurrence.end else None,
         "count": item.recurrence.count,
@@ -521,6 +522,7 @@ def scenario_events(api: Api, handle: str | None) -> dict:
                 "amount": parts["amount"] if parts else None,
                 "category_planning_flow": (parts["category_planning_flow"] if parts else None),
                 "frequency": frequency if parts else None,
+                "interval": item.recurrence.interval,
                 "start": item.recurrence.start.isoformat(),
                 "end": item.recurrence.end.isoformat() if item.recurrence.end else None,
                 "count": item.recurrence.count,
@@ -584,7 +586,7 @@ def scenario_event_save(api: Api, payload: dict) -> dict:
     except ValueError:
         raise ValueError("choose a valid category planning purpose") from None
     try:
-        amount = abs(input_money(payload, payload.get("amount", "")))
+        amount = abs(input_amount(payload, payload.get("amount", "")))
     except (ValueError, ArithmeticError):
         raise ValueError("enter a valid amount") from None
     recurrence = schedule_recurrence(payload)

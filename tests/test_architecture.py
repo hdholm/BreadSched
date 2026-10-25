@@ -999,7 +999,15 @@ class TestPresentationPackage:
 
         package = SRC / "presentation"
         areas = sorted(p.stem for p in package.glob("*.py") if p.stem != "__init__")
-        assert areas == ["benefits", "charts", "investments", "messages", "notices", "planning"]
+        assert areas == [
+            "benefits",
+            "charts",
+            "investments",
+            "messages",
+            "notices",
+            "planning",
+            "schedules",
+        ]
         for area in areas:
             path = package / f"{area}.py"
             tree = ast.parse(path.read_text(encoding="utf-8"))

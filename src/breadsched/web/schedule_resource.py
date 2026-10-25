@@ -31,7 +31,7 @@ from ..gen.services import (
 )
 from ..gen.services.historical_estimates import AcceptHistoricalEstimate
 from ..gen.services.schedule_editing import ScheduleEditorView
-from .controls import input_money
+from .controls import input_amount
 from .schedule_controls import (
     frequency_key,
     parse_additional_splits,
@@ -75,6 +75,7 @@ def scheduled(api: Api, days: int = 60) -> dict:
                 "name": item.name,
                 "frequency": item.recurrence.describe(),
                 "frequency_key": frequency,
+                "interval": item.recurrence.interval,
                 "amount": item.amount(),
                 "enabled": item.enabled,
                 "placeholder": item.placeholder,
@@ -154,7 +155,8 @@ def scheduled(api: Api, days: int = 60) -> dict:
                 "linked_account": payment_definition.account,
                 "name": payment_definition.name,
                 "frequency": payment_definition.recurrence.describe(),
-                "frequency_key": "monthly",
+                "frequency_key": "months",
+                "interval": 1,
                 "amount": payment_definition.amount_due,
                 "enabled": True,
                 "placeholder": False,
@@ -225,6 +227,7 @@ def scheduled_draft(api: Api, payload: dict) -> dict:
         "name": draft.name,
         "frequency": draft.recurrence.describe(),
         "frequency_key": "once",
+        "interval": 1,
         "amount": draft.amount(),
         "enabled": True,
         "placeholder": False,
@@ -261,7 +264,7 @@ def scheduled_occurrence_options(api: Api, payload: dict) -> dict:
     raw_amount = str(payload.get("amount") or "").strip()
     if raw_amount:
         try:
-            amount = abs(input_money(payload, raw_amount))
+            amount = abs(input_amount(payload, raw_amount))
         except (ValueError, ArithmeticError) as exc:
             raise ValueError("amount must be a valid number") from exc
         if not amount:
@@ -329,7 +332,7 @@ def scheduled_save(api: Api, payload: dict) -> dict:
             raise ValueError("choose a valid category planning purpose") from None
         category_ledger_direction = None
     try:
-        amount = input_money(payload, payload.get("amount") or "0")
+        amount = input_amount(payload, payload.get("amount") or "0")
     except (ValueError, ArithmeticError) as exc:
         raise ValueError("amount must be a valid number") from exc
     recurrence = schedule_recurrence(payload, existing)
@@ -556,6 +559,7 @@ def historical_estimates(
                 "start": item.recurrence.start,
                 "frequency": item.recurrence.describe(),
                 "frequency_key": frequency_key(item.recurrence),
+                "interval": item.recurrence.interval,
                 "seasonal_amounts": [
                     {"month": value.month, "amount": value.amount}
                     for value in item.seasonal_amounts
@@ -602,6 +606,7 @@ def historical_estimate_draft(view: ScheduleEditorView) -> dict:
         "investment_activity": parts["investment_activity"],
         "frequency": frequency,
         "frequency_key": frequency,
+        "interval": draft.recurrence.interval,
         "start": draft.recurrence.start.isoformat(),
         "end": draft.recurrence.end.isoformat() if draft.recurrence.end else None,
         "count": draft.recurrence.count,

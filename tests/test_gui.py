@@ -2783,7 +2783,7 @@ class TestScheduleEntry:
     def test_fortnightly_is_offered_and_works(self, dialog):
         dialog.name_entry.set_text("Pay")
         dialog.amount_entry.set_text("1500.00")
-        dialog.frequency.set_selected(1)
+        dialog.frequency.set_value(PeriodType.WEEK, 2)
         dialog.start_entry.set_text("2026-01-02")
         built = dialog.build()
         assert built.recurrence.occurrences(date(2026, 2, 1))[:3] == [
@@ -2791,6 +2791,67 @@ class TestScheduleEntry:
             date(2026, 1, 16),
             date(2026, 1, 30),
         ]
+
+    def test_any_interval_is_offered_with_a_calculated_amount(self, dialog):
+        """#370: every N days, weeks, months, or years; amounts may be arithmetic."""
+        from breadsched.presentation import FREQUENCY_UNITS
+
+        dialog.name_entry.set_text("Water")
+        dialog.amount_entry.set_text("76.84*1.06")
+        dialog.start_entry.set_text("2026-01-06")
+        dialog.frequency.unit.set_selected(
+            [key for key, _label, _period in FREQUENCY_UNITS].index("weeks")
+        )
+        dialog.frequency.every.set_value(4)
+        built = dialog.build()
+        assert built.amount() == Money("81.45")
+        assert (built.recurrence.period, built.recurrence.interval) == (PeriodType.WEEK, 4)
+        assert built.recurrence.occurrences(date(2026, 3, 3)) == [
+            date(2026, 1, 6),
+            date(2026, 2, 3),
+            date(2026, 3, 3),
+        ]
+        # Twice a month and once take no number, so it is hidden.
+        dialog.frequency.unit.set_selected(
+            [key for key, _label, _period in FREQUENCY_UNITS].index("once")
+        )
+        assert dialog.frequency.every.get_visible() is False
+
+    def test_an_imported_four_weekly_rule_is_an_ordinary_editable_choice(
+        self, app, window, populated_book
+    ):
+        """#370: no more "(imported rule)": every 4 weeks shows, and saves, as such."""
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        db = app.db
+        rent = db.get_account_by_name("Expenses:Rent")
+        checking = db.get_account_by_name("Assets:Checking Account")
+        imported = ScheduledTransaction(
+            name="Four-weekly",
+            recurrence=Recurrence(PeriodType.WEEK, interval=4, start=date(2026, 1, 6)),
+            splits=[
+                ScheduledSplit(rent.handle, Money("40")),
+                ScheduledSplit(checking.handle, Money("-40")),
+            ],
+        )
+        with db.transaction("Import") as txn:
+            db.add_scheduled(imported, txn)
+        dialog = ScheduleDialog(window, db, source=db.get_scheduled(imported.handle))
+        try:
+            assert dialog.frequency.unit_key() == "weeks"
+            assert dialog.frequency.every.get_value() == 4
+            model = dialog.frequency.unit.get_model()
+            labels = [model.get_string(i) for i in range(model.get_n_items())]
+            assert not any("imported rule" in label for label in labels)
+            dialog.frequency.every.set_value(6)
+            dialog.amount_entry.set_text("40+2.5")
+            dialog._on_save(None)
+            saved = db.get_scheduled(imported.handle)
+            assert (saved.recurrence.period, saved.recurrence.interval) == (PeriodType.WEEK, 6)
+            assert saved.amount() == Money("42.50")
+        finally:
+            dialog.destroy()
 
     def test_schedule_can_end_on_a_date(self, dialog):
         dialog.name_entry.set_text("Temporary rent")
@@ -2865,7 +2926,7 @@ class TestScheduleEntry:
 
         dialog = ScheduleDialog(window, app.db, source=source, creating=True)
         dialog.amount_entry.set_text("1850")
-        dialog.frequency.set_selected(1)
+        dialog.frequency.set_value(PeriodType.WEEK, 2)
         dialog.start_entry.set_text("2026-02-06")
         dialog.category_planning_flow.set_selected(3)
         dialog.seasonal_amounts_editor.set_values([(1, "2000"), (7, "1700")])
@@ -4778,7 +4839,7 @@ class TestDerivedPlanView:
         dialog.category.set_selected(names.index("Income:Salary"))
         dialog.funding.set_selected(names.index("Assets:Checking Account"))
         dialog.amount_entry.set_text("300.00")
-        dialog.frequency.set_selected(0)
+        dialog.frequency.set_value(PeriodType.WEEK, 1)
         dialog.start_entry.set_text("2026-01-02")
         dialog._on_save(None)
 

@@ -59,7 +59,9 @@ form and the expected local/source ownership result.
 
 Imported-schedule editing follows the same rule. Any newly editable schedule shape
 must first be added to the generated native/SQLite/XML fidelity matrix, including a
-save/reload/source-refresh assertion. Presentation layers consume a shared
+save/reload/source-refresh assertion; imported every-N-weeks, -months, and -years
+rules (#370) are in it, since the editors' "Every N <unit>" control reproduces them.
+Presentation layers consume a shared
 editability decision; they do not independently infer that a source definition is
 safe from the number of splits or a familiar-looking recurrence label.
 

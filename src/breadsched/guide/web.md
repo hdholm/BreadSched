@@ -181,7 +181,10 @@ says how many such credits are waiting.
 ## Scheduled activity
 
 In **Scheduled**, enter a name, category, funding account, amount, and recurrence to
-create a fixed schedule. Editing one can also set future amounts, one-time
+create a fixed schedule. **Repeats** is **Every** a number and a unit (days, weeks,
+months, months on the same weekday or last weekday, or years), or twice a month or
+once; the first due date sets the day, and an amount may be a calculation such as
+`76.84*1.06`. Editing one can also set future amounts, one-time
 exceptions, additional splits, and optional planning classifications. Review the
 result before relying on a projection. Scenario-only estimates and scenario changes
 to baseline schedules are made in the same view.

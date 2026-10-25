@@ -51,8 +51,35 @@ def test_one_recurrence_parser_serves_every_schedule_editor():
     )
     assert (recurrence.period, recurrence.interval, recurrence.count) == (PeriodType.WEEK, 2, 5)
     assert recurrence.weekend_adjust is WeekendAdjust.NEXT
-    assert frequency_key(recurrence) == "biweekly"
+    # #370: an earlier preset key still works, and is described back as a unit.
+    assert frequency_key(recurrence) == "weeks"
     assert weekend_key(recurrence.weekend_adjust) == "next"
+
+    # Any interval of a unit: every 4 weeks, every 2 months, every 3 years.
+    for unit, interval, period in (
+        ("weeks", "4", PeriodType.WEEK),
+        ("months", "2", PeriodType.MONTH),
+        ("years", "3", PeriodType.YEAR),
+        ("days", "10", PeriodType.DAY),
+        ("nth_weekday", "2", PeriodType.NTH_WEEKDAY),
+    ):
+        every = schedule_recurrence(
+            {"frequency": unit, "interval": interval, "start": "2026-01-06"}
+        )
+        assert (every.period, every.interval) == (period, int(interval))
+        assert frequency_key(every) == unit
+    four_weeks = schedule_recurrence({"frequency": "weeks", "interval": 4, "start": "2026-01-06"})
+    assert four_weeks.occurrences(date(2026, 3, 31)) == [
+        date(2026, 1, 6),
+        date(2026, 2, 3),
+        date(2026, 3, 3),
+        date(2026, 3, 31),
+    ]
+    # Twice a month and once take no number.
+    twice = schedule_recurrence(
+        {"frequency": "semimonthly", "interval": "5", "start": "2026-01-01"}
+    )
+    assert twice.interval == 1
 
     # A one-time schedule ignores end and count fields its editor may leave filled.
     once = schedule_recurrence({"frequency": "once", "start": "2026-03-01", "end": "x"})
@@ -60,6 +87,9 @@ def test_one_recurrence_parser_serves_every_schedule_editor():
 
     for payload, message in (
         ({"frequency": "fortnightly", "start": "2026-01-02"}, "unsupported schedule frequency"),
+        ({"frequency": "weeks", "interval": "0", "start": "2026-01-02"}, "from 1 to 999"),
+        ({"frequency": "weeks", "interval": "1000", "start": "2026-01-02"}, "from 1 to 999"),
+        ({"frequency": "weeks", "interval": "two", "start": "2026-01-02"}, "whole number"),
         ({"start": "soon"}, "first due date is invalid"),
         ({"start": "2026-01-02", "end": "2025-01-01"}, "cannot precede"),
         ({"start": "2026-01-02", "end": "2026-12-31", "count": "3"}, "not both"),

@@ -47,6 +47,7 @@ __all__ = [
     "DATE_KEYS",
     "PRICE_PLACES",
     "EntryInputError",
+    "parse_amount_text",
     "TradeFill",
     "fill_trade",
     "trade_price",
@@ -210,6 +211,22 @@ def parse_entry_amount(
             return (result / unit).quantize(Decimal(1), rounding=ROUND_HALF_UP) * unit
     except ArithmeticError as exc:
         raise EntryInputError(f"cannot calculate {text.strip()}") from exc
+
+
+def parse_amount_text(
+    text: str,
+    number_format: NumberFormat | Literal["auto"] = "auto",
+    fraction: int = 100,
+) -> Decimal:
+    """An amount from any form field, arithmetic evaluated (``76.84*1.06``).
+
+    The schedule editors read their amounts this way, as the register does (#370);
+    a blank field is an error here, since these fields have no default.
+    """
+    value = parse_entry_amount(text, number_format, fraction)
+    if value is None:
+        raise EntryInputError("enter an amount")
+    return value
 
 
 def complete_account(text: str, names: Iterable[str]) -> list[str]:

@@ -20,6 +20,7 @@ from ...api import ApiError
 from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import schedule as schedule_engine
+from ...gen.engine.entry_input import parse_amount_text
 from ...gen.lib import (
     AccountClass,
     FormulaError,
@@ -46,10 +47,10 @@ from ...gen.services import (
     build_fixed_schedule,
     build_formula_schedule,
 )
-from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.frequency import FrequencyPicker
 from ..widgets.help import help_row
 from ..widgets.schedule_timeline import (
     DatedAmountListEditor,
@@ -60,19 +61,6 @@ from ..widgets.schedule_timeline import (
 )
 
 __all__ = ["ScheduleDialog"]
-
-_FREQUENCIES = [
-    ("Weekly", PeriodType.WEEK, 1),
-    ("Fortnightly", PeriodType.WEEK, 2),
-    ("Twice a month", PeriodType.SEMI_MONTH, 1),
-    ("Monthly", PeriodType.MONTH, 1),
-    ("Monthly — nth weekday", PeriodType.NTH_WEEKDAY, 1),
-    ("Monthly — last weekday", PeriodType.LAST_WEEKDAY, 1),
-    ("Quarterly", PeriodType.MONTH, 3),
-    ("Twice a year", PeriodType.MONTH, 6),
-    ("Yearly", PeriodType.YEAR, 1),
-    ("Once", PeriodType.ONCE, 1),
-]
 
 _WEEKEND = [
     ("Leave on the day", WeekendAdjust.NONE),
@@ -150,18 +138,6 @@ class ScheduleDialog(BoundedWindow):
         self._load_initial_state(source, read_only_reason, grid)
 
     def _load_choices(self, source: ScheduledTransaction | None) -> None:
-        self._frequencies = list(_FREQUENCIES)
-        if source is not None and not any(
-            period is source.recurrence.period and interval == source.recurrence.interval
-            for _label, period, interval in self._frequencies
-        ):
-            self._frequencies.append(
-                (
-                    f"{source.recurrence.describe()} (imported rule)",
-                    source.recurrence.period,
-                    source.recurrence.interval,
-                )
-            )
         referenced = {split.account for split in source.splits} if source is not None else set()
         self._accounts = sorted(
             (
@@ -346,9 +322,10 @@ class ScheduleDialog(BoundedWindow):
         return row
 
     def _build_recurrence_fields(self, grid: Gtk.Grid, row: int) -> None:
-        self.frequency = bounded_dropdown([item[0] for item in self._frequencies])
-        self.frequency.set_selected(3)
-        self.frequency.connect("notify::selected", self._recurrence_changed)
+        # Every N days, weeks, months, or years (#370): any interval GnuCash
+        # imports is an ordinary choice, not an uneditable "imported rule".
+        self.frequency = FrequencyPicker(PeriodType.MONTH, 1)
+        self.frequency.connect_changed(self._recurrence_changed)
         grid.attach(Gtk.Label(label="Frequency", xalign=0), 0, row, 1, 1)
         grid.attach(self.frequency, 1, row, 1, 1)
         row += 1
@@ -556,10 +533,7 @@ class ScheduleDialog(BoundedWindow):
                 if policy is source.growth_policy
             )
         )
-        for index, (_label, period, interval) in enumerate(self._frequencies):
-            if source.recurrence.period is period and source.recurrence.interval == interval:
-                self.frequency.set_selected(index)
-                break
+        self.frequency.set_value(source.recurrence.period, source.recurrence.interval)
         self.start_entry.set_text(source.recurrence.start.isoformat())
         if source.recurrence.end is not None:
             self.ends.set_selected(1)
@@ -803,10 +777,7 @@ class ScheduleDialog(BoundedWindow):
                     )
                 self.additional_splits.set_values(extra_values)
 
-        for index, (_label, period, interval) in enumerate(self._frequencies):
-            if source.recurrence.period is period and source.recurrence.interval == interval:
-                self.frequency.set_selected(index)
-                break
+        self.frequency.set_value(source.recurrence.period, source.recurrence.interval)
         self.start_entry.set_text(source.recurrence.start.isoformat())
         if source.recurrence.end is not None:
             self.ends.set_selected(1)
@@ -850,7 +821,7 @@ class ScheduleDialog(BoundedWindow):
             start = date.fromisoformat(self.start_entry.get_text().strip())
         except ValueError:
             return None
-        _label, period, interval = self._frequencies[self.frequency.get_selected()]
+        period, interval = self.frequency.value()
         end = None
         count = None
         if period is not PeriodType.ONCE:
@@ -909,7 +880,7 @@ class ScheduleDialog(BoundedWindow):
         if not text:
             return None
         try:
-            value = Money(parse_user_amount(text))
+            value = Money(parse_amount_text(text))
         except (ValueError, ArithmeticError):
             return None
         return value if value else None
@@ -922,7 +893,7 @@ class ScheduleDialog(BoundedWindow):
         try:
             for when_text, amount_text in values:
                 when = date.fromisoformat(when_text)
-                amount = Money(parse_user_amount(amount_text))
+                amount = Money(parse_amount_text(amount_text))
                 if amount <= 0:
                     return None
                 changes.append(ScheduledAmountChange(when, amount))
@@ -939,7 +910,7 @@ class ScheduleDialog(BoundedWindow):
             for account_index, when_text, amount_text in self.split_amount_changes_editor.values():
                 account = self._accounts[account_index]
                 when = date.fromisoformat(when_text)
-                amount = Money(parse_user_amount(amount_text))
+                amount = Money(parse_amount_text(amount_text))
                 key = (account.handle, when)
                 if key in seen:
                     return None
@@ -959,7 +930,7 @@ class ScheduleDialog(BoundedWindow):
             return None
         try:
             amounts = [
-                ScheduledMonthAmount(month, Money(parse_user_amount(raw_amount)))
+                ScheduledMonthAmount(month, Money(parse_amount_text(raw_amount)))
                 for month, raw_amount in values
             ]
         except (ValueError, ArithmeticError):
@@ -996,7 +967,7 @@ class ScheduleDialog(BoundedWindow):
         try:
             for when_text, amount_text in values:
                 when = date.fromisoformat(when_text)
-                amount = Money(parse_user_amount(amount_text))
+                amount = Money(parse_amount_text(amount_text))
                 if amount <= 0:
                     return None
                 changes.append(ScheduledOccurrenceAdjustment(when, amount))
@@ -1015,7 +986,7 @@ class ScheduleDialog(BoundedWindow):
         if not self.name_entry.get_text().strip():
             problems.append("give it a name")
         recurrence = self._recurrence()
-        period = self._frequencies[self.frequency.get_selected()][1]
+        period = self.frequency.value()[0]
         bounded = period is not PeriodType.ONCE
         self.ends.set_sensitive(bounded)
         self.end_entry.set_sensitive(bounded and self.ends.get_selected() == 1)
@@ -1057,7 +1028,7 @@ class ScheduleDialog(BoundedWindow):
             _direction,
         ) in self.additional_splits.values():
             try:
-                extra_amount = Money(parse_user_amount(raw_amount))
+                extra_amount = Money(parse_amount_text(raw_amount))
             except (ValueError, ArithmeticError):
                 problems.append("check additional split amounts")
                 break
@@ -1136,7 +1107,7 @@ class ScheduleDialog(BoundedWindow):
         additional = tuple(
             FixedSplitInput(
                 account=self._accounts[account_index].handle,
-                amount=Money(parse_user_amount(raw_amount)),
+                amount=Money(parse_amount_text(raw_amount)),
                 planning_flow=_PLANNING_FLOWS[purpose_index][1],
                 investment_activity=_INVESTMENT_ACTIVITIES[activity_index][1],
                 memo=memo,

@@ -11,11 +11,12 @@ from __future__ import annotations
 from typing import Literal, cast
 
 from ..api.contract import ApiError
+from ..gen.engine.entry_input import parse_amount_text
 from ..gen.lib import Money
 from ..gen.services import ServiceError
 from ..gen.utils.amount_input import NumberFormat, parse_user_amount
 
-__all__ = ["ResourceError", "input_money", "service_error"]
+__all__ = ["ResourceError", "input_amount", "input_money", "service_error"]
 
 
 #: A resource-adapter failure is the book API's own error envelope (#355).
@@ -36,3 +37,15 @@ def input_money(payload: dict, raw: object) -> Money:
         raise ValueError("invalid number format")
     selected = cast(NumberFormat | Literal["auto"], number_format)
     return Money(parse_user_amount(str(raw).strip(), selected))
+
+
+def input_amount(payload: dict, raw: object) -> Money:
+    """A browser-entered amount that may be arithmetic (``76.84*1.06``), as the
+    schedule editors accept (#370); otherwise read like :func:`input_money`."""
+    if isinstance(raw, (list, tuple)) and len(raw) == 2:
+        return Money(int(raw[0]), int(raw[1]))
+    number_format = str(payload.get("number_format") or "auto")
+    if number_format not in {"auto", "dot", "comma"}:
+        raise ValueError("invalid number format")
+    selected = cast(NumberFormat | Literal["auto"], number_format)
+    return Money(parse_amount_text(str(raw).strip(), selected))

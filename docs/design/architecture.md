@@ -23,7 +23,7 @@ Presentations: GTK4, web, CLI, print  gui/, web/, cli/, plugins/export/
 | Every financial or domain write, with validation and its complete database transaction | `gen/services` (typed requests, `ServiceResult`, stable error codes) | assemble splits, claim objects, or schedules themselves |
 | Import and export formats | `plugins/importer`, `plugins/export` | bypass the import service's preflight and ownership rules |
 | Online quote sources (network, Finance::Quote bridge) | `plugins/quotes`, called through `gen/services/quotes` | fetch from the network in an engine or service, or store prices themselves |
-| Wording of service errors and shared report sentences | `presentation/` (by area: `messages`, `notices`, `benefits`, `planning`, `investments`; the package re-exports every name) and its gettext catalog | invent their own financial wording |
+| Wording of service errors and shared report sentences | `presentation/` (by area: `messages`, `notices`, `benefits`, `planning`, `investments`, `schedules`; the package re-exports every name) and its gettext catalog | invent their own financial wording |
 | GTK windows, dialogs, printing, background jobs | `gui/` | touch widgets from a worker thread |
 | HTTP routes, query parsing, response shape | `web/resources.py` and the `web/*_resource.py` adapters | perform validation or writes the service owns |
 | HTTP authentication, framing, limits, static files | `web/transport.py` | import financial engines |

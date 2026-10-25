@@ -983,6 +983,69 @@ class TestItServes:
         assert payload["code"] == "loan.name.required"
         assert payload["fields"] == ["name"]
 
+    def test_any_interval_schedule_is_edited_with_a_calculated_amount(self, client):
+        """#370: every 4 weeks is an ordinary rule, and amounts may be arithmetic."""
+        from breadsched.gen.lib import PeriodType, Recurrence, ScheduledSplit
+        from breadsched.gen.lib import ScheduledTransaction as Scheduled
+
+        db = client.database
+        _status, data = client.get("/api/scheduled")
+        category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+        funding = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
+        # As GnuCash imports it: a rule the old presets could not show.
+        imported = Scheduled(
+            name="Four-weekly",
+            recurrence=Recurrence(PeriodType.WEEK, interval=4, start=date(2026, 1, 6)),
+            splits=[
+                ScheduledSplit(category["handle"], Money("40")),
+                ScheduledSplit(funding["handle"], Money("-40")),
+            ],
+        )
+        with db.transaction("Import") as txn:
+            db.add_scheduled(imported, txn)
+        _status, data = client.get("/api/scheduled")
+        row = next(item for item in data["definitions"] if item["handle"] == imported.handle)
+        assert (row["frequency_key"], row["interval"], row["simple"]) == ("weeks", 4, True)
+
+        status, _saved = client.post(
+            "/api/scheduled/save",
+            {
+                "handle": imported.handle,
+                "name": "Four-weekly",
+                "category": category["handle"],
+                "funding": funding["handle"],
+                "amount": "76.84*1.06",
+                "frequency": "weeks",
+                "interval": "4",
+                "start": "2026-01-06",
+            },
+        )
+        assert status == 200
+        saved = db.get_scheduled(imported.handle)
+        assert (saved.recurrence.period, saved.recurrence.interval) == (PeriodType.WEEK, 4)
+        assert saved.amount() == Money("81.45")
+
+        def refused(payload):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post("/api/scheduled/save", payload)
+            return caught.value.code
+
+        stored = db.get_scheduled(imported.handle).serialize()
+        base = {
+            "handle": imported.handle,
+            "name": "Four-weekly",
+            "category": category["handle"],
+            "funding": funding["handle"],
+            "start": "2026-01-06",
+        }
+        for bad in (
+            {"amount": "76.84*", "frequency": "weeks", "interval": "4"},
+            {"amount": "10", "frequency": "weeks", "interval": "0"},
+            {"amount": "10", "frequency": "fortnights", "interval": "1"},
+        ):
+            assert refused({**base, **bad}) == 400
+        assert db.get_scheduled(imported.handle).serialize() == stored
+
     def test_scheduled_active_state_can_be_edited(self, client):
         _status, data = client.get("/api/scheduled")
         category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
