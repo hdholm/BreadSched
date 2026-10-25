@@ -20,6 +20,13 @@ Reimbursements and write-offs are applied oldest first and never take the
 receivable below zero; money back beyond what was owed simply stays a refund in
 the expense account. So the receivable account holds exactly what is still
 owed, which counts toward net worth but never toward liquidity.
+
+A *direct* receivable (#378) is one whose cost was recorded straight to its
+receivable account, such as a card charge an employer will repay: it is owed in
+full, needs no tracking posting, and money back credited to that account (a
+paycheck line, say) needs none either -- the ledger already holds it there. Only
+a write-off posts, into the expense account it names. Any receivable may take
+money back credited straight to its receivable account in the same way.
 """
 
 from __future__ import annotations
@@ -45,6 +52,7 @@ __all__ = [
     "ReceivableSummary",
     "ReimbursementProposal",
     "fsa_overlaps",
+    "is_direct",
     "iter_receivables",
     "owned_postings",
     "planned_postings",
@@ -95,6 +103,9 @@ class ReceivableSummary:
     status: ReceivableStatus
     #: FSA claims that also claim one of the linked expense splits (a warning).
     fsa_claims: tuple[str, ...] = ()
+    #: Whether the cost was recorded straight to the receivable account (#378):
+    #: then it is owed in full and a write-off names its expense account.
+    direct: bool = False
 
 
 def iter_receivables(db: DbSQLite) -> list[Receivable]:
@@ -110,6 +121,25 @@ def _resolve_link(db: DbSQLite, link: SplitLink) -> tuple[Transaction, Split]:
 
 def _sum_links(db: DbSQLite, links: list[SplitLink]) -> Money:
     return split_links.sum_links(db, links, _missing_link)
+
+
+def _in_receivable_account(db: DbSQLite, split: Split) -> bool:
+    account = db.get_account(split.account)
+    return account is not None and account.atype is AccountType.RECEIVABLE
+
+
+def is_direct(db: DbSQLite, receivable: Receivable) -> bool:
+    """Whether the receivable's cost was recorded straight to a receivable account (#378)."""
+    for link in receivable.expenses:
+        transaction = db.get_transaction(link.transaction)
+        split = (
+            next((item for item in transaction.splits if item.handle == link.split), None)
+            if transaction is not None
+            else None
+        )
+        if split is not None:
+            return _in_receivable_account(db, split)
+    return False
 
 
 def _owed(receivable: Receivable, expense_total: Money) -> Money:
@@ -157,6 +187,7 @@ def receivable_summary(
         age_days=age_days,
         status=status,
         fsa_claims=fsa_overlaps(db, receivable),
+        direct=is_direct(db, receivable),
     )
 
 
@@ -223,6 +254,9 @@ def propose_reimbursements(
         if summary.status in _CLOSED or summary.remaining <= 0 or not expenses:
             continue
         accounts = {split.account for _transaction, split in expenses}
+        if receivable.account is not None:
+            # Money back credited straight to the receivable account (#378).
+            accounts.add(receivable.account)
         currencies = {currency_of(transaction) for transaction, _split in expenses}
         open_items.append((receivable, accounts, currencies, match_key(receivable.payer)))
         remaining[receivable.handle] = summary.remaining
@@ -331,8 +365,9 @@ class ExpectedReceipt:
     #: account a card that paid it is paid from.
     cash_account: str
     #: The expense account a projected write-off returns to: the largest linked
-    #: expense split's, as a recorded write-off uses.
-    expense_account: str
+    #: expense split's, as a recorded write-off uses; ``None`` for a direct
+    #: receivable (#378), whose unexpected part stays owed in the projection.
+    expense_account: str | None
     #: The linked expense and what has been reimbursed and written off so far.
     summary: ReceivableSummary
 
@@ -380,8 +415,9 @@ def expected_receipt(
     if cash is None:
         return None
     largest = max((_resolve_link(db, link)[1] for link in receivable.expenses), key=_value)
+    expense_account = None if _in_receivable_account(db, largest) else largest.account
     return ExpectedReceipt(
-        receivable, when, summary.remaining, receivable.account, cash, largest.account, summary
+        receivable, when, summary.remaining, receivable.account, cash, expense_account, summary
     )
 
 
@@ -448,9 +484,30 @@ def planned_postings(db: DbSQLite, receivable: Receivable) -> list[Transaction]:
             "the receivable account holds another currency than the linked splits",
         )
     expenses = [_resolve_link(db, link) for link in receivable.expenses]
+    kinds = {_in_receivable_account(db, split) for _transaction, split in expenses}
+    if len(kinds) > 1:
+        raise ReceivableError(
+            "receivable.split.mixed_kinds",
+            ("split",),
+            "a receivable's costs are all expenses or all direct charges",
+        )
+    direct = kinds == {True}
     expense_total = Money(0)
     for _transaction, split in expenses:
+        if direct and split.account != receivable.account:
+            raise ReceivableError(
+                "receivable.split.other_account",
+                ("split",),
+                "a direct charge is in another receivable account",
+            )
         expense_total = expense_total + split.value
+    if direct and receivable.expected_amount is not None:
+        if receivable.expected_amount < expense_total:
+            raise ReceivableError(
+                "receivable.expected_amount.below_direct_charge",
+                ("expected_amount",),
+                "a direct charge is owed in full",
+            )
     owed = _owed(receivable, expense_total)
     raw_currency = expenses[0][0].currency
     fraction = commodity_fraction(db, currency)
@@ -479,7 +536,8 @@ def planned_postings(db: DbSQLite, receivable: Receivable) -> list[Transaction]:
         return transaction
 
     postings: list[Transaction] = []
-    if owed > 0:
+    # A direct charge already holds what is owed in the receivable account.
+    if owed > 0 and not direct:
         shares: list[tuple[str, Money, Split | None]] = []
         allocated = Money(0)
         for index, (_transaction, split) in enumerate(expenses):
@@ -511,17 +569,31 @@ def planned_postings(db: DbSQLite, receivable: Receivable) -> list[Transaction]:
     for when, kind, index, event in sorted(events, key=lambda item: item[:3]):
         if outstanding <= 0:
             break
+        source: Split | None
         if kind == 0:
             assert isinstance(event, SplitLink)
             _transaction, split = _resolve_link(db, event)
             amount = min(-split.value, outstanding)
+            if split.account == receivable.account:
+                # Credited straight to the receivable account: already out of it.
+                outstanding = outstanding - max(amount, Money(0))
+                continue
             expense_account, source = split.account, split
             key: object = ("reimbursement", event.transaction, event.split)
             description = f"Reimbursement from {receivable.payer} received"
         else:
             assert isinstance(event, ReceivableWriteOff)
             amount = min(event.amount, outstanding)
-            expense_account, source = largest.account, largest
+            if event.account is not None:
+                expense_account, source = event.account, None if direct else largest
+            elif direct:
+                raise ReceivableError(
+                    "receivable.write_off.account_required",
+                    ("account",),
+                    "a direct receivable's write-off names its expense account",
+                )
+            else:
+                expense_account, source = largest.account, largest
             key = ("write-off", index)
             description = f"Reimbursement from {receivable.payer} written off"
         if amount <= 0:

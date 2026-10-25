@@ -25,7 +25,7 @@ from collections.abc import Callable
 from datetime import date
 
 from ...gen.engine import ledger
-from ...gen.lib.account import AccountClass, AccountType
+from ...gen.lib.account import Account, AccountClass, AccountType
 from ...presentation.investments import register_share_summary
 from ..gi_setup import GLib, Gtk
 from ..register_sheet import RegisterSheet
@@ -433,20 +433,25 @@ class RegisterView(BaseView):
                 "Put the cursor on a transaction to track as reimbursable."
             )
         accounts = {account.handle: account for account in self.db.iter_accounts()}
-        cost = next(
-            (
+
+        def costs(kind: Callable[[Account], bool]):
+            return (
                 split
                 for split in transaction.splits
                 if split.value > 0
                 and accounts.get(split.account) is not None
-                and accounts[split.account].account_class is AccountClass.EXPENSE
-            ),
-            None,
+                and kind(accounts[split.account])
+            )
+
+        # An expense, else a charge recorded straight to a receivable account (#378).
+        cost = next(costs(lambda item: item.account_class is AccountClass.EXPENSE), None) or next(
+            costs(lambda item: item.atype is AccountType.RECEIVABLE), None
         )
         if cost is None:
             return self._refuse_tracking(
-                f"“{transaction.description}” has no expense to track: only money spent "
-                "on an expense account can be owed back."
+                f"“{transaction.description}” has nothing to track: choose a transaction "
+                "that spends on an expense account, or charges a Receivable account "
+                "for what someone will pay back."
             )
         root = self.get_root()
         application = (root.get_application() if isinstance(root, Gtk.Window) else None) or (

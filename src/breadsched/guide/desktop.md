@@ -577,8 +577,12 @@ See [Savings goals](../USER_GUIDE.md#savings-goals).
 Select the transaction in a register and choose **Actions → Track as
 Reimbursable…**. Typing not yet entered is saved first. The date, description, and
 expense amount are filled in; enter who owes you and choose **Add receivable**, and
-the expense is linked. Nothing is recorded until then. If the transaction cannot be
-tracked (it has no expense, or it could not be saved), an alert says why.
+the expense is linked. Nothing is recorded until then. A charge recorded straight
+to a Receivable account (a cost your employer will repay, say) is tracked the same
+way, and **Held in** starts at that account; see [Two ways to record a reimbursable
+cost](../USER_GUIDE.md#two-ways-to-record-a-reimbursable-cost). If the transaction
+cannot be tracked (it neither spends on an expense nor charges a Receivable account,
+or it could not be saved), an alert says why.
 
 **Actions → Reimbursable Expenses…** lists every receivable with its expense, what
 is reimbursed, written off, and still remaining, its status, and its age. Choose
@@ -589,8 +593,11 @@ under it names any account that looks like a receivable but is not offered (an
 change its type to **Receivable** in **Edit Account**. **Link expense** adds more expense splits and **Link
 reimbursement** links a credit that paid money back. **Proposed reimbursements**
 lists credits that clearly belong to one open receivable, checked; choose **Accept
-selected** to link them. Record a dispute or write off part of the balance on the
-same screen. A warning appears when a linked expense is also on an FSA claim.
+selected** to link them; a credit to the receivable account itself, such as a
+paycheck line, is proposed the same way. Record a dispute or write off part of the
+balance on the same screen: the picker after the reason chooses the expense account
+the write-off becomes, which a charge recorded to a Receivable account must name.
+A warning appears when a linked expense is also on an FSA claim.
 
 When FSA statement lines clearly belong on claims, the FSA Dashboard lists them
 first under **Proposed claim links**, each checked; **Link selected** links them.

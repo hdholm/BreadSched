@@ -783,6 +783,7 @@ def cmd_receivables(args: argparse.Namespace) -> int:
                     amount=Money(args.amount),
                     written_off_on=date.fromisoformat(args.on),
                     reason=args.reason or "",
+                    account=resolve_account(db, args.into).handle if args.into else None,
                 ),
             )
             if result.value is None:
@@ -994,6 +995,12 @@ def register(add: AddCommand) -> None:
         "--on", metavar="DATE", help="date of the dispute or write-off, or the scenario's date"
     )
     receivables_cmd.add_argument("--reason", help="write-off reason")
+    receivables_cmd.add_argument(
+        "--into",
+        metavar="ACCOUNT",
+        help="expense account a write-off becomes (required for a charge recorded "
+        "straight to a Receivable account; default: the expense's own)",
+    )
     receivables_cmd.add_argument(
         "--proposals",
         action="store_true",

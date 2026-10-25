@@ -6494,6 +6494,63 @@ class TestReceivablesRoutes:
         assert client.database.get_receivable(saved["handle"]).serialize() == before
         assert len(list(client.database.iter_receivables())) == 1
 
+    def test_a_charge_to_a_receivable_account_is_tracked_and_written_off_into_an_expense(
+        self, client
+    ):
+        # #378: an employer's cost charged straight to a receivable account.
+        from breadsched.gen.lib import Account, AccountType, Transaction
+
+        db = client.database
+        assets = db.get_account_by_name("Assets")
+        checking = db.get_account_by_name("Assets:Checking")
+        rent = db.get_account_by_name("Expenses:Rent")
+        employer = Account(name="Employer", atype=AccountType.RECEIVABLE, parent=assets.handle)
+        with db.transaction("Employer") as txn:
+            db.add_account(employer, txn)
+        charge = Transaction.simple(
+            date(2026, 3, 3), "Conference hotel", employer.handle, checking.handle, "100"
+        )
+        with db.transaction("Charge") as txn:
+            db.add_transaction(charge, txn)
+        split = charge.split_for(employer.handle)
+
+        _status, listed = client.get("/api/receivables")
+        [cost] = [item for item in listed["costs"] if item["split"] == split.handle]
+        assert cost["account_handle"] == employer.handle
+        assert employer.handle in [item["handle"] for item in listed["accounts"]]
+        assert rent.handle in [item["handle"] for item in listed["write_off_accounts"]]
+        _status, saved = client.post(
+            "/api/receivable/save",
+            {
+                "payer": "Acme",
+                "incurred_date": "2026-03-03",
+                "link_expense": {"transaction": charge.handle, "split": split.handle},
+            },
+        )
+        [item] = client.get("/api/receivables")[1]["receivables"]
+        assert item["direct"] is True and item["account"] == employer.handle
+        assert item["owed"] == "100.00" and db.get_receivable(saved["handle"]).postings == []
+
+        before = db.get_receivable(saved["handle"]).serialize()
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/receivable/write-off",
+                {"receivable": saved["handle"], "amount": "20", "written_off_on": "2026-03-30"},
+            )
+        assert json.loads(caught.value.read())["code"] == "receivable.write_off.account_required"
+        assert db.get_receivable(saved["handle"]).serialize() == before
+        client.post(
+            "/api/receivable/write-off",
+            {
+                "receivable": saved["handle"],
+                "amount": "20",
+                "written_off_on": "2026-03-30",
+                "account": rent.handle,
+            },
+        )
+        [item] = client.get("/api/receivables")[1]["receivables"]
+        assert item["written_off"] == "20.00" and item["remaining"] == "80.00"
+
     def test_an_fsa_claim_covers_the_rest_of_a_receivable(self, client):
         # Issue #192: linked from the claim; the FSA share waits for the EOB.
         db = client.database

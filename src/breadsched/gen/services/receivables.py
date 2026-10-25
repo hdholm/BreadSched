@@ -48,6 +48,7 @@ __all__ = [
     "default_receivable_account",
     "receivable_accounts",
     "unoffered_receivable_accounts",
+    "write_off_accounts",
     "sync_all_receivables",
     "sync_linked_receivables",
     "attach_reimbursement_split",
@@ -86,6 +87,9 @@ class RecordWriteOff:
     amount: Money
     written_off_on: date
     reason: str = ""
+    #: The expense account the written-off amount becomes; ``None`` uses the
+    #: largest linked expense's, and a direct receivable must name one (#378).
+    account: str | None = None
 
 
 #: Name of the receivable account BreadSched creates when a book has none.
@@ -98,6 +102,16 @@ def receivable_accounts(db: DbSQLite) -> tuple[Account, ...]:
         account
         for account in db.iter_accounts()
         if account.atype is AccountType.RECEIVABLE and not account.placeholder
+    ]
+    return tuple(sorted(found, key=lambda account: db.full_name(account) or account.name))
+
+
+def write_off_accounts(db: DbSQLite) -> tuple[Account, ...]:
+    """The expense accounts a write-off can become, by full name (#378)."""
+    found = [
+        account
+        for account in db.iter_accounts()
+        if account.account_class is AccountClass.EXPENSE and not account.placeholder
     ]
     return tuple(sorted(found, key=lambda account: db.full_name(account) or account.name))
 
@@ -319,8 +333,18 @@ def _link_split(
     if split is None:
         return ServiceResult.failure(ServiceError("receivable.split.not_found", ("split",)))
     account = db.get_account(split.account)
-    if account is None or account.account_class is not AccountClass.EXPENSE:
+    # A charge recorded straight to a receivable account, and money back credited
+    # to it, link like expense splits (#378).
+    direct = (
+        account is not None and account.atype is AccountType.RECEIVABLE and not account.placeholder
+    )
+    if account is None or (account.account_class is not AccountClass.EXPENSE and not direct):
         return ServiceResult.failure(ServiceError("receivable.split.not_expense", ("split",)))
+    if direct:
+        if receivable.account is None:
+            receivable.account = account.handle
+        elif receivable.account != account.handle:
+            return ServiceResult.failure(ServiceError("receivable.split.other_account", ("split",)))
     if role == "expense" and split.value <= 0:
         return ServiceResult.failure(ServiceError("receivable.split.not_a_cost", ("split",)))
     if role == "reimbursement" and split.value >= 0:
@@ -397,8 +421,19 @@ def record_write_off(db: DbSQLite, request: RecordWriteOff) -> ServiceResult[Rec
         return ServiceResult.failure(
             ServiceError("receivable.write_off.amount_not_positive", ("amount",))
         )
+    if request.account is not None:
+        account = db.get_account(request.account)
+        if account is None or account.account_class is not AccountClass.EXPENSE:
+            return ServiceResult.failure(
+                ServiceError("receivable.write_off.account_not_expense", ("account",))
+            )
     receivable.write_offs.append(
-        ReceivableWriteOff(request.written_off_on, request.amount, " ".join(request.reason.split()))
+        ReceivableWriteOff(
+            request.written_off_on,
+            request.amount,
+            " ".join(request.reason.split()),
+            request.account,
+        )
     )
     return _write(db, receivable, "Write off receivable balance")
 
@@ -446,8 +481,9 @@ def receivable_candidates(
     """The most recent linkable splits: (costs, credits), newest first; writes nothing.
 
     Costs are positive expense-account splits (for an expense link) and credits
-    negative ones (for a reimbursement link), the same rules ``attach_*`` checks.
-    Splits already linked to ``receivable`` are left out.
+    negative ones (for a reimbursement link), the same rules ``attach_*`` checks;
+    splits in a Receivable account count too (#378), except BreadSched's own
+    reclassifications. Splits already linked to ``receivable`` are left out.
     """
     linked: set[tuple[str, str]] = set()
     if receivable is not None:
@@ -461,6 +497,7 @@ def receivable_candidates(
         account.handle
         for account in db.iter_accounts()
         if account.account_class is AccountClass.EXPENSE
+        or (account.atype is AccountType.RECEIVABLE and not account.placeholder)
     }
     owned = owned_postings(db)
     costs: list[ReceivableCandidate] = []

@@ -192,8 +192,10 @@ async function showReimbursables() {
     value:selected?.expected_cash_date || "", "aria-label":"Expected by" });
   const heldIn = el("select", { name:"account", "aria-label":"Held in" },
     el("option", { value:"" }, "Default Receivable account"),
+    // A charge recorded to a receivable account is held there (#378).
     ...data.accounts.map((account) => el("option", { value:account.handle,
-      selected:selected?.account === account.handle ? "selected" : null }, account.name)));
+      selected:(selected ? selected.account : from?.account_handle) === account.handle
+        ? "selected" : null }, account.name)));
   const form = el("form", { class:"entry", onsubmit:(event) => {
     event.preventDefault();
     run(async () => {
@@ -305,6 +307,13 @@ async function showReimbursables() {
       "aria-label":"Write-off date" });
     const writeOffReason = field("reason", { placeholder:"Reason",
       "aria-label":"Write-off reason" });
+    // A direct charge has no expense of its own, so its write-off names one (#378).
+    const writeOffAccount = el("select", { name:"write_off_account",
+      "aria-label":"Write off into" },
+      el("option", { value:"" },
+        selected.direct ? "Choose the expense it becomes" : "The expense's own account"),
+      ...(data.write_off_accounts || []).map((account) =>
+        el("option", { value:account.handle }, account.name)));
     detail = el("div", { class:"panel panel-pad-16" },
       el("h2", {}, `${selected.payer} — linked splits`),
       selected.account_name ? el("p", { class:"note" },
@@ -336,12 +345,12 @@ async function showReimbursables() {
           await refresh();
         }) }, "Clear dispute")),
       el("div", { class:"toolbar" }, el("strong", {}, "Write off"), writeOffAmount,
-        writeOffDate, writeOffReason,
+        writeOffDate, writeOffReason, writeOffAccount,
         el("button", { class:"action", type:"button", onclick:run(async () => {
           await post("/api/receivable/write-off", { receivable:selected.handle,
             amount:writeOffAmount.value, written_off_on:writeOffDate.value,
-            reason:writeOffReason.value });
-          say("Wrote off the amount; it is back in the expense account.");
+            reason:writeOffReason.value, account:writeOffAccount.value || null });
+          say("Wrote off the amount; it is an expense now, out of the receivable account.");
           await refresh();
         }) }, "Record write-off")),
       scenarioRow(selected),
@@ -358,15 +367,18 @@ async function showReimbursables() {
 
   return el("div", {},
     el("p", { class:"note" },
-      "Track an expense you paid that an insurer, employer, or other payer owes back. "
-      + "What is owed moves from the expense into a Receivable account: part of net worth, "
-      + "never of liquidity, because it cannot be spent yet. A reimbursement is an ordinary "
-      + "credit to the same expense account, never income; a write-off returns the balance "
-      + "to the expense, and a dispute posts nothing. The original expense is never changed."),
+      "Track money an insurer, employer, or other payer owes back. Either you recorded "
+      + "an expense (what is owed then moves from the expense into a Receivable account, "
+      + "and money back is an ordinary credit to that expense), or you charged the cost "
+      + "straight to a Receivable account (then it is already held there, and money back "
+      + "credits that account, such as a paycheck line). Either way it is part of net "
+      + "worth, never of liquidity, and never income. A dispute posts nothing, and the "
+      + "original transaction is never changed."),
     unavailable ? el("p", { class:"note negative" },
-      "That transaction has no expense to track as reimbursable.") : null,
-    from ? el("p", { class:"note" }, `Saving links the ${from.value} expense from `
-      + `${from.date} “${from.description}”.`) : null,
+      "That transaction neither spends on an expense account nor charges a Receivable "
+      + "account, so there is nothing to track.") : null,
+    from ? el("p", { class:"note" }, `Saving links the ${from.value} charge to `
+      + `${from.account} from ${from.date} “${from.description}”.`) : null,
     el("div", { class:"panel panel-pad-16" }, el("h2", {}, "Reimbursable expenses"),
       data.receivables.length
         ? table(["Payer", "Description", "Incurred", { label:"Expense", num:true },
