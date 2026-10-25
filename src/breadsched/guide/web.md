@@ -156,6 +156,10 @@ in when you leave the field, as in the
 [desktop register](desktop.md#shares-in-an-investment-register). A purchase or sale
 is not saved without its shares.
 
+**Filter this register**, above the table, keeps the rows whose date, number,
+description, notes, tags, memos, accounts, or amounts contain what you type, as the
+desktop register's filter does.
+
 ### Tags and linked documents
 
 A register row shows its tags and how many documents it links, in red when one is

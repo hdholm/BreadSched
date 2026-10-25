@@ -28,6 +28,7 @@ __all__ = [
     "RegisterRow",
     "security_of",
     "share_fraction",
+    "transaction_matches",
     "update_register",
     "totals_by_class_amount",
     "net_worth_amount",
@@ -321,3 +322,37 @@ def cash_on_hand_amount(db: DbSQLite, as_of: date | None = None) -> Amount:
 def accounts_of_class(db: DbSQLite, classes: Iterable[AccountClass]) -> list[Account]:
     wanted = set(classes)
     return [a for a in db.iter_accounts() if a.account_class in wanted and not a.is_root]
+
+
+def _amount_texts(value: Money) -> tuple[str, str]:
+    """An amount as the register shows it (``1,067.00``) and as typed (``1067.00``)."""
+    shown = abs(value).format()
+    return shown, shown.replace(",", "")
+
+
+def transaction_matches(db: DbSQLite, transaction: Transaction, text: str) -> bool:
+    """Whether ``text`` appears anywhere in ``transaction`` (#382).
+
+    The register filters search everything a transaction holds: its date,
+    number, description, notes (BreadSched's and imported), tags, each split's
+    memo and account, and each split's amount (and share count) as shown or as
+    typed, so ``67`` finds a 67.00 charge as well as check 1067. Case is ignored.
+    """
+    needle = text.strip().casefold()
+    if not needle:
+        return True
+    parts = [
+        transaction.post_date.isoformat(),
+        transaction.num,
+        transaction.description,
+        transaction.notes,
+        transaction.source_notes,
+        *transaction.tags,
+    ]
+    for split in transaction.splits:
+        parts.append(split.memo)
+        parts.append(db.full_name(split.account) or "")
+        parts.extend(_amount_texts(split.value))
+        if split.quantity != split.value:
+            parts.extend(_amount_texts(split.quantity))
+    return needle in " ".join(part for part in parts if part).casefold()

@@ -1348,7 +1348,9 @@ async function showRegister() {
   if (!state.account && usable.length) state.account = usable[0].handle;
   if (!state.account) return el("p", { class: "note" }, "No accounts yet.");
 
-  const data = await get(`/api/register?account=${encodeURIComponent(state.account)}`);
+  const filterText = state.registerFilter || "";
+  const data = await get(`/api/register?account=${encodeURIComponent(state.account)}`
+    + (filterText ? `&filter=${encodeURIComponent(filterText)}` : ""));
   const selectedAccount = usable.find((item) => item.handle === state.account);
   const picker = el("select", {
     onchange: (event) => {
@@ -1440,6 +1442,18 @@ async function showRegister() {
           state.reconcileReturn = null;
           if (account) openReconciliation(account).catch((error)=>say(error.message,"error"));
         }}, "Back to reconciliation") : null,
+      // Filters by anything a transaction holds, amounts included (#382).
+      el("input", { type:"search", class:"register-filter", value:filterText,
+        placeholder:"Filter this register", "aria-label":"Filter this register",
+        title:"Date, number, description, notes, tags, memos, accounts, or an amount",
+        oninput:(event)=>{
+          state.registerFilter = event.target.value;
+          clearTimeout(state.registerFilterTimer);
+          state.registerFilterTimer = setTimeout(()=>render().then(()=>{
+            const box = document.querySelector("input.register-filter");
+            if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+          }), 250);
+        } }),
       el("span", { class: "muted" }, `${data.rows.length} entries`)),
     data.summary ? el("p", { class: "note register-summary" }, data.summary) : null,
     table(["Date", "Num", "Description", "Transfer", "R",

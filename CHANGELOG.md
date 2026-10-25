@@ -10,6 +10,20 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a300 - 2026-10-25
+
+- **The register filter searches amounts and everything else (#382).** Filtering
+  a register in GTK used to search descriptions, numbers, notes, tags, memos, and
+  account names, but never amounts, so 67 found check 1067 or an imported note
+  and not a 67.00 charge. It now matches each split's amount as shown (1,067.25)
+  and as typed (1067.25), share counts, and the date as well
+  (`ledger.transaction_matches`). The browser register gains the same filter
+  (`/api/register?filter=`).
+- **Long choice lists open tall (#381).** Every searchable drop-down in the
+  desktop window, account choices included, opens at least about twelve rows
+  tall (`widgets.choice.LIST_MIN_HEIGHT`) rather than two or three where the window
+  left little room.
+
 ## 0.2.0a299 - 2026-10-25
 
 - **A charge recorded straight to a receivable is reimbursable (#378).** A cost an

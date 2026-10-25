@@ -99,7 +99,8 @@ class RegisterView(BaseView):
 
         self.filter_entry = Gtk.SearchEntry(placeholder_text="Filter this register")
         self.filter_entry.set_tooltip_text(
-            "Filter by description, number, notes, tag, memo, or account"
+            "Filter by anything a transaction holds: date, number, description, notes, "
+            "tags, memos, accounts, or an amount such as 67 or 67.00"
         )
         self.filter_entry.connect("search-changed", lambda *_: self._apply_filter())
         bar.append(self.filter_entry)

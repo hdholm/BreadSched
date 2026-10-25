@@ -382,22 +382,7 @@ class RegisterSheet:
         self._rebuild()
 
     def _matches(self, row: ledger.RegisterRow) -> bool:
-        needle = self.filter_text.strip().casefold()
-        if not needle:
-            return True
-        transaction = row.transaction
-        text = " ".join(
-            [
-                transaction.description,
-                transaction.num,
-                transaction.notes,
-                transaction.source_notes,
-                *transaction.tags,
-                *(split.memo for split in transaction.splits),
-                *(self.db.full_name(split.account) for split in transaction.splits),
-            ]
-        ).casefold()
-        return needle in text
+        return ledger.transaction_matches(self.db, row.transaction, self.filter_text)
 
     def _rebuild(self) -> None:
         """Lay the rows out again around the draft, keeping the cursor's place."""
