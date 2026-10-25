@@ -37,7 +37,7 @@ async function scenarioEventPanel(handle, fromMonth) {
     const preview = schedulePreviewNode();
     const additionalSplits = planningSplitEditor(
       data.accounts, editSource?.additional_splits || [], changed);
-    const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); const amount_changes=futureEditor.values().map((item)=>({start:item.when, amount:item.amount})); const skipped=skipEditor.values(); const occurrence_adjustments=oneTimeEditor.values(); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, growth_policy:v.growth_policy, category:v.category, funding:v.funding, category_planning_flow:v.category_planning_flow || null, planning_flow:v.planning_flow || null, investment_activity:v.investment_activity || null, amount:v.amount, additional_splits:additionalSplits.values(), amount_changes, seasonal_amounts:seasonalEditor.values(), skipped, occurrence_adjustments, frequency:v.frequency, start:v.start, end:v.end, count:v.count, weekend:v.weekend, estimate_evidence:editSource?.estimate_evidence || null}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
+    const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); const amount_changes=futureEditor.values().map((item)=>({start:item.when, amount:item.amount})); const skipped=skipEditor.values(); const occurrence_adjustments=oneTimeEditor.values(); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, growth_policy:v.growth_policy, category:v.category, funding:v.funding, category_planning_flow:v.category_planning_flow || null, planning_flow:v.planning_flow || null, investment_activity:v.investment_activity || null, amount:v.amount, additional_splits:additionalSplits.values(), amount_changes, seasonal_amounts:seasonalEditor.values(), skipped, occurrence_adjustments, frequency:v.frequency, interval:v.interval, start:v.start, end:v.end, count:v.count, weekend:v.weekend, estimate_evidence:editSource?.estimate_evidence || null}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
       sourceSelect ? el("label", {}, "Baseline schedule", sourceSelect) : null,
       el("label", {}, "Name", el("input", {name:"name", required:"required", value:editSource?.name || ""})),
       el("label", {}, "Projection growth", el("select", {name:"growth_policy"},
@@ -62,7 +62,7 @@ async function scenarioEventPanel(handle, fromMonth) {
       el("label", {}, "Amount", el("input", {name:"amount", required:"required", inputmode:"decimal", value:editSource?.amount || ""})),
       additionalSplits.node,
       futureEditor.node, seasonalEditor.node, skipEditor.node, oneTimeEditor.node, preview.node,
-      el("label", {}, "Frequency", el("select", {name:"frequency"}, [["weekly","Weekly"],["biweekly","Fortnightly"],["semimonthly","Twice a month"],["monthly","Monthly"],["nth_weekday","Monthly — nth weekday"],["last_weekday","Monthly — last weekday"],["quarterly","Quarterly"],["semiannual","Twice a year"],["annual","Yearly"],["once","Once"]].map(([v,l])=>el("option",{value:v,selected:v===(editSource?.frequency||"monthly")?"selected":null},l)))),
+      el("label", {}, "Repeats", frequencyControl(editSource ? {frequency_key:editSource.frequency, interval:editSource.interval} : null)),
       el("label", {}, "First occurrence", el("input", {name:"start", type:"date", required:"required", value:editSource?.start || `${fromMonth}-01`})),
       el("label", {}, "End date (optional)", el("input", {name:"end", type:"date", value:editSource?.end || ""})),
       el("label", {}, "Occurrence count (optional)", el("input", {name:"count", type:"number", min:"1", step:"1", value:editSource?.count || ""})),
@@ -74,7 +74,7 @@ async function scenarioEventPanel(handle, fromMonth) {
       if (!values.start) return;
       try {
         const payload = {
-          frequency:values.frequency, start:values.start, end:values.end || null,
+          frequency:values.frequency, interval:values.interval, start:values.start, end:values.end || null,
           count:values.count || null, weekend:values.weekend, amount:values.amount,
         };
         try {
@@ -92,7 +92,7 @@ async function scenarioEventPanel(handle, fromMonth) {
         oneTimeEditor.setOptions([]);
       }
     };
-    [form.elements.frequency, form.elements.start, form.elements.end,
+    [form.elements.frequency, form.elements.interval, form.elements.start, form.elements.end,
       form.elements.count, form.elements.weekend]
       .forEach((control)=>control.addEventListener("change", refreshOccurrenceOptions));
     form.elements.start.addEventListener("input", refreshOccurrenceOptions);

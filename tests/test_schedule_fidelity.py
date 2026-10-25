@@ -232,6 +232,87 @@ def test_gnucash_advanced_recurrence_import_is_editable_and_convergent(
     assert len(list(db.iter_scheduled())) == 1
 
 
+@pytest.mark.parametrize(
+    ("source_kind", "period_name", "mult", "unit", "period"),
+    [
+        ("sqlite", "week", 4, "weeks", PeriodType.WEEK),
+        ("xml", "week", 4, "weeks", PeriodType.WEEK),
+        ("sqlite", "month", 2, "months", PeriodType.MONTH),
+        ("xml", "year", 3, "years", PeriodType.YEAR),
+    ],
+)
+def test_any_imported_interval_is_an_ordinary_editable_rule(
+    db, tmp_path, gnucash_sqlite_path, source_kind, period_name, mult, unit, period
+):
+    """#370: every 4 weeks (or 2 months, 3 years) round-trips the simple editors."""
+    from breadsched.web.schedule_controls import (
+        frequency_key,
+        schedule_recurrence,
+        simple_schedule_parts,
+        weekend_key,
+    )
+
+    if source_kind == "sqlite":
+        path = gnucash_sqlite_path.path
+        handle = gnucash_sqlite_path.ids.sched
+        with sqlite3.connect(path) as conn:
+            conn.execute(
+                "UPDATE recurrences SET recurrence_mult=?, recurrence_period_type=?, "
+                "recurrence_period_start='20260106'",
+                (mult, period_name),
+            )
+        importer = gnucash_sqlite.import_book
+    else:
+        source = create_xml_book(tmp_path / "interval.gnucash", compress=False)
+        path = Path(source.path)
+        handle = source.schedule
+        path.write_text(
+            source.body.replace(
+                "<recurrence:mult>1</recurrence:mult>", f"<recurrence:mult>{mult}</recurrence:mult>"
+            )
+            .replace(
+                "<recurrence:period_type>month</recurrence:period_type>",
+                f"<recurrence:period_type>{period_name}</recurrence:period_type>",
+            )
+            .replace(
+                "<recurrence:start><gdate>2026-01-01</gdate></recurrence:start>",
+                "<recurrence:start><gdate>2026-01-06</gdate></recurrence:start>",
+            ),
+            encoding="utf-8",
+        )
+        importer = gnucash_xml.import_book
+
+    importer(db, path)
+    imported = db.get_scheduled(handle)
+    assert imported is not None
+    assert (imported.recurrence.period, imported.recurrence.interval) == (period, mult)
+    projection = schedule.schedule_edit_projection(db, imported)
+    assert projection.editability.mode is schedule.ScheduleEditorMode.FIXED
+    assert simple_schedule_parts(db, imported) is not None
+    assert frequency_key(imported.recurrence) == unit
+
+    # The editors' controls, as shown, give back exactly the imported rule.
+    rule = imported.recurrence
+    reproduced = schedule_recurrence(
+        {
+            "frequency": frequency_key(rule),
+            "interval": rule.interval,
+            "start": rule.start.isoformat(),
+            "end": rule.end.isoformat() if rule.end else None,
+            "count": rule.count,
+            "weekend": weekend_key(rule.weekend_adjust),
+        },
+        imported,
+    )
+    assert reproduced.serialize() == rule.serialize()
+
+    serialized = imported.serialize()
+    importer(db, path)
+    refreshed = db.get_scheduled(handle)
+    assert refreshed is not None
+    assert refreshed.serialize() == serialized
+
+
 @pytest.mark.parametrize("source_kind", ["sqlite", "xml"])
 def test_multiple_source_recurrences_are_preserved_but_never_executed(
     db, tmp_path, gnucash_sqlite_path, source_kind

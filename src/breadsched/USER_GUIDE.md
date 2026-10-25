@@ -619,6 +619,14 @@ still balance. If an edit is rejected, the existing schedule is retained; comple
 imported definitions remain protected when a simple editor cannot preserve their
 structure.
 
+A schedule repeats every so many days, weeks, months, or years (every 4 weeks, every
+2 months, every 3 years), on the same weekday of the month, on the last weekday, twice
+a month, or once. The day comes from the first due date: a weekly schedule repeats on
+that weekday, a monthly one on that day of the month. Any interval GnuCash imports is
+an ordinary choice in the editors, so those schedules are edited like any other. An
+amount may be a calculation, such as `76.84*1.06`, as in the register; the result is
+rounded to the cent.
+
 For alternate assumptions, add a scenario-only estimate or alter an eligible
 baseline schedule within a saved scenario. The original baseline definition stays
 intact. An invalid exception, such as skipping and overriding the same occurrence,

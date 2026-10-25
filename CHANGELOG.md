@@ -10,6 +10,27 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a296 - 2026-10-25
+
+- **Every N days, weeks, months, or years (#370).**
+  - The GTK schedule and scenario-estimate editors and the browser's schedule,
+    formula-schedule, and scenario-event editors replace their fixed preset list
+    (Weekly, Fortnightly, Quarterly, …) with **Every** a number and a unit.
+  - The units come from the new `presentation.schedules` module, shared by both
+    interfaces: days, weeks, months, months on the same weekday, months on the last
+    weekday, years, twice a month, and once.
+  - The day still comes from the first due date. An imported rule such as every 4
+    weeks, previously shown as an "(imported rule)" choice in GTK and refused by the
+    browser editor, is now an ordinary editable choice.
+  - Browser requests send `frequency` as the unit with an `interval` (1–999). The
+    earlier preset keys are still accepted, and responses carry `interval` beside
+    `frequency_key`.
+- **Calculated schedule amounts (#370).** Schedule amounts in GTK and the browser
+  (the amount, split amounts, future amounts, seasonal amounts, and one-time
+  amounts) accept arithmetic such as `76.84*1.06`, rounded to the cent. They use the
+  register's parser, through `engine.entry_input.parse_amount_text` and
+  `web.controls.input_amount`.
+
 ## 0.2.0a295 - 2026-10-24
 
 - **FSA claims are easier to start, link, and find (#366).**

@@ -233,3 +233,35 @@ function schedulePreviewNode() {
     },
   };
 }
+
+// The schedule editors' "Every N <unit>" (#370): the units and keys of
+// presentation/schedules.py. Twice a month and once take no number. The day
+// comes from the first due date.
+const FREQUENCY_UNITS = [
+  ["days", "days"], ["weeks", "weeks"], ["months", "months"],
+  ["nth_weekday", "months, on the same weekday"],
+  ["last_weekday", "months, on the last weekday"],
+  ["years", "years"], ["semimonthly", "twice a month"], ["once", "once"],
+];
+const FIXED_INTERVAL_UNITS = new Set(["semimonthly", "once"]);
+
+function frequencyControl(source) {
+  const unit = el("select", { name:"frequency", "aria-label":"Repeat unit" },
+    FREQUENCY_UNITS.map(([key, label]) => el("option", {
+      value:key, selected:key === (source?.frequency_key || "months") ? "selected" : null,
+    }, label)));
+  const every = el("input", { name:"interval", type:"number", min:"1", max:"999",
+    step:"1", value:String(source?.interval || 1), "aria-label":"Repeat every",
+    class:"interval" });
+  const everyLabel = el("span", {}, "Every ");
+  const box = el("span", { class:"frequency" }, everyLabel, every, " ", unit);
+  const show = () => {
+    const fixed = FIXED_INTERVAL_UNITS.has(unit.value);
+    every.hidden = fixed;
+    everyLabel.hidden = fixed;
+  };
+  unit.addEventListener("change", show);
+  show();
+  return box;
+}
+
