@@ -245,7 +245,9 @@ parallel transaction models:
   entry's description from the register's earlier descriptions, most recent first;
   leaving the description then asks `suggest_entry` for the rest. The grid keeps the
   letters as typed, so a completion that stops matching gives back the typed case
-  rather than the earlier description's (#363).
+  rather than the earlier description's (#363). Tab from the transfer of a two-split
+  entry whose transfer is an expense goes to the decrease (money-out) column, for
+  that one step only (`RegisterSheet._expense_hop`, #369; the browser does the same).
 - **Commit.** Two balancing `TransactionSplitInput`s with a positive exact amount
   (direction from the cell typed in), or one per split line, go through
   `save_transaction` as one atomic change and one undo step. Fewer than two splits,
@@ -254,7 +256,11 @@ parallel transaction models:
   cell. An existing transaction may move out of the register's account entirely
   (#364), in GTK and the browser alike; the message names where it went.
 - **Split lines.** A transaction of more than two splits opens with its split lines
-  (memo, account, and amount each) and a trailing empty line; the Split button
+  (memo, account, and amount each) and a trailing empty line; while they do not
+  balance, that line shows the rest in the balancing column
+  (`RegisterSheet.balancing_line`, display only) and takes it as its amount when
+  given an account or memo, as GnuCash's blank split does (#369), in GTK and the
+  browser alike; there is no separate imbalance row any more; the Split button
   toggles them for a two-split one. Viewing the lines is not an edit. Collapsing is
   refused while more than two lines hold a split.
 - **Editing in place.** Moving the cursor onto a transaction loads it as the draft:
@@ -283,6 +289,14 @@ parallel transaction models:
   held and their market value with the quote's date and source, or "no quote" and
   the ledger amount, never an unquoted conversion. The transaction editor's
   splits show a Shares entry for a security's split.
+- **Transaction editor splits (#369).** Each `SplitEditor` row is a small register
+  line: account, memo, and increase/decrease entries named by
+  `ledger.register_headings` for the row's own account, so no amount is typed
+  signed (either entry may be arithmetic). A single blank row shows the balancing
+  amount as its placeholder and takes it on save; when every row has an amount and
+  they do not balance, the dialog adds a row (`SplitEditor.auto`) with no account,
+  which blocks saving until one is chosen, and removes it again, untouched, once
+  the entry balances.
 - **Double Line.** The window's stateful `win.double-line` action (**View → Double
   Line**, also in Preferences; remembered in view settings as
   `register.double_line`) adds a `NOTES` row under every transaction

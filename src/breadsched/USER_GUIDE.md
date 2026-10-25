@@ -472,7 +472,9 @@ full-ledger running balance. Headings use account-appropriate household language
 such as Deposit/Withdrawal or Payment/Charge. Filtering the register searches
 descriptions, numbers, notes, tags, split memos, and account names without
 changing the running balance. A transaction cannot be saved unless its exact splits
-balance.
+balance. While split lines do not balance, the empty last line (or, in the desktop
+transaction editor, a new split row) holds the amount left, waiting for its
+account, as in GnuCash.
 
 Both the desktop and browser registers end in a blank row for typing a new entry
 (the desktop register opens there, scrolled to the newest entries),

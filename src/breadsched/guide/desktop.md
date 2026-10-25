@@ -125,7 +125,13 @@ row, such as a schedule's **View / Edit…**, stay beside their table.
 
 **New Transaction…** (the toolbar's **Transaction**, or Ctrl+T) opens the
 transaction editor; with a register shown, the new transaction starts in that
-register's account.
+register's account. Each split row has an account, a memo, and two amount columns
+named for that account, as its register names them (for example **Payment** and
+**Charge** for a credit card, **Expense** and **Rebate** for an expense), so you
+never need a minus sign. A blank row shows what it would take to balance the
+others, and saving fills it in. When every row has an amount and they do not
+balance, a new row appears holding the rest, waiting for you to choose its
+account; it goes again if you balance the others yourself.
 
 Categorization rules and reimbursable expenses open from **Actions →
 Categorization Rules…** and **Actions → Reimbursable Expenses…**.
@@ -290,7 +296,9 @@ Type a new entry straight into the blank transaction:
 Arriving in a cell selects everything in it, so typing (or Backspace) replaces a
 proposed amount or account; **Left** or **Right** goes to its start or end instead.
 **Tab** and **Shift+Tab** move between cells; **Tab** past the last cell saves
-the transaction, like **Enter**. **Escape** puts the transaction back as it was
+the transaction, like **Enter**. From a transfer to an expense, **Tab** goes straight
+to the money-out column (**Withdrawal** or **Charge**), where the expense belongs;
+after that one step it follows the usual order. **Escape** puts the transaction back as it was
 (the blank one empties). The register's **Enter** and **Cancel** buttons, and
 **Actions → Enter Transaction** and **Cancel Transaction**, do the same as the keys,
 so you can save or abandon what you typed without them. Dates, amounts, and **Num** take the shortcuts in
@@ -324,9 +332,10 @@ transfer; when you move onto it, its split lines open beneath it, each with a
 memo, an account (completed the same way), and an amount under the account's own
 Increase or Decrease heading, and an empty line waits for another split. Choose
 **Split** in the toolbar to open an ordinary transaction (or the one you are
-typing) the same way, or to fold two lines back into one. An **Imbalance** line
-shows how far the splits are from balancing; **Enter** saves only once they
-balance. A new transaction needs one split in this register's account. To move an
+typing) the same way, or to fold two lines back into one. While the splits do not
+balance, the empty last line shows the amount left, in the column that balances
+them: choose its account (or type a memo) and it takes that amount, or type a
+different one. **Enter** saves only once they balance. A new transaction needs one split in this register's account. To move an
 existing one entered in the wrong account, such as a purchase on the wrong credit
 card, change that split line's account to the right one and press **Enter**: the
 transaction moves there and leaves this register, and the line under the register
