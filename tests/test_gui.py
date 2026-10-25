@@ -8834,8 +8834,54 @@ class TestReceivablesDialog:
         )
         assert view.sheet.select_transaction(income.transaction.handle)
         assert view.track_selected_reimbursable() is None
-        assert "has no expense to track" in view.entry_status.get_text()
+        assert "has nothing to track" in view.entry_status.get_text()
         assert view.entry_status.has_css_class("negative")
+
+    def test_a_charge_to_a_receivable_account_is_tracked_where_it_is_held(
+        self, app, window, populated_book
+    ):
+        # #378: an employer's cost charged straight to a receivable account has no
+        # expense; it is tracked in that account and its write-off names an expense.
+        from breadsched.gen.lib import Account, AccountType, Transaction
+
+        db, _rent_txn, rent, _cost = self._book(app, populated_book)
+        assets = db.get_account_by_name("Assets")
+        checking = db.get_account_by_name("Assets:Checking Account")
+        employer = Account(name="Employer", atype=AccountType.RECEIVABLE, parent=assets.handle)
+        with db.transaction("Employer") as txn:
+            db.add_account(employer, txn)
+        charge = Transaction.simple(
+            date(2026, 2, 3), "Conference hotel", employer.handle, checking.handle, "100"
+        )
+        with db.transaction("Charge") as txn:
+            db.add_transaction(charge, txn)
+        window.open_register(checking.handle)
+        view = window._views["register"]
+        assert view.sheet.select_transaction(charge.handle)
+        dialog = view.track_selected_reimbursable()
+        try:
+            assert dialog is not None
+            held = dialog._accounts[dialog.account_picker.get_selected()]
+            assert held == employer.handle
+            assert "charge to Assets:Employer" in dialog.status.get_text()
+            dialog.payer_entry.set_text("Acme")
+            receivable = dialog.save()
+            stored = db.get_receivable(receivable.handle)
+            assert stored.account == employer.handle and stored.postings == []
+            assert [link.transaction for link in stored.expenses] == [charge.handle]
+
+            model = dialog.write_off_account.get_model()
+            assert model.get_string(0) == "Choose the expense it becomes"
+            dialog.write_off_amount.set_text("20")
+            dialog.write_off_date.set_text("2026-02-28")
+            assert not dialog.write_off()
+            assert "no expense of its own" in dialog.status.get_text()
+            dialog.write_off_account.set_selected(dialog._write_off_accounts.index(rent.handle))
+            assert dialog.write_off()
+            stored = db.get_receivable(receivable.handle)
+            assert [item.account for item in stored.write_offs] == [rent.handle]
+        finally:
+            dialog.destroy()
 
     def test_held_in_names_receivable_accounts_it_cannot_offer(self, app, window, populated_book):
         from breadsched.gen.lib import Account, AccountType

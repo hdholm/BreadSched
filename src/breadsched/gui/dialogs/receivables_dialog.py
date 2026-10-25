@@ -92,13 +92,14 @@ class ReceivablesDialog(BoundedWindow):
         box.append(
             Gtk.Label(
                 label=(
-                    "Track an expense you paid that an insurer, employer, or other payer "
-                    "owes back. What is owed moves from the expense into a Receivable "
-                    "account: part of net worth, never of liquidity, because it cannot "
-                    "be spent yet. A reimbursement is an ordinary credit to the same "
-                    "expense account, never income; a write-off returns the balance to "
-                    "the expense, and a dispute posts nothing. The original expense is "
-                    "never changed."
+                    "Track money an insurer, employer, or other payer owes back. Either "
+                    "you recorded an expense (what is owed then moves from the expense "
+                    "into a Receivable account, and money back is an ordinary credit to "
+                    "that expense), or you charged the cost straight to a Receivable "
+                    "account (then it is already held there, and money back credits that "
+                    "account, such as a paycheck line). Either way it is part of net "
+                    "worth, never of liquidity, and never income. A dispute posts "
+                    "nothing, and the original transaction is never changed."
                 ),
                 xalign=0,
                 wrap=True,
@@ -222,6 +223,12 @@ class ReceivablesDialog(BoundedWindow):
         self.write_off_amount.add_css_class("numeric")
         self.write_off_date = Gtk.Entry(placeholder_text="YYYY-MM-DD")
         self.write_off_reason = Gtk.Entry(hexpand=True, placeholder_text="Reason")
+        # The expense a write-off becomes; a direct charge has none of its own (#378).
+        self.write_off_account = bounded_dropdown()
+        self.write_off_account.set_tooltip_text(
+            "The expense account the written-off amount becomes"
+        )
+        self._write_off_accounts: list[str | None] = []
         record = Gtk.Button(label="Record write-off")
         record.connect("clicked", lambda _b: self.write_off())
         for widget in (
@@ -229,6 +236,7 @@ class ReceivablesDialog(BoundedWindow):
             self.write_off_amount,
             self.write_off_date,
             self.write_off_reason,
+            self.write_off_account,
         ):
             write_row.append(widget)
         write_row.append(record)
@@ -300,10 +308,21 @@ class ReceivablesDialog(BoundedWindow):
         self.incurred_entry.set_text(transaction.post_date.isoformat())
         self.description_entry.set_text(transaction.description)
         self.expected_entry.set_text(split.value.format())
+        # A charge recorded straight to a receivable account is held there (#378).
+        direct = split.account in self._accounts
+        if direct:
+            self.account_picker.set_selected(self._accounts.index(split.account))
+        held = self.account_picker.get_model()
+        what = (
+            f"{split.value.format()} charge to "
+            f"{held.get_string(self._accounts.index(split.account))}"
+            if direct and held is not None
+            else f"{split.value.format()} expense"
+        )
         self._message(
-            f"Tracking the {split.value.format()} expense from "
-            f"{transaction.post_date.isoformat()} “{transaction.description}”. Enter who "
-            "owes it back and choose Add receivable; nothing is recorded until then.",
+            f"Tracking the {what} from {transaction.post_date.isoformat()} "
+            f"“{transaction.description}”. Enter who owes it back and choose Add "
+            "receivable; nothing is recorded until then.",
             False,
         )
         self.payer_entry.grab_focus()
@@ -419,6 +438,7 @@ class ReceivablesDialog(BoundedWindow):
         lines = [shared_cost_text(item) for item in line.shared_costs]
         self.shared.set_text("\n".join(lines))
         self.shared.set_visible(bool(lines))
+        self._fill_write_off_accounts(view, line.summary.direct)
         if line.summary.fsa_claims:
             self.warning.set_text(
                 "An expense linked here is also on an FSA claim. Check that the same "
@@ -453,6 +473,15 @@ class ReceivablesDialog(BoundedWindow):
         )
         self.dispute_note.set_text(receivable.dispute_note)
         self._fill_scenarios(view, line.scenario_changes)
+
+    def _fill_write_off_accounts(self, view: ReceivablesView, direct: bool) -> None:
+        self._write_off_accounts = [None, *(handle for handle, _name in view.write_off_accounts)]
+        names = Gtk.StringList()
+        names.append("Choose the expense it becomes" if direct else "The expense's own account")
+        for _handle, name in view.write_off_accounts:
+            names.append(name)
+        self.write_off_account.set_model(names)
+        self.write_off_account.set_selected(0)
 
     def _fill_scenarios(self, view: ReceivablesView, scenario_changes) -> None:
         selected = self.scenario_picker.get_selected()
@@ -714,14 +743,21 @@ class ReceivablesDialog(BoundedWindow):
         except ValueError as error:
             self._message(str(error), True)
             return False
+        index = self.write_off_account.get_selected()
+        into = (
+            self._write_off_accounts[index] if 0 <= index < len(self._write_off_accounts) else None
+        )
         try:
             self.book.record_write_off(
-                RecordWriteOff(self.editing, amount, when, self.write_off_reason.get_text())
+                RecordWriteOff(self.editing, amount, when, self.write_off_reason.get_text(), into)
             )
         except ApiError as error:
             self._message(str(error), True)
             return False
         self.edit(self.editing)
         self.refresh()
-        self._message(f"Wrote off {amount.format()}; it is back in the expense account.", False)
+        self._message(
+            f"Wrote off {amount.format()}; it is an expense now, out of the receivable account.",
+            False,
+        )
         return True

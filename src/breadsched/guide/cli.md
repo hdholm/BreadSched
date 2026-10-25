@@ -369,7 +369,7 @@ breadsched receivables book.breadsched --dispute RECEIVABLE --on 2026-09-20 \
     --note "Insurer denied the claim"
 breadsched receivables book.breadsched --clear-dispute RECEIVABLE
 breadsched receivables book.breadsched --write-off RECEIVABLE --amount 25.00 \
-    --on 2026-10-01 --reason "Deductible"
+    --on 2026-10-01 --reason "Deductible" [--into "Expenses:Travel"]
 breadsched receivables book.breadsched                # list with status and age
 breadsched receivables book.breadsched --delete RECEIVABLE
 breadsched receivables book.breadsched --proposals         # credits that look like money back
@@ -388,7 +388,12 @@ credits money back (a deposit's other split posted to the same expense account,
 exactly like an ordinary refund) with `--attach-reimbursement`; `--split-index` is
 the split's 1-based position within `--transaction`. `--account` chooses the
 Receivable account; without it BreadSched uses the default for the expense's
-currency. The list shows what is owed, the account, and any FSA-claim overlap, and
+currency. A charge recorded straight to a Receivable account (an employer's cost on
+your card, say) is attached with `--attach-expense` too, and its payback, a credit
+to that account such as a paycheck line, with `--attach-reimbursement`; such a
+receivable is held in that account and owed in full, and its `--write-off` needs
+`--into` an expense account (see [Two ways to record a reimbursable
+cost](../USER_GUIDE.md#two-ways-to-record-a-reimbursable-cost)). The list shows what is owed, the account, and any FSA-claim overlap, and
 warns under the table when an expense is also on an FSA claim. When an FSA claim
 covers the rest of a receivable's bill (linked on the claim in the desktop or
 browser), a line under the table shows what the payer, the FSA, and you each pay,

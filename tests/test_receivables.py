@@ -384,6 +384,47 @@ def test_cli_adds_links_and_resolves(tmp_path, capsys):
     assert "no receivable matches" in capsys.readouterr().err
 
 
+def test_cli_tracks_a_direct_charge_and_writes_off_into_an_expense(tmp_path, capsys):
+    # #378: a charge recorded straight to a receivable account; --into names the
+    # expense its write-off becomes.
+    import json
+
+    from breadsched.cli.main import main
+    from breadsched.gen.db.sqlite import DbSQLite as _Db
+    from breadsched.gen.lib import Account, AccountType
+
+    path = tmp_path / "direct.breadsched"
+    assert main(["init", str(path)]) == 0
+    db = _Db()
+    db.load(str(path))
+    with db.transaction("Setup") as txn:
+        card = Account(name="Card", atype=AccountType.CREDIT)
+        employer = Account(name="Employer", atype=AccountType.RECEIVABLE)
+        travel = Account(name="Travel", atype=AccountType.EXPENSE)
+        for account in (card, employer, travel):
+            db.add_account(account, txn)
+    charge = Transaction.simple(date(2026, 9, 3), "Hotel", employer.handle, card.handle, "100")
+    with db.transaction("Charge") as txn:
+        db.add_transaction(charge, txn)
+    db.close()
+    capsys.readouterr()
+
+    args = ["receivables", str(path)]
+    assert main([*args, "--add", "Acme", "--incurred", "2026-09-03", "--json"]) == 0
+    handle = json.loads(capsys.readouterr().out)["handle"]
+    attach = ["--attach-expense", handle, "--transaction", charge.handle, "--split-index", "1"]
+    assert main([*args, *attach]) == 0
+    capsys.readouterr()
+    write_off = [*args, "--write-off", handle, "--amount", "30", "--on", "2026-09-30"]
+    assert main(write_off) == 2
+    assert "no expense of its own" in capsys.readouterr().err
+    assert main([*write_off, "--into", "Travel"]) == 0
+    assert "Wrote off" in capsys.readouterr().out
+    assert main([*args, "--json"]) == 0
+    [listed] = json.loads(capsys.readouterr().out)
+    assert listed["remaining"] == "70.00"
+
+
 def test_gnucash_reimport_refuses_to_delete_a_linked_transaction(db, book):
     from breadsched.plugins.importer.gnucash_common import _protected_transaction_references
 

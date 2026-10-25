@@ -316,12 +316,30 @@ _SERVICE_MESSAGES = {
     "receivable.expected_amount.negative": "The expected amount must not be negative",
     "receivable.transaction.not_found": "That transaction no longer exists",
     "receivable.split.not_found": "That split no longer exists",
-    "receivable.split.not_expense": "Choose a split posted to an expense account",
+    "receivable.split.not_expense": (
+        "Choose a split posted to an expense account or to a Receivable account"
+    ),
     "receivable.split.not_a_cost": "Choose a split that records money spent, not received",
     "receivable.split.not_a_credit": "Choose a split that records money credited back",
     "receivable.split.duplicate": "That split is already linked to this receivable",
+    "receivable.split.other_account": (
+        "That split is in another receivable account; a receivable is held in one account"
+    ),
+    "receivable.split.mixed_kinds": (
+        "A receivable's costs are either expenses or charges recorded to its receivable "
+        "account, not both; track the other kind as a receivable of its own"
+    ),
+    "receivable.expected_amount.below_direct_charge": (
+        "A charge recorded to a receivable account is owed in full; write off the part "
+        "the payer will not pay instead"
+    ),
     "receivable.link.not_found": "That split is not linked to this receivable",
     "receivable.write_off.amount_not_positive": "The write-off amount must be positive",
+    "receivable.write_off.account_required": (
+        "Choose the expense account the written-off amount becomes: this receivable has "
+        "no expense of its own"
+    ),
+    "receivable.write_off.account_not_expense": "Choose an expense account for the write-off",
     "receivable.split.owned_posting": (
         "That is BreadSched's own receivable reclassification; link the original "
         "transaction instead"

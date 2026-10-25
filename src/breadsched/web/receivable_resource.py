@@ -87,6 +87,7 @@ def _candidate(line) -> dict[str, object]:
         "date": item.when,
         "description": item.description,
         "account": line.account_name,
+        "account_handle": item.account,
         "value": item.value,
     }
 
@@ -129,6 +130,7 @@ def receivables(api: Api, query: QueryParams) -> dict[str, object]:
                 "status": line.summary.status.value,
                 "status_label": line.summary.status.label,
                 "owed": line.summary.owed,
+                "direct": line.summary.direct,
                 "account": line.summary.receivable.account,
                 "account_name": line.account_name,
                 "fsa_claims": list(line.summary.fsa_claims),
@@ -151,6 +153,9 @@ def receivables(api: Api, query: QueryParams) -> dict[str, object]:
         "costs": [_candidate(line) for line in view.costs],
         "credits": [_candidate(line) for line in view.credits],
         "accounts": [{"handle": handle, "name": name} for handle, name in view.accounts],
+        "write_off_accounts": [
+            {"handle": handle, "name": name} for handle, name in view.write_off_accounts
+        ],
         "account_note": receivable_account_note(
             [name for _handle, name in view.unoffered_accounts]
         ),
@@ -255,6 +260,7 @@ def receivable_write_off(api: Api, payload: Mapping[str, Any]) -> dict[str, obje
             input_money(dict(payload), raw_amount),
             _date(payload, "written_off_on") or date.today(),
             _text(payload, "reason", optional=True) or "",
+            _text(payload, "account", optional=True) or None,
         )
     )
     return {"handle": saved.handle}

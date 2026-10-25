@@ -10,6 +10,29 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a299 - 2026-10-25
+
+- **A charge recorded straight to a receivable is reimbursable (#378).** A cost an
+  employer will repay, charged to Assets:Receivables:Employer rather than an
+  expense, can now be tracked: **Track as Reimbursable…** (GTK and browser) takes
+  it, and **Held in** starts at that account.
+  - Such a *direct* receivable posts no reclassification and is owed in full.
+  - Money back is a credit to that receivable account, such as a paycheck line.
+    It is proposed and linked like a refund and posts nothing. Any receivable may
+    now take money back that way.
+  - A write-off names the expense account it becomes, in GTK and the browser
+    (**Write off into**) and the command line (`receivables --write-off ...
+    --into ACCOUNT`); a direct receivable must name one.
+  - Plan and Projection expect its payback; a scenario expecting less leaves the
+    rest owed instead of inventing an expense.
+  - New refusals: `receivable.split.mixed_kinds`, `receivable.split.other_account`,
+    `receivable.expected_amount.below_direct_charge`,
+    `receivable.write_off.account_required`, and
+    `receivable.write_off.account_not_expense`.
+- **The user guide explains the two ways to record a reimbursable cost (#378),**
+  with a worked example of each, how the payback is recorded, and why neither is
+  income.
+
 ## 0.2.0a298 - 2026-10-25
 
 - **Track as Reimbursable always answers (#371).** The GTK command saves typing

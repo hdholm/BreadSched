@@ -135,8 +135,8 @@ parse input and call that service; `presentation.reimbursement_override_text` wo
 each change.
 
 `services/receivables.py` validates every write: linked splits must be in
-expense-class accounts, expense links positive and reimbursement links negative, and
-no split linked twice. The database refuses to delete a transaction a receivable
+expense-class accounts or in the receivable's own Receivable account (#378), expense
+links positive and reimbursement links negative, and no split linked twice. The database refuses to delete a transaction a receivable
 links to (`receivable.missing_transaction`), as it does for FSA claims, and a
 GnuCash re-import that would delete one is reported instead.
 
@@ -149,8 +149,20 @@ the reclassification transactions that put it there, planned by
 | --- | --- | --- |
 | Tracking | receivable +owed, expense −owed (allocated over the linked expense splits) | incurred date |
 | Reimbursement linked | expense +amount, receivable −amount | the credit's date |
-| Write-off | expense +amount, receivable −amount (the largest expense split's account) | write-off date |
+| Write-off | expense +amount, receivable −amount (`ReceivableWriteOff.account`, else the largest expense split's account) | write-off date |
 | Dispute | nothing | — |
+
+A *direct* receivable (#378, `ReceivableSummary.direct`) is one whose cost splits are
+charges in its Receivable account itself, as an employer's cost charged to
+Assets:Receivables:Employer is: it posts no tracking transaction, is owed in full
+(`receivable.expected_amount.below_direct_charge` otherwise), and its write-off must
+name an expense account (`receivable.write_off.account_required`). Costs are all
+expenses or all direct charges in one account (`receivable.split.mixed_kinds`,
+`receivable.split.other_account`). Any receivable's money back may be a credit to
+its own Receivable account (a paycheck line); that reduces what is owed and posts
+nothing, since the ledger already took it out of the account. A direct
+receivable's expected receipt has no expense account, so a scenario shortfall stays
+owed rather than becoming a projected expense.
 
 Reimbursements and write-offs apply oldest first and never take the receivable
 below zero; money back beyond what was owed stays a refund. Posting handles are
@@ -167,7 +179,8 @@ until its next change. The Dashboard sums open reporting-currency balances as
 
 Reimbursement proposals (`engine.receivables.propose_reimbursements`) match an
 unlinked credit to a receivable still owed something only when the credit is in an
-expense account the receivable's expense used, dated on or after it, in the same
+expense account the receivable's expense used (or in the receivable's own account),
+dated on or after it, in the same
 currency, and no larger than what remains; a credit that fits several receivables is
 proposed only when exactly one payer's name appears in its description. Credits are
 allocated oldest first, and acceptance recomputes the proposals and links only
