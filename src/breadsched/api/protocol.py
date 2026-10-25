@@ -301,9 +301,9 @@ class BookApi(Protocol):
 
     def register(self, query: RegisterQuery) -> RegisterPage: ...
 
-    def register_view(self, account: str, limit: int = 250) -> RegisterView:
+    def register_view(self, account: str, limit: int = 250, filter_text: str = "") -> RegisterView:
         """The newest ``limit`` rows of a register with every name, document, and share
-        detail they show."""
+        detail they show; with ``filter_text``, only rows whose transaction holds it."""
         ...
 
     def account_balance(self, query: BalanceQuery) -> AccountBalance: ...

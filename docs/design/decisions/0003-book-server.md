@@ -429,8 +429,9 @@ command line's `verify` and GTK's verification dialog still check the file throu
 connection of their own (`DbSQLite.verify_path`), which also works while another
 process holds the book.
 
-The browser's register followed: `register_view(account, limit)`
-(`GET /api/v1/accounts/{handle}/register-view`) returns the engine's register rows
+The browser's register followed: `register_view(account, limit, filter_text)`
+(`GET /api/v1/accounts/{handle}/register-view`, with `filter` for the register
+filter of #382) returns the engine's register rows
 with the full name of every account their splits use, each transaction's linked
 documents, and, for a security account, its shares, valuation, and quote evidence
 (`gen/services/register_view`), so the browser's register no longer reads the book;

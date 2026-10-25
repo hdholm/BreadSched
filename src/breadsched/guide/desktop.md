@@ -169,7 +169,9 @@ Every view you open, and the register of every account you open, gets a tab in t
 bar below the toolbar. Choosing a tab puts the keyboard in what it shows (in a
 register, the cell under the cursor). **Ctrl+Page Up** and **Ctrl+Page Down** move
 between tabs, **Ctrl+W** closes the current one, and **Ctrl+F** (**Edit → Find in
-Register**) goes to the register's filter. Choose a tab to go back to it; each register tab keeps its
+Register**) goes to the register's filter, which keeps the transactions whose date,
+number, description, notes, tags, memos, accounts, or amounts (such as 67 or 67.00)
+contain what you type. Choose a tab to go back to it; each register tab keeps its
 own place, filter, and half-typed entry. Opening an account that already has a tab
 returns to that tab. To open another register beside the one you are in, choose
 **New tab** in the register's toolbar (**Actions → Open Register in New Tab**): it

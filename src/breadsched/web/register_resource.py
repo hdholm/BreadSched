@@ -39,9 +39,11 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
     """One account's register rows, newest ``limit`` rows, with editing detail."""
     handle = query.text("account", required=True) or ""
     limit = query.integer("limit", default=250, minimum=1, maximum=10000) or 250
+    # The same filter as the desktop register: anything a transaction holds (#382).
+    needle = query.text("filter") or ""
     query.finish()
     try:
-        view = api.book.register_view(handle, limit)
+        view = api.book.register_view(handle, limit, needle)
     except ApiError as exc:
         if exc.status == 404:
             raise KeyError(handle) from None

@@ -379,6 +379,17 @@ def test_the_filter_keeps_the_blank_transaction_last(db, funded_book, needle, ex
     assert (len(sheet.rows) > 1) is expected
 
 
+def test_the_filter_finds_a_transaction_by_its_amount(db, funded_book):
+    # #382: "67" never matched a 67.00 amount, only text containing 67.
+    sheet = _sheet(db, funded_book)
+    first = sheet.ledger_rows[0]
+    sheet.set_filter(abs(first.split.value).format())
+    shown = {row.handle for row in sheet.rows if row.kind == TRANSACTION}
+    assert first.transaction.handle in shown
+    sheet.set_filter("zzz-none")
+    assert [row.kind for row in sheet.rows] == [BLANK]
+
+
 def test_viewing_splits_is_not_an_edit(db, funded_book):
     sheet = _sheet(db, funded_book)
     sheet.move(-1)

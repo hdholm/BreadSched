@@ -6070,6 +6070,21 @@ class TestSecurityRegister:
         assert plain["security"] is None and plain["summary"] is None
         assert all("shares" not in item for item in plain["rows"])
 
+    def test_the_register_filters_by_anything_a_transaction_holds(self, client):
+        # #382: the browser register filters like the desktop one, amounts included.
+        db = client.database
+        checking = db.get_account_by_name("Assets:Checking")
+        _status, every = client.get(f"/api/register?account={checking.handle}")
+        rent = next(row for row in every["rows"] if row["description"] == "Rent")
+        amount = rent["amount"].lstrip("-")
+        _status, found = client.get(
+            f"/api/register?account={checking.handle}&filter={urllib.parse.quote(amount)}"
+        )
+        assert rent["split"] in [row["split"] for row in found["rows"]]
+        assert len(found["rows"]) < len(every["rows"])
+        _status, none = client.get(f"/api/register?account={checking.handle}&filter=zzz-none")
+        assert none["rows"] == []
+
     def test_the_trade_route_fills_the_third_value(self, client):
         account, _checking, _buy, _usd = self._fund(client)
         query = urllib.parse.urlencode(

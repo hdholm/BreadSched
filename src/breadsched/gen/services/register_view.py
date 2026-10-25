@@ -68,15 +68,26 @@ class RegisterView:
 
 
 def register_view(
-    db: DbSQLite, account: str, limit: int = DEFAULT_ROWS
+    db: DbSQLite, account: str, limit: int = DEFAULT_ROWS, filter_text: str = ""
 ) -> ServiceResult[RegisterView]:
-    """The newest ``limit`` rows of ``account``'s register, oldest first."""
+    """The newest ``limit`` rows of ``account``'s register, oldest first.
+
+    ``filter_text`` keeps only the rows whose transaction holds it anywhere, as the
+    desktop register's filter does (``ledger.transaction_matches``, #382); the limit
+    applies after it.
+    """
     found = db.get_account(account)
     if found is None:
         return ServiceResult.failure(ServiceError("account.not_found", ("account",)))
     if limit < 1:
         return ServiceResult.failure(ServiceError("register.rows.invalid", ("limit",)))
-    rows = tuple(ledger.register(db, account)[-limit:])
+    rows = tuple(
+        [
+            row
+            for row in ledger.register(db, account)
+            if ledger.transaction_matches(db, row.transaction, filter_text)
+        ][-limit:]
+    )
     debit_label, credit_label = ledger.register_headings(found.atype)
     security = ledger.security_of(db, found)
     holding = None

@@ -1781,6 +1781,10 @@ def test_register_views_read_alike(target, book, tmp_path):
     ]
     assert view.holding is None
     assert len(api.register_view(book.checking).rows) == 2
+    # The register filter reaches the server: 1800 is the rent's amount (#382).
+    assert [
+        row.transaction.handle for row in api.register_view(book.checking, 250, "1800").rows
+    ] == [rent.handle]
 
     account, fund, usd = _fund(db, book)
     _trade(db, account, usd, book.checking, date(2026, 9, 10), "4", "400")

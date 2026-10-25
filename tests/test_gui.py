@@ -10683,6 +10683,23 @@ class TestSearchableChoices:
         later.set_model(Gtk.StringList.new(names))
         assert later.get_enable_search() is True
 
+    def test_a_long_choice_list_opens_tall_enough_to_scroll(self):
+        # #381: account lists opened two or three rows high.
+        from breadsched.gui.widgets.choice import (
+            LIST_MIN_HEIGHT,
+            SEARCH_FROM,
+            _list_scroller,
+            bounded_dropdown,
+        )
+
+        long = bounded_dropdown([f"Expenses:Item {index}" for index in range(SEARCH_FROM + 5)])
+        assert _list_scroller(long).get_min_content_height() == LIST_MIN_HEIGHT
+        short = bounded_dropdown(["Keep", "Set to"])
+        assert _list_scroller(short).get_min_content_height() == -1
+        later = bounded_dropdown()
+        later.set_model(Gtk.StringList.new([f"Account {index}" for index in range(20)]))
+        assert _list_scroller(later).get_min_content_height() == LIST_MIN_HEIGHT
+
     def test_the_register_account_choice_is_searchable(self, app, window, populated_book):
         from breadsched.gen.lib import Account, AccountType
 
