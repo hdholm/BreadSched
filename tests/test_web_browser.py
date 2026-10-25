@@ -1543,3 +1543,59 @@ def test_a_schedule_repeats_every_n_units_with_a_calculated_amount(page, served)
     saved = next(item for item in db.iter_scheduled() if item.name == "Every four weeks")
     assert (saved.recurrence.period.value, saved.recurrence.interval) == ("week", 4)
     assert saved.amount() == Money("81.45")
+
+
+def test_the_last_split_line_holds_the_rest_and_tab_skips_to_withdrawal(page, served):
+    """#369: an unbalanced split offers the rest on its empty line; an expense
+    transfer tabs to the money-out column."""
+    from breadsched.gen.lib import AccountClass
+
+    db, _httpd = served
+    _open_register(page)
+    register = page.locator("select").first.input_value()
+    expense = next(
+        a
+        for a in db.iter_accounts()
+        if a.account_class is AccountClass.EXPENSE and not a.placeholder and not a.hidden
+    )
+    other = next(
+        a
+        for a in db.iter_accounts()
+        if a.account_class is AccountClass.EXPENSE
+        and not a.placeholder
+        and not a.hidden
+        and a.handle != expense.handle
+    )
+    transfer = page.locator("[aria-label='New transaction transfer account']")
+    transfer.select_option(expense.handle)
+    transfer.focus()
+    page.keyboard.press("Tab")
+    focused = page.evaluate("() => document.activeElement.getAttribute('aria-label')")
+    # The second amount cell of the new row is the money-out column.
+    amounts = page.locator("tr.entry-row:has([aria-label='New transaction description']) input.num")
+    decrease_label = amounts.nth(1).get_attribute("aria-label")
+    assert focused == decrease_label
+
+    _blank(page, "description").fill("Split rest")
+    page.locator(f"[aria-label='{decrease_label}']").fill("9.00")
+    page.locator("tr:has([aria-label='New transaction description'])").get_by_role(
+        "button", name="Split", exact=True
+    ).click()
+    page.wait_for_selector("[aria-label='New split 3 account']")
+    # Take 4.00 off the expense line: the empty third line shows the 4.00 left.
+    lines = page.locator("tr.entry-line")
+    expense_row = lines.filter(has=page.locator(f"option[value='{expense.handle}']:checked"))
+    for field in expense_row.locator("input.num").all():
+        if field.input_value():
+            field.fill("5.00")
+            field.dispatch_event("input")
+    rest = page.locator("tr.entry-line input.rest")
+    assert rest.count() == 1 and rest.get_attribute("placeholder") == "4.00"
+    page.locator("[aria-label='New split 3 account']").select_option(other.handle)
+    assert rest.count() == 0 or rest.input_value() == "4.00"
+    page.locator("[aria-label='New transaction description']").press("Enter")
+    page.wait_for_selector("text=Posted Split rest.")
+    stored = next(t for t in db.iter_transactions() if t.description == "Split rest")
+    values = {split.account: split.value for split in stored.splits}
+    assert values[register] == -values[expense.handle] - values[other.handle]
+    assert abs(values[other.handle].to_decimal()) == 4

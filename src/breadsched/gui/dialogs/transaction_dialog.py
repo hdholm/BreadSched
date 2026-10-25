@@ -37,6 +37,7 @@ from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import attachments as attachment_engine
 from ...gen.engine import escrow, fsa_claims, ledger
 from ...gen.engine.cost_basis import shares_text
+from ...gen.engine.entry_input import parse_amount_text
 from ...gen.lib import (
     Amount,
     InvestmentActivityKind,
@@ -89,22 +90,37 @@ class SplitEditor:
         self.reconcile_date = split.reconcile_date if split else None
         self.fsa_year_start = split.fsa_year_start if split else None
 
+        #: Whether the dialog added this row to hold the rest of an unbalanced
+        #: entry, so it can take it away again once the entry balances (#369).
+        self.auto: bool = False
         self.box = Gtk.Box(spacing=8)
         self.account = bounded_dropdown(dialog.account_names or ["(none)"])
         self.account.set_hexpand(True)
         self.account.connect("notify::selected", dialog.revalidate)
         self.account.connect("notify::selected", lambda *_: self._show_shares())
+        self.account.connect("notify::selected", lambda *_: self._label_columns())
+        # Choosing an account for a row that holds the rest keeps the row.
+        self.account.connect(
+            "notify::selected",
+            lambda *_: setattr(self, "auto", self.auto and self.account_handle is None),
+        )
         self.box.append(self.account)
 
         self.memo = Gtk.Entry(placeholder_text="Memo")
         self.memo.set_size_request(140, -1)
         self.box.append(self.memo)
 
-        self.amount = Gtk.Entry(placeholder_text="0.00", xalign=1)
-        self.amount.set_size_request(110, -1)
-        self.amount.add_css_class("numeric")
-        self.amount.connect("changed", dialog.revalidate)
-        self.box.append(self.amount)
+        # Two amount columns, as in the register (#369): each named for this row's
+        # account (Payment/Charge, Deposit/Withdrawal, Expense/Rebate), so which
+        # way money moves is never a matter of the sign. Typing in one clears the
+        # other; either may be arithmetic.
+        self.increase = Gtk.Entry(xalign=1)
+        self.decrease = Gtk.Entry(xalign=1)
+        for entry, other in ((self.increase, self.decrease), (self.decrease, self.increase)):
+            entry.set_size_request(100, -1)
+            entry.add_css_class("numeric")
+            entry.connect("changed", self._amount_changed, other)
+            self.box.append(entry)
 
         # Shares, for a split in an account that holds a security (#323).
         self.shares = Gtk.Entry(placeholder_text="Shares", xalign=1)
@@ -146,7 +162,7 @@ class SplitEditor:
                     self.account.set_selected(index)
                     break
             self.memo.set_text(split.memo)
-            self.amount.set_text(str(split.value.to_decimal()))
+            self.set_value(split.value)
             if dialog.holds_security(split.account):
                 self._loaded_shares = shares_text(split.quantity)
                 self.shares.set_text(self._loaded_shares)
@@ -172,6 +188,52 @@ class SplitEditor:
             )
 
         self._show_shares()
+        self._label_columns()
+
+    def _amount_changed(self, entry: Gtk.Entry, other: Gtk.Entry) -> None:
+        if entry.get_text().strip() and other.get_text():
+            other.set_text("")
+        self.auto = False
+        self.dialog.revalidate()
+
+    def _label_columns(self) -> None:
+        """Name the two amount columns for this row's account, as its register does."""
+        handle = self.account_handle
+        account = self.dialog.db.get_account(handle) if handle is not None else None
+        up, down = ledger.register_headings(account.atype) if account is not None else ("In", "Out")
+        self._labels = (up, down)
+        for entry, label in ((self.increase, up), (self.decrease, down)):
+            entry.update_property([Gtk.AccessibleProperty.LABEL], [label])
+        self.show_rest(None)
+
+    def show_rest(self, rest: Money | None) -> None:
+        """Show what this blank row would take to balance the entry, or the labels."""
+        up, down = getattr(self, "_labels", ("In", "Out"))
+        self.increase.set_placeholder_text(up)
+        self.decrease.set_placeholder_text(down)
+        if rest is not None and rest:
+            target = self.increase if rest > 0 else self.decrease
+            target.set_placeholder_text(abs(rest).format())
+
+    def set_value(self, value: Money | None) -> None:
+        """Show a signed value in its column: positive as an increase (a debit)."""
+        if value is None:
+            self.increase.set_text("")
+            self.decrease.set_text("")
+        elif value >= 0:
+            self.increase.set_text(str(value.to_decimal()))
+        else:
+            self.decrease.set_text(str((-value).to_decimal()))
+
+    def set_amount_text(self, text: str) -> None:
+        """Type a signed amount: a leading minus puts it in the decrease column."""
+        text = text.strip()
+        if text.startswith("-"):
+            self.increase.set_text("")
+            self.decrease.set_text(text[1:])
+        else:
+            self.decrease.set_text("")
+            self.increase.set_text(text)
 
     def _show_shares(self) -> None:
         self.shares.set_visible(self.dialog.holds_security(self.account_handle))
@@ -205,18 +267,21 @@ class SplitEditor:
         return None
 
     def value(self) -> Money | None:
-        """The typed amount, or None when the field is blank or unreadable."""
-        text = self.amount.get_text().strip()
-        if not text:
-            return None
-        try:
-            return Money(parse_user_amount(text))
-        except (ValueError, ArithmeticError):
-            return None
+        """The signed amount (an increase positive), or None when blank or unreadable."""
+        for entry, sign in ((self.increase, 1), (self.decrease, -1)):
+            text = entry.get_text().strip()
+            if not text:
+                continue
+            try:
+                amount = Money(parse_amount_text(text))
+            except (ValueError, ArithmeticError):
+                return None
+            return amount if sign > 0 else -amount
+        return None
 
     @property
     def is_blank(self) -> bool:
-        return not self.amount.get_text().strip()
+        return not self.increase.get_text().strip() and not self.decrease.get_text().strip()
 
     @property
     def activity(self) -> InvestmentActivityKind | None:
@@ -376,6 +441,7 @@ class TransactionDialog(BoundedWindow):
         self.proposal_note.add_css_class("dim")
         box.append(self.proposal_note)
 
+        # Each split row names its two amount columns for its own account (#369).
         self.split_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         scroller = Gtk.ScrolledWindow(child=self.split_box)
         scroller.set_vexpand(True)
@@ -642,15 +708,15 @@ class TransactionDialog(BoundedWindow):
                 if account in accounts:
                     editor.account.set_selected(accounts.index(account))
                 editor.memo.set_text(memo)
-                editor.amount.set_text("" if value is None else str(value.to_decimal()))
+                editor.set_value(value)
             self.revalidate()
             return
         other, here = self.splits[0], self.splits[1]
         if transfer in accounts:
             other.account.set_selected(accounts.index(transfer))
         if amount is not None:
-            here.amount.set_text(str(amount.to_decimal()))
-            other.amount.set_text(str((-amount).to_decimal()))
+            here.set_value(amount)
+            other.set_value(-amount)
         elif description:
             self.propose_from_entry()
         self.revalidate()
@@ -661,7 +727,7 @@ class TransactionDialog(BoundedWindow):
         """Fill untouched splits of a new transaction from the latest matching entry."""
         if self.transaction is not None:
             return None  # an existing transaction is never rewritten
-        if any(e.amount.get_text().strip() or e.memo.get_text().strip() for e in self.splits):
+        if any(not e.is_blank or e.memo.get_text().strip() for e in self.splits):
             return None  # never overwrite what the user typed
         try:
             proposal = book_server(self.db).suggest_entry(
@@ -686,7 +752,7 @@ class TransactionDialog(BoundedWindow):
         for editor, split in zip(self.splits, suggestion.splits, strict=True):
             editor.account.set_selected(handles.index(split.account))
             editor.memo.set_text(split.memo)
-            editor.amount.set_text(str(split.value.to_decimal()))
+            editor.set_value(split.value)
         notes = self.notes_view.get_buffer()
         if (
             suggestion.notes.strip()
@@ -735,9 +801,43 @@ class TransactionDialog(BoundedWindow):
         return total
 
     def revalidate(self, *_args) -> None:
-        problems: list[str] = []
+        if getattr(self, "_revalidating", False):
+            return
+        self._revalidating = True
+        try:
+            self._revalidate()
+        finally:
+            self._revalidating = False
 
-        if len({e.account_handle for e in self.splits}) < 2:
+    def _rest_row(self, residual: Money) -> None:
+        """Keep one blank row holding the rest while the entry is out of balance (#369).
+
+        GnuCash puts the rest of an unbalanced entry on a new split, waiting for its
+        account; this does the same. A row added for it goes again, untouched, once
+        the entry balances.
+        """
+        typed = [e for e in self.splits if not e.is_blank]
+        blanks = [e for e in self.splits if e.is_blank]
+        if residual and not blanks and len(typed) >= 2:
+            editor = self.add_split()
+            editor.auto = True
+            editor.account.set_selected(Gtk.INVALID_LIST_POSITION)
+            blanks = [editor]
+        elif not residual:
+            for editor in [e for e in blanks if e.auto and len(self.splits) > 2]:
+                self.splits.remove(editor)
+                self.split_box.remove(editor.box)
+            blanks = [e for e in self.splits if e.is_blank]
+        for editor in self.splits:
+            editor.show_rest(-residual if editor in blanks and len(blanks) == 1 else None)
+
+    def _revalidate(self) -> None:
+        problems: list[str] = []
+        self._rest_row(self.residual())
+
+        if any(e.account_handle is None for e in self.splits):
+            problems.append("choose the account for the last split, which holds the rest")
+        elif len({e.account_handle for e in self.splits}) < 2:
             problems.append("use at least two different accounts")
         if any(e.value() is None and not e.is_blank for e in self.splits):
             problems.append("check the amounts")

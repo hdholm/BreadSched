@@ -1136,7 +1136,8 @@ class TestRegisterGrid:
         grid.key(Gdk.KEY_Up, 0)
         assert grid.key(Gdk.KEY_Tab, 0)
         assert sheet.draft.transfer == "Expenses:Rent"
-        assert sheet.column == "increase" and not grid.match_frame.get_visible()
+        # #369: an expense goes to the money-out column (Withdrawal).
+        assert sheet.column == "decrease" and not grid.match_frame.get_visible()
 
     def test_a_whole_entry_by_keyboard(self, app, window, populated_book):
         view = _grid_register(app, window, populated_book)
@@ -1150,8 +1151,8 @@ class TestRegisterGrid:
         _type(grid, "Keyboard entry")
         grid.key(Gdk.KEY_Tab, 0)
         _type(grid, "ex:re")
-        grid.key(Gdk.KEY_Tab, 0)
-        grid.key(Gdk.KEY_Tab, 0)  # to the decrease column
+        grid.key(Gdk.KEY_Tab, 0)  # an expense: straight to the decrease column (#369)
+        assert sheet.column == "decrease"
         _type(grid, "20+5")
         assert grid.key(Gdk.KEY_Return, 0)
         posted = next(t for t in db.iter_transactions() if t.description == "Keyboard entry")
@@ -1765,9 +1766,77 @@ class TestDialogs:
 
         app.open_book(populated_book)
         dialog = TransactionDialog(window, app.db)
-        dialog.splits[0].amount.set_text("125.00")
+        dialog.splits[0].set_amount_text("125.00")
         assert dialog.save_button.get_sensitive() is True
         assert "blank split will be set to" in dialog.status.get_text()
+
+    def test_split_rows_name_their_columns_and_hold_the_rest(self, app, window, populated_book):
+        """#369: Increase/Decrease named for each row's account; the rest on a new row."""
+        from breadsched.gen.lib import Money
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        db = app.db
+        card = db.get_account_by_name("Credit Card")
+        rent = db.get_account_by_name("Expenses:Rent")
+        checking = db.get_account_by_name("Assets:Checking Account")
+        dialog = TransactionDialog(window, db, default_account=card.handle)
+        try:
+            handles = [account.handle for account in dialog.accounts]
+            first, second = dialog.splits
+            first.account.set_selected(handles.index(card.handle))
+            second.account.set_selected(handles.index(rent.handle))
+            assert (
+                first.increase.get_placeholder_text(),
+                first.decrease.get_placeholder_text(),
+            ) == (
+                "Payment",
+                "Charge",
+            )
+            assert second.increase.get_placeholder_text() == "Expense"
+            # A charge: no signs to get right.
+            first.decrease.set_text("60")
+            assert first.value() == Money("-60")
+            # The blank row shows what balances it, in its expense column.
+            assert second.increase.get_placeholder_text() == "60.00"
+            second.increase.set_text("45")
+            # Out of balance: a new row holds the 15 left, waiting for its account.
+            assert len(dialog.splits) == 3
+            rest = dialog.splits[2]
+            assert rest.auto and rest.account_handle is None
+            assert rest.increase.get_placeholder_text() == "15.00"
+            assert dialog.save_button.get_sensitive() is False
+            rest.account.set_selected(handles.index(checking.handle))
+            assert rest.auto is False
+            assert dialog.save_button.get_sensitive() is True
+            dialog.description_entry.set_text("Rest on a new split")
+            dialog._on_save(None)
+            saved = next(
+                t for t in db.iter_transactions() if t.description == "Rest on a new split"
+            )
+            assert {s.account: s.value for s in saved.splits} == {
+                card.handle: Money("-60"),
+                rent.handle: Money("45"),
+                checking.handle: Money("15"),
+            }
+        finally:
+            dialog.destroy()
+
+    def test_a_rest_row_goes_again_once_the_entry_balances(self, app, window, populated_book):
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        dialog = TransactionDialog(window, app.db)
+        try:
+            first, second = dialog.splits
+            first.increase.set_text("10")
+            second.decrease.set_text("4")
+            assert len(dialog.splits) == 3 and dialog.splits[2].auto
+            second.decrease.set_text("10+0")
+            assert len(dialog.splits) == 2
+            assert dialog.status.get_text() == "Balanced"
+        finally:
+            dialog.destroy()
 
     def test_transaction_amount_accepts_comma_decimal_input(self, app, window, populated_book):
         from breadsched.gen.lib import Money
@@ -1775,7 +1844,7 @@ class TestDialogs:
 
         app.open_book(populated_book)
         dialog = TransactionDialog(window, app.db)
-        dialog.splits[0].amount.set_text("45,67")
+        dialog.splits[0].set_amount_text("45,67")
 
         assert dialog.splits[0].value() == Money("45.67")
         assert dialog.save_button.get_sensitive() is True
@@ -1787,7 +1856,7 @@ class TestDialogs:
         app.open_book(populated_book)
         dialog = TransactionDialog(window, app.db)
         dialog.description_entry.set_text("Test entry")
-        dialog.splits[0].amount.set_text("42.00")
+        dialog.splits[0].set_amount_text("42.00")
         before = app.db.summary()["txn"]
         dialog._on_save(None)
 
@@ -3656,10 +3725,10 @@ class TestEditingFromTheRegister:
         from breadsched.gen.lib import Money
 
         dialog, transaction = self._dialog_for(register)
-        dialog.splits[0].amount.set_text("77.00")
-        dialog.splits[1].amount.set_text("-77.00")
+        dialog.splits[0].set_amount_text("77.00")
+        dialog.splits[1].set_amount_text("-77.00")
         for extra in dialog.splits[2:]:
-            extra.amount.set_text("0.00")
+            extra.set_amount_text("0.00")
         dialog.revalidate()
         dialog._on_save(None)
 
@@ -3669,10 +3738,15 @@ class TestEditingFromTheRegister:
 
     def test_an_unbalanced_edit_cannot_be_saved(self, register):
         dialog, _ = self._dialog_for(register)
-        dialog.splits[0].amount.set_text("1000000.00")
+        before = len(dialog.splits)
+        dialog.splits[0].set_amount_text("1000000.00")
         dialog.revalidate()
         assert dialog.save_button.get_sensitive() is False
-        assert "Out of balance" in dialog.status.get_text()
+        # #369: the rest waits on a new split, for its account.
+        assert len(dialog.splits) == before + 1
+        rest = dialog.splits[-1]
+        assert rest.auto and rest.account_handle is None and rest.is_blank
+        assert "holds the rest" in dialog.status.get_text()
 
     def test_split_identities_survive_an_edit(self, register, app):
         """Split handles carry reconciliation state; losing them detaches it."""
@@ -7725,11 +7799,11 @@ class TestEditorAutocomplete:
         app.open_book(populated_book)
         checking, _source = self._grocer(app)
         dialog = TransactionDialog(window, app.db, default_account=checking)
-        dialog.splits[0].amount.set_text("7.00")
+        dialog.splits[0].set_amount_text("7.00")
         dialog.description_entry.set_text("Corner Grocer")
 
         assert dialog.propose_from_entry() is None
-        assert dialog.splits[0].amount.get_text() == "7.00"
+        assert dialog.splits[0].increase.get_text() == "7.00"
         assert dialog.proposal_note.get_visible() is False
 
         memo_only = TransactionDialog(window, app.db, default_account=checking)
@@ -8477,7 +8551,7 @@ class TestEditorKeepsQuantity:
         try:
             for editor in dialog.splits:
                 value = editor.value()
-                editor.amount.set_text("-1900.00" if value < 0 else "1900.00")
+                editor.set_amount_text("-1900.00" if value < 0 else "1900.00")
             dialog._on_save(None)
         finally:
             dialog.destroy()

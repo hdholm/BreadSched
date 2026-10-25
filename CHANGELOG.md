@@ -10,6 +10,28 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a297 - 2026-10-25
+
+- **The rest of a split entry waits on its own line (#369).** An unbalanced split
+  entry no longer shows a separate Imbalance line.
+  - The GTK register's empty last split line shows the amount left, in the column
+    that balances it, and takes it when given an account or memo
+    (`RegisterSheet.balancing_line`). Saving still refuses until the splits
+    balance; the message now points at that line.
+  - The browser register does the same: the rest is the empty line's placeholder,
+    and choosing its account fills it in.
+- **Tab from an expense goes to the money-out column (#369).** In the GTK and
+  browser registers, Tab from the transfer of a two-split entry whose transfer is
+  an expense goes to Withdrawal or Charge instead of Deposit or Payment, for that
+  one step only.
+- **Transaction editor splits read like a register (#369).** Each split row has two
+  amount entries named for its account (Payment/Charge, Deposit/Withdrawal,
+  Expense/Rebate…) in place of one signed amount; either may be arithmetic.
+  - A single blank row shows the balancing amount and takes it on save.
+  - An entry whose rows are all filled but out of balance gains a row holding the
+    rest, with no account until one is chosen. That row goes again if the entry
+    balances first.
+
 ## 0.2.0a296 - 2026-10-25
 
 - **Every N days, weeks, months, or years (#370).**
