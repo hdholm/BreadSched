@@ -41,11 +41,17 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
     """One account's register rows, newest ``limit`` rows, with editing detail."""
     handle = query.text("account", required=True) or ""
     limit = query.integer("limit", default=250, minimum=1, maximum=10000) or 250
+    # The same filter as the desktop register: anything a transaction holds (#382).
+    needle = query.text("filter") or ""
     query.finish()
     account = api.db.get_account(handle)
     if account is None:
         raise KeyError(handle)
-    rows = ledger.register(api.db, handle)[-limit:]
+    rows = [
+        row
+        for row in ledger.register(api.db, handle)
+        if ledger.transaction_matches(api.db, row.transaction, needle)
+    ][-limit:]
     debit_label, credit_label = ledger.register_headings(account.atype)
     security = ledger.security_of(api.db, account)
     holds_shares: dict[str, bool] = {}

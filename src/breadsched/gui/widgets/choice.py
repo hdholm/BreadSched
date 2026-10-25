@@ -15,8 +15,9 @@ letters at a time.
 
 A list of :data:`SEARCH_FROM` or more choices can be searched (#334): opening it
 shows a search field, and typing keeps only the choices that contain what was typed
-anywhere, as the register's account cell does. Every account choice in the desktop
-window comes from here, so they all search the same way.
+anywhere, as the register's account cell does. Such a list also opens at least
+:data:`LIST_MIN_HEIGHT` tall (#381). Every account choice in the desktop window
+comes from here, so they all search and size the same way.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from collections.abc import Sequence
 
 from ..gi_setup import Gtk, Pango
 
-__all__ = ["SEARCH_FROM", "bound_dropdown", "bounded_dropdown"]
+__all__ = ["LIST_MIN_HEIGHT", "SEARCH_FROM", "bound_dropdown", "bounded_dropdown"]
 
 #: Characters a shown choice may take before it is shortened.
 CHOICE_CHARS = 36
@@ -34,6 +35,23 @@ CHOICE_CHARS = 36
 LIST_CHARS = 72
 #: A list this long or longer can be searched by typing.
 SEARCH_FROM = 8
+#: The open list is at least this tall (about twelve rows), so a long list of
+#: accounts scrolls and searches comfortably even where the window left GTK
+#: room for only two or three rows below the button (#381).
+LIST_MIN_HEIGHT = 300
+
+
+def _list_scroller(dropdown: Gtk.DropDown) -> Gtk.ScrolledWindow | None:
+    """The scrolled window holding the drop-down's open list (inside its popover)."""
+    pending = [dropdown.get_first_child()]
+    while pending:
+        widget = pending.pop()
+        while widget is not None:
+            if isinstance(widget, Gtk.ScrolledWindow):
+                return widget
+            pending.append(widget.get_first_child())
+            widget = widget.get_next_sibling()
+    return None
 
 
 def _text(item) -> str:
@@ -137,6 +155,10 @@ def bound_dropdown(dropdown: Gtk.DropDown, chars: int = CHOICE_CHARS) -> Gtk.Dro
         model = dropdown.get_model()
         count = model.get_n_items() if model is not None else 0
         dropdown.set_enable_search(count >= SEARCH_FROM)
+        # A long list opens tall; a short one keeps its natural height.
+        scroller = _list_scroller(dropdown)
+        if scroller is not None:
+            scroller.set_min_content_height(LIST_MIN_HEIGHT if count >= SEARCH_FROM else -1)
 
     searchable()
     dropdown.connect("notify::model", searchable)

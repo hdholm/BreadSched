@@ -81,7 +81,9 @@ scenario. Choosing a tab, a view icon, or a menu item leaves the keyboard in the
 shown view (`ViewManager._focus_view`, a register's cursor cell, #331); tab buttons
 do not take focus on click. Ctrl+Page Up and Ctrl+Page Down step through the tabs,
 Ctrl+W closes the current one, and Ctrl+F (**Edit → Find in Register**) goes to the
-register's filter. Closing a register with unsaved typing asks first; opening another book
+register's filter, which matches with `ledger.transaction_matches`, as the browser
+register's `filter` does: date, number, description, both notes, tags, memos,
+accounts, and amounts as shown or typed (#382). Closing a register with unsaved typing asks first; opening another book
 closes every tab, because tabs name the old book's accounts. Each book's tabs are
 remembered in `views.ini` (section `open-tabs`, keyed by a digest of the book path)
 and restored after the Dashboard opens, skipping deleted accounts and scenarios. The
@@ -165,7 +167,9 @@ Windows must stay usable on small screens whatever the book holds:
   `SEARCH_FROM` (8) or more choices can be searched: its popup has a search field
   matching anywhere in a choice (`StringFilterMatchMode.SUBSTRING`), so every
   account choice, including the register's account picker, filters as the
-  register's account cell does (#334). View
+  register's account cell does (#334). Such a list opens at least `LIST_MIN_HEIGHT`
+  tall (the list's scrolled window inside the drop-down's popover), so it never shows
+  only two or three rows (#381). View
   toolbars scroll, Dashboard cards wrap in a `Gtk.FlowBox`, and the main stacks are
   not homogeneous, so the window's minimum is the shown page's.
 - Every secondary window is a `widgets.bounded.BoundedWindow`, which opens at its

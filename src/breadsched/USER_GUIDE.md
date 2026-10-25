@@ -473,8 +473,10 @@ in your own settings, readable only by you, never in the book.
 A register lists one account's entries oldest first, like a check register, with a
 full-ledger running balance. Headings use account-appropriate household language
 such as Deposit/Withdrawal or Payment/Charge. Filtering the register searches
-descriptions, numbers, notes, tags, split memos, and account names without
-changing the running balance. A transaction cannot be saved unless its exact splits
+everything a transaction holds: its date, number, description, notes (BreadSched's
+and imported), tags, split memos, account names, and amounts, as shown (1,067.25)
+or as typed (1067.25), so 67 finds a 67.00 charge as well as check 1067. It does
+not change the running balance. A transaction cannot be saved unless its exact splits
 balance. While split lines do not balance, the empty last line (or, in the desktop
 transaction editor, a new split row) holds the amount left, waiting for its
 account, as in GnuCash.
