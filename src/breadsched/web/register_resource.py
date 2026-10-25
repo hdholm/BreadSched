@@ -99,7 +99,6 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
                 "num": row.transaction.num,
                 "description": row.description,
                 "notes": row.transaction.notes,
-                "source_notes": row.transaction.source_notes,
                 "tags": list(row.transaction.tags),
                 "documents": document_json(view.documents_of(row.transaction.handle)),
                 "transfer": view.transfer(row),

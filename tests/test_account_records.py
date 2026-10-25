@@ -33,7 +33,7 @@ STORED = {
     "hidden": False,
     "commodity_scu": None,
     "notes": "",
-    "source_notes": "",
+    "imported_notes_digest": "",
     "source_atype": None,
     "source_guid": None,
     "source_type": "",

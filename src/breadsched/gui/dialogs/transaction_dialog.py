@@ -377,22 +377,9 @@ class TransactionDialog(BoundedWindow):
             self.notes_view.get_buffer().set_text(transaction.notes)
         notes_scroll = Gtk.ScrolledWindow(child=self.notes_view)
         notes_scroll.set_min_content_height(64)
-        header.attach(Gtk.Label(label="BreadSched notes", xalign=0), 0, 3, 1, 1)
+        # One note, imported ones included (#385).
+        header.attach(Gtk.Label(label="Notes", xalign=0), 0, 3, 1, 1)
         header.attach(notes_scroll, 1, 3, 1, 1)
-
-        if transaction is not None and transaction.source_notes:
-            imported_notes = Gtk.Label(
-                label=transaction.source_notes,
-                xalign=0,
-                wrap=True,
-                selectable=True,
-            )
-            imported_notes.add_css_class("dim")
-            imported_notes.set_tooltip_text(
-                "Read-only notes from the import source; refreshed on re-import"
-            )
-            header.attach(Gtk.Label(label="Imported notes", xalign=0), 0, 4, 1, 1)
-            header.attach(imported_notes, 1, 4, 1, 1)
 
         self.escrow_treatment: Gtk.Label | None = None
         if transaction is not None:

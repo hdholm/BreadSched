@@ -1090,8 +1090,6 @@ function openAccountDetails(account) {
             el("td", {}, value(account.source_guid))),
           el("tr", {}, el("td", {}, "Source account type"), el("td", {}, "type"),
             el("td", {}, value(account.source_type))),
-          el("tr", {}, el("td", {}, "Source notes"), el("td", {}, "string"),
-            el("td", {}, value(account.source_notes))),
           ...(account.source_fields || []).map((field) => el("tr", {},
             el("td", {}, field.name), el("td", {}, field.value_type),
             el("td", {}, value(field.value)))),
@@ -1392,8 +1390,7 @@ async function showRegister() {
       el("td", { class: "muted" }, row.num),
       el("td", {},
         el("div", {}, row.description),
-        row.notes ? el("div", {class:"muted"}, `BreadSched: ${row.notes}`) : null,
-        row.source_notes ? el("div", {class:"muted"}, `Imported: ${row.source_notes}`) : null,
+        row.notes ? el("div", {class:"muted"}, row.notes) : null,
         row.tags.length ? el("div", {class:"muted"}, `Tags: ${row.tags.join(", ")}`) : null,
         row.documents.length ? el("div", {class:
           row.documents.some((item)=>item.missing) ? "negative" : "muted"},

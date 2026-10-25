@@ -47,7 +47,7 @@ LOG = get_logger(__name__)
 
 __all__ = ["DbSQLite", "is_portal_book", "migration_backup_path", "stored_schema_version"]
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 T = TypeVar("T", bound=PrimaryObject)
 
 _SCHEMA = """

@@ -334,7 +334,7 @@ def transaction_matches(db: DbSQLite, transaction: Transaction, text: str) -> bo
     """Whether ``text`` appears anywhere in ``transaction`` (#382).
 
     The register filters search everything a transaction holds: its date,
-    number, description, notes (BreadSched's and imported), tags, each split's
+    number, description, note (imported notes included, #385), tags, each split's
     memo and account, and each split's amount (and share count) as shown or as
     typed, so ``67`` finds a 67.00 charge as well as check 1067. Case is ignored.
     """
@@ -346,7 +346,6 @@ def transaction_matches(db: DbSQLite, transaction: Transaction, text: str) -> bo
         transaction.num,
         transaction.description,
         transaction.notes,
-        transaction.source_notes,
         *transaction.tags,
     ]
     for split in transaction.splits:

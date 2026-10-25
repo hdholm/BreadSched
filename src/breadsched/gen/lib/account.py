@@ -17,6 +17,7 @@ from typing import Any
 
 from .base import PrimaryObject
 from .money import Money
+from .notes import merge_legacy_notes, notes_digest
 
 __all__ = [
     "Account",
@@ -403,9 +404,11 @@ class Account(PrimaryObject):
         self.placeholder = placeholder
         self.hidden = hidden
         self.commodity_scu = commodity_scu
+        #: The account's one note, owned by BreadSched; an import seeds it and
+        #: refreshes it only while it is unchanged (#385, see ``lib.notes``).
         self.notes = ""
-        #: Read-only account notes refreshed from the external source on re-import.
-        self.source_notes = ""
+        #: Fingerprint of the source's notes as last imported (``lib.notes``).
+        self.imported_notes_digest = ""
         #: Last source-owned GnuCash type, distinct from BreadSched's account type.
         self.source_atype: GnuCashAccountType | None = None
         #: Exact imported identity. Adopted roots/top-level placeholders retain a
@@ -478,7 +481,7 @@ class Account(PrimaryObject):
             "hidden": self.hidden,
             "commodity_scu": self.commodity_scu,
             "notes": self.notes,
-            "source_notes": self.source_notes,
+            "imported_notes_digest": self.imported_notes_digest,
             "source_atype": self.source_atype.value if self.source_atype is not None else None,
             "source_guid": self.source_guid,
             "source_type": self.source_type,
@@ -532,23 +535,30 @@ class Account(PrimaryObject):
             for field in data.get("source_fields", [])
             if isinstance(field, dict)
         ]
-        legacy_notes = str(data.get("notes", ""))
+        notes = str(data.get("notes", ""))
         if "source_notes" in data:
-            self.notes = legacy_notes
-            self.source_notes = str(data.get("source_notes", ""))
+            # Two notes from 0204 until schema 13 (#385): merged into one.
+            self.notes, self.imported_notes_digest = merge_legacy_notes(
+                str(data.get("source_notes") or ""), notes
+            )
+        elif "imported_notes_digest" in data:
+            self.notes = notes
+            self.imported_notes_digest = str(data.get("imported_notes_digest") or "")
         else:
-            # Before 0204 imported and local notes shared one editable field. Move
-            # a value only when retained source metadata proves it came from GnuCash.
+            # Before 0204 one note served both; it came from GnuCash when the
+            # retained source metadata holds the same text.
             imported_note = next(
                 (
                     field.value
                     for field in self.source_fields
                     if field.name == "slot:notes" and field.value_type.startswith("string")
                 ),
-                None,
+                "",
             )
-            self.source_notes = legacy_notes if imported_note == legacy_notes else ""
-            self.notes = "" if imported_note == legacy_notes else legacy_notes
+            self.notes = notes
+            self.imported_notes_digest = (
+                notes_digest(imported_note) if imported_note == notes else ""
+            )
         self.fsa = FsaPlan(
             years=[FsaFundingYear.from_dict(year) for year in data.get("fsa_years", [])],
             dependent_care=bool(data.get("fsa_dependent_care", False)),

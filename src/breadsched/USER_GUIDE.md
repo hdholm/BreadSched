@@ -473,8 +473,7 @@ in your own settings, readable only by you, never in the book.
 A register lists one account's entries oldest first, like a check register, with a
 full-ledger running balance. Headings use account-appropriate household language
 such as Deposit/Withdrawal or Payment/Charge. Filtering the register searches
-everything a transaction holds: its date, number, description, notes (BreadSched's
-and imported), tags, split memos, account names, and amounts, as shown (1,067.25)
+everything a transaction holds: its date, number, description, notes, tags, split memos, account names, and amounts, as shown (1,067.25)
 or as typed (1067.25), so 67 finds a 67.00 charge as well as check 1067. It does
 not change the running balance. A transaction cannot be saved unless its exact splits
 balance. While split lines do not balance, the empty last line (or, in the desktop
@@ -1623,9 +1622,16 @@ each period rather than recording the same activity in both.
   to a reconciled split's account, amount, quantity, memo, or action, are held.
   Changes confined to its other splits apply normally.
 - Use BreadSched for planning work: account types and Dashboard groups, Plan
-  matches and rejections, BreadSched notes, split planning/FSA/investment
-  classifications, FSA claims, estimates, scenarios, and schedule planning
-  timelines. These survive re-import.
+  matches and rejections, split planning/FSA/investment classifications, FSA
+  claims, estimates, scenarios, and schedule planning timelines. These survive
+  re-import.
+- Each transaction and account has one note. The first import fills it with
+  GnuCash's notes; after that it is yours. A re-import brings GnuCash's new notes
+  only while you have not edited the note in BreadSched. If you both changed it,
+  BreadSched keeps your note and the import summary says how many notes it kept.
+  Write-back sends transaction notes to GnuCash (next section). Books from before
+  version 0.2.0a301 kept GnuCash's notes apart from BreadSched's; opening one joins
+  them, GnuCash's text first, then a blank line and yours.
 - Do not post schedules or add transactions in BreadSched for activity you also
   record in GnuCash, unless you write them back (next section). BreadSched-created
   transactions are otherwise never written to GnuCash and are never removed by
@@ -1650,13 +1656,13 @@ written:
 - transactions you entered in BreadSched, with any number of splits, when every
   account exists in GnuCash and the transaction is in a currency the book has (a
   split in a security or foreign-currency account keeps its own quantity);
-- edits to transactions that came from GnuCash: date, description, number, split
-  memos and actions, amounts, accounts, and added or removed splits;
+- edits to transactions that came from GnuCash: date, description, number, notes,
+  split memos and actions, amounts, accounts, and added or removed splits;
 - transactions you deleted in BreadSched, which are deleted in GnuCash too, with
   their notes and other details; and
 - reconcile marks you set in BreadSched.
 
-A transaction GnuCash has reconciled only takes reconcile marks: other edits to it,
+A transaction GnuCash has reconciled only takes reconcile marks and notes: other edits to it,
 and deleting it, are listed as not written, as is a transaction in a GnuCash lot
 (investment lots). Anything else that cannot be written is listed too, with the
 reason. Nothing is written until you choose which transactions to write.
@@ -1681,7 +1687,7 @@ transaction and what GnuCash changed:
 
 - **Keep BreadSched version** leaves the transaction as reconciled. That GnuCash
   version is not raised again; a later, different GnuCash change is.
-- **Use GnuCash version** applies the change, keeping BreadSched notes, Plan
+- **Use GnuCash version** applies the change, keeping your notes, Plan
   links, and classifications. A split in a completed BreadSched statement stays
   Reconciled when its account and amount are unchanged. If GnuCash would change
   that split's account or amount, or remove it, the row names the statement

@@ -39,6 +39,7 @@ from breadsched.gen.lib import (
     Transaction,
 )
 from breadsched.gen.lib.commodity import Commodity
+from breadsched.gen.lib.notes import notes_digest
 from breadsched.gen.plug import IMPORTER, PluginManager
 from breadsched.gen.utils import OperationCancelled
 from breadsched.plugins.importer import gnucash_common, gnucash_sqlite, gnucash_xml
@@ -258,7 +259,8 @@ class TestSqliteImport:
         # A type chosen in BreadSched survives the next import.
         assert db.get_account(source.ids.insurance_claims).atype is AccountType.ASSET
         assert refreshed_fsa.notes == "Local enrollment context"
-        assert refreshed_fsa.source_notes == "Source enrollment note"
+        # Both sides changed the note since the last import: BreadSched's is kept (#385).
+        assert refreshed_fsa.imported_notes_digest == notes_digest("Source enrollment note")
         assert refreshed_fsa.fsa.years[0].election == Money("2400")
         assert refreshed_fsa.fsa.dependent_care is True
         assert refreshed_fund.investment.cost_basis_method == "average"
@@ -288,8 +290,9 @@ class TestSqliteImport:
         assert account.atype is AccountType.BANK
         assert account.code == "1010"
         assert account.description == "Everyday account"
-        assert account.notes == ""
-        assert account.source_notes == "Generic account note"
+        # The first import seeds the one note (#385).
+        assert account.notes == "Generic account note"
+        assert account.imported_notes_digest == notes_digest("Generic account note")
         assert account.commodity_scu == 100
 
     def test_retains_typed_account_fields_without_interpreting_them(self, db, gnucash_sqlite_path):
@@ -316,7 +319,7 @@ class TestSqliteImport:
         assert fields[("slot:color", "string; source type 4")] == "#315a74"
         assert fields[("slot:tax-related", "int64; source type 1")] == "1"
 
-    def test_reimport_refreshes_source_notes_without_overwriting_local_notes(
+    def test_reimport_keeps_a_changed_note_when_gnucash_also_changed_it(
         self, db, gnucash_sqlite_path
     ):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
@@ -336,22 +339,63 @@ class TestSqliteImport:
         refreshed = db.get_account(gnucash_sqlite_path.ids.checking)
         assert refreshed is not None
         assert refreshed.notes == "Local planning note"
-        assert refreshed.source_notes == "Refreshed source note"
+        assert refreshed.imported_notes_digest == notes_digest("Refreshed source note")
 
-    def test_legacy_imported_note_is_moved_only_when_source_metadata_proves_it(
+    def test_reimport_takes_gnucash_notes_when_breadsched_left_the_note_alone(
+        self, db, gnucash_sqlite_path
+    ):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            source.execute(
+                "UPDATE slots SET string_val=? WHERE obj_guid=? AND name='notes'",
+                ("Refreshed source note", gnucash_sqlite_path.ids.checking),
+            )
+
+        result = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+
+        refreshed = db.get_account(gnucash_sqlite_path.ids.checking)
+        assert refreshed is not None
+        assert refreshed.notes == "Refreshed source note"
+        assert not any("kept BreadSched's notes" in warning for warning in result.warnings)
+
+    def test_reimport_reports_notes_kept_because_both_sides_changed(self, db, gnucash_sqlite_path):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        account = db.get_account(gnucash_sqlite_path.ids.checking)
+        assert account is not None
+        account.notes = "Local planning note"
+        with db.transaction("Local account note") as txn:
+            db.commit_account(account, txn)
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            source.execute(
+                "UPDATE slots SET string_val=? WHERE obj_guid=? AND name='notes'",
+                ("Refreshed source note", gnucash_sqlite_path.ids.checking),
+            )
+
+        result = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+
+        assert any(
+            "kept BreadSched's notes on 1 transaction(s) or account(s)" in warning
+            for warning in result.warnings
+        )
+        # The next import, with nothing changed on either side, reports nothing more.
+        again = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        assert not any("kept BreadSched's notes" in warning for warning in again.warnings)
+        assert db.get_account(gnucash_sqlite_path.ids.checking).notes == "Local planning note"
+
+    def test_legacy_imported_note_is_recognised_only_when_source_metadata_proves_it(
         self, db, gnucash_sqlite_path
     ):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         account = db.get_account(gnucash_sqlite_path.ids.checking)
         assert account is not None
         raw = account.serialize()
-        raw.pop("source_notes")
+        raw.pop("imported_notes_digest")
         raw["notes"] = "Generic account note"
 
         restored = Account.from_dict(raw)
 
-        assert restored.notes == ""
-        assert restored.source_notes == "Generic account note"
+        assert restored.notes == "Generic account note"
+        assert restored.imported_notes_digest == notes_digest("Generic account note")
 
         raw["notes"] = "Ambiguous legacy note"
         raw["source_fields"] = [
@@ -359,7 +403,7 @@ class TestSqliteImport:
         ]
         ambiguous = Account.from_dict(raw)
         assert ambiguous.notes == "Ambiguous legacy note"
-        assert ambiguous.source_notes == ""
+        assert ambiguous.imported_notes_digest == ""
 
     def test_historical_and_unknown_source_types_are_not_lost(self, db, gnucash_sqlite_path):
         unknown_guid = new_guid()
@@ -844,7 +888,7 @@ class TestSqliteImport:
         transaction = next(
             item for item in db.iter_transactions() if item.description == "Supermarket"
         )
-        assert transaction.source_notes == "Imported shopping note"
+        assert transaction.notes == "Imported shopping note"
         transaction.notes = "planning note"
         transaction.planned_occurrence = "schedule:occurrence"
         transaction.planned_for = date(2026, 1, 14)
@@ -867,7 +911,7 @@ class TestSqliteImport:
         reimported = db.get_transaction(transaction.handle)
         assert reimported is not None
         assert reimported.notes == "planning note"
-        assert reimported.source_notes == "Revised imported note"
+        assert reimported.imported_notes_digest == notes_digest("Revised imported note")
         assert reimported.planned_occurrence == "schedule:occurrence"
         assert reimported.planned_for == date(2026, 1, 14)
         assert reimported.planned_amount == Money("75.00")
@@ -1106,8 +1150,7 @@ class TestXmlImport:
         assert db.full_name(gnucash_xml_path.ids.bank) == "Current Account"
         account = db.get_account(gnucash_xml_path.ids.bank)
         assert account.code == "1200"
-        assert account.notes == ""
-        assert account.source_notes == "Generic XML account note"
+        assert account.notes == "Generic XML account note"
         assert account.commodity_scu == 1000
 
     def test_nested_xml_account_fields_remain_typed_and_inspectable(
@@ -1153,7 +1196,7 @@ class TestXmlImport:
         gnucash_xml.import_book(db, gnucash_xml_path.path)
         txn = db.get_transaction(gnucash_xml_path.ids.txn2)
         assert txn.num == "DD"
-        assert txn.source_notes == "Imported transaction note"
+        assert txn.notes == "Imported transaction note"
         assert txn.split_for(gnucash_xml_path.ids.util).memo == "quarterly"
 
     def test_non_dollar_commodities_survive(self, db, gnucash_xml_path):

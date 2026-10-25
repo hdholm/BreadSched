@@ -6515,7 +6515,7 @@ class TestAccountEditor:
                 commodity_scu=1000,
             )
             child.notes = "Local planning note"
-            child.source_notes = "Generic imported account note"
+            child.imported_notes_digest = "digest-of-the-imported-note"
             child.source_guid = "imported-account-guid"
             child.source_type = "STOCK"
             child.source_fields = [GnuCashAccountField("slot:color", "string", "#315a74")]
@@ -6550,7 +6550,7 @@ class TestAccountEditor:
         assert rebuilt.commodity == commodity.handle
         assert rebuilt.commodity_scu == 1000
         assert rebuilt.notes == "Local planning note"
-        assert rebuilt.source_notes == "Generic imported account note"
+        assert rebuilt.imported_notes_digest == "digest-of-the-imported-note"
         assert rebuilt.source_guid == "imported-account-guid"
         assert rebuilt.source_type == "STOCK"
         assert rebuilt.source_fields == child.source_fields

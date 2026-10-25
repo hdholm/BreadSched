@@ -37,7 +37,7 @@ TRANSACTION_DEFAULTS: dict[str, Any] = {
     "currency": None,
     "num": "",
     "notes": "",
-    "source_notes": "",
+    "imported_notes_digest": "",
     "scheduled_from": None,
     "planned_occurrence": None,
     "planned_for": None,
