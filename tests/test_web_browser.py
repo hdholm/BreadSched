@@ -1629,3 +1629,50 @@ def test_the_last_split_line_holds_the_rest_and_tab_skips_to_withdrawal(page, se
     values = {split.account: split.value for split in stored.splits}
     assert values[register] == -values[expense.handle] - values[other.handle]
     assert abs(values[other.handle].to_decimal()) == 4
+
+
+def test_configure_dashboard_sets_sections_groups_and_columns(page, served):
+    """Configure Dashboard holds the horizons, sections, groups, and columns (#381)."""
+    db, _httpd = served
+    page.wait_for_selector("text=Pending bills")
+    # The horizons moved off the page into the dialog.
+    assert page.locator("#view input[type=number]").count() == 0
+    page.get_by_role("button", name="Configure Dashboard…").click()
+    dialog = page.locator(".dashboard-config")
+    dialog.wait_for()
+    dialog.locator("input[type=number]").first.fill("45")
+    dialog.locator("input[name=section-bills]").uncheck()
+    dialog.locator("input[name=section-reimbursables]").check()
+    # Expected income: hide Frequency (index 3) for this browser only.
+    dialog.locator("input[name=column-income-3]").uncheck()
+    assert dialog.locator("input[name=column-income-0]").is_disabled()
+
+    # A new group takes an account typed into its searchable picker.
+    dialog.get_by_role("button", name="Add group").click()
+    card = dialog.locator(".card").last
+    card.locator("input").first.fill("Browser group")
+    account = page.evaluate(
+        "() => document.querySelector('#dashboard-config-accounts option').value"
+    )
+    card.get_by_label("Add an account").fill(account)
+    card.get_by_role("button", name="Add", exact=True).click()
+    assert card.locator(".group-members li").count() == 1
+    dialog.get_by_role("button", name="Save").click()
+    page.wait_for_selector(".dashboard-config", state="detached")
+
+    page.wait_for_selector("text=Pending reimbursables")
+    assert page.locator("h2", has_text="Pending bills").count() == 0
+    income = page.locator("h2", has_text="Expected income").locator("xpath=following-sibling::*[1]")
+    headers = income.locator("th").all_inner_texts()
+    assert "Frequency" not in headers and "Item" in headers
+    assert page.locator("text=Needed in 45 days").count() == 1
+
+    from breadsched.gen.engine.dashboard import DashboardConfig
+
+    stored = DashboardConfig.load(db)
+    assert stored.liquidity_days == 45
+    assert stored.shows("bills") is False and stored.shows("reimbursables") is True
+    [group] = [item for item in stored.groups if item.name == "Browser group"]
+    assert len(group.accounts) == 1
+    # Columns are the browser's, not the book's.
+    assert "Frequency" not in str(db.get_metadata("dashboard"))

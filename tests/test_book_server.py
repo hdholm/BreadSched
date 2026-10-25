@@ -1426,6 +1426,11 @@ def test_dashboard_settings_alike(target, book):
     assert (saved.liquidity_days, saved.emergency_months) == (14, 36)
     assert db.get_account(book.checking).group == "Cash"
     assert api.dashboard_settings() == saved
+    # Sections travel with the settings and the board (#381).
+    assert saved.sections["reimbursables"] is False
+    shown = api.save_dashboard_settings(SaveDashboardConfig(sections={"reimbursables": True}))
+    assert shown.sections["reimbursables"] is True and shown.groups == saved.groups
+    assert api.dashboard().config.shows("reimbursables") is True
 
     before = (repr(db.get_metadata("dashboard")), db.get_account(book.card).group)
     for groups in (

@@ -115,7 +115,7 @@ A menu item that asks for more before it acts ends in "…". The toolbar command
 icons are, for example, **New Account**, **Edit Account**, **Security Price**, and
 **Exchange Rate** in Accounts, **Manage FSA Claims** on the FSA Dashboard (also in
 the Actions menu in every view),
-**Configure Dashboard Groups** on the Dashboard, **New Scheduled**, **Suggest**, and
+**Configure Dashboard** on the Dashboard, **New Scheduled**, **Suggest**, and
 **New Loan** in Scheduled, **New Scenario**, **Scenarios**, and **Explore** in Plan,
 and **Compare**, **Export**, and **New tab** in Projection. Each icon stands for one
 command, so the same picture never means two things. **View → Hide Empty
@@ -155,7 +155,9 @@ postings behind it below the table; that section has its own **Print…** and
 **Export CSV…**. See [Net worth history](../USER_GUIDE.md#net-worth-history).
 
 Each table has its own column chooser (the "⋯" button at the right of that table's
-heading); its tooltip names the table, and the columns you hide are remembered.
+heading); its tooltip names the table, and the columns you hide are remembered. The
+Dashboard's tables are the exception: their columns are chosen in **Configure
+Dashboard** (see [Configure the Dashboard](#configure-the-dashboard)).
 The register is a ledger grid with GnuCash's fixed columns, so it has no chooser.
 When you make the window narrower, text columns such as descriptions shorten (with
 "…") so every column, including every amount, stays visible. On a small screen, a
@@ -202,15 +204,28 @@ card's payment terms, a loan's asset, an FSA's funding years, or an investment's
 return and cost method. **Delete** asks first, and refuses an account the book still
 needs, saying why. See [Accounts](../USER_GUIDE.md#accounts).
 
-## Dashboard groups
+## Configure the Dashboard
 
-On the Dashboard, **Configure Dashboard Groups** (toolbar icon or the Actions menu)
-names the groups the Dashboard shows (a `:` nests one group in another), gives each
-a kind, and chooses its accounts; **Suggest from accounts** proposes groups from the
-chart of accounts. An account is in at most one group: choosing it here sets the
-Dashboard group the account editor shows, and saving with an account checked in two
-groups says so and changes nothing. Groups only arrange what the Dashboard shows; its
-totals cover the whole book. See
+On the Dashboard, **Configure Dashboard** (toolbar icon or the Actions menu) holds
+everything the Dashboard can be told, on three pages:
+
+- **General**: the two horizons, **Liquid for** so many days of bills and how many
+  months of outgoings the **Emergency fund covers**, and which sections show:
+  Account groups, Pending bills, Expected income, Pending reimbursables (off until
+  you turn it on), and Savings goals. The summary cards always show and name the
+  horizons they were judged against.
+- **Groups**: each group's name (a `:` nests one group in another), its kind, and
+  its accounts. A group lists only its own accounts, each with a remove button;
+  **Add an account…** is a searchable list (type part of a name) and **Add** puts
+  the chosen account in the group. An account is in at most one group, so adding it
+  to one takes it out of another, and the dialog says so. **Suggest from accounts**
+  proposes groups from the chart of accounts.
+- **Columns**: the columns each Dashboard table shows. These are yours, remembered
+  on this computer rather than in the book, and change as soon as you tick them.
+
+**Save** stores the horizons, sections, and groups in the book; **Cancel** leaves
+them as they were. Groups only arrange what the Dashboard shows; its totals cover the
+whole book. Printing the Dashboard prints the sections it shows. See
 [Dashboard and near-term cash](../USER_GUIDE.md#dashboard-and-near-term-cash).
 
 ## Exchange rates and security prices
@@ -752,8 +767,8 @@ work. They are kept in your own settings, not in a book:
   for every register.
 - **Online quotes**: the Alpha Vantage API key, the same key **Online Quotes…**
   keeps (see [Online quotes](#online-quotes)).
-- **Dashboard**: **Configure Dashboard Groups…** opens the open book's groups (see
-  [Dashboard groups](#dashboard-groups)); groups belong to the book.
+- **Dashboard**: **Configure Dashboard…** opens the open book's Dashboard settings
+  (see [Configure the Dashboard](#configure-the-dashboard)); they belong to the book.
 - **Windows**: **Forget remembered window sizes** returns every window to its own
   size. BreadSched remembers the main window's size (and whether it was maximized)
   and an independent register window's size each time you close them, and the

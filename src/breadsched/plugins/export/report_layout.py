@@ -405,10 +405,11 @@ def dashboard_layout(board: Dashboard, *, book_name: str = "") -> ReportDocument
             for item in board.display_incomes
         ),
     )
+    # The sections Configure Dashboard shows are the ones printed (#381).
+    shows = board.config.shows
     blocks: list[Block] = [
         Cards(tuple(cards)),
-        Heading("Balances"),
-        balances,
+        *((Heading("Balances"), balances) if shows("groups") else ()),
         *_notes(board.coverage_notes),
         *_completeness(board.completeness, "Net worth"),
         *(
@@ -416,11 +417,34 @@ def dashboard_layout(board: Dashboard, *, book_name: str = "") -> ReportDocument
             if board.liquid_completeness.excluded != board.completeness.excluded
             else ()
         ),
-        Heading("Pending bills"),
-        bills,
-        Heading("Expected income"),
-        income,
+        *((Heading("Pending bills"), bills) if shows("bills") else ()),
+        *((Heading("Expected income"), income) if shows("income") else ()),
     ]
+    if shows("reimbursables"):
+        blocks += [
+            Heading("Pending reimbursables"),
+            Table(
+                _columns("Expense", "Payer", "Incurred", "Expected", "#Still owed", "Status"),
+                tuple(
+                    TableRow(
+                        (
+                            _text(item.receivable.description or item.receivable.payer),
+                            _text(item.receivable.payer),
+                            _text(item.receivable.incurred_date.isoformat()),
+                            _text(
+                                item.receivable.expected_cash_date.isoformat()
+                                if item.receivable.expected_cash_date
+                                else "—"
+                            ),
+                            _amount(item.remaining),
+                            _text(item.status.label),
+                        )
+                    )
+                    for item in board.reimbursables
+                ),
+                empty="No reimbursable expenses are owed.",
+            ),
+        ]
     if board.claim_alerts:
         blocks += [
             Heading("FSA claims needing attention"),
@@ -440,7 +464,7 @@ def dashboard_layout(board: Dashboard, *, book_name: str = "") -> ReportDocument
                 ),
             ),
         ]
-    if board.goals:
+    if board.goals and shows("goals"):
         blocks += [
             Heading("Savings goals"),
             Table(

@@ -270,14 +270,24 @@ natural width.
 
 Dashboard group membership is stored once, as each account's `Account.group`
 (#337, schema 12). The book's `dashboard` metadata (`DashboardConfig`) keeps only
-the groups' names and kinds, in order, and the horizons; `DashboardConfig.load`
+the groups' names and kinds, in order, the horizons, and which of
+`dashboard.SECTIONS` show (#381: `sections`, read with `DashboardConfig.shows`; a
+section not stored takes `DEFAULT_SECTIONS`, every one but pending reimbursables);
+`DashboardConfig.load`
 fills each `GroupConfig.accounts` from the accounts (a group named only on accounts
 follows, its kind taken from its first account), and `DashboardConfig.save` writes
 the members back to the accounts and clears every other account's group in the same
 change. Both editors save through `services.save_dashboard_config`, which refuses a
 blank or repeated group name, an unknown kind or account, and an account in two
-groups, leaving the book unchanged. `resolve_groups` therefore merges nothing: the
-configuration it is given is complete.
+groups, leaving the book unchanged; it also refuses a section name it does not
+know. `resolve_groups` therefore merges nothing: the configuration it is given is
+complete. The book holds what the household decides (horizons, sections, groups);
+each table's columns are a user's own and stay in their view settings (desktop) or
+the browser's local storage (web), never in the book. `Dashboard.reimbursables` is
+the receivable summaries behind `receivables_owed`, soonest expected first
+(`reimbursable_order`); `reimbursable_overdue` is the same test that sums
+`receivables_attention`. GTK, web, CLI text, and the printed layout render only the
+sections `shows` names; CLI `--json` always carries every list plus `sections`.
 
 Dashboard group names are account-style colon-delimited paths. The engine builds
 the hierarchy and aggregate totals; GTK, web, and CLI only render the resulting

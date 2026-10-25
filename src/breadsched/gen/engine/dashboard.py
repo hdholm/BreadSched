@@ -52,6 +52,10 @@ from .dashboard_bills import (
 )
 
 __all__ = [
+    "DEFAULT_SECTIONS",
+    "SECTIONS",
+    "reimbursable_order",
+    "reimbursable_overdue",
     "DashboardConfig",
     "GROUP_KINDS",
     "GroupConfig",
@@ -71,6 +75,19 @@ __all__ = [
 
 #: The kinds a Dashboard group can be, in the order editors list them.
 GROUP_KINDS = ("liquid", "retirement", "asset", "property", "liability")
+
+#: The Dashboard's sections below its summary cards, in the order they are shown,
+#: with their headings (#381).
+SECTIONS = {
+    "groups": "Account groups",
+    "bills": "Pending bills",
+    "income": "Expected income",
+    "reimbursables": "Pending reimbursables",
+    "goals": "Savings goals",
+}
+#: Sections shown until the household chooses otherwise: every one but the list of
+#: pending reimbursables, which their own card already totals.
+DEFAULT_SECTIONS = {name: name != "reimbursables" for name in SECTIONS}
 
 
 @dataclass
@@ -116,6 +133,12 @@ class DashboardConfig:
     reserve: Money = field(default_factory=lambda: Money(0))
     #: Bills below this are rolled into an "other" line rather than listed.
     minimum_bill: Money = field(default_factory=lambda: Money(0))
+    #: Which of ``SECTIONS`` are shown (#381); a section not named takes its default.
+    sections: dict[str, bool] = field(default_factory=lambda: dict(DEFAULT_SECTIONS))
+
+    def shows(self, section: str) -> bool:
+        """Whether ``section`` (a key of ``SECTIONS``) is shown."""
+        return self.sections.get(section, DEFAULT_SECTIONS[section])
 
     def serialize(self) -> dict[str, Any]:
         return {
@@ -124,18 +147,24 @@ class DashboardConfig:
             "emergency_months": self.emergency_months,
             "reserve": [self.reserve.numerator, self.reserve.denominator],
             "minimum_bill": [self.minimum_bill.numerator, self.minimum_bill.denominator],
+            "sections": {name: self.shows(name) for name in SECTIONS},
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> DashboardConfig:
         reserve = data.get("reserve")
         minimum = data.get("minimum_bill")
+        stored = data.get("sections")
+        sections = dict(DEFAULT_SECTIONS)
+        if isinstance(stored, dict):
+            sections.update({k: bool(v) for k, v in stored.items() if k in SECTIONS})
         return cls(
             groups=[GroupConfig.from_dict(g) for g in data.get("groups", [])],
             liquidity_days=data.get("liquidity_days", 30),
             emergency_months=data.get("emergency_months", 6),
             reserve=Money(*reserve) if reserve else Money(0),
             minimum_bill=Money(*minimum) if minimum else Money(0),
+            sections=sections,
         )
 
     # ------------------------------------------------------------- persistence
@@ -332,6 +361,9 @@ class Dashboard:
     receivables_owed: Money = field(default_factory=lambda: Money(0))
     #: The part of ``receivables_owed`` that is disputed or past its expected date.
     receivables_attention: Money = field(default_factory=lambda: Money(0))
+    #: Each reimbursable expense still owed in the reporting currency, the soonest
+    #: expected first (#381): the rows behind ``receivables_owed``.
+    reimbursables: list[receivables.ReceivableSummary] = field(default_factory=list)
     #: Each savings goal's earmark on the as-of date.
     goals: list[savings_goals.GoalProgress] = field(default_factory=list)
     #: FSA claims with something left to do (see ``fsa_claim_report``).
@@ -699,16 +731,30 @@ def _receivables(db: DbSQLite, board: Dashboard, today: date) -> None:
             foreign += 1
             continue
         board.receivables_owed = board.receivables_owed + summary.remaining
-        overdue = (
-            receivable.expected_cash_date is not None and receivable.expected_cash_date < today
-        )
-        if summary.status is receivables.ReceivableStatus.DISPUTED or overdue:
+        board.reimbursables.append(summary)
+        if reimbursable_overdue(summary, today):
             board.receivables_attention = board.receivables_attention + summary.remaining
+    board.reimbursables.sort(key=reimbursable_order)
     if foreign:
         board.coverage_notes = (
             *board.coverage_notes,
             f"Reimbursements due excludes {foreign} receivable(s) in another currency.",
         )
+
+
+def reimbursable_order(summary: receivables.ReceivableSummary) -> tuple[date, date, str]:
+    """Soonest expected first; one with no expected date by when it was incurred."""
+    receivable = summary.receivable
+    expected = receivable.expected_cash_date or date.max
+    return (expected, receivable.incurred_date, receivable.handle)
+
+
+def reimbursable_overdue(summary: receivables.ReceivableSummary, today: date) -> bool:
+    """Past its expected date, or disputed: what ``receivables_attention`` counts."""
+    expected = summary.receivable.expected_cash_date
+    return summary.status is receivables.ReceivableStatus.DISPUTED or (
+        expected is not None and expected < today
+    )
 
 
 def linked_pairs(db: DbSQLite) -> list[tuple[Account, Account]]:

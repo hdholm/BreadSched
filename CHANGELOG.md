@@ -10,6 +10,29 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a302 - 2026-10-25
+
+- **Configure Dashboard (#381).** The desktop's *Configure Dashboard Groups* window
+  and the browser's *Configure groups* editor become **Configure Dashboard**
+  (`win.dashboard-configure`). It holds:
+  - the two horizons, moved off the Dashboard;
+  - which sections show (`DashboardConfig.sections`, `SECTIONS`, `shows`), stored
+    in the book's existing Dashboard settings and saved through
+    `save_dashboard_config`, which refuses an unknown section;
+  - the groups;
+  - each table's columns, which stay per user: desktop view settings under the same
+    `columns:<view id>` keys, or the browser's local storage.
+  - A group lists only its own accounts, each with a remove button. A searchable
+    picker adds another, and adding an account to one group takes it out of
+    another.
+  - The Dashboard tables' own column menus are hidden in favour of the dialog.
+  - Saving the browser's settings without `groups` now keeps the stored groups.
+- **Pending reimbursables (#381).** `Dashboard.reimbursables` lists the
+  reimbursable expenses behind *Reimbursements due*, soonest expected first. An
+  optional section, off by default, shows them in GTK, the browser, the printed
+  Dashboard, and `breadsched dashboard`. Its text output, like the printed page,
+  follows the chosen sections; `--json` carries every list plus `sections`.
+
 ## 0.2.0a301 - 2026-10-25
 
 - **One note per transaction and account, shared with GnuCash (#385).** Imported

@@ -8,15 +8,17 @@ lists, sortable and
 scrollable, with recurring flows normalised to monthly and annual figures so a
 quarterly fee and a fortnightly one can be compared at a glance.
 
-The two horizons are on the toolbar rather than buried in a preferences dialog,
-because they are the numbers a household argues about: how much must stay liquid,
-and how long the fund should last.
+Everything it can be told lives in **Configure Dashboard** (#381): the two
+horizons (how much must stay liquid, and how long the fund should last), which
+sections show, the account groups, and each table's columns. The cards name the
+horizons they were judged against, so the numbers stay in sight.
 """
 
 from __future__ import annotations
 
 from ...api.local import book_server
 from ...gen.engine import dashboard as engine
+from ...gen.engine import receivables
 from ...gen.lib.money import Money
 from ...presentation import goal_status_text
 from ..gi_setup import Gio, Gtk, Pango
@@ -48,7 +50,6 @@ class DashboardView(BaseView):
         super().__init__(manager)
         self.config: engine.DashboardConfig | None = None
         self.board: engine.Dashboard | None = None
-        self._updating = False
         self._build()
 
     # ------------------------------------------------------------------ layout
@@ -63,23 +64,8 @@ class DashboardView(BaseView):
         title.set_hexpand(True)
         bar.append(title)
 
-        bar.append(Gtk.Label(label="Liquid for"))
-        self.liquidity_spin = Gtk.SpinButton.new_with_range(7, 365, 1)
-        self.liquidity_spin.set_value(30)
-        self.liquidity_spin.set_tooltip_text("Days of bills that must be covered by cash on hand")
-        self.liquidity_spin.connect("value-changed", self._on_setting_changed)
-        bar.append(self.liquidity_spin)
-        bar.append(Gtk.Label(label="days"))
-
-        bar.append(Gtk.Label(label="Emergency"))
-        self.emergency_spin = Gtk.SpinButton.new_with_range(1, 36, 1)
-        self.emergency_spin.set_value(6)
-        self.emergency_spin.set_tooltip_text("Months of outgoings the emergency fund should cover")
-        self.emergency_spin.connect("value-changed", self._on_setting_changed)
-        bar.append(self.emergency_spin)
-        bar.append(Gtk.Label(label="months"))
-
-        # Group configuration is a toolbar icon and Actions menu item (#156).
+        # Configure Dashboard is a toolbar icon and Actions menu item (#156); the
+        # horizons moved into it from here (#381).
         self._bar = bar
         self.append_toolbar(bar)
 
@@ -258,6 +244,83 @@ class DashboardView(BaseView):
         )
         self._add_section(self.goals_section)
 
+        # Each reimbursable expense still owed, as the bills are listed (#381).
+        self.reimbursables_view = Gtk.ColumnView()
+        self.reimbursables_view.add_css_class("data-table")
+        self.reimbursables_view.set_show_row_separators(True)
+        self.reimbursables_view.connect("activate", self._on_reimbursable_activated)
+        self.reimbursables_view.append_column(
+            column(
+                "Expense",
+                lambda s: s.receivable.description or s.receivable.payer or "Reimbursable expense",
+                expand=True,
+                sort_key=lambda s: s.receivable.description,
+            )
+        )
+        self.reimbursables_view.append_column(
+            column("Payer", lambda s: s.receivable.payer, sort_key=lambda s: s.receivable.payer)
+        )
+        self.reimbursables_view.append_column(
+            column(
+                "Incurred",
+                lambda s: s.receivable.incurred_date.isoformat(),
+                sort_key=lambda s: s.receivable.incurred_date,
+            )
+        )
+        self.reimbursables_view.append_column(
+            column("Expected", self._expected_text, sort_key=engine.reimbursable_order)
+        )
+        self.reimbursables_view.append_column(
+            column(
+                "Still owed",
+                lambda s: s.remaining.format(),
+                sort_key=lambda s: s.remaining.to_decimal(),
+                numeric=True,
+            )
+        )
+        self.reimbursables_view.append_column(
+            column("Status", lambda s: s.status.label, sort_key=lambda s: s.status.label)
+        )
+        self.reimbursables_section = table_section(
+            self.reimbursables_view,
+            "dashboard-reimbursables",
+            self._settings(),
+            title="Pending reimbursables",
+        )
+        self._add_section(self.reimbursables_section)
+
+        # Columns are chosen in Configure Dashboard (#381), not in each heading.
+        for section in self._tables_sections():
+            section.chooser.set_visible(False)
+
+    def _tables_sections(self) -> tuple[Gtk.Box, ...]:
+        return (
+            self.bills_section,
+            self.income_section,
+            self.reimbursables_section,
+            self.goals_section,
+        )
+
+    def column_tables(self) -> tuple[tuple[str, str, Gtk.ColumnView], ...]:
+        """The Dashboard's tables as Configure Dashboard lists their columns."""
+        return (
+            ("Pending bills", "dashboard", self.bills_view),
+            ("Expected income", "dashboard-income", self.income_view),
+            ("Pending reimbursables", "dashboard-reimbursables", self.reimbursables_view),
+            ("Savings goals", "dashboard-goals", self.goals_view),
+        )
+
+    def _expected_text(self, summary: receivables.ReceivableSummary) -> str:
+        expected = summary.receivable.expected_cash_date
+        if expected is None:
+            return "—"
+        if expected < self._today():
+            return f"{expected.isoformat()} (overdue)"
+        return expected.isoformat()
+
+    def _on_reimbursable_activated(self, _view, _position) -> None:
+        self.manager.get_application().on_receivables(parent=self.get_root())
+
     def _on_goal_activated(self, _view, _position) -> None:
         self.manager.get_application().on_savings_goals()
 
@@ -298,12 +361,6 @@ class DashboardView(BaseView):
             return
         self.board = book_server(self.db).dashboard()
         self.config = self.board.config
-        self._updating = True
-        try:
-            self.liquidity_spin.set_value(self.config.liquidity_days)
-            self.emergency_spin.set_value(self.config.emergency_months)
-        finally:
-            self._updating = False
 
         self._render_cards()
         self._render_groups()
@@ -324,7 +381,17 @@ class DashboardView(BaseView):
         self.goals_view.set_model(
             Gtk.SingleSelection(model=sorted_model(self.goals_view, goal_store))
         )
-        self.goals_section.set_visible(bool(self.board.goals))
+        reimbursable_store = Gio.ListStore.new(Row)
+        for summary in self.board.reimbursables:
+            reimbursable_store.append(Row(summary))
+        self.reimbursables_view.set_model(
+            Gtk.SingleSelection(model=sorted_model(self.reimbursables_view, reimbursable_store))
+        )
+        shows = self.config.shows
+        self.bills_section.set_visible(shows("bills"))
+        self.income_section.set_visible(shows("income"))
+        self.reimbursables_section.set_visible(shows("reimbursables"))
+        self.goals_section.set_visible(shows("goals") and bool(self.board.goals))
 
     def printable_report(self):
         """The currently rendered Dashboard, laid out for printing."""
@@ -436,7 +503,7 @@ class DashboardView(BaseView):
         _empty(self.groups)
         board = self.board
         assert board is not None
-        self.groups_section.set_visible(bool(board.groups))
+        self.groups_section.set_visible(board.config.shows("groups") and bool(board.groups))
 
         headings = ("Group", "Value", "Owed", "Equity / total", "LTV", "Loan end")
         for position, heading in enumerate(headings):
@@ -548,7 +615,9 @@ class DashboardView(BaseView):
             return
         from ..dialogs.dashboard_dialog import DashboardDialog
 
-        dialog = DashboardDialog(self.get_root(), self.db)
+        dialog = DashboardDialog(
+            self.get_root(), self.db, tables=self.column_tables(), settings=self._settings()
+        )
         dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
 

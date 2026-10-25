@@ -3680,6 +3680,7 @@ class TestDashboardApi:
             "coverage_notes",
             "unavailable_reasons",
             "goals",
+            "reimbursables",
             "completeness",
             "liquid_completeness",
         }
@@ -4141,6 +4142,43 @@ class TestDashboardApi:
         _status, after = client.get("/api/dashboard")
         assert after["config"] == before["config"]
 
+    def test_sections_round_trip_and_alone_keep_the_groups(self, client):
+        """Configure Dashboard's sections are the book's (#381)."""
+        _status, before = client.get("/api/dashboard")
+        assert before["config"]["sections"] == {
+            "groups": True,
+            "bills": True,
+            "income": True,
+            "reimbursables": False,
+            "goals": True,
+        }
+        assert before["config"]["section_titles"]["reimbursables"] == "Pending reimbursables"
+        assert before["reimbursables"] == []
+        _status, saved = client.post(
+            "/api/dashboard/config", {"sections": {"bills": False, "reimbursables": True}}
+        )
+        assert saved["sections"]["bills"] is False and saved["sections"]["reimbursables"] is True
+        _status, after = client.get("/api/dashboard")
+        assert after["config"]["sections"] == saved["sections"]
+        # Saving sections alone leaves the groups as they were.
+        assert after["config"]["groups"] == before["config"]["groups"]
+
+    @pytest.mark.parametrize(
+        ("sections", "code"),
+        [({"cards": False}, "dashboard.section.invalid"), ({"bills": "no"}, None)],
+    )
+    def test_a_rejected_section_leaves_the_settings_as_they_were(self, client, sections, code):
+        _status, before = client.get("/api/dashboard")
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/dashboard/config", {"sections": sections, "liquidity_days": 9})
+        assert caught.value.code == 400
+        error = json.loads(caught.value.read())
+        if code is not None:
+            assert error["code"] == code
+            assert error["error"] == "Choose a Dashboard section that exists"
+        _status, after = client.get("/api/dashboard")
+        assert after["config"] == before["config"]
+
     def test_the_horizons_are_query_parameters(self, client):
         _status, six = client.get("/api/dashboard?emergency_months=6")
         _status, twelve = client.get("/api/dashboard?emergency_months=12")
@@ -4181,7 +4219,7 @@ class TestDashboardApi:
         assert '"Dashboard", "FSA Dashboard", "Accounts"' in page
         assert "async function showDashboard" in page
         assert "async function showFsaDashboard" in page
-        assert "openDashboardGroupsEditor" in page
+        assert "openDashboardConfigEditor" in page
         assert '"X-BreadSched-Token"' in page
 
 
