@@ -453,7 +453,7 @@ def test_transaction_service_preserves_hidden_accounts_and_source_metadata_on_ed
     source = Transaction.simple(
         date(2026, 1, 1), "Imported entry", hidden.handle, book.checking, Money("20")
     )
-    source.source_notes = "Imported provenance"
+    source.imported_notes_digest = "digest-of-the-imported-note"
     source.splits[0].quantity = Money("2.5")
     with db.transaction("Fixture") as txn:
         db.add_account(hidden, txn)
@@ -482,7 +482,7 @@ def test_transaction_service_preserves_hidden_accounts_and_source_metadata_on_ed
     assert result.ok
     stored = db.get_transaction(source.handle)
     assert stored is not None
-    assert stored.source_notes == "Imported provenance"
+    assert stored.imported_notes_digest == "digest-of-the-imported-note"
     assert stored.splits[0].quantity == Money("2.5")
 
 

@@ -335,8 +335,8 @@ class TestItServes:
         assert payload == {
             "ok": True,
             "application_version": __version__,
-            "native_schema_version": 12,
-            "supported_schema_versions": {"minimum": 6, "maximum": 12},
+            "native_schema_version": 13,
+            "supported_schema_versions": {"minimum": 6, "maximum": 13},
             "sqlite": [],
             "issues": [],
         }
@@ -549,7 +549,7 @@ class TestItServes:
         assert checking["source_guid"]
         assert checking["source_type"] == "BANK"
         assert checking["notes"] == ""
-        assert checking["source_notes"] == ""
+        assert "source_notes" not in checking
         assert checking["commodity_scu"] == 100
         assert checking["source_fields"] == [
             {
@@ -2783,7 +2783,7 @@ class TestWriting:
         )
         posted = next(row for row in register["rows"] if row["description"] == "Web entry")
         assert posted["notes"] == "Entered from the web"
-        assert posted["source_notes"] == ""
+        assert "source_notes" not in posted
 
     def test_a_transaction_accepts_comma_decimal_browser_input(self, client):
         status, payload = client.post(

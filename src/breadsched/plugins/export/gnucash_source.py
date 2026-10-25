@@ -95,6 +95,8 @@ class SourceTxn:
     post_date: date | None
     description: str
     splits: dict[str, SourceSplit]
+    #: The transaction's GnuCash notes, written back from BreadSched's note (#385).
+    notes: str = ""
 
     @property
     def reconciled(self) -> bool:
@@ -199,6 +201,13 @@ def _read_sqlite(path: Path) -> SourceBook:
                 {},
             )
             sample = sample or str(row["post_date"] or "")
+        if "slots" in tables:
+            for row in conn.execute(
+                "SELECT obj_guid, string_val FROM slots WHERE name='notes' ORDER BY id"
+            ):
+                owner = transactions.get(row["obj_guid"])
+                if owner is not None:  # the last row wins, as the importer reads it
+                    owner.notes = row["string_val"] or ""
         for row in conn.execute("SELECT * FROM splits"):
             owner = transactions.get(row["tx_guid"])
             if owner is None:
@@ -335,7 +344,17 @@ def _xml_transaction(element: ET.Element, ns: dict[str, str]) -> SourceTxn:
         _safe_date(xml_text(element, "trn:date-posted/ts:date", ns)),
         xml_text(element, "trn:description", ns),
         splits,
+        _xml_notes(element, ns),
     )
+
+
+def _xml_notes(element: ET.Element, ns: dict[str, str]) -> str:
+    """The value of the transaction's ``notes`` slot, or empty."""
+    for slot in element.findall("trn:slots/slot", ns):
+        if xml_text(slot, "slot:key", ns) == "notes":
+            value = slot.find("slot:value", ns)
+            return value.text or "" if value is not None else ""
+    return ""
 
 
 def file_digest(path: Path) -> str:

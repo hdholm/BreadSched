@@ -389,3 +389,63 @@ def test_a_round_trip_mismatch_restores_the_book(linked, monkeypatch):
 
     assert [error.code for error in result.errors] == ["writeback.roundtrip.mismatch"]
     assert open(gnc.path, "rb").read() == before
+
+
+def test_a_note_is_written_to_gnucash_even_on_a_reconciled_transaction(linked):
+    """A note is not ledger data, so a GnuCash-reconciled transaction still takes it (#385)."""
+    db, gnc = linked
+    rent = _rent(db)
+    _gnc_exec(gnc.path, "UPDATE splits SET reconcile_state='y' WHERE tx_guid=?", rent.handle)
+    import_book(db, ImportBook(source=gnc.path, notify=False))
+    rent = _rent(db)
+    rent.notes = "Lease renewed in December"
+    _save(db, rent)
+
+    plan = preview_writeback(db).value
+    assert plan.unsupported == ()
+    [change] = plan.changes
+    assert change.kinds == ("notes",)
+    assert change.details == ("notes: (blank) -> 'Lease renewed in December'",)
+    _write_all(db)
+    assert _gnc(
+        gnc.path, "SELECT string_val FROM slots WHERE obj_guid=? AND name='notes'", rent.handle
+    ) == [("Lease renewed in December",)]
+    assert preview_writeback(db).value.changes == ()
+
+    # The written note comes back unchanged on the next import, and is not a conflict.
+    result = import_book(db, ImportBook(source=gnc.path, notify=False))
+    assert not any("kept BreadSched's notes" in warning for warning in result.value.result.warnings)
+    assert _rent(db).notes == "Lease renewed in December"
+
+    # Clearing the note removes GnuCash's notes slot.
+    rent = _rent(db)
+    rent.notes = ""
+    _save(db, rent)
+    _write_all(db)
+    assert (
+        _gnc(
+            gnc.path, "SELECT string_val FROM slots WHERE obj_guid=? AND name='notes'", rent.handle
+        )
+        == []
+    )
+
+
+def test_a_new_transaction_carries_its_note_to_gnucash(linked):
+    db, gnc = linked
+    checking = db.get_account_by_name("Assets:Checking Account")
+    groceries = db.get_account_by_name("Expenses:Groceries")
+    entry = Transaction.simple(
+        date(2026, 2, 3), "Farmers market", groceries.handle, checking.handle, "23.40"
+    )
+    entry.notes = "Paid in cash"
+    with db.transaction("New entry") as txn:
+        db.add_transaction(entry, txn)
+
+    [change] = preview_writeback(db).value.changes
+    assert "  notes: 'Paid in cash'" in change.details
+    _write_all(db)
+    assert _gnc(
+        gnc.path,
+        "SELECT slot_type, string_val FROM slots WHERE obj_guid=? AND name='notes'",
+        entry.handle,
+    ) == [(4, "Paid in cash")]

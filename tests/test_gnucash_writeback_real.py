@@ -136,6 +136,7 @@ def _edit_everything(db) -> dict[str, str]:
         if split.account == checking:
             split.account = savings
     electric.post_date = date(2026, 2, 11)
+    electric.notes = "Meter read 4 Feb & <estimated>"
     _save(db, rent, supermarket, electric)
 
     new = Transaction(
@@ -148,12 +149,18 @@ def _edit_everything(db) -> dict[str, str]:
             Split(checking, Money("-50.00")),
         ],
     )
+    new.notes = "Receipt in the folder"
     with db.transaction("New") as txn:
         db.add_transaction(new, txn)
     deleted = _txn(db, "To savings")
     with db.transaction("Delete") as txn:
         db.remove_transaction(deleted.handle, txn)
-    return {"rent": rent.handle, "new": new.handle, "deleted": deleted.handle}
+    return {
+        "rent": rent.handle,
+        "new": new.handle,
+        "deleted": deleted.handle,
+        "electric": electric.handle,
+    }
 
 
 def _facts(db):
@@ -166,6 +173,7 @@ def _facts(db):
                 transaction.post_date,
                 transaction.description,
                 transaction.num,
+                transaction.notes,
                 tuple(
                     sorted(
                         (
@@ -194,6 +202,7 @@ def test_wider_edits_round_trip_through_the_written_book(linked, tmp_path):
     assert kinds[handles["new"]] == ("new",)
     assert kinds[handles["deleted"]] == ("delete",)
     assert kinds[handles["rent"]] == ("edit", "reconcile")
+    assert kinds[handles["electric"]] == ("edit", "notes")
     assert len(plan.changes) == 5
 
     applied = apply_writeback(db, ApplyWriteback(tuple(kinds)))
@@ -225,6 +234,8 @@ def test_wider_edits_round_trip_through_the_written_book(linked, tmp_path):
         ("Expenses.Groceries", "3025/100", "Produce", ""),
         ("Expenses.Utilities", "1975/100", "", "Buy"),
     ]
+    assert new["notes"] == "Receipt in the folder"
+    assert report["transactions"][handles["electric"]]["notes"] == "Meter read 4 Feb & <estimated>"
     rent = report["transactions"][handles["rent"]]
     assert rent["description"] == "Rent (February)" and rent["num"] == "1002"
     assert {s["account"]: s["reconcile"] for s in rent["splits"]}["Assets.Checking"] == "c"
@@ -295,3 +306,30 @@ def test_the_fixture_books_are_what_gnucash_wrote(tmp_path):
         if report is None:
             pytest.skip("GnuCash's Python bindings are not installed")
         assert len(report["transactions"]) == 5 and report["imbalanced"] == []
+
+
+def test_an_xml_note_is_set_and_then_removed(tmp_path):
+    """Write-back adds a transaction's notes slot and removes it when cleared (#385)."""
+    source = _materialize("xml", tmp_path)
+    db = DbSQLite()
+    db.load(str(tmp_path / "home.breadsched"))
+    try:
+        assert import_book(db, ImportBook(source=str(source), notify=False)).value
+        rent = _txn(db, "Rent")
+        rent.notes = "Lease & deposit <2026>"
+        _save(db, rent)
+        [change] = preview_writeback(db).value.changes
+        assert change.kinds == ("notes",)
+        assert apply_writeback(db, ApplyWriteback((rent.handle,))).value
+        written = gzip.decompress(source.read_bytes()).decode()
+        assert "<slot:key>notes</slot:key>\n" in written
+        assert '<slot:value type="string">Lease &amp; deposit &lt;2026&gt;</slot:value>' in written
+
+        rent = _txn(db, "Rent")
+        rent.notes = ""
+        _save(db, rent)
+        assert apply_writeback(db, ApplyWriteback((rent.handle,))).value
+        assert "<slot:key>notes</slot:key>" not in gzip.decompress(source.read_bytes()).decode()
+        assert preview_writeback(db).value.changes == ()
+    finally:
+        db.close()

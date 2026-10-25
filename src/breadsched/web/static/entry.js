@@ -808,7 +808,7 @@ async function showEntry() {
     el("label", {}, "Date",
       el("input", { type: "date", name: "date", value: new Date().toISOString().slice(0, 10) })),
     el("label", {}, "Description", el("input", { name: "description", required: "required" })),
-    el("label", {}, "BreadSched notes", el("textarea", { name: "notes", rows: "3" })),
+    el("label", {}, "Notes", el("textarea", { name: "notes", rows: "3" })),
     el("label", {}, "From (money leaves)", options("from")),
     el("label", {}, "To (money arrives)", options("to")),
     el("label", {}, "Amount", el("input", { name: "amount", required: "required", placeholder: "0.00" })),

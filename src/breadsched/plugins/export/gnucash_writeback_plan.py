@@ -54,6 +54,8 @@ class TargetTxn:
     post_date: date
     description: str
     splits: tuple[TargetSplit, ...]
+    #: BreadSched's note, written to the transaction's ``notes`` slot (#385).
+    notes: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +73,7 @@ class WritebackChange:
     transaction: str
     post_date: date
     description: str
-    #: ``new``, ``edit``, ``reconcile``, and/or ``delete``.
+    #: ``new``, ``edit``, ``notes``, ``reconcile``, and/or ``delete``.
     kinds: tuple[str, ...]
     #: Plain-language lines naming each change.
     details: tuple[str, ...]
@@ -270,6 +272,7 @@ def _target(
         transaction.post_date,
         transaction.description,
         tuple(splits),
+        transaction.notes or "",
     )
 
 
@@ -305,6 +308,8 @@ def _change(
             f"{money_of(split.value).format()} (reconcile {split.state})"
             for split in target.splits
         )
+        if target.notes:
+            lines.append(f"  notes: {shown_value(target.notes)}")
         return WritebackChange(
             target.guid,
             target.post_date,
@@ -363,18 +368,29 @@ def _change(
                 ledger_changed = True
         if prior.state != split.state:
             reconcile_lines.append(f"reconcile on {label}: {prior.state} -> {split.state}")
+    # A note is not ledger data, so it is written back even to a reconciled or lot
+    # transaction (#385).
+    notes_lines = (
+        [f"notes: {shown_value(existing.notes)} -> {shown_value(target.notes)}"]
+        if existing.notes != target.notes
+        else []
+    )
     if ledger_changed and existing.reconciled:
         raise _Refused("reconciled in GnuCash; only its reconcile state is written back")
     if ledger_changed and existing.in_lot:
         raise _Refused("part of a GnuCash lot; only its reconcile state is written back")
-    if not details and not reconcile_lines:
+    if not details and not notes_lines and not reconcile_lines:
         return None
-    kinds = (("edit",) if details else ()) + (("reconcile",) if reconcile_lines else ())
+    kinds = (
+        (("edit",) if details else ())
+        + (("notes",) if notes_lines else ())
+        + (("reconcile",) if reconcile_lines else ())
+    )
     return WritebackChange(
         target.guid,
         target.post_date,
         target.description,
         kinds,
-        tuple(details + reconcile_lines),
+        tuple(details + notes_lines + reconcile_lines),
         _Operation("edit", target.guid, target),
     )

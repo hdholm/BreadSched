@@ -10,6 +10,28 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a301 - 2026-10-25
+
+- **One note per transaction and account, shared with GnuCash (#385).** Imported
+  records kept two notes: a read-only copy of GnuCash's, refreshed on every
+  import, and BreadSched's own. Schema 13 joins them into one BreadSched-owned
+  note (`gen.lib.notes`):
+  - The first import seeds it, and `imported_notes_digest` fingerprints the
+    GnuCash text it last reconciled with.
+  - A re-import takes GnuCash's new text only while the note is unchanged since
+    the last import. When both sides changed, BreadSched's note is kept and the
+    import warns with a count.
+  - Write-back sends transaction notes to GnuCash's `notes` slot (SQLite and
+    XML) as a `notes` change. A note is not ledger data, so a transaction
+    reconciled in GnuCash or in a lot still takes it. Account notes are not
+    written back.
+  - The transaction editor's *Imported notes* block, the account editor's
+    *Source notes* line, the browser's *Source notes* row and *Imported:* line,
+    and the `source_notes` keys in `--json` and `/api` output are gone.
+  - **Schema 13.** The 12→13 migration joins the two texts, the imported text
+    first and BreadSched's after a blank line (the same text once). 0.2.0a300
+    cannot open a schema 13 book.
+
 ## 0.2.0a300 - 2026-10-25
 
 - **The register filter searches amounts and everything else (#382).** Filtering

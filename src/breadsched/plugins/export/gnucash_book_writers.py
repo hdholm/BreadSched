@@ -149,6 +149,13 @@ def _sqlite_apply(conn: sqlite3.Connection, book: SourceBook, change: WritebackC
                 (target.post_date.strftime("%Y%m%d"), target.guid),
             )
         existing = book.transactions[target.guid].splits
+    if has_slots:
+        conn.execute("DELETE FROM slots WHERE obj_guid=? AND name='notes'", (target.guid,))
+        if target.notes:
+            conn.execute(
+                "INSERT INTO slots (obj_guid, name, slot_type, string_val) VALUES (?,?,?,?)",
+                (target.guid, "notes", 4, target.notes),
+            )
     wanted = {split.guid for split in target.splits}
     for guid in existing:
         if guid not in wanted:
@@ -326,6 +333,35 @@ def _date_slot(element: ET.Element, ns: dict[str, str], when: date, create: bool
     ET.SubElement(value, "gdate").text = when.isoformat()
 
 
+def _notes_slot(element: ET.Element, ns: dict[str, str], notes: str) -> None:
+    """Set, or remove when empty, the transaction's ``notes`` slot (#385)."""
+    slots = element.find("trn:slots", ns)
+    if slots is not None:
+        for slot in slots.findall("slot", ns):
+            key = slot.find("slot:key", ns)
+            if key is None or key.text != "notes":
+                continue
+            value = slot.find("slot:value", ns)
+            if notes and value is not None:
+                value.text = notes
+                return
+            slots.remove(slot)
+            if not len(slots):
+                element.remove(slots)
+                slots = None
+            break
+    if not notes:
+        return
+    if slots is None:
+        slots = ET.Element(qualified(ns, "trn:slots"))
+        splits = element.find("trn:splits", ns)
+        index = list(element).index(splits) if splits is not None else len(element)
+        element.insert(index, slots)
+    slot = ET.SubElement(slots, "slot")
+    ET.SubElement(slot, qualified(ns, "slot:key")).text = "notes"
+    ET.SubElement(slot, qualified(ns, "slot:value"), {"type": "string"}).text = notes
+
+
 def _xml_transaction_element(
     element: ET.Element | None, target: TargetTxn, ns: dict[str, str]
 ) -> ET.Element:
@@ -360,6 +396,7 @@ def _xml_transaction_element(
     _ts(posted_holder, ns, target.post_date)
     _set_child(element, q("trn:description"), target.description, order, keep_empty=True)
     _date_slot(element, ns, target.post_date, creating)
+    _notes_slot(element, ns, target.notes)
     splits = element.find(q("trn:splits"))
     assert splits is not None
     current = {xml_text(split, "split:id", ns): split for split in splits.findall(q("trn:split"))}

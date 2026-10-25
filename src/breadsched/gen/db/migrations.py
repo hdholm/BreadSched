@@ -173,6 +173,35 @@ def _v11_to_v12(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE metadata SET value=? WHERE key='dashboard'", (json.dumps(config),))
 
 
+def _v12_to_v13(conn: sqlite3.Connection) -> None:
+    """Merge each transaction's and account's two notes into one (#385).
+
+    Imported (GnuCash) notes and BreadSched notes were kept apart; they are one
+    note now, the imported text first and BreadSched's after a blank line (the
+    same text once), with a fingerprint of the imported text so a later import
+    knows what it last brought (``lib.notes``).
+    """
+    import json
+
+    from ..lib.notes import merge_legacy_notes
+
+    for table in ("txn", "account"):
+        rows = conn.execute(f"SELECT handle, blob FROM {table}").fetchall()  # noqa: S608
+        for handle, blob in rows:
+            data = json.loads(blob)
+            if not isinstance(data, dict) or "source_notes" not in data:
+                continue
+            notes, digest = merge_legacy_notes(
+                str(data.pop("source_notes") or ""), str(data.get("notes") or "")
+            )
+            data["notes"] = notes
+            data["imported_notes_digest"] = digest
+            conn.execute(
+                f"UPDATE {table} SET blob=? WHERE handle=?",  # noqa: S608
+                (json.dumps(data, separators=(",", ":")), handle),
+            )
+
+
 MIGRATIONS: dict[int, Migration] = {
     6: Migration(6, 7, "add reconciliation sessions", _v6_to_v7),
     7: Migration(7, 8, "add payees", _v7_to_v8),
@@ -180,6 +209,7 @@ MIGRATIONS: dict[int, Migration] = {
     9: Migration(9, 10, "add savings goals", _v9_to_v10),
     10: Migration(10, 11, "remove payees", _v10_to_v11),
     11: Migration(11, 12, "store Dashboard group membership on accounts", _v11_to_v12),
+    12: Migration(12, 13, "merge imported and BreadSched notes", _v12_to_v13),
 }
 MIN_SUPPORTED_SCHEMA_VERSION = min(MIGRATIONS)
 

@@ -35,6 +35,7 @@ from ...gen.lib.account import (
 from ...gen.lib.commodity import Commodity, CommodityPrice
 from ...gen.lib.formula import FormulaError, evaluate
 from ...gen.lib.money import Money
+from ...gen.lib.notes import notes_digest, reconcile_imported_notes
 from ...gen.lib.recurrence import PeriodType
 from ...gen.lib.scheduled import ScheduledSplit, ScheduledTransaction
 from ...gen.lib.transaction import (
@@ -548,6 +549,9 @@ class ImportSink:
         #: Source GUID -> destination handle, for accounts that were merged into an
         #: account the book already had rather than created afresh.
         self._remap: dict[str, str] = {}
+        #: Transactions and accounts whose note changed on both sides since the
+        #: last import, so BreadSched's note was kept (#385).
+        self.notes_kept = 0
 
     # ------------------------------------------------------------- commodities
 
@@ -699,7 +703,7 @@ class ImportSink:
                 existing_root.source_atype = parsed
                 existing_root.source_type = source_type
                 existing_root.source_fields = list(source_fields)
-                existing_root.source_notes = notes
+                self._take_notes(existing_root, existing_root, notes)
                 self.db.commit_account(existing_root, self.txn)
                 self._source_accounts[guid] = existing_root.handle
                 LOG.debug("mapped source root %s onto the book's root", guid[:8])
@@ -733,12 +737,12 @@ class ImportSink:
                 hidden=hidden,
                 commodity_scu=commodity_scu,
             )
-            account.source_notes = notes
             account.source_atype = parsed
             account.source_guid = guid
             account.source_type = source_type
             account.source_fields = list(source_fields)
             self._preserve_breadsched_account_state(account, existing)
+            self._take_notes(account, existing, notes)
             self.db.commit_account(account, self.txn)
             if existing.handle != guid:
                 self._remap[guid] = existing.handle
@@ -762,12 +766,12 @@ class ImportSink:
                 hidden=hidden,
                 commodity_scu=commodity_scu,
             )
-            account.source_notes = notes
             account.source_atype = parsed
             account.source_guid = guid
             account.source_type = source_type
             account.source_fields = list(source_fields)
             self._preserve_breadsched_account_state(account, twin)
+            self._take_notes(account, twin, notes)
             self.db.commit_account(account, self.txn)
             self._source_accounts[guid] = twin.handle
             LOG.debug("merged imported %r into the existing account", name)
@@ -789,7 +793,8 @@ class ImportSink:
             hidden=hidden,
             commodity_scu=commodity_scu,
         )
-        account.source_notes = notes
+        account.notes = notes
+        account.imported_notes_digest = notes_digest(notes)
         account.source_atype = parsed
         account.source_guid = guid
         account.source_type = source_type
@@ -812,11 +817,26 @@ class ImportSink:
             account = self.db.get_account(account.parent) if account.parent else None
         return False
 
+    def report_kept_notes(self) -> None:
+        """Say how many notes changed on both sides, so BreadSched's were kept (#385)."""
+        if self.notes_kept:
+            self.result.warn(
+                f"kept BreadSched's notes on {self.notes_kept} transaction(s) or "
+                "account(s) whose GnuCash notes also changed since the last import"
+            )
+
+    def _take_notes(self, account: Account, existing: Account, notes: str) -> None:
+        """Merge the source's account notes into BreadSched's one note (#385)."""
+        account.notes, account.imported_notes_digest, conflict = reconcile_imported_notes(
+            existing.notes, existing.imported_notes_digest, notes
+        )
+        if conflict:
+            self.notes_kept += 1
+
     @staticmethod
     def _preserve_breadsched_account_state(imported: Account, existing: Account) -> None:
         """Keep BreadSched-owned account configuration across source re-import."""
         imported.atype = existing.atype
-        imported.notes = existing.notes
         imported.fsa.years = list(existing.fsa.years)
         imported.fsa.dependent_care = existing.fsa.dependent_care
         imported.investment.annual_return = existing.investment.annual_return
@@ -940,7 +960,9 @@ class ImportSink:
         # records must not enter BreadSched's plan-resolution review queue en
         # masse. On re-import, BreadSched-owned planning state is merged below.
         txn_obj.planning_resolution = PlanningResolution.HISTORICAL
-        txn_obj.source_notes = source_notes
+        # The source's notes seed the one note; an existing one is merged below (#385).
+        txn_obj.notes = source_notes
+        txn_obj.imported_notes_digest = notes_digest(source_notes)
         txn_obj.source_link = source_link
         subject = txn_obj.describe()
 
@@ -979,8 +1001,8 @@ class ImportSink:
                 )
             )
 
-        if existing is not None:
-            import_review.merge_local_state(txn_obj, existing)
+        if existing is not None and import_review.merge_local_state(txn_obj, existing):
+            self.notes_kept += 1
 
         LOG.debug(
             "%s: %d split(s) totalling %s",

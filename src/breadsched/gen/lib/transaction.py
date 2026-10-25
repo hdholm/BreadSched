@@ -15,6 +15,7 @@ from typing import Any
 
 from .base import PrimaryObject, create_handle
 from .money import Money
+from .notes import merge_legacy_notes
 
 __all__ = [
     "InvestmentActivityKind",
@@ -291,10 +292,11 @@ class Transaction(PrimaryObject):
         self.description = description
         self.currency = currency
         self.num = num
-        #: Notes owned by BreadSched and editable independently of an import source.
+        #: The transaction's one note, owned by BreadSched. An import seeds it and
+        #: refreshes it only while it is unchanged (#385, see ``lib.notes``).
         self.notes = ""
-        #: Read-only transaction notes refreshed from the external source on re-import.
-        self.source_notes = ""
+        #: Fingerprint of the source's notes as last imported (``lib.notes``).
+        self.imported_notes_digest = ""
         self.scheduled_from: str | None = None  # handle of the originating schedule
         #: Stable identity of the plan occurrence this transaction resolved.
         self.planned_occurrence: str | None = None
@@ -310,7 +312,7 @@ class Transaction(PrimaryObject):
         #: attachment folder, an absolute path or ``file:`` URI, or a web address.
         self.attachments: list[str] = []
         #: The document linked in the import source (GnuCash "Linked Document"),
-        #: read-only and refreshed on re-import like ``source_notes``.
+        #: read-only and refreshed on re-import.
         self.source_link = ""
         self.splits: list[Split] = list(splits or [])
 
@@ -400,7 +402,7 @@ class Transaction(PrimaryObject):
             "currency": self.currency,
             "num": self.num,
             "notes": self.notes,
-            "source_notes": self.source_notes,
+            "imported_notes_digest": self.imported_notes_digest,
             "scheduled_from": self.scheduled_from,
             "planned_occurrence": self.planned_occurrence,
             "planned_for": self.planned_for.isoformat() if self.planned_for else None,
@@ -420,8 +422,14 @@ class Transaction(PrimaryObject):
         self.description = data.get("description", "")
         self.currency = data.get("currency")
         self.num = data.get("num", "")
-        self.notes = data.get("notes", "")
-        self.source_notes = data.get("source_notes", "")
+        if "source_notes" in data:
+            # Two notes before schema 13 (#385): merged into one, as the migration does.
+            self.notes, self.imported_notes_digest = merge_legacy_notes(
+                str(data.get("source_notes") or ""), str(data.get("notes") or "")
+            )
+        else:
+            self.notes = data.get("notes", "")
+            self.imported_notes_digest = str(data.get("imported_notes_digest") or "")
         self.scheduled_from = data.get("scheduled_from")
         self.planned_occurrence = data.get("planned_occurrence")
         raw_planned_for = data.get("planned_for")
