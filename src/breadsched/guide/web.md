@@ -204,8 +204,14 @@ In **Scheduled**, enter a name, category, funding account, amount, and recurrenc
 create a fixed schedule. **Repeats** is **Every** a number and a unit (days, weeks,
 months, months on the same weekday or last weekday, or years), or twice a month or
 once; the first due date sets the day, and an amount may be a calculation such as
-`76.84*1.06`. Editing one can also set future amounts, one-time
-exceptions, additional splits, and optional planning classifications. Review the
+`76.84*1.06`. The editor shows those fields first; **Splits and memos**, **Future
+changes** (future, seasonal, skipped, and one-time amounts, counted in its heading),
+and **Advanced** (projection growth, planning purposes, weekend rule, posting, and
+enter and remind days) open when you choose them, and Future changes opens by itself
+when a schedule has some. **Investment activity** appears under Advanced only for an
+investment or retirement account. The scenario event editor folds the same way.
+**Enter**'s two-split form offers investment activity only when one of its accounts
+is an investment or retirement account. Review the
 result before relying on a projection. Scenario-only estimates and scenario changes
 to baseline schedules are made in the same view.
 

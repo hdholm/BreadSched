@@ -420,7 +420,13 @@ notes too if you have typed none; a note says where it came from. Edit anything 
 
 ### Tags and linked documents
 
-In the full transaction editor, type tags under **Tags**, separated by commas; they
+The full transaction editor opens on **Entry** (date, description, number, and
+notes) above the splits; **Tags & documents** is its second tab, counting the tags
+and documents a transaction has. **Planning detail**, beside **Add split**, shows
+each split's planning purpose, and its investment activity for an investment or
+retirement account; a split that already has either shows it anyway.
+
+On **Tags & documents**, type tags under **Tags**, separated by commas; they
 are saved with the transaction. The register filter also matches tags.
 
 **Documents** lists the transaction's linked documents once it has been saved. A
@@ -474,7 +480,14 @@ Use **New Scheduled** for a fixed or formula-driven commitment or estimate, and
 **Suggest** for reviewable estimate drafts from history. **Frequency** is **Every**
 a number and a unit: days, weeks, months, months on the same weekday, months on the
 last weekday, or years; **twice a month** and **once** take no number. The first due
-date sets the day. Amounts can be calculations such as `76.84*1.06`. Choose the **New Loan**
+date sets the day. Amounts can be calculations such as `76.84*1.06`. The editor opens
+on **Basics** (name, kind, accounts, amount, and when it repeats); **Splits** holds the
+memos and additional splits, **Future changes** the future, seasonal, skipped, and
+one-time amounts (its tab counts them, so a schedule with some says so), and
+**Advanced** the projection growth, planning purposes, weekend rule, posting, and
+enter and remind days. **Investment activity** appears there only when the schedule
+uses an investment or retirement account, or already has one. A scenario estimate's
+editor is laid out the same way. Choose the **New Loan**
 toolbar icon in Scheduled to create a loan (see
 [Create a loan](../USER_GUIDE.md#create-a-loan)).
 

@@ -67,9 +67,13 @@ from ..gi_setup import Gio, GLib, Gtk
 from ..widgets.bounded import BoundedWindow, keeps_enter
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
+from ..widgets.form_pages import FormPages
 from ..widgets.help import help_row
 
-__all__ = ["TransactionDialog"]
+__all__ = ["MORE", "TransactionDialog"]
+
+#: The second page: tags, documents, and escrow detail; its tab counts them (#383).
+MORE = "Tags & documents"
 
 _INVESTMENT_ACTIVITIES = [
     ("Ordinary", None),
@@ -145,6 +149,7 @@ class SplitEditor:
             "Override the planning purpose; Ordinary lets the account type and context decide"
         )
         self.planning_purpose.connect("notify::selected", dialog.revalidate)
+        self.planning_purpose.connect("notify::selected", lambda *_: self.show_detail())
         self.box.append(self.planning_purpose)
 
         self.investment_activity = bounded_dropdown(
@@ -154,7 +159,9 @@ class SplitEditor:
             "Classify a contribution, distribution, investment income, fee, or rollover"
         )
         self.investment_activity.connect("notify::selected", dialog.revalidate)
+        self.investment_activity.connect("notify::selected", lambda *_: self.show_detail())
         self.box.append(self.investment_activity)
+        self.account.connect("notify::selected", lambda *_: self.show_detail())
 
         self.remove = Gtk.Button(icon_name="list-remove-symbolic")
         self.remove.set_tooltip_text("Remove this split")
@@ -194,6 +201,23 @@ class SplitEditor:
 
         self._show_shares()
         self._label_columns()
+        self.show_detail()
+
+    def show_detail(self) -> None:
+        """Show planning purpose and investment activity only where they apply (#383).
+
+        Planning purpose shows with the dialog's **Planning detail**; investment
+        activity also needs an investment or retirement account. Either shows
+        whenever it already holds a choice, so nothing set is hidden.
+        """
+        detail = self.dialog.show_planning_detail
+        handle = self.account_handle
+        account = self.dialog.db.get_account(handle) if handle is not None else None
+        investing = account is not None and account.atype.is_investment
+        self.planning_purpose.set_visible(detail or self.planning_purpose.get_selected() != 0)
+        self.investment_activity.set_visible(
+            (detail and investing) or self.investment_activity.get_selected() != 0
+        )
 
     def _amount_changed(self, entry: Gtk.Entry, other: Gtk.Entry) -> None:
         if entry.get_text().strip() and other.get_text():
@@ -346,21 +370,23 @@ class TransactionDialog(BoundedWindow):
         self.set_child(box)
         box.prepend(help_row("transactions"))
 
-        header = Gtk.Grid(column_spacing=10, row_spacing=8)
-        box.append(header)
+        self.show_planning_detail = False
+        # The entry itself first; tags, documents, and escrow detail a tab away (#383).
+        self.pages = FormPages()
+        box.append(self.pages)
+        header = self.pages.page("Entry")
+        more = self.pages.page(MORE)
 
         when = (transaction.post_date if transaction is not None else default_date) or date.today()
         self.date_entry = Gtk.Entry(text=when.isoformat())
         self.date_entry.connect("changed", self.revalidate)
-        header.attach(Gtk.Label(label="Date", xalign=0), 0, 0, 1, 1)
-        header.attach(self.date_entry, 1, 0, 1, 1)
+        header.add("Date", self.date_entry)
 
         self.description_entry = Gtk.Entry(placeholder_text="What was it for")
         self.description_entry.set_hexpand(True)
         if transaction is not None:
             self.description_entry.set_text(transaction.description)
-        header.attach(Gtk.Label(label="Description", xalign=0), 0, 1, 1, 1)
-        header.attach(self.description_entry, 1, 1, 1, 1)
+        header.add("Description", self.description_entry)
         if transaction is None:
             # Leaving the description proposes the latest matching entry's splits.
             keeps_enter(self.description_entry)
@@ -372,8 +398,7 @@ class TransactionDialog(BoundedWindow):
         self.num_entry = Gtk.Entry(placeholder_text="Cheque or reference")
         if transaction is not None:
             self.num_entry.set_text(transaction.num)
-        header.attach(Gtk.Label(label="Number", xalign=0), 0, 2, 1, 1)
-        header.attach(self.num_entry, 1, 2, 1, 1)
+        header.add("Number", self.num_entry)
 
         self.notes_view = Gtk.TextView()
         self.notes_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
@@ -383,8 +408,7 @@ class TransactionDialog(BoundedWindow):
         notes_scroll = Gtk.ScrolledWindow(child=self.notes_view)
         notes_scroll.set_min_content_height(64)
         # One note, imported ones included (#385).
-        header.attach(Gtk.Label(label="Notes", xalign=0), 0, 3, 1, 1)
-        header.attach(notes_scroll, 1, 3, 1, 1)
+        header.add("Notes", notes_scroll)
 
         self.escrow_treatment: Gtk.Label | None = None
         if transaction is not None:
@@ -399,8 +423,7 @@ class TransactionDialog(BoundedWindow):
                     wrap=True,
                     selectable=True,
                 )
-                header.attach(Gtk.Label(label="Escrow treatment", xalign=0), 0, 5, 1, 1)
-                header.attach(self.escrow_treatment, 1, 5, 1, 1)
+                more.add("Escrow treatment", self.escrow_treatment)
 
         self.tags_entry = Gtk.Entry(placeholder_text="Comma-separated, e.g. Tax, Home repair")
         if transaction is not None:
@@ -408,22 +431,30 @@ class TransactionDialog(BoundedWindow):
         self.tags_entry.set_tooltip_text(
             "BreadSched's own labels; kept when a GnuCash book is imported again"
         )
-        header.attach(Gtk.Label(label="Tags", xalign=0), 0, 6, 1, 1)
-        header.attach(self.tags_entry, 1, 6, 3, 1)
+        self.tags_entry.connect("changed", lambda *_: self._count_more())
+        more.add("Tags", self.tags_entry)
 
         self.documents = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        header.attach(Gtk.Label(label="Documents", xalign=0, yalign=0), 0, 7, 1, 1)
-        header.attach(self.documents, 1, 7, 3, 1)
+        more.add("Documents", self.documents)
         #: (status, row) for each linked document shown, in order.
         self.document_rows: list[tuple[attachment_engine.AttachmentStatus, Gtk.Widget]] = []
         self.link_entry: Gtk.Entry | None = None
         self._show_documents()
+        self._count_more()
 
         caption = Gtk.Box(spacing=8)
         splits_label = Gtk.Label(label="Splits", xalign=0)
         splits_label.add_css_class("total-row")
         splits_label.set_hexpand(True)
         caption.append(splits_label)
+        # Planning purpose and investment activity, per split, only when wanted.
+        self.detail_toggle = Gtk.ToggleButton(label="Planning detail")
+        self.detail_toggle.set_tooltip_text(
+            "Show each split's planning purpose, and investment activity for "
+            "investment and retirement accounts"
+        )
+        self.detail_toggle.connect("toggled", self._on_detail_toggled)
+        caption.append(self.detail_toggle)
         add_button = Gtk.Button(label="Add split", icon_name="list-add-symbolic")
         add_button.connect("clicked", lambda *_: self.add_split())
         caption.append(add_button)
@@ -578,6 +609,7 @@ class TransactionDialog(BoundedWindow):
         link.connect("clicked", lambda *_: self.link_location(address.get_text()))
         controls.append(link)
         self.documents.append(controls)
+        self._count_more()
 
     def _document_changed(self, result) -> bool:
         if result.value is None:
@@ -754,6 +786,16 @@ class TransactionDialog(BoundedWindow):
         return suggestion
 
     # ------------------------------------------------------------------ splits
+
+    def _on_detail_toggled(self, button: Gtk.ToggleButton) -> None:
+        self.show_planning_detail = button.get_active()
+        for editor in self.splits:
+            editor.show_detail()
+
+    def _count_more(self) -> None:
+        """Count what the second page holds on its tab."""
+        tags = [part for part in self.tags_entry.get_text().split(",") if part.strip()]
+        self.pages.set_count(MORE, len(tags) + len(self.document_rows))
 
     def holds_security(self, account: str | None) -> bool:
         """Whether ``account`` holds a security, so its splits carry shares."""

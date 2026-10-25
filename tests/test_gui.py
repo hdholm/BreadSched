@@ -1759,6 +1759,43 @@ class TestDialogs:
         assert len(dialog.splits) == 2
         assert dialog.save_button.get_sensitive() is False
 
+    def test_the_transaction_editor_keeps_detail_out_of_the_way(self, app, window, populated_book):
+        """#383: tags and documents on a second page; planning detail on request."""
+        from breadsched.gui.dialogs.transaction_dialog import MORE, TransactionDialog
+
+        app.open_book(populated_book)
+        _add_brokerage(app.db)
+        dialog = TransactionDialog(window, app.db)
+        assert dialog.pages.get_current_page() == 0
+        assert dialog.tags_entry.get_parent() is dialog.pages.get_nth_page(1)
+        assert dialog.pages.tab_label(MORE) == MORE
+        dialog.tags_entry.set_text("Tax, Home")
+        assert dialog.pages.tab_label(MORE) == f"{MORE} (2)"
+
+        def index_of(investing: bool) -> int:
+            return next(
+                index
+                for index, account in enumerate(dialog.accounts)
+                if account.atype.is_investment is investing
+            )
+
+        first = dialog.splits[0]
+        first.account.set_selected(index_of(False))
+        assert first.planning_purpose.get_visible() is False
+        assert first.investment_activity.get_visible() is False
+        dialog.detail_toggle.set_active(True)
+        assert first.planning_purpose.get_visible() is True
+        # Investment activity needs an investment or retirement account too.
+        assert first.investment_activity.get_visible() is False
+        first.account.set_selected(index_of(True))
+        assert first.investment_activity.get_visible() is True
+        # A choice already made stays in sight with the detail turned off.
+        first.investment_activity.set_selected(1)
+        dialog.detail_toggle.set_active(False)
+        assert first.investment_activity.get_visible() is True
+        assert first.planning_purpose.get_visible() is False
+        dialog.destroy()
+
     def test_one_amount_is_enough_for_a_two_split_entry(self, app, window, populated_book):
         """The common case: pick two accounts, type one number."""
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
@@ -2824,6 +2861,48 @@ class TestScheduleEntry:
         created = next(s for s in schedules if s.name == "Council tax")
         assert len(created.splits) == 2
         assert created.instantiate(date(2026, 6, 1)).is_balanced()
+
+    def test_the_editor_opens_on_its_basics_with_the_rest_a_tab_away(self, dialog):
+        """#383: future changes and defaults are on their own pages."""
+        from breadsched.gui.dialogs.schedule_dialog import FUTURE_CHANGES
+
+        pages = dialog.pages
+        titles = [pages.get_tab_label(pages.get_nth_page(i)).get_label() for i in range(4)]
+        assert titles == ["Basics", "Splits", FUTURE_CHANGES, "Advanced"]
+        assert pages.get_current_page() == 0
+        basics = pages.get_nth_page(0)
+        assert dialog.name_entry.get_parent() is basics
+        assert dialog.frequency.get_parent() is basics
+        assert dialog.growth_policy.get_parent() is pages.get_nth_page(3)
+        assert dialog.skipped_editor.get_parent() is pages.get_nth_page(2)
+        # The tab says how many future changes there are.
+        dialog.amount_changes_editor.add_row(date(2027, 1, 1), "200.00")
+        dialog.seasonal_amounts_editor.add_row(12, "300.00")
+        dialog._validate()
+        assert pages.tab_label(FUTURE_CHANGES) == f"{FUTURE_CHANGES} (2)"
+
+    def test_investment_activity_shows_only_for_an_investment_account(self, dialog, app):
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        _add_brokerage(app.db)
+        dialog = ScheduleDialog(dialog.get_transient_for(), app.db)
+
+        def index_of(investing: bool) -> int:
+            return next(
+                index
+                for index, account in enumerate(dialog._accounts)
+                if account.atype.is_investment is investing
+            )
+
+        plain = index_of(False)
+        dialog.category.set_selected(plain)
+        dialog.funding.set_selected(plain)
+        assert dialog.investment_activity.get_visible() is False
+        assert dialog.investment_activity_label.get_visible() is False
+        dialog.funding.set_selected(index_of(True))
+        assert dialog.investment_activity.get_visible() is True
+        assert dialog.investment_activity_label.get_visible() is True
+        dialog.destroy()
 
     def test_enter_and_remind_in_advance_days_are_saved(self, dialog):
         # #352: GnuCash's create- and remind-in-advance days.
@@ -10783,3 +10862,14 @@ class TestSearchableChoices:
         window.open_register(app.db.get_account_by_name("Assets:Checking Account").handle)
         picker = window._views["register"].account_picker
         assert picker.get_enable_search() is True
+
+
+def _add_brokerage(db) -> None:
+    """An investment account entries can use (the fixture's are placeholders)."""
+    from breadsched.gen.lib import Account, AccountType
+
+    with db.transaction("Brokerage") as txn:
+        root = db.root_account()
+        db.add_account(
+            Account(name="Test Brokerage", atype=AccountType.INVESTMENT, parent=root.handle), txn
+        )

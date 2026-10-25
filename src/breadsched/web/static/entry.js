@@ -812,7 +812,8 @@ async function showEntry() {
     el("label", {}, "From (money leaves)", options("from")),
     el("label", {}, "To (money arrives)", options("to")),
     el("label", {}, "Amount", el("input", { name: "amount", required: "required", placeholder: "0.00" })),
-    el("label", {}, "Investment activity (optional)",
+    el("label", { class: "investment-activity", hidden: "hidden" },
+      "Investment activity (optional)",
       el("select", { name: "investment_activity" },
         el("option", { value: "" }, "Ordinary transaction"),
         el("option", { value: "contribution" }, "Contribution"),
@@ -837,6 +838,18 @@ async function showEntry() {
         el("option", { value: "direct_refund" }, "Refunded to the FSA card"))) : null,
     el("button", { class: "action primary", type: "submit" }, "Post"));
 
+  // Investment activity applies only to an investment or retirement account (#383).
+  const investing = new Set(usable.filter((a) => ["INVESTMENT", "RETIREMENT"].includes(a.type))
+    .map((a) => a.full_name));
+  const showInvestment = () => {
+    form.querySelector(".investment-activity").hidden = !(
+      investing.has(form.elements.from.value) || investing.has(form.elements.to.value)
+      || form.elements.investment_activity.value);
+  };
+  form.elements.from.addEventListener("change", showInvestment);
+  form.elements.to.addEventListener("change", showInvestment);
+  form.addEventListener("reset", () => setTimeout(showInvestment, 0));
+  showInvestment();
   return el("div", {},
     el("p", { class: "note" },
       "Two-split entry. For anything more involved, use the desktop interface."),

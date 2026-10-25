@@ -351,27 +351,58 @@ function openScheduledEditor(data, source) {
     "investment_activity", INVESTMENT_ACTIVITY_OPTIONS, source?.investment_activity || "");
   const frequency = frequencyControl(source);
   const weekend = select("weekend", [["none","Leave on the day"],["previous","Friday before"],["next","Monday after"]], source?.weekend || "none");
+  // The fields most schedules need first; splits, future changes, and defaults
+  // set once are folded away, each saying what it holds (#383).
+  const investmentField = field("Investment activity", investmentActivity);
+  const investing = new Set(accounts.filter((a) => a.investment).map((a) => a.handle));
+  const showInvestment = () => {
+    investmentField.hidden = !(investing.has(category.value) || investing.has(funding.value)
+      || investmentActivity.value);
+  };
+  [category, funding, investmentActivity].forEach((control) =>
+    control.addEventListener("change", showInvestment));
+  showInvestment();
+  const changesSummary = el("summary", {}, "Future changes");
+  const countChanges = () => {
+    let count = 0;
+    for (const editor of [futureEditor, seasonalEditor, skipEditor, oneTimeEditor,
+      splitAmountChanges]) {
+      try { count += editor.values().length; } catch (_error) { count += 1; }
+    }
+    changesSummary.textContent = count ? `Future changes (${count})` : "Future changes";
+    return count;
+  };
+  const section = (summary, ...children) => el("details", { class:"form-section" },
+    typeof summary === "string" ? el("summary", {}, summary) : summary, ...children);
+  const changes = section(changesSummary,
+    el("p", { class:"note" }, "Changes from a date onward, in particular months, or on single occurrences. Most schedules need none."),
+    futureEditor.node, splitAmountChanges.node, seasonalEditor.node, skipEditor.node,
+    oneTimeEditor.node);
+  if (countChanges()) changes.open = true;
   form.append(
     field("Name", el("input", { name:"name", value:source?.name || "", required:"required" })),
-    field("Status", select("enabled", [["true","Active"],["false","Inactive"]], source?.enabled === false ? "false" : "true")),
     field("Kind", select("kind", [["commitment","Commitment"],["estimate","Estimate"]], source?.placeholder ? "estimate" : "commitment")),
-    field("Projection growth", growthPolicy),
     field("Category / investment account", category), field("Paid from / into", funding),
-    field("Category planning purpose", categoryPlanningFlow),
-    field("Planning purpose override", planningFlow),
-    field("Investment activity", investmentActivity),
     field("Amount", el("input", { name:"amount", value:source?.amount || "", inputmode:"decimal", required:"required" })),
-    field("Category memo", el("input", { name:"category_memo", value:source?.category_memo || "" })),
-    field("Funding memo", el("input", { name:"funding_memo", value:source?.funding_memo || "" })),
-    additionalSplits.node, splitAmountChanges.node,
-    futureEditor.node, seasonalEditor.node, skipEditor.node, oneTimeEditor.node, preview.node,
     field("Repeats", frequency),
     field("First due", el("input", { name:"start", type:"date", value:source?.start || today, required:"required" })),
     field("End date", el("input", { name:"end", type:"date", value:source?.end || "" })),
     field("Occurrences", el("input", { name:"count", type:"number", min:"1", value:source?.count || "" })),
-    field("Weekend", weekend),
-    field("Posting", select("posting", [["manual","Manual"],["automatic","Automatic"]], source?.auto ? "automatic" : "manual")),
-    ...advanceFields(source));
+    field("Status", select("enabled", [["true","Active"],["false","Inactive"]], source?.enabled === false ? "false" : "true")),
+    preview.node,
+    section("Splits and memos",
+      field("Category memo", el("input", { name:"category_memo", value:source?.category_memo || "" })),
+      field("Funding memo", el("input", { name:"funding_memo", value:source?.funding_memo || "" })),
+      additionalSplits.node),
+    changes,
+    section("Advanced",
+      field("Projection growth", growthPolicy),
+      field("Category planning purpose", categoryPlanningFlow),
+      field("Planning purpose override", planningFlow),
+      investmentField,
+      field("Weekend", weekend),
+      field("Posting", select("posting", [["manual","Manual"],["automatic","Automatic"]], source?.auto ? "automatic" : "manual")),
+      ...advanceFields(source)));
   form.append(el("div", { class:"toolbar" },
     el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Cancel"),
     el("button", { class:"action primary", type:"submit" }, "Save")));
@@ -401,7 +432,7 @@ function openScheduledEditor(data, source) {
   [frequency, form.elements.start, form.elements.end, form.elements.count, weekend]
     .forEach((control)=>control.addEventListener("change", refreshOccurrenceOptions));
   form.elements.start.addEventListener("input", refreshOccurrenceOptions);
-  refreshTimeline = refreshOccurrenceOptions;
+  refreshTimeline = () => { countChanges(); return refreshOccurrenceOptions(); };
   form.elements.amount.addEventListener("change", refreshOccurrenceOptions);
   refreshOccurrenceOptions();
   form.addEventListener("submit", async (event) => {

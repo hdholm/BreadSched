@@ -199,6 +199,8 @@ def scheduled(api: Api, days: int = 60) -> dict:
                 "name": api.db.full_name(account),
                 "class": account.account_class.value,
                 "hidden": account.hidden,
+                # Investment activity applies only to these (#383).
+                "investment": account.atype.is_investment,
             }
             for account in accounts
         ],
