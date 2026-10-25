@@ -268,6 +268,7 @@ def import_book(
                 report("Reading scheduled transactions", 0)
                 _import_scheduled(conn, sink, db, txn)
             report("Finishing", counts.get("transactions", 0))
+            sink.report_kept_notes()
             result.finish(db, txn)
             record_fingerprint(db, path, digest, txn)
     finally:

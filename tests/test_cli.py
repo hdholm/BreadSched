@@ -290,8 +290,8 @@ class TestInit:
     def test_version(self, capsys):
         code, out = run(capsys, "--version")
         assert code == 0 and out.startswith("breadsched ")
-        assert "native schema 12" in out
-        assert "supports 6–12" in out
+        assert "native schema 13" in out
+        assert "supports 6–13" in out
 
 
 class TestPostingAndReading:
@@ -482,8 +482,7 @@ class TestImport:
         checking = next(row for row in accounts if row["name"].endswith("Checking Account"))
         assert checking["source_guid"] == gnucash_sqlite_path.ids.checking
         assert checking["source_type"] == "BANK"
-        assert checking["notes"] == ""
-        assert checking["source_notes"] == "Generic account note"
+        assert checking["notes"] == "Generic account note"
         assert checking["source_fields"][0]["name"] == "account:non-standard-scu"
 
     def test_imported_source_owned_chart_fields_cannot_be_edited(
@@ -1144,7 +1143,7 @@ class TestVerify:
         capsys.readouterr()
         assert main(["verify", str(path)]) == 0
         output = capsys.readouterr().out.lower()
-        assert "native schema 12" in output
+        assert "native schema 13" in output
         assert "verification passed" in output
 
     def test_verify_json_reports_build_and_schema_versions(self, tmp_path, capsys):
@@ -1160,8 +1159,8 @@ class TestVerify:
         payload = json.loads(capsys.readouterr().out)
 
         assert payload["application_version"] == __version__
-        assert payload["native_schema_version"] == 12
-        assert payload["supported_schema_versions"] == {"minimum": 6, "maximum": 12}
+        assert payload["native_schema_version"] == 13
+        assert payload["supported_schema_versions"] == {"minimum": 6, "maximum": 13}
 
     def test_verify_json_reports_logical_damage(self, tmp_path, capsys):
         import json

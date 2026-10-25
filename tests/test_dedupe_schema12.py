@@ -86,7 +86,7 @@ def test_a_schema_11_book_moves_group_membership_onto_its_accounts(tmp_path):
     migrated = DbSQLite()
     migrated.load(str(path))
     try:
-        assert migrated.get_metadata("schema_version") == SCHEMA_VERSION == 12
+        assert migrated.get_metadata("schema_version") == SCHEMA_VERSION == 13
         assert migrated.migration_backup is not None
         stored = migrated.get_metadata("dashboard")
         assert stored["groups"] == [
@@ -137,7 +137,7 @@ def test_a_book_without_dashboard_settings_migrates_unchanged(tmp_path):
     migrated = DbSQLite()
     migrated.load(str(path))
     try:
-        assert migrated.get_metadata("schema_version") == 12
+        assert migrated.get_metadata("schema_version") == 13
         assert migrated.get_metadata("dashboard") is None
     finally:
         migrated.close()

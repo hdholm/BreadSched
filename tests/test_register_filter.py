@@ -18,8 +18,7 @@ def _purchase(db, book):
     transaction = Transaction(post_date=date(2026, 3, 14), description="Corner grocer", num="1067")
     transaction.add_split(Split(book.groceries, Money("1067.25"), memo="weekly shop"))
     transaction.add_split(Split(book.checking, Money("-1067.25")))
-    transaction.notes = "Party supplies"
-    transaction.source_notes = "Imported: FITID 99881"
+    transaction.notes = "Party supplies\nImported: FITID 99881"
     transaction.tags = ["household"]
     with db.transaction("Purchase") as txn:
         db.add_transaction(transaction, txn)

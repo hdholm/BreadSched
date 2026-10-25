@@ -38,6 +38,7 @@ from typing import Any
 
 from ..db.base import DbTxn
 from ..db.sqlite import DbSQLite
+from ..lib.notes import reconcile_imported_notes
 from ..lib.reconciliation import Reconciliation, ReconciliationStatus
 from ..lib.transaction import ReconcileState, Split, Transaction
 
@@ -138,7 +139,7 @@ def transaction_source_facts(transaction: Transaction) -> tuple[object, ...]:
         transaction.description,
         transaction.currency,
         transaction.num,
-        transaction.source_notes,
+        transaction.imported_notes_digest,
         tuple(sorted((split_source_facts(split) for split in transaction.splits), key=repr)),
     )
     # Appended only when present, so fingerprints of books without source links
@@ -239,7 +240,7 @@ def _shown(value: object) -> str:
 # ---------------------------------------------------------------------- merging
 
 
-def merge_local_state(incoming: Transaction, existing: Transaction) -> None:
+def merge_local_state(incoming: Transaction, existing: Transaction) -> bool:
     """Carry BreadSched-owned state from ``existing`` onto an incoming version.
 
     GnuCash remains authoritative for ledger facts such as dates, amounts,
@@ -248,8 +249,14 @@ def merge_local_state(incoming: Transaction, existing: Transaction) -> None:
     that split's account, value, and quantity are unchanged. Split annotations
     are preserved only when the source split GUID still exists, so a materially
     replaced source split cannot inherit stale state.
+
+    The one note follows ``lib.notes.reconcile_imported_notes`` (#385): the
+    incoming source text is taken only while BreadSched's note is unchanged.
+    Returns true when both changed it, so BreadSched's note was kept.
     """
-    incoming.notes = existing.notes
+    incoming.notes, incoming.imported_notes_digest, conflict = reconcile_imported_notes(
+        existing.notes, existing.imported_notes_digest, incoming.notes
+    )
     incoming.scheduled_from = existing.scheduled_from
     incoming.planned_occurrence = existing.planned_occurrence
     incoming.planned_for = existing.planned_for
@@ -277,6 +284,7 @@ def merge_local_state(incoming: Transaction, existing: Transaction) -> None:
         ) == (prior.account, prior.value, prior.quantity):
             split.reconcile = ReconcileState.RECONCILED
             split.reconcile_date = prior.reconcile_date
+    return conflict
 
 
 def blocking_reconciliations(

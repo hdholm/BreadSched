@@ -47,6 +47,7 @@ def main(path: str) -> int:
                     "date": txn.GetDate().strftime("%Y-%m-%d"),
                     "description": txn.GetDescription(),
                     "num": txn.GetNum(),
+                    "notes": txn.GetNotes() or "",
                     "currency": txn.GetCurrency().get_mnemonic(),
                     "splits": sorted(
                         (

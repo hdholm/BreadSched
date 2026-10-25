@@ -25,9 +25,9 @@ changing the native schema.
 
 BreadSched-owned planning state must not be destroyed by re-import. On a matching
 GnuCash account GUID, source-owned chart fields (name, source type, parent,
-commodity, code, description, source notes, placeholder/hidden state, and commodity SCU)
+commodity, code, description, placeholder/hidden state, and commodity SCU)
 may refresh from the source, while the BreadSched account type, FSA funding years,
-local account notes, projection-rate overrides, projection exclusion, dashboard grouping,
+projection-rate overrides, projection exclusion, dashboard grouping,
 linked-asset/card behavior, usual payment, payment day, and BreadSched's tax-relevant
 mark are retained. GnuCash's own *tax related* slot stays a read-only source field;
 it decides tax relevance only while BreadSched has no mark of its own, and the
@@ -36,11 +36,21 @@ type change is reported. If its accounting class conflicts with the retained
 BreadSched type, the conflict requires review rather than silently changing local
 semantics or display signs.
 
-Account notes follow the same ownership split as transaction notes. GnuCash notes
-are inspectable source provenance and refresh on re-import; BreadSched notes are
-editable planning context and survive independently. Compatibility loading moves a
-legacy shared note to source provenance only when the retained typed `slot:notes`
-value proves that origin, avoiding a guess that could discard a local note.
+Accounts and transactions each have one note, owned by BreadSched (#385,
+`gen.lib.notes`). The first import seeds it from GnuCash's `notes` slot, and
+`imported_notes_digest` records a fingerprint of the GnuCash text it last
+reconciled with. A re-import then decides by who changed what: GnuCash text equal
+to the note needs nothing; GnuCash unchanged since the last import keeps the note;
+a note still equal to what was imported takes GnuCash's new text; and when both
+changed, BreadSched's note is kept and the import warns with a count. Either way
+the digest moves to the new GnuCash text, so the same conflict is reported once.
+Write-back sends transaction notes (below), after which the next import finds equal
+text. Account notes are not written back. Before schema 13 the two texts were kept
+apart (a read-only `source_notes` refreshed on every import); the 12→13 migration
+and compatibility loading join them, GnuCash's first and BreadSched's after a blank
+line (once if equal), with the digest of the GnuCash text. A pre-0.2.0a204 account
+whose single note equals its retained typed `slot:notes` value is recognised as
+imported (digest set) rather than guessed.
 
 That ownership boundary is enforced at edit time as well as import time. GTK and
 CLI refuse changes to an imported account's source-controlled name, parent, code,
@@ -68,9 +78,8 @@ safe from the number of splits or a familiar-looking recurrence label.
 
 On a matching GnuCash transaction GUID, source-owned ledger facts (dates,
 descriptions, numbers, accounts, values, quantities, memos/actions, and reconcile
-state) and source transaction notes may refresh from the source. Source notes have
-their own read-only field because BreadSched-authored transaction notes,
-plan-resolution/link state, rejected matches, and split planning/FSA classifications
+state) may refresh from the source, and the transaction's note follows the
+ownership rule above. Plan-resolution/link state, rejected matches, and split planning/FSA classifications
 are retained across re-import. Split-level annotations are retained only when the
 same source split GUID still exists, so a materially replaced source split cannot
 inherit stale BreadSched state. A sale's named lots (`Split.lot_picks`) are kept
@@ -145,8 +154,8 @@ owns the rule and the importer's shared sink applies it to SQLite and XML books:
 - A refresh that changes a *protected* fact is withheld. Protected facts are the
   transaction's date, description, number, and currency, and each locally
   reconciled split's account, value, quantity, memo, and action, or its removal.
-  Changes confined to splits not reconciled locally, and read-only source notes,
-  apply normally. The withheld version is serialized with a fingerprint of its
+  Changes confined to splits not reconciled locally, and notes, apply normally
+  (notes by the ownership rule above). The withheld version is serialized with a fingerprint of its
   source facts in the `import.reconciled_review` book metadata key, written inside
   the import transaction so it is undoable and needs no schema change.
 - `gen.services.import_review` lists pending versions and applies one batch of
@@ -215,6 +224,9 @@ BreadSched with that view and produces one operation per transaction:
   security or foreign-currency account writes its own quantity at the account's
   SCU. BreadSched handles become the GnuCash GUIDs, so re-import recognizes them.
   A `date-posted` gdate slot is written as GnuCash does.
+- **notes**: a difference in the transaction's note, written to (or, when empty,
+  removed from) its `notes` string slot. A note is not ledger data, so a
+  transaction reconciled in GnuCash or in a lot still takes it.
 - **edit**: any difference in date (and its `date-posted` slot), description,
   number, split account, value, quantity, memo, action, or added or removed
   splits, unless a GnuCash split of the transaction is reconciled (`y`) or in a

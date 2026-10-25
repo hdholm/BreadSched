@@ -5,7 +5,7 @@ change is decided on its own, in one batch, like the due-schedule review:
 
 * **Keep BreadSched version** — the local transaction stays as reconciled and
   this GnuCash version is not raised again.
-* **Use GnuCash version** — apply the change, keeping BreadSched notes, Plan
+* **Use GnuCash version** — apply the change, keeping notes, Plan
   links, and classifications. Unavailable while a completed statement would stop
   balancing; reopen that statement first.
 * **Decide later** — the default, because the safe answer to an unread question

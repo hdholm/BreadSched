@@ -210,6 +210,7 @@ def import_book(
                         kind="schedule",
                     )
 
+        sink.report_kept_notes()
         result.finish(db, txn)
         record_fingerprint(db, path, digest, txn)
 

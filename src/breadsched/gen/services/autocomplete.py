@@ -59,7 +59,7 @@ class EntrySuggestion:
     transfer_account: str | None
     #: The signed value in ``account`` (positive increases a debit-normal account).
     amount: Money | None
-    #: The earlier transaction's BreadSched notes, for an entry whose notes are empty (#363).
+    #: The earlier transaction's notes, for an entry whose notes are empty (#363).
     notes: str = ""
 
 
