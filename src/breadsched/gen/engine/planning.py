@@ -448,11 +448,21 @@ def receivable_receipt_events(
     found: list[PlannedEvent] = []
     for item in scenario_receipts(db, scenario, start, end):
         receipt, receivable = item.receipt, item.receivable
-        splits = [PlannedSplit(receipt.account, -receipt.amount)]
-        if item.amount > 0:
-            splits.insert(0, PlannedSplit(receipt.cash_account, item.amount))
-        if item.shortfall > 0:
-            splits.append(PlannedSplit(receipt.expense_account, item.shortfall))
+        if receipt.expense_account is None:
+            # A direct receivable (#378) has no expense to write off into: what a
+            # scenario does not expect simply stays owed.
+            if item.amount <= 0:
+                continue
+            splits = [
+                PlannedSplit(receipt.cash_account, item.amount),
+                PlannedSplit(receipt.account, -item.amount),
+            ]
+        else:
+            splits = [PlannedSplit(receipt.account, -receipt.amount)]
+            if item.amount > 0:
+                splits.insert(0, PlannedSplit(receipt.cash_account, item.amount))
+            if item.shortfall > 0:
+                splits.append(PlannedSplit(receipt.expense_account, item.shortfall))
         description = (
             f"Expected from {receivable.payer}: {receivable.description}"
             if item.amount > 0
@@ -466,7 +476,7 @@ def receivable_receipt_events(
                 source_handle=None,
                 description=description,
                 expected_splits=tuple(splits),
-                expected_amount=receipt.amount,
+                expected_amount=receipt.amount if receipt.expense_account else item.amount,
                 placeholder=True,
             )
         )

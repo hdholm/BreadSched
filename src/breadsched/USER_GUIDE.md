@@ -1424,6 +1424,54 @@ expense or counting the reimbursement as new income
 [browser](guide/web.md#reimbursable-expenses),
 [command line](guide/cli.md#reimbursable-expenses)).
 
+#### Two ways to record a reimbursable cost
+
+Money someone owes you back can be recorded in either of two ways, and BreadSched
+tracks both. The difference is whether the cost was ever *your* expense.
+
+**As an expense you hope to get back.** Use this when the cost really is yours
+until someone agrees to pay: a doctor's bill an insurer may cover in part, a
+repair a warranty might refund. You record the payment as usual, to an expense:
+
+| Transaction | Account | Amount |
+|---|---|---|
+| Clinic visit | Expenses:Medical | +150 |
+| | Assets:Checking | −150 |
+
+Then you track it as reimbursable. BreadSched moves what you expect back out of
+the expense and into a Receivable account with a transaction of its own, so your
+spending shows only what you will really bear. When the insurer pays, record the
+check as a credit to the same expense, like a refund (Checking +120,
+Expenses:Medical −120), and link it. If the insurer pays less than you hoped, the
+rest is simply your expense: write it off and it returns to Expenses:Medical.
+
+**As a charge to a receivable from the start.** Use this when the cost was never
+yours: a hotel your employer will repay, something you bought for a friend. You
+record the charge straight to a Receivable account and never touch an expense:
+
+| Transaction | Account | Amount |
+|---|---|---|
+| Conference hotel | Assets:Receivables:Employer | +100 |
+| | Liabilities:Credit Card | −100 |
+
+Your spending and net worth do not change: the card owes 100 more and the employer
+owes you 100. Track the charge as reimbursable to give it a payer, an expected date,
+and a status; BreadSched posts nothing, because the money is already where it
+belongs. The payback credits the same receivable account: if it comes on your
+paycheck, give the paycheck a line for it, such as Checking +100 and
+Assets:Receivables:Employer −100, rather than counting it as salary. Link that
+credit (BreadSched proposes it) and the receivable is settled. Such a charge is
+owed in full; if the payer will not cover part of it, write that part off and
+choose the expense account it becomes, since there is no expense to return it to.
+
+Either way, what is owed sits in an account of type **Receivable**, which counts
+toward net worth but never toward liquidity, Available, or the emergency fund,
+because you cannot spend it yet. Money back is never income. One receivable can
+gather several charges, say every cost on one expense report, when they are repaid
+together; a single payback links to one receivable.
+
+#### How BreadSched holds what is owed
+
 What the payer still owes is held in a **Receivable** account. When you track an
 expense, BreadSched moves the amount expected back (or the whole expense, if you
 gave no expected amount) out of the expense account and into the receivable
@@ -1445,7 +1493,9 @@ When money comes back, record it as a credit to the same expense account, as an
 ordinary refund, and link it to the receivable. BreadSched proposes such a credit
 for one open receivable only if all of these hold:
 
-- it is in the same account and currency as the expense;
+- it is in the same account as the expense, or in the receivable's own account
+  (such as a paycheck line repaying a charge recorded there);
+- it is in the same currency as the expense;
 - it is dated on or after the expense;
 - it is no more than what is still owed.
 
@@ -1483,7 +1533,8 @@ money on that date: what is still owed moves from the receivable account into th
 cash account that paid the expense (or, for a card, the account the card is paid
 from), so projected cash rises only from the day it is due, and net worth is
 unchanged. It is an expectation, never posted; the real reimbursement, once linked,
-replaces it. A disputed receivable, one whose expected date has passed, and one
+replaces it. For a charge recorded straight to a receivable, a scenario that expects
+less leaves the rest owed rather than turning it into an expense. A disputed receivable, one whose expected date has passed, and one
 settled or written off are not counted on, so a doubtful reimbursement never shows
 as spendable cash.
 

@@ -11,6 +11,10 @@ been received and cannot be spent. BreadSched owns the reclassification
 transactions that move it there (``postings``) and recomputes them from the
 receivable on every change -- see ``engine.receivables.planned_postings``. A
 dispute posts nothing.
+
+A cost may instead be recorded straight to the receivable account, as a charge
+an employer will repay often is (#378): such a *direct* receivable needs no
+reclassification to hold what is owed, and money back credits that account.
 """
 
 from __future__ import annotations
@@ -28,18 +32,27 @@ __all__ = ["Receivable", "ReceivableWriteOff"]
 
 @dataclass(frozen=True)
 class ReceivableWriteOff:
-    """An amount given up as uncollectible; its reclassification returns it to the expense."""
+    """An amount given up as uncollectible; its reclassification returns it to the expense.
+
+    ``account`` is the expense account it becomes: by default the largest linked
+    expense's, and required for a charge recorded straight to a receivable
+    account, which has no expense of its own (#378).
+    """
 
     written_off_on: date
     amount: Money
     reason: str = ""
+    account: str | None = None
 
     def serialize(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "written_off_on": self.written_off_on.isoformat(),
             "amount": [self.amount.numerator, self.amount.denominator],
             "reason": self.reason,
         }
+        if self.account is not None:
+            data["account"] = self.account
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ReceivableWriteOff:
@@ -47,6 +60,7 @@ class ReceivableWriteOff:
             written_off_on=date.fromisoformat(str(data["written_off_on"])),
             amount=Money(*data["amount"]),
             reason=str(data.get("reason", "")),
+            account=str(data["account"]) if data.get("account") else None,
         )
 
 
@@ -78,10 +92,12 @@ class Receivable(PrimaryObject):
         self.description = description
         self.expected_amount = expected_amount
         self.expected_cash_date = expected_cash_date
-        #: Expense-class splits recording the original out-of-pocket cost.
+        #: Splits recording the original cost: expense-class splits, or (#378)
+        #: charges recorded straight to the receivable account, never both.
         self.expenses = list(expenses or [])
-        #: Expense-class splits crediting money back, exactly like an ordinary
-        #: refund; never an income-class split.
+        #: Splits crediting money back: an expense-class split, exactly like an
+        #: ordinary refund, or a credit to the receivable account itself (such
+        #: as a paycheck line); never an income-class split.
         self.reimbursements = list(reimbursements or [])
         self.disputed_on = disputed_on
         self.dispute_note = dispute_note

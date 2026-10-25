@@ -30,6 +30,7 @@ from ..gen.services.receivables import (
     save_receivable,
     shared_costs,
     unoffered_receivable_accounts,
+    write_off_accounts,
 )
 from ..gen.services.scenarios import SetReimbursementOverride, set_reimbursement_override
 from ..presentation import (
@@ -123,6 +124,7 @@ def _candidate(api: Api, item) -> dict[str, object]:
         "date": item.when,
         "description": item.description,
         "account": api.db.full_name(item.account),
+        "account_handle": item.account,
         "value": item.value,
     }
 
@@ -168,6 +170,7 @@ def receivables(api: Api, query: QueryParams) -> dict[str, object]:
                 "status": item.status.value,
                 "status_label": item.status.label,
                 "owed": item.owed,
+                "direct": item.direct,
                 "account": item.receivable.account,
                 "account_name": (
                     api.db.full_name(item.receivable.account) if item.receivable.account else None
@@ -198,6 +201,10 @@ def receivables(api: Api, query: QueryParams) -> dict[str, object]:
         "accounts": [
             {"handle": account.handle, "name": api.db.full_name(account) or account.name}
             for account in receivable_accounts(api.db)
+        ],
+        "write_off_accounts": [
+            {"handle": account.handle, "name": api.db.full_name(account) or account.name}
+            for account in write_off_accounts(api.db)
         ],
         "account_note": receivable_account_note(
             [
@@ -321,6 +328,7 @@ def receivable_write_off(api: Api, payload: Mapping[str, Any]) -> dict[str, obje
                 input_money(dict(payload), raw_amount),
                 _date(payload, "written_off_on") or date.today(),
                 _text(payload, "reason", optional=True) or "",
+                _text(payload, "account", optional=True) or None,
             ),
         ),
     )

@@ -295,14 +295,19 @@ section, and **Plan** lists goals reaching their target in its range. See
 ## Reimbursable expenses
 
 Choose **Reimbursable…** on a register row to start a receivable from that expense,
-or open **Reimbursable Expenses** to list, open, link, dispute, and write off receivables.
+or from a charge recorded straight to a Receivable account (then **Held in** starts
+at that account), or open **Reimbursable Expenses** to list, open, link, dispute, and
+write off receivables. A write-off's **Write off into** chooses the expense it
+becomes; a charge recorded to a Receivable account must name one. See [Two ways to
+record a reimbursable cost](../USER_GUIDE.md#two-ways-to-record-a-reimbursable-cost).
 **Held in** chooses the receivable account (the default is one per currency). It
 lists only accounts whose type is **Receivable**; the note under it names any account
 that looks like a receivable but is not offered (an **Asset** account named for
 receivables, or a placeholder). To use such an account, change its type to
 **Receivable** when editing the account.
 **Proposed reimbursements** lists credits that clearly belong to one open
-receivable, checked; choose **Accept selected** to link them. A warning appears when
+receivable, checked, including a credit to the receivable account itself such as a
+paycheck line; choose **Accept selected** to link them. A warning appears when
 a linked expense is also on an FSA claim, and the open receivable shows what is
 owed and the account holding it.
 
