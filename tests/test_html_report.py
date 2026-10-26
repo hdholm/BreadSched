@@ -196,3 +196,19 @@ def test_projection_report_includes_chart_assumptions_year_end_values_and_compar
     assert "Retirement rollovers" in document
     assert "Escrow treatment" in document
     assert "funded from household cash/income is recognized now" in document
+
+
+def test_the_printed_dashboard_shows_only_the_chosen_sections(db, book):
+    """Printing follows Configure Dashboard's sections (#381)."""
+    config = dashboard.DashboardConfig(
+        groups=[dashboard.GroupConfig("Ready cash", [book.checking], "liquid")]
+    )
+    config.sections = {**config.sections, "bills": False, "reimbursables": True}
+    board = dashboard.build(db, config, as_of=date(2026, 2, 1))
+
+    document = dashboard_report(board, book_name="household.breadsched")
+
+    assert "Pending bills" not in document
+    assert "Expected income" in document
+    assert "Pending reimbursables" in document
+    assert "No reimbursable expenses are owed." in document

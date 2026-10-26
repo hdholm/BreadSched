@@ -44,9 +44,13 @@ def dashboard_report(
             _plain({key: value for key, value in goal_json(item).items() if key != "allocations"})
             for item in board.goals
         ],
+        # Each reimbursable expense still owed, soonest expected first (#381).
+        "reimbursables": [_reimbursable_row(item, board) for item in board.reimbursables],
         "config": {
             "liquidity_days": config.liquidity_days,
             "emergency_months": config.emergency_months,
+            "sections": {name: config.shows(name) for name in engine.SECTIONS},
+            "section_titles": dict(engine.SECTIONS),
             "groups": [group_json(group) for group in config.groups],
             "accounts": [
                 {"handle": account.handle, "name": db.full_name(account)}
@@ -167,6 +171,23 @@ def _display_row(item: engine.BillRow | engine.MissedGroup, board: engine.Dashbo
     }
 
 
+def _reimbursable_row(item, board: engine.Dashboard) -> dict:
+    receivable = item.receivable
+    expected = receivable.expected_cash_date
+    return {
+        "handle": receivable.handle,
+        "description": receivable.description,
+        "payer": receivable.payer,
+        "incurred": receivable.incurred_date.isoformat(),
+        "expected": expected.isoformat() if expected is not None else None,
+        "overdue": expected is not None and expected < board.as_of,
+        "attention": engine.reimbursable_overdue(item, board.as_of),
+        "remaining": str(item.remaining.to_decimal()),
+        "status": item.status.value,
+        "status_label": item.status.label,
+    }
+
+
 def _plain(values: Mapping[str, object]) -> dict[str, str | None]:
     """Convert Money and date values to strings the browser can read."""
     out: dict[str, str | None] = {}
@@ -181,12 +202,18 @@ def _plain(values: Mapping[str, object]) -> dict[str, str | None]:
 
 
 def dashboard_config_save(api: Api, payload: dict) -> dict:
-    """Save the same group paths and account selections edited by GTK.
+    """Save the same settings Configure Dashboard edits in GTK (#381).
 
     Parsing stays here; validation and the write (each account's group plus the
-    stored names, kinds, and horizons) are ``save_dashboard_config``'s (#337).
+    stored names, kinds, horizons, and sections) are ``save_dashboard_config``'s
+    (#337). A key left out keeps what is stored.
     """
-    groups: list[DashboardGroupInput] = []
+    sections = payload.get("sections")
+    if sections is not None and (
+        not isinstance(sections, dict) or not all(isinstance(v, bool) for v in sections.values())
+    ):
+        raise ValueError("dashboard sections must map each section to true or false")
+    groups: list[DashboardGroupInput] | None = None if "groups" not in payload else []
     raw_groups = payload.get("groups", [])
     if not isinstance(raw_groups, list):
         raise ValueError("dashboard groups must be a list")
@@ -196,6 +223,7 @@ def dashboard_config_save(api: Api, payload: dict) -> dict:
         raw_handles = raw.get("accounts", [])
         if not isinstance(raw_handles, list):
             raise ValueError("dashboard group accounts must be a list")
+        assert groups is not None
         groups.append(
             DashboardGroupInput(
                 name=str(raw.get("name", "")),
@@ -206,11 +234,12 @@ def dashboard_config_save(api: Api, payload: dict) -> dict:
     result = save_dashboard_config(
         api.db,
         SaveDashboardConfig(
-            groups=tuple(groups),
+            groups=tuple(groups) if groups is not None else None,
             liquidity_days=int(payload["liquidity_days"]) if "liquidity_days" in payload else None,
             emergency_months=(
                 int(payload["emergency_months"]) if "emergency_months" in payload else None
             ),
+            sections={str(k): v for k, v in sections.items()} if sections is not None else None,
         ),
     )
     if result.value is None:
@@ -220,6 +249,7 @@ def dashboard_config_save(api: Api, payload: dict) -> dict:
         "groups": [group_json(group) for group in config.groups],
         "liquidity_days": config.liquidity_days,
         "emergency_months": config.emergency_months,
+        "sections": {name: config.shows(name) for name in engine.SECTIONS},
     }
 
 

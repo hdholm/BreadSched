@@ -94,7 +94,9 @@ or scenario in its query string.
 
 Every table except the register grid (below) is built with `_base.table_section()`: a heading row with the table's
 own column chooser (never in the view toolbar, where identical icons could not be
-told apart) above a scrolled `Gtk.ColumnView` carrying the `data-table` class, which
+told apart; the Dashboard hides its tables' choosers and lists the same columns,
+under the same `columns:<view id>` settings, on the Columns page of
+`dialogs.dashboard_dialog.DashboardDialog`, #381) above a scrolled `Gtk.ColumnView` carrying the `data-table` class, which
 stripes rows so they are distinguishable at rest. Numeric cells carry `numeric` for
 tabular figures and a small right padding. Tables never scroll sideways: a narrowing
 window gives each column between its minimum and natural width, text cells ellipsize,
@@ -135,9 +137,9 @@ can forget them all (`forget_sizes`).
 not part of a book: `general.last_book_path`, `register.double_line` and
 `register.banding` in the view settings, and the Alpha Vantage key through
 `plugins.quotes.save_alphavantage_key` (stored only if changed, so a key from the
-environment is not copied into the file). **Configure Dashboard Groups…** there
-activates the window's existing `win.dashboard-configure-groups`, because groups
-belong to the book. The browser has no equivalent window; its guide's Preferences
+environment is not copied into the file). **Configure Dashboard…** there
+activates the window's existing `win.dashboard-configure`, because the Dashboard's
+horizons, sections, and groups belong to the book. The browser has no equivalent window; its guide's Preferences
 section says where each setting lives there.
 
 A modal dialog is never shown behind the window it blocks (#295), and never two at

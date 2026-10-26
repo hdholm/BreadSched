@@ -11,8 +11,9 @@ over toolbars:
   to every open register when saved.
 * **Online quotes** – the Alpha Vantage API key, the same stored key the Online
   Quotes window edits.
-* **Dashboard** – **Configure Dashboard Groups…**, which opens that window for the
-  open book (groups belong to the book, not to these settings).
+* **Dashboard** – **Configure Dashboard…**, which opens that window for the open
+  book (its horizons, sections, and groups belong to the book, not to these
+  settings).
 * **Windows** – forget the remembered window sizes (#349).
 
 **Save** writes them all; **Cancel** (or Escape) changes nothing.
@@ -106,8 +107,8 @@ class PreferencesDialog(BoundedWindow):
         row += 1
 
         heading("Dashboard")
-        groups = Gtk.Button(label="Configure Dashboard Groups…", halign=Gtk.Align.START)
-        groups.set_tooltip_text("Arrange the open book's Dashboard groups")
+        groups = Gtk.Button(label="Configure Dashboard…", halign=Gtk.Align.START)
+        groups.set_tooltip_text("Choose what the open book's Dashboard shows")
         groups.set_sensitive(getattr(application, "db", None) is not None)
         groups.connect("clicked", self._on_dashboard_groups)
         grid.attach(groups, 0, row, 2, 1)
@@ -166,7 +167,7 @@ class PreferencesDialog(BoundedWindow):
     def _on_dashboard_groups(self, _button) -> None:
         parent = self.get_transient_for()
         if parent is not None:
-            parent.activate_action("win.dashboard-configure-groups", None)
+            parent.activate_action("win.dashboard-configure", None)
 
     # ----------------------------------------------------------------- saving
 

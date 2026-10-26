@@ -714,6 +714,22 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                         for item in board.display_incomes
                         if isinstance(item, dashboard_engine.MissedGroup)
                     ],
+                    # Each reimbursable expense still owed, soonest expected first (#381).
+                    "reimbursables": [
+                        {
+                            "handle": item.receivable.handle,
+                            "description": item.receivable.description,
+                            "payer": item.receivable.payer,
+                            "incurred": item.receivable.incurred_date,
+                            "expected": item.receivable.expected_cash_date,
+                            "remaining": item.remaining,
+                            "status": item.status.value,
+                            "attention": dashboard_engine.reimbursable_overdue(item, board.as_of),
+                        }
+                        for item in board.reimbursables
+                    ],
+                    # Which sections Configure Dashboard shows; the text output follows it.
+                    "sections": {name: config.shows(name) for name in dashboard_engine.SECTIONS},
                 },
                 args,
             )
@@ -851,7 +867,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
         ]
         print(table(headline, ["measure", "amount"], right={1}))
 
-        if board.bills:
+        if board.bills and config.shows("bills"):
             print()
             print("Pending bills")
             display_bills = board.display_bills
@@ -886,7 +902,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
             )
             if len(display_bills) > args.limit:
                 print(f"... and {len(display_bills) - args.limit} more")
-        if board.incomes:
+        if board.incomes and config.shows("income"):
             print()
             print("Expected income")
             display_incomes = board.display_incomes
@@ -910,6 +926,22 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
             )
             if len(display_incomes) > args.limit:
                 print(f"... and {len(display_incomes) - args.limit} more")
+        if board.reimbursables and config.shows("reimbursables"):
+            print()
+            print("Pending reimbursables")
+            rows = [
+                [
+                    (item.receivable.description or item.receivable.payer)[:32],
+                    item.receivable.payer[:24],
+                    str(item.receivable.expected_cash_date or "—"),
+                    item.remaining.format(),
+                    item.status.label,
+                ]
+                for item in board.reimbursables[: args.limit]
+            ]
+            print(table(rows, ["expense", "payer", "expected", "still owed", "status"], right={3}))
+            if len(board.reimbursables) > args.limit:
+                print(f"... and {len(board.reimbursables) - args.limit} more")
         return 0
     finally:
         db.close()
