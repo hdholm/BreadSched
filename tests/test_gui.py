@@ -10873,3 +10873,67 @@ def _add_brokerage(db) -> None:
         db.add_account(
             Account(name="Test Brokerage", atype=AccountType.INVESTMENT, parent=root.handle), txn
         )
+
+
+class TestFindTransactions:
+    """#382: Edit → Find Transactions searches every register with subtotals."""
+
+    def test_an_amount_finds_its_legs_and_groups_subtotal(self, app, window, populated_book):
+        from breadsched.gen.engine.transaction_query import TransactionQuery, run_query
+        from breadsched.gui.dialogs.find_dialog import FindDialog
+
+        app.open_book(populated_book)
+        assert app.actions["find-transactions"].get_enabled() is True
+        opened: list[str] = []
+        dialog = FindDialog(window, app.db, open_account=opened.append)
+        first = next(iter(app.db.iter_transactions()))
+        size = abs(first.splits[0].value)
+        dialog.amount_entry.set_text(str(size.to_decimal()))
+        dialog.group_by.set_selected(1)  # account
+        result = dialog.find()
+        assert result is not None and result.rows
+        assert all(abs(row.value) == size for row in result.rows)
+        expected = run_query(app.db, TransactionQuery(amount=size, group_by="account"))
+        assert [row.split.handle for row in result.rows] == [
+            row.split.handle for row in expected.rows
+        ]
+        kinds = [line.kind for line in dialog.lines]
+        assert kinds.count("subtotal") == len(result.groups) and kinds[-1] == "total"
+        assert dialog.results.get_model().get_n_items() == len(dialog.lines)
+        dialog._on_activate(None, 0)
+        assert opened == [dialog.lines[0].handle]
+        dialog.destroy()
+
+    def test_criteria_that_cannot_be_read_say_so(self, app, window, populated_book):
+        from breadsched.gui.dialogs.find_dialog import FindDialog
+
+        app.open_book(populated_book)
+        dialog = FindDialog(window, app.db)
+        dialog.start_entry.set_text("not a date")
+        assert dialog.find() is None
+        assert "first date" in dialog.status.get_text()
+        dialog.start_entry.set_text("2026-05-01")
+        dialog.end_entry.set_text("2026-01-01")
+        assert dialog.find() is None
+        assert "start date is after the end date" in dialog.status.get_text()
+        dialog.destroy()
+
+    def test_the_edit_menu_offers_it(self, app):
+        from breadsched.gui.app import build_menu_model
+
+        menu = build_menu_model()
+        labels = []
+        for index in range(menu.get_n_items()):
+            section = menu.get_item_link(index, "submenu")
+            stack = [section]
+            while stack:
+                current = stack.pop()
+                for item in range(current.get_n_items()):
+                    label = current.get_item_attribute_value(item, "label", None)
+                    if label is not None:
+                        labels.append(label.get_string())
+                    for link in ("section", "submenu"):
+                        child = current.get_item_link(item, link)
+                        if child is not None:
+                            stack.append(child)
+        assert "Find _Transactions…" in labels

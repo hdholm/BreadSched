@@ -505,6 +505,32 @@ dates; the payload carries the shared CSV text for download), the GTK history
 dialog's Change buttons, `html_report.net_worth_change_report`, and
 `csv_export.net_worth_change_csv` all render that one result.
 
+## Finding transactions
+
+`gen.engine.transaction_query` is the one search behind the desktop's **Find
+Transactions** window (`dialogs.find_dialog`), the browser's Find view
+(`GET /api/find`, `web/find_resource.py`), and `breadsched find`
+(`cli/find_commands.py`). Issue #382 asked for it to be the basis of a report
+generator.
+
+- **Rows.** `run_query` returns `QueryRow`s, and each row is a split.
+  - Transaction-level criteria choose transactions: text (via
+    `ledger.transaction_matches`, the register filter's own test), a date range,
+    and tags (every one).
+  - Split-level criteria choose which legs are shown: accounts (and descendants),
+    an exact size or a range on `abs(value)`, direction (sign), and reconcile
+    states.
+- **Order.** Rows sort by date, amount, account, or description, with the date and
+  handles as tie-breakers, so equal keys stay in a stable order.
+- **Groups.** `QueryGroup`s, by account, month, year, or tag (a split appears under
+  each tag), carry signed totals keyed by currency mnemonic. The grand total counts
+  each split once. Amounts are never converted between currencies.
+- **Invalid queries.** `TransactionQuery.problems` lists what makes a query
+  unrunnable, and `run_query` raises `ValueError` with those words:
+  - the CLI reports it with exit status 2;
+  - the browser returns a 400 `request.invalid`;
+  - the desktop shows it on the window's status line.
+
 ## Printable reports
 
 Printing is a presentation of an already calculated view, not another financial

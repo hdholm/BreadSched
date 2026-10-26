@@ -198,6 +198,7 @@ class BreadSchedApplication(Gtk.Application):
             ("rules", self.on_rules, None),
             ("receivables", self.on_receivables, None),
             ("savings-goals", self.on_savings_goals, None),
+            ("find-transactions", self.on_find_transactions, "<Control><Shift>f"),
             ("fsa-claims", self.on_fsa_claims, None),
             ("gnucash-writeback", self.on_gnucash_writeback, None),
             ("open-default", self.on_open_default, None),
@@ -231,6 +232,7 @@ class BreadSchedApplication(Gtk.Application):
             "rules",
             "receivables",
             "savings-goals",
+            "find-transactions",
             "fsa-claims",
             "gnucash-writeback",
             "export",
@@ -266,6 +268,7 @@ class BreadSchedApplication(Gtk.Application):
             "rules",
             "receivables",
             "savings-goals",
+            "find-transactions",
             "fsa-claims",
             "gnucash-writeback",
             "export",
@@ -483,6 +486,21 @@ class BreadSchedApplication(Gtk.Application):
         from .dialogs.receivables_dialog import ReceivablesDialog
 
         dialog = ReceivablesDialog(parent or self.props.active_window, self.db, expense=expense)
+        dialog.present()
+        return dialog
+
+    def on_find_transactions(self, *_args):
+        """Search every register; sort, group, and total what is found (#382)."""
+        if self.db is None:
+            self._report("Open a book before finding transactions.")
+            return None
+        from .dialogs.find_dialog import FindDialog
+
+        window = self.props.active_window
+        manager = window if isinstance(window, ViewManager) else None
+        dialog = FindDialog(
+            window, self.db, open_account=manager.open_register if manager is not None else None
+        )
         dialog.present()
         return dialog
 
@@ -843,6 +861,7 @@ def build_menu_model(actions_menu: ActionsMenu | None = None) -> Gio.Menu:
     edit_menu.append("_Redo", "app.redo")
     finding = Gio.Menu()
     finding.append("_Find in Register", "win.find")
+    finding.append("Find _Transactions…", "app.find-transactions")
     edit_menu.append_section(None, finding)
     preferences = Gio.Menu()
     preferences.append("_Preferences…", "app.preferences")

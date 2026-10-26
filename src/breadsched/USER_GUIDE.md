@@ -614,6 +614,32 @@ Reconciling imported GnuCash transactions is safe: re-import keeps their Reconci
 state and holds any GnuCash change to them for review. See
 [Review GnuCash changes to reconciled transactions](#review-gnucash-changes-to-reconciled-transactions).
 
+### Find transactions
+
+A register's filter searches one account. **Find transactions** searches every
+register ([desktop](guide/desktop.md#find-transactions),
+[browser](guide/web.md#find-transactions),
+[command line](guide/cli.md#find-transactions)), and is the basis for simple
+reports: every split in an account over a period, sorted and totalled, or every
+split matching other choices, with subtotals.
+
+**What it finds.** Its rows are *splits*, because an amount, an account, and a
+direction belong to one leg of a transaction:
+
+- Text, dates, and tags choose transactions. The text matches anything the
+  transaction holds, as the register filter does.
+- An account (with its subaccounts), an amount or a range of amounts, a direction,
+  and a reconcile state choose the splits shown.
+- An amount matches a split's size in either direction: 67 finds both legs of a
+  67.00 charge, never check 1067.
+- With no account or amount chosen, every leg of each matching transaction is
+  listed, so the grand total of a balanced book is zero; choose an account (such as
+  Expenses) to total spending.
+
+**Groups and totals.** Rows can be grouped by account, month, year, or tag, each
+with a subtotal. A transaction with two tags appears under both tags but counts once
+in the total. Totals are kept per currency and never converted.
+
 ## Scheduled activity
 
 Scheduled transactions support recurrence bounds, weekend adjustment, skipped

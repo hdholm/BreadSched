@@ -1731,3 +1731,24 @@ def test_quick_entry_offers_investment_activity_only_for_investment_accounts(pag
     if investing:
         form.locator("select[name=to]").select_option(investing[0])
         assert form.locator(".investment-activity").is_visible()
+
+
+def test_find_searches_every_register_with_subtotals(page, served):
+    """#382: the Find view runs the shared query and shows group subtotals."""
+    db, _httpd = served
+    page.wait_for_selector("#nav button")
+    page.evaluate(
+        "() => [...document.querySelectorAll('#nav button')]"
+        ".find((button) => button.textContent === 'Find').click()"
+    )
+    form = page.locator("form.find-form")
+    form.wait_for()
+    expenses = next(a for a in db.iter_accounts() if a.name == "Expenses" and a.placeholder)
+    form.locator("select[name=account]").select_option(expenses.handle)
+    form.locator("select[name=group_by]").select_option("month")
+    form.get_by_role("button", name="Find").click()
+    page.wait_for_selector(".find-results tr.total")
+    text = page.locator(".find-results").inner_text()
+    assert "Subtotal: " in text and "Total: " in text
+    first_account = page.locator(".find-results tbody button").first.inner_text()
+    assert first_account.startswith("Expenses:")

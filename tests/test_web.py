@@ -3536,6 +3536,65 @@ class TestCliIntegration:
         assert cli(["web", str(book_path), "--host", "0.0.0.0"]) != 0
 
 
+class TestFindApi:
+    """``/api/find`` runs the shared transaction query (#382)."""
+
+    @pytest.fixture
+    def found(self, client):
+        from breadsched.gen.lib import Transaction
+
+        db = client.database
+        checking = db.get_account_by_name("Assets:Checking")
+        groceries = next(
+            a
+            for a in db.iter_accounts()
+            if a.account_class.value == "expense" and not a.placeholder
+        )
+        with db.transaction("Find fixture") as txn:
+            for when, text, amount in (
+                (date(2026, 3, 1), "Corner grocer", "67.00"),
+                (date(2026, 3, 9), "Check 1067", "1067.25"),
+                (date(2026, 4, 2), "Market", "42.10"),
+            ):
+                db.add_transaction(
+                    Transaction.simple(when, text, groceries.handle, checking.handle, amount), txn
+                )
+        return client, groceries
+
+    def test_an_amount_finds_that_leg_and_groups_carry_subtotals(self, found):
+        client, groceries = found
+        _status, payload = client.get("/api/find?amount=67")
+        rows = [row for group in payload["groups"] for row in group["rows"]]
+        assert {row["description"] for row in rows} == {"Corner grocer"}
+        assert payload["transactions"] == 1 and payload["splits"] == 2
+        _status, monthly = client.get(
+            "/api/find?"
+            + urllib.parse.urlencode(
+                [("account", groceries.handle), ("group_by", "month"), ("start", "2026-03-01")]
+            )
+        )
+        keys = {group["key"]: group["totals"]["USD"] for group in monthly["groups"]}
+        assert keys["2026-03"] == "1134.25" and keys["2026-04"] == "42.10"
+        assert monthly["totals"]["USD"] == "1176.35"
+
+    @pytest.mark.parametrize(
+        ("query", "status", "code"),
+        [
+            ("amount=lots", 400, "query.amount.invalid"),
+            ("group_by=week", 400, "query.invalid"),
+            ("start=2026-05-01&end=2026-01-01", 400, "request.invalid"),
+            ("account=no-such-account", 404, "resource.not_found"),
+            ("colour=red", 400, "query.unknown"),
+        ],
+    )
+    def test_a_query_that_cannot_run_is_refused(self, found, query, status, code):
+        client, _groceries = found
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get("/api/find?" + query)
+        assert caught.value.code == status
+        assert json.loads(caught.value.read())["code"] == code
+
+
 class TestDashboardApi:
     """The dashboard is the primary view; the browser gets the same figures."""
 

@@ -186,6 +186,15 @@ anywhere else; use **Attach file**, or the desktop or command line, for those.
 unlinks a document without deleting the file. A document linked in GnuCash can only
 be opened. See [Tags and linked documents](../USER_GUIDE.md#tags-and-linked-documents).
 
+## Find transactions
+
+**Find** searches every register with the same choices as the desktop: text,
+account (and its subaccounts), dates, an exact amount or a range (either
+direction), money in or out, a tag, the sort, and **Subtotal by** account, month,
+year, or tag. Each group ends with its subtotal and the last line is the total, per
+currency. Choose a row's account to open that register. See
+[Find transactions](../USER_GUIDE.md#find-transactions).
+
 ## Reconcile a statement
 
 Choose **Reconcile…** in the register, enter the statement date and ending balance,

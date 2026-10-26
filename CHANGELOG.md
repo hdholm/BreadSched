@@ -10,6 +10,23 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a304 - 2026-10-26
+
+- **Find transactions across the book, with totals (#382).**
+  - A new shared query, `gen.engine.transaction_query`, returns matching splits
+    sorted and grouped (by account, month, year, or tag) with per-currency
+    subtotals and a grand total.
+  - It chooses transactions by text, dates, and tags, and splits by account (with
+    subaccounts), exact amount or range in either direction, direction, and
+    reconcile state.
+  - It is available in the desktop's **Edit → Find Transactions…** (`app.find-transactions`,
+    Ctrl+Shift+F, `dialogs.find_dialog`), where activating a row opens its register.
+  - The browser has a **Find** view (`GET /api/find`; `QueryParams` gains `texts`,
+    `flag`, and `money`).
+  - The command line has `breadsched find` with `--json`.
+  - A query that cannot run (dates out of order, a minimum above the maximum) is
+    refused with the reason.
+
 ## 0.2.0a303 - 2026-10-25
 
 - **Simpler transaction and schedule editors (#383).**
