@@ -82,8 +82,11 @@ shown view (`ViewManager._focus_view`, a register's cursor cell, #331); tab butt
 do not take focus on click. Ctrl+Page Up and Ctrl+Page Down step through the tabs,
 Ctrl+W closes the current one, and Ctrl+F (**Edit → Find in Register**) goes to the
 register's filter, which matches with `ledger.transaction_matches`, as the browser
-register's `filter` does: date, number, description, both notes, tags, memos,
-accounts, and amounts as shown or typed (#382). Closing a register with unsaved typing asks first; opening another book
+register's `filter` does: date, number, description, notes, tags, memos,
+accounts, and amounts as shown or typed (#382). Ctrl+Shift+F (**Edit → Find
+Transactions…**, `app.find-transactions`) opens `dialogs.find_dialog.FindDialog`,
+which searches every register through `engine.transaction_query` (see valuation and
+reporting) and opens a found split's register when a row is activated. Closing a register with unsaved typing asks first; opening another book
 closes every tab, because tabs name the old book's accounts. Each book's tabs are
 remembered in `views.ini` (section `open-tabs`, keyed by a digest of the book path)
 and restored after the Dashboard opens, skipping deleted accounts and scenarios. The

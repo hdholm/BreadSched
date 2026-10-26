@@ -1458,3 +1458,84 @@ async function showRegister() {
            { label: data.debit_label, num: true }, { label: data.credit_label, num: true },
            { label: data.security ? "Shares Held" : "Balance", num: true }, ""], rows));
 }
+
+
+// Find transactions across every register, sorted, grouped, and totalled (#382).
+// The search is the shared transaction query; rows are splits, so an amount finds
+// the leg that has it (67 finds a 67.00 charge, never check 1067).
+async function showFind() {
+  if (!state.accounts.length) state.accounts = await get("/api/accounts");
+  const saved = state.find || {};
+  const field = (label, control) => el("label", {}, label, control);
+  const input = (name, attrs = {}) => el("input", { name, value: saved[name] || "", ...attrs });
+  const select = (name, options) => el("select", { name }, options.map(([value, label]) =>
+    el("option", { value, selected: value === (saved[name] || options[0][0]) ? "selected" : null },
+      label)));
+  const accounts = [["", "All accounts"],
+    ...state.accounts.filter((a) => a.type !== "ROOT").map((a) => [a.handle, a.full_name])];
+  const results = el("div", { class: "find-results" });
+  const form = el("form", { class: "entry find-form", onsubmit: (event) => {
+    event.preventDefault();
+    state.find = Object.fromEntries(new FormData(form).entries());
+    state.find.no_subaccounts = form.elements.subaccounts.checked ? "" : "true";
+    run().catch((error) => say(error.message, "error"));
+  } },
+    field("Text", input("text", { placeholder: "Anything a transaction holds" })),
+    field("Account", select("account", accounts)),
+    el("label", { class: "check" }, el("input", { type: "checkbox", name: "subaccounts",
+      checked: saved.no_subaccounts === "true" ? null : "checked" }), " Include subaccounts"),
+    field("From", input("start", { type: "date" })),
+    field("To", input("end", { type: "date" })),
+    field("Amount exactly", input("amount", { inputmode: "decimal" })),
+    field("At least", input("min", { inputmode: "decimal" })),
+    field("At most", input("max", { inputmode: "decimal" })),
+    field("Direction", select("direction", [["any", "In or out"], ["debit", "Money in (debit)"],
+      ["credit", "Money out (credit)"]])),
+    field("Tag", input("tag")),
+    field("Sort by", select("sort", [["date", "Date"], ["amount", "Amount"], ["account", "Account"],
+      ["description", "Description"]])),
+    el("label", { class: "check" }, el("input", { type: "checkbox", name: "descending",
+      checked: saved.descending ? "checked" : null }), " Descending"),
+    field("Subtotal by", select("group_by", [["none", "No groups"], ["account", "Account"],
+      ["month", "Month"], ["year", "Year"], ["tag", "Tag"]])),
+    el("button", { class: "action primary", type: "submit" }, "Find"));
+  const totals = (map) => Object.entries(map).map(([code, value]) => `${money(value)} ${code}`)
+    .join(", ") || money("0");
+  const run = async () => {
+    const values = state.find || {};
+    const query = new URLSearchParams();
+    for (const name of ["text", "account", "start", "end", "amount", "min", "max", "direction",
+      "tag", "sort", "group_by"]) {
+      if (values[name]) query.set(name, values[name]);
+    }
+    if (values.no_subaccounts === "true") query.set("no_subaccounts", "true");
+    if (values.descending) query.set("descending", "true");
+    const data = await get(`/api/find?${query}`);
+    const grouped = (values.group_by || "none") !== "none";
+    const rows = [];
+    for (const group of data.groups) {
+      for (const row of group.rows) {
+        rows.push([row.date, row.num, row.description,
+          el("button", { class: "action", type: "button", onclick: () => {
+            state.account = row.account; switchTo("Register"); } }, row.account_name),
+          money(row.amount)]);
+      }
+      if (grouped) {
+        rows.push(el("tr", { class: "total" }, el("th", { colspan: "4" }, `Subtotal: ${group.key}`),
+          el("td", { class: "num" }, totals(group.totals))));
+      }
+    }
+    rows.push(el("tr", { class: "total" },
+      el("th", { colspan: "4" },
+        `Total: ${data.splits} split(s) in ${data.transactions} transaction(s)`),
+      el("td", { class: "num" }, totals(data.totals))));
+    results.replaceChildren(table(["Date", "Num", "Description", "Account",
+      { label: "Amount", num: true }], rows));
+  };
+  if (state.find) run().catch((error) => say(error.message, "error"));
+  return el("div", {},
+    el("p", { class: "note" }, "Search every register. Rows are splits: an amount finds the "
+      + "leg of that size, in or out; text finds anything a transaction holds. Subtotals "
+      + "group the rows, and the last line is the total."),
+    el("div", { class: "panel panel-pad-16" }, form), results);
+}

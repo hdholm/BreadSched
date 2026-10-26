@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date
+from decimal import InvalidOperation
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, unquote
 
+from ..gen.lib.money import Money
 from .account_resource import (
     account_card_save,
     account_cost_basis_save,
@@ -37,6 +39,7 @@ from .entry_input_resource import (
     entry_trade,
 )
 from .expense_resource import expense_report
+from .find_resource import find
 from .fsa_claim_resource import (
     fsa_claim_close,
     fsa_claim_delete,
@@ -397,6 +400,24 @@ class QueryParams:
             raise QueryError("query.invalid", (name,))
         return raw
 
+    def texts(self, name: str) -> tuple[str, ...]:
+        """Every non-blank value of a field that may repeat, such as ``account``."""
+        self._used.add(name)
+        return tuple(value for value in self._values.get(name, []) if value)
+
+    def flag(self, name: str) -> bool:
+        """``true`` or ``false``; false when absent."""
+        return self.choice(name, ("true", "false"), "false") == "true"
+
+    def money(self, name: str) -> Money | None:
+        raw = self._one(name)
+        if raw is None:
+            return None
+        try:
+            return Money(raw.replace(",", ""))
+        except (InvalidOperation, ValueError):
+            raise QueryError("query.amount.invalid", (name,)) from None
+
     def finish(self) -> None:
         unknown = tuple(sorted(set(self._values) - self._used))
         if unknown:
@@ -496,6 +517,7 @@ def _without_query(route: Callable[[Api], object]) -> GetRoute:
 
 GET_ROUTES: dict[str, GetRoute] = {
     "/api/dashboard": _dashboard,
+    "/api/find": find,
     "/api/fsa/dashboard": fsa_dashboard,
     "/api/summary": _without_query(summary),
     "/api/accounts": _without_query(accounts),
