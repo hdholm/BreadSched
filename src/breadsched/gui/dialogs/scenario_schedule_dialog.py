@@ -45,6 +45,7 @@ from ...gen.services import (
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
+from ..widgets.form_pages import FormPages
 from ..widgets.frequency import FrequencyPicker
 from ..widgets.help import help_row
 from ..widgets.schedule_timeline import (
@@ -53,6 +54,7 @@ from ..widgets.schedule_timeline import (
     MonthAmountListEditor,
     PlanningSplitListEditor,
 )
+from .schedule_dialog import FUTURE_CHANGES, update_schedule_pages
 
 __all__ = ["ScenarioScheduleDialog", "ScenarioSchedulePickerDialog"]
 
@@ -140,16 +142,18 @@ class ScenarioScheduleDialog(BoundedWindow):
             )
         box.append(explanation)
 
-        grid = Gtk.Grid(column_spacing=10, row_spacing=8)
-        box.append(grid)
-        row = 0
+        # The fields most estimates need first; the rest a tab away (#383).
+        self.pages = FormPages()
+        box.append(self.pages)
+        basics = self.pages.page("Basics")
+        splits = self.pages.page("Splits")
+        changes = self.pages.page(FUTURE_CHANGES)
+        advanced = self.pages.page("Advanced")
 
         self.name_entry = Gtk.Entry(placeholder_text="Groceries")
         self.name_entry.set_hexpand(True)
         self.name_entry.connect("changed", self._validate)
-        grid.attach(Gtk.Label(label="Name", xalign=0), 0, row, 1, 1)
-        grid.attach(self.name_entry, 1, row, 1, 1)
-        row += 1
+        basics.add("Name", self.name_entry)
 
         self.growth_policy = bounded_dropdown([label for label, _policy in _GROWTH_POLICIES])
         self.growth_policy.set_tooltip_text(
@@ -157,48 +161,36 @@ class ScenarioScheduleDialog(BoundedWindow):
             "expense inflation for expense-only schedules, and no generic growth "
             "for formula-driven schedules."
         )
-        grid.attach(Gtk.Label(label="Projection growth", xalign=0), 0, row, 1, 1)
-        grid.attach(self.growth_policy, 1, row, 1, 1)
-        row += 1
+        advanced.add("Projection growth", self.growth_policy)
 
         self.category = bounded_dropdown(self._names)
         self.category.connect("notify::selected", self._validate)
-        grid.attach(Gtk.Label(label="Category / investment account", xalign=0), 0, row, 1, 1)
-        grid.attach(self.category, 1, row, 1, 1)
-        row += 1
+        basics.add("Category / investment account", self.category)
 
         self.category_planning_flow = bounded_dropdown([label for label, _kind in _PLANNING_FLOWS])
         self.category_planning_flow.connect("notify::selected", self._validate)
-        grid.attach(Gtk.Label(label="Category planning purpose", xalign=0), 0, row, 1, 1)
-        grid.attach(self.category_planning_flow, 1, row, 1, 1)
-        row += 1
+        advanced.add("Category planning purpose", self.category_planning_flow)
 
         self.funding = bounded_dropdown(self._names)
         self.funding.connect("notify::selected", self._validate)
         if len(self._accounts) > 1:
             self.funding.set_selected(1)
-        grid.attach(Gtk.Label(label="Paid from / into", xalign=0), 0, row, 1, 1)
-        grid.attach(self.funding, 1, row, 1, 1)
-        row += 1
+        basics.add("Paid from / into", self.funding)
 
         self.planning_flow = bounded_dropdown([label for label, _kind in _PLANNING_FLOWS])
-        grid.attach(Gtk.Label(label="Planning purpose override", xalign=0), 0, row, 1, 1)
-        grid.attach(self.planning_flow, 1, row, 1, 1)
-        row += 1
+        advanced.add("Planning purpose override", self.planning_flow)
 
         self.investment_activity = bounded_dropdown(
             [label for label, _kind in _INVESTMENT_ACTIVITIES]
         )
         self.investment_activity.connect("notify::selected", self._validate)
-        grid.attach(Gtk.Label(label="Investment activity", xalign=0), 0, row, 1, 1)
-        grid.attach(self.investment_activity, 1, row, 1, 1)
-        row += 1
+        self.investment_activity_label = advanced.add(
+            "Investment activity", self.investment_activity
+        )
 
         self.amount_entry = Gtk.Entry(placeholder_text="0.00")
         self.amount_entry.connect("changed", self._validate)
-        grid.attach(Gtk.Label(label="Amount", xalign=0), 0, row, 1, 1)
-        grid.attach(self.amount_entry, 1, row, 1, 1)
-        row += 1
+        basics.add("Amount", self.amount_entry)
 
         self.additional_splits = PlanningSplitListEditor(
             self._validate,
@@ -206,80 +198,57 @@ class ScenarioScheduleDialog(BoundedWindow):
             [label for label, _kind in _PLANNING_FLOWS],
             [label for label, _kind in _INVESTMENT_ACTIVITIES],
         )
-        label = Gtk.Label(label="Additional splits", xalign=0, valign=Gtk.Align.START)
-        label.set_tooltip_text(
-            "Add fixed payroll deductions, retirement/FSA funding, debt principal, "
-            "or other legs. The paid-from/into split is balanced automatically."
+        splits.add(
+            "Additional splits",
+            self.additional_splits,
+            tooltip=(
+                "Add fixed payroll deductions, retirement/FSA funding, debt principal, "
+                "or other legs. The paid-from/into split is balanced automatically."
+            ),
         )
-        grid.attach(label, 0, row, 1, 1)
-        grid.attach(self.additional_splits, 1, row, 1, 1)
-        row += 1
 
         self.amount_changes_editor = DatedAmountListEditor(self._validate, "Add future amount")
-        label = Gtk.Label(label="Future amounts", xalign=0, valign=Gtk.Align.START)
-        grid.attach(label, 0, row, 1, 1)
-        grid.attach(self.amount_changes_editor, 1, row, 1, 1)
-        row += 1
+        changes.add("Future amounts", self.amount_changes_editor)
 
         self.seasonal_amounts_editor = MonthAmountListEditor(self._validate)
-        label = Gtk.Label(label="Seasonal month amounts", xalign=0, valign=Gtk.Align.START)
-        grid.attach(label, 0, row, 1, 1)
-        grid.attach(self.seasonal_amounts_editor, 1, row, 1, 1)
-        row += 1
+        changes.add("Seasonal month amounts", self.seasonal_amounts_editor)
 
         self.skipped_editor = DateListEditor(
             self._validate, "Add skipped occurrence", self._occurrence_options
         )
-        label = Gtk.Label(label="Skip occurrences", xalign=0, valign=Gtk.Align.START)
-        grid.attach(label, 0, row, 1, 1)
-        grid.attach(self.skipped_editor, 1, row, 1, 1)
-        row += 1
+        changes.add("Skip occurrences", self.skipped_editor)
 
         self.occurrence_adjustments_editor = DatedAmountListEditor(
             self._validate,
             "Add one-time amount",
             self._occurrence_options,
         )
-        label = Gtk.Label(label="One-time amounts", xalign=0, valign=Gtk.Align.START)
-        grid.attach(label, 0, row, 1, 1)
-        grid.attach(self.occurrence_adjustments_editor, 1, row, 1, 1)
-        row += 1
+        changes.add("One-time amounts", self.occurrence_adjustments_editor)
 
         # Every N days, weeks, months, or years, as in the schedule editor (#370).
         self.frequency = FrequencyPicker(PeriodType.MONTH, 1)
         self.frequency.connect_changed(self._recurrence_changed)
-        grid.attach(Gtk.Label(label="Frequency", xalign=0), 0, row, 1, 1)
-        grid.attach(self.frequency, 1, row, 1, 1)
-        row += 1
+        basics.add("Frequency", self.frequency)
 
         self.start_entry = Gtk.Entry(text=date.today().replace(day=1).isoformat())
         self.start_entry.connect("changed", self._recurrence_changed)
-        grid.attach(Gtk.Label(label="First occurrence", xalign=0), 0, row, 1, 1)
-        grid.attach(self.start_entry, 1, row, 1, 1)
-        row += 1
+        basics.add("First occurrence", self.start_entry)
 
         self.ends = bounded_dropdown(["Never", "On date", "After occurrences"])
         self.ends.connect("notify::selected", self._recurrence_changed)
-        grid.attach(Gtk.Label(label="Ends", xalign=0), 0, row, 1, 1)
-        grid.attach(self.ends, 1, row, 1, 1)
-        row += 1
+        basics.add("Ends", self.ends)
 
         self.end_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD")
         self.end_entry.connect("changed", self._recurrence_changed)
-        grid.attach(Gtk.Label(label="End date", xalign=0), 0, row, 1, 1)
-        grid.attach(self.end_entry, 1, row, 1, 1)
-        row += 1
+        basics.add("End date", self.end_entry)
 
         self.count_entry = Gtk.Entry(placeholder_text="12")
         self.count_entry.connect("changed", self._recurrence_changed)
-        grid.attach(Gtk.Label(label="Occurrences", xalign=0), 0, row, 1, 1)
-        grid.attach(self.count_entry, 1, row, 1, 1)
-        row += 1
+        basics.add("Occurrences", self.count_entry)
 
         self.weekend = bounded_dropdown([item[0] for item in _WEEKEND])
         self.weekend.connect("notify::selected", self._recurrence_changed)
-        grid.attach(Gtk.Label(label="If it falls on a weekend", xalign=0), 0, row, 1, 1)
-        grid.attach(self.weekend, 1, row, 1, 1)
+        advanced.add("If it falls on a weekend", self.weekend)
 
         self.formula_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.formula_box.set_visible(False)
@@ -750,6 +719,7 @@ class ScenarioScheduleDialog(BoundedWindow):
     def _validate(self, *_args) -> None:
         if self._constructing:
             return
+        update_schedule_pages(self)
         problems = []
         if not self.name_entry.get_text().strip():
             problems.append("give it a name")

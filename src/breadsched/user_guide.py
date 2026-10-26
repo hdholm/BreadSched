@@ -88,6 +88,7 @@ HELP_TOPICS: dict[str, str] = {
     "rules": "Categorization rules",
     "reimbursables": "Reimbursable expenses",
     "goals": "Savings goals",
+    "find": "Find transactions",
     "accounts": "Accounts",
     "dashboard": "Configure the Dashboard",
     "prices": "Exchange rates and security prices",

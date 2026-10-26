@@ -81,6 +81,30 @@ breadsched sample sample.breadsched --as-of 2026-09-15
 The command refuses an existing path. `--as-of YYYY-MM-DD` chooses a repeatable
 reference month. See [Synthetic sample book](../USER_GUIDE.md#synthetic-sample-book).
 
+## Find transactions
+
+`breadsched find BOOK` searches every register; each option narrows it:
+
+```console
+$ breadsched find home.breadsched --amount 67
+$ breadsched find home.breadsched --account Expenses --start 2026-01-01 --end 2026-03-31 --group-by month
+$ breadsched find home.breadsched --text "corner grocer" --sort amount --descending --json
+```
+
+- `--text` matches anything a transaction holds.
+- `--account` (repeatable; `--no-subaccounts` leaves out subaccounts) chooses the
+  splits.
+- `--start` and `--end` bound the dates.
+- `--amount`, `--min`, and `--max` match a split's size in either direction.
+- `--direction debit|credit`, `--tag` (repeatable), and `--reconcile n|c|y` narrow
+  it further.
+- `--sort date|amount|account|description` and `--descending` order the rows.
+- `--group-by account|month|year|tag` prints a subtotal under each group; the last
+  line is the total, per currency.
+
+`--json` carries every row, each group's totals, and the grand total. See
+[Find transactions](../USER_GUIDE.md#find-transactions).
+
 ## Net worth history
 
 ```bash

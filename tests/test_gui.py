@@ -1759,6 +1759,43 @@ class TestDialogs:
         assert len(dialog.splits) == 2
         assert dialog.save_button.get_sensitive() is False
 
+    def test_the_transaction_editor_keeps_detail_out_of_the_way(self, app, window, populated_book):
+        """#383: tags and documents on a second page; planning detail on request."""
+        from breadsched.gui.dialogs.transaction_dialog import MORE, TransactionDialog
+
+        app.open_book(populated_book)
+        _add_brokerage(app.db)
+        dialog = TransactionDialog(window, app.db)
+        assert dialog.pages.get_current_page() == 0
+        assert dialog.tags_entry.get_parent() is dialog.pages.get_nth_page(1)
+        assert dialog.pages.tab_label(MORE) == MORE
+        dialog.tags_entry.set_text("Tax, Home")
+        assert dialog.pages.tab_label(MORE) == f"{MORE} (2)"
+
+        def index_of(investing: bool) -> int:
+            return next(
+                index
+                for index, account in enumerate(dialog.accounts)
+                if account.atype.is_investment is investing
+            )
+
+        first = dialog.splits[0]
+        first.account.set_selected(index_of(False))
+        assert first.planning_purpose.get_visible() is False
+        assert first.investment_activity.get_visible() is False
+        dialog.detail_toggle.set_active(True)
+        assert first.planning_purpose.get_visible() is True
+        # Investment activity needs an investment or retirement account too.
+        assert first.investment_activity.get_visible() is False
+        first.account.set_selected(index_of(True))
+        assert first.investment_activity.get_visible() is True
+        # A choice already made stays in sight with the detail turned off.
+        first.investment_activity.set_selected(1)
+        dialog.detail_toggle.set_active(False)
+        assert first.investment_activity.get_visible() is True
+        assert first.planning_purpose.get_visible() is False
+        dialog.destroy()
+
     def test_one_amount_is_enough_for_a_two_split_entry(self, app, window, populated_book):
         """The common case: pick two accounts, type one number."""
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
@@ -2824,6 +2861,48 @@ class TestScheduleEntry:
         created = next(s for s in schedules if s.name == "Council tax")
         assert len(created.splits) == 2
         assert created.instantiate(date(2026, 6, 1)).is_balanced()
+
+    def test_the_editor_opens_on_its_basics_with_the_rest_a_tab_away(self, dialog):
+        """#383: future changes and defaults are on their own pages."""
+        from breadsched.gui.dialogs.schedule_dialog import FUTURE_CHANGES
+
+        pages = dialog.pages
+        titles = [pages.get_tab_label(pages.get_nth_page(i)).get_label() for i in range(4)]
+        assert titles == ["Basics", "Splits", FUTURE_CHANGES, "Advanced"]
+        assert pages.get_current_page() == 0
+        basics = pages.get_nth_page(0)
+        assert dialog.name_entry.get_parent() is basics
+        assert dialog.frequency.get_parent() is basics
+        assert dialog.growth_policy.get_parent() is pages.get_nth_page(3)
+        assert dialog.skipped_editor.get_parent() is pages.get_nth_page(2)
+        # The tab says how many future changes there are.
+        dialog.amount_changes_editor.add_row(date(2027, 1, 1), "200.00")
+        dialog.seasonal_amounts_editor.add_row(12, "300.00")
+        dialog._validate()
+        assert pages.tab_label(FUTURE_CHANGES) == f"{FUTURE_CHANGES} (2)"
+
+    def test_investment_activity_shows_only_for_an_investment_account(self, dialog, app):
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        _add_brokerage(app.db)
+        dialog = ScheduleDialog(dialog.get_transient_for(), app.db)
+
+        def index_of(investing: bool) -> int:
+            return next(
+                index
+                for index, account in enumerate(dialog._accounts)
+                if account.atype.is_investment is investing
+            )
+
+        plain = index_of(False)
+        dialog.category.set_selected(plain)
+        dialog.funding.set_selected(plain)
+        assert dialog.investment_activity.get_visible() is False
+        assert dialog.investment_activity_label.get_visible() is False
+        dialog.funding.set_selected(index_of(True))
+        assert dialog.investment_activity.get_visible() is True
+        assert dialog.investment_activity_label.get_visible() is True
+        dialog.destroy()
 
     def test_enter_and_remind_in_advance_days_are_saved(self, dialog):
         # #352: GnuCash's create- and remind-in-advance days.
@@ -10783,3 +10862,78 @@ class TestSearchableChoices:
         window.open_register(app.db.get_account_by_name("Assets:Checking Account").handle)
         picker = window._views["register"].account_picker
         assert picker.get_enable_search() is True
+
+
+def _add_brokerage(db) -> None:
+    """An investment account entries can use (the fixture's are placeholders)."""
+    from breadsched.gen.lib import Account, AccountType
+
+    with db.transaction("Brokerage") as txn:
+        root = db.root_account()
+        db.add_account(
+            Account(name="Test Brokerage", atype=AccountType.INVESTMENT, parent=root.handle), txn
+        )
+
+
+class TestFindTransactions:
+    """#382: Edit → Find Transactions searches every register with subtotals."""
+
+    def test_an_amount_finds_its_legs_and_groups_subtotal(self, app, window, populated_book):
+        from breadsched.gen.engine.transaction_query import TransactionQuery, run_query
+        from breadsched.gui.dialogs.find_dialog import FindDialog
+
+        app.open_book(populated_book)
+        assert app.actions["find-transactions"].get_enabled() is True
+        opened: list[str] = []
+        dialog = FindDialog(window, app.db, open_account=opened.append)
+        first = next(iter(app.db.iter_transactions()))
+        size = abs(first.splits[0].value)
+        dialog.amount_entry.set_text(str(size.to_decimal()))
+        dialog.group_by.set_selected(1)  # account
+        result = dialog.find()
+        assert result is not None and result.rows
+        assert all(abs(row.value) == size for row in result.rows)
+        expected = run_query(app.db, TransactionQuery(amount=size, group_by="account"))
+        assert [row.split.handle for row in result.rows] == [
+            row.split.handle for row in expected.rows
+        ]
+        kinds = [line.kind for line in dialog.lines]
+        assert kinds.count("subtotal") == len(result.groups) and kinds[-1] == "total"
+        assert dialog.results.get_model().get_n_items() == len(dialog.lines)
+        dialog._on_activate(None, 0)
+        assert opened == [dialog.lines[0].handle]
+        dialog.destroy()
+
+    def test_criteria_that_cannot_be_read_say_so(self, app, window, populated_book):
+        from breadsched.gui.dialogs.find_dialog import FindDialog
+
+        app.open_book(populated_book)
+        dialog = FindDialog(window, app.db)
+        dialog.start_entry.set_text("not a date")
+        assert dialog.find() is None
+        assert "first date" in dialog.status.get_text()
+        dialog.start_entry.set_text("2026-05-01")
+        dialog.end_entry.set_text("2026-01-01")
+        assert dialog.find() is None
+        assert "start date is after the end date" in dialog.status.get_text()
+        dialog.destroy()
+
+    def test_the_edit_menu_offers_it(self, app):
+        from breadsched.gui.app import build_menu_model
+
+        menu = build_menu_model()
+        labels = []
+        for index in range(menu.get_n_items()):
+            section = menu.get_item_link(index, "submenu")
+            stack = [section]
+            while stack:
+                current = stack.pop()
+                for item in range(current.get_n_items()):
+                    label = current.get_item_attribute_value(item, "label", None)
+                    if label is not None:
+                        labels.append(label.get_string())
+                    for link in ("section", "submenu"):
+                        child = current.get_item_link(item, link)
+                        if child is not None:
+                            stack.append(child)
+        assert "Find _Transactions…" in labels

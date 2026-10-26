@@ -186,6 +186,15 @@ anywhere else; use **Attach file**, or the desktop or command line, for those.
 unlinks a document without deleting the file. A document linked in GnuCash can only
 be opened. See [Tags and linked documents](../USER_GUIDE.md#tags-and-linked-documents).
 
+## Find transactions
+
+**Find** searches every register with the same choices as the desktop: text,
+account (and its subaccounts), dates, an exact amount or a range (either
+direction), money in or out, a tag, the sort, and **Subtotal by** account, month,
+year, or tag. Each group ends with its subtotal and the last line is the total, per
+currency. Choose a row's account to open that register. See
+[Find transactions](../USER_GUIDE.md#find-transactions).
+
 ## Reconcile a statement
 
 Choose **Reconcile…** in the register, enter the statement date and ending balance,
@@ -204,8 +213,14 @@ In **Scheduled**, enter a name, category, funding account, amount, and recurrenc
 create a fixed schedule. **Repeats** is **Every** a number and a unit (days, weeks,
 months, months on the same weekday or last weekday, or years), or twice a month or
 once; the first due date sets the day, and an amount may be a calculation such as
-`76.84*1.06`. Editing one can also set future amounts, one-time
-exceptions, additional splits, and optional planning classifications. Review the
+`76.84*1.06`. The editor shows those fields first; **Splits and memos**, **Future
+changes** (future, seasonal, skipped, and one-time amounts, counted in its heading),
+and **Advanced** (projection growth, planning purposes, weekend rule, posting, and
+enter and remind days) open when you choose them, and Future changes opens by itself
+when a schedule has some. **Investment activity** appears under Advanced only for an
+investment or retirement account. The scenario event editor folds the same way.
+**Enter**'s two-split form offers investment activity only when one of its accounts
+is an investment or retirement account. Review the
 result before relying on a projection. Scenario-only estimates and scenario changes
 to baseline schedules are made in the same view.
 

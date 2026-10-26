@@ -1676,3 +1676,79 @@ def test_configure_dashboard_sets_sections_groups_and_columns(page, served):
     assert len(group.accounts) == 1
     # Columns are the browser's, not the book's.
     assert "Frequency" not in str(db.get_metadata("dashboard"))
+
+
+def test_the_schedule_editor_folds_away_what_most_schedules_do_not_need(page, served):
+    """#383: splits, future changes, and defaults are folded; their summary counts."""
+    page.wait_for_selector("#nav button")
+    page.evaluate(
+        "() => [...document.querySelectorAll('#nav button')]"
+        ".find((button) => button.textContent === 'Scheduled').click()"
+    )
+    page.get_by_role("button", name="New scheduled…").click()
+    form = page.locator(".detail-dialog form")
+    form.locator("input[name=name]").wait_for()
+    summaries = form.locator("details.form-section > summary").all_inner_texts()
+    assert summaries == ["Splits and memos", "Future changes", "Advanced"]
+    assert form.locator("select[name=growth_policy]").is_hidden()
+    assert form.locator("input[name=amount]").is_visible()
+    form.locator("summary", has_text="Advanced").click()
+    assert form.locator("select[name=growth_policy]").is_visible()
+    # Investment activity only for an investment or retirement account.
+    db, _httpd = served
+    expense = next(
+        a for a in db.iter_accounts() if a.account_class.value == "expense" and not a.placeholder
+    )
+    bank = next(a for a in db.iter_accounts() if a.atype.value == "BANK" and not a.placeholder)
+    form.locator("select[name=category]").select_option(expense.handle)
+    form.locator("select[name=funding]").select_option(bank.handle)
+    assert form.locator("select[name=investment_activity]").is_hidden()
+    form.locator("summary", has_text="Future changes").click()
+    form.get_by_role("button", name="Add date and amount").first.click()
+    form.locator("summary", has_text="Future changes (1)").wait_for()
+
+
+def test_quick_entry_offers_investment_activity_only_for_investment_accounts(page, served):
+    """#383: the browser's two-split entry hides investment activity elsewhere."""
+    page.wait_for_selector("#nav button")
+    page.evaluate(
+        "() => [...document.querySelectorAll('#nav button')]"
+        ".find((button) => button.textContent === 'Enter').click()"
+    )
+    form = page.locator("form.entry")
+    form.locator("select[name=from]").wait_for()
+    investing = page.evaluate(
+        "() => state.accounts.filter((a) => ['INVESTMENT', 'RETIREMENT'].includes(a.type)"
+        " && !a.placeholder && !a.hidden && a.depth > 0).map((a) => a.full_name)"
+    )
+    plain = page.evaluate(
+        "() => state.accounts.filter((a) => a.type === 'BANK' && !a.placeholder && !a.hidden"
+        " && a.depth > 0).map((a) => a.full_name)"
+    )
+    form.locator("select[name=from]").select_option(plain[0])
+    form.locator("select[name=to]").select_option(plain[-1])
+    assert form.locator(".investment-activity").is_hidden()
+    if investing:
+        form.locator("select[name=to]").select_option(investing[0])
+        assert form.locator(".investment-activity").is_visible()
+
+
+def test_find_searches_every_register_with_subtotals(page, served):
+    """#382: the Find view runs the shared query and shows group subtotals."""
+    db, _httpd = served
+    page.wait_for_selector("#nav button")
+    page.evaluate(
+        "() => [...document.querySelectorAll('#nav button')]"
+        ".find((button) => button.textContent === 'Find').click()"
+    )
+    form = page.locator("form.find-form")
+    form.wait_for()
+    expenses = next(a for a in db.iter_accounts() if a.name == "Expenses" and a.placeholder)
+    form.locator("select[name=account]").select_option(expenses.handle)
+    form.locator("select[name=group_by]").select_option("month")
+    form.get_by_role("button", name="Find").click()
+    page.wait_for_selector(".find-results tr.total")
+    text = page.locator(".find-results").inner_text()
+    assert "Subtotal: " in text and "Total: " in text
+    first_account = page.locator(".find-results tbody button").first.inner_text()
+    assert first_account.startswith("Expenses:")

@@ -37,15 +37,31 @@ async function scenarioEventPanel(handle, fromMonth) {
     const preview = schedulePreviewNode();
     const additionalSplits = planningSplitEditor(
       data.accounts, editSource?.additional_splits || [], changed);
+    const changeCount = [futureEditor, seasonalEditor, skipEditor, oneTimeEditor]
+      .reduce((total, editor) => { try { return total + editor.values().length; } catch (_e) { return total + 1; } }, 0);
+    const changesSection = el("details", {class:"form-section", open:changeCount ? "open" : null},
+      el("summary", {}, changeCount ? `Future changes (${changeCount})` : "Future changes"),
+      futureEditor.node, seasonalEditor.node, skipEditor.node, oneTimeEditor.node);
     const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); const amount_changes=futureEditor.values().map((item)=>({start:item.when, amount:item.amount})); const skipped=skipEditor.values(); const occurrence_adjustments=oneTimeEditor.values(); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, growth_policy:v.growth_policy, category:v.category, funding:v.funding, category_planning_flow:v.category_planning_flow || null, planning_flow:v.planning_flow || null, investment_activity:v.investment_activity || null, amount:v.amount, additional_splits:additionalSplits.values(), amount_changes, seasonal_amounts:seasonalEditor.values(), skipped, occurrence_adjustments, frequency:v.frequency, interval:v.interval, start:v.start, end:v.end, count:v.count, weekend:v.weekend, estimate_evidence:editSource?.estimate_evidence || null}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
       sourceSelect ? el("label", {}, "Baseline schedule", sourceSelect) : null,
       el("label", {}, "Name", el("input", {name:"name", required:"required", value:editSource?.name || ""})),
+      el("label", {}, "Category / investment account", el("select", {name:"category"}, categories.map(a=>el("option",{value:a.handle,selected:a.handle===category?"selected":null},a.name)))),
+      el("label", {}, "Paid from / into", el("select", {name:"funding"}, data.accounts.map(a=>el("option",{value:a.handle,selected:a.handle===funding?"selected":null},a.name)))),
+      el("label", {}, "Amount", el("input", {name:"amount", required:"required", inputmode:"decimal", value:editSource?.amount || ""})),
+      preview.node,
+      el("label", {}, "Repeats", frequencyControl(editSource ? {frequency_key:editSource.frequency, interval:editSource.interval} : null)),
+      el("label", {}, "First occurrence", el("input", {name:"start", type:"date", required:"required", value:editSource?.start || `${fromMonth}-01`})),
+      el("label", {}, "End date (optional)", el("input", {name:"end", type:"date", value:editSource?.end || ""})),
+      el("label", {}, "Occurrence count (optional)", el("input", {name:"count", type:"number", min:"1", step:"1", value:editSource?.count || ""})),
+      el("p", {class:"note"}, "Use either an end date or an occurrence count, not both."),
+      // Splits, future changes, and defaults set once are folded away (#383).
+      el("details", {class:"form-section"}, el("summary", {}, "Splits"), additionalSplits.node),
+      changesSection,
+      el("details", {class:"form-section"}, el("summary", {}, "Advanced"),
       el("label", {}, "Projection growth", el("select", {name:"growth_policy"},
         [["auto","Automatic from schedule contents"],["none","No growth - fixed nominal amount"],
          ["income","Income growth"],["inflation","Expense inflation"]].map(([value,label])=>
           el("option",{value,selected:value===growthPolicy?"selected":null},label)))),
-      el("label", {}, "Category / investment account", el("select", {name:"category"}, categories.map(a=>el("option",{value:a.handle,selected:a.handle===category?"selected":null},a.name)))),
-      el("label", {}, "Paid from / into", el("select", {name:"funding"}, data.accounts.map(a=>el("option",{value:a.handle,selected:a.handle===funding?"selected":null},a.name)))),
       el("label", {}, "Category planning purpose", el("select", {name:"category_planning_flow"},
         [["","Ordinary category activity"],["retirement_saving","Retirement saving"],
          ["benefit_funding","Benefit / FSA funding"],["debt_principal","Debt principal"],
@@ -59,15 +75,7 @@ async function scenarioEventPanel(handle, fromMonth) {
       el("label", {}, "Investment activity", el("select", {name:"investment_activity"},
         INVESTMENT_ACTIVITY_OPTIONS.map(([value,label])=>
           el("option",{value,selected:value===investmentActivity?"selected":null},label)))),
-      el("label", {}, "Amount", el("input", {name:"amount", required:"required", inputmode:"decimal", value:editSource?.amount || ""})),
-      additionalSplits.node,
-      futureEditor.node, seasonalEditor.node, skipEditor.node, oneTimeEditor.node, preview.node,
-      el("label", {}, "Repeats", frequencyControl(editSource ? {frequency_key:editSource.frequency, interval:editSource.interval} : null)),
-      el("label", {}, "First occurrence", el("input", {name:"start", type:"date", required:"required", value:editSource?.start || `${fromMonth}-01`})),
-      el("label", {}, "End date (optional)", el("input", {name:"end", type:"date", value:editSource?.end || ""})),
-      el("label", {}, "Occurrence count (optional)", el("input", {name:"count", type:"number", min:"1", step:"1", value:editSource?.count || ""})),
-      el("p", {class:"note"}, "Use either an end date or an occurrence count, not both."),
-      el("label", {}, "Weekend", el("select", {name:"weekend"}, [["none","Leave on the day"],["previous","Move to Friday before"],["next","Move to Monday after"]].map(([v,l])=>el("option",{value:v,selected:v===(editSource?.weekend||"none")?"selected":null},l)))),
+      el("label", {}, "Weekend", el("select", {name:"weekend"}, [["none","Leave on the day"],["previous","Move to Friday before"],["next","Move to Monday after"]].map(([v,l])=>el("option",{value:v,selected:v===(editSource?.weekend||"none")?"selected":null},l))))),
       el("div", {class:"toolbar"}, el("button",{class:"action primary"},"Save scenario change"), el("button",{class:"action",type:"button",onclick:()=>{state.scenarioEvent=null;render();}},"Cancel")));
     const refreshOccurrenceOptions = async () => {
       const values = Object.fromEntries(new FormData(form).entries());

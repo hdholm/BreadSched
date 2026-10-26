@@ -420,7 +420,13 @@ notes too if you have typed none; a note says where it came from. Edit anything 
 
 ### Tags and linked documents
 
-In the full transaction editor, type tags under **Tags**, separated by commas; they
+The full transaction editor opens on **Entry** (date, description, number, and
+notes) above the splits; **Tags & documents** is its second tab, counting the tags
+and documents a transaction has. **Planning detail**, beside **Add split**, shows
+each split's planning purpose, and its investment activity for an investment or
+retirement account; a split that already has either shows it anyway.
+
+On **Tags & documents**, type tags under **Tags**, separated by commas; they
 are saved with the transaction. The register filter also matches tags.
 
 **Documents** lists the transaction's linked documents once it has been saved. A
@@ -432,6 +438,24 @@ points a moved or missing file at where it is now, and the remove button unlinks
 it without deleting the file. A document linked in GnuCash is shown dimmed and can
 only be opened. Each change is saved at once and can be undone with **Edit → Undo**.
 See [Tags and linked documents](../USER_GUIDE.md#tags-and-linked-documents).
+
+## Find transactions
+
+**Edit → Find Transactions…** (Ctrl+Shift+F) searches every register. **Text**
+matches anything a transaction holds, as the register filter does. **Account**
+narrows it to one account, with its subaccounts unless you untick **Include
+subaccounts**. **Dates** bound it.
+
+**Amount** finds a split of exactly that size, either direction, so 67 finds a
+67.00 charge and never check 1067; **At least** and **At most** give a range.
+**Direction** keeps money in (debits) or money out (credits). **Tags** keeps
+transactions that have every tag listed.
+
+**Sort by** and **Descending** order the rows. **Subtotal by** groups them by
+account, month, year, or tag, with a subtotal under each group; the last line is
+the total, per currency. A row is one split, so a transaction can appear once for
+each leg that matches. Activate a row to open its register. See
+[Find transactions](../USER_GUIDE.md#find-transactions).
 
 ## Reconcile a statement
 
@@ -474,7 +498,14 @@ Use **New Scheduled** for a fixed or formula-driven commitment or estimate, and
 **Suggest** for reviewable estimate drafts from history. **Frequency** is **Every**
 a number and a unit: days, weeks, months, months on the same weekday, months on the
 last weekday, or years; **twice a month** and **once** take no number. The first due
-date sets the day. Amounts can be calculations such as `76.84*1.06`. Choose the **New Loan**
+date sets the day. Amounts can be calculations such as `76.84*1.06`. The editor opens
+on **Basics** (name, kind, accounts, amount, and when it repeats); **Splits** holds the
+memos and additional splits, **Future changes** the future, seasonal, skipped, and
+one-time amounts (its tab counts them, so a schedule with some says so), and
+**Advanced** the projection growth, planning purposes, weekend rule, posting, and
+enter and remind days. **Investment activity** appears there only when the schedule
+uses an investment or retirement account, or already has one. A scenario estimate's
+editor is laid out the same way. Choose the **New Loan**
 toolbar icon in Scheduled to create a loan (see
 [Create a loan](../USER_GUIDE.md#create-a-loan)).
 

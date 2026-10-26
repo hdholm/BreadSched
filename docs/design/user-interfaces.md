@@ -82,8 +82,11 @@ shown view (`ViewManager._focus_view`, a register's cursor cell, #331); tab butt
 do not take focus on click. Ctrl+Page Up and Ctrl+Page Down step through the tabs,
 Ctrl+W closes the current one, and Ctrl+F (**Edit → Find in Register**) goes to the
 register's filter, which matches with `ledger.transaction_matches`, as the browser
-register's `filter` does: date, number, description, both notes, tags, memos,
-accounts, and amounts as shown or typed (#382). Closing a register with unsaved typing asks first; opening another book
+register's `filter` does: date, number, description, notes, tags, memos,
+accounts, and amounts as shown or typed (#382). Ctrl+Shift+F (**Edit → Find
+Transactions…**, `app.find-transactions`) opens `dialogs.find_dialog.FindDialog`,
+which searches every register through `engine.transaction_query` (see valuation and
+reporting) and opens a found split's register when a row is activated. Closing a register with unsaved typing asks first; opening another book
 closes every tab, because tabs name the old book's accounts. Each book's tabs are
 remembered in `views.ini` (section `open-tabs`, keyed by a digest of the book path)
 and restored after the Dashboard opens, skipping deleted accounts and scenarios. The
@@ -91,6 +94,18 @@ browser has no tab bar: `openInNewTab` opens a browser tab with the view and acc
 or scenario in its query string.
 
 ## Tables, dialogs, and bounded sizes
+
+Editors disclose progressively (#383): the fields most entries need come first, and
+what is set once (defaults, planning classifications) or rarely (future changes) is
+a tab or a fold away, never removed. The desktop uses `widgets.form_pages`
+(`FormPages`, a notebook whose tab can carry a count, and `FormGrid` label/field
+rows); the browser uses `details.form-section`. A page or fold that holds something
+says so in its title (`Future changes (2)`, `Tags & documents (1)`) or opens by
+itself, so nothing set is hidden from view. A field that applies only to some
+accounts (investment activity) shows only for those, or when it already holds a
+choice. The schedule and scenario schedule editors share `update_schedule_pages`;
+the transaction editor's per-split planning purpose and investment activity follow
+its **Planning detail** toggle (`SplitEditor.show_detail`).
 
 Every table except the register grid (below) is built with `_base.table_section()`: a heading row with the table's
 own column chooser (never in the view toolbar, where identical icons could not be

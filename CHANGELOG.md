@@ -10,6 +10,44 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a304 - 2026-10-26
+
+- **Find transactions across the book, with totals (#382).**
+  - A new shared query, `gen.engine.transaction_query`, returns matching splits
+    sorted and grouped (by account, month, year, or tag) with per-currency
+    subtotals and a grand total.
+  - It chooses transactions by text, dates, and tags, and splits by account (with
+    subaccounts), exact amount or range in either direction, direction, and
+    reconcile state.
+  - It is available in the desktop's **Edit → Find Transactions…** (`app.find-transactions`,
+    Ctrl+Shift+F, `dialogs.find_dialog`), where activating a row opens its register.
+  - The browser has a **Find** view (`GET /api/find`; `QueryParams` gains `texts`,
+    `flag`, and `money`).
+  - The command line has `breadsched find` with `--json`.
+  - A query that cannot run (dates out of order, a minimum above the maximum) is
+    refused with the reason.
+
+## 0.2.0a303 - 2026-10-25
+
+- **Simpler transaction and schedule editors (#383).**
+  - **Desktop schedule and scenario editors:** they are laid out on
+    `widgets.form_pages`: **Basics**, **Splits**, **Future changes** (its tab
+    counts the future, seasonal, skipped, per-leg, and one-time amounts) and
+    **Advanced** (projection growth, planning purposes, weekend rule, posting,
+    enter/remind days). Investment activity shows only for an investment or
+    retirement account, or once chosen (`update_schedule_pages`).
+  - **Desktop transaction editor:** it moves tags, documents, and escrow detail to
+    a counted **Tags & documents** tab. Its **Planning detail** toggle shows each
+    split's planning purpose, and investment activity for investment accounts
+    (`SplitEditor.show_detail`); a chosen value always shows.
+  - **Browser editors:** the schedule and scenario editors fold the same groups
+    into `details.form-section`, and Future changes opens by itself when it holds
+    something. The browser's two-split entry offers investment activity only for
+    investment or retirement accounts; `/api/scheduled` accounts carry
+    `investment`.
+  - **Rule:** `docs/design/user-interfaces.md` records progressive disclosure as
+    an interface rule.
+
 ## 0.2.0a302 - 2026-10-25
 
 - **Configure Dashboard (#381).** The desktop's *Configure Dashboard Groups* window
