@@ -864,6 +864,13 @@ class TestItServes:
         status, payload = client.get("/api/scheduled")
         assert status == 200
         assert set(payload) == {"definitions", "accounts", "upcoming"}
+        # Which accounts take investment activity, so the editor offers it only there (#383).
+        kinds = {item["name"]: item["investment"] for item in payload["accounts"]}
+        db = client.database
+        for account in db.iter_accounts():
+            name = db.full_name(account)
+            if name in kinds:
+                assert kinds[name] is account.atype.is_investment
 
     def test_card_payment_settings_supply_scheduled_and_upcoming_rows(self, client):
         db = client.database

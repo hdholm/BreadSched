@@ -92,6 +92,18 @@ or scenario in its query string.
 
 ## Tables, dialogs, and bounded sizes
 
+Editors disclose progressively (#383): the fields most entries need come first, and
+what is set once (defaults, planning classifications) or rarely (future changes) is
+a tab or a fold away, never removed. The desktop uses `widgets.form_pages`
+(`FormPages`, a notebook whose tab can carry a count, and `FormGrid` label/field
+rows); the browser uses `details.form-section`. A page or fold that holds something
+says so in its title (`Future changes (2)`, `Tags & documents (1)`) or opens by
+itself, so nothing set is hidden from view. A field that applies only to some
+accounts (investment activity) shows only for those, or when it already holds a
+choice. The schedule and scenario schedule editors share `update_schedule_pages`;
+the transaction editor's per-split planning purpose and investment activity follow
+its **Planning detail** toggle (`SplitEditor.show_detail`).
+
 Every table except the register grid (below) is built with `_base.table_section()`: a heading row with the table's
 own column chooser (never in the view toolbar, where identical icons could not be
 told apart; the Dashboard hides its tables' choosers and lists the same columns,

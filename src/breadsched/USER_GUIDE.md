@@ -633,6 +633,16 @@ an ordinary choice in the editors, so those schedules are edited like any other.
 amount may be a calculation, such as `76.84*1.06`, as in the register; the result is
 rounded to the cent.
 
+The schedule editors show first what most schedules need: name, kind, accounts,
+amount, and when it repeats. Splits, future changes (future, seasonal, skipped, and
+one-time amounts), and defaults set once (projection growth, planning purposes,
+weekend rule, posting, enter and remind days) are a tab or a fold away, and a
+section that holds something says so. Investment activity is offered only for an
+investment or retirement account. The transaction editor likewise keeps tags and
+documents on a second tab and shows each split's planning purpose and investment
+activity on request ([desktop](guide/desktop.md#scheduled-activity),
+[browser](guide/web.md#scheduled-activity)).
+
 For alternate assumptions, add a scenario-only estimate or alter an eligible
 baseline schedule within a saved scenario. The original baseline definition stays
 intact. An invalid exception, such as skipping and overriding the same occurrence,
