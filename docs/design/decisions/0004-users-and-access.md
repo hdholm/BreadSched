@@ -3,13 +3,14 @@
 Part of the [BreadSched design](../../../DESIGN.md); builds on
 [decision 0003](0003-book-server.md).
 
-- **Status:** proposed, 2026-10-28, for review before any code. If accepted, it is
-  built on the `claude/experimental-book-server` branch in the phases below.
-- **Proposal:** the book server knows *users*. Every request is made by a user
+- **Status:** accepted for the experimental branch, 2026-10-28, with the answers to
+  its review questions (at the end) folded in. It is built on the
+  `claude/experimental-book-server` branch in the phases below.
+- **Decision:** the book server knows *users*. Every request is made by a user
   (signed in, or the computer's own account acting for itself), every book is shared
-  with named users in a role, and undo history and personal preferences belong to a
-  user. Used alone on one computer, nothing of this shows: no sign-in, no password,
-  and the user settings live in a **Users** page of Preferences.
+  with named users in a role, and every display choice is personal. Used alone on one
+  computer, nothing of this shows: no sign-in, no password, and the user settings
+  live in a **Users** page of Preferences.
 
 ## Context
 
@@ -32,7 +33,7 @@ is decided only by a token:
 Use from an iPad and quick entry from a phone (the project's goals) make these gaps
 real: a household shares books between people, not only between programs.
 
-## Proposal
+## Decision
 
 ### 1. A book host with a user directory
 
@@ -84,8 +85,7 @@ real: a household shares books between people, not only between programs.
   with the hash so they can be raised later.
 - **Sign-in throttling:** after repeated failures, a growing delay per account and
   per client address, and a log entry. Failures never say whether the name exists.
-- **TOTP (RFC 6238):** optional per user, required by host policy for sign-in through
-  the proxy if the administrator chooses. It needs only `hmac` and `hashlib` (about
+- **TOTP (RFC 6238):** optional; each user turns it on for themselves. It needs only `hmac` and `hashlib` (about
   thirty lines). Enrolment shows the secret and an `otpauth://` link; a QR code would
   need a dependency (or a small built-in encoder) and can come later. Ten one-time
   recovery codes are shown once at enrolment.
@@ -110,42 +110,49 @@ real: a household shares books between people, not only between programs.
 
 ### 5. Books and roles
 
-- **Roles per book:** *owner*, *editor* (reads and writes), and *viewer* (reads).
-  Possibly also *entry*: may add transactions (quick entry) and read nothing else, for
-  a child's phone; this is an open question below.
+- **Roles per book:**
+  - *owner*: everything, including what only the owner may do (below);
+  - *editor*: reads and writes, and undoes and redoes;
+  - *viewer*: reads;
+  - *entry*: adds transactions (quick entry, as from a child's phone) and sees only
+    what entering needs: the accounts it may enter against, the descriptions it may
+    complete from, and its own recent entries. It cannot undo; a mistake is put right
+    by an editor.
 - **The creator is the owner.** The owner grants and revokes access for users the
   host knows, may pass ownership on, and alone may: delete or restore the book,
   write back to GnuCash, change the attachment and GnuCash link folders, and set
   book-wide settings.
 - **Every operation declares its permission.** Each `BookApi` operation is tagged
-  read, write, or owner (and *names host files* for the path-taking ones of #358);
+  read, entry, write, or owner (and *names host files* for the path-taking ones of
+  #358);
   the transport checks the tag before calling. An architecture test requires a tag
   on every operation, so a new one cannot be added open.
 - **A user's book list** is the books they hold a grant on. Opening another book
   from the host, from a phone, is choosing one from that list.
 
-### 6. Undo per user
+### 6. Undo stays the book's, and names who
 
-- **Each user has their own undo and redo history** of their own changes, per book,
-  in the host's memory (lost when the host stops, as today).
-- **Undoing is refused if someone changed the same records since.** It is the check
-  undo already makes against an invalid book, applied to the records' current state;
-  the refusal says who changed them ("Alice edited this transaction since").
-- **A change notice says whose change it was,** and whether *the subscriber* can
-  undo or redo (decision 0003's `can_undo` becomes per subscriber).
-- **Recording who made a change:** the change stream and undo label name the user. A
-  durable per-transaction "entered by" field is optional and could come later.
+- **One undo and redo history per book,** as today, in the host's memory (lost when
+  the host stops). Editors and owners undo and redo any step, whoever made it: an
+  editor could make the reversing change by hand anyway, so keeping undo to one's own
+  changes would protect nothing. Viewers and entry users cannot undo.
+- **Each step names its user,** so Undo says whose change it reverses ("Undo Alice's
+  Groceries"), and a change notice says whose change it was.
+- **A durable "entered by"** on each transaction is optional and could come later.
 
 ### 7. Preferences: three kinds
 
 | Kind | Examples | Where it lives |
 | --- | --- | --- |
 | Device | window size, column widths, banding | Per computer account or browser, as now |
-| Personal | Plan range and scenario, register double line, the selected scenario, last books, dashboard sections shown | In the user directory, per user (and per book where it is about one book), so the phone and laptop agree |
-| Book-wide | base assumptions, categorization rules, dashboard groups, attachment folder, payroll templates | In the book, as now; changing them needs the owner role (or editor, for rules) |
+| Personal | every display choice: the Plan's range, period, measure, scenario, and comparison; the whole Dashboard configuration (its groups and their accounts, sections shown, liquidity and emergency horizons, reserve, and minimum bill); register double line; the selected scenario; last books | In the user directory, per user (and per book where it is about one book), so the phone and laptop agree |
+| Book-wide | the data and the rules that make it: accounts, transactions, schedules, scenarios and assumptions, categorization rules, tax marks, payroll templates, receivables and goals, the attachment and GnuCash link folders, write-back settings | In the book, as now; changing them needs the editor role (the folders and write-back, the owner) |
 
-`plan.view` moves from book-wide to personal; the others named above stay where they
-are. Used alone, personal preferences are simply stored for the one user.
+The rule: anything that only changes how a user *sees* shared data is personal, so
+each person can look at the book the way that makes sense to them. `plan.view` and
+the Dashboard configuration move from the book to the user directory; a new user
+starts from the book's current choices. Used alone, personal preferences are simply
+stored for the one user.
 
 ### 8. Where it shows: Preferences → Users
 
@@ -166,8 +173,8 @@ are. Used alone, personal preferences are simply stored for the one user.
 
 - **It closes decision 0003's remaining items:** other accounts on the same computer
   are kept out by their lack of a credential, not by the port, so no Unix socket is
-  needed; undo is decided (per user); and anything wider than loopback now has real
-  authentication, with TLS still from the proxy.
+  needed; undo is decided (the book's, for editors and owners); and anything wider
+  than loopback now has real authentication, with TLS still from the proxy.
 - **Every operation is touched once,** to declare its permission, and every write
   carries a user through the service layer to the undo history and change stream.
   That is mechanical but wide.
@@ -190,7 +197,7 @@ are. Used alone, personal preferences are simply stored for the one user.
   token on first start), so a household already using a proxy is not locked out.
 - **Cost:** several weeks of work across phases, a security review before the proxy
   is used with it, and new tests for every refusal (wrong role, revoked token, expired
-  session, throttling, TOTP window, undo conflict).
+  session, throttling, TOTP window, an entry user's undo).
 
 ## Phases
 
@@ -202,26 +209,22 @@ are. Used alone, personal preferences are simply stored for the one user.
    sign-in page, Preferences → Users, and `breadsched users`, `password`, `token`.
 3. **Sharing books:** book ids, the multi-book host, roles and grants, the permission
    tag on every operation, and each book's sharing settings.
-4. **Personal state:** undo and redo per user with conflict refusal, change
-   attribution, and personal preferences (starting with `plan.view`).
-5. **TOTP** and recovery codes, and the host policy that requires it through the
-   proxy.
+4. **Personal state:** undo and redo for editors and owners naming each step's user,
+   change attribution, and personal display preferences (`plan.view` and the
+   Dashboard configuration first).
+5. **TOTP** and recovery codes, optional per user.
 
 Phases 1 and 2 already make the server safe to reach from other devices and from
 other accounts; 3 and 4 make it a household application.
 
-## Questions for review
+## Answers to the review questions (2026-10-28)
 
-1. **Roles:** are owner, editor, and viewer enough, or is an *entry* role (add
-   transactions only, as from a child's phone) wanted?
-2. **Grants:** with the host (proposed: a copied book carries no access), or in the
-   book, so that access travels with the file to another host?
-3. **Undo:** only one's own changes, refused when someone changed them since
-   (proposed), or also undoing others' changes for the owner?
-4. **TOTP:** optional per user, or required for anyone signing in from another
-   device?
-5. **Book-wide or personal:** is the proposed split right, for example the dashboard's
-   groups shared but which sections are shown personal?
-6. **One host per computer account** (proposed), or one host for the whole computer,
-   serving several computer accounts' books? The second needs a system service and
-   is not proposed.
+1. **Roles:** owner, editor, and viewer, and an *entry* role as well.
+2. **Grants:** with the host; a copied book carries no access.
+3. **Undo:** editors and owners undo anything, whoever made it; restricting it would
+   protect nothing an editor cannot do by hand.
+4. **TOTP:** optional.
+5. **Personal or book-wide:** every display choice is personal, the whole Dashboard
+   configuration included: each user sees shared data the way that makes sense to
+   them.
+6. **One host per computer account;** no system service.

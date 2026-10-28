@@ -802,10 +802,11 @@ would have let a token holder link any file through it, are now local only too (
   changes the same way, and the release that brings this to `main` must say so.
 - **Undo**: today one undo history belongs to the book. Shared editing must decide
   whether undo stays global or becomes per client; [decision
-  0004](0004-users-and-access.md) proposes per user.
+  0004](0004-users-and-access.md) keeps it the book's, for editors and owners, with
+  each step naming its user.
 - **Security**: an independent server stays on the loopback interface, with a token
   file only the user can read. Anything wider needs real authentication and TLS;
-  decision 0004 proposes users, passwords, and per-book roles, which would also keep
+  decision 0004 adds users, passwords, and per-book roles, which also keep
   other accounts on the same computer out without a Unix socket.
 - **Long operations** (imports, quote fetches, projections) need jobs with progress
   and cancellation once a client is a separate process.
