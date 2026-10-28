@@ -17,7 +17,11 @@ from .. import APP_ID, APP_NAME, __version__  # noqa: E402
 from ..gen.db.sqlite import SCHEMA_VERSION, DbSQLite, stored_schema_version  # noqa: E402
 from ..gen.utils.logs import get_logger  # noqa: E402
 from ..gen.utils.settings import Settings  # noqa: E402
-from ..presentation import book_open_notice, book_upgrade_progress  # noqa: E402
+from ..presentation import (  # noqa: E402
+    book_open_notice,
+    book_opening_progress,
+    book_upgrade_progress,
+)
 from ..user_guide import help_target
 from .gi_setup import Gdk, Gio, GLib, Gtk
 from .user_guide import UserGuideWindow
@@ -111,14 +115,14 @@ class BreadSchedApplication(Gtk.Application):
 
     def do_activate(self) -> None:
         window = self.props.active_window or ViewManager(self)
-        # Restore the previous book before presenting the window.  If we present
-        # first, the empty-book chooser is briefly visible even when there is a
-        # perfectly good remembered book to reopen. A book that must be upgraded
-        # is the exception: the window comes up first and says so (#295).
+        # Reopen the previous book behind an "Opening…" page: the window comes up
+        # at once and says what it is doing, rather than nothing appearing for the
+        # seconds a large book takes to open (#389), and the empty-book chooser is
+        # never flashed. An upgrade says so on the same page (#295).
         if self.db is None:
             remembered = self.settings.get("general", "last_book_path")
-            if remembered and self._needs_upgrade(remembered) and isinstance(window, ViewManager):
-                self.open_book_announced(remembered, window=window, failure=None)
+            if remembered and Path(remembered).exists() and isinstance(window, ViewManager):
+                self.open_book_announced(remembered, window=window, failure=None, always=True)
             else:
                 self.reopen_last_book()
         window.present()
@@ -129,7 +133,12 @@ class BreadSchedApplication(Gtk.Application):
         return schema is not None and schema < SCHEMA_VERSION
 
     def open_book_announced(
-        self, path: str, *, window: ViewManager | None = None, failure: str | None
+        self,
+        path: str,
+        *,
+        window: ViewManager | None = None,
+        failure: str | None,
+        always: bool = False,
     ) -> None:
         """Open ``path``; a book that needs upgrading first says so on screen.
 
@@ -138,16 +147,22 @@ class BreadSchedApplication(Gtk.Application):
         shows what is happening and is presented before the upgrade starts, and
         the notice afterwards comes up over a window that is already on screen.
         ``failure`` prefixes the message reported if opening fails; ``None`` logs
-        the failure instead, as for the remembered book at start-up.
+        the failure instead, as for the remembered book at start-up. ``always``
+        shows an "Opening…" page for a current book too, as start-up does (#389).
         """
         if window is None:
             active = self.props.active_window
             window = active if isinstance(active, ViewManager) else None
         schema = stored_schema_version(path)
-        if window is None or schema is None or schema >= SCHEMA_VERSION:
+        upgrading = schema is not None and schema < SCHEMA_VERSION
+        if window is None or not (upgrading or always):
             self._open_or_report(path, failure)
             return
-        window.show_busy(book_upgrade_progress(path, schema))
+        window.show_busy(
+            book_upgrade_progress(path, schema)
+            if upgrading and schema is not None
+            else book_opening_progress(path)
+        )
         window.present()
 
         def upgrade() -> None:
@@ -913,6 +928,8 @@ def build_menu_model(actions_menu: ActionsMenu | None = None) -> Gio.Menu:
     tabs = Gio.Menu()
     tabs.append("_Previous Tab", "win.previous-tab")
     tabs.append("Ne_xt Tab", "win.next-tab")
+    tabs.append("Move Tab _Left", "win.move-tab-left")
+    tabs.append("Move Tab _Right", "win.move-tab-right")
     tabs.append("_Close Tab", "win.close-tab")
     view_menu.append_section(None, tabs)
     menubar.append_submenu("_View", view_menu)

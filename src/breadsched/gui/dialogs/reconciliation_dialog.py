@@ -56,14 +56,35 @@ def _candidate_key(candidate: reconciliation.ReconciliationCandidate) -> tuple:
     )
 
 
-class _Column:
-    """One side of the statement: its heading, rows, and checked total."""
+#: The sort buttons above each list, and what each orders by (#377).
+_SORT_LABELS = {"checked": "✓", "date": "Date", "description": "Description", "amount": "Amount"}
 
-    def __init__(self, title: str) -> None:
+
+class _Column:
+    """One side of the statement: its heading, sort buttons, rows, and checked total."""
+
+    def __init__(self, title: str, on_sort) -> None:
         self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, hexpand=True)
         heading = Gtk.Label(label=title, xalign=0)
         heading.add_css_class("heading")
         self.box.append(heading)
+        #: The list's order; choosing the same button again reverses it.
+        self.sort = "date"
+        self.descending = False
+        self._on_sort = on_sort
+        self.sort_buttons: dict[str, Gtk.Button] = {}
+        sorts = Gtk.Box(spacing=2)
+        sorts.append(Gtk.Label(label="Sort:", xalign=0))
+        for key in reconciliation.CANDIDATE_SORTS:
+            button = Gtk.Button(label=_SORT_LABELS[key])
+            button.set_has_frame(False)
+            button.set_tooltip_text(
+                "Checked first" if key == "checked" else f"Order by {_SORT_LABELS[key].lower()}"
+            )
+            button.connect("clicked", lambda _b, k=key: self.sort_by(k))
+            self.sort_buttons[key] = button
+            sorts.append(button)
+        self.box.append(sorts)
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.MULTIPLE)
         self.list.set_activate_on_single_click(False)
         self.list.add_css_class("boxed-list")
@@ -79,6 +100,18 @@ class _Column:
 
     def selected_splits(self) -> list[str]:
         return [self.splits[row] for row in self.list.get_selected_rows() if row in self.splits]
+
+    def sort_by(self, key: str) -> None:
+        """Order the list by ``key``; the current key again reverses the order."""
+        self.descending = not self.descending if key == self.sort else False
+        self.sort = key
+        self._show_sort()
+        self._on_sort()
+
+    def _show_sort(self) -> None:
+        for key, button in self.sort_buttons.items():
+            arrow = (" ▼" if self.descending else " ▲") if key == self.sort else ""
+            button.set_label(_SORT_LABELS[key] + arrow)
 
 
 class ReconciliationDialog(BoundedWindow):
@@ -323,9 +356,10 @@ class ReconciliationDialog(BoundedWindow):
         self.body.append(target_row)
 
         columns = Gtk.Box(spacing=12, homogeneous=True, vexpand=True)
-        self.funds_in = _Column("Funds In")
-        self.funds_out = _Column("Funds Out")
+        self.funds_in = _Column("Funds In", lambda: self._resort(handle))
+        self.funds_out = _Column("Funds Out", lambda: self._resort(handle))
         for column in (self.funds_in, self.funds_out):
+            column._show_sort()
             column.list.connect("row-activated", self._on_row_activated)
             column.list.connect("selected-rows-changed", self._on_selection_changed)
             # Clicks are the dialog's own (#374, #375): one click checks a row and
@@ -384,13 +418,22 @@ class ReconciliationDialog(BoundedWindow):
         finally:
             self._extending = False
 
+    def _resort(self, handle: str) -> None:
+        """Rebuild the lists in their chosen order; checks and selection are kept."""
+        state = self.book.reconciliation(self.account.handle).current
+        if state is not None and state.reconciliation.handle == handle:
+            self._fill(state)
+
     def _fill_lists(self, state: reconciliation.ReconciliationSummary, selected: set) -> None:
         statement = state.reconciliation.statement_date
         for column, funds_in in ((self.funds_in, True), (self.funds_out, False)):
             column.list.remove_all()
             column.splits = {}
             later_heading = False
-            for candidate in state.candidates:
+            ordered = reconciliation.sort_candidates(
+                state.candidates, column.sort, column.descending
+            )
+            for candidate in ordered:
                 if candidate.funds_in is not funds_in:
                     continue
                 if candidate.after_statement and not later_heading:

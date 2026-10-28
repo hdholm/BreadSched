@@ -33,7 +33,7 @@ from pathlib import Path
 from .. import APP_NAME  # noqa: E402
 from ..gen.db.sqlite import DbSQLite  # noqa: E402
 from ..gen.utils.settings import Settings  # noqa: E402
-from .gi_setup import Gio, GLib, Gtk, Pango
+from .gi_setup import Gdk, Gio, GLib, GObject, Gtk, Pango
 from .paths import default_book_path  # noqa: E402
 from .view_catalog import (
     CATEGORIES,
@@ -165,6 +165,8 @@ class ViewManager(Gtk.ApplicationWindow):
             ("close-tab", self._on_close_tab),
             ("next-tab", lambda *_: self.step_tab(1)),
             ("previous-tab", lambda *_: self.step_tab(-1)),
+            ("move-tab-right", lambda *_: self.shift_tab(1)),
+            ("move-tab-left", lambda *_: self.shift_tab(-1)),
             ("find", self._on_find),
         ):
             action = Gio.SimpleAction.new(name, None)
@@ -176,6 +178,9 @@ class ViewManager(Gtk.ApplicationWindow):
             application.set_accels_for_action("win.close-tab", ["<Control>w"])
             application.set_accels_for_action("win.next-tab", ["<Control>Page_Down"])
             application.set_accels_for_action("win.previous-tab", ["<Control>Page_Up"])
+            # Moving a tab, the keyboard's way to do what dragging does (#390).
+            application.set_accels_for_action("win.move-tab-right", ["<Shift><Control>Page_Down"])
+            application.set_accels_for_action("win.move-tab-left", ["<Shift><Control>Page_Up"])
             application.set_accels_for_action("win.find", ["<Control>f"])
 
     # ----------------------------------------------------------------- chrome
@@ -893,6 +898,7 @@ class ViewManager(Gtk.ApplicationWindow):
             tab = _Tab(key, view, self._tab_title(key, view))
             tab.button.connect("clicked", lambda *_a: self._on_tab_clicked(tab))
             tab.close.connect("clicked", lambda *_a: self.close_tab(tab))
+            self._make_draggable(tab)
             self._tabs.append(tab)
             self.tab_bar.append(tab.widget)
         for item in self._tabs:
@@ -937,6 +943,41 @@ class ViewManager(Gtk.ApplicationWindow):
         current = self._current_tab()
         index = self._tabs.index(current) if current is not None else 0
         self._on_tab_clicked(self._tabs[(index + step) % len(self._tabs)])
+
+    def move_tab(self, tab: _Tab, index: int) -> None:
+        """Put ``tab`` at ``index`` in the tab bar and remember the new order (#390)."""
+        if tab not in self._tabs:
+            return
+        index = max(0, min(index, len(self._tabs) - 1))
+        if self._tabs.index(tab) == index:
+            return
+        self._tabs.remove(tab)
+        self._tabs.insert(index, tab)
+        before = self._tabs[index - 1].widget if index > 0 else None
+        self.tab_bar.reorder_child_after(tab.widget, before)
+        self._remember_tabs()
+
+    def shift_tab(self, step: int) -> None:
+        """Move the current tab ``step`` places along the bar, stopping at either end."""
+        current = self._current_tab()
+        if current is not None:
+            self.move_tab(current, self._tabs.index(current) + step)
+
+    def _make_draggable(self, tab: _Tab) -> None:
+        """Drag a tab onto another to put it there, as other tabbed applications do."""
+        source = Gtk.DragSource(actions=Gdk.DragAction.MOVE)
+        source.connect("prepare", lambda *_a: Gdk.ContentProvider.new_for_value(str(id(tab))))
+        tab.widget.add_controller(source)
+        target = Gtk.DropTarget.new(GObject.TYPE_STRING, Gdk.DragAction.MOVE)
+        target.connect("drop", lambda _t, value, _x, _y: self._on_tab_drop(tab, value))
+        tab.widget.add_controller(target)
+
+    def _on_tab_drop(self, onto: _Tab, value: str) -> bool:
+        dragged = next((tab for tab in self._tabs if str(id(tab)) == value), None)
+        if dragged is None or dragged is onto or onto not in self._tabs:
+            return False
+        self.move_tab(dragged, self._tabs.index(onto))
+        return True
 
     def _on_double_line(self, action, value) -> None:
         """Show or hide every register's notes line, and remember the choice."""

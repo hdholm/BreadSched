@@ -102,12 +102,12 @@ def balance_amount(
     handle = account if isinstance(account, str) else account.handle
     reporting_currency = reporting_currency_handle(db)
     total: Amount | None = None
-    for row in db.split_rows(handle, start=since, end=as_of):
-        row_currency = row["currency"]
+    # Summed in the database by currency and denominator, exactly (#389).
+    for row_currency, denominator, numerator in db.split_totals(handle, start=since, end=as_of):
         commodity = (
             row_currency if isinstance(row_currency, str) and row_currency else reporting_currency
         )
-        total = _accumulate(total, Amount(Money(row["value_num"], row["value_den"]), commodity))
+        total = _accumulate(total, Amount(Money(numerator, denominator), commodity))
     if total is None:
         total = Amount(Money(0), reporting_currency)
     if natural_sign:

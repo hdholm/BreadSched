@@ -13,6 +13,7 @@ from datetime import date
 from typing import TYPE_CHECKING, Any
 
 from ..api.contract import ApiError
+from ..gen.engine import reconciliation as reconciliation_engine
 from ..gen.services.reconciliations import StartReconciliation, UpdateReconciliation
 from ..presentation import claim_link_notice, reimbursement_notice
 from .controls import input_money
@@ -32,8 +33,14 @@ __all__ = [
 
 
 def reconciliation(api: Api, query: QueryParams) -> dict[str, object]:
-    """Return the current statement workflow and its auditable history."""
+    """Return the current statement workflow and its auditable history.
+
+    ``sort`` (one of ``CANDIDATE_SORTS``) and ``descending`` order the statement's
+    entries, as the desktop's lists do (#377).
+    """
     account_handle = query.text("account", required=True) or ""
+    sort = query.choice("sort", reconciliation_engine.CANDIDATE_SORTS, "date")
+    descending = query.flag("descending")
     query.finish()
     try:
         view = api.book.reconciliation(account_handle)
@@ -73,8 +80,13 @@ def reconciliation(api: Api, query: QueryParams) -> dict[str, object]:
                         "after_statement": item.after_statement,
                         "funds_in": item.funds_in,
                     }
-                    for item in current_state.candidates
+                    for item in reconciliation_engine.sort_candidates(
+                        current_state.candidates, sort, descending
+                    )
                 ],
+                "sort": sort,
+                "descending": descending,
+                "sorts": list(reconciliation_engine.CANDIDATE_SORTS),
             }
             if current is not None and current_state is not None
             else None

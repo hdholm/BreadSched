@@ -13,7 +13,9 @@ breadsched-gtk household.breadsched
 ```
 
 With no book argument, the application offers to create a book, open a book, or
-import a GnuCash book into a new BreadSched book. The equivalent commands are
+import a GnuCash book into a new BreadSched book. With no argument it reopens the
+book you used last, and the window says **Opening** and the book's name until it is
+ready (or that it is upgrading, for an older book). The equivalent commands are
 `breadsched gui` and `python -m breadsched.gui`. **File → New Book** creates a book
 at any time, and **File → Import GnuCash Book into New Book** starts from GnuCash.
 
@@ -170,7 +172,9 @@ Dialogs work the same way throughout: **Escape** closes one as its **Cancel** or
 Every view you open, and the register of every account you open, gets a tab in the
 bar below the toolbar. Choosing a tab puts the keyboard in what it shows (in a
 register, the cell under the cursor). **Ctrl+Page Up** and **Ctrl+Page Down** move
-between tabs, **Ctrl+W** closes the current one, and **Ctrl+F** (**Edit → Find in
+between tabs. Drag a tab onto another to put it in that place, or move the current
+tab one place with **Ctrl+Shift+Page Up** and **Ctrl+Shift+Page Down** (**View → Move
+Tab Left** and **Move Tab Right**). **Ctrl+W** closes the current one, and **Ctrl+F** (**Edit → Find in
 Register**) goes to the register's filter, which keeps the transactions whose date,
 number, description, notes, tags, memos, accounts, or amounts (such as 67 or 67.00)
 contain what you type. Choose a tab to go back to it; each register tab keeps its
@@ -189,7 +193,7 @@ own, and choosing another scenario in it retitles the tab. Base assumptions you
 change anywhere reach every tab whose scenario uses them.
 
 Each book remembers its tabs: opening it again brings back the same views,
-registers, and scenario tabs, with the same tab selected. A tab for an account or
+registers, and scenario tabs, in the same order, with the same tab selected. A tab for an account or
 scenario deleted since is left out. Another book has its own tabs.
 
 Registers can also open in independent windows; their account, filter, and cursor
@@ -470,6 +474,10 @@ each leg that matches. Activate a row to open its register. See
    and **Funds Out**, each with its checked total; below them are the starting,
    reconciled, and ending balances and the difference. Entries dated after the
    statement are listed below an **After** heading, shaded, in case a date is wrong.
+   To find an entry, order a column with the buttons above it: **✓** (checked
+   first), **Date**, **Description**, or **Amount**; choose the same one again to
+   reverse it. Each column keeps its own order, and later entries stay below the
+   heading.
 4. Check entries until the difference is zero. Click a row (or its check) to check
    or uncheck it, or press Enter or Space on it. A click selects only that row, in
    both columns; Ctrl-click adds or removes a row and Shift-click selects a range in
@@ -533,7 +541,8 @@ accounts; **Create loan** saves the loan account and its payment schedule. See
 BreadSched asks when a book opens (after any held GnuCash changes), and **Actions →
 Review Due Transactions…**, or the **Review Due Transactions…** button in Upcoming,
 opens the same review; if nothing is due, it says so. Choose each date's action, or one for all
-of a schedule's dates, then **Apply**. If anything was posted, **Posted
+of a schedule's dates, then **Apply**. A schedule with several dates lists them under
+**Show the dates**, so a long list of missed dates opens quickly. If anything was posted, **Posted
 transactions** lists it split by split; choose **Edit…** to change one in the
 transaction editor or **Delete** to remove it, then **Close**. See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).

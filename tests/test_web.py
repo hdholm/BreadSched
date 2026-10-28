@@ -789,6 +789,42 @@ class TestItServes:
         assert status == 200
         assert reopened["status"] == "open"
 
+    def test_reconciliation_entries_come_in_the_order_asked(self, client):
+        """#377: ``sort`` and ``descending`` order the statement's entries."""
+        _status, accounts = client.get("/api/accounts")
+        checking = next(a for a in accounts if a["name"] == "Checking")
+        client.post(
+            "/api/reconciliation/start",
+            {
+                "account": checking["handle"],
+                "statement_date": date.today().isoformat(),
+                "ending_balance": "0",
+            },
+        )
+
+        def entries(**order):
+            query = urllib.parse.urlencode({"account": checking["handle"], **order})
+            _status, state = client.get(f"/api/reconciliation?{query}")
+            return state["open"]
+
+        plain = entries()
+        assert plain["sort"] == "date" and plain["descending"] is False
+        assert plain["sorts"] == ["date", "description", "amount", "checked"]
+        assert len(plain["candidates"]) > 1
+        largest = entries(sort="amount", descending="true")
+        sizes = [abs(Money(item["amount"])) for item in largest["candidates"]]
+        assert sizes == sorted(sizes, reverse=True)
+        assert largest["sort"] == "amount" and largest["descending"] is True
+        named = [
+            item["description"].casefold() for item in entries(sort="description")["candidates"]
+        ]
+        assert named == sorted(named)
+        for bad in ({"sort": "colour"}, {"descending": "maybe"}):
+            query = urllib.parse.urlencode({"account": checking["handle"], **bad})
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.get(f"/api/reconciliation?{query}")
+            assert caught.value.code == 400
+
     def test_register_query_and_rejected_entries_keep_their_contract(self, client):
         def refused(call, *args) -> tuple[int, dict]:
             with pytest.raises(urllib.error.HTTPError) as caught:

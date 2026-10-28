@@ -302,14 +302,17 @@ class TestDialogsStayInFront:
         [(parent_mapped, message)] = alerts
         assert parent_mapped and "upgraded to the current format" in message
 
-    def test_a_current_remembered_book_still_opens_before_the_window_appears(
-        self, app, window, populated_book
-    ):
+    def test_a_remembered_book_opens_behind_an_opening_page(self, app, window, populated_book):
+        """#389: the window comes up at once and says what it is doing."""
         app.settings.set("general", "last_book_path", populated_book)
         app.settings.save()
         app.do_activate()
-        assert app.db is not None  # no placeholder flash for a book that needs no upgrade
-        assert window.stack.get_visible_child_name() != "busy"
+        # Never the empty-book chooser: the "Opening…" page, then the book.
+        assert window.stack.get_visible_child_name() == "busy"
+        assert window.busy_label.get_text() == "Opening gui.breadsched…"
+        assert _spin(lambda: app.db is not None)
+        assert _spin(lambda: window.stack.get_visible_child_name() != "busy")
+        assert window.stack.get_visible_child_name() != "empty"
 
     def test_opening_an_old_book_shows_progress_then_the_book(
         self, app, window, tmp_path, monkeypatch
@@ -3931,7 +3934,8 @@ class TestLastBookIsRemembered:
 
         app.do_activate()
 
-        assert app.db is not None
+        # Opened behind the "Opening…" page once the window is up (#389).
+        assert _spin(lambda: app.db is not None)
         assert app.book_path == str(remembered)
 
     def test_a_remembered_default_user_book_is_reopened(self, app, tmp_path, monkeypatch):
@@ -5706,6 +5710,34 @@ class TestDueReview:
         group.set_selected(3)  # "Never, all"
         assert all(chooser.get_selected() == NEVER for chooser in dialog.choosers)
         assert dialog.apply() == (0, len(due))
+
+    def test_a_schedules_dates_are_built_only_when_shown(self, due_book, window):
+        """#389: many missed dates opened slowly, one drop-down each at once."""
+        from breadsched.gui.dialogs.due_dialog import NEVER, POST
+
+        dialog, due = self._dialog(due_book, window)
+        [expander] = dialog.expanders.values()
+        [group] = dialog.group_choosers.values()
+        assert expander.get_label() == f"Show the {len(due)} dates"
+
+        def dropdowns() -> int:
+            return sum(1 for w in _descendants(expander) if isinstance(w, Gtk.DropDown))
+
+        assert dropdowns() == 0
+        # An answer given before the rows exist is the one they show.
+        group.set_selected(3)  # "Never, all"
+        dialog.choosers[1].set_selected(POST)
+        expander.set_expanded(True)
+        assert dropdowns() == len(due)
+        shown = [w for w in _descendants(expander) if isinstance(w, Gtk.DropDown)]
+        assert [w.get_selected() for w in shown] == [NEVER, POST, *[NEVER] * (len(due) - 2)]
+        # A choice made in a row is the date's answer; reopening builds nothing new.
+        shown[0].set_selected(POST)
+        assert dialog.choosers[0].get_selected() == POST
+        expander.set_expanded(False)
+        expander.set_expanded(True)
+        assert dropdowns() == len(due)
+        assert dialog.apply() == (2, len(due) - 2)
 
     def test_a_date_posted_elsewhere_is_refused_not_duplicated(self, due_book, window):
         from breadsched.gen.engine import schedule as engine
@@ -9529,6 +9561,49 @@ class TestReconcileWindow:
         finally:
             dialog.destroy()
 
+    def test_each_list_sorts_by_a_column_and_keeps_checks(self, app, window, populated_book):
+        """#377: Date, Description, Amount, or checked order a list, either way."""
+        db, card, _rent, made = self._card(app, populated_book)
+        dialog = self._start(window, db, card)
+        try:
+            split = {name: made[name].split_for(card.handle).handle for name in made}
+
+            ours = set(split.values())
+
+            def order(column):
+                # The book's own earlier card entries are left out of the comparison.
+                shown = [column.splits.get(row) for row in self._rows(column)]
+                return [item for item in shown if item is None or item in ours]
+
+            out = dialog.funds_out
+            # Date order, and the entry after the statement below its heading.
+            assert order(out) == [split["Groceries"], split["Fuel"], None, split["Late"]]
+            assert out.sort_buttons["date"].get_label() == "Date ▲"
+            out.sort_buttons["amount"].emit("clicked")
+            assert order(out) == [split["Groceries"], split["Fuel"], None, split["Late"]]
+            out.sort_buttons["amount"].emit("clicked")
+            assert out.sort_buttons["amount"].get_label() == "Amount ▼"
+            assert out.sort_buttons["date"].get_label() == "Date"
+            assert order(out) == [split["Fuel"], split["Groceries"], None, split["Late"]]
+            # Checks and the selection survive a new order.
+            _out, fuel_row = self._row_for(dialog, split["Fuel"])
+            dialog.click_row(fuel_row)
+            out.sort_buttons["description"].emit("clicked")
+            assert order(out) == [split["Fuel"], split["Groceries"], None, split["Late"]]
+            assert dialog._checks[split["Fuel"]].get_active()
+            assert dialog.selected_splits() == [split["Fuel"]]
+            out.sort_buttons["description"].emit("clicked")
+            assert order(out) == [split["Groceries"], split["Fuel"], None, split["Late"]]
+            out.sort_buttons["checked"].emit("clicked")
+            assert order(out) == [split["Fuel"], split["Groceries"], None, split["Late"]]
+            # The other list keeps its own order.
+            assert dialog.funds_in.sort == "date"
+            # A change to the book refills the list in the chosen order.
+            dialog.refresh()
+            assert order(out) == [split["Fuel"], split["Groceries"], None, split["Late"]]
+        finally:
+            dialog.destroy()
+
     def test_a_double_click_edits_the_row_and_leaves_its_check(self, app, window, populated_book):
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
@@ -9901,6 +9976,56 @@ class TestTabs:
         app.open_book(str(other))
         app.open_book(populated_book)
         assert window.tabs == expected[:3]
+
+    def test_tabs_reorder_by_drag_or_keyboard_and_stay_reordered(
+        self, app, window, populated_book, tmp_path
+    ):
+        """Issue #390: tabs can be put in another order, and reopening keeps it."""
+        from breadsched.gui.gi_setup import Gtk
+
+        app.open_book(populated_book)
+        checking, card = self._accounts(app)
+        window.show_category("plan")
+        window.open_register(checking)
+        window.open_register(card)
+        assert [key for key, _title in window.tabs] == ["dashboard", "plan", "register", "register"]
+        accels = app.get_accels_for_action
+        assert accels("win.move-tab-left") == ["<Shift><Control>Page_Up"]
+        assert accels("win.move-tab-right") == ["<Shift><Control>Page_Down"]
+        # The current tab (Credit Card) moves left, and stops at the first place.
+        for _ in range(5):
+            window.activate_action("win.move-tab-left", None)
+        assert [title for _key, title in window.tabs] == [
+            "Credit Card",
+            "Dashboard",
+            "Plan",
+            "Checking Account",
+        ]
+        window.activate_action("win.move-tab-right", None)
+        assert window.tabs[1] == ("register", "Credit Card")
+        # A drop onto another tab puts the dragged one in its place.
+        dashboard, card_tab, plan, checking_tab = window._tabs
+        assert window._on_tab_drop(plan, str(id(checking_tab))) is True
+        assert window._tabs == [dashboard, card_tab, checking_tab, plan]
+        assert window._on_tab_drop(plan, str(id(plan))) is False
+        assert window._on_tab_drop(plan, "not a tab") is False
+        # The bar shows the same order the list holds.
+        shown = []
+        child = window.tab_bar.get_first_child()
+        while child is not None:
+            shown.append(child)
+            child = child.get_next_sibling()
+        assert shown == [tab.widget for tab in window._tabs]
+        for tab in window._tabs:
+            controllers = tab.widget.observe_controllers()
+            kinds = {type(controllers.get_item(i)) for i in range(controllers.get_n_items())}
+            assert {Gtk.DragSource, Gtk.DropTarget} <= kinds
+        expected = list(window.tabs)
+        other = tmp_path / "other.breadsched"
+        shutil.copyfile(populated_book, other)
+        app.open_book(str(other))
+        app.open_book(populated_book)
+        assert window.tabs == expected
 
     def test_remembered_tabs_survive_a_damaged_entry(self, app, window, populated_book):
         app.open_book(populated_book)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -12,6 +13,7 @@ from ..lib.reconciliation import Reconciliation, ReconciliationEvent, Reconcilia
 from ..lib.transaction import ReconcileState, Split, Transaction
 
 __all__ = [
+    "CANDIDATE_SORTS",
     "ReconciliationCandidate",
     "ReconciliationSummary",
     "ReconciliationError",
@@ -21,6 +23,7 @@ __all__ = [
     "reconciled_balance",
     "reopen",
     "set_selection",
+    "sort_candidates",
     "start",
     "summary",
     "toggle_cleared",
@@ -165,6 +168,38 @@ def reconciled_balance(db: DbSQLite, account: str, through: date) -> Money:
         } and _reconciled_through(transaction, split, through):
             total += split.value * account_obj.sign()
     return total
+
+
+#: How a statement's lists can be ordered (#377); ``date`` is the order they start in.
+CANDIDATE_SORTS = ("date", "description", "amount", "checked")
+
+
+def sort_candidates(
+    candidates: Iterable[ReconciliationCandidate], sort: str = "date", descending: bool = False
+) -> list[ReconciliationCandidate]:
+    """``candidates`` in a column's order, so a missing entry is easier to find (#377).
+
+    ``amount`` orders by size, as both lists show it; ``checked`` puts the checked
+    entries first (last when descending). Entries dated after the statement stay
+    below the others in either direction, since they are listed only in case a date
+    is wrong. Ties keep date order.
+    """
+    if sort not in CANDIDATE_SORTS:
+        raise ValueError(f"sort must be one of {', '.join(CANDIDATE_SORTS)}")
+
+    def key(item: ReconciliationCandidate):
+        if sort == "description":
+            return item.description.casefold()
+        if sort == "amount":
+            return abs(item.amount)
+        if sort == "checked":
+            return not item.selected
+        return item.post_date
+
+    ordered = sorted(candidates, key=lambda item: (item.post_date, item.transaction, item.split))
+    ordered.sort(key=key, reverse=descending)
+    ordered.sort(key=lambda item: item.after_statement)
+    return ordered
 
 
 def summary(db: DbSQLite, reconciliation: Reconciliation | str) -> ReconciliationSummary:

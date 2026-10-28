@@ -373,3 +373,41 @@ def test_cancelling_abandons_the_statement_without_touching_the_ledger(db, state
     assert cancel_reconciliation(db, ReconciliationAction(session.handle)).value is not None
     assert {t.handle: t.serialize() for t in db.iter_transactions()} == before
     assert reconciliation.open_for_account(db, bank.handle) is None
+
+
+def _candidate(name: str, when: date, amount: str, *, selected=False, after=False):
+    return reconciliation.ReconciliationCandidate(
+        transaction=f"t-{name}",
+        split=f"s-{name}",
+        post_date=when,
+        description=name,
+        amount=Money(amount),
+        state=ReconcileState.NOT_RECONCILED,
+        selected=selected,
+        after_statement=after,
+    )
+
+
+def test_candidates_sort_by_a_column_with_later_entries_kept_last():
+    """#377: a statement's entries order by date, description, size, or check."""
+    rent = _candidate("Rent", date(2026, 1, 3), "-900")
+    coffee = _candidate("coffee", date(2026, 1, 9), "-4", selected=True)
+    bonus = _candidate("Bonus", date(2026, 1, 20), "250")
+    late = _candidate("Arrears", date(2026, 2, 2), "-1000", after=True)
+    items = [late, bonus, coffee, rent]
+
+    def names(sort, descending=False):
+        ordered = reconciliation.sort_candidates(items, sort, descending)
+        return [item.description for item in ordered]
+
+    assert names("date") == ["Rent", "coffee", "Bonus", "Arrears"]
+    assert names("date", True) == ["Bonus", "coffee", "Rent", "Arrears"]
+    assert names("description") == ["Bonus", "coffee", "Rent", "Arrears"]
+    # Size, not sign: the lists show amounts without one.
+    assert names("amount") == ["coffee", "Bonus", "Rent", "Arrears"]
+    assert names("amount", True) == ["Rent", "Bonus", "coffee", "Arrears"]
+    # Checked first; ties stay in date order either way.
+    assert names("checked") == ["coffee", "Rent", "Bonus", "Arrears"]
+    assert names("checked", True) == ["Rent", "Bonus", "coffee", "Arrears"]
+    with pytest.raises(ValueError, match="sort must be one of"):
+        reconciliation.sort_candidates(items, "colour")
