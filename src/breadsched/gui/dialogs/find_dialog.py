@@ -1,11 +1,11 @@
 """Find Transactions: search every register, then sort, group, and total (#382).
 
 The register's filter searches one account; this window searches the whole book
-with the shared ``engine.transaction_query``, the same search the browser's Find
-view and the command line's ``find`` run. Rows are splits, so an amount or an
-account picks out the leg that has it. Grouping gives subtotals per account, month,
-year, or tag, and the last line is the grand total, per currency. Activating a row
-opens that split's register.
+through the book server's ``find`` (``services.transaction_search``), the same
+search the browser's Find view and the command line's ``find`` run. Rows are
+splits, so an amount or an account picks out the leg that has it. Grouping gives
+subtotals per account, month, year, or tag, and the last line is the grand total,
+per currency. Activating a row opens that split's register.
 """
 
 from __future__ import annotations
@@ -15,16 +15,12 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import InvalidOperation
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.transaction_query import (
-    DIRECTIONS,
-    GROUPINGS,
-    SORTS,
-    QueryResult,
-    TransactionQuery,
-    run_query,
-)
+from ...gen.engine.transaction_query import DIRECTIONS, GROUPINGS, SORTS, TransactionQuery
 from ...gen.lib import Money
+from ...gen.services.transaction_search import FindResult
 from ..gi_setup import Gio, Gtk
 from ..views._base import Row, column
 from ..widgets.bounded import BoundedWindow
@@ -77,7 +73,7 @@ def _totals(totals: dict[str, Money]) -> str:
     )
 
 
-def result_lines(result: QueryResult) -> list[ResultLine]:
+def result_lines(result: FindResult) -> list[ResultLine]:
     """The rows as shown: each group's splits and subtotal, then the total."""
     grouped = result.query.group_by != "none"
     lines: list[ResultLine] = []
@@ -86,12 +82,12 @@ def result_lines(result: QueryResult) -> list[ResultLine]:
             lines.append(
                 ResultLine(
                     "split",
-                    row.transaction.post_date.isoformat(),
-                    row.transaction.num,
-                    row.transaction.description,
+                    row.date.isoformat(),
+                    row.num,
+                    row.description,
                     row.account_name,
-                    row.value.format(parens_negative=True),
-                    row.split.account,
+                    row.amount.format(parens_negative=True),
+                    row.account,
                 )
             )
         if grouped:
@@ -104,7 +100,7 @@ def result_lines(result: QueryResult) -> list[ResultLine]:
         ResultLine(
             "total",
             description=(
-                f"Total: {len(result.rows)} split(s) in {result.transactions} transaction(s)"
+                f"Total: {result.splits} split(s) in {result.transactions} transaction(s)"
             ),
             amount=_totals(result.totals),
         )
@@ -123,8 +119,9 @@ class FindDialog(BoundedWindow):
     ) -> None:
         super().__init__(title="Find transactions", transient_for=parent, modal=False)
         self.db = db
+        self.book = book_server(db)
         self.open_account = open_account
-        self.result: QueryResult | None = None
+        self.result: FindResult | None = None
         self.set_default_size(820, 640)
         self.accounts = sorted(
             (account for account in db.iter_accounts() if not account.is_root),
@@ -257,17 +254,17 @@ class FindDialog(BoundedWindow):
             group_by=GROUPINGS[self.group_by.get_selected()],
         )
 
-    def find(self) -> QueryResult | None:
+    def find(self) -> FindResult | None:
         """Run the search and show it; None, with the reason shown, if it cannot run."""
         try:
-            result = run_query(self.db, self.query())
-        except ValueError as exc:
+            result = self.book.find(self.query())
+        except (ApiError, ValueError) as exc:
             self.status.set_text(f"Cannot search: {exc}.")
             self.status.add_css_class("negative")
             return None
         self.status.remove_css_class("negative")
         self.status.set_text(
-            f"{len(result.rows)} split(s) in {result.transactions} transaction(s). "
+            f"{result.splits} split(s) in {result.transactions} transaction(s). "
             "Activate a row to open its register."
         )
         self.result = result

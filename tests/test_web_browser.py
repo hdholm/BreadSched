@@ -1786,3 +1786,64 @@ def test_find_searches_every_register_with_subtotals(page, served):
     assert "Subtotal: " in text and "Total: " in text
     first_account = page.locator(".find-results tbody button").first.inner_text()
     assert first_account.startswith("Expenses:")
+
+
+@pytest.fixture
+def phone(served):
+    """The quick entry page on a phone-sized screen, touch and all."""
+    _db, httpd = served
+    with sync_api.sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch(executable_path=_chromium())
+        except Exception as exc:  # noqa: BLE001 - no usable browser here
+            pytest.skip(f"Chromium is not available: {exc}")
+        view = browser.new_page(
+            viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True
+        )
+        errors: list[str] = []
+        view.on("pageerror", lambda error: errors.append(str(error)))
+        view.goto(f"http://127.0.0.1:{httpd.server_port}/quick#token={httpd.token}")
+        yield view
+        browser.close()
+        assert errors == []
+
+
+def test_quick_entry_saves_from_a_phone(phone, served):
+    """A transaction can be entered on a small screen, apart from the full interface."""
+    db, _httpd = served
+    phone.locator("#quick-account option").nth(1).wait_for(state="attached")
+    # One column that fits the screen: nothing scrolls sideways.
+    assert phone.evaluate("document.documentElement.scrollWidth") <= 390
+    # The amount is ready to type, with the phone's number keyboard.
+    assert phone.evaluate("document.activeElement.id") == "quick-amount"
+    assert phone.locator("#quick-amount").get_attribute("inputmode") == "decimal"
+    expense = next(
+        account
+        for account in db.iter_accounts()
+        if account.account_class.value == "expense" and not account.placeholder
+    )
+    fund = phone.locator("#quick-account option").nth(1).get_attribute("value")
+    before = {item.handle for item in db.iter_transactions()}
+    phone.locator("#quick-amount").fill("12.34")
+    phone.locator("#quick-description").fill("Corner bakery")
+    phone.locator("#quick-account").select_option(fund)
+    phone.locator("#quick-category").select_option(expense.handle)
+    phone.get_by_role("button", name="Save").tap()
+    phone.locator(".quick-recent li").first.wait_for()
+    [made] = [item for item in db.iter_transactions() if item.handle not in before]
+    assert made.description == "Corner bakery"
+    assert made.split_for(expense.handle).value.to_decimal() == Decimal("12.34")
+    assert made.split_for(fund).value.to_decimal() == Decimal("-12.34")
+    # The form is ready for the next one; the account money came from is kept.
+    assert phone.locator("#quick-amount").input_value() == ""
+    assert phone.locator("#quick-account").input_value() == fund
+    # Received money goes into the account instead.
+    phone.get_by_role("button", name="Received").tap()
+    assert phone.locator("label[for=quick-account]").inner_text() == "Paid into"
+    # A missing category is refused before anything is sent.
+    phone.locator("#quick-amount").fill("5")
+    phone.get_by_role("button", name="Save").tap()
+    phone.wait_for_selector("text=Enter an amount, an account, and a category.")
+    assert len(list(db.iter_transactions())) == len(before) + 1
+    # The full interface is a link away, keeping the token.
+    assert "token=" in phone.locator("#full-view").get_attribute("href")

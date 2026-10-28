@@ -460,6 +460,24 @@ carries a `float` (a statistic such as a confidence, never an amount) as a JSON
 number. They serve the command line's `estimate suggest`, the browser's historical
 estimates, and GTK's historical estimates dialog; GTK still opens the proposal in its
 own schedule editor, which reads the book.
+
+Find transactions (#382) followed: `find(TransactionQuery)` (`POST /api/v1/find`,
+read-only like `POST /loans/preview`, since the query holds tuples and amounts) comes
+from `gen/services/transaction_search`, which checks the query and names each refusal
+(`find.dates.order`, `find.amounts.order`, `find.account.missing`,
+`find.sort.invalid`, and so on) and returns `FindResult`: rows flattened to what is
+shown (date, number, description, account and its full name, memo, amount, currency,
+reconcile state, tags) so the typed codec carries them without a `Transaction`. The
+browser's `/api/find` (a missing account is now `400 find.account.missing` rather than
+404), the command line's `find` (now with `--server`), and GTK's Find Transactions
+window use it.
+
+A phone-sized **quick entry** page (`/quick`, `quick.html` with only `core.js` and
+`quick.js`) posts one spending or income transaction through the browser's
+`/api/transaction`, which already saves through the server, and fills a known
+description's category from `/api/entry/suggest`. It is a separate page so a phone
+loads little, and it is reached like the full page: on this machine, or through the
+TLS reverse proxy below from another device such as a phone or iPad.
 GTK's register still does; it needs the bulk reads and pushed changes the
 consequences below name before it can move without a round trip per row.
 

@@ -35,6 +35,7 @@ from ..gen.engine.projection import Projection, ProjectionMonthDetail
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.engine.schedule import Occurrence
+from ..gen.engine.transaction_query import TransactionQuery
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
 from ..gen.lib.commodity import CommodityPrice
 from ..gen.lib.fsa_claim import FsaClaim
@@ -112,6 +113,7 @@ from ..gen.services import (
     set_tags,
     tag_counts,
     transaction_currency,
+    transaction_search,
     transactions_with_tag,
 )
 from ..gen.services import activity as activity_service
@@ -699,6 +701,11 @@ class LocalBookServer:
         with self._changing("dashboard-config"):
             saved = unwrap(dashboard_config.save_dashboard_config(self.db, request))
         return dashboard_config.settings_of(saved)
+
+    # ------------------------------------------------------------------- find
+
+    def find(self, query: TransactionQuery) -> transaction_search.FindResult:
+        return unwrap(transaction_search.find_transactions(self.db, query))
 
     # ------------------------------------------------------------- attachments
 

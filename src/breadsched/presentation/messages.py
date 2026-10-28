@@ -21,6 +21,12 @@ _translation: gettext.NullTranslations = gettext.translation(
 
 
 _SERVICE_MESSAGES = {
+    "find.direction.invalid": "Choose money in, money out, or either",
+    "find.sort.invalid": "Choose date, amount, account, or description to sort by",
+    "find.group_by.invalid": "Choose account, month, year, tag, or no groups",
+    "find.dates.order": "The first date is after the last",
+    "find.amounts.order": "The smallest amount is larger than the largest",
+    "find.account.missing": "An account to search no longer exists",
     "dashboard.group.name.empty": "Give each Dashboard group a name",
     "dashboard.liquidity_days.invalid": "The liquidity horizon cannot be negative",
     "dashboard.emergency_months.invalid": "The emergency fund horizon cannot be negative",

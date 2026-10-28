@@ -139,4 +139,4 @@ def test_the_command_line_finds_groups_and_totals(tmp_path, capsys):
     assert cli(["find", str(path), "--amount", "lots"]) == 2
     assert "--amount: 'lots' is not an amount" in capsys.readouterr().err
     assert cli(["find", str(path), "--start", "2026-09-01", "--end", "2026-01-01"]) == 2
-    assert "start date is after the end date" in capsys.readouterr().err
+    assert "The first date is after the last" in capsys.readouterr().err

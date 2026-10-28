@@ -50,6 +50,8 @@ get("/api/summary").then((s) => {
   document.getElementById("book").textContent = s.book || "";
 }).catch(() => {});
 document.getElementById("print-view").addEventListener("click", () => window.print());
+// Quick entry is its own page; it needs the token to use the book too.
+document.getElementById("quick-entry").href = `/quick#${new URLSearchParams({ token: apiToken })}`;
 render();
 // Like the desktop, offer held GnuCash changes once when the book opens.
 openImportReviewDialog().catch(() => {});

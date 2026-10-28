@@ -101,6 +101,15 @@ and restored after the Dashboard opens, skipping deleted accounts and scenarios.
 browser has no tab bar: `openInNewTab` opens a browser tab with the view and account
 or scenario in its query string.
 
+The browser's **Quick entry** page (`/quick`, experimental branch) is the small-screen
+entry point: a separate `quick.html` that loads only `core.js` and `quick.js`
+(`web.transport.QUICK_SCRIPTS`), one column at most 480 px wide with 44 px touch
+targets and 16 px fields (so iOS does not zoom), a decimal keyboard for the amount,
+and Spent/Received choosing which account is debited. It saves through
+`/api/transaction` and suggests from `/api/entry/suggest`, so it adds no write path;
+the account used last is kept in `localStorage`. The token travels in the URL's
+fragment as on the full page, and **Full view** and **Quick entry** link the two.
+
 ## Tables, dialogs, and bounded sizes
 
 Editors disclose progressively (#383): the fields most entries need come first, and

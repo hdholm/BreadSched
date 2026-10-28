@@ -11128,11 +11128,9 @@ class TestFindTransactions:
         dialog.group_by.set_selected(1)  # account
         result = dialog.find()
         assert result is not None and result.rows
-        assert all(abs(row.value) == size for row in result.rows)
+        assert all(abs(row.amount) == size for row in result.rows)
         expected = run_query(app.db, TransactionQuery(amount=size, group_by="account"))
-        assert [row.split.handle for row in result.rows] == [
-            row.split.handle for row in expected.rows
-        ]
+        assert [row.split for row in result.rows] == [row.split.handle for row in expected.rows]
         kinds = [line.kind for line in dialog.lines]
         assert kinds.count("subtotal") == len(result.groups) and kinds[-1] == "total"
         assert dialog.results.get_model().get_n_items() == len(dialog.lines)
@@ -11151,7 +11149,7 @@ class TestFindTransactions:
         dialog.start_entry.set_text("2026-05-01")
         dialog.end_entry.set_text("2026-01-01")
         assert dialog.find() is None
-        assert "start date is after the end date" in dialog.status.get_text()
+        assert "The first date is after the last" in dialog.status.get_text()
         dialog.destroy()
 
     def test_the_edit_menu_offers_it(self, app):

@@ -28,6 +28,7 @@ from ..gen.engine.projection import Projection, ProjectionMonthDetail
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.engine.schedule import Occurrence
+from ..gen.engine.transaction_query import TransactionQuery
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
 from ..gen.lib.commodity import CommodityPrice
 from ..gen.lib.fsa_claim import FsaClaim
@@ -148,6 +149,7 @@ from ..gen.services.scenarios import (
 )
 from ..gen.services.security_prices import SavedSecurityPrice, SaveSecurityPrice, SecurityQuote
 from ..gen.services.tax import SetTaxMarks, TaxMarks
+from ..gen.services.transaction_search import FindResult
 
 __all__ = ["BookApi", "Change", "Listener"]
 
@@ -781,6 +783,12 @@ class BookApi(Protocol):
         ...
 
     def save_dashboard_settings(self, request: SaveDashboardConfig) -> DashboardSettings: ...
+
+    # ------------------------------------------------------------------- find
+
+    def find(self, query: TransactionQuery) -> FindResult:
+        """Splits across the book that match ``query``, grouped, with totals (#382)."""
+        ...
 
     # ------------------------------------------------------------- attachments
 

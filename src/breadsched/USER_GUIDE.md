@@ -480,6 +480,10 @@ balance. While split lines do not balance, the empty last line (or, in the deskt
 transaction editor, a new split row) holds the amount left, waiting for its
 account, as in GnuCash.
 
+For entering one purchase or payment quickly, as on a phone, the browser interface
+also has a small **Quick entry** page apart from the full interface
+([browser](guide/web.md#quick-entry-from-a-phone)).
+
 Both the desktop and browser registers end in a blank row for typing a new entry
 (the desktop register opens there, scrolled to the newest entries),
 with split lines for entries of more than two splits, and let you edit an existing

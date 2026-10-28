@@ -55,7 +55,8 @@ The rest of this file is unscheduled and comes after the first Beta.
   investment reports (holdings, realized gains, and the tax year), Budget jars, the
   Dashboard, plan versus actuals (`activity`), reading register entry, security
   prices, GnuCash write-back, the browser's book summary and Verify page, the
-  browser's register, the Plan's saved presentation, and historical estimates so far
+  browser's register, the Plan's saved presentation, historical estimates, and Find
+  transactions so far
   (most through a generic typed JSON codec), and phase 3 has a stored book revision,
   `/api/v1` resources with `ETag`/`If-Match`, a change stream, and an HTTP client.
   Phase 4 has `breadsched serve`, a user-only server record, and command-line commands
@@ -65,7 +66,8 @@ The rest of this file is unscheduled and comes after the first Beta.
   proxy (nginx). The server takes a trusted origin and a token file for that proxy,
   and the HTTP client speaks HTTPS with client certificates; a Unix-socket listener is
   still to come, and copying a document in over HTTP still reads any path the server
-  can.
+  can. A phone-sized quick entry page (`/quick`) enters one transaction apart from the
+  full interface, toward entering transactions from a phone before Beta.
 
 - Split oversized modules/functions where ownership is clear. Split large GUI test
   modules only when the resulting fixture ownership and runtime isolation improve;

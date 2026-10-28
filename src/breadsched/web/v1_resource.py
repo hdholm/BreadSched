@@ -110,6 +110,8 @@ Resources so far, all under ``/api/v1``:
   Dashboard computed once, over other horizons without saving them.
 * ``GET`` and ``PATCH /dashboard/settings`` (``SaveDashboardConfig``) – the
   Dashboard's groups, with their members, and its horizons.
+* ``POST /find`` (``TransactionQuery``) – splits across the book that match, grouped,
+  with per-currency totals; it reads only (#382).
 * ``GET /attachments`` (``missing``, ``transaction``) – linked documents checked
   against the file system; ``POST /transactions/{handle}/attachments`` (``location``),
   ``/attachments/files`` (``path`` as the server sees it, ``copy``), ``/remove``, and
@@ -180,6 +182,7 @@ from ..gen.engine.activity import PlanSettings, ReportingPeriod
 from ..gen.engine.fsa_claim_report import GROUPINGS
 from ..gen.engine.fsa_claims import FsaClaimStatus
 from ..gen.engine.loans import LoanTerms
+from ..gen.engine.transaction_query import TransactionQuery
 from ..gen.lib import Scenario
 from ..gen.lib.money import Money
 from ..gen.lib.scenario import AssumptionPeriod
@@ -268,6 +271,7 @@ __all__ = [
     "writeback_settings_patch",
     "dashboard_settings_get",
     "dashboard_settings_patch",
+    "find_post",
     "currencies_get",
     "currency_lookup",
     "exchange_rate_save",
@@ -1430,6 +1434,10 @@ def dashboard_settings_get(api: Api, _path: Path, query: QueryParams) -> dict:
 def dashboard_settings_patch(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     request = from_data(SaveDashboardConfig, body, "request")
     return to_data(api.book.save_dashboard_settings(request))
+
+
+def find_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.find(from_data(TransactionQuery, body, "request")))
 
 
 @dataclass(frozen=True, slots=True)

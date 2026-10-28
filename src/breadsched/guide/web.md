@@ -134,6 +134,20 @@ settings and never shown again (`/api/quotes`, `/api/quotes/source`,
 `/api/quotes/key`, `/api/quotes/update`). See
 [Online quotes](../USER_GUIDE.md#online-quotes).
 
+## Quick entry from a phone
+
+**Quick entry** in the page's header (or the address ending in `/quick`) opens a small
+page for entering one transaction, sized for a phone. Choose **Spent** or
+**Received**, type the amount and description, and choose the account the money came
+from (or went into) and its category; the date starts as today. A description you have
+used before fills in its category, and its amount if you have not typed one.
+**Save** enters it and clears the form for the next one; the account is remembered on
+that device, and **Saved here** lists what you entered. **Full view** opens the
+complete interface. To use it from a phone or tablet away from this computer, reach
+the book through the TLS reverse proxy described in
+[Share a book with a running server](cli.md#share-a-book-with-a-running-server-experimental); add the page to the home screen to
+open it like an app.
+
 ## Enter transactions in a register
 
 The register has a blank row at the bottom for a new entry, **Split** for split

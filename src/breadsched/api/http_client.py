@@ -39,6 +39,7 @@ from ..gen.engine.projection import Projection, ProjectionMonthDetail
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.engine.schedule import Occurrence
+from ..gen.engine.transaction_query import TransactionQuery
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
 from ..gen.lib.commodity import CommodityPrice
 from ..gen.lib.fsa_claim import FsaClaim
@@ -159,6 +160,7 @@ from ..gen.services.scenarios import (
 )
 from ..gen.services.security_prices import SavedSecurityPrice, SaveSecurityPrice, SecurityQuote
 from ..gen.services.tax import SetTaxMarks, TaxMarks
+from ..gen.services.transaction_search import FindResult
 from .account_codec import save_account_json
 from .contract import ApiError, to_json
 from .protocol import Change, Listener
@@ -1133,6 +1135,11 @@ class HttpBookClient:
     def save_dashboard_settings(self, request: SaveDashboardConfig) -> DashboardSettings:
         found = self._call("PATCH", "/dashboard/settings", body=to_data(request))
         return from_data(DashboardSettings, found)
+
+    # ------------------------------------------------------------------- find
+
+    def find(self, query: TransactionQuery) -> FindResult:
+        return from_data(FindResult, self._call("POST", "/find", body=to_data(query)))
 
     # ------------------------------------------------------------- attachments
 

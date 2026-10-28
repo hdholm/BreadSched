@@ -1231,10 +1231,13 @@ class TestBookServerBoundaries:
         "propose_historical_estimates",
         "accept_historical_estimate",
         "draft_historical_estimate",
+        "find_transactions",
+        "run_query",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
     OPERATIONS = {
+        "find",
         "due_review",
         "resolve_due",
         "resolve_next",
@@ -1476,6 +1479,9 @@ class TestBookServerBoundaries:
             ("gui/dialogs/historical_estimates_dialog.py", ("_reload",)),
             ("cli/plan_commands.py", ("_estimate_suggestions",)),
             ("web/dashboard_resource.py", ("dashboard_report",)),
+            ("web/find_resource.py", ("find",)),
+            ("cli/find_commands.py", ("cmd_find",)),
+            ("gui/dialogs/find_dialog.py", ("find",)),
             ("gui/views/dashboard.py", ("refresh",)),
             ("cli/quote_commands.py", ("cmd_quotes", "cmd_quote_source")),
             ("web/loan_resource.py", ("loan_options", "loan_preview", "loan_save")),

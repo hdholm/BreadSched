@@ -268,6 +268,25 @@ class TestItServes:
         assert "header { display: none !important; }" in style
         assert ".plan-table thead th { position: static; }" in style
 
+    def test_quick_entry_is_a_small_page_of_its_own(self, client):
+        """Phones get a page that loads only what entering a transaction needs."""
+        from breadsched.web.transport import QUICK_SCRIPTS
+
+        for path in ("/quick", "/quick.html"):
+            status, body, headers = client.raw(path)
+            assert status == 200 and headers.get_content_type() == "text/html"
+            page = body.decode("utf-8")
+            loaded = re.findall(r'<script src="/([\w-]+\.js)"></script>', page)
+            assert tuple(loaded) == QUICK_SCRIPTS == ("core.js", "quick.js")
+            assert 'name="viewport"' in page and 'body class="quick"' in page
+        status, script, headers = client.raw("/quick.js")
+        assert status == 200 and headers.get_content_type() == "application/javascript"
+        script_text = script.decode("utf-8")
+        assert 'post("/api/transaction"' in script_text
+        assert "/api/entry/suggest" in script_text
+        _status, body, _headers = client.raw("/")
+        assert 'id="quick-entry"' in body.decode("utf-8")
+
     def test_the_page_loads_every_area_script_in_order(self, client):
         """Classic scripts share one scope; start-up runs only after all are defined."""
         _status, body, _headers = client.raw("/")
@@ -3651,8 +3670,9 @@ class TestFindApi:
         [
             ("amount=lots", 400, "query.amount.invalid"),
             ("group_by=week", 400, "query.invalid"),
-            ("start=2026-05-01&end=2026-01-01", 400, "request.invalid"),
-            ("account=no-such-account", 404, "resource.not_found"),
+            # The book server's stable codes (#358).
+            ("start=2026-05-01&end=2026-01-01", 400, "find.dates.order"),
+            ("account=no-such-account", 400, "find.account.missing"),
             ("colour=red", 400, "query.unknown"),
         ],
     )

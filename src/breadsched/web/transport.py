@@ -58,8 +58,14 @@ SCRIPTS = (
     "dashboard.js",
     "app.js",
 )
+#: The phone-sized quick entry page (``/quick``) loads only these, apart from the
+#: full interface, so it opens fast on a small, slow connection.
+QUICK_SCRIPTS = ("core.js", "quick.js")
 STATIC_ASSETS = {
     "index.html": ("index.html", "text/html; charset=utf-8"),
+    "quick": ("quick.html", "text/html; charset=utf-8"),
+    "quick.html": ("quick.html", "text/html; charset=utf-8"),
+    "quick.js": ("quick.js", "application/javascript; charset=utf-8"),
     "style.css": ("style.css", "text/css; charset=utf-8"),
     **{name: (name, "application/javascript; charset=utf-8") for name in SCRIPTS},
 }

@@ -1447,6 +1447,45 @@ def test_dashboard_settings_alike(target, book):
     assert (repr(db.get_metadata("dashboard")), db.get_account(book.card).group) == before
 
 
+def test_find_reads_alike(target, book):
+    """#382 on the book server: one typed result, in process or over HTTP."""
+    from breadsched.gen.engine.transaction_query import TransactionQuery
+    from breadsched.gen.services.transaction_search import FindResult, find_transactions
+
+    api, db = target.api, target.db
+    with db.transaction("Shop") as txn:
+        for day, amount in ((3, "67"), (9, "1067"), (20, "12.50")):
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 3, day), f"Shop {day}", book.groceries, book.checking, amount
+                ),
+                txn,
+            )
+    query = TransactionQuery(
+        accounts=(book.expenses,), amount_min=Money("10"), group_by="month", sort="amount"
+    )
+    found = api.find(query)
+    assert isinstance(found, FindResult)
+    assert found == find_transactions(db, query).value
+    assert [row.description for row in found.rows] == ["Shop 20", "Shop 3", "Shop 9"]
+    assert found.splits == 3 and found.transactions == 3
+    [march] = [group for group in found.groups if group.key == "2026-03"]
+    assert march.totals == {"USD": Money("1146.50")}
+    exact = api.find(TransactionQuery(amount=Money("67")))
+    assert {row.description for row in exact.rows} == {"Shop 3"}
+    before = db.summary()
+    for bad, code in (
+        (TransactionQuery(start=date(2026, 4, 1), end=date(2026, 3, 1)), "find.dates.order"),
+        (TransactionQuery(amount_min=Money("5"), amount_max=Money("1")), "find.amounts.order"),
+        (TransactionQuery(accounts=("nowhere",)), "find.account.missing"),
+        (TransactionQuery(sort="colour"), "find.sort.invalid"),
+    ):
+        with pytest.raises(ApiError) as refused:
+            api.find(bad)
+        assert (refused.value.status, refused.value.code) == (400, code)
+    assert db.summary() == before
+
+
 def test_attachments_alike(target, book, tmp_path):
     api, db = target.api, target.db
     paid = Transaction.simple(date(2026, 3, 8), "Dentist", book.rent, book.checking, "200")
