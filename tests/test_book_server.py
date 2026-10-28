@@ -1751,6 +1751,41 @@ def test_the_transaction_editor_reads_alike(target, book):
     assert (refused.value.status, refused.value.code) == (404, "transaction.not_found")
 
 
+def test_the_scheduled_page_reads_alike(target, book):
+    """#358: GTK's Scheduled and Upcoming views read one page through the server."""
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.engine import schedule as engine
+    from breadsched.gen.services.schedule_editing import scheduled_page
+
+    api, db = target.api, target.db
+    card = db.get_account(book.card)
+    card.card.pays_in_full = False
+    card.card.usual_payment = Money("100")
+    card.card.payment_day = 15
+    card.card.payment_account = book.checking
+    with db.transaction("Card") as txn:
+        db.commit_account(card, txn)
+        db.add_transaction(
+            Transaction.simple(date(2026, 10, 2), "Fuel", book.rent, book.card, "60"), txn
+        )
+    as_of = date(2026, 10, 3)
+    page = api.scheduled_page(days=60, as_of=as_of)
+    assert to_data(page) == to_data(scheduled_page(db, 60, as_of).value)
+    assert [item.name for item in page.schedules] == ["Rent"]
+    assert page.editability[page.schedules[0].handle].editable
+    assert page.names[book.rent] == db.full_name(db.get_account(book.rent))
+    expected = engine.upcoming_occurrences(db, as_of=as_of, horizon_days=60)
+    assert [(item.when, item.name) for item in page.upcoming] == [
+        (item.when, item.name) for item in expected
+    ]
+    assert len(page.payments) == len(engine.account_payment_definitions(db))
+    # Without days, no occurrences are worked out.
+    assert api.scheduled_page().upcoming == []
+    with pytest.raises(ApiError) as refused:
+        api.scheduled_page(days=-1)
+    assert refused.value.status == 400
+
+
 def test_attachments_alike(target, book, tmp_path):
     api, db = target.api, target.db
     paid = Transaction.simple(date(2026, 3, 8), "Dentist", book.rent, book.checking, "200")

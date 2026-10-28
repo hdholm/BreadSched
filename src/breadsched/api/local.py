@@ -873,6 +873,11 @@ class LocalBookServer:
     def schedule_editor(self, schedule: str) -> schedule_editing.ScheduleEditorView:
         return unwrap(schedule_editing.schedule_editor(self.db, schedule))
 
+    def scheduled_page(
+        self, days: int | None = None, as_of: date | None = None
+    ) -> schedule_editing.ScheduledPage:
+        return unwrap(schedule_editing.scheduled_page(self.db, days, as_of))
+
     def schedule_layout(
         self, definition: ScheduledTransaction
     ) -> schedule_editing.ScheduleEditorView:

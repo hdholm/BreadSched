@@ -171,6 +171,7 @@ from ..gen.services.scenarios import (
 )
 from ..gen.services.schedule_editing import (
     ScenarioEventsView,
+    ScheduledPage,
     ScheduleEditorView,
     SchedulesView,
 )
@@ -754,6 +755,10 @@ class HttpBookClient:
     def schedule_editor(self, schedule: str) -> ScheduleEditorView:
         path = f"/schedules/{quote(schedule, safe='')}/editor"
         return from_data(ScheduleEditorView, self._call("GET", path))
+
+    def scheduled_page(self, days: int | None = None, as_of: date | None = None) -> ScheduledPage:
+        found = self._call("GET", "/schedules/page", {"days": days, "as_of": as_of})
+        return from_data(ScheduledPage, found)
 
     def schedule_layout(self, definition: ScheduledTransaction) -> ScheduleEditorView:
         body = {"definition": definition.serialize()}

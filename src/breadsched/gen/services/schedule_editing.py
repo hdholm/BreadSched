@@ -14,7 +14,13 @@ from datetime import date
 
 from ..db.sqlite import DbSQLite
 from ..engine import schedule as schedule_engine
-from ..engine.schedule import ScheduleEditProjection
+from ..engine.schedule import (
+    AccountPaymentDefinition,
+    AccountPaymentOccurrence,
+    Occurrence,
+    ScheduleEditability,
+    ScheduleEditProjection,
+)
 from ..lib.account import AccountClass
 from ..lib.money import Money
 from ..lib.scenario import Scenario, ScenarioSchedule
@@ -28,12 +34,14 @@ __all__ = [
     "ScenarioChangeView",
     "ScenarioEventsView",
     "ScheduleEditorView",
+    "ScheduledPage",
     "SchedulesView",
     "UpcomingLine",
     "editor_view",
     "schedule_draft",
     "schedule_editor",
     "schedule_layout",
+    "scheduled_page",
     "scenario_events",
     "schedules_view",
 ]
@@ -243,5 +251,58 @@ def scenario_events(db: DbSQLite, scenario: str) -> ServiceResult[ScenarioEvents
             accounts=_account_choices(db),
             baseline=tuple(editor_view(db, item) for item in db.iter_scheduled()),
             changes=tuple(changes),
+        )
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ScheduledPage:
+    """What the desktop's Scheduled and Upcoming views show, read once (#358)."""
+
+    schedules: tuple[ScheduledTransaction, ...]
+    #: Card payments derived from the cards' settings, never saved as schedules.
+    payments: tuple[AccountPaymentDefinition, ...]
+    #: How each saved definition can be edited, by handle.
+    editability: Mapping[str, ScheduleEditability]
+    #: Every account's full name, by handle.
+    names: Mapping[str, str]
+    occurrences: tuple[Occurrence, ...] = ()
+    payment_occurrences: tuple[AccountPaymentOccurrence, ...] = ()
+
+    @property
+    def upcoming(self) -> list[Occurrence | AccountPaymentOccurrence]:
+        """Committed occurrences and card payments in date order, as Upcoming lists them."""
+        both: list[Occurrence | AccountPaymentOccurrence] = [
+            *self.occurrences,
+            *self.payment_occurrences,
+        ]
+        return sorted(both, key=lambda item: (item.when, item.name))
+
+
+def scheduled_page(
+    db: DbSQLite, days: int | None = None, as_of: date | None = None
+) -> ServiceResult[ScheduledPage]:
+    """The definitions and card payments; with ``days``, the upcoming occurrences too."""
+    if days is not None and days < 0:
+        return ServiceResult.failure(ServiceError("schedules.days.invalid", ("days",)))
+    saved = list(db.iter_scheduled())
+    occurrences: list[Occurrence] = []
+    payment_occurrences: list[AccountPaymentOccurrence] = []
+    if days is not None:
+        for item in schedule_engine.upcoming_occurrences(db, as_of=as_of, horizon_days=days):
+            if isinstance(item, AccountPaymentOccurrence):
+                payment_occurrences.append(item)
+            else:
+                occurrences.append(item)
+    return ServiceResult.success(
+        ScheduledPage(
+            schedules=tuple(saved),
+            payments=tuple(schedule_engine.account_payment_definitions(db, schedules=saved)),
+            editability={
+                item.handle: schedule_engine.schedule_editability(db, item) for item in saved
+            },
+            names={account.handle: db.full_name(account) for account in db.iter_accounts()},
+            occurrences=tuple(occurrences),
+            payment_occurrences=tuple(payment_occurrences),
         )
     )

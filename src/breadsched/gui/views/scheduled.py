@@ -29,6 +29,7 @@ from ...gen.services import (
     ResolveNext,
     ServiceError,
 )
+from ...gen.services.schedule_editing import ScheduledPage
 from ...presentation import service_error_message
 from ..gi_setup import Gio, Gtk, Pango
 from ..widgets.bounded import BoundedWindow
@@ -51,17 +52,17 @@ def _representative_date(schedule_object: ScheduledTransaction) -> date:
 class ScheduleSplitRow:
     """One leg of a scheduled transaction, shown beneath its definition."""
 
-    __slots__ = ("split", "schedule", "db")
+    __slots__ = ("split", "schedule", "names")
 
-    def __init__(self, split, schedule_object, db) -> None:
+    def __init__(self, split, schedule_object, names: dict[str, str]) -> None:
         self.split = split
         self.schedule = schedule_object
-        self.db = db
+        #: Every account's full name, as the book server listed them.
+        self.names = names
 
     @property
     def account_name(self) -> str:
-        account = self.db.get_account(self.split.account)
-        return self.db.full_name(account) if account else "(unknown account)"
+        return self.names.get(self.split.account, "(unknown account)")
 
     def amount_text(self) -> str:
         if self.split.formula:
@@ -100,6 +101,8 @@ class ScheduledView(BaseView):
         super().__init__(manager)
         self._suggest_dialog: Gtk.Window | None = None
         self._active_selection = None
+        #: The definitions as last read through the book server (#358).
+        self._page: ScheduledPage | None = None
         self._build()
 
     def set_db(self, db: DbSQLite | None) -> None:
@@ -258,8 +261,9 @@ class ScheduledView(BaseView):
     def refresh(self) -> None:
         if self.db is None:
             return
-        schedules = list(self.db.iter_scheduled())
-        account_payments = schedule.account_payment_definitions(self.db, schedules=schedules)
+        self._page = book_server(self.db).scheduled_page()
+        schedules = list(self._page.schedules)
+        account_payments = list(self._page.payments)
         commitments = [item for item in schedules if not item.placeholder]
         self._set_definitions_model(self.definitions_view, [*commitments, *account_payments], True)
         self._set_definitions_model(
@@ -314,8 +318,13 @@ class ScheduledView(BaseView):
             return None
         store = Gio.ListStore.new(Row)
         for split in payload.splits:
-            store.append(Row(ScheduleSplitRow(split, payload, self.db)))
+            store.append(Row(ScheduleSplitRow(split, payload, self._names())))
         return store
+
+    def _names(self) -> dict[str, str]:
+        if self._page is None and self.db is not None:
+            self._page = book_server(self.db).scheduled_page()
+        return dict(self._page.names) if self._page is not None else {}
 
     def _next_text(self, sched) -> str:
         if isinstance(sched, AccountPaymentDefinition):
@@ -329,7 +338,7 @@ class ScheduledView(BaseView):
             return "(no splits)"
         parts = []
         for split in sched.splits:
-            row = ScheduleSplitRow(split, sched, self.db)
+            row = ScheduleSplitRow(split, sched, self._names())
             parts.append(f"{row.account_name} {row.amount_text()}")
         return "  |  ".join(parts)
 
@@ -423,7 +432,10 @@ class ScheduledView(BaseView):
             return "No scheduled transaction is selected."
         if self.db is None:
             return "No book is open."
-        return schedule.schedule_editability(self.db, sched).reason
+        if self._page is None or sched.handle not in self._page.editability:
+            self._page = book_server(self.db).scheduled_page()
+        found = self._page.editability.get(sched.handle)
+        return found.reason if found is not None else ""
 
     def _on_edit_clicked(self, _button) -> None:
         if self.db is None:
@@ -432,8 +444,9 @@ class ScheduledView(BaseView):
         if selected is None:
             return
         if isinstance(selected, AccountPaymentDefinition):
-            account = self.db.get_account(selected.account)
-            if account is None:
+            try:
+                account = book_server(self.db).account(selected.account).account
+            except ApiError:
                 return
             from ..dialogs.account_dialog import AccountDialog
 
@@ -713,9 +726,7 @@ class UpcomingView(BaseView):
         if self.db is None:
             return
         today = date.today()
-        occurrences = schedule.upcoming_occurrences(
-            self.db, as_of=today, horizon_days=self._horizon
-        )
+        occurrences = book_server(self.db).scheduled_page(self._horizon, today).upcoming
         store = Gio.ListStore.new(Row)
         for occurrence in occurrences:
             store.append(Row(occurrence))
@@ -763,8 +774,11 @@ class UpcomingView(BaseView):
         if occurrence is not None:
             if isinstance(occurrence.schedule, AccountPaymentDefinition):
                 db = self.db
-                account = db.get_account(occurrence.schedule.account) if db else None
-                if account is None:
+                if db is None:
+                    return
+                try:
+                    account = book_server(db).account(occurrence.schedule.account).account
+                except ApiError:
                     return
                 from ..dialogs.account_dialog import AccountDialog
 

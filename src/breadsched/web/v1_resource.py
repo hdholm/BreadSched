@@ -305,6 +305,7 @@ __all__ = [
     "scenario_schedule_formula_post",
     "schedule_draft_get",
     "schedule_layout_post",
+    "scheduled_page_get",
     "schedule_editor_get",
     "schedules_view_get",
     "currencies_get",
@@ -1619,6 +1620,13 @@ def schedules_view_get(api: Api, _path: Path, query: QueryParams) -> dict:
 def schedule_editor_get(api: Api, path: Path, query: QueryParams) -> dict:
     query.finish()
     return to_data(api.book.schedule_editor(path["handle"]))
+
+
+def scheduled_page_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    days = query.integer("days", minimum=0, maximum=3660)
+    as_of = query.iso_date("as_of")
+    query.finish()
+    return to_data(api.book.scheduled_page(days, as_of))
 
 
 def schedule_layout_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:

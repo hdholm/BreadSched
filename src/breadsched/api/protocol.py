@@ -159,6 +159,7 @@ from ..gen.services.scenarios import (
 )
 from ..gen.services.schedule_editing import (
     ScenarioEventsView,
+    ScheduledPage,
     ScheduleEditorView,
     SchedulesView,
 )
@@ -494,6 +495,11 @@ class BookApi(Protocol):
 
     def schedule_editor(self, schedule: str) -> ScheduleEditorView:
         """A saved definition's editor view, to check an edit against."""
+        ...
+
+    def scheduled_page(self, days: int | None = None, as_of: date | None = None) -> ScheduledPage:
+        """The definitions, card payments, and how each can be edited; with ``days``,
+        the occurrences due within them too."""
         ...
 
     def schedule_layout(self, definition: ScheduledTransaction) -> ScheduleEditorView:

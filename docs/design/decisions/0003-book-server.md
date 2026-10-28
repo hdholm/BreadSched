@@ -532,6 +532,11 @@ accounts with their years, and payers from `fsa_claims()` and a claim's standing
 the summary or the engine's reason it cannot be worked out; its loan editor takes its
 choices and precision from `loan_choices()`.
 
+GTK's Scheduled and Upcoming views read `scheduled_page(days, as_of)` (`GET /api/v1/
+schedules/page`): the saved definitions, the cards' derived payments as definitions,
+each definition's editability, every account's name, and, with `days`, the committed
+occurrences and card payments due within them.
+
 **Still open (imports):** like copying a document in, an import names a file by a path
 the server reads. Through a proxy, a token holder could import any statement file the
 server's user can read; uploading the bytes (as the browser's upload already does
