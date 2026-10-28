@@ -135,6 +135,9 @@ def test_a_write_is_one_change_every_subscriber_sees(target):
     assert change_json(change)["kinds"] == sorted(change.kinds)
     # It names the transactions it wrote, so a register rereads only those (#319).
     assert change.transactions == frozenset(outcome.transactions)
+    # And whether a step is left to undo or redo, for the window's buttons.
+    assert (change.can_undo, change.can_redo) == (True, False)
+    assert change_json(change)["can_undo"] is True
 
 
 def test_undo_redo_and_writes_from_other_code_are_changes_too(target, book):
@@ -152,6 +155,12 @@ def test_undo_redo_and_writes_from_other_code_are_changes_too(target, book):
     _until(lambda: len(seen) == 4)
     stop()
     assert [change.revision - start for change in seen] == [1, 2, 3, 4]
+    # After the undo, a step waits to be redone; the redo leaves none (and the book's
+    # earlier steps can still be undone throughout).
+    assert [(change.can_undo, change.can_redo) for change in seen[1:3]] == [
+        (True, True),
+        (True, False),
+    ]
     assert seen[-1].kinds == frozenset({"transaction"})
     assert seen[-1].transactions == frozenset(
         item.handle for item in target.db.iter_transactions() if item.description == "Shop"

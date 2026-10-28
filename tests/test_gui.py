@@ -1603,6 +1603,15 @@ class TestLiveUpdates:
                 Transaction.simple(date(2026, 4, 1), "x", other, handle, Money("1")), txn
             )
         assert app.actions["undo"].get_enabled() is True
+        assert window.tool_buttons["app.undo"].get_tooltip_text() == "Undo: Something"
+        # The window follows the book server's change notices for undo and redo too.
+        while app.db.undo_stack:
+            app.db.undo()
+        assert app.actions["undo"].get_enabled() is False
+        assert window.tool_buttons["app.undo"].get_tooltip_text() == "Nothing to undo"
+        assert app.actions["redo"].get_enabled() is True
+        app.db.redo()
+        assert app.actions["undo"].get_enabled() is True
 
 
 class TestProjectionView:

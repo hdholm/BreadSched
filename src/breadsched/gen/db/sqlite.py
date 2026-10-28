@@ -814,7 +814,6 @@ class DbSQLite(ChangeVerification):
                 conn.rollback()
                 self._reload_account_cache()
                 raise
-        self._emit_for(txn, reverse=reverse)
 
     def undo(self) -> bool:
         if not self.undo_stack:
@@ -823,6 +822,8 @@ class DbSQLite(ChangeVerification):
         self._replay(txn, reverse=True)
         self.undo_stack.pop()
         self.redo_stack.append(txn)
+        # Announced once the stacks have moved, so a listener sees what is left.
+        self._emit_for(txn, reverse=True)
         self.emit("undo-available", (bool(self.undo_stack),))
         self.emit("redo-available", (True,))
         return True
@@ -834,6 +835,7 @@ class DbSQLite(ChangeVerification):
         self._replay(txn, reverse=False)
         self.redo_stack.pop()
         self.undo_stack.append(txn)
+        self._emit_for(txn, reverse=False)
         self.emit("undo-available", (True,))
         self.emit("redo-available", (bool(self.redo_stack),))
         return True

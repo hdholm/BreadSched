@@ -194,6 +194,9 @@ class Change:
     #: The transactions the change added, edited, or removed, so a register can
     #: reread only those (#319).
     transactions: frozenset[str] = frozenset()
+    #: Whether a step is left to undo, and one to redo, after the change.
+    can_undo: bool = False
+    can_redo: bool = False
 
 
 Listener = Callable[[Change], None]

@@ -299,6 +299,8 @@ class LocalBookServer:
             frozenset(self._pending),
             self.db.undo_message(),
             frozenset(self._transactions),
+            bool(self.db.undo_stack),
+            bool(self.db.redo_stack),
         )
         self._pending.clear()
         self._transactions.clear()

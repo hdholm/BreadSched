@@ -40,8 +40,9 @@ open fails on the lock.
      services and one `DbSQLite`.
    - It observes the book's storage signals. Every change, including undo, redo,
      and writes by other code on the same book, raises its revision by one and
-     reaches each subscriber as a `Change` (revision, kinds, undo label, and the
-     transactions it added, edited, or removed).
+     reaches each subscriber as a `Change` (revision, kinds, undo label, the
+     transactions it added, edited, or removed, and whether a step is left to undo
+     and to redo).
    - The command line and the browser move onto it one area at a time.
 3. **HTTP transport (#357).**
    - The protocol is served as versioned `/api/v1` resources, with record
@@ -489,8 +490,10 @@ through the server's `subscribe()`, not the book's storage signals (an architect
 test keeps them so). A view repaints for a change of a kind its `WATCHES` names, or for
 every change when it watches `database-changed`; a register rereads only the
 transactions a `Change` names (`transactions`, also in `/api/v1/events`) unless an
-account changed too. The view manager's undo, redo, status, and prefill still listen to
-the book itself.
+account changed too. The window's Undo and Redo, its status counts, and its background
+prefill follow the same notices (`can_undo`, `can_redo`, and `label` for the Undo
+tooltip); the book announces an undo or redo only after its undo stacks have moved, so
+a listener sees what is left.
 
 No GTK view, dialog, or window now reads the book itself (an architecture test bans the
 book's `get_`/`iter_`/`full_name`/`summary` reads under `gui/`); only the read-only

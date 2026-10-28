@@ -1866,6 +1866,7 @@ class TestBookServerBoundaries:
             *sorted((SRC / "gui" / "views").glob("*.py")),
             SRC / "gui" / "dialogs" / "fsa_claims_dialog.py",
             SRC / "gui" / "dialogs" / "reconciliation_dialog.py",
+            SRC / "gui" / "viewmanager.py",
         ]
         for module in followers:
             tree = ast.parse(module.read_text(encoding="utf-8"))

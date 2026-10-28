@@ -33,6 +33,7 @@ from pathlib import Path
 from .. import APP_NAME  # noqa: E402
 from ..api import ApiError
 from ..api.local import book_server
+from ..api.protocol import Change
 from ..gen.db.sqlite import DbSQLite  # noqa: E402
 from ..gen.services.ledger_reads import AccountRecord
 from ..gen.utils.settings import Settings  # noqa: E402
@@ -92,6 +93,7 @@ class ViewManager(Gtk.ApplicationWindow):
         #: Answers slow views' reads off GTK's loop while a book is open (#389).
         self.snapshot_reader: SnapshotReader | None = None
         self._prefill_source: int | None = None
+        self._unsubscribe: Callable[[], None] | None = None
         self._register_windows: list[tuple[Gtk.Window, Gtk.Widget]] = []
         # Automatic due review is a user-facing startup policy, not required for
         # binding views to a book. Tests and embedded windows can suppress it so
@@ -379,6 +381,9 @@ class ViewManager(Gtk.ApplicationWindow):
         if self._prefill_source is not None:
             GLib.source_remove(self._prefill_source)
             self._prefill_source = None
+        if self._unsubscribe is not None:
+            self._unsubscribe()
+            self._unsubscribe = None
         if self.snapshot_reader is not None:
             self.snapshot_reader.close()
             self.snapshot_reader = None
@@ -426,10 +431,8 @@ class ViewManager(Gtk.ApplicationWindow):
         self.set_title(f"{path.rsplit('/', 1)[-1]} — {APP_NAME}")
         if db.path and db.path != ":memory:":
             self.snapshot_reader = SnapshotReader(db.path)
-        db.connect("undo-available", self._on_undo_available)
-        db.connect("redo-available", self._on_redo_available)
-        db.connect("database-changed", lambda *_: self._refresh_status())
-        db.connect("database-changed", lambda *_: self._queue_prefill())
+        # The window hears of changes, as its views do, from the book server (#356).
+        self._unsubscribe = book_server(db).subscribe(self._on_book_change)
         for view in self._all_views():
             view.set_db(db)
         self._refresh_status()
@@ -647,11 +650,16 @@ class ViewManager(Gtk.ApplicationWindow):
         counts = book_server(self.db).book_counts()
         self.status.set_text(f"{counts.accounts} accounts\n{counts.transactions} transactions")
 
-    def _on_undo_available(self, available: bool) -> None:
+    def _on_book_change(self, change: Change) -> None:
+        self._refresh_status()
+        self._queue_prefill()
+        self._on_undo_available(change.can_undo, change.label)
+        self._on_redo_available(change.can_redo)
+
+    def _on_undo_available(self, available: bool, message: str | None = None) -> None:
         application = self.get_application()
         if application is not None:
             application.set_action_enabled("undo", available)
-        message = self.db.undo_message() if self.db is not None else None
         button = self.tool_buttons.get("app.undo")
         if button is not None:
             button.set_tooltip_text(
