@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="src/breadsched/gui/resources/breadsched-logo.png" alt="BreadSched" width="320">
+</p>
+
 # BreadSched Household Financial Manager
 
 BreadSched is a household finance application for tracking income and expenses,

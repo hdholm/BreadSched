@@ -41,6 +41,16 @@ def test_local_document_links_and_anchors_resolve():
                 assert anchor in slugs, f"{document}: no heading for {target}"
 
 
+def test_document_images_resolve():
+    """An image a document shows (the README's logo) is a file in the repository."""
+    for document in DOCUMENTS:
+        source = ROOT / document
+        text = source.read_text(encoding="utf-8")
+        for target in re.findall(r'<img src="([^"]+)"', text):
+            if "://" not in target:
+                assert (source.parent / target).is_file(), f"{document}: missing image {target}"
+
+
 def _backticked(text: str) -> set[str]:
     return set(re.findall(r"`([^`]+\.md)`", text))
 
