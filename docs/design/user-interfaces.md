@@ -54,6 +54,11 @@ click on the check is left to the check). A plain click selects only that row,
 across both lists, and toggles its check. Ctrl and Shift select without checking.
 A double-click puts the check back and edits (#374, #375). Keyboard selection in
 one list empties the other, so the edit and check commands act on the row in view.
+Each list has its own sort buttons (✓, Date, Description, Amount; the same one again
+reverses), and both GTK and the browser order rows with the shared
+`reconciliation.sort_candidates` (`CANDIDATE_SORTS`): size for amounts, checked
+first, ties in date order, and `after_statement` rows always last. The browser asks
+`GET /api/reconciliation?sort=…&descending=…` after saving its checks (#377).
 The browser's reconcile table has an **Edit** per row that saves the checks and
 opens the row in the register with **Back to reconciliation**.
 
@@ -79,7 +84,10 @@ shown, so callers that address "the register" keep working. A pinned
 assumptions change, while the unpinned Projection and Plan follow the selected
 scenario. Choosing a tab, a view icon, or a menu item leaves the keyboard in the
 shown view (`ViewManager._focus_view`, a register's cursor cell, #331); tab buttons
-do not take focus on click. Ctrl+Page Up and Ctrl+Page Down step through the tabs,
+do not take focus on click. Ctrl+Page Up and Ctrl+Page Down step through the tabs.
+A tab can be dragged onto another to take its place, or moved one place with
+Ctrl+Shift+Page Up/Down (**View → Move Tab Left/Right**); `ViewManager.move_tab`
+reorders the bar and the remembered tabs keep the new order (#390).
 Ctrl+W closes the current one, and Ctrl+F (**Edit → Find in Register**) goes to the
 register's filter, which matches with `ledger.transaction_matches`, as the browser
 register's `filter` does: date, number, description, notes, tags, memos,
@@ -167,8 +175,14 @@ reviews. Two modal dialogs open together let the later one take every input whil
 the earlier one covered it, so neither answered and the window stayed greyed out. Opening a book that needs a
 schema upgrade first shows a busy page naming the book and its schema
 (`ViewManager.show_busy`, text from `presentation.book_upgrade_progress`) on a
-presented window, then migrates. A remembered book that needs no upgrade still
-opens before the window appears, so the start screen never flashes.
+presented window, then migrates. A remembered book that needs no upgrade opens the
+same way behind an **Opening** page (`presentation.book_opening_progress`), so a
+large book's start-up is visibly under way and the start screen never flashes (#389).
+The due review builds the rows of a schedule with several dates only when its
+expander opens (`DueDialog._fill_dates`, answers held by `_Choice` until then), and
+balances and "already posted" are answered in SQL (`DbSQLite.split_totals`, summed
+exactly per currency and denominator, and `DbSQLite.has_scheduled_posting`) rather
+than by decoding every split or the day's transactions.
 
 Windows must stay usable on small screens whatever the book holds:
 

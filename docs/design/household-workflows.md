@@ -324,6 +324,8 @@ split dated after the statement is marked `after_statement`, in case its date is
 wrong, and never starts checked, while Cleared candidates through the date do (#362).
 Each candidate records its direction (`funds_in`, a debit), and the summary totals the
 checked Funds In and Funds Out separately for a GnuCash-style two-column window.
+`sort_candidates` orders candidates for display only (date, description, size, or
+checked first; later-dated entries last), so a missing entry is easier to find (#377).
 `add_statement_entry` posts a missing statement line, such as interest, as one
 undoable change: the transaction, its Cleared mark, and its place in the open
 statement's checks. The displayed difference is always statement ending balance minus the account's

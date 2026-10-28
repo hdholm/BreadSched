@@ -246,6 +246,10 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
 
 /* Register: rows edit on click; typed account paths list their matches. */
 tr.editable { cursor: pointer; }
+/* A reconciliation column heading that orders the entries (#377). */
+th .sort-heading { background: none; border: 0; padding: 0; font: inherit; font-weight: inherit;
+  color: inherit; cursor: pointer; }
+th .sort-heading:hover, th .sort-heading:focus-visible { text-decoration: underline; }
 tr.after-statement td { background: var(--bg); border-top: 1px dashed var(--line); font-style: italic; }
 .completion { display: flex; flex-direction: column; align-items: stretch; gap: 2px; margin-top: 4px; }
 .completion[hidden] { display: none; }

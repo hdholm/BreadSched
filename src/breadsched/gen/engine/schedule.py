@@ -660,10 +660,11 @@ def delete_definition(db: DbSQLite, handle: str) -> ScheduledTransaction:
 
 
 def already_posted(db: DbSQLite, schedule_handle: str, when: date) -> bool:
-    for txn in db.iter_transactions(start=when, end=when):
-        if txn.scheduled_from == schedule_handle:
-            return True
-    return False
+    """Whether a transaction posted from this schedule is dated ``when``.
+
+    Asked of the database without decoding the day's transactions (#389).
+    """
+    return db.has_scheduled_posting(schedule_handle, when)
 
 
 def due_occurrences(

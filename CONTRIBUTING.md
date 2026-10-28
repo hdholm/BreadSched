@@ -170,7 +170,7 @@ Performance thresholds should be loose enough for ordinary CI variability while
 still detecting the regression class they were introduced to prevent.
 
 The Linux-only bounded mutation gate covers reporting currency selection and
-commodity-tagged Amount behavior. Install `mutmut==3.8.0` in the development
+commodity-tagged Amount behavior. Install `mutmut==3.8.1` in the development
 environment and run `python scripts/check_mutation_baseline.py` to reproduce the
 fresh measured baseline. The script creates its own temporary checkout to avoid
 reusing mutation cache. Review survivors and update the documented exemption and

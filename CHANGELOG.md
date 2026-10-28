@@ -10,6 +10,32 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a305 - 2026-10-28
+
+- **Faster start-up, and a page that says a book is opening (#389).**
+  - A remembered book now opens behind an **Opening** page naming it
+    (`presentation.book_opening_progress`), as an upgrade already did, so the
+    window appears at once and shows that something is happening.
+  - The due review lists a schedule's several dates under an expander and builds
+    their rows only when it opens; a book with years of missed dates took seconds
+    to show the window.
+  - Balances are summed in SQL, exactly, per currency and denominator
+    (`DbSQLite.split_totals`), and "already posted" is one indexed query
+    (`DbSQLite.has_scheduled_posting`), instead of decoding every split or the
+    day's transactions. On a 12-year household book the due review went from about
+    3.9 s to 0.5 s and the due list from 0.65 s to 0.1 s.
+- **Reorder desktop tabs (#390).** Drag a tab onto another to put it there, or use
+  **Ctrl+Shift+Page Up/Down** (**View → Move Tab Left/Right**). Reopening a book
+  keeps the new order (`ViewManager.move_tab`).
+- **Sort the reconciliation lists (#377).** Funds In and Funds Out each order by
+  checked, date, description, or amount (by size), either way; later-dated entries
+  stay last. The browser's column headings do the same through
+  `GET /api/reconciliation?sort=…&descending=…`, saving the checks first. Both use
+  `reconciliation.sort_candidates`.
+- **CI.** The bounded mutation gate installs mutmut 3.8.1: pytest 9.2 removed the
+  private attribute 3.8.0 read, so every run failed before testing. The measured
+  baseline is unchanged (125 of 129 eligible mutants killed).
+
 ## 0.2.0a304 - 2026-10-26
 
 - **Find transactions across the book, with totals (#382).**

@@ -598,7 +598,9 @@ there was made before this statement. Entries are listed as Funds In (deposits, 
 payments on a card or loan) and Funds Out (withdrawals, or charges), each with its
 checked total. Entries dated after the statement are listed too, marked, in case a
 date is wrong; they are never checked for you, but one you check is reconciled with
-the statement. Checks are saved with the open statement as you make them, so a
+the statement. Each list can be ordered by date, description, amount (by size), or
+checked first, either way, to find an entry that is missing from it; entries after
+the statement stay last. Checks are saved with the open statement as you make them, so a
 statement can be left and resumed later.
 
 Between statements, a register's **R** column marks entries cleared (**c**) or not
