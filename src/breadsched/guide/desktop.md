@@ -823,6 +823,13 @@ work. They are kept in your own settings, not in a book:
   is already open. Their changes appear here at once and can be undone here. It is
   off unless you turn it on; see
   [Share a book with a running server](cli.md#share-a-book-with-a-running-server-experimental).
+- **Users** (experimental): says "Only you" until someone else may use this
+  computer's books. **Users and devices…** sets your own password (needed only to
+  sign in from another device), adds a person with a temporary password they replace
+  when they first sign in, resets or removes them, and lists your devices and scripts:
+  **Add a device or script…** makes a token shown only once, and **Revoke** stops
+  one at once. The same can be done with `breadsched users`, `password`, and `token`
+  (see [Users and devices](cli.md#users-and-devices-experimental)).
 
 **Save** stores them all and redraws open registers; **Cancel** or Escape changes
 nothing.

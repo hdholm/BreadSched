@@ -8186,6 +8186,15 @@ class TestChromeCleanup:
         assert any("full editor" in text for text in tooltips)
 
 
+def _texts(widget) -> str:
+    """Every label's text under ``widget``, one per line."""
+    from breadsched.gui.gi_setup import Gtk
+
+    return "\n".join(
+        child.get_text() for child in _descendants(widget) if isinstance(child, Gtk.Label)
+    )
+
+
 def _descendants(widget):
     for child in _children(widget):
         yield child
@@ -10914,6 +10923,61 @@ class TestPreferences:
         assert app.view_settings.get("register", "banding") == "lines"
         # The View menu's Double Line check follows the saved preference.
         assert window.lookup_action("double-line").get_state().get_boolean() is True
+
+    def test_users_are_out_of_the_way_until_wanted(self, app, window):
+        """Decision 0004: alone, Preferences says "Only you"; Users and devices manages
+        your password, other people, and your devices."""
+        from breadsched.api.users import UserDirectory
+        from breadsched.gui.dialogs.users_dialog import UsersDialog
+
+        dialog = app.on_preferences()
+        assert dialog.users_summary.get_text() == "Only you"
+        users = dialog._on_users(None)
+        assert isinstance(users, UsersDialog) and _spin(users.get_mapped)
+        assert "Only you use this computer's books" in _texts(users.content)
+        directory = UserDirectory()
+
+        # Add a person with a temporary password.
+        users._ask_add()
+        users.form.fill(name="alice", display_name="Alice", password="short")
+        users.form.submit_button.emit("clicked")
+        assert "at least 10" in users.status.get_text()
+        users.form.fill(password="temporary-pass")
+        users.form.submit_button.emit("clicked")
+        alice = directory.user("alice")
+        assert alice.must_change and alice.display_name == "Alice"
+        assert "Alice (alice, chooses a password at next sign-in)" in _texts(users.content)
+
+        # Your own password: the two entries must agree.
+        users._ask_own_password()
+        users.form.fill(new="host-password", again="different")
+        users.form.submit_button.emit("clicked")
+        assert users.status.get_text() == "The two new passwords differ"
+        users.form.fill(again="host-password")
+        users.form.submit_button.emit("clicked")
+        assert directory.host_user().has_password
+
+        # A token for a script is shown once, then listed and revocable.
+        users._ask_token()
+        users.form.fill(name="Backup script")
+        users.form.submit_button.emit("clicked")
+        shown = next(w for w in _descendants(users.content) if w.get_name() == "new-token")
+        assert directory.authenticate(shown.get_text()) is not None
+        [token] = [t for t in directory.tokens(directory.host_user()) if t.name == "Backup script"]
+        users._revoke(token.id)
+        assert directory.authenticate(shown.get_text()) is None
+
+        # Reset and remove the other person; the summary follows on close.
+        users._ask_reset(alice)
+        users.form.fill(password="another-temporary")
+        users.form.submit_button.emit("clicked")
+        users.close()
+        assert _spin(lambda: dialog.users_summary.get_text() == "You and 1 other person")
+        users = dialog._on_users(None)
+        users._remove(directory.user("alice"))
+        assert [u.name for u in directory.users() if not u.host_account] == []
+        users.close()
+        dialog.close()
 
     def test_forget_and_cancel(self, app, window, populated_book):
         app.open_book(populated_book)

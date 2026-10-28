@@ -206,6 +206,7 @@ _SERVICE_MESSAGES = {
     "users.user.last_administrator": "The last administrator cannot be removed",
     "users.password.too_short": "A password needs at least 10 characters",
     "users.password.wrong": "The current password is wrong",
+    "users.password.mismatch": "The two new passwords differ",
     "signin.failed": "That name and password do not match",
     "signin.throttled": "Too many attempts; wait a little and try again",
     "file.local_only": "Send the file itself: only programs on the book's own computer "

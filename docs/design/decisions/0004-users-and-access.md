@@ -268,8 +268,12 @@ other accounts; 3 and 4 make it a household application.
 - **The pages:** the full page and quick entry ask `/api/v1/me` first; without a
   token or session they show a sign-in form, and then the choice of a new password
   when one is due. The cookie keeps a phone signed in across reloads.
-- **Still to come in phase 2:** Preferences → Users in GTK. The server's own
-  `--token-file` token keeps working for devices already given it.
+- **Preferences → Users** in GTK says "Only you" until there are others; **Users and
+  devices…** (`gui/dialogs/users_dialog.py`) sets your own password, adds, resets,
+  and removes people, and lists, makes (shown once), and revokes your device tokens,
+  on the computer account's directory directly.
+- **Phase 2 is built.** The server's own `--token-file` token keeps working for
+  devices already given it.
 
 ## Answers to the review questions (2026-10-28)
 
