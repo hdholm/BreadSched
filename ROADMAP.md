@@ -55,8 +55,9 @@ The rest of this file is unscheduled and comes after the first Beta.
   investment reports (holdings, realized gains, and the tax year), Budget jars, the
   Dashboard, plan versus actuals (`activity`), reading register entry, security
   prices, GnuCash write-back, the browser's book summary and Verify page, the
-  browser's register, the Plan's saved presentation, historical estimates, and Find
-  transactions so far
+  browser's register, the Plan's saved presentation, historical estimates, Find
+  transactions, and every remaining browser resource (schedules, scenario estimates,
+  imports, and Plan cells) so far
   (most through a generic typed JSON codec), and phase 3 has a stored book revision,
   `/api/v1` resources with `ETag`/`If-Match`, a change stream, and an HTTP client.
   Phase 4 has `breadsched serve`, a user-only server record, and command-line commands

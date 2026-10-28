@@ -482,6 +482,34 @@ stays in place. A view moved onto the server can follow by splitting its refresh
 that read and a draw. This is the in-process form of what a remote GTK
 client needs anyway: reads that take time without freezing the window.
 
+The browser's last direct reads followed, so every browser resource now reaches the
+book through `Api.book` (an architecture test keeps it so; only the transport's binary
+document route reads the book it serves):
+- **Schedules:** `schedules_view(days)` (`GET /api/v1/schedules/view`) carries every
+  saved definition's editor view and next occurrence, the cards' derived payments, the
+  upcoming occurrences, and the account choices; `schedule_editor(handle)` and
+  `schedule_draft(transaction)` give one definition's view to check an edit against,
+  or a one-time draft made from a transaction (`gen/services/schedule_editing`).
+- **Scenario estimates:** `scenario_events(scenario)` lays a scenario's own estimates
+  beside the baseline; `save_fixed_scenario_schedule` and
+  `save_formula_scenario_schedule` (`POST /api/v1/scenario-schedules/fixed` and
+  `/formula`) save one.
+- **Imports:** `inspect_csv`, `preview_csv`, `import_csv`, and `import_book`
+  (`POST /api/v1/imports/...`) carry the services' requests and results whole;
+  `import_source()` is the file last imported from. In process, `ImportBook.progress`
+  hears how far an import has got; over HTTP it is not sent.
+- **Plan cells:** `explain_plan_cell(PlanCellQuery)` (`POST /api/v1/plan/cell`,
+  `gen/services/plan_cells`) returns exactly one of a category, planning-flow, or
+  mortgage detail, refusing an unknown cash requirement
+  (`plan.requirement_kind.invalid`).
+- **Currencies:** `currencies(book_order=True)` keeps the book's order, whose first is
+  an editor's default quote currency.
+
+**Still open (imports):** like copying a document in, an import names a file by a path
+the server reads. Through a proxy, a token holder could import any statement file the
+server's user can read; uploading the bytes (as the browser's upload already does
+before naming the saved copy) is the narrower form.
+
 A phone-sized **quick entry** page (`/quick`, `quick.html` with only `core.js` and
 `quick.js`) posts one spending or income transaction through the browser's
 `/api/transaction`, which already saves through the server, and fills a known

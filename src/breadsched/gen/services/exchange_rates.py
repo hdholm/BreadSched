@@ -42,11 +42,15 @@ class SaveExchangeRate:
     rate: Money
 
 
-def currencies(db: DbSQLite) -> tuple[CurrencyChoice, ...]:
-    """The book's currencies, by mnemonic."""
+def currencies(db: DbSQLite, book_order: bool = False) -> tuple[CurrencyChoice, ...]:
+    """The book's currencies, by mnemonic; in the order the book holds them with
+    ``book_order`` (the first is an editor's default quote currency)."""
+    held = list(db.iter_commodities())
+    if not book_order:
+        held.sort(key=lambda item: item.mnemonic)
     return tuple(
         CurrencyChoice(item.handle, item.mnemonic, item.fullname)
-        for item in sorted(db.iter_commodities(), key=lambda item: item.mnemonic)
+        for item in held
         if item.is_currency
     )
 

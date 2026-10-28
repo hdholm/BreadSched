@@ -110,7 +110,7 @@ def _stored(api: Api, handle: str) -> Account | None:
 def commodities(api: Api) -> dict:
     """Securities, currencies, and their latest exact dated prices."""
     # In book order: the first is the editor's default quote currency.
-    currencies = [item for item in api.db.iter_commodities() if item.is_currency]
+    currencies = api.book.currencies(book_order=True)
     securities = []
     for quote in api.book.securities():
         item, latest = quote.security, quote.latest

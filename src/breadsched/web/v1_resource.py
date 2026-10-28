@@ -110,6 +110,19 @@ Resources so far, all under ``/api/v1``:
   Dashboard computed once, over other horizons without saving them.
 * ``GET`` and ``PATCH /dashboard/settings`` (``SaveDashboardConfig``) – the
   Dashboard's groups, with their members, and its horizons.
+* ``GET /schedules/view`` (``days``) – every saved definition with its editor view and
+  next occurrence, card payments, upcoming occurrences, and account choices;
+  ``GET /schedules/{handle}/editor`` and ``/transactions/{handle}/schedule-draft`` –
+  one definition's editor view, or a one-time draft made from a transaction.
+* ``GET /scenarios/{handle}/events`` – a scenario's own estimates beside the baseline
+  schedules; ``POST /scenario-schedules/fixed`` (``SaveFixedScenarioSchedule``) and
+  ``/scenario-schedules/formula`` (``FormulaScenarioScheduleInput``) save one.
+* ``POST /imports/csv/inspect`` (``InspectCsv``), ``/imports/csv/preview`` and
+  ``/imports/csv`` (``CsvImportRequest``), and ``/imports`` (``ImportBook``) – a statement
+  or book file, by a path the server can read; ``GET /imports/source`` – the file last
+  imported from.
+* ``POST /plan/cell`` (``PlanCellQuery``) – one Plan cell's planned occurrences beside
+  the actual transactions; it reads only.
 * ``POST /find`` (``TransactionQuery``) – splits across the book that match, grouped,
   with per-currency totals; it reads only (#382).
 * ``GET /attachments`` (``missing``, ``transaction``) – linked documents checked
@@ -200,16 +213,19 @@ from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumpti
 from ..gen.services.autocomplete import SuggestEntry
 from ..gen.services.categorization import AddRule
 from ..gen.services.claims import ClaimReportQuery, CloseClaim, ReopenClaim, SaveClaim
+from ..gen.services.csv_import import CsvImportRequest, InspectCsv
 from ..gen.services.dashboard_config import SaveDashboardConfig
 from ..gen.services.entry_input import ReadEntryTrade
 from ..gen.services.exchange_rates import SaveExchangeRate
 from ..gen.services.gnucash_writeback import ApplyWriteback
 from ..gen.services.historical_estimates import AcceptHistoricalEstimate
 from ..gen.services.import_review import ResolveHeldImports
+from ..gen.services.imports import ImportBook
 from ..gen.services.loans import SaveLoan
 from ..gen.services.lots import SetSaleLots
 from ..gen.services.payroll import CreatePaycheck, PayChange, SavePayrollTemplate
 from ..gen.services.plan import PlanQuery
+from ..gen.services.plan_cells import PlanCellQuery
 from ..gen.services.quotes import SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import RecordWriteOff, SaveReceivable
 from ..gen.services.reconciliations import (
@@ -227,6 +243,7 @@ from ..gen.services.scenarios import (
     SetReimbursementOverride,
     SuppressScenarioSchedule,
 )
+from ..gen.services.schedules import FormulaScenarioScheduleInput, SaveFixedScenarioSchedule
 from ..gen.services.security_prices import SaveSecurityPrice
 from ..gen.services.tax import SetTaxMarks
 from .context import Api
@@ -272,6 +289,18 @@ __all__ = [
     "dashboard_settings_get",
     "dashboard_settings_patch",
     "find_post",
+    "plan_cell_v1",
+    "csv_inspect_v1",
+    "csv_preview_v1",
+    "csv_import_v1",
+    "import_book_v1",
+    "import_source_get",
+    "scenario_events_get",
+    "scenario_schedule_fixed_post",
+    "scenario_schedule_formula_post",
+    "schedule_draft_get",
+    "schedule_editor_get",
+    "schedules_view_get",
     "currencies_get",
     "currency_lookup",
     "exchange_rate_save",
@@ -1370,8 +1399,9 @@ def loan_save_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
 
 
 def currencies_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    book_order = query.choice("order", ("code", "book"), "code") == "book"
     query.finish()
-    return {"currencies": to_data(api.book.currencies())}
+    return {"currencies": to_data(api.book.currencies(book_order))}
 
 
 def currency_lookup(api: Api, _path: Path, query: QueryParams) -> dict:
@@ -1571,6 +1601,66 @@ def entry_num_get(api: Api, _path: Path, query: QueryParams) -> dict:
     query.finish()
     assert step is not None
     return {"num": api.book.next_num(account, text, step)}
+
+
+def schedules_view_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    days = query.integer("days", default=60, minimum=0, maximum=3660)
+    query.finish()
+    assert days is not None
+    return to_data(api.book.schedules_view(days))
+
+
+def schedule_editor_get(api: Api, path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.schedule_editor(path["handle"]))
+
+
+def schedule_draft_get(api: Api, path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.schedule_draft(path["handle"]))
+
+
+def scenario_events_get(api: Api, path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.scenario_events(path["handle"]))
+
+
+def scenario_schedule_fixed_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(SaveFixedScenarioSchedule, body, "request")
+    return to_data(api.book.save_fixed_scenario_schedule(request))
+
+
+def scenario_schedule_formula_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(FormulaScenarioScheduleInput, body, "request")
+    return to_data(api.book.save_formula_scenario_schedule(request))
+
+
+def csv_inspect_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.inspect_csv(from_data(InspectCsv, body, "request")))
+
+
+def csv_preview_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.preview_csv(from_data(CsvImportRequest, body, "request")))
+
+
+def csv_import_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.import_csv(from_data(CsvImportRequest, body, "request")))
+
+
+def import_book_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(ImportBook, body, "request")
+    if request.progress is not None:
+        raise ValueError("progress is heard in process only")
+    return to_data(api.book.import_book(request))
+
+
+def import_source_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return {"source": api.book.import_source()}
+
+
+def plan_cell_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.explain_plan_cell(from_data(PlanCellQuery, body, "request")))
 
 
 def historical_estimates_get(api: Api, _path: Path, query: QueryParams) -> dict:

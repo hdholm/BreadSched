@@ -42,7 +42,6 @@ from .schedule_controls import (
     parse_split_amount_changes,
     schedule_recurrence,
     simple_parts,
-    simple_schedule_parts,
     weekend_key,
 )
 
@@ -51,20 +50,12 @@ if TYPE_CHECKING:
 
 
 def scheduled(api: Api, days: int = 60) -> dict:
-    occurrences = schedule.upcoming_occurrences(api.db, horizon_days=days)
-    accounts = sorted(
-        (
-            account
-            for account in api.db.iter_accounts()
-            if not account.is_root and not account.placeholder
-        ),
-        key=api.db.full_name,
-    )
+    """The Schedules page, from one book-server read (#358)."""
+    view = api.book.schedules_view(days)
     definitions = []
-    saved_schedules = list(api.db.iter_scheduled())
-    for item in saved_schedules:
-        projection = schedule.schedule_edit_projection(api.db, item)
-        simple = simple_schedule_parts(api.db, item)
+    for editor in view.definitions:
+        item, projection = editor.schedule, editor.projection
+        simple = simple_parts(editor)
         frequency = frequency_key(item.recurrence)
         editability = projection.editability
         definitions.append(
@@ -82,7 +73,7 @@ def scheduled(api: Api, days: int = 60) -> dict:
                 "auto": item.auto_create,
                 "advance_days": item.advance_days,
                 "remind_days": item.remind_days,
-                "next": next_occurrence_json(api.book.next_occurrence(item.handle)),
+                "next": next_occurrence_json(view.next.get(item.handle)),
                 "growth_policy": item.growth_policy.value,
                 "simple": simple is not None and frequency is not None,
                 "editable": editability.editable,
@@ -102,11 +93,8 @@ def scheduled(api: Api, days: int = 60) -> dict:
                     {
                         "index": index,
                         "account": item.splits[index].account,
-                        "account_name": (
-                            api.db.full_name(account)
-                            if (account := api.db.get_account(item.splits[index].account))
-                            is not None
-                            else item.splits[index].account
+                        "account_name": view.names.get(
+                            item.splits[index].account, item.splits[index].account
                         ),
                         "formula": item.splits[index].formula,
                     }
@@ -145,19 +133,17 @@ def scheduled(api: Api, days: int = 60) -> dict:
                 "estimate_evidence": item.estimate_evidence,
             }
         )
-    for payment_definition in schedule.account_payment_definitions(
-        api.db, schedules=saved_schedules
-    ):
+    for payment in view.payments:
         definitions.append(
             {
-                "handle": payment_definition.handle,
+                "handle": payment.handle,
                 "account_linked": True,
-                "linked_account": payment_definition.account,
-                "name": payment_definition.name,
-                "frequency": payment_definition.recurrence.describe(),
+                "linked_account": payment.account,
+                "name": payment.name,
+                "frequency": payment.frequency,
                 "frequency_key": "months",
                 "interval": 1,
-                "amount": payment_definition.amount_due,
+                "amount": payment.amount_due,
                 "enabled": True,
                 "placeholder": False,
                 "auto": False,
@@ -169,14 +155,14 @@ def scheduled(api: Api, days: int = 60) -> dict:
                 "unsupported_reason": "",
                 "source_recurrence": None,
                 "category": None,
-                "funding": payment_definition.payment_account,
+                "funding": payment.payment_account,
                 "planning_flow": None,
                 "investment_activity": None,
                 "category_memo": "",
                 "funding_memo": "",
                 "additional_splits": [],
-                "account_handles": [split.account for split in payment_definition.splits],
-                "start": payment_definition.next_due.isoformat(),
+                "account_handles": list(payment.split_accounts),
+                "start": payment.next_due.isoformat(),
                 "end": None,
                 "count": None,
                 "weekend": "none",
@@ -191,37 +177,36 @@ def scheduled(api: Api, days: int = 60) -> dict:
         "accounts": [
             {
                 "handle": account.handle,
-                "name": api.db.full_name(account),
+                "name": account.name,
                 "class": account.account_class.value,
                 "hidden": account.hidden,
                 # Investment activity applies only to these (#383).
-                "investment": account.atype.is_investment,
+                "investment": account.investment,
             }
-            for account in accounts
+            for account in view.accounts
         ],
         "upcoming": [
             {
                 "date": occurrence.when,
                 "name": occurrence.name,
                 "amount": occurrence.amount,
-                "schedule": occurrence.schedule.handle,
-                "account_linked": isinstance(
-                    occurrence.schedule, schedule.AccountPaymentDefinition
-                ),
-                "linked_account": getattr(occurrence.schedule, "account", None),
+                "schedule": occurrence.schedule,
+                "account_linked": occurrence.account_linked,
+                "linked_account": occurrence.linked_account,
             }
-            for occurrence in occurrences
+            for occurrence in view.upcoming
         ],
     }
 
 
 def scheduled_draft(api: Api, payload: dict) -> dict:
     """Represent an actual as a reviewable, unsaved fixed-schedule draft."""
-    transaction = api.db.get_transaction(str(payload.get("transaction") or ""))
-    if transaction is None:
-        raise KeyError(str(payload.get("transaction") or ""))
-    draft = schedule.from_transaction(transaction)
-    simple = simple_schedule_parts(api.db, draft)
+    reference = str(payload.get("transaction") or "")
+    if not reference:
+        raise KeyError(reference)
+    editor = api.book.schedule_draft(reference)
+    draft = editor.schedule
+    simple = simple_parts(editor)
     if simple is None:
         raise ValueError("this transaction's split structure needs the desktop schedule editor")
     return {
@@ -288,12 +273,12 @@ def scheduled_occurrence_options(api: Api, payload: dict) -> dict:
 def scheduled_save(api: Api, payload: dict) -> dict:
     """Create or update a fixed-split baseline schedule."""
     handle = str(payload.get("handle") or "").strip()
-    existing = api.db.get_scheduled(handle) if handle else None
-    if handle and existing is None:
-        raise KeyError(handle)
-    existing_parts = simple_schedule_parts(api.db, existing) if existing is not None else None
+    editor = api.book.schedule_editor(handle) if handle else None
+    existing = editor.schedule if editor is not None else None
+    existing_parts = simple_parts(editor) if editor is not None else None
     if existing is not None:
-        editability = schedule.schedule_editability(api.db, existing)
+        assert editor is not None
+        editability = editor.projection.editability
         if not editability.editable:
             raise ValueError(editability.reason)
         if (
@@ -452,9 +437,9 @@ def scheduled_save(api: Api, payload: dict) -> dict:
 def scheduled_formula_save(api: Api, payload: dict) -> dict:
     """Update formula inputs and ordinary metadata without exposing owned mechanics."""
     handle = str(payload.get("handle") or "").strip()
-    existing = api.db.get_scheduled(handle)
-    if existing is None:
+    if not handle:
         raise KeyError(handle)
+    existing = api.book.find_schedule(handle)
     raw_formulas = payload.get("formulas")
     if not isinstance(raw_formulas, list):
         raise ValueError("formula expressions must be a list")

@@ -1233,11 +1233,43 @@ class TestBookServerBoundaries:
         "draft_historical_estimate",
         "find_transactions",
         "run_query",
+        "schedules_view",
+        "schedule_editor",
+        "schedule_draft",
+        "simple_schedule_parts",
+        "upcoming_occurrences",
+        "account_payment_definitions",
+        "schedule_editability",
+        "schedule_edit_projection",
+        # The web handler shares the service's name ``scenario_events``.
+        "save_fixed_scenario_schedule",
+        "inspect_csv",
+        "preview_csv_import",
+        "import_csv",
+        "import_book",
+        "remembered_import_source",
+        "explain_plan_cell",
+        "explain_category_period",
+        "explain_planning_flow_period",
+        "explain_mortgage_payment_period",
+        "save_formula_scenario_schedule",
     }
 
     #: Book server operations a moved adapter reaches through ``book``.
     OPERATIONS = {
         "find",
+        "inspect_csv",
+        "preview_csv",
+        "import_csv",
+        "import_book",
+        "import_source",
+        "explain_plan_cell",
+        "scenario_events",
+        "save_fixed_scenario_schedule",
+        "save_formula_scenario_schedule",
+        "schedules_view",
+        "schedule_editor",
+        "schedule_draft",
         "due_review",
         "resolve_due",
         "resolve_next",
@@ -1480,6 +1512,17 @@ class TestBookServerBoundaries:
             ("cli/plan_commands.py", ("_estimate_suggestions",)),
             ("web/dashboard_resource.py", ("dashboard_report",)),
             ("web/find_resource.py", ("find",)),
+            (
+                "web/schedule_resource.py",
+                ("scheduled", "scheduled_draft", "scheduled_save", "scheduled_formula_save"),
+            ),
+            (
+                "web/scenario_resource.py",
+                ("scenario_events", "scenario_event_suppress", "scenario_event_save"),
+            ),
+            ("web/csv_import_resource.py", ("csv_inspect", "csv_preview", "csv_import")),
+            ("web/import_resource.py", ("import_local", "import_defaults")),
+            ("web/plan_detail_resource.py", ("plan_detail_report",)),
             ("cli/find_commands.py", ("cmd_find",)),
             ("gui/dialogs/find_dialog.py", ("find",)),
             ("gui/views/dashboard.py", ("refresh",)),
@@ -1778,6 +1821,14 @@ class TestBookServerBoundaries:
                 }
             }
             assert not engines, (name, engines)
+
+    def test_web_resources_reach_the_book_only_through_the_server(self):
+        """#358: every browser resource uses ``api.book``; only the HTTP transport's
+        binary document route reads the book it serves."""
+        for module in (SRC / "web").glob("*.py"):
+            if module.name == "transport.py":
+                continue
+            assert "api.db" not in module.read_text(encoding="utf-8"), module.name
 
     def test_the_book_server_package_has_no_interface_imports(self):
         for module in modules_under("api"):

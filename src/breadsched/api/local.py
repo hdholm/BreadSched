@@ -45,6 +45,7 @@ from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
 from ..gen.lib.scenario import AssumptionPeriod, Assumptions, Drawdown
 from ..gen.lib.transaction import ReconcileState
+from ..gen.plug import remembered_import_source
 from ..gen.services import (
     AccountBalance,
     AccountRecord,
@@ -98,6 +99,7 @@ from ..gen.services import (
     import_review,
     next_occurrence,
     pending_due_review,
+    plan_cells,
     post_due,
     reconciliations,
     register_page,
@@ -108,6 +110,7 @@ from ..gen.services import (
     save_formula_schedule,
     save_transaction,
     savings_goals,
+    schedule_editing,
     security_prices,
     set_advance_days,
     set_tags,
@@ -122,9 +125,11 @@ from ..gen.services import assumptions as assumption_service
 from ..gen.services import attachments as attachment_service
 from ..gen.services import budget_jars as jars_service
 from ..gen.services import claims as claim_service
+from ..gen.services import csv_import as csv_service
 from ..gen.services import expense_explorer as expense_service
 from ..gen.services import gnucash_writeback as writeback_service
 from ..gen.services import historical_estimates as estimate_service
+from ..gen.services import imports as import_service
 from ..gen.services import investment_reports as investment_report_service
 from ..gen.services import loans as loan_service
 from ..gen.services import lots as lot_service
@@ -137,6 +142,7 @@ from ..gen.services import register_view as register_view_service
 from ..gen.services import review as review_service
 from ..gen.services import scenarios as scenario_service
 from ..gen.services import schedules as schedule_service
+from ..gen.services import schedules as schedule_services
 from ..gen.services import tax as tax_service
 from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
@@ -342,6 +348,19 @@ class LocalBookServer:
 
     def save_formula_schedule(self, request: FormulaScheduleInput) -> SavedSchedule:
         return unwrap(save_formula_schedule(self.db, request))
+
+    def scenario_events(self, scenario: str) -> schedule_editing.ScenarioEventsView:
+        return unwrap(schedule_editing.scenario_events(self.db, scenario))
+
+    def save_fixed_scenario_schedule(
+        self, request: schedule_services.SaveFixedScenarioSchedule
+    ) -> schedule_services.SavedScenarioSchedule:
+        return unwrap(schedule_services.save_fixed_scenario_schedule(self.db, request))
+
+    def save_formula_scenario_schedule(
+        self, request: schedule_services.FormulaScenarioScheduleInput
+    ) -> schedule_services.SavedScenarioSchedule:
+        return unwrap(schedule_services.save_formula_scenario_schedule(self.db, request))
 
     # ------------------------------------------------------------ transactions
 
@@ -652,8 +671,8 @@ class LocalBookServer:
 
     # ---------------------------------------------------------- exchange rates
 
-    def currencies(self) -> tuple[CurrencyChoice, ...]:
-        return exchange_rates.currencies(self.db)
+    def currencies(self, book_order: bool = False) -> tuple[CurrencyChoice, ...]:
+        return exchange_rates.currencies(self.db, book_order)
 
     def find_currency(self, reference: str) -> CurrencyChoice:
         found = exchange_rates.find_currency(self.db, reference)
@@ -703,6 +722,26 @@ class LocalBookServer:
         with self._changing("dashboard-config"):
             saved = unwrap(dashboard_config.save_dashboard_config(self.db, request))
         return dashboard_config.settings_of(saved)
+
+    def explain_plan_cell(self, query: plan_cells.PlanCellQuery) -> plan_cells.PlanCellDetail:
+        return unwrap(plan_cells.explain_plan_cell(self.db, query))
+
+    # ---------------------------------------------------------------- imports
+
+    def inspect_csv(self, request: csv_service.InspectCsv) -> csv_service.CsvInspection:
+        return unwrap(csv_service.inspect_csv(request))
+
+    def preview_csv(self, request: csv_service.CsvImportRequest) -> csv_service.CsvPreview:
+        return unwrap(csv_service.preview_csv_import(self.db, request))
+
+    def import_csv(self, request: csv_service.CsvImportRequest) -> csv_service.CsvImported:
+        return unwrap(csv_service.import_csv(self.db, request))
+
+    def import_book(self, request: import_service.ImportBook) -> import_service.ImportedBook:
+        return unwrap(import_service.import_book(self.db, request))
+
+    def import_source(self) -> str | None:
+        return remembered_import_source(self.db)
 
     # ------------------------------------------------------------------- find
 
@@ -804,6 +843,15 @@ class LocalBookServer:
         return unwrap(net_worth_service.query_net_worth_change(self.db, start, end, today))
 
     # ----------------------------------------------------- historical estimates
+
+    def schedules_view(self, days: int = 60) -> schedule_editing.SchedulesView:
+        return unwrap(schedule_editing.schedules_view(self.db, days))
+
+    def schedule_editor(self, schedule: str) -> schedule_editing.ScheduleEditorView:
+        return unwrap(schedule_editing.schedule_editor(self.db, schedule))
+
+    def schedule_draft(self, transaction: str) -> schedule_editing.ScheduleEditorView:
+        return unwrap(schedule_editing.schedule_draft(self.db, transaction))
 
     def historical_estimates(
         self,

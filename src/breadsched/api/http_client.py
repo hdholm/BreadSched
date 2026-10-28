@@ -21,6 +21,7 @@ import socket
 import ssl
 import threading
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import date
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
@@ -100,6 +101,13 @@ from ..gen.services.claims import (
     SaveClaim,
     SavedClaim,
 )
+from ..gen.services.csv_import import (
+    CsvImported,
+    CsvImportRequest,
+    CsvInspection,
+    CsvPreview,
+    InspectCsv,
+)
 from ..gen.services.dashboard_config import DashboardSettings, SaveDashboardConfig
 from ..gen.services.entry_input import EntryAccount, EntryAmount, ReadEntryTrade
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
@@ -115,12 +123,14 @@ from ..gen.services.import_review import (
     HeldImportResolution,
     ResolveHeldImports,
 )
+from ..gen.services.imports import ImportBook, ImportedBook
 from ..gen.services.investment_reports import HoldingsView, RealizedGainsView, TaxYearView
 from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.plan import PlanQuery, PlanQueryResult
+from ..gen.services.plan_cells import PlanCellDetail, PlanCellQuery
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
     AcceptedReimbursements,
@@ -157,6 +167,16 @@ from ..gen.services.scenarios import (
     SaveScenario,
     SetReimbursementOverride,
     SuppressScenarioSchedule,
+)
+from ..gen.services.schedule_editing import (
+    ScenarioEventsView,
+    ScheduleEditorView,
+    SchedulesView,
+)
+from ..gen.services.schedules import (
+    FormulaScenarioScheduleInput,
+    SavedScenarioSchedule,
+    SaveFixedScenarioSchedule,
 )
 from ..gen.services.security_prices import SavedSecurityPrice, SaveSecurityPrice, SecurityQuote
 from ..gen.services.tax import SetTaxMarks, TaxMarks
@@ -423,6 +443,22 @@ class HttpBookClient:
     def save_formula_schedule(self, request: FormulaScheduleInput) -> SavedSchedule:
         found = self._call("POST", "/schedules/formula", body=formula_request_json(request))
         return saved_schedule_from_json(found)
+
+    def scenario_events(self, scenario: str) -> ScenarioEventsView:
+        path = f"/scenarios/{quote(scenario, safe='')}/events"
+        return from_data(ScenarioEventsView, self._call("GET", path))
+
+    def save_fixed_scenario_schedule(
+        self, request: SaveFixedScenarioSchedule
+    ) -> SavedScenarioSchedule:
+        found = self._call("POST", "/scenario-schedules/fixed", body=to_data(request))
+        return from_data(SavedScenarioSchedule, found)
+
+    def save_formula_scenario_schedule(
+        self, request: FormulaScenarioScheduleInput
+    ) -> SavedScenarioSchedule:
+        found = self._call("POST", "/scenario-schedules/formula", body=to_data(request))
+        return from_data(SavedScenarioSchedule, found)
 
     # ------------------------------------------------------------ transactions
 
@@ -691,6 +727,17 @@ class HttpBookClient:
         return saved_transaction_from_json(self._call("POST", path, body=body))
 
     # ----------------------------------------------------- historical estimates
+
+    def schedules_view(self, days: int = 60) -> SchedulesView:
+        return from_data(SchedulesView, self._call("GET", "/schedules/view", {"days": days}))
+
+    def schedule_editor(self, schedule: str) -> ScheduleEditorView:
+        path = f"/schedules/{quote(schedule, safe='')}/editor"
+        return from_data(ScheduleEditorView, self._call("GET", path))
+
+    def schedule_draft(self, transaction: str) -> ScheduleEditorView:
+        path = f"/transactions/{quote(transaction, safe='')}/schedule-draft"
+        return from_data(ScheduleEditorView, self._call("GET", path))
 
     def historical_estimates(
         self,
@@ -1080,8 +1127,8 @@ class HttpBookClient:
 
     # ---------------------------------------------------------- exchange rates
 
-    def currencies(self) -> tuple[CurrencyChoice, ...]:
-        found = self._call("GET", "/currencies")
+    def currencies(self, book_order: bool = False) -> tuple[CurrencyChoice, ...]:
+        found = self._call("GET", "/currencies", {"order": "book" if book_order else None})
         return from_data(tuple[CurrencyChoice, ...], found["currencies"], "currencies")
 
     def find_currency(self, reference: str) -> CurrencyChoice:
@@ -1137,6 +1184,30 @@ class HttpBookClient:
     def save_dashboard_settings(self, request: SaveDashboardConfig) -> DashboardSettings:
         found = self._call("PATCH", "/dashboard/settings", body=to_data(request))
         return from_data(DashboardSettings, found)
+
+    def explain_plan_cell(self, query: PlanCellQuery) -> PlanCellDetail:
+        return from_data(PlanCellDetail, self._call("POST", "/plan/cell", body=to_data(query)))
+
+    # ---------------------------------------------------------------- imports
+
+    def inspect_csv(self, request: InspectCsv) -> CsvInspection:
+        found = self._call("POST", "/imports/csv/inspect", body=to_data(request))
+        return from_data(CsvInspection, found)
+
+    def preview_csv(self, request: CsvImportRequest) -> CsvPreview:
+        found = self._call("POST", "/imports/csv/preview", body=to_data(request))
+        return from_data(CsvPreview, found)
+
+    def import_csv(self, request: CsvImportRequest) -> CsvImported:
+        return from_data(CsvImported, self._call("POST", "/imports/csv", body=to_data(request)))
+
+    def import_book(self, request: ImportBook) -> ImportedBook:
+        # Progress is heard in process only; the server reports the outcome.
+        body = to_data(replace(request, progress=None))
+        return from_data(ImportedBook, self._call("POST", "/imports", body=body))
+
+    def import_source(self) -> str | None:
+        return self._call("GET", "/imports/source")["source"]
 
     # ------------------------------------------------------------------- find
 

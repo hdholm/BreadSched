@@ -89,6 +89,13 @@ from ..gen.services.claims import (
     SaveClaim,
     SavedClaim,
 )
+from ..gen.services.csv_import import (
+    CsvImported,
+    CsvImportRequest,
+    CsvInspection,
+    CsvPreview,
+    InspectCsv,
+)
 from ..gen.services.dashboard_config import DashboardSettings, SaveDashboardConfig
 from ..gen.services.entry_input import EntryAccount, EntryAmount, ReadEntryTrade
 from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
@@ -104,12 +111,14 @@ from ..gen.services.import_review import (
     HeldImportResolution,
     ResolveHeldImports,
 )
+from ..gen.services.imports import ImportBook, ImportedBook
 from ..gen.services.investment_reports import HoldingsView, RealizedGainsView, TaxYearView
 from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.plan import PlanQuery, PlanQueryResult
+from ..gen.services.plan_cells import PlanCellDetail, PlanCellQuery
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
     AcceptedReimbursements,
@@ -146,6 +155,16 @@ from ..gen.services.scenarios import (
     SaveScenario,
     SetReimbursementOverride,
     SuppressScenarioSchedule,
+)
+from ..gen.services.schedule_editing import (
+    ScenarioEventsView,
+    ScheduleEditorView,
+    SchedulesView,
+)
+from ..gen.services.schedules import (
+    FormulaScenarioScheduleInput,
+    SavedScenarioSchedule,
+    SaveFixedScenarioSchedule,
 )
 from ..gen.services.security_prices import SavedSecurityPrice, SaveSecurityPrice, SecurityQuote
 from ..gen.services.tax import SetTaxMarks, TaxMarks
@@ -235,6 +254,22 @@ class BookApi(Protocol):
 
     def save_formula_schedule(self, request: FormulaScheduleInput) -> SavedSchedule:
         """Replace a formula schedule's editable inputs, keeping its structure."""
+        ...
+
+    def scenario_events(self, scenario: str) -> ScenarioEventsView:
+        """A saved scenario's own estimates beside the baseline schedules."""
+        ...
+
+    def save_fixed_scenario_schedule(
+        self, request: SaveFixedScenarioSchedule
+    ) -> SavedScenarioSchedule:
+        """Add or replace a scenario's fixed estimate (replacing a baseline one)."""
+        ...
+
+    def save_formula_scenario_schedule(
+        self, request: FormulaScenarioScheduleInput
+    ) -> SavedScenarioSchedule:
+        """Replace a baseline formula schedule's inputs within one scenario."""
         ...
 
     # ------------------------------------------------------------ transactions
@@ -430,6 +465,19 @@ class BookApi(Protocol):
         ...
 
     # ----------------------------------------------------- historical estimates
+
+    def schedules_view(self, days: int = 60) -> SchedulesView:
+        """The saved definitions with their editor views, card payments, the
+        occurrences within ``days``, and the accounts a schedule may use."""
+        ...
+
+    def schedule_editor(self, schedule: str) -> ScheduleEditorView:
+        """A saved definition's editor view, to check an edit against."""
+        ...
+
+    def schedule_draft(self, transaction: str) -> ScheduleEditorView:
+        """An unsaved one-time definition made from a recorded transaction."""
+        ...
 
     def historical_estimates(
         self,
@@ -734,7 +782,9 @@ class BookApi(Protocol):
 
     # ---------------------------------------------------------- exchange rates
 
-    def currencies(self) -> tuple[CurrencyChoice, ...]: ...
+    def currencies(self, book_order: bool = False) -> tuple[CurrencyChoice, ...]:
+        """The book's currencies by code, or as the book holds them with ``book_order``."""
+        ...
 
     def find_currency(self, reference: str) -> CurrencyChoice:
         """A currency by exact handle or unambiguous code."""
@@ -786,6 +836,33 @@ class BookApi(Protocol):
         ...
 
     def save_dashboard_settings(self, request: SaveDashboardConfig) -> DashboardSettings: ...
+
+    def explain_plan_cell(self, query: PlanCellQuery) -> PlanCellDetail:
+        """One Plan cell's planned occurrences beside the actual transactions."""
+        ...
+
+    # ---------------------------------------------------------------- imports
+
+    def inspect_csv(self, request: InspectCsv) -> CsvInspection:
+        """A statement file's encoding, delimiter, columns, and first rows."""
+        ...
+
+    def preview_csv(self, request: CsvImportRequest) -> CsvPreview:
+        """How each statement row would be imported, writing nothing."""
+        ...
+
+    def import_csv(self, request: CsvImportRequest) -> CsvImported:
+        """Import a mapped statement into one account, as one change."""
+        ...
+
+    def import_book(self, request: ImportBook) -> ImportedBook:
+        """Run the importer for a file (GnuCash, QIF, OFX, ...). In process, the
+        request's ``progress`` hears how far it has got; over HTTP it is not sent."""
+        ...
+
+    def import_source(self) -> str | None:
+        """The file this book was last imported from, to offer again."""
+        ...
 
     # ------------------------------------------------------------------- find
 

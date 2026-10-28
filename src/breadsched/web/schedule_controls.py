@@ -27,7 +27,7 @@ from ..gen.lib import (
     WeekendAdjust,
 )
 from ..gen.services import FixedSplitInput
-from ..gen.services.schedule_editing import ScheduleEditorView, editor_view
+from ..gen.services.schedule_editing import ScenarioChangeView, ScheduleEditorView, editor_view
 from ..presentation import (
     FIXED_INTERVAL_UNITS,
     LEGACY_FREQUENCIES,
@@ -50,7 +50,7 @@ def simple_schedule_parts(db: DbSQLite, scheduled) -> dict | None:
     return simple_parts(editor_view(db, scheduled))
 
 
-def simple_parts(view: ScheduleEditorView) -> dict | None:
+def simple_parts(view: ScheduleEditorView | ScenarioChangeView) -> dict | None:
     """:func:`simple_schedule_parts` from a book server's editor view."""
     projection, scheduled = view.projection, view.schedule
     if (

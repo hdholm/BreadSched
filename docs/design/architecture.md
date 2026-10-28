@@ -225,6 +225,10 @@ decoded JSON form.
 
 Their command-line JSON is therefore the browser's JSON.
 
+Every browser resource now reaches the book through `Api.book`; only the HTTP
+transport's binary document route reads the book it serves, and
+`tests/test_architecture.py` checks that no resource reads `api.db`.
+
 The same operations are served as versioned resources under `/api/v1` (#357):
 - **Handlers:** `web/v1_resource.py`, each calling `Api.book`.
 - **Routing:** `web.resources.V1_ROUTES` maps a method and a path pattern with

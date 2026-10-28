@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING
 
 from ..api.contract import ApiError
 from ..api.protocol import BookApi
-from ..gen.db.sqlite import DbSQLite
 from ..gen.lib import (
     AccountClass,
     AssumptionPeriod,
@@ -27,7 +26,6 @@ from ..gen.lib import (
     PlanningFlowKind,
     Rate,
     Scenario,
-    ScenarioSchedule,
     ScheduleGrowthPolicy,
 )
 from ..gen.services import (
@@ -38,9 +36,9 @@ from ..gen.services import (
     SaveFixedScenarioSchedule,
     SaveScenarioAssumptions,
     SuppressScenarioSchedule,
-    save_fixed_scenario_schedule,
 )
-from .controls import input_amount, input_money, service_error
+from ..gen.services.schedule_editing import ScenarioChangeView
+from .controls import input_amount, input_money
 from .schedule_controls import (
     frequency_key,
     parse_additional_splits,
@@ -49,7 +47,7 @@ from .schedule_controls import (
     parse_seasonal_amounts,
     parse_skipped,
     schedule_recurrence,
-    simple_schedule_parts,
+    simple_parts,
     weekend_key,
 )
 
@@ -257,24 +255,21 @@ def optional_rate(value: object) -> Decimal | None:
     return rate
 
 
-def scenario_for_events(db: DbSQLite, handle: object) -> Scenario:
+def _events_handle(handle: object) -> str:
     value = str(handle or "").strip()
     if not value:
         raise ValueError("scenario event changes require a saved scenario")
-    scenario = db.get_scenario(value)
-    if scenario is None:
-        raise KeyError(value)
-    return scenario
+    return value
 
 
-def scenario_event_payload(db: DbSQLite, item: ScenarioSchedule) -> dict:
-    source = db.get_scheduled(item.source_schedule) if item.source_schedule else None
-    simple = simple_schedule_parts(db, item)
+def scenario_event_payload(change: ScenarioChangeView) -> dict:
+    item = change.schedule
+    simple = simple_parts(change)
     return {
         "handle": item.handle,
         "name": item.name,
         "source_schedule": item.source_schedule,
-        "source_name": source.name if source is not None else None,
+        "source_name": change.source_name,
         "enabled": item.enabled,
         "growth_policy": item.growth_policy.value,
         "simple": (simple is not None and frequency_key(item.recurrence) is not None),
@@ -490,32 +485,25 @@ def scenario_drawdown_delete(api: Api, payload: dict) -> dict:
 
 
 def scenario_events(api: Api, handle: str | None) -> dict:
-    scenario = scenario_for_events(api.db, handle)
-    accounts = sorted(
-        (
-            account
-            for account in api.db.iter_accounts()
-            if not account.is_root and not account.placeholder
-        ),
-        key=api.db.full_name,
-    )
-    schedules = list(api.db.iter_scheduled())
+    """A scenario's estimates beside the baseline, from one book-server read (#358)."""
+    view = api.book.scenario_events(_events_handle(handle))
+    scenario = view.scenario
     return {
         "scenario": {"handle": scenario.handle, "name": scenario.name},
         "accounts": [
             {
                 "handle": account.handle,
-                "name": api.db.full_name(account),
+                "name": account.name,
                 "class": account.account_class.value,
             }
-            for account in accounts
+            for account in view.accounts
         ],
         "baseline": [
             {
                 "handle": item.handle,
                 "name": item.name,
                 "growth_policy": item.growth_policy.value,
-                "simple": (parts := simple_schedule_parts(api.db, item)) is not None
+                "simple": (parts := simple_parts(editor)) is not None
                 and (frequency := frequency_key(item.recurrence)) is not None,
                 "category": parts["category"] if parts else None,
                 "funding": parts["funding"] if parts else None,
@@ -542,14 +530,16 @@ def scenario_events(api: Api, handle: str | None) -> dict:
                 ],
                 "estimate_evidence": item.estimate_evidence,
             }
-            for item in schedules
+            for editor in view.baseline
+            for item in (editor.schedule,)
         ],
-        "changes": [scenario_event_payload(api.db, item) for item in scenario.schedule_overrides],
+        "changes": [scenario_event_payload(change) for change in view.changes],
     }
 
 
 def scenario_event_suppress(api: Api, payload: dict) -> dict:
-    scenario = scenario_for_events(api.db, payload.get("handle"))
+    handle = _events_handle(payload.get("handle"))
+    scenario = api.book.find_scenario(handle)
     api.book.suppress_scenario_schedule(
         SuppressScenarioSchedule(scenario.handle, str(payload.get("source_schedule", "")).strip())
     )
@@ -558,12 +548,18 @@ def scenario_event_suppress(api: Api, payload: dict) -> dict:
 
 def scenario_event_save(api: Api, payload: dict) -> dict:
     """Save a scenario schedule through the shared service; return the scenario's events."""
-    scenario = scenario_for_events(api.db, payload.get("handle"))
+    view = api.book.scenario_events(_events_handle(payload.get("handle")))
+    scenario = view.scenario
     source_handle = str(payload.get("source_schedule") or "").strip() or None
-    source = api.db.get_scheduled(source_handle) if source_handle else None
-    if source_handle and source is None:
+    source_editor = (
+        next((item for item in view.baseline if item.schedule.handle == source_handle), None)
+        if source_handle
+        else None
+    )
+    if source_handle and source_editor is None:
         raise KeyError(source_handle)
-    if source is not None and simple_schedule_parts(api.db, source) is None:
+    source = source_editor.schedule if source_editor is not None else None
+    if source_editor is not None and simple_parts(source_editor) is None:
         raise ValueError("complex schedules can only be suppressed for now")
 
     name = str(payload.get("name", "")).strip()
@@ -626,8 +622,7 @@ def scenario_event_save(api: Api, payload: dict) -> dict:
         )
     except ValueError:
         raise ValueError("choose a valid projection growth policy") from None
-    result = save_fixed_scenario_schedule(
-        api.db,
+    api.book.save_fixed_scenario_schedule(
         SaveFixedScenarioSchedule(
             scenario_handle=scenario.handle,
             source_schedule=source_handle,
@@ -666,6 +661,4 @@ def scenario_event_save(api: Api, payload: dict) -> dict:
             ),
         ),
     )
-    if result.value is None:
-        raise service_error(result.errors[0])
     return scenario_events(api, scenario.handle)

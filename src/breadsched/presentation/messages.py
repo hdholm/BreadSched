@@ -21,6 +21,8 @@ _translation: gettext.NullTranslations = gettext.translation(
 
 
 _SERVICE_MESSAGES = {
+    "schedules.days.invalid": "The number of days ahead cannot be negative",
+    "plan.requirement_kind.invalid": "Only a mortgage cash requirement can be explained",
     "find.direction.invalid": "Choose money in, money out, or either",
     "find.sort.invalid": "Choose date, amount, account, or description to sort by",
     "find.group_by.invalid": "Choose account, month, year, tag, or no groups",

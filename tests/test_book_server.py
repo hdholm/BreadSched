@@ -1486,6 +1486,190 @@ def test_find_reads_alike(target, book):
     assert db.summary() == before
 
 
+def test_the_schedules_page_reads_alike(target, book):
+    """#358: the browser's Schedules page reads one view through the server."""
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.engine import schedule as engine
+    from breadsched.gen.services.schedule_editing import schedules_view
+
+    api, db = target.api, target.db
+    view = api.schedules_view(days=400)
+    assert to_data(view) == to_data(schedules_view(db, 400).value)
+    [rent] = [item for item in view.definitions if item.schedule.name == "Rent"]
+    assert rent.projection == engine.schedule_edit_projection(db, rent.schedule)
+    assert view.next[rent.schedule.handle] == api.next_occurrence(rent.schedule.handle)
+    assert view.names[book.rent] == db.full_name(db.get_account(book.rent))
+    assert [line.when for line in view.upcoming] == [
+        item.when for item in engine.upcoming_occurrences(db, horizon_days=400)
+    ]
+    assert {choice.handle for choice in view.accounts} == {
+        account.handle
+        for account in db.iter_accounts()
+        if not account.is_root and not account.placeholder
+    }
+    assert api.schedule_editor(rent.schedule.handle) == rent
+    # A transaction makes a one-time draft to review; nothing is saved.
+    with db.transaction("Pay") as txn:
+        paid = Transaction.simple(date(2026, 9, 1), "Gym", book.rent, book.checking, "40")
+        db.add_transaction(paid, txn)
+    before = len(list(db.iter_scheduled()))
+    draft = api.schedule_draft(paid.handle)
+    assert draft.schedule.name == "Gym" and draft.schedule.recurrence.start == date(2026, 9, 1)
+    assert len(list(db.iter_scheduled())) == before
+    for call, status, code in (
+        (lambda: api.schedule_editor("no-such-schedule"), 404, "schedule.not_found"),
+        (lambda: api.schedule_draft("no-such-transaction"), 404, "transaction.not_found"),
+        (lambda: api.schedules_view(-1), 400, None),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert refused.value.status == status
+        if code:
+            assert refused.value.code == code
+
+
+def test_scenario_estimates_read_and_save_alike(target, book):
+    """#358: a scenario's estimates are read and saved through the server."""
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.lib import Recurrence, Scenario
+    from breadsched.gen.services import FixedScheduleInput, SaveFixedScenarioSchedule
+    from breadsched.gen.services.schedule_editing import scenario_events
+
+    api, db = target.api, target.db
+    scenario = Scenario(name="Move")
+    with db.transaction("Scenario") as txn:
+        db.add_scenario(scenario, txn)
+    rent = next(item for item in db.iter_scheduled() if item.name == "Rent")
+    view = api.scenario_events(scenario.handle)
+    assert to_data(view) == to_data(scenario_events(db, scenario.handle).value)
+    assert [item.schedule.handle for item in view.baseline] == [rent.handle]
+    assert view.changes == ()
+    saved = api.save_fixed_scenario_schedule(
+        SaveFixedScenarioSchedule(
+            scenario_handle=scenario.handle,
+            source_schedule=rent.handle,
+            definition=FixedScheduleInput(
+                name="Smaller rent",
+                recurrence=Recurrence(period=PeriodType.MONTH, interval=1, start=date(2026, 11, 6)),
+                category=book.rent,
+                funding=book.checking,
+                amount=Money("1500"),
+            ),
+        )
+    )
+    assert (saved.scenario_handle, saved.source_schedule) == (scenario.handle, rent.handle)
+    [change] = api.scenario_events(scenario.handle).changes
+    assert change.schedule.name == "Smaller rent" and change.source_name == "Rent"
+    assert db.get_scheduled(rent.handle).amount() == rent.amount()  # the baseline is kept
+    before = repr(db.get_scenario(scenario.handle).serialize())
+    with pytest.raises(ApiError) as refused:
+        api.scenario_events("no-such-scenario")
+    assert (refused.value.status, refused.value.code) == (404, "scenario.not_found")
+    with pytest.raises(ApiError):
+        api.save_fixed_scenario_schedule(
+            SaveFixedScenarioSchedule(
+                scenario_handle=scenario.handle,
+                definition=FixedScheduleInput(
+                    name="",
+                    recurrence=Recurrence(
+                        period=PeriodType.MONTH, interval=1, start=date(2026, 11, 6)
+                    ),
+                    category=book.rent,
+                    funding=book.checking,
+                    amount=Money("1500"),
+                ),
+            )
+        )
+    assert repr(db.get_scenario(scenario.handle).serialize()) == before
+
+
+def test_imports_run_alike(target, book, tmp_path):
+    """#358: statement and book imports go through the server, by a path it reads."""
+    from breadsched.gen.services.csv_import import CsvImportRequest, CsvMapping, InspectCsv
+
+    api, db = target.api, target.db
+    statement = tmp_path / "statement.csv"
+    statement.write_text(
+        "Date,Amount,Description\n2026-03-01,-12.50,Coffee\n2026-03-02,-40.00,Groceries\n",
+        encoding="utf-8",
+    )
+    inspection = api.inspect_csv(InspectCsv(str(statement)))
+    assert inspection.columns == ("Date", "Amount", "Description")
+    request = CsvImportRequest(
+        source=str(statement),
+        account=book.checking,
+        mapping=CsvMapping(date="Date", amount="Amount", description="Description"),
+    )
+    before = db.summary()["txn"]
+    preview = api.preview_csv(request)
+    assert preview.count("new") == 2 and db.summary()["txn"] == before
+    imported = api.import_csv(request)
+    assert imported.result.transactions_new == 2
+    assert db.summary()["txn"] == before + 2
+    assert api.preview_csv(request).count("imported") == 2
+    for call in (
+        lambda: api.inspect_csv(InspectCsv(str(tmp_path / "missing.csv"))),
+        lambda: api.import_csv(CsvImportRequest("", book.checking, request.mapping)),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert refused.value.status in (400, 404)
+    assert db.summary()["txn"] == before + 2
+    assert api.import_source() is None or isinstance(api.import_source(), str)
+
+
+def test_a_plan_cell_is_explained_alike(target, book):
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.services.plan_cells import PlanCellQuery, explain_plan_cell
+
+    api, db = target.api, target.db
+    with db.transaction("Rent") as txn:
+        db.add_transaction(
+            Transaction.simple(date(2026, 10, 6), "Rent", book.rent, book.checking, "1800"), txn
+        )
+    query = PlanCellQuery(book.rent, date(2026, 10, 1), date(2026, 10, 31))
+    explained = api.explain_plan_cell(query)
+    assert to_data(explained) == to_data(explain_plan_cell(db, query).value)
+    assert explained.scenario_name == "Base scenario"
+    assert explained.category is not None and explained.category.actual == Money("1800")
+    assert explained.flow is None and explained.mortgage is None
+    for bad, status, code in (
+        (PlanCellQuery("no-such-account", date(2026, 10, 1), date(2026, 10, 31)), 404, None),
+        (PlanCellQuery(book.rent, date(2026, 10, 31), date(2026, 10, 1)), 400, None),
+        (
+            PlanCellQuery(book.rent, date(2026, 10, 1), date(2026, 10, 31), scenario="nope"),
+            404,
+            "scenario.not_found",
+        ),
+        (
+            PlanCellQuery(
+                book.rent, date(2026, 10, 1), date(2026, 10, 31), requirement_kind="tuition"
+            ),
+            400,
+            "plan.requirement_kind.invalid",
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            api.explain_plan_cell(bad)
+        assert refused.value.status == status
+        if code:
+            assert refused.value.code == code
+
+
+def test_currencies_in_book_order_alike(target, book):
+    from breadsched.gen.lib import Commodity
+
+    api, db = target.api, target.db
+    with db.transaction("Currencies") as txn:
+        db.add_commodity(Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro"), txn)
+        db.add_commodity(Commodity(namespace="CURRENCY", mnemonic="CAD", fullname="Dollar"), txn)
+    by_code = [item.mnemonic for item in api.currencies()]
+    held = [item.mnemonic for item in api.currencies(book_order=True)]
+    assert by_code == sorted(by_code)
+    assert held == [item.mnemonic for item in db.iter_commodities() if item.is_currency]
+    assert sorted(held) == by_code
+
+
 def test_attachments_alike(target, book, tmp_path):
     api, db = target.api, target.db
     paid = Transaction.simple(date(2026, 3, 8), "Dentist", book.rent, book.checking, "200")

@@ -8,17 +8,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..gen.plug import remembered_import_source
 from ..gen.services import (
     HeldImportDecision,
     ImportBook,
     ResolveHeldImports,
-    import_book,
 )
-from ..gen.services.claims import claim_link_proposals
-from ..gen.services.receivables import reimbursement_proposals
 from ..presentation import claim_link_notice, reimbursement_notice
-from .controls import service_error
 
 if TYPE_CHECKING:
     from .context import Api
@@ -32,8 +27,7 @@ def import_local(api: Api, payload: dict) -> dict:
     include_duplicates = payload.get("include_duplicates", False)
     if not isinstance(include_duplicates, bool):
         raise ValueError("include_duplicates must be true or false")
-    result = import_book(
-        api.db,
+    imported = api.book.import_book(
         ImportBook(
             source=path,
             format=(str(payload["format"]) if payload.get("format") else None),
@@ -43,20 +37,14 @@ def import_local(api: Api, payload: dict) -> dict:
             include_duplicates=include_duplicates,
         ),
     )
-    if not result.ok:
-        raise service_error(result.errors[0])
-    imported = result.value
-    assert imported is not None
     return {
         "format": imported.format_name,
         "detail": imported.result.detail(limit=50),
         "problems": [problem.as_dict() for problem in imported.result.problems()],
         "held": imported.result.transactions_held,
         "possible_duplicates": imported.result.possible_duplicates,
-        "reimbursement_notice": reimbursement_notice(
-            len(reimbursement_proposals(api.db).value or ())
-        ),
-        "claim_link_notice": claim_link_notice(len(claim_link_proposals(api.db).value or ())),
+        "reimbursement_notice": reimbursement_notice(len(api.book.reimbursement_proposals())),
+        "claim_link_notice": claim_link_notice(len(api.book.claim_link_proposals())),
     }
 
 
@@ -97,4 +85,4 @@ def import_review_resolve(api: Api, payload: dict) -> dict:
 
 def import_defaults(api: Api) -> dict:
     """Return per-book presentation state without initiating an import."""
-    return {"path": remembered_import_source(api.db) or ""}
+    return {"path": api.book.import_source() or ""}
