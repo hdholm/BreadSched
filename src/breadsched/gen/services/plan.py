@@ -110,7 +110,11 @@ def _previous_month(when: date) -> date:
 
 def _bounds(db: DbSQLite, today: date) -> tuple[date, date]:
     dates: list[date] = []
-    dates.extend(transaction.post_date for transaction in db.iter_transactions())
+    # The earliest transaction, asked of the database rather than by decoding every
+    # transaction, which took seconds on a long book.
+    first = db.first_transaction_date()
+    if first is not None:
+        dates.append(first)
     dates.extend(schedule.recurrence.start for schedule in db.iter_scheduled())
     for scenario in db.iter_scenarios():
         dates.extend(item.recurrence.start for item in scenario.schedule_overrides)

@@ -33,6 +33,7 @@ from pathlib import Path
 from .. import APP_NAME  # noqa: E402
 from ..gen.db.sqlite import DbSQLite  # noqa: E402
 from ..gen.utils.settings import Settings  # noqa: E402
+from .background import SnapshotReader
 from .gi_setup import Gdk, Gio, GLib, GObject, Gtk, Pango
 from .paths import default_book_path  # noqa: E402
 from .view_catalog import (
@@ -84,6 +85,9 @@ class ViewManager(Gtk.ApplicationWindow):
         self._tabs: list[_Tab] = []
         #: Opening a book restores its tabs; nothing is remembered meanwhile.
         self._restoring_tabs = False
+        #: Answers slow views' reads off GTK's loop while a book is open (#389).
+        self.snapshot_reader: SnapshotReader | None = None
+        self._prefill_source: int | None = None
         self._register_windows: list[tuple[Gtk.Window, Gtk.Widget]] = []
         # Automatic due review is a user-facing startup policy, not required for
         # binding views to a book. Tests and embedded windows can suppress it so
@@ -368,6 +372,12 @@ class ViewManager(Gtk.ApplicationWindow):
 
     def _detach_views(self) -> None:
         """Disconnect views and cancel work that belongs to the current book."""
+        if self._prefill_source is not None:
+            GLib.source_remove(self._prefill_source)
+            self._prefill_source = None
+        if self.snapshot_reader is not None:
+            self.snapshot_reader.close()
+            self.snapshot_reader = None
         for view in self._all_views():
             view.set_db(None)
         # Tabs name accounts of this book; the next book starts with its own.
@@ -410,9 +420,12 @@ class ViewManager(Gtk.ApplicationWindow):
     def book_opened(self, db: DbSQLite, path: str) -> None:
         self.db = db
         self.set_title(f"{path.rsplit('/', 1)[-1]} — {APP_NAME}")
+        if db.path and db.path != ":memory:":
+            self.snapshot_reader = SnapshotReader(db.path)
         db.connect("undo-available", self._on_undo_available)
         db.connect("redo-available", self._on_redo_available)
         db.connect("database-changed", lambda *_: self._refresh_status())
+        db.connect("database-changed", lambda *_: self._queue_prefill())
         for view in self._all_views():
             view.set_db(db)
         self._refresh_status()
@@ -421,14 +434,84 @@ class ViewManager(Gtk.ApplicationWindow):
         self.category_action.set_enabled(True)
         for action in self.view_actions.values():
             action.set_enabled(True)
-        self._restoring_tabs = True
-        try:
-            self.show_category(CATEGORIES[0][0])
-        finally:
-            self._restoring_tabs = False
-        self._restore_tabs()
+        # The remembered tabs, with the chosen one drawn; else the Dashboard.
+        if not self._restore_tabs():
+            self._restoring_tabs = True
+            try:
+                self.show_category(CATEGORIES[0][0])
+            finally:
+                self._restoring_tabs = False
+        self._queue_prefill()
         if self._prompt_due_on_open:
             self._schedule_due_prompt()
+
+    # ------------------------------------------------------- hidden tabs (#389)
+
+    def displays(self, view) -> bool:
+        """Whether ``view`` is the one on screen in this window."""
+        shown = self.stack.get_visible_child()
+        if shown is self.register_stack:
+            return self.register_stack.get_visible_child() is view
+        return shown is view
+
+    def defers_refresh(self, view) -> bool:
+        """A view attached to the book while hidden is drawn when shown, or in the
+        background, rather than at once: drawing every remembered tab made opening
+        a long book take half a minute (#389). A view this window does not hold
+        (a register window, a dialog's own view) is drawn at once."""
+        held = any(view is item for item in self._all_views())
+        return held and not self.displays(view)
+
+    def _queue_prefill(self) -> None:
+        """Soon, redraw out-of-date hidden tabs in the background (after a change too)."""
+        if self.snapshot_reader is None or self._prefill_source is not None:
+            return
+        self._prefill_source = GLib.timeout_add(250, self._prefill)
+
+    def _prefill(self) -> bool:
+        """Start background redraws of hidden tabs whose views can have one.
+
+        Each is read from the snapshot reader in turn, so switching to such a tab
+        shows it current instead of calculating it then. A tab whose view has
+        never been built is built hidden first; that is cheap now that hidden
+        views wait to be drawn.
+        """
+        self._prefill_source = None
+        if self.db is None or self.snapshot_reader is None:
+            return GLib.SOURCE_REMOVE
+        for tab in list(self._tabs):
+            view = tab.view
+            if view is None:
+                if tab.key not in self.BACKGROUND_VIEWS:
+                    continue
+                view = self._views.get(tab.key) or self._build_hidden(tab.key)
+            if view is None or self.displays(view) or not hasattr(view, "refresh_in_background"):
+                continue
+            if view.is_current() or view.refreshing_in_background:
+                continue
+            view.refresh_in_background()
+        return GLib.SOURCE_REMOVE
+
+    #: Views whose calculation runs on the snapshot reader, worth building hidden.
+    BACKGROUND_VIEWS = frozenset({"plan"})
+
+    def _build_hidden(self, key: str):
+        view = self._build_view(key)
+        if view is None:
+            return None
+        self._views[key] = view
+        self.stack.add_named(view, key)
+        if self.db is not None:
+            view.set_db(self.db)
+        return view
+
+    def wait_for_background(self, timeout: float = 10.0) -> bool:
+        """Finish queued prefills and background reads; deterministic support for tests."""
+        if self._prefill_source is not None:
+            GLib.source_remove(self._prefill_source)
+            self._prefill()
+        reader = self.snapshot_reader
+        return reader is None or reader.wait(timeout)
 
     def queue_modal(self, show: Callable[[Callable[[], None]], bool]) -> None:
         """Show a modal dialog after this window is on screen and every earlier one closed.
@@ -776,7 +859,7 @@ class ViewManager(Gtk.ApplicationWindow):
             None,
         )
         if register is None:
-            register = self._new_register()
+            register = self._new_register(account_handle)
         self._activate_register(register)
         self.show_category("register")
         register.show_account(account_handle)
@@ -798,7 +881,7 @@ class ViewManager(Gtk.ApplicationWindow):
             spare = next((a.handle for a in candidates if a.handle not in open_accounts), None)
             current = self._views.get("register")
             account_handle = spare or (current.account_handle if current is not None else None)
-        register = self._new_register()
+        register = self._new_register(account_handle)
         self._activate_register(register)
         self.show_category("register")
         if account_handle is not None:
@@ -808,10 +891,13 @@ class ViewManager(Gtk.ApplicationWindow):
 
     # ------------------------------------------------------------------- tabs
 
-    def _new_register(self):
+    def _new_register(self, account_handle: str | None = None):
         from .views.register import RegisterView
 
         register = RegisterView(self)
+        # Set before attaching, so the register reads this account once rather
+        # than first the picker's first account and then this one (#389).
+        register.account_handle = account_handle
         self._registers.append(register)
         self.register_stack.add_child(register)
         register.account_picker.connect(
@@ -842,19 +928,23 @@ class ViewManager(Gtk.ApplicationWindow):
         tabs keep theirs, so two futures can be looked at side by side. A scenario
         that already has a tab switches to it.
         """
-        from .views.projection import ProjectionView
-
         projection = next(
             (view for view in self._projections if view.scenario_handle == scenario_handle),
             None,
         )
         if projection is None:
-            projection = ProjectionView(self, pinned=True, scenario_handle=scenario_handle)
-            self._projections.append(projection)
-            self.stack.add_child(projection)
-            if self.db is not None:
-                projection.set_db(self.db)
+            projection = self._new_projection(scenario_handle)
         self._show_projection(projection)
+        return projection
+
+    def _new_projection(self, scenario_handle: str | None):
+        from .views.projection import ProjectionView
+
+        projection = ProjectionView(self, pinned=True, scenario_handle=scenario_handle)
+        self._projections.append(projection)
+        self.stack.add_child(projection)
+        if self.db is not None:
+            projection.set_db(self.db)
         return projection
 
     def _show_projection(self, projection) -> None:
@@ -891,16 +981,20 @@ class ViewManager(Gtk.ApplicationWindow):
     def _tab_for(self, key: str, view) -> _Tab | None:
         return next((tab for tab in self._tabs if tab.key == key and tab.view is view), None)
 
+    def _add_tab(self, key: str, view) -> _Tab:
+        """A tab for ``view`` (or the view ``key``) at the end of the bar, not chosen."""
+        tab = _Tab(key, view, self._tab_title(key, view))
+        tab.button.connect("clicked", lambda *_a: self._on_tab_clicked(tab))
+        tab.close.connect("clicked", lambda *_a: self.close_tab(tab))
+        self._make_draggable(tab)
+        self._tabs.append(tab)
+        self.tab_bar.append(tab.widget)
+        self.tab_scroll.set_visible(True)
+        return tab
+
     def _select_tab(self, key: str, view) -> None:
         """Mark the tab for what is shown, opening one if needed."""
-        tab = self._tab_for(key, view)
-        if tab is None:
-            tab = _Tab(key, view, self._tab_title(key, view))
-            tab.button.connect("clicked", lambda *_a: self._on_tab_clicked(tab))
-            tab.close.connect("clicked", lambda *_a: self.close_tab(tab))
-            self._make_draggable(tab)
-            self._tabs.append(tab)
-            self.tab_bar.append(tab.widget)
+        tab = self._tab_for(key, view) or self._add_tab(key, view)
         for item in self._tabs:
             item.set_current(item is tab)
         self._update_tab_label(view)
@@ -1078,18 +1172,22 @@ class ViewManager(Gtk.ApplicationWindow):
             settings.set(TAB_SECTION, key, stored)
             settings.save()
 
-    def _restore_tabs(self) -> None:
-        """Reopen the tabs this book had; anything since deleted is skipped."""
+    def _restore_tabs(self) -> bool:
+        """Reopen the tabs this book had; anything since deleted is skipped.
+
+        Only the chosen tab is drawn; the rest are drawn when chosen, or in the
+        background (#389). Returns whether any tab came back.
+        """
         place = self._tab_settings()
         if place is None or self.db is None:
-            return
+            return False
         settings, key = place
         try:
             stored = json.loads(settings.get(TAB_SECTION, key) or "{}")
             entries = [list(entry) for entry in stored.get("tabs", [])]
             current = int(stored.get("current", 0))
         except (TypeError, ValueError, AttributeError):
-            return
+            return False
         known = {item for item, _label, _icon in CATEGORIES}
         opened: list[_Tab | None] = []
         self._restoring_tabs = True
@@ -1098,15 +1196,13 @@ class ViewManager(Gtk.ApplicationWindow):
                 opened.append(self._reopen_tab(entry, known))
             wanted = opened[current] if 0 <= current < len(opened) else None
             restored = [tab for tab in opened if tab is not None]
-            # The Dashboard opened with the book; drop it if it was closed before.
-            first = self._tab_for(CATEGORIES[0][0], None)
-            if restored and first is not None and first not in restored:
-                self._remove_tab(first)
-            if wanted is not None or restored:
+            if restored:
                 self._on_tab_clicked(wanted or restored[-1])
         finally:
             self._restoring_tabs = False
-        self._remember_tabs()
+        if restored:
+            self._remember_tabs()
+        return bool(restored)
 
     def _reopen_tab(self, entry: list, known: set[str]) -> _Tab | None:
         if self.db is None or not entry or not isinstance(entry[0], str):
@@ -1115,17 +1211,18 @@ class ViewManager(Gtk.ApplicationWindow):
             return None
         key = entry[0]
         reference = entry[1] if len(entry) > 1 and isinstance(entry[1], str) else ""
+        # A remembered tab comes back as a tab; what it shows is drawn when it is
+        # chosen, or in the background (#389), not all at once as the book opens.
         if key == "register":
             if not reference or self.db.get_account(reference) is None:
                 return None
             # Every remembered register tab comes back, even two on one account.
-            return self._tab_for("register", self.open_register_tab(reference))
+            return self._add_tab("register", self._new_register(reference))
         if len(entry) > 2 and key == "projection":
             if reference and self.db.get_scenario(reference) is None:
                 return None
-            return self._tab_for(key, self.open_projection_tab(reference or None))
-        self.show_category(key)
-        return self._tab_for(key, None)
+            return self._add_tab(key, self._new_projection(reference or None))
+        return self._tab_for(key, None) or self._add_tab(key, None)
 
     def open_register_window(self, account_handle: str) -> Gtk.Window | None:
         """Open an independently navigable register sharing the current book."""
@@ -1139,6 +1236,7 @@ class ViewManager(Gtk.ApplicationWindow):
         window.size_key = "register-window"
         window.always_remember_size = True
         register = RegisterView(self)
+        register.account_handle = account_handle
         window.set_child(register)
         pair = (window, register)
         self._register_windows.append(pair)

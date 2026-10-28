@@ -361,8 +361,17 @@ class RegisterView(BaseView):
         self.confirm_leave(switch)
 
     def focus_entry(self) -> None:
-        """Put keyboard focus in the cell under the cursor, once the grid is shown."""
+        """Put keyboard focus in the cell under the cursor, once the grid is shown.
 
+        One request at a time: a newer one replaces it, and it is dropped if the
+        register is hidden or the keyboard has moved elsewhere since it was made
+        (Ctrl+F into the filter), rather than taking the keyboard back later.
+        """
+        previous = getattr(self, "_focus_source", None)
+        if previous is not None:
+            GLib.source_remove(previous)
+        root = self.get_root()
+        asked_from = root.get_focus() if root is not None else None
         tries = [0]
 
         def focus() -> bool:
@@ -372,10 +381,14 @@ class RegisterView(BaseView):
             if (not grid.get_mapped() or not grid._widths or grid._height <= 0) and tries[0] < 50:
                 tries[0] += 1
                 return GLib.SOURCE_CONTINUE
-            grid.sync()
+            self._focus_source = None
+            now = root.get_focus() if root is not None else None
+            moved = now is not None and now is not asked_from and not now.is_ancestor(grid)
+            if self.get_mapped() and not moved:
+                grid.sync()
             return GLib.SOURCE_REMOVE
 
-        GLib.timeout_add(20, focus)
+        self._focus_source = GLib.timeout_add(20, focus)
 
     def edit_selected_in_place(self, *_args) -> bool:
         """Typing goes into the transaction under the cursor; this puts focus there."""

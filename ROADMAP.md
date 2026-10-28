@@ -67,7 +67,9 @@ The rest of this file is unscheduled and comes after the first Beta.
   and the HTTP client speaks HTTPS with client certificates; a Unix-socket listener is
   still to come, and copying a document in over HTTP still reads any path the server
   can. A phone-sized quick entry page (`/quick`) enters one transaction apart from the
-  full interface, toward entering transactions from a phone before Beta.
+  full interface, toward entering transactions from a phone before Beta. GTK draws
+  only the chosen remembered tab when a book opens and calculates the Plan from a
+  snapshot in the background; registers and other views follow as they move.
 
 - Split oversized modules/functions where ownership is clear. Split large GUI test
   modules only when the resulting fixture ownership and runtime isolation improve;

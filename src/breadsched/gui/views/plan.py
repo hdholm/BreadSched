@@ -461,7 +461,9 @@ class PlanView(BaseView):
         if self.db is None:
             return date(today.year, 1, 1)
         dates: list[date] = []
-        dates.extend(transaction.post_date for transaction in self.db.iter_transactions())
+        first = self.db.first_transaction_date()
+        if first is not None:
+            dates.append(first)
         dates.extend(schedule.recurrence.start for schedule in self.db.iter_scheduled())
         for scenario in self.db.iter_scenarios():
             dates.extend(item.recurrence.start for item in scenario.schedule_overrides)
@@ -570,26 +572,56 @@ class PlanView(BaseView):
         self.control_status.remove_css_class("negative")
         self.refresh()
 
+    def _plan_query(self) -> PlanQuery:
+        """The applied selection, read from the controls on GTK's loop."""
+        assert self.db is not None
+        self._initialize_range_bounds()
+        self._populate_scenarios()
+        return PlanQuery(
+            start=self._start_date,
+            end=self._end_date,
+            period=self._grouping(),
+            measure=self._measure(),
+            scenario=self._scenario_handle,
+            baseline=baseline_scenario(self.manager, self.db),
+        )
+
     def refresh(self) -> None:
         if self.db is None:
             return
-        self._initialize_range_bounds()
-        self._populate_scenarios()
+        query = self._plan_query()
         try:
-            plan = book_server(self.db).plan(
-                PlanQuery(
-                    start=self._start_date,
-                    end=self._end_date,
-                    period=self._grouping(),
-                    measure=self._measure(),
-                    scenario=self._scenario_handle,
-                    baseline=baseline_scenario(self.manager, self.db),
-                )
-            )
+            plan = book_server(self.db).plan(query)
         except ApiError as error:
-            self.control_status.set_text(error.code)
-            self.control_status.add_css_class("negative")
+            self._show_plan_error(error)
             return
+        self._show_plan(plan)
+
+    def background_refresh(self):
+        """The Plan is calculated from a snapshot; only drawing it uses GTK's loop (#389)."""
+        if self.db is None:
+            return None
+        query = self._plan_query()
+
+        def show(plan) -> None:
+            if isinstance(plan, ApiError):
+                self._show_plan_error(plan)
+            else:
+                self._show_plan(plan)
+
+        def read(book):
+            try:
+                return book.plan(query)
+            except ApiError as error:
+                return error
+
+        return read, show
+
+    def _show_plan_error(self, error: ApiError) -> None:
+        self.control_status.set_text(error.code)
+        self.control_status.add_css_class("negative")
+
+    def _show_plan(self, plan) -> None:
         self._report = plan.report
         activity = self._report.activity
         position = self._report.cash_position

@@ -9,11 +9,14 @@ import fired a hundred of them.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 from ...gen.db.sqlite import DbSQLite  # noqa: E402
 from ...gen.lib.money import Money  # noqa: E402
+from ...gen.utils.logs import get_logger  # noqa: E402
 from ..gi_setup import GLib, GObject, Gtk, Pango
 
 __all__ = [
@@ -28,6 +31,9 @@ __all__ = [
     "toolbar",
     "unwrap",
 ]
+
+
+LOG = get_logger(__name__)
 
 
 class Row(GObject.Object):
@@ -65,6 +71,14 @@ class BaseView(Gtk.Box):
         #: The day the view was last drawn; showing it on a later day redraws it.
         self._drawn_on: date | None = None
         self._full_refresh_pending = False
+        #: Changes to the book seen so far; a background read started before the
+        #: latest one leaves the view out of date.
+        self._changes = 0
+        self._background_running = False
+        #: Shown above the view while a background read redraws it (#389).
+        self.updating_label = Gtk.Label(label="Updating…", xalign=0, visible=False)
+        self.updating_label.add_css_class("dim")
+        self.append(self.updating_label)
         self.connect("map", self._on_map)
 
     def append_toolbar(self, bar: Gtk.Widget) -> Gtk.ScrolledWindow:
@@ -99,6 +113,9 @@ class BaseView(Gtk.Box):
                 self.db.disconnect(handle)
         self._handlers.clear()
         self.db = db
+        self._drawn_on = None
+        self._background_running = False
+        self.updating_label.set_visible(False)
         if db is None:
             return
         for signal in self.WATCHES:
@@ -107,8 +124,18 @@ class BaseView(Gtk.Box):
             # Every commit raises database-changed: whatever a hidden view does
             # not watch for, it is still redrawn when shown after any change.
             self._handlers.append(db.connect("database-changed", self._on_any_change))
+        if self._defers_refresh():
+            # A view in a tab nobody is looking at is drawn when shown, or in the
+            # background; drawing every remembered tab made opening a book slow (#389).
+            self._stale = True
+            self._full_refresh_pending = True
+            return
         self.refresh()
         self._mark_fresh()
+
+    def _defers_refresh(self) -> bool:
+        defers = getattr(self.manager, "defers_refresh", None)
+        return bool(callable(defers) and defers(self))
 
     def _mark_fresh(self) -> None:
         self._stale = False
@@ -127,8 +154,68 @@ class BaseView(Gtk.Box):
         """
         if self.db is None or not self.db.is_open or self.is_current():
             return
+        if self._background_running:
+            # Already being redrawn in the background; it shows when ready.
+            return
+        if self._drawn_on is not None and self.refresh_in_background():
+            # Out of date but drawn before: keep showing that while it updates.
+            return
         self._on_map_refresh()
         self._mark_fresh()
+
+    # ------------------------------------------------------------- background
+
+    def background_refresh(self) -> tuple[Callable[[Any], Any], Callable[[Any], None]] | None:
+        """``(read, show)`` for a background redraw, or None to redraw in place.
+
+        ``read`` runs on the snapshot reader's thread against a read-only book
+        server and must not touch widgets or ``self.db``; ``show`` draws its answer
+        on GTK's loop. A view whose calculation is slow overrides this (#389).
+        """
+        return None
+
+    def _snapshot_reader(self):
+        return getattr(self.manager, "snapshot_reader", None)
+
+    @property
+    def refreshing_in_background(self) -> bool:
+        return self._background_running
+
+    def refresh_in_background(self) -> bool:
+        """Start a background redraw; False when this view or book cannot have one."""
+        reader = self._snapshot_reader()
+        db = self.db
+        if reader is None or db is None or not db.is_open:
+            return False
+        if self._background_running:
+            return True
+        job = self.background_refresh()
+        if job is None:
+            return False
+        read, show = job
+        changes = self._changes
+        self._background_running = True
+        self.updating_label.set_visible(True)
+
+        def answer(result: Any, error: BaseException | None) -> None:
+            if self.db is not db or not db.is_open:
+                return
+            self._background_running = False
+            self.updating_label.set_visible(False)
+            if error is not None:
+                LOG.warning("background redraw failed; redrawing in place: %s", error)
+                self.refresh()
+                self._mark_fresh()
+                return
+            show(result)
+            if self._changes == changes:
+                self._mark_fresh()
+            elif self.get_mapped():
+                # The book changed while this was read: read it again.
+                self.refresh_in_background()
+
+        reader.submit(db.revision(), read, answer)
+        return True
 
     def invalidate(self) -> None:
         """Something every view shows changed (a setting): redraw now or when shown."""
@@ -140,6 +227,7 @@ class BaseView(Gtk.Box):
             self._full_refresh_pending = True
 
     def _on_any_change(self, *_args) -> None:
+        self._changes += 1
         if not self.get_mapped():
             self._stale = True
             self._full_refresh_pending = True
@@ -151,6 +239,7 @@ class BaseView(Gtk.Box):
         is looking at, made entering a transaction take seconds on a long book
         (#319). A hidden view only notes that it is out of date.
         """
+        self._changes += 1
         if not self.get_mapped():
             self._stale = True
             self._full_refresh_pending = True
@@ -196,6 +285,9 @@ class BaseView(Gtk.Box):
             # connection has since been closed.  The database identity is captured
             # when the work is scheduled so switching books cannot retarget it.
             if scheduled_db is not None and self.db is scheduled_db and scheduled_db.is_open:
+                # A slow view keeps what it shows and redraws in the background.
+                if self._drawn_on is not None and self.refresh_in_background():
+                    return GLib.SOURCE_REMOVE
                 self.refresh()
                 self._mark_fresh()
             return GLib.SOURCE_REMOVE

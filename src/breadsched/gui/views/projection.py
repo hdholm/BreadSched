@@ -242,6 +242,11 @@ class ProjectionView(BaseView):
             self._baseline = baseline_scenario(self.manager, db)
             if self._scenario_handle is None:
                 self.scenario = self._baseline
+            else:
+                # A restored scenario tab is titled before it is first drawn (#389).
+                stored = db.get_scenario(self._scenario_handle)
+                if stored is not None:
+                    self._scenario_name = stored.name
 
     def _is_visible(self) -> bool:
         """Return whether this is the category currently shown by the manager."""

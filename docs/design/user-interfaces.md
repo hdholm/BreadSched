@@ -97,7 +97,24 @@ which searches every register through `engine.transaction_query` (see valuation 
 reporting) and opens a found split's register when a row is activated. Closing a register with unsaved typing asks first; opening another book
 closes every tab, because tabs name the old book's accounts. Each book's tabs are
 remembered in `views.ini` (section `open-tabs`, keyed by a digest of the book path)
-and restored after the Dashboard opens, skipping deleted accounts and scenarios. The
+and restored, skipping deleted accounts and scenarios. Restoring draws only the chosen
+tab (#389): a view the window holds but does not show is attached to the book without
+being drawn (`BaseView.set_db` asks `ViewManager.defers_refresh`), and a register is
+created with its account set so it reads that account once. Twelve remembered tabs on
+a 12-year book took 31 s to open; they now take as long as one.
+
+Slow views are calculated off GTK's loop (experimental branch). `gui.background.
+SnapshotReader` is one worker thread per open book that runs book-server reads against
+a read-only snapshot (`DbSQLite.load(path, "r")`, an in-memory copy, so a long read
+neither blocks a save nor sees part of one), reusing the snapshot until the book's
+revision changes. A view that can split its refresh into a read and a draw overrides
+`BaseView.background_refresh` (the Plan does, through `book.plan`); its redraw after a
+change, or when shown out of date, then keeps the old figures under an **Updating…**
+label and draws the new ones when they arrive, rereading if the book changed meanwhile.
+`ViewManager._prefill` redraws hidden tabs of such views (`BACKGROUND_VIEWS`) shortly
+after the book opens and after each change, so switching to them is immediate.
+Registers and the other views still draw when shown; moving them onto the book server
+brings them to the same path. An in-memory book has no snapshot and draws in place. The
 browser has no tab bar: `openInNewTab` opens a browser tab with the view and account
 or scenario in its query string.
 

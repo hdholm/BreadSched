@@ -472,6 +472,13 @@ browser's `/api/find` (a missing account is now `400 find.account.missing` rathe
 404), the command line's `find` (now with `--server`), and GTK's Find Transactions
 window use it.
 
+GTK's slow views read through the server off the main loop (#389):
+`gui.background.SnapshotReader` runs a view's book-server read on one worker thread
+against a read-only snapshot of the book and hands the answer back to GTK's loop to
+draw. The Plan is first; a view moved onto the server can follow by splitting its
+refresh into that read and a draw. This is the in-process form of what a remote GTK
+client needs anyway: reads that take time without freezing the window.
+
 A phone-sized **quick entry** page (`/quick`, `quick.html` with only `core.js` and
 `quick.js`) posts one spending or income transaction through the browser's
 `/api/transaction`, which already saves through the server, and fills a known

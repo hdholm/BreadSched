@@ -990,6 +990,11 @@ class DbSQLite(ChangeVerification):
         sql += " ORDER BY s.post_date, s.handle"
         return list(self._require().execute(sql, params))
 
+    def first_transaction_date(self) -> date | None:
+        """The earliest transaction's date, or None in a book with none."""
+        row = self._require().execute("SELECT MIN(post_date) FROM txn").fetchone()
+        return date.fromisoformat(row[0]) if row is not None and row[0] else None
+
     def has_scheduled_posting(self, schedule: str, when: date) -> bool:
         """Whether a transaction dated ``when`` was posted from ``schedule``."""
         row = (

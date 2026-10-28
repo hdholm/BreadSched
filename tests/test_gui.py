@@ -8125,9 +8125,7 @@ class TestChromeCleanup:
         view = window._views["register"]
         assert view.sheet.rows[-1].kind == "blank"
         tooltips = [
-            widget.get_tooltip_text()
-            for widget in _descendants(view.get_first_child())
-            if widget.get_tooltip_text()
+            widget.get_tooltip_text() for widget in _descendants(view) if widget.get_tooltip_text()
         ]
         assert any("full editor" in text for text in tooltips)
 
@@ -9748,6 +9746,104 @@ class TestViewSpecificChrome:
         assert self._sections(app)[0][0] == "Plan"
 
 
+class TestBackgroundRedraw:
+    """#389: slow views are calculated from a snapshot while the window stays usable."""
+
+    def test_a_hidden_plan_tab_is_drawn_in_the_background(self, app, window, populated_book):
+        from breadsched.gen.lib import Transaction
+
+        app.open_book(populated_book)
+        window.show_category("plan")
+        window.show_category("accounts")
+        assert window.snapshot_reader is not None
+        plan = window._views["plan"]
+        drawn: list[str] = []
+        original_refresh = type(plan).refresh
+        plan.refresh = lambda: (drawn.append("in place"), original_refresh(plan))[-1]
+        # A change while Plan is hidden is read again in the background soon after.
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        with app.db.transaction("Rent") as txn:
+            app.db.add_transaction(
+                Transaction.simple(date.today(), "Rent", rent.handle, checking.handle, "9"), txn
+            )
+        assert _spin(lambda: window._prefill_source is None and not window.snapshot_reader.busy)
+        assert window.wait_for_background()
+        assert plan.is_current()
+        # Switching to it shows it at once: nothing is calculated then.
+        window.show_category("plan")
+        assert drawn == []
+        assert not plan.updating_label.get_visible()
+
+    def test_the_shown_plan_keeps_its_report_while_it_updates(self, app, window, populated_book):
+        from breadsched.gen.lib import Transaction
+
+        app.open_book(populated_book)
+        window.present()
+        assert _spin(window.get_mapped)
+        window.show_category("plan")
+        plan = window._views["plan"]
+        assert _spin(plan.get_mapped)
+        before = plan._report
+        assert before is not None
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        with app.db.transaction("Rent") as txn:
+            app.db.add_transaction(
+                Transaction.simple(date.today(), "Rent", rent.handle, checking.handle, "9"), txn
+            )
+        assert _spin(lambda: plan.refreshing_in_background)
+        # The old report stays on screen, marked as updating, until the new one is in.
+        assert plan._report is before and plan.updating_label.get_visible()
+        assert window.wait_for_background()
+        assert plan._report is not before and not plan.updating_label.get_visible()
+        assert plan.is_current()
+
+    def test_the_snapshot_reader_reads_each_revision_once_and_reports_failures(
+        self, populated_book
+    ):
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.gui.background import SnapshotReader
+
+        db = DbSQLite()
+        db.load(populated_book)
+        reader = SnapshotReader(db.path)
+        answers: list[object] = []
+        books: list[int] = []
+
+        def read(book):
+            books.append(id(book))
+            return book.find_account("Assets:Checking Account").name
+
+        def answer(result, error):
+            answers.append(error if error is not None else result)
+
+        try:
+            reader.submit(db.revision(), read, answer)
+            reader.submit(db.revision(), read, answer)
+            assert reader.wait()
+            assert answers == ["Checking Account", "Checking Account"]
+            assert books[0] == books[1]  # one snapshot served both
+            with db.transaction("Rename") as txn:
+                account = db.get_account_by_name("Assets:Checking Account")
+                account.name = "Everyday"
+                db.commit_account(account, txn)
+            reader.submit(
+                db.revision(), lambda book: book.find_account("Assets:Everyday").name, answer
+            )
+
+            def broken(_book):
+                raise RuntimeError("no such report")
+
+            reader.submit(db.revision(), broken, answer)
+            assert reader.wait()
+            assert answers[2] == "Everyday"
+            assert isinstance(answers[3], RuntimeError)
+        finally:
+            reader.close()
+            db.close()
+
+
 class TestTabs:
     """#183: opened views and each open register account are tabs below the toolbar."""
 
@@ -10026,6 +10122,59 @@ class TestTabs:
         app.open_book(str(other))
         app.open_book(populated_book)
         assert window.tabs == expected
+
+    def test_reopened_tabs_are_drawn_when_chosen_not_all_at_once(
+        self, app, window, populated_book, tmp_path, monkeypatch
+    ):
+        """#389: opening a book drew every remembered tab; now only the chosen one.
+
+        Each register also reads its account once, not first the picker's first
+        account and then its own.
+        """
+        from breadsched.gui import register_sheet
+
+        app.open_book(populated_book)
+        checking, card = self._accounts(app)
+        window.show_category("accounts")
+        window.open_register(checking)
+        window.open_register(card)
+        window.show_category("scheduled")
+        expected = list(window.tabs)
+        other = tmp_path / "other.breadsched"
+        shutil.copyfile(populated_book, other)
+        app.open_book(str(other))
+
+        loads: list[str] = []
+        original = register_sheet.RegisterSheet.__init__
+
+        def counting(sheet, db, account, *args, **kwargs):
+            loads.append(account)
+            original(sheet, db, account, *args, **kwargs)
+
+        monkeypatch.setattr(register_sheet.RegisterSheet, "__init__", counting)
+        app.open_book(populated_book)
+        assert window.tabs == expected
+        # Scheduled was chosen; the registers wait, unread, until chosen.
+        assert window._current_tab().key == "scheduled"
+        assert loads == []
+        registers = [tab.view for tab in window._tabs if tab.key == "register"]
+        assert [view.sheet for view in registers] == [None, None]
+        assert [view.account_handle for view in registers] == [checking, card]
+        assert not window._views["accounts"].is_current()
+        window._on_tab_clicked(window._tabs[[t.view for t in window._tabs].index(registers[1])])
+        assert loads == [card]
+        assert registers[1].sheet is not None and registers[1].sheet.account == card
+        # Opening a register from the chart reads it once too.
+        loads.clear()
+        savings = next(
+            account.handle
+            for account in app.db.iter_accounts()
+            if not account.placeholder
+            and not account.is_root
+            and account.handle not in (checking, card)
+        )
+        window.open_register(savings)
+        assert loads == [savings]
 
     def test_remembered_tabs_survive_a_damaged_entry(self, app, window, populated_book):
         app.open_book(populated_book)

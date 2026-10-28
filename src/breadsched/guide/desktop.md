@@ -194,7 +194,11 @@ change anywhere reach every tab whose scenario uses them.
 
 Each book remembers its tabs: opening it again brings back the same views,
 registers, and scenario tabs, in the same order, with the same tab selected. A tab for an account or
-scenario deleted since is left out. Another book has its own tabs.
+scenario deleted since is left out. Another book has its own tabs. Only the selected
+tab is drawn when the book opens, so many open tabs no longer slow opening it; the
+others are drawn when you choose them. The Plan is calculated in the background
+instead: it is ready when you switch to it, and after a change it keeps showing what
+it had, marked **Updating…**, until the new figures are in.
 
 Registers can also open in independent windows; their account, filter, and cursor
 do not replace the main window's register state.

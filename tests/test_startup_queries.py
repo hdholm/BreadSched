@@ -69,3 +69,15 @@ def test_has_scheduled_posting_matches_the_days_transactions(db, book, payday_sc
             for txn in db.iter_transactions(start=when, end=when)
         )
         assert scanned == db.has_scheduled_posting(payday_schedule.handle, when)
+
+
+def test_first_transaction_date_is_the_earliest_or_none(db, book):
+    """The Plan's earliest month comes from one query, not every transaction (#389)."""
+    assert db.first_transaction_date() is None
+    with db.transaction("Spend") as txn:
+        for when in (date(2026, 5, 2), date(2024, 11, 30), date(2025, 1, 1)):
+            db.add_transaction(
+                Transaction.simple(when, "Item", book.groceries, book.checking, "1"), txn
+            )
+    assert db.first_transaction_date() == date(2024, 11, 30)
+    assert db.first_transaction_date() == min(t.post_date for t in db.iter_transactions())
