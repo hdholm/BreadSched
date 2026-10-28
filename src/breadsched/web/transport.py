@@ -67,6 +67,9 @@ STATIC_ASSETS = {
     "quick.html": ("quick.html", "text/html; charset=utf-8"),
     "quick.js": ("quick.js", "application/javascript; charset=utf-8"),
     "style.css": ("style.css", "text/css; charset=utf-8"),
+    "favicon.png": ("favicon.png", "image/png"),
+    # Safari asks for this name for an icon added to the home screen.
+    "apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
     **{name: (name, "application/javascript; charset=utf-8") for name in SCRIPTS},
 }
 MAX_JSON_BODY = 64 * 1024

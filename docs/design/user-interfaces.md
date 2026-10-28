@@ -213,6 +213,9 @@ schema upgrade first shows a busy page naming the book and its schema
 presented window, then migrates. A remembered book that needs no upgrade opens the
 same way behind an **Opening** page (`presentation.book_opening_progress`), so a
 large book's start-up is visibly under way and the start screen never flashes (#389).
+That page is the start-up splash: it leads with the BreadSched logo, as the start
+screen (no book) and the About dialog do (`gui/widgets/brand.py`, which draws the
+packaged logo at a fixed width and adds the packaged icons to GTK's search path).
 The due review builds the rows of a schedule with several dates only when its
 expander opens (`DueDialog._fill_dates`, answers held by `_Choice` until then), and
 balances and "already posted" are answered in SQL (`DbSQLite.split_totals`, summed

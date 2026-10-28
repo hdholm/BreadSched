@@ -14,8 +14,8 @@ breadsched-gtk household.breadsched
 
 With no book argument, the application offers to create a book, open a book, or
 import a GnuCash book into a new BreadSched book. With no argument it reopens the
-book you used last, and the window says **Opening** and the book's name until it is
-ready (or that it is upgrading, for an older book). The equivalent commands are
+book you used last, and the window shows the BreadSched logo with **Opening** and the
+book's name until it is ready (or that it is upgrading, for an older book). The equivalent commands are
 `breadsched gui` and `python -m breadsched.gui`. **File → New Book** creates a book
 at any time, and **File → Import GnuCash Book into New Book** starts from GnuCash.
 

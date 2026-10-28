@@ -146,7 +146,7 @@ that device, and **Saved here** lists what you entered. **Full view** opens the
 complete interface. To use it from a phone or tablet away from this computer, reach
 the book through the TLS reverse proxy described in
 [Share a book with a running server](cli.md#share-a-book-with-a-running-server-experimental); add the page to the home screen to
-open it like an app.
+open it like an app, with BreadSched's icon.
 
 ## Enter transactions in a register
 

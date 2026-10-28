@@ -2214,6 +2214,22 @@ class TestPackagedResources:
         assert "web/static/*.html" in declared
         assert "web/static/*.css" in declared
         assert "web/static/*.js" in declared
+        assert "web/static/*.png" in declared
+
+    def test_every_packaged_image_is_declared_as_package_data(self):
+        """The icons and logo GTK and the browser show ship in the wheel (``pip install``
+        has no other copy of them)."""
+        import fnmatch
+        import tomllib
+
+        root = Path(__file__).resolve().parent.parent
+        config = tomllib.loads((root / "pyproject.toml").read_text())
+        declared = config["tool"]["setuptools"]["package-data"]["breadsched"]
+        images = sorted(SRC.rglob("*.png"))
+        assert images
+        for image in images:
+            relative = image.relative_to(SRC).as_posix()
+            assert any(fnmatch.fnmatch(relative, pattern) for pattern in declared), relative
 
 
 class TestCommunityHealth:

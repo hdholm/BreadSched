@@ -3361,6 +3361,19 @@ class TestDueReview:
 
 
 class TestSafety:
+    def test_pages_carry_the_application_icon(self, client):
+        """A browser tab and an iPad home screen show BreadSched's icon."""
+        for page in ("/", "/quick"):
+            _status, body, _headers = client.raw(page)
+            html = body.decode("utf-8")
+            assert '<link rel="icon" type="image/png" href="/favicon.png">' in html
+            assert '<link rel="apple-touch-icon" href="/apple-touch-icon.png">' in html
+        for icon in ("/favicon.png", "/apple-touch-icon.png"):
+            status, body, headers = client.raw(icon)
+            assert status == 200
+            assert headers.get_content_type() == "image/png"
+            assert body.startswith(b"\x89PNG\r\n\x1a\n")
+
     def test_only_named_static_assets_are_served(self, client, tmp_path, monkeypatch):
         from breadsched.web import transport
 

@@ -310,6 +310,13 @@ class TestDialogsStayInFront:
         # Never the empty-book chooser: the "Opening…" page, then the book.
         assert window.stack.get_visible_child_name() == "busy"
         assert window.busy_label.get_text() == "Opening gui.breadsched…"
+        # The page is the start-up splash: it shows the logo.
+        from breadsched.gui.widgets.brand import LogoPicture
+
+        busy = window.stack.get_child_by_name("busy")
+        assert any(
+            isinstance(item, LogoPicture) and item.size == (320, 272) for item in _descendants(busy)
+        )
         assert _spin(lambda: app.db is not None)
         assert _spin(lambda: window.stack.get_visible_child_name() != "busy")
         assert window.stack.get_visible_child_name() != "empty"
@@ -343,6 +350,35 @@ class TestDialogsStayInFront:
         assert _spin(lambda: bool(reported))
         assert reported == ["Could not open the book: disk full"]
         assert window.stack.get_visible_child_name() == "empty"
+
+
+class TestBranding:
+    """The application icon and the BreadSched logo come from the package itself."""
+
+    def test_the_packaged_icon_is_found_without_an_installed_one(self, app):
+        from breadsched import APP_ID
+        from breadsched.gui.gi_setup import Gdk, Gtk
+
+        theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+        assert theme.has_icon(APP_ID)
+        assert Gtk.Window.get_default_icon_name() == APP_ID
+
+    def test_the_about_dialog_and_start_screen_show_the_logo(self, app, window, monkeypatch):
+        from breadsched.gui.gi_setup import Gtk
+        from breadsched.gui.widgets.brand import LogoPicture
+
+        shown = []
+        monkeypatch.setattr(Gtk.AboutDialog, "present", lambda dialog: shown.append(dialog))
+        app.on_about()
+        [about] = shown
+        logo = about.get_logo()
+        assert logo is not None and (logo.get_width(), logo.get_height()) == (640, 545)
+        # With no book, the start screen leads with the logo in place of a title.
+        empty = window.stack.get_child_by_name("empty")
+        assert any(
+            isinstance(item, LogoPicture) and item.size == (240, 204)
+            for item in _descendants(empty)
+        )
 
 
 class TestStartupDialogsTakeTurns:

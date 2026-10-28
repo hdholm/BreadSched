@@ -47,6 +47,7 @@ from .view_catalog import (
     view_action_name,
 )
 from .widgets.bounded import BoundedWindow
+from .widgets.brand import logo_picture
 from .widgets.presented import when_presented
 from .widgets.window_sizes import remember_size, restore_size
 
@@ -311,6 +312,8 @@ class ViewManager(Gtk.ApplicationWindow):
             page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
             page.set_valign(Gtk.Align.CENTER)
             page.set_halign(Gtk.Align.CENTER)
+            # The start-up splash: the logo while the remembered book opens.
+            page.append(logo_picture())
             page.append(Gtk.Spinner(spinning=True, width_request=32, height_request=32))
             self.busy_label = Gtk.Label(wrap=True, justify=Gtk.Justification.CENTER)
             self.busy_label.set_max_width_chars(60)
@@ -331,9 +334,7 @@ class ViewManager(Gtk.ApplicationWindow):
         empty.set_valign(Gtk.Align.CENTER)
         empty.set_halign(Gtk.Align.CENTER)
 
-        title = Gtk.Label(label=APP_NAME)
-        title.add_css_class("category-title")
-        empty.append(title)
+        empty.append(logo_picture(240))
         empty.append(Gtk.Label(label="Open a book to begin, or start a new one."))
 
         choices = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)

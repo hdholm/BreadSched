@@ -28,6 +28,7 @@ from .user_guide import UserGuideWindow
 from .view_catalog import CATEGORIES as MENU_CATEGORIES  # noqa: E402
 from .view_catalog import VIEW_ACTIONS, view_action_name  # noqa: E402
 from .viewmanager import ViewManager  # noqa: E402
+from .widgets.brand import install_icons, logo_texture
 from .widgets.presented import when_presented
 
 if TYPE_CHECKING:
@@ -103,6 +104,8 @@ class BreadSchedApplication(Gtk.Application):
         show_scrollbars()
         # The installed desktop entry, AppStream metadata, and icon share the
         # application id, so windows use the themed icon wherever it is installed.
+        # A checkout or pip install has no installed icon: the package carries it.
+        install_icons(display)
         Gtk.Window.set_default_icon_name(APP_ID)
         self._install_actions()
         #: The Actions menu follows the active window's current view (#182).
@@ -739,6 +742,7 @@ class BreadSchedApplication(Gtk.Application):
             comments="Plan cash flow from scheduled financial events and compare "
             "the plan with actual activity.",
             license_type=Gtk.License.AGPL_3_0,
+            logo=logo_texture(),
         )
         about.present()
 
