@@ -8,13 +8,14 @@ an interface lays the register out without reading the book itself.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 from ..db.sqlite import DbSQLite
 from ..engine import attachments as attachment_engine
 from ..engine import ledger, valuation
 from ..engine.attachments import AttachmentStatus
+from ..engine.currency import reporting_currency_handle
 from ..engine.ledger import RegisterRow
 from ..engine.valuation import AccountValuation
 from ..lib.account import Account
@@ -22,7 +23,13 @@ from ..lib.commodity import Commodity
 from ..lib.money import Money
 from .contracts import ServiceError, ServiceResult
 
-__all__ = ["RegisterView", "SecurityHolding", "register_view"]
+__all__ = [
+    "RegisterChanges",
+    "RegisterView",
+    "SecurityHolding",
+    "register_changes",
+    "register_view",
+]
 
 #: The register shows at most this many of the newest rows unless asked for more.
 DEFAULT_ROWS = 250
@@ -129,5 +136,61 @@ def register_view(
             rows,
             names,
             documents,
+        )
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class RegisterChanges:
+    """What a register needs to bring its rows up to date after ``changed``
+    transactions were saved or removed, without reading the whole register (#319).
+
+    ``rows`` are the changed transactions' rows in the account, for those still in
+    the book; ``apply`` merges them into a full register and recomputes its balances.
+    """
+
+    account: Account
+    changed: tuple[str, ...]
+    rows: tuple[RegisterRow, ...]
+    #: The reporting currency, for a transaction kept in none.
+    currency: str
+    holds_shares: bool
+    #: Full names of every account the rows' splits use, by handle.
+    names: Mapping[str, str] = field(default_factory=dict)
+
+    def apply(self, rows: list[RegisterRow]) -> list[RegisterRow]:
+        """``rows`` (every row of this account's register) with the changes merged."""
+        return ledger.merge_register(
+            rows,
+            self.changed,
+            self.rows,
+            sign=self.account.sign(),
+            currency=self.currency,
+            holds_shares=self.holds_shares,
+        )
+
+
+def register_changes(
+    db: DbSQLite, account: str, changed: Iterable[str]
+) -> ServiceResult[RegisterChanges]:
+    """The rows of ``changed`` transactions in ``account``'s register, to merge."""
+    found = db.get_account(account)
+    if found is None:
+        return ServiceResult.failure(ServiceError("account.not_found", ("account",)))
+    handles = tuple(sorted(set(changed)))
+    rows = tuple(ledger.changed_rows(db, account, handles))
+    names = {}
+    for handle in {split.account for row in rows for split in row.transaction.splits}:
+        named = db.get_account(handle)
+        if named is not None:
+            names[handle] = db.full_name(named)
+    return ServiceResult.success(
+        RegisterChanges(
+            found,
+            handles,
+            rows,
+            reporting_currency_handle(db),
+            ledger.security_of(db, found) is not None,
+            names,
         )
     )

@@ -20,7 +20,7 @@ import json
 import socket
 import ssl
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import date
 from typing import Any
@@ -147,7 +147,7 @@ from ..gen.services.reconciliations import (
     ToggleCleared,
     UpdateReconciliation,
 )
-from ..gen.services.register_view import RegisterView
+from ..gen.services.register_view import RegisterChanges, RegisterView
 from ..gen.services.review import (
     PendingActual,
     ReviewClaimAttachment,
@@ -564,6 +564,11 @@ class HttpBookClient:
         path = f"/accounts/{quote(account, safe='')}/register-view"
         params = {"limit": "all" if limit is None else limit, "filter": filter_text or None}
         return from_data(RegisterView, self._call("GET", path, params))
+
+    def register_changes(self, account: str, changed: Sequence[str]) -> RegisterChanges:
+        path = f"/accounts/{quote(account, safe='')}/register-changes"
+        found = self._call("POST", path, body={"changed": list(changed)})
+        return from_data(RegisterChanges, found)
 
     def account_balance(self, query: BalanceQuery) -> AccountBalance:
         path = f"/accounts/{quote(query.account, safe='')}/balance"

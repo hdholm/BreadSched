@@ -8,7 +8,7 @@ that caching buys nothing.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date
 
@@ -28,7 +28,10 @@ __all__ = [
     "RegisterRow",
     "security_of",
     "share_fraction",
+    "changed_rows",
+    "merge_register",
     "transaction_matches",
+    "transaction_matches_named",
     "update_register",
     "totals_by_class_amount",
     "net_worth_amount",
@@ -238,23 +241,53 @@ def update_register(
     """
     handle = account if isinstance(account, str) else account.handle
     gone = set(changed)
-    kept = [row for row in rows if row.transaction.handle not in gone]
+    obj = db.get_account(handle)
+    return merge_register(
+        rows,
+        gone,
+        changed_rows(db, handle, gone),
+        sign=obj.sign() if obj else 1,
+        currency=reporting_currency_handle(db),
+        holds_shares=security_of(db, obj) is not None,
+    )
+
+
+def changed_rows(db: DbSQLite, account: str, changed: Iterable[str]) -> list[RegisterRow]:
+    """The register rows in ``account`` of the ``changed`` transactions still in the
+    book, with balances left for ``merge_register`` to compute."""
     added: list[RegisterRow] = []
-    for txn_handle in sorted(gone):
+    for txn_handle in sorted(set(changed)):
         txn = db.get_transaction(txn_handle)
         if txn is None:
             continue
         added.extend(
-            RegisterRow(txn, split, Money(0)) for split in txn.splits if split.account == handle
+            RegisterRow(txn, split, Money(0)) for split in txn.splits if split.account == account
         )
+    return added
+
+
+def merge_register(
+    rows: list[RegisterRow],
+    changed: Iterable[str],
+    added: Iterable[RegisterRow],
+    *,
+    sign: int,
+    currency: str,
+    holds_shares: bool,
+) -> list[RegisterRow]:
+    """Replace the ``changed`` transactions' rows with ``added`` and recompute every
+    running balance in memory, reading nothing from the book (#319).
+
+    ``sign`` is the account's display sign, ``currency`` the reporting currency for a
+    transaction with none, and ``holds_shares`` whether share balances run too.
+    """
+    gone = set(changed)
+    kept = [row for row in rows if row.transaction.handle not in gone]
     merged = sorted(
-        kept + added, key=lambda row: (row.transaction.post_date, row.transaction.handle)
+        [*kept, *added], key=lambda row: (row.transaction.post_date, row.transaction.handle)
     )
-    obj = db.get_account(handle)
-    sign = obj.sign() if obj else 1
-    currency = reporting_currency_handle(db)
     running: Amount | None = None
-    shares: Money | None = Money(0) if security_of(db, obj) is not None else None
+    shares: Money | None = Money(0) if holds_shares else None
     for row in merged:
         amount = Amount(row.split.value, row.transaction.currency or currency)
         running = _accumulate(running, amount)
@@ -331,12 +364,21 @@ def _amount_texts(value: Money) -> tuple[str, str]:
 
 
 def transaction_matches(db: DbSQLite, transaction: Transaction, text: str) -> bool:
+    """Whether ``text`` appears anywhere in ``transaction`` (#382); see
+    ``transaction_matches_named``, which this calls with the book's full names."""
+    return transaction_matches_named(transaction, text, lambda handle: db.full_name(handle) or "")
+
+
+def transaction_matches_named(
+    transaction: Transaction, text: str, full_name: Callable[[str], str]
+) -> bool:
     """Whether ``text`` appears anywhere in ``transaction`` (#382).
 
     The register filters search everything a transaction holds: its date,
     number, description, note (imported notes included, #385), tags, each split's
-    memo and account, and each split's amount (and share count) as shown or as
-    typed, so ``67`` finds a 67.00 charge as well as check 1067. Case is ignored.
+    memo and account (named by ``full_name``), and each split's amount (and share
+    count) as shown or as typed, so ``67`` finds a 67.00 charge as well as check
+    1067. Case is ignored.
     """
     needle = text.strip().casefold()
     if not needle:
@@ -350,7 +392,7 @@ def transaction_matches(db: DbSQLite, transaction: Transaction, text: str) -> bo
     ]
     for split in transaction.splits:
         parts.append(split.memo)
-        parts.append(db.full_name(split.account) or "")
+        parts.append(full_name(split.account))
         parts.extend(_amount_texts(split.value))
         if split.quantity != split.value:
             parts.extend(_amount_texts(split.quantity))

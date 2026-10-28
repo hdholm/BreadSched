@@ -28,6 +28,9 @@ Resources so far, all under ``/api/v1``:
 * ``GET /accounts/{handle}/register`` (``start``, ``end``, ``tag``, ``limit``).
 * ``GET /accounts/{handle}/register-view`` (``limit``) – the newest rows with every name,
   document, and share detail the browser's register shows.
+* ``POST /accounts/{handle}/register-changes`` (``changed``, transaction handles) – the
+  rows of those transactions in the register, for a client holding every row to merge;
+  it writes nothing.
 * ``GET /accounts/{handle}/balance`` (``as_of``, ``recursive``) and ``GET /balances``
   (``as_of``) – one account's balance, or the book's cash and net worth.
 * ``GET /accounts`` and ``GET /accounts/{handle}`` – accounts as stored, with full
@@ -417,6 +420,7 @@ __all__ = [
     "currency_get",
     "register_get",
     "register_view_get",
+    "register_changes_v1",
     "transaction_editable",
     "transaction_lookup",
     "advance_days_get",
@@ -636,6 +640,16 @@ def register_view_get(api: Api, path: Path, query: QueryParams) -> dict:
     needle = query.text("filter") or ""
     query.finish()
     return to_data(api.book.register_view(path["handle"], limit, needle))
+
+
+@dataclass(frozen=True, slots=True)
+class _RegisterChanged:
+    changed: tuple[str, ...]
+
+
+def register_changes_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(_RegisterChanged, body, "request")
+    return to_data(api.book.register_changes(path["handle"], request.changed))
 
 
 def account_balance_get(api: Api, path: Path, query: QueryParams) -> dict:

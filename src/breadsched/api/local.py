@@ -12,7 +12,7 @@ with the book, so every process that opens it agrees on it (#357).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
@@ -205,7 +205,7 @@ from ..gen.services.reconciliations import (
     ToggleCleared,
     UpdateReconciliation,
 )
-from ..gen.services.register_view import RegisterView
+from ..gen.services.register_view import RegisterChanges, RegisterView
 from ..gen.services.review import (
     PendingActual,
     ReviewClaimAttachment,
@@ -454,6 +454,9 @@ class LocalBookServer:
         self, account: str, limit: int | None = 250, filter_text: str = ""
     ) -> RegisterView:
         return unwrap(register_view_service.register_view(self.db, account, limit, filter_text))
+
+    def register_changes(self, account: str, changed: Sequence[str]) -> RegisterChanges:
+        return unwrap(register_view_service.register_changes(self.db, account, changed))
 
     def account_balance(self, query: BalanceQuery) -> AccountBalance:
         return unwrap(account_balance(self.db, query))

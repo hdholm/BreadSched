@@ -24,6 +24,8 @@ import weakref
 from collections.abc import Callable
 from datetime import date
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.engine import ledger
 from ...gen.lib.account import Account, AccountClass, AccountType
 from ...presentation.investments import register_share_summary
@@ -190,7 +192,7 @@ class RegisterView(BaseView):
             self._updating = False
         if self.account_handle is None:
             return
-        account = self.db.get_account(self.account_handle)
+        account = self._account()
         if account is None:
             return
         self.reconcile_button.set_sensitive(
@@ -362,18 +364,32 @@ class RegisterView(BaseView):
         self.set_entry_status(sheet.message, error=sheet.error)
         self._show_balance()
 
+    def _account(self) -> Account | None:
+        """The register's account as the book server stores it, if it still exists."""
+        if self.db is None or self.account_handle is None:
+            return None
+        try:
+            return book_server(self.db).account(self.account_handle).account
+        except ApiError:
+            return None
+
     def _populate_picker(self) -> None:
         db = self.db
         if db is None:
             return
-        accounts = sorted(
-            (a for a in db.iter_accounts() if not a.is_root and not a.placeholder),
-            key=db.full_name,
+        records = sorted(
+            (
+                record
+                for record in book_server(db).accounts()
+                if not record.account.is_root and not record.account.placeholder
+            ),
+            key=lambda record: record.full_name,
         )
+        accounts = [record.account for record in records]
         self._pickable = accounts
         model = Gtk.StringList()
-        for account in accounts:
-            model.append(db.full_name(account))
+        for record in records:
+            model.append(record.full_name)
         self.account_picker.set_model(model)
         if self.account_handle is None and accounts:
             self.account_handle = accounts[0].handle
@@ -489,12 +505,17 @@ class RegisterView(BaseView):
             if handle is not None:
                 sheet.select_transaction(handle)
             self.grid.sync()
-        transaction = self.db.get_transaction(handle) if handle is not None else None
+        try:
+            transaction = book_server(self.db).find_transaction(handle) if handle else None
+        except ApiError:
+            transaction = None
         if transaction is None:
             return self._refuse_tracking(
                 "Put the cursor on a transaction to track as reimbursable."
             )
-        accounts = {account.handle: account for account in self.db.iter_accounts()}
+        accounts = {
+            record.account.handle: record.account for record in book_server(self.db).accounts()
+        }
 
         def costs(kind: Callable[[Account], bool]):
             return (
@@ -720,7 +741,7 @@ class RegisterView(BaseView):
     def _on_reconcile_clicked(self, *_args) -> None:
         if self.db is None or self.account_handle is None:
             return
-        account = self.db.get_account(self.account_handle)
+        account = self._account()
         if account is None:
             return
         from ..dialogs.reconciliation_dialog import ReconciliationDialog

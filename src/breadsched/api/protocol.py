@@ -9,7 +9,7 @@ changing the book.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
@@ -135,7 +135,7 @@ from ..gen.services.reconciliations import (
     ToggleCleared,
     UpdateReconciliation,
 )
-from ..gen.services.register_view import RegisterView
+from ..gen.services.register_view import RegisterChanges, RegisterView
 from ..gen.services.review import (
     PendingActual,
     ReviewClaimAttachment,
@@ -362,6 +362,11 @@ class BookApi(Protocol):
         """The newest ``limit`` rows (every row for ``None``) of a register with every
         name, document, and share detail they show; with ``filter_text``, only rows
         whose transaction holds it."""
+        ...
+
+    def register_changes(self, account: str, changed: Sequence[str]) -> RegisterChanges:
+        """The rows of the ``changed`` transactions in ``account``'s register, for a
+        register that holds every row to merge in place of reading them all again."""
         ...
 
     def account_balance(self, query: BalanceQuery) -> AccountBalance: ...

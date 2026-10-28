@@ -477,8 +477,15 @@ GTK's slow views read through the server off the main loop (#389):
 against a read-only snapshot of the book and hands the answer back to GTK's loop to
 draw. The Plan was first; GTK's register followed: its full read is
 `register_view(account, None)` (`limit=None` is every row; over HTTP `limit=all`) and
-its account names come from `accounts()`, while a reread of just-saved transactions
-stays in place. A view moved onto the server can follow by splitting its refresh into
+its account names come from `accounts()`. A reread of just-saved transactions asks
+`register_changes(account, changed)` (`POST /api/v1/accounts/{handle}/register-changes`)
+for those transactions' rows, which `RegisterChanges.apply` merges into the rows the
+register holds, recomputing the balances in memory (`ledger.merge_register`; #319).
+The register's account, its picker, the transaction a draft reloads, and the filter's
+account names come from `account()`, `accounts()`, and `find_transaction()`.
+**Still open:** which transactions a commit changed still reaches the register from the
+book's storage signals; a `Change` names only the kinds, so a remote GTK register would
+reread everything. A view moved onto the server can follow by splitting its refresh into
 that read and a draw. This is the in-process form of what a remote GTK
 client needs anyway: reads that take time without freezing the window.
 

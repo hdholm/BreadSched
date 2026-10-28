@@ -47,7 +47,7 @@ from ..gen.engine.entry_input import (
     quickfill_description,
     trade_price,
 )
-from ..gen.lib.account import AccountClass, AccountType
+from ..gen.lib.account import Account, AccountClass, AccountType
 from ..gen.lib.amount import Amount
 from ..gen.lib.commodity import Commodity
 from ..gen.lib.money import Money
@@ -286,6 +286,8 @@ class RegisterSheet:
         self.transfer_names: dict[str, str] = {}
         #: Every account's full name by handle, and the accounts that hold securities.
         self.full_names: dict[str, str] = {}
+        #: Every account as the book server listed it, by handle.
+        self.accounts: dict[str, Account] = {}
         self.security_accounts: frozenset[str] = frozenset()
         #: Earlier descriptions in this register, most recent first.
         self.descriptions: list[str] = []
@@ -305,8 +307,18 @@ class RegisterSheet:
     # ----------------------------------------------------------------- loading
 
     @property
-    def account_object(self):
-        return self.db.get_account(self.account)
+    def account_object(self) -> Account | None:
+        try:
+            return book_server(self.db).account(self.account).account
+        except ApiError:
+            return None
+
+    def _stored(self, handle: str) -> Transaction | None:
+        """A transaction as the book now stores it, or ``None`` once it is gone."""
+        try:
+            return book_server(self.db).find_transaction(handle)
+        except ApiError:
+            return None
 
     @property
     def columns(self) -> tuple[str, ...]:
@@ -323,17 +335,16 @@ class RegisterSheet:
         has gone (deleted elsewhere) returns the cursor to the blank transaction.
         """
         if changed is not None and self.ledger_rows:
-            # Only the changed transactions are read again, in the book (#319).
-            account = self.account_object
-            if account is None:
+            # Only the changed transactions are read again (#319).
+            try:
+                changes = book_server(self.db).register_changes(self.account, tuple(changed))
+            except ApiError:
                 self._lose_account()
                 return
             self._refresh_draft(keep_cursor)
             self._load_accounts()
-            self.ledger_rows = ledger.update_register(
-                self.db, self.account, self.ledger_rows, changed
-            )
-            self._finish_load(account)
+            self.ledger_rows = changes.apply(self.ledger_rows)
+            self._finish_load(changes.account)
             return
         try:
             view = book_server(self.db).register_view(self.account, None)
@@ -371,7 +382,7 @@ class RegisterSheet:
         if not keep_cursor:
             self.draft = self._blank_draft()
         elif source is not None:
-            fresh = self.db.get_transaction(source.handle)
+            fresh = self._stored(source.handle)
             if fresh is None:
                 self.draft = self._blank_draft()
             elif not self.draft.dirty():
@@ -399,6 +410,7 @@ class RegisterSheet:
         names: dict[str, str] = {}
         records = book_server(self.db).accounts()
         self.full_names = {record.account.handle: record.full_name for record in records}
+        self.accounts = {record.account.handle: record.account for record in records}
         for record in records:
             item = record.account
             if item.is_root or item.placeholder or item.parent is None:
@@ -434,7 +446,9 @@ class RegisterSheet:
         self._rebuild()
 
     def _matches(self, row: ledger.RegisterRow) -> bool:
-        return ledger.transaction_matches(self.db, row.transaction, self.filter_text)
+        return ledger.transaction_matches_named(
+            row.transaction, self.filter_text, lambda handle: self.full_names.get(handle, "")
+        )
 
     def _rebuild(self) -> None:
         """Lay the rows out again around the draft, keeping the cursor's place."""
@@ -1184,7 +1198,7 @@ class RegisterSheet:
             if handle is None:
                 self.draft = self._blank_draft()
             else:
-                fresh = self.db.get_transaction(handle)
+                fresh = self._stored(handle)
                 if fresh is None:
                     return self._fail("That transaction is no longer in the book.")
                 self.draft = self._load_draft(fresh, split)
@@ -1260,7 +1274,7 @@ class RegisterSheet:
         if row is None or row.kind == SPLIT or self.draft.expanded:
             return target
         name = self._resolve_account(self.draft.transfer.strip(), self.account_names)
-        account = self.db.get_account(self.account_names[name]) if name is not None else None
+        account = self.accounts.get(self.account_names[name]) if name is not None else None
         if account is None or account.account_class is not AccountClass.EXPENSE:
             return target
         return next(
@@ -1314,7 +1328,7 @@ class RegisterSheet:
         if source is None:
             self.draft = self._blank_draft()
         else:
-            fresh = self.db.get_transaction(source.handle)
+            fresh = self._stored(source.handle)
             self.draft = (
                 self._load_draft(fresh, self.draft.split_handle)
                 if fresh is not None
@@ -1562,7 +1576,7 @@ class RegisterSheet:
         """Shares as an amount of the account's security, for the shared service."""
         if quantity is None:
             return None
-        obj = self.db.get_account(account)
+        obj = self.accounts.get(account)
         return Amount(quantity, obj.commodity) if obj is not None and obj.commodity else None
 
     # ---------------------------------------------------------------- reconcile

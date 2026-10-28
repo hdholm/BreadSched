@@ -2167,6 +2167,45 @@ def test_register_views_read_alike(target, book, tmp_path):
         assert refused.value.status == status
 
 
+def test_register_changes_merge_like_a_full_read(target, book):
+    """A register holding every row merges the changed transactions' rows and gets
+    what reading the whole register again gives (#319, #389)."""
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.engine import ledger
+
+    api, db = target.api, target.db
+    with db.transaction("Activity") as txn:
+        for when, description, to, source, amount in (
+            (date(2026, 9, 1), "Opening", book.checking, book.opening, "5000"),
+            (date(2026, 9, 6), "Rent", book.rent, book.checking, "1800"),
+            (date(2026, 9, 20), "Groceries", book.rent, book.checking, "75"),
+        ):
+            db.add_transaction(Transaction.simple(when, description, to, source, amount), txn)
+    rows = list(api.register_view(book.checking, None).rows)
+    rent = next(item for item in db.iter_transactions() if item.description == "Rent")
+    groceries = next(item for item in db.iter_transactions() if item.description == "Groceries")
+    with db.transaction("Back-dated and removed") as txn:
+        db.add_transaction(
+            Transaction.simple(date(2026, 9, 3), "Refund", book.checking, book.rent, "40"), txn
+        )
+        db.remove_transaction(groceries.handle, txn)
+    refund = next(item for item in db.iter_transactions() if item.description == "Refund")
+    changes = api.register_changes(book.checking, [refund.handle, groceries.handle])
+    assert changes.changed == tuple(sorted((refund.handle, groceries.handle)))
+    assert [row.transaction.handle for row in changes.rows] == [refund.handle]
+    assert changes.names[book.rent] == db.full_name(book.rent)
+    merged = changes.apply(rows)
+    assert to_data(tuple(merged)) == to_data(tuple(ledger.register(db, book.checking)))
+    assert merged[-1].running == Money("3240")
+    # Changes elsewhere leave the register's own rows as they were.
+    assert api.register_changes(book.checking, [rent.handle]).apply(merged)[-1].running == (
+        Money("3240")
+    )
+    with pytest.raises(ApiError) as refused:
+        api.register_changes("no-such-account", [rent.handle])
+    assert refused.value.status == 404
+
+
 def test_the_book_summary_and_verification_read_alike(target, book):
     from breadsched.api.typed_codec import to_data
     from breadsched.gen.engine import valuation

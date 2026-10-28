@@ -1427,6 +1427,7 @@ class TestBookServerBoundaries:
         "save_plan_settings",
         "historical_estimates",
         "accept_historical_estimate",
+        "register_changes",
     }
 
     @pytest.mark.parametrize(
@@ -1783,6 +1784,14 @@ class TestBookServerBoundaries:
                 ("_populate_scenarios", "_on_scenario_chosen", "_currency_label", "work"),
             ),
             ("gui/dialogs/projection_detail_dialog.py", ("_render",)),
+            (
+                "gui/register_sheet.py",
+                ("reload", "_stored", "account_object", "_load_accounts"),
+            ),
+            (
+                "gui/views/register.py",
+                ("_account", "_populate_picker", "track_selected_reimbursable"),
+            ),
             ("gui/register_sheet.py", ("_save_transaction",)),
         ],
     )
