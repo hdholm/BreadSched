@@ -266,6 +266,12 @@ instead of printing it. Another machine's commands then use
 authority or asks for a client certificate. See the design notes (decision 0003)
 for a complete nginx configuration and the checks the proxy must keep.
 
+A command on another machine sends the files it names: `import`, `import-csv`, and
+`attachments --add` upload the file, and the server imports or links its own copy
+(an import file is kept beside the book in `<book>.uploads`). Only commands on the
+server's own computer, which read its record, may name files there, change the
+attachment folder, or link a document outside it.
+
 ## Import files
 
 ```bash

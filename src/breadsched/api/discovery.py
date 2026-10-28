@@ -42,6 +42,9 @@ class ServerRecord:
     host: str
     #: The token of the writer lock the server holds.
     lock: str
+    #: The server's local-only token: it lets a program on this computer name files
+    #: here (#358); "" for a record written before there was one.
+    local_token: str = ""
 
 
 def _canonical(book: str) -> str:
@@ -56,10 +59,18 @@ def record_path(book: str, directory: Path | None = None) -> Path:
 
 
 def publish_server(
-    book: str, url: str, token: str, lock: str, directory: Path | None = None
+    book: str,
+    url: str,
+    token: str,
+    lock: str,
+    directory: Path | None = None,
+    *,
+    local_token: str = "",
 ) -> ServerRecord:
     """Record that this process, holding ``book``'s writer lock ``lock``, serves it at ``url``."""
-    record = ServerRecord(_canonical(book), url, token, os.getpid(), socket.gethostname(), lock)
+    record = ServerRecord(
+        _canonical(book), url, token, os.getpid(), socket.gethostname(), lock, local_token
+    )
     path = record_path(book, directory)
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -77,6 +88,7 @@ def publish_server(
                 "pid": record.pid,
                 "host": record.host,
                 "lock": record.lock,
+                "local_token": record.local_token,
             },
             handle,
             sort_keys=True,
@@ -106,6 +118,7 @@ def _read(path: Path) -> ServerRecord | None:
             int(data["pid"]),
             str(data["host"]),
             str(data["lock"]),
+            str(data.get("local_token", "")),
         )
     except (OSError, ValueError, TypeError, KeyError):
         return None

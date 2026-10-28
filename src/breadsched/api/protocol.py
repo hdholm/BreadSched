@@ -931,6 +931,11 @@ class BookApi(Protocol):
         """The file this book was last imported from, to offer again."""
         ...
 
+    def upload_import_file(self, filename: str, content: bytes) -> str:
+        """Keep a file sent as bytes where the importers may read it; returns the path
+        to name in an import. Sending the same file name again replaces its copy."""
+        ...
+
     # ------------------------------------------------------------------- find
 
     def find(self, query: TransactionQuery) -> FindResult:
@@ -950,7 +955,13 @@ class BookApi(Protocol):
         ...
 
     def attach_file(self, transaction: str, path: str, copy: bool = True) -> Transaction:
-        """Link a file as the server sees it, copying it into the folder by default."""
+        """Link a file as the server sees it, copying it into the folder by default.
+        Only a program on the server's computer may name a file there; the HTTP
+        client sends any other file's bytes (``attach_content``)."""
+        ...
+
+    def attach_content(self, transaction: str, filename: str, content: bytes) -> Transaction:
+        """Copy a document sent as bytes into the attachment folder and link it."""
         ...
 
     def unlink_attachment(self, transaction: str, location: str) -> Transaction: ...

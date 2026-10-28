@@ -2,7 +2,8 @@
 
 Every failure a book server reports is an :class:`ApiError`: a stable code, the
 fields it concerns, an HTTP status, and presentation-owned wording. A service
-failure maps to 404 when the code names a missing object (``*.not_found``) and to
+failure maps to 404 when the code names a missing object (``*.not_found``), to 403
+when only a program on the book's own computer may ask (``*.local_only``), and to
 400 otherwise, as the browser has always received.
 
 :func:`to_json` is the single leaf encoding of money, rates, decimals, dates, and
@@ -40,7 +41,12 @@ class ApiError(Exception):
 
     @classmethod
     def from_service(cls, error: ServiceError) -> ApiError:
-        status = 404 if error.code.endswith(".not_found") else 400
+        if error.code.endswith(".not_found"):
+            status = 404
+        elif error.code.endswith(".local_only"):
+            status = 403
+        else:
+            status = 400
         return cls(status, error.code, error.fields, service_error_message(error))
 
     def __str__(self) -> str:

@@ -284,7 +284,7 @@ def _serve_book(args: argparse.Namespace, *, open_browser: bool, read_only: bool
         record = (
             None
             if read_only or lock is None
-            else publish_server(args.book, base, httpd.token, lock)
+            else publish_server(args.book, base, httpd.token, lock, local_token=httpd.local_token)
         )
         if token is None:
             print(f"BreadSched is serving {args.book} at {base}/#token={httpd.token}")

@@ -23,7 +23,7 @@ function switchTo(name) { current = name; render(); }
 function openInNewTab(view, extra = {}) {
   const url = new URL(window.location.href);
   url.search = new URLSearchParams({ view, ...extra }).toString();
-  url.hash = new URLSearchParams({ token: apiToken }).toString();
+  url.hash = tokenFragment();
   window.open(url.toString(), "_blank", "noopener");
 }
 
@@ -51,7 +51,7 @@ get("/api/summary").then((s) => {
 }).catch(() => {});
 document.getElementById("print-view").addEventListener("click", () => window.print());
 // Quick entry is its own page; it needs the token to use the book too.
-document.getElementById("quick-entry").href = `/quick#${new URLSearchParams({ token: apiToken })}`;
+document.getElementById("quick-entry").href = `/quick#${tokenFragment()}`;
 render();
 // Like the desktop, offer held GnuCash changes once when the book opens.
 openImportReviewDialog().catch(() => {});

@@ -583,10 +583,24 @@ sure as one change, recomputing them on the server, so the proposed values are n
 sent back. The HTTP client decodes an import's result with the importers' own
 `ImportResult`, which the service names only for type checking.
 
-**Still open (imports):** like copying a document in, an import names a file by a path
-the server reads. Through a proxy, a token holder could import any statement file the
-server's user can read; uploading the bytes (as the browser's upload already does
-before naming the saved copy) is the narrower form.
+**Files a client names (#358).** A server makes a second, *local* token besides the
+API token. It is never printed or written to a token file: only the server record (in
+the user's runtime folder) and the page `breadsched web` opens itself carry it, and a
+request shows it in `X-BreadSched-Local`. Only such a request may name a file on the
+server (`import_book`, `inspect_csv`, `preview_csv`, `import_csv`, `attach_file`), link
+or relink a document outside the attachment folder, or change the attachment or
+GnuCash link folder (`attachment.folder.local_only`, 403); any other may name only a
+file in the book's uploads folder (`file.local_only`, 403). `upload_import_file(
+filename, content)` (`POST /api/v1/imports/upload?filename=`, the file's bytes as
+`application/octet-stream`) keeps an import file in `<book>.uploads` and returns its
+path, and `attach_content(transaction, filename, content)` (`POST
+/api/v1/transactions/{handle}/attachments/upload?filename=`) copies a document into
+the attachment folder (`gen/services/uploads`, which the browser's upload routes use
+too). `HttpBookClient` without the local token sends the files it is asked to import,
+inspect, or attach (once per file and modification) and names the server's copy, so
+`--server` from another machine works unchanged; with it (from the record) it names
+them, as the GnuCash write-back needs. The transport serves each request as local or
+not (`api.local.local_caller`) on whichever thread runs the book.
 
 A phone-sized **quick entry** page (`/quick`, `quick.html` with only `core.js` and
 `quick.js`) posts one spending or income transaction through the browser's
@@ -774,14 +788,11 @@ local-user gap in item 8. The proxy would then reach the server through the sock
 `/api/v1` alike) links or relinks a document only by web address or inside the
 attachment folder (`contained_location`), so a token holder cannot link a file such
 as `~/.ssh/id_ed25519` and then read it back through the document route; only an
-in-process caller (GTK, or a command with no server) may link any file.
-**Still open:** copying a file in (`attach_file`,
-`POST /api/v1/transactions/{handle}/attachments/files`) still reads a path as the
-server sees it, which the command line's `attachments --add FILE` through a local
-server needs. Through a proxy, a token holder could copy in any file the server's
-user can read. Until that is narrowed (for example, refusing it for requests that
-arrive through a trusted origin, or uploading the file's bytes instead), give the
-token only to the user's own devices.
+in-process caller (GTK, or a command with no server) or a request carrying the local
+token may link any file.
+Copying a file in by path (`attach_file`) and changing the attachment folder, which
+would have let a token holder link any file through it, are now local only too (see
+**Files a client names** above); a device elsewhere sends the document's bytes.
 
 ## Consequences and open questions
 

@@ -124,6 +124,8 @@ def client(book_path):
     class Client:
         base_url = base
         token = httpd.token
+        # The page the server opens on this computer is given the local token (#358).
+        local_token = httpd.local_token
         database = db
 
         def raw(self, path: str):
@@ -132,7 +134,8 @@ def client(book_path):
 
         def get(self, path: str):
             request = urllib.request.Request(
-                base + path, headers={"X-BreadSched-Token": self.token}
+                base + path,
+                headers={"X-BreadSched-Token": self.token, "X-BreadSched-Local": self.local_token},
             )
             with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
                 return response.status, json.loads(response.read())
@@ -144,6 +147,7 @@ def client(book_path):
                 headers={
                     "Content-Type": "application/json",
                     "X-BreadSched-Token": self.token,
+                    "X-BreadSched-Local": self.local_token,
                 },
                 method="POST",
             )
@@ -158,6 +162,7 @@ def client(book_path):
                 headers={
                     "Content-Type": "application/octet-stream",
                     "X-BreadSched-Token": self.token,
+                    "X-BreadSched-Local": self.local_token,
                 },
                 method="POST",
             )
@@ -3031,6 +3036,21 @@ class TestImportApi:
         with pytest.raises(urllib.error.HTTPError) as caught:
             client.post("/api/import", {"path": defaults["path"], "include_duplicates": "yes"})
         assert caught.value.code == 400
+
+    def test_a_page_without_the_local_token_names_no_file_on_the_server(self, client, tmp_path):
+        """#358: a page reached through a proxy sends a file; it cannot import one by a
+        path on the server, which the page the server opened itself may."""
+        statement = tmp_path / "statement.qif"
+        statement.write_bytes(b"!Type:Bank\nD01/02/2026\nT-3.00\nPBus\n^\n")
+        before = len(list(client.database.iter_transactions()))
+        client.local_token = ""
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/import", {"path": str(statement)})
+        assert caught.value.code == 403
+        assert json.loads(caught.value.read())["code"] == "file.local_only"
+        assert len(list(client.database.iter_transactions())) == before
+        assert client.upload("statement.qif", statement.read_bytes())[0] == 200
+        assert len(list(client.database.iter_transactions())) == before + 1
 
     def test_browser_upload_rejects_invalid_filename_and_restores_prior_source(self, client):
         content = b"!Type:Bank\nD01/01/2026\nT1.00\nPExample\n^\n"
@@ -7196,6 +7216,8 @@ class TestTransactionTagsAndDocumentRoutes:
             return json.loads(response.read())
 
     def test_tags_and_documents_round_trip_through_the_register(self, client, book_path):
+        # A page reached through a proxy: it holds no local token (#358).
+        client.local_token = ""
         transaction = next(iter(client.database.iter_transactions()))
         account = transaction.splits[0].account
         _status, saved = client.post(
@@ -7244,6 +7266,7 @@ class TestTransactionTagsAndDocumentRoutes:
         assert [item["location"] for item in removed["documents"]] == ["2026/receipt.pdf"]
 
     def test_rejected_requests_keep_the_stored_transaction(self, client, book_path):
+        client.local_token = ""  # a page reached through a proxy (#358)
         transaction = next(iter(client.database.iter_transactions()))
         before = client.database.get_transaction(transaction.handle).serialize()
         for path, payload, code in (

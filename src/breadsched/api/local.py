@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date
 from pathlib import Path
 from typing import Literal, cast
@@ -147,6 +148,7 @@ from ..gen.services import scenarios as scenario_service
 from ..gen.services import schedules as schedule_service
 from ..gen.services import schedules as schedule_services
 from ..gen.services import tax as tax_service
+from ..gen.services import uploads as upload_service
 from ..gen.services.account_inference import (
     AccountSuggestion,
     AppliedSuggestions,
@@ -239,7 +241,13 @@ from ..gen.services.tax import SetTaxMarks, TaxMarks
 from .contract import ApiError, unwrap
 from .protocol import Change, Listener
 
-__all__ = ["LocalBookServer", "book_server", "lookup_schedule", "open_book_server"]
+__all__ = [
+    "LocalBookServer",
+    "book_server",
+    "local_caller",
+    "lookup_schedule",
+    "open_book_server",
+]
 
 #: Storage signal stems whose add, update, and delete signals name a change's kinds.
 _STEMS = (
@@ -256,13 +264,30 @@ _STEMS = (
 )
 
 
+#: Set while a request from a program on this computer is served (``local_caller``).
+_LOCAL_CALLER: ContextVar[bool] = ContextVar("breadsched_local_caller", default=False)
+
+
+@contextmanager
+def local_caller(local: bool = True) -> Iterator[None]:
+    """Serve the calls inside the block (in this thread) as from a program on this
+    computer, one holding the server's local token, which may name its files (#358)."""
+    token = _LOCAL_CALLER.set(local)
+    try:
+        yield
+    finally:
+        _LOCAL_CALLER.reset(token)
+
+
 class LocalBookServer:
     """A book server in this process, over one open book."""
 
     def __init__(self, db: DbSQLite, *, confine_documents: bool = False) -> None:
         self.db = db
-        #: Served to other processes: a document may be linked only by web address or
-        #: inside the attachment folder, as the browser may (``contained_location``).
+        #: Served to other processes: unless a request comes from a program on this
+        #: computer (``local_caller``), a document may be linked only by web address
+        #: or inside the attachment folder, as the browser may (``contained_location``),
+        #: and a file read only from the uploads folder (#358).
         self._confine_documents = confine_documents
         self._pending: set[str] = set()
         self._transactions: set[str] = set()
@@ -788,16 +813,23 @@ class LocalBookServer:
     # ---------------------------------------------------------------- imports
 
     def inspect_csv(self, request: csv_service.InspectCsv) -> csv_service.CsvInspection:
+        self._readable(request.source)
         return unwrap(csv_service.inspect_csv(request))
 
     def preview_csv(self, request: csv_service.CsvImportRequest) -> csv_service.CsvPreview:
+        self._readable(request.source)
         return unwrap(csv_service.preview_csv_import(self.db, request))
 
     def import_csv(self, request: csv_service.CsvImportRequest) -> csv_service.CsvImported:
+        self._readable(request.source)
         return unwrap(csv_service.import_csv(self.db, request))
 
     def import_book(self, request: import_service.ImportBook) -> import_service.ImportedBook:
+        self._readable(request.source)
         return unwrap(import_service.import_book(self.db, request))
+
+    def upload_import_file(self, filename: str, content: bytes) -> str:
+        return str(unwrap(upload_service.store_import_upload(self.db, filename, content)).path)
 
     def import_source(self) -> str | None:
         return remembered_import_source(self.db)
@@ -821,7 +853,11 @@ class LocalBookServer:
         return unwrap(attachment_service.attach_location(self.db, transaction, location))
 
     def attach_file(self, transaction: str, path: str, copy: bool = True) -> Transaction:
+        self._readable(path)
         return unwrap(attachment_service.attach_file(self.db, transaction, Path(path), copy=copy))
+
+    def attach_content(self, transaction: str, filename: str, content: bytes) -> Transaction:
+        return unwrap(upload_service.attach_content(self.db, transaction, filename, content))
 
     def unlink_attachment(self, transaction: str, location: str) -> Transaction:
         return unwrap(attachment_service.detach(self.db, transaction, location))
@@ -830,8 +866,21 @@ class LocalBookServer:
         new = self._document_location(new)
         return unwrap(attachment_service.relink(self.db, transaction, location, new))
 
+    @property
+    def _confined(self) -> bool:
+        return self._confine_documents and not _LOCAL_CALLER.get()
+
+    def _readable(self, path: str) -> None:
+        """Refuse a remote caller a file outside the uploads folder."""
+        if self._confined and not upload_service.in_uploads(self.db, path):
+            raise ApiError.from_service(ServiceError("file.local_only", ("source",)))
+
+    def _local_only(self) -> None:
+        if self._confined:
+            raise ApiError.from_service(ServiceError("attachment.folder.local_only", ("folder",)))
+
     def _document_location(self, location: str) -> str:
-        if not self._confine_documents:
+        if not self._confined:
             return location
         confined = attachment_service.contained_location(self.db, location)
         if isinstance(confined, ServiceError):
@@ -839,10 +888,12 @@ class LocalBookServer:
         return confined
 
     def set_attachment_folder(self, folder: str) -> str:
+        self._local_only()
         with self._changing("attachment-folder"):
             return str(unwrap(attachment_service.set_attachment_folder(self.db, folder)))
 
     def set_source_link_folder(self, folder: str) -> str:
+        self._local_only()
         with self._changing("attachment-folder"):
             return str(unwrap(attachment_service.set_source_link_folder(self.db, folder)))
 

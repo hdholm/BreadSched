@@ -63,7 +63,9 @@ def running(book_path):
     httpd = serve(db, host="127.0.0.1", port=0)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{httpd.server_port}"
-    record = publish_server(str(book_path), base, httpd.token, db.writer_lock_token)
+    record = publish_server(
+        str(book_path), base, httpd.token, db.writer_lock_token, local_token=httpd.local_token
+    )
     yield type("Running", (), {"db": db, "base": base, "token": httpd.token, "record": record})
     withdraw_server(record)
     httpd.shutdown()

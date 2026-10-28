@@ -50,7 +50,9 @@ def open_book_api(
         return
     record = find_server(book, directory)
     if record is not None:
-        yield HttpBookClient(record.url, record.token)
+        # On this computer: the record's local token lets the server read files named
+        # here, as the GnuCash write-back and imports by path need (#358).
+        yield HttpBookClient(record.url, record.token, local_token=record.local_token or None)
         return
     with open_book_server(book, mode) as server:
         yield server

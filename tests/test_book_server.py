@@ -17,6 +17,7 @@ import urllib.request
 from datetime import date, timedelta
 from decimal import Decimal
 from enum import Enum
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -88,7 +89,12 @@ def target(request, db, book):
     httpd, base = _serve(db)
     try:
         yield SimpleNamespace(
-            api=HttpBookClient(base, httpd.token), db=db, remote=True, base=base, token=httpd.token
+            # A program on this computer, as the server record makes it (#358).
+            api=HttpBookClient(base, httpd.token, local_token=httpd.local_token),
+            db=db,
+            remote=True,
+            base=base,
+            token=httpd.token,
         )
     finally:
         httpd.shutdown()
@@ -2007,8 +2013,13 @@ def test_the_revision_is_stored_with_the_book(tmp_path):
 def remote(db, book):
     _add_rent(db, book)
     httpd, base = _serve(db)
+    # ``client`` is a device elsewhere (no local token); ``local`` a program here.
     yield SimpleNamespace(
-        base=base, token=httpd.token, db=db, client=HttpBookClient(base, httpd.token)
+        base=base,
+        token=httpd.token,
+        db=db,
+        client=HttpBookClient(base, httpd.token),
+        local=HttpBookClient(base, httpd.token, local_token=httpd.local_token),
     )
     httpd.shutdown()
     httpd.server_close()
@@ -2575,7 +2586,11 @@ def test_documents_served_over_http_stay_in_the_attachment_folder(remote, book, 
     (folder / "receipt.pdf").write_bytes(b"%PDF-1.4")
     secret = tmp_path / "secret.txt"
     secret.write_text("not a document", encoding="utf-8")
-    client.set_attachment_folder(str(folder))
+    # Only a program on this computer may choose the folder (#358).
+    with pytest.raises(ApiError) as refused:
+        client.set_attachment_folder(str(tmp_path))
+    assert (refused.value.status, refused.value.code) == (403, "attachment.folder.local_only")
+    remote.local.set_attachment_folder(str(folder))
     with db.transaction("Card") as txn:
         card = Transaction.simple(date(2026, 9, 3), "Card", book.groceries, book.card, "12")
         db.add_transaction(card, txn)
@@ -2593,10 +2608,69 @@ def test_documents_served_over_http_stay_in_the_attachment_folder(remote, book, 
     assert client.link_attachment(card.handle, "https://example.com/r").attachments[-1] == (
         "https://example.com/r"
     )
-    # In process (GTK, a command without a server) the user may link any file.
+    # In process (GTK, a command without a server), or from a program on this computer,
+    # the user may link any file.
     assert LocalBookServer(db).link_attachment(card.handle, str(secret)).attachments[-1] == str(
         secret
     )
+    assert remote.local.relink_attachment(card.handle, str(secret), str(folder)).attachments
+
+
+def test_a_device_elsewhere_sends_files_and_may_name_only_its_uploads(tmp_path):
+    """#358: without the local token the server reads no file a client names; the HTTP
+    client sends the file's bytes, and imports and attaches the server's copy."""
+    from breadsched.gen.services.imports import ImportBook
+
+    path = tmp_path / "book.breadsched"
+    create_sample_book(path, as_of=TODAY)
+    db = DbSQLite()
+    db.load(str(path))
+    httpd, base = _serve(db)
+    try:
+        device = HttpBookClient(base, httpd.token)
+        local = HttpBookClient(base, httpd.token, local_token=httpd.local_token)
+        statement = tmp_path / "away" / "statement.qif"
+        statement.parent.mkdir()
+        statement.write_bytes(
+            b"!Account\nNTravel card\nTBank\n^\n!Type:Bank\nD03/04/2026\nT-9.50\nPTaxi\n^\n"
+        )
+        before = db.summary()["txn"]
+        imported = device.import_book(ImportBook(str(statement)))
+        assert imported.result.transactions_new == 1 and db.summary()["txn"] == before + 1
+        # The server imported its own copy, kept beside the book.
+        assert imported.source != str(statement)
+        assert Path(imported.source).parent == path.parent / "book.breadsched.uploads"
+        assert Path(imported.source).read_bytes() == statement.read_bytes()
+        # Naming a file directly, as a raw request would, is refused.
+        raw = urllib.request.Request(
+            base + "/api/v1/imports",
+            data=json.dumps({"source": str(statement)}).encode(),
+            headers={"X-BreadSched-Token": httpd.token, "Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(urllib.error.HTTPError) as refused:
+            urllib.request.urlopen(raw, timeout=10)
+        assert refused.value.code == 403
+        assert json.loads(refused.value.read())["code"] == "file.local_only"
+        # The same file from a program on this computer is read where it is.
+        assert local.import_book(ImportBook(str(statement))).source == str(statement)
+
+        # A document is sent too, and copied into the attachment folder.
+        folder = tmp_path / "documents"
+        local.set_attachment_folder(str(folder))
+        [taxi] = [txn for txn in db.iter_transactions() if txn.description == "Taxi"][:1]
+        receipt = tmp_path / "away" / "receipt.pdf"
+        receipt.write_bytes(b"%PDF-1.4 taxi")
+        attached = device.attach_file(taxi.handle, str(receipt))
+        assert (folder / attached.attachments[-1]).read_bytes() == b"%PDF-1.4 taxi"
+        for bad in ("", "../escape.pdf"):
+            with pytest.raises(ApiError) as refused_name:
+                device.attach_content(taxi.handle, bad or "x.pdf", b"" if not bad else b"x")
+            assert refused_name.value.status == 400
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        db.close()
 
 
 def test_v1_refuses_what_it_does_not_serve(remote):

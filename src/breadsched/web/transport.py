@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import queue
+import re
 import secrets
 import socketserver
 import threading
@@ -15,9 +17,11 @@ from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, TypeVar
-from urllib.parse import urlencode, urlparse
+from urllib.parse import unquote, urlencode, urlparse
 
+from ..api.local import local_caller
 from ..api.protocol import Change
+from ..api.typed_codec import to_data
 from ..api.views import change_json
 from ..gen.db.sqlite import DbSQLite
 from ..gen.lib import Money, Rate
@@ -72,6 +76,10 @@ STATIC_ASSETS = {
     "apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
     **{name: (name, "application/javascript; charset=utf-8") for name in SCRIPTS},
 }
+#: The book server's two routes that take a file's bytes rather than JSON.
+_V1_UPLOAD = re.compile(
+    r"^/api/v1/(?:imports/upload|transactions/(?P<transaction>[^/]+)/attachments/upload)$"
+)
 MAX_JSON_BODY = 64 * 1024
 MAX_UPLOAD_BODY = 32 * 1024 * 1024
 
@@ -97,6 +105,8 @@ class Handler(BaseHTTPRequestHandler):
     #: Origins besides loopback whose pages may use the API: the public origin of
     #: a TLS proxy in front of the server (``serve(trusted_origins=...)``).
     trusted_origins: frozenset[str] = frozenset()
+    #: The second token that marks a request from a program on this computer.
+    local_token: str = ""
     #: Runs a callable with exclusive use of the writer book (see ``_exclusive``).
     executor: Callable[[Callable[[], Any]], Any]
 
@@ -207,9 +217,25 @@ class Handler(BaseHTTPRequestHandler):
 
         By default that is under the server's lock, in this request's thread. A host
         that owns the book on another thread (GTK, #359) supplies an executor that
-        runs it there instead.
+        runs it there instead. Either way it runs as from a program on this computer
+        only when the request carries the server's local token (#358).
         """
-        return self.executor(work)
+        local = self._local_request()
+
+        def as_caller() -> T:
+            with local_caller(local):
+                return work()
+
+        return self.executor(as_caller)
+
+    def _local_request(self) -> bool:
+        """Whether the request carries the local token: only programs that read the
+        server's record (a file only its user can read), or the page the server
+        itself opened, hold it; a device reaching the server through a proxy does not."""
+        offered = self.headers.get("X-BreadSched-Local", "")
+        return bool(self.local_token and offered) and hmac.compare_digest(
+            offered.encode("utf-8"), self.local_token.encode("utf-8")
+        )
 
     def _open_read_api(self) -> tuple[Api, DbSQLite | None]:
         """Open one isolated GET view, or lock the non-reopenable writer."""
@@ -318,6 +344,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if urlparse(self.path).path == "/api/attachment/upload":
             self._attachment_upload()
+            return
+        upload = _V1_UPLOAD.match(urlparse(self.path).path)
+        if upload is not None:
+            self._v1_upload(upload["transaction"])
             return
         if urlparse(self.path).path.startswith(V1_PREFIX + "/"):
             self._v1("POST")
@@ -507,6 +537,53 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(f"event: {name}\nid: {revision}\ndata: {data}\n\n".encode())
         self.wfile.flush()
 
+    def _v1_upload(self, transaction: str | None) -> None:
+        """A file's bytes for the book server: an import file (``transaction`` None,
+        ``upload_import_file``) or a document for one transaction (``attach_content``).
+        """
+        limit = MAX_UPLOAD_BODY if transaction is None else MAX_ATTACHMENT_BYTES
+        if (
+            not self._trusted_api_request()
+            or self.headers.get_content_type() != "application/octet-stream"
+        ):
+            self._discard_body(limit)
+            self._error(403, "request.untrusted")
+            return
+        try:
+            query = QueryParams(urlparse(self.path).query)
+            filename = query.text("filename", required=True) or ""
+            query.finish()
+        except QueryError as exc:
+            self._discard_body(limit)
+            self._error(400, exc.code, exc.fields)
+            return
+        try:
+            length = self._content_length(limit)
+            if length is None:
+                return
+            content = self.rfile.read(length)
+            if len(content) != length:
+                self._error(400, "request.body.incomplete", ("file",))
+                return
+            book = self.api_object.book
+
+            def perform() -> tuple[object, int]:
+                if transaction is None:
+                    result: object = {"path": book.upload_import_file(filename, content)}
+                else:
+                    changed = book.attach_content(unquote(transaction), filename, content)
+                    result = {"transaction": to_data(changed)}
+                return result, book.revision
+
+            result, revision = self._exclusive(perform)
+            self._json(200, result, self._revision_headers(revision))
+        except ResourceError as exc:
+            self._error(exc.status, exc.code, exc.fields, message=exc.message)
+        except ValueError as exc:
+            self._error(400, "request.invalid", message=str(exc))
+        except Exception:  # noqa: BLE001 - isolate the threaded server
+            self._unexpected()
+
     def _import_upload(self) -> None:
         """Receive one bounded file without JSON encoding or a client filesystem path."""
         if (
@@ -632,6 +709,8 @@ class BreadSchedHTTPServer(ThreadingHTTPServer):
     """Threaded local server carrying the API token exposed to the launcher."""
 
     token: str
+    #: Marks requests from programs on this computer (see ``Handler._local_request``).
+    local_token: str
     #: Set on shutdown so open change streams end.
     stopping: threading.Event
 
@@ -706,6 +785,7 @@ def build_handler(
     token: str,
     executor: Executor | None = None,
     trusted_origins: frozenset[str] = frozenset(),
+    local_token: str = "",
 ) -> type[Handler]:
     """Bind one serialized writer and short-lived read snapshots to a handler.
 
@@ -727,6 +807,7 @@ def build_handler(
             "lock": lock,
             "token": token,
             "trusted_origins": trusted_origins,
+            "local_token": local_token,
             "executor": staticmethod(executor or locked),
         },
     )
@@ -751,15 +832,20 @@ def serve(
         raise ValueError("the web interface binds to loopback only")
     origins = frozenset(trusted_origin(origin) for origin in trusted_origins)
     token = token or secrets.token_urlsafe(32)
+    # Never written to a token file or printed: it reaches only the server record
+    # (user-only) and the page this server opens itself (#358).
+    local_token = secrets.token_urlsafe(32)
     server = BreadSchedHTTPServer(
-        (host, port), build_handler(db, token, executor, trusted_origins=origins)
+        (host, port),
+        build_handler(db, token, executor, trusted_origins=origins, local_token=local_token),
     )
     server.token = token
+    server.local_token = local_token
     server.stopping = threading.Event()
     if open_browser:  # pragma: no cover - depends on a desktop session
         import webbrowser
 
-        query = urlencode({"token": token})
+        query = urlencode({"token": token, "local": local_token})
         threading.Timer(
             0.5,
             partial(webbrowser.open, f"http://{host}:{server.server_port}/#{query}"),

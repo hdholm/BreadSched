@@ -76,8 +76,16 @@ const completenessDetails = (coverage, what) => {
 
 const params = new URLSearchParams(window.location.hash.slice(1));
 const apiToken = params.get("token") || "";
+// Only the page the server opens on its own computer is given the local token,
+// which lets it name files there; a page reached through a proxy sends files instead.
+const localToken = params.get("local") || "";
 if (params.has("token")) history.replaceState(null, "", window.location.pathname + window.location.search);
-const apiHeaders = () => ({ "X-BreadSched-Token": apiToken });
+const apiHeaders = () => (localToken
+  ? { "X-BreadSched-Token": apiToken, "X-BreadSched-Local": localToken }
+  : { "X-BreadSched-Token": apiToken });
+// The fragment that carries this page's tokens to another of its pages.
+const tokenFragment = () => new URLSearchParams(
+  localToken ? { token: apiToken, local: localToken } : { token: apiToken }).toString();
 const browserNumberFormat = (() => {
   const decimal = new Intl.NumberFormat().formatToParts(1.1)
     .find((part) => part.type === "decimal")?.value;

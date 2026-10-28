@@ -23,6 +23,7 @@ import threading
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import date
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
@@ -242,6 +243,7 @@ class HttpBookClient:
         ca_file: str | None = None,
         client_cert: str | None = None,
         client_key: str | None = None,
+        local_token: str | None = None,
     ) -> None:
         parsed = urlparse(base_url)
         if parsed.scheme not in ("http", "https") or not parsed.hostname:
@@ -251,6 +253,12 @@ class HttpBookClient:
         self.host = parsed.hostname
         self.port = parsed.port or (443 if parsed.scheme == "https" else 80)
         self.token = token
+        #: The server's second, local-only token, from its record on this computer:
+        #: with it the server reads files this client names; without it this client
+        #: sends a file's bytes instead (#358).
+        self.local_token = local_token
+        #: Files already sent, by (path, modification time, size): the server's copy.
+        self._sent: dict[tuple[str, int, int], str] = {}
         self.timeout = timeout
         self._tls: ssl.SSLContext | None = None
         if parsed.scheme == "https":
@@ -278,14 +286,21 @@ class HttpBookClient:
         path: str,
         query: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
+        content: bytes | None = None,
     ) -> Any:
         target = "/api/v1" + path
         present = {key: to_json(value) for key, value in (query or {}).items() if value is not None}
         if present:
             target += "?" + urlencode(present)
         headers = {"X-BreadSched-Token": self.token, "Accept": "application/json"}
+        if self.local_token:
+            headers["X-BreadSched-Local"] = self.local_token
         payload = None
-        if method != "GET":
+        if content is not None:
+            # A file's bytes, as they are (``upload_import_file``, ``attach_content``).
+            payload = content
+            headers["Content-Type"] = "application/octet-stream"
+        elif method != "GET":
             payload = json.dumps(to_json(body or {})).encode("utf-8")
             headers["Content-Type"] = "application/json"
             if self.require_revision is not None:
@@ -1248,19 +1263,42 @@ class HttpBookClient:
 
     # ---------------------------------------------------------------- imports
 
+    def _server_file(self, path: str) -> str:
+        """A file the server may read: ``path`` itself for a client on its computer
+        (holding the local token), else the server's copy of the file's bytes."""
+        if self.local_token:
+            return path
+        local = Path(path).expanduser()
+        if not local.is_file():
+            # Not a file here: the server answers for the path as given.
+            return path
+        stat = local.stat()
+        key = (str(local.resolve()), stat.st_mtime_ns, stat.st_size)
+        if key not in self._sent:
+            self._sent[key] = self.upload_import_file(local.name, local.read_bytes())
+        return self._sent[key]
+
+    def upload_import_file(self, filename: str, content: bytes) -> str:
+        found = self._call("POST", "/imports/upload", {"filename": filename}, content=content)
+        return str(found["path"])
+
     def inspect_csv(self, request: InspectCsv) -> CsvInspection:
+        request = replace(request, source=self._server_file(request.source))
         found = self._call("POST", "/imports/csv/inspect", body=to_data(request))
         return from_data(CsvInspection, found)
 
     def preview_csv(self, request: CsvImportRequest) -> CsvPreview:
+        request = replace(request, source=self._server_file(request.source))
         found = self._call("POST", "/imports/csv/preview", body=to_data(request))
         return from_data(CsvPreview, found)
 
     def import_csv(self, request: CsvImportRequest) -> CsvImported:
+        request = replace(request, source=self._server_file(request.source))
         return from_data(CsvImported, self._call("POST", "/imports/csv", body=to_data(request)))
 
     def import_book(self, request: ImportBook) -> ImportedBook:
         # Progress is heard in process only; the server reports the outcome.
+        request = replace(request, source=self._server_file(request.source))
         body = to_data(replace(request, progress=None))
         found = self._call("POST", "/imports", body=body)
         # The service names the importers' result only for type checking (it does not
@@ -1299,7 +1337,16 @@ class HttpBookClient:
         return self._attachments(transaction, "", {"location": location})
 
     def attach_file(self, transaction: str, path: str, copy: bool = True) -> Transaction:
+        local = Path(path).expanduser()
+        if not self.local_token and local.is_file():
+            # Not on the server's computer: send the document (it is always copied in).
+            return self.attach_content(transaction, local.name, local.read_bytes())
         return self._attachments(transaction, "/files", {"path": path, "copy": copy})
+
+    def attach_content(self, transaction: str, filename: str, content: bytes) -> Transaction:
+        path = f"/transactions/{quote(transaction, safe='')}/attachments/upload"
+        found = self._call("POST", path, {"filename": filename}, content=content)
+        return from_data(Transaction, found["transaction"], "transaction")
 
     def unlink_attachment(self, transaction: str, location: str) -> Transaction:
         return self._attachments(transaction, "/remove", {"location": location})

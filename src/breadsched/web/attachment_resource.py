@@ -12,10 +12,7 @@ confinement for every request served over HTTP, the ``/api/v1`` routes included.
 from __future__ import annotations
 
 import mimetypes
-import os
-import tempfile
 from collections.abc import Iterable, Mapping
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..gen.db.sqlite import DbSQLite
@@ -115,23 +112,7 @@ def attachment_upload(
     api: Api, db: DbSQLite, *, transaction: str, filename: str, content: bytes
 ) -> dict[str, object]:
     """Copy a browser-selected file into the attachment folder and link it."""
-    if (
-        not filename
-        or filename in {".", ".."}
-        or len(filename.encode("utf-8")) > 255
-        or any(c in filename for c in "/\\\0")
-    ):
-        raise _refuse(400, "attachment.filename.invalid", "filename")
-    if not content:
-        raise _refuse(400, "attachment.file.empty", "file")
-    with tempfile.TemporaryDirectory(prefix="breadsched-attachment-") as staging:
-        root = os.path.realpath(staging)
-        staged = os.path.normpath(os.path.join(root, filename))
-        if not staged.startswith(root + os.sep):
-            raise _refuse(400, "attachment.filename.invalid", "filename")
-        Path(staged).write_bytes(content)
-        # The web server holds the book, so the staged file is where it can see it.
-        return _changed(api, api.book.attach_file(transaction, staged))
+    return _changed(api, api.book.attach_content(transaction, filename, content))
 
 
 def attachment_content(db: DbSQLite, transaction: str, location: str) -> tuple[bytes, str]:

@@ -413,7 +413,9 @@ and closes, reopens, or deletes a claim (deleting asks first). See
 ## Import files
 
 In **Import**, select a QIF, OFX/QFX, or GnuCash file from the browser (up to
-32 MiB), or enter a path visible to the BreadSched server. Uploaded files are
+32 MiB), or enter a path visible to the BreadSched server. Only the page that
+`breadsched web` opens on the server's own computer may enter a path; a page reached
+from another device, or through a proxy, selects the file instead. Uploaded files are
 retained beside the native book in a `<book>.uploads` directory; keep that directory
 with the book if you want to repeat an import from its remembered path. Uploading
 the same filename again refreshes the same source identity; different filenames are

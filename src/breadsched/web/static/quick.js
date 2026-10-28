@@ -44,7 +44,7 @@ async function showQuick() {
   const all = await get("/api/accounts");
   const { funds, categories, others } = quickAccounts(all);
   const fullView = document.getElementById("full-view");
-  fullView.href = `/#${new URLSearchParams({ token: apiToken })}`;
+  fullView.href = `/#${tokenFragment()}`;
 
   let direction = "out";
   const outButton = el("button", { type: "button", class: "action active",

@@ -195,6 +195,13 @@ _SERVICE_MESSAGES = {
     "import.source.not_file": "Choose a file, not a directory",
     "import.format.not_found": "The requested importer is not available",
     "import.format.unrecognized": "The file format is not recognised",
+    "import.filename.invalid": "Choose a file with an ordinary file name",
+    "import.file.empty": "That file is empty",
+    "import.upload.book_required": "Save the book to a file before sending files to it",
+    "file.local_only": "Send the file itself: only programs on the book's own computer "
+    "may name files there",
+    "attachment.folder.local_only": "Only programs on the book's own computer may change "
+    "where documents are kept",
     "import.number_format.invalid": "Choose a valid number format",
     "import.date_format.invalid": "Choose a valid QIF date order",
     "writeback.source.unknown": (
