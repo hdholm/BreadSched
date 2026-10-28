@@ -131,7 +131,7 @@ jobs:
       - name: Install focused mutation dependencies
         run: |
           python -m pip install -e ".[dev]"
-          python -m pip install 'mutmut==3.8.0'
+          python -m pip install 'mutmut==3.8.1'
       - name: Run fresh measured mutation slice
         run: python scripts/check_mutation_baseline.py
 
