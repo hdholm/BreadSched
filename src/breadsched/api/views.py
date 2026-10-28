@@ -186,7 +186,12 @@ def posted_due_json(posted: PostedDue) -> dict[str, Any]:
 
 def change_json(change: Change) -> dict[str, Any]:
     """A change event as a subscriber receives it."""
-    return {"revision": change.revision, "kinds": sorted(change.kinds), "label": change.label}
+    return {
+        "revision": change.revision,
+        "kinds": sorted(change.kinds),
+        "label": change.label,
+        "transactions": sorted(change.transactions),
+    }
 
 
 # ------------------------------------------------------------------ decoding
@@ -246,7 +251,12 @@ def advance_days_from_json(payload: dict[str, Any]) -> AdvanceDays:
 
 
 def change_from_json(payload: dict[str, Any]) -> Change:
-    return Change(int(payload["revision"]), frozenset(payload["kinds"]), payload.get("label"))
+    return Change(
+        int(payload["revision"]),
+        frozenset(payload["kinds"]),
+        payload.get("label"),
+        frozenset(payload.get("transactions", ())),
+    )
 
 
 def saved_schedule_from_json(payload: dict[str, Any]) -> SavedSchedule:

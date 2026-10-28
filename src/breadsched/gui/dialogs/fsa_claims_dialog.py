@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import weakref
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date
 
 from ...api import ApiError
@@ -416,7 +416,9 @@ class FsaClaimsDialog(BoundedWindow):
         # The dialog is not modal: it can stay open beside a register, and the
         # transactions it offers follow the book (#366).
         self._refresh_source = 0
-        self._handler: int | None = db.connect("database-changed", self._on_book_changed)
+        self._unsubscribe: Callable[[], None] | None = book_server(db).subscribe(
+            self._on_book_changed
+        )
         self.connect("destroy", lambda *_: self._disconnect())
         self.connect("close-request", self._on_close_request)
         if claim_handle is None and self.claims:
@@ -434,9 +436,9 @@ class FsaClaimsDialog(BoundedWindow):
         if self._refresh_source:
             GLib.source_remove(self._refresh_source)
             self._refresh_source = 0
-        if self._handler is not None:
-            self.db.disconnect(self._handler)
-            self._handler = None
+        if self._unsubscribe is not None:
+            self._unsubscribe()
+            self._unsubscribe = None
         if _OPEN.get(id(self.db)) is self:
             del _OPEN[id(self.db)]
 

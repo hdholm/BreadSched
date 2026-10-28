@@ -259,6 +259,7 @@ class LocalBookServer:
         #: inside the attachment folder, as the browser may (``contained_location``).
         self._confine_documents = confine_documents
         self._pending: set[str] = set()
+        self._transactions: set[str] = set()
         self._listeners: list[Listener] = []
         known = db._known_signals()
         self._connections: list[int] = []
@@ -269,6 +270,12 @@ class LocalBookServer:
                     self._connections.append(
                         db.connect(signal, lambda _handles, kind=stem: self._pending.add(kind))
                     )
+        for action in ("add", "update", "delete"):
+            self._connections.append(
+                db.connect(
+                    f"transaction-{action}", lambda handles: self._transactions.update(handles)
+                )
+            )
         self._connections.append(db.connect("database-changed", self._on_changed))
 
     # ------------------------------------------------------------- changes
@@ -287,8 +294,14 @@ class LocalBookServer:
         return stop
 
     def _on_changed(self, _db: DbSQLite) -> None:
-        change = Change(self.db.revision(), frozenset(self._pending), self.db.undo_message())
+        change = Change(
+            self.db.revision(),
+            frozenset(self._pending),
+            self.db.undo_message(),
+            frozenset(self._transactions),
+        )
         self._pending.clear()
+        self._transactions.clear()
         for listener in list(self._listeners):
             listener(change)
 

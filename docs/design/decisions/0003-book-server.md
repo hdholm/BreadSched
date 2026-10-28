@@ -40,7 +40,8 @@ open fails on the lock.
      services and one `DbSQLite`.
    - It observes the book's storage signals. Every change, including undo, redo,
      and writes by other code on the same book, raises its revision by one and
-     reaches each subscriber as a `Change` (revision, kinds, undo label).
+     reaches each subscriber as a `Change` (revision, kinds, undo label, and the
+     transactions it added, edited, or removed).
    - The command line and the browser move onto it one area at a time.
 3. **HTTP transport (#357).**
    - The protocol is served as versioned `/api/v1` resources, with record
@@ -483,9 +484,13 @@ for those transactions' rows, which `RegisterChanges.apply` merges into the rows
 register holds, recomputing the balances in memory (`ledger.merge_register`; #319).
 The register's account, its picker, the transaction a draft reloads, and the filter's
 account names come from `account()`, `accounts()`, and `find_transaction()`.
-**Still open:** which transactions a commit changed still reaches the register from the
-book's storage signals; a `Change` names only the kinds, so a remote GTK register would
-reread everything. A view moved onto the server can follow by splitting its refresh into
+GTK's views, and its reconciliation and FSA claims windows, hear of changes only
+through the server's `subscribe()`, not the book's storage signals (an architecture
+test keeps them so). A view repaints for a change of a kind its `WATCHES` names, or for
+every change when it watches `database-changed`; a register rereads only the
+transactions a `Change` names (`transactions`, also in `/api/v1/events`) unless an
+account changed too. The view manager's undo, redo, status, and prefill still listen to
+the book itself. A view moved onto the server can follow by splitting its refresh into
 that read and a draw. This is the in-process form of what a remote GTK
 client needs anyway: reads that take time without freezing the window.
 

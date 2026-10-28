@@ -191,6 +191,9 @@ class Change:
     revision: int
     kinds: frozenset[str]
     label: str | None = None
+    #: The transactions the change added, edited, or removed, so a register can
+    #: reread only those (#319).
+    transactions: frozenset[str] = frozenset()
 
 
 Listener = Callable[[Change], None]

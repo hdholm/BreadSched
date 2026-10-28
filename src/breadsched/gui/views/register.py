@@ -26,6 +26,7 @@ from datetime import date
 
 from ...api import ApiError
 from ...api.local import book_server
+from ...api.protocol import Change
 from ...gen.engine import ledger
 from ...gen.lib.account import Account, AccountClass, AccountType
 from ...presentation.investments import register_share_summary
@@ -66,10 +67,9 @@ def column_headings(atype: AccountType) -> tuple[str, str]:
 class RegisterView(BaseView):
     """A ledger grid for one account at a time."""
 
-    # Transaction signals are connected separately (``set_db``): they name the
-    # transactions that changed, so the register reloads only those (#319).
-    WATCHES = ("database-changed", "account-update")
-    TRANSACTION_SIGNALS = ("transaction-add", "transaction-update", "transaction-delete")
+    # A change that names transactions reloads only those (#319), unless it also
+    # changed an account; any other change rereads the register.
+    WATCHES = ("database-changed",)
     #: Where the Double Line choice is remembered.
     SETTINGS_SECTION = "register"
 
@@ -86,7 +86,6 @@ class RegisterView(BaseView):
         self._pending_changes: set[str] = set()
         #: Set when this commit's transaction signals were handled, so the
         #: database-changed signal that follows them does not reload again.
-        self._handled_commit = False
         self._build()
 
     def _build(self) -> None:
@@ -263,16 +262,14 @@ class RegisterView(BaseView):
 
     # ------------------------------------------------------------- updates
 
-    def set_db(self, db) -> None:
-        super().set_db(db)
-        if db is None:
-            return
-        for signal in self.TRANSACTION_SIGNALS:
-            self._handlers.append(db.connect(signal, self._on_transactions))
+    def _on_book_change(self, change: Change) -> None:
+        if change.transactions and "account" not in change.kinds:
+            self._on_transactions(change.transactions)
+        else:
+            super()._on_book_change(change)
 
     def _on_transactions(self, handles) -> None:
         """Reload just the transactions a commit changed (#319)."""
-        self._handled_commit = True
         self._changes += 1
         sheet = self.sheet
         if sheet is None or sheet.db is not self.db:
@@ -287,13 +284,6 @@ class RegisterView(BaseView):
         sheet.reload(changed=handles)
         self.grid.set_sheet(sheet)
         self._show_balance()
-
-    def _on_change(self, *args) -> None:
-        if self._handled_commit:
-            # The transaction signals of this commit already updated the register.
-            self._handled_commit = False
-            return
-        super()._on_change(*args)
 
     def _on_map_refresh(self) -> None:
         sheet = self.sheet

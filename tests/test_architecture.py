@@ -1836,6 +1836,29 @@ class TestBookServerBoundaries:
             }
             assert not engines, (name, engines)
 
+    def test_gtk_views_follow_the_book_through_the_server(self):
+        """#356: GTK's views and its live dialogs hear of changes from the book
+        server's ``subscribe``, not from the storage's signals."""
+        followers = [
+            *sorted((SRC / "gui" / "views").glob("*.py")),
+            SRC / "gui" / "dialogs" / "fsa_claims_dialog.py",
+            SRC / "gui" / "dialogs" / "reconciliation_dialog.py",
+        ]
+        for module in followers:
+            tree = ast.parse(module.read_text(encoding="utf-8"))
+            connected = [
+                node.lineno
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "connect"
+                and (
+                    (isinstance(node.func.value, ast.Name) and node.func.value.id == "db")
+                    or (isinstance(node.func.value, ast.Attribute) and node.func.value.attr == "db")
+                )
+            ]
+            assert not connected, (module.name, connected)
+
     def test_web_resources_reach_the_book_only_through_the_server(self):
         """#358: every browser resource uses ``api.book``; only the HTTP transport's
         binary document route reads the book it serves."""

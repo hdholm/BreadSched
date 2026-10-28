@@ -133,6 +133,8 @@ def test_a_write_is_one_change_every_subscriber_sees(target):
     assert {"transaction", "scheduled"} <= change.kinds
     assert change.label == "Enter next occurrence of Rent"
     assert change_json(change)["kinds"] == sorted(change.kinds)
+    # It names the transactions it wrote, so a register rereads only those (#319).
+    assert change.transactions == frozenset(outcome.transactions)
 
 
 def test_undo_redo_and_writes_from_other_code_are_changes_too(target, book):
@@ -151,6 +153,9 @@ def test_undo_redo_and_writes_from_other_code_are_changes_too(target, book):
     stop()
     assert [change.revision - start for change in seen] == [1, 2, 3, 4]
     assert seen[-1].kinds == frozenset({"transaction"})
+    assert seen[-1].transactions == frozenset(
+        item.handle for item in target.db.iter_transactions() if item.description == "Shop"
+    )
     assert api.revision == start + 4
 
 

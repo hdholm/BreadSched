@@ -14,6 +14,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from ...api.local import book_server
+from ...api.protocol import Change
 from ...gen.db.sqlite import DbSQLite  # noqa: E402
 from ...gen.lib.money import Money  # noqa: E402
 from ...gen.utils.logs import get_logger  # noqa: E402
@@ -55,14 +57,15 @@ def _today() -> date:
 class BaseView(Gtk.Box):
     """A category view: owns a database reference and knows how to repaint."""
 
-    #: Database signals that should trigger a repaint.
+    #: What should trigger a repaint, as the storage signals name it: a kind's
+    #: ``-add``/``-update``/``-delete``, or ``database-changed`` for every change.
     WATCHES: tuple[str, ...] = ("database-changed",)
 
     def __init__(self, manager) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.manager = manager
         self.db: DbSQLite | None = None
-        self._handlers: list[int] = []
+        self._unsubscribe: Callable[[], None] | None = None
         self._refresh_pending = False
         self._refresh_source_id: int | None = None
         #: The book changed while the view was hidden (or it was never drawn): it
@@ -108,22 +111,17 @@ class BaseView(Gtk.Box):
         against a database that has already been closed.
         """
         self.cancel_refresh()
-        for handle in self._handlers:
-            if self.db is not None:
-                self.db.disconnect(handle)
-        self._handlers.clear()
+        if self._unsubscribe is not None:
+            self._unsubscribe()
+            self._unsubscribe = None
         self.db = db
         self._drawn_on = None
         self._background_running = False
         self.updating_label.set_visible(False)
         if db is None:
             return
-        for signal in self.WATCHES:
-            self._handlers.append(db.connect(signal, self._on_change))
-        if "database-changed" not in self.WATCHES:
-            # Every commit raises database-changed: whatever a hidden view does
-            # not watch for, it is still redrawn when shown after any change.
-            self._handlers.append(db.connect("database-changed", self._on_any_change))
+        # The view follows the book through its server's change notices (#356).
+        self._unsubscribe = book_server(db).subscribe(self._on_book_change)
         if self._defers_refresh():
             # A view in a tab nobody is looking at is drawn when shown, or in the
             # background; drawing every remembered tab made opening a book slow (#389).
@@ -225,6 +223,21 @@ class BaseView(Gtk.Box):
         else:
             self._stale = True
             self._full_refresh_pending = True
+
+    def _watched_kinds(self) -> frozenset[str] | None:
+        """The change kinds that repaint this view, or ``None`` for every change."""
+        if "database-changed" in self.WATCHES:
+            return None
+        return frozenset(signal.rsplit("-", 1)[0] for signal in self.WATCHES)
+
+    def _on_book_change(self, change: Change) -> None:
+        watched = self._watched_kinds()
+        if watched is None or change.kinds & watched:
+            self._on_change()
+        else:
+            # Whatever a hidden view does not watch for, it is still redrawn when
+            # shown after any change.
+            self._on_any_change()
 
     def _on_any_change(self, *_args) -> None:
         self._changes += 1
