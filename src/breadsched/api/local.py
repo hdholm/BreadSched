@@ -31,7 +31,7 @@ from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.loans import LoanTerms
 from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
 from ..gen.engine.planning import MatchCandidate, PlannedEvent
-from ..gen.engine.projection import Projection, ProjectionMonthDetail
+from ..gen.engine.projection import Projection, ProjectionMonthDetail, ProjectionProgress
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.engine.schedule import Occurrence
@@ -839,11 +839,22 @@ class LocalBookServer:
 
     # -------------------------------------------------------------- projection
 
-    def project(self, scenario: Scenario) -> Projection:
-        return projection_engine.project(self.db, scenario)
+    def project(
+        self,
+        scenario: Scenario,
+        progress: Callable[[ProjectionProgress], None] | None = None,
+    ) -> Projection:
+        return projection_engine.project(self.db, scenario, progress=progress)
 
-    def projection_month(self, scenario: Scenario, month_index: int) -> ProjectionMonthDetail:
-        result = projection_engine.project(self.db, scenario)
+    def projection_month(
+        self,
+        scenario: Scenario,
+        month_index: int,
+        projected: Projection | None = None,
+    ) -> ProjectionMonthDetail:
+        result = (
+            projected if projected is not None else projection_engine.project(self.db, scenario)
+        )
         if not 0 <= month_index < len(result.rows):
             raise ApiError(
                 404, "projection.month.not_found", ("month_index",), "no such projection month"

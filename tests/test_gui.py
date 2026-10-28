@@ -1700,6 +1700,7 @@ class TestProjectionView:
         assert "events" in view.explain_button.get_tooltip_text()
 
     def test_projection_explanation_shows_each_stock_reconciling(self, app, window, populated_book):
+        from breadsched.api.local import book_server
         from breadsched.gui.dialogs.projection_detail_dialog import (
             ProjectionDetailDialog,
             _children,
@@ -1708,7 +1709,7 @@ class TestProjectionView:
         app.open_book(populated_book)
         window.show_category("projection")
         view = _projection(window)
-        dialog = ProjectionDetailDialog(window, app.db, view._result)
+        dialog = ProjectionDetailDialog(window, book_server(app.db), view._result)
         try:
 
             def texts(widget):

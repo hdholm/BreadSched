@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from ...gen.db.sqlite import DbSQLite
+from ...api import BookApi
 from ...gen.engine import projection
 from ...gen.engine.projection_bridge import StockBridge, month_bridges, projection_bridges
 from ..gi_setup import Gtk
@@ -21,11 +21,12 @@ class ProjectionDetailDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        book: BookApi,
         result: projection.Projection,
     ) -> None:
         super().__init__(title="Projection explanation", transient_for=parent, modal=True)
-        self.db = db
+        self.book = book
+        self._names = {record.account.handle: record.account.name for record in book.accounts()}
         self.result = result
         self.set_default_size(980, 680)
 
@@ -137,7 +138,7 @@ class ProjectionDetailDialog(BoundedWindow):
         if not self.result.rows:
             self.content.append(Gtk.Label(label="Projection has no reporting months."))
             return
-        detail = projection.explain_month(self.db, self.result, index)
+        detail = self.book.projection_month(self.result.scenario, index, self.result)
         summary = Gtk.Label(
             label=(
                 f"{detail.label}   ·   "
@@ -192,8 +193,7 @@ class ProjectionDetailDialog(BoundedWindow):
         def amount_basis(event) -> str:
             lines = []
             for split in event.expected_splits:
-                account = self.db.get_account(split.account)
-                name = account.name if account is not None else split.account
+                name = self._names.get(split.account, split.account)
                 lines.append(f"{name}: {split.amount_source}")
             return "\n".join(lines)
 

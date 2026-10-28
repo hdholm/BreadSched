@@ -24,7 +24,7 @@ from ..gen.engine.fsa_claim_report import ClaimReport
 from ..gen.engine.loans import LoanTerms
 from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
 from ..gen.engine.planning import MatchCandidate, PlannedEvent
-from ..gen.engine.projection import Projection, ProjectionMonthDetail
+from ..gen.engine.projection import Projection, ProjectionMonthDetail, ProjectionProgress
 from ..gen.engine.receivables import ReimbursementProposal
 from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.engine.schedule import Occurrence
@@ -963,12 +963,24 @@ class BookApi(Protocol):
 
     # -------------------------------------------------------------- projection
 
-    def project(self, scenario: Scenario) -> Projection:
-        """Project ``scenario`` (saved or a draft) month by month; writes nothing."""
+    def project(
+        self,
+        scenario: Scenario,
+        progress: Callable[[ProjectionProgress], None] | None = None,
+    ) -> Projection:
+        """Project ``scenario`` (saved or a draft) month by month; writes nothing. In
+        process, ``progress`` hears how far it has got; over HTTP it is not sent."""
         ...
 
-    def projection_month(self, scenario: Scenario, month_index: int) -> ProjectionMonthDetail:
-        """Explain one month of ``scenario``'s projection."""
+    def projection_month(
+        self,
+        scenario: Scenario,
+        month_index: int,
+        projected: Projection | None = None,
+    ) -> ProjectionMonthDetail:
+        """Explain one month of ``scenario``'s projection. In process, ``projected``
+        (that scenario's projection, already calculated) is explained without
+        projecting again; over HTTP it is not sent."""
         ...
 
     # --------------------------------------------------------------- net worth

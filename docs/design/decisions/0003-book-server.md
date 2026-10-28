@@ -537,6 +537,14 @@ schedules/page`): the saved definitions, the cards' derived payments as definiti
 each definition's editability, every account's name, and, with `days`, the committed
 occurrences and card payments due within them.
 
+GTK's Projection view lists and opens scenarios through `scenarios()` and
+`find_scenario(reference)`, names accounts from `accounts()`, and labels amounts with
+`reporting_currency()`. It still projects on a worker thread against a read-only
+snapshot, now as `project(scenario, progress)`; its explanation dialog asks
+`projection_month(scenario, month, projected)`. In process, `progress` hears how far a
+projection has got and `projected`, a projection already calculated, is explained
+without projecting again; over HTTP neither is sent, so the server projects again.
+
 **Still open (imports):** like copying a document in, an import names a file by a path
 the server reads. Through a proxy, a token holder could import any statement file the
 server's user can read; uploading the bytes (as the browser's upload already does

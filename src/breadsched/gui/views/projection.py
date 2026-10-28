@@ -24,8 +24,6 @@ from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import projection
 from ...gen.engine.completeness import combine
-from ...gen.engine.currency import reporting_currency_label
-from ...gen.engine.projection import projected_account_names
 from ...gen.engine.projection_result import projection_balances_chart, projection_chart
 from ...gen.lib import Assumptions, Scenario  # noqa: E402
 from ...gen.services import (
@@ -244,9 +242,10 @@ class ProjectionView(BaseView):
                 self.scenario = self._baseline
             else:
                 # A restored scenario tab is titled before it is first drawn (#389).
-                stored = db.get_scenario(self._scenario_handle)
-                if stored is not None:
-                    self._scenario_name = stored.name
+                try:
+                    self._scenario_name = book_server(db).find_scenario(self._scenario_handle).name
+                except ApiError:
+                    pass
 
     def _is_visible(self) -> bool:
         """Return whether this is the category currently shown by the manager."""
@@ -279,7 +278,7 @@ class ProjectionView(BaseView):
     def _populate_scenarios(self) -> None:
         if self.db is None:
             return
-        self._scenarios = list(self.db.iter_scenarios())
+        self._scenarios = book_server(self.db).scenarios()
         model = Gtk.StringList()
         model.append("Base scenario")
         selected = 0
@@ -412,7 +411,7 @@ class ProjectionView(BaseView):
                 report(update)
 
             try:
-                return projection.project(worker_db, snapshot, progress=progress_callback)
+                return book_server(worker_db).project(snapshot, progress=progress_callback)
             finally:
                 if owns_worker:
                     worker_db.close()
@@ -519,12 +518,22 @@ class ProjectionView(BaseView):
         return self._job is None or self._job.wait(timeout)
 
     def _account_names(self, result: projection.Projection) -> dict[str, str]:
-        return projected_account_names(self.db, result) if self.db is not None else {}
+        if self.db is None:
+            return {}
+        names = {
+            record.account.handle: record.full_name for record in book_server(self.db).accounts()
+        }
+        projected = {
+            handle
+            for row in result.rows
+            for handle in (*row.ledger.closing_holdings, *row.ledger.closing_liabilities)
+        }
+        return {handle: names.get(handle, handle) for handle in projected}
 
     def _currency_label(self) -> str:
         if self.db is None:
             return ""
-        return reporting_currency_label(self.db)
+        return book_server(self.db).reporting_currency()
 
     def _render(self, result: projection.Projection) -> None:
         self._result = result
@@ -652,8 +661,9 @@ class ProjectionView(BaseView):
         index = picker.get_selected()
         chosen = self._scenarios[index - 1] if index > 0 else None
         if chosen is not None:
-            chosen = self.db.get_scenario(chosen.handle)
-            if chosen is None:
+            try:
+                chosen = book_server(self.db).find_scenario(chosen.handle)
+            except ApiError:
                 self.schedule_refresh()
                 return
         self._scenario_handle = chosen.handle if chosen is not None else None
@@ -676,7 +686,7 @@ class ProjectionView(BaseView):
             return
         from ..dialogs.projection_detail_dialog import ProjectionDetailDialog
 
-        ProjectionDetailDialog(self.get_root(), self.db, self._result).present()
+        ProjectionDetailDialog(self.get_root(), book_server(self.db), self._result).present()
 
     def _on_compare_clicked(self, _button) -> None:
         if self.db is None or not getattr(self, "_scenarios", []):

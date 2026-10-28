@@ -1915,9 +1915,25 @@ def test_projection_alike(target, book):
     with pytest.raises(ApiError) as refused:
         api.projection_month(draft, 99)
     assert (refused.value.status, refused.value.code) == (404, "projection.month.not_found")
+    # A projection already calculated is explained as it stands (in process; over
+    # HTTP it is not sent and the server projects again, to the same answer).
+    assert to_data(api.projection_month(draft, 2, result)) == to_data(month)
+    with pytest.raises(ApiError) as refused:
+        api.projection_month(draft, 12, result)
+    assert refused.value.code == "projection.month.not_found"
 
 
 # ------------------------------------------------------------ in process only
+
+
+def test_projection_progress_is_heard_in_process(db, book):
+    from breadsched.gen.lib import Scenario
+
+    heard = []
+    LocalBookServer(db).project(
+        Scenario(name="Draft", start=date(2026, 10, 1), years=1), progress=heard.append
+    )
+    assert heard and heard[-1].fraction == 1.0
 
 
 def test_closing_the_server_stops_notifications(db, book):

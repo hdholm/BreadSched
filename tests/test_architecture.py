@@ -1778,6 +1778,11 @@ class TestBookServerBoundaries:
             ("web/register_entry_resource.py", ("register_entry_save",)),
             ("web/register_resource.py", ("transaction_add",)),
             ("gui/dialogs/posted_dialog.py", ("delete",)),
+            (
+                "gui/views/projection.py",
+                ("_populate_scenarios", "_on_scenario_chosen", "_currency_label", "work"),
+            ),
+            ("gui/dialogs/projection_detail_dialog.py", ("_render",)),
             ("gui/register_sheet.py", ("_save_transaction",)),
         ],
     )
