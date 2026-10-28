@@ -95,6 +95,9 @@ Resources so far, all under ``/api/v1``:
   ``GET /transactions/{handle}/plan-matches`` (``window_days``).
 * ``GET /held-imports`` – GnuCash changes held back from reconciled transactions;
   ``POST /held-imports/resolve`` (``ResolveHeldImports``).
+* ``GET /account-suggestions`` – loan/asset links and card settings the book suggests;
+  ``POST /account-suggestions/apply`` (``ApplyAccountSuggestions``) applies those at
+  least ``min_confidence`` sure.
 * ``GET`` and ``POST /transactions/{handle}/splits/{split}/lots`` – the lots a sale
   could name, and naming them (``picks``); ``GET`` and ``PATCH /tax-marks``.
 * ``GET /quotes`` – commodities, their quote sources, and what a fetch would ask
@@ -215,6 +218,7 @@ from ..gen.services import (
     ResolveNext,
     SetAdvanceDays,
 )
+from ..gen.services.account_inference import ApplyAccountSuggestions
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.autocomplete import SuggestEntry
 from ..gen.services.categorization import AddRule
@@ -333,6 +337,8 @@ __all__ = [
     "tax_marks_get",
     "tax_marks_patch",
     "held_imports_get",
+    "account_suggestions_get",
+    "account_suggestions_apply",
     "held_imports_resolve",
     "plan_matches_get",
     "plan_occurrence_lookup",
@@ -1362,6 +1368,16 @@ def plan_matches_get(api: Api, path: Path, query: QueryParams) -> dict:
 def held_imports_get(api: Api, _path: Path, query: QueryParams) -> dict:
     query.finish()
     return {"changes": to_data(api.book.held_imports())}
+
+
+def account_suggestions_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return {"suggestions": to_data(api.book.account_suggestions())}
+
+
+def account_suggestions_apply(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(ApplyAccountSuggestions, body, "request")
+    return to_data(api.book.apply_account_suggestions(request))
 
 
 def held_imports_resolve(api: Api, _path: Path, body: dict[str, Any]) -> dict:

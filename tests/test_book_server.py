@@ -1683,6 +1683,20 @@ def test_imports_run_alike(target, book, tmp_path):
     assert db.summary()["txn"] == before + 2
     assert api.import_source() is None or isinstance(api.import_source(), str)
 
+    # A whole file through its importer, with the importer's full result back.
+    from breadsched.gen.services.imports import ImportBook
+
+    qif = tmp_path / "statement.qif"
+    qif.write_bytes(
+        b"!Account\nNImported checking\nTBank\n^\n!Type:Bank\nD03/04/2026\nT12.50\nPExample\n^\n"
+    )
+    book_import = api.import_book(ImportBook(str(qif)))
+    assert book_import.source == str(qif) and "QIF" in book_import.format_name
+    assert book_import.result.transactions_new == 1
+    assert book_import.result.detail(limit=5)
+    assert db.summary()["txn"] == before + 3
+    assert api.import_source() == str(qif)
+
 
 def test_a_plan_cell_is_explained_alike(target, book):
     from breadsched.api.typed_codec import to_data
@@ -2218,6 +2232,38 @@ def test_register_changes_merge_like_a_full_read(target, book):
     with pytest.raises(ApiError) as refused:
         api.register_changes("no-such-account", [rent.handle])
     assert refused.value.status == 404
+
+
+def test_account_suggestions_are_listed_and_applied_alike(target, book):
+    from breadsched.gen.engine import inference
+    from breadsched.gen.lib import Account, AccountType
+    from breadsched.gen.services.account_inference import ApplyAccountSuggestions
+
+    api, db = target.api, target.db
+    liabilities = db.get_account(book.card).parent
+    home = Account(name="Home Evans", atype=AccountType.ASSET, parent=book.assets)
+    mortgage = Account(name="Mortgage Evans", atype=AccountType.LIABILITY, parent=liabilities)
+    with db.transaction("Accounts") as txn:
+        db.add_account(home, txn)
+        db.add_account(mortgage, txn)
+    found = api.account_suggestions()
+    engine = inference.infer_all(db).suggestions
+    assert [(item.account, item.field, item.confidence) for item in found] == [
+        (item.account, item.field, Decimal(str(round(item.confidence, 2)))) for item in engine
+    ]
+    link = next(item for item in found if item.account == mortgage.handle)
+    # Shown as the account's full name; only a shared place name, so not confident.
+    assert link.value == db.full_name(home.handle) and link.confidence < 0.6
+    assert api.apply_account_suggestions(ApplyAccountSuggestions()).applied == len(
+        [item for item in engine if item.confidence >= 0.6]
+    )
+    assert db.get_account(mortgage.handle).liability.linked_asset is None
+    applied = api.apply_account_suggestions(ApplyAccountSuggestions(min_confidence=Decimal(0)))
+    assert (applied.applied, applied.considered) == (len(engine), len(engine))
+    assert db.get_account(mortgage.handle).liability.linked_asset == home.handle
+    with pytest.raises(ApiError) as refused:
+        api.apply_account_suggestions(ApplyAccountSuggestions(min_confidence=Decimal("1.5")))
+    assert (refused.value.status, refused.value.code) == (400, "inference.confidence.invalid")
 
 
 def test_counts_plan_bounds_and_dashboard_defaults_read_alike(target, book):

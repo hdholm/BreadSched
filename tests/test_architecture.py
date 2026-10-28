@@ -1429,6 +1429,8 @@ class TestBookServerBoundaries:
         "historical_estimates",
         "accept_historical_estimate",
         "register_changes",
+        "account_suggestions",
+        "apply_account_suggestions",
         "plan_bounds",
         "book_counts",
         "default_dashboard_settings",
@@ -1789,6 +1791,7 @@ class TestBookServerBoundaries:
             ),
             ("gui/dialogs/projection_detail_dialog.py", ("_render",)),
             ("gui/views/plan.py", ("_plan_bounds", "_populate_scenarios")),
+            ("cli/import_commands.py", ("cmd_import", "cmd_infer")),
             (
                 "gui/viewmanager.py",
                 ("_refresh_status", "_account_record", "_scenario_exists", "open_register_tab"),

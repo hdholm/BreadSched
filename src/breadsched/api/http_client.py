@@ -79,6 +79,11 @@ from ..gen.services import (
     TagCount,
     TransactionInput,
 )
+from ..gen.services.account_inference import (
+    AccountSuggestion,
+    AppliedSuggestions,
+    ApplyAccountSuggestions,
+)
 from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
@@ -1118,6 +1123,14 @@ class HttpBookClient:
         found = self._call("GET", "/held-imports")
         return from_data(tuple[HeldImportChange, ...], found["changes"], "changes")
 
+    def account_suggestions(self) -> tuple[AccountSuggestion, ...]:
+        found = self._call("GET", "/account-suggestions")
+        return from_data(tuple[AccountSuggestion, ...], found["suggestions"], "suggestions")
+
+    def apply_account_suggestions(self, request: ApplyAccountSuggestions) -> AppliedSuggestions:
+        found = self._call("POST", "/account-suggestions/apply", body=to_data(request))
+        return from_data(AppliedSuggestions, found)
+
     def resolve_held_imports(self, request: ResolveHeldImports) -> HeldImportResolution:
         found = self._call("POST", "/held-imports/resolve", body=to_data(request))
         return from_data(HeldImportResolution, found)
@@ -1249,7 +1262,17 @@ class HttpBookClient:
     def import_book(self, request: ImportBook) -> ImportedBook:
         # Progress is heard in process only; the server reports the outcome.
         body = to_data(replace(request, progress=None))
-        return from_data(ImportedBook, self._call("POST", "/imports", body=body))
+        found = self._call("POST", "/imports", body=body)
+        # The service names the importers' result only for type checking (it does not
+        # import the plugins), so its field is decoded with the plugins' own class.
+        from ..plugins.importer.gnucash_common import ImportResult
+
+        return ImportedBook(
+            found["source"],
+            found["format_id"],
+            found["format_name"],
+            from_data(ImportResult, found["result"], "result"),
+        )
 
     def import_source(self) -> str | None:
         return self._call("GET", "/imports/source")["source"]

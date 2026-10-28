@@ -67,6 +67,11 @@ from ..gen.services import (
     TagCount,
     TransactionInput,
 )
+from ..gen.services.account_inference import (
+    AccountSuggestion,
+    AppliedSuggestions,
+    ApplyAccountSuggestions,
+)
 from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
@@ -788,6 +793,14 @@ class BookApi(Protocol):
 
     def held_imports(self) -> tuple[HeldImportChange, ...]:
         """GnuCash changes held back from transactions reconciled here."""
+        ...
+
+    def account_suggestions(self) -> tuple[AccountSuggestion, ...]:
+        """Loan/asset links and card settings the book suggests; writes nothing."""
+        ...
+
+    def apply_account_suggestions(self, request: ApplyAccountSuggestions) -> AppliedSuggestions:
+        """Apply the suggestions at least ``min_confidence`` sure, as one change."""
         ...
 
     def resolve_held_imports(self, request: ResolveHeldImports) -> HeldImportResolution: ...

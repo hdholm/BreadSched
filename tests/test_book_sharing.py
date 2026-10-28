@@ -558,6 +558,25 @@ def test_investment_reports_work_through_the_server_holding_the_book(running, bo
     assert "No Such Account" in capsys.readouterr().err
 
 
+def test_import_and_infer_work_through_the_server_holding_the_book(
+    running, book_path, capsys, tmp_path
+):
+    statement = tmp_path / "statement.qif"
+    statement.write_bytes(
+        b"!Account\nNShared checking\nTBank\n^\n!Type:Bank\nD03/04/2026\nT12.50\nPExample\n^\n"
+    )
+    path = str(book_path)
+    assert main(["import", path, str(statement), "--json"]) == 0
+    imported = json.loads(capsys.readouterr().out)
+    assert imported["transactions_new"] == 1
+    assert imported["source"] == str(statement)
+    assert main(["infer", path, "--json"]) == 0
+    suggestions = json.loads(capsys.readouterr().out)
+    assert all(isinstance(item["confidence"], float) for item in suggestions)
+    assert main(["infer", path, "--apply", "--min-confidence", "1", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["considered"] == len(suggestions)
+
+
 def test_a_server_can_be_named_explicitly(running, book_path, tmp_path, capsys, monkeypatch):
     withdraw_server(running.record)
     token_file = tmp_path / "token"

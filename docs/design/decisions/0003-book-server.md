@@ -573,6 +573,16 @@ snapshot, now as `project(scenario, progress)`; its explanation dialog asks
 projection has got and `projected`, a projection already calculated, is explained
 without projecting again; over HTTP neither is sent, so the server projects again.
 
+The command line's `import` and `infer` run through the server too (`--server`, or
+the server holding the book): `import_book` imports, and `account_suggestions()`
+(`GET /api/v1/account-suggestions`) lists the loan/asset links and card settings
+`engine.inference` finds, each with its account's name, the value as shown, a
+confidence to two places, and the evidence. `apply_account_suggestions(request)`
+(`POST /api/v1/account-suggestions/apply`) applies those at least `min_confidence`
+sure as one change, recomputing them on the server, so the proposed values are never
+sent back. The HTTP client decodes an import's result with the importers' own
+`ImportResult`, which the service names only for type checking.
+
 **Still open (imports):** like copying a document in, an import names a file by a path
 the server reads. Through a proxy, a token holder could import any statement file the
 server's user can read; uploading the bytes (as the browser's upload already does

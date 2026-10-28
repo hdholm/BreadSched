@@ -318,6 +318,7 @@ _SERVICE_MESSAGES = {
     "savings_goal.close.before_start": "A goal cannot close before it starts",
     "receivable.payer.required": "Enter who owes this reimbursement",
     "receivable.not_found": "That receivable no longer exists",
+    "inference.confidence.invalid": "The confidence must be between 0 and 1",
     "receivable.costs.range.invalid": "The costs range must not end before it starts",
     "receivable.reference.ambiguous": (
         "That matches more than one receivable; use more of its handle"

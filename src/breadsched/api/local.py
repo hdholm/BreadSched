@@ -79,6 +79,7 @@ from ..gen.services import (
     TagCount,
     TransactionInput,
     account_balance,
+    account_inference,
     account_record,
     account_records,
     balance_summary,
@@ -146,6 +147,11 @@ from ..gen.services import scenarios as scenario_service
 from ..gen.services import schedules as schedule_service
 from ..gen.services import schedules as schedule_services
 from ..gen.services import tax as tax_service
+from ..gen.services.account_inference import (
+    AccountSuggestion,
+    AppliedSuggestions,
+    ApplyAccountSuggestions,
+)
 from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
@@ -673,6 +679,12 @@ class LocalBookServer:
 
     def held_imports(self) -> tuple[HeldImportChange, ...]:
         return tuple(import_review.pending_import_changes(self.db))
+
+    def account_suggestions(self) -> tuple[AccountSuggestion, ...]:
+        return account_inference.account_suggestions(self.db)
+
+    def apply_account_suggestions(self, request: ApplyAccountSuggestions) -> AppliedSuggestions:
+        return unwrap(account_inference.apply_account_suggestions(self.db, request))
 
     def resolve_held_imports(self, request: ResolveHeldImports) -> HeldImportResolution:
         return unwrap(import_review.resolve_import_changes(self.db, request))

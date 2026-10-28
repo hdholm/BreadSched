@@ -3,26 +3,21 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
+from decimal import Decimal
 
-from ..gen.engine import (
-    inference,
-)
 from ..gen.services import (
     HeldImportDecision,
     ImportBook,
     ResolveHeldImports,
-    import_book,
 )
+from ..gen.services.account_inference import AccountSuggestion, ApplyAccountSuggestions
 from ..gen.services.csv_import import CsvImportRequest, CsvMapping
 from ..gen.services.gnucash_writeback import (
     ApplyWriteback,
 )
-from ..gen.services.receivables import (
-    reimbursement_proposals,
-)
 from ..presentation import (
     reimbursement_notice,
-    service_error_message,
 )
 from .common import (
     AddCommand,
@@ -30,44 +25,30 @@ from .common import (
     add_server_options,
     book_api,
     emit,
-    open_book,
     table,
 )
 
 
 def cmd_import(args: argparse.Namespace) -> int:
-    db = open_book(args.book)
-    try:
-        imported = import_book(
-            db,
+    """Through the book server (#358), so it works while another process holds the book."""
+    with book_api(args, "w") as book:
+        result = book.import_book(
             ImportBook(
                 source=args.source,
                 format=args.format,
                 include_scheduled=not args.no_scheduled,
                 include_duplicates=args.include_duplicates,
-            ),
-        )
-        if not imported.ok:
-            raise CommandError(service_error_message(imported.errors[0]))
-        assert imported.value is not None
-        result = imported.value.result
+            )
+        ).result
         result.log_path = str(args.log_file) if args.log_file else None
-        proposal_count = len(reimbursement_proposals(db).value or ())
-    finally:
-        db.close()
-    suggestions = []
-    if not args.no_infer:
-        db = open_book(args.book)
-        try:
-            suggestions = inference.infer_all(db).suggestions
+        proposal_count = len(book.reimbursement_proposals())
+        suggestions: tuple[AccountSuggestion, ...] = ()
+        if not args.no_infer:
+            suggestions = book.account_suggestions()
             if args.infer_apply:
-                inference.apply_suggestions(
-                    db,
-                    [s for s in suggestions if s.confidence >= 0.6],
-                    message="Apply relationships inferred on import",
+                book.apply_account_suggestions(
+                    ApplyAccountSuggestions(message="Apply relationships inferred on import")
                 )
-        finally:
-            db.close()
 
     emit(
         {
@@ -103,16 +84,7 @@ def cmd_import(args: argparse.Namespace) -> int:
             "source_identity": result.source_identity,
             "log_file": result.log_path,
             "reimbursement_proposals": proposal_count,
-            "suggestions": [
-                {
-                    "account": s.account_name,
-                    "field": s.field,
-                    "value": s.value_label,
-                    "confidence": s.confidence,
-                    "reason": s.reason,
-                }
-                for s in suggestions
-            ],
+            "suggestions": [_suggestion_json(s) for s in suggestions],
         },
         args,
         f"Imported into {args.book}\n"
@@ -387,7 +359,7 @@ def cmd_import_review(args: argparse.Namespace) -> int:
         return 0
 
 
-def _inference_note(suggestions: list, applied: bool) -> str:
+def _inference_note(suggestions: Sequence[AccountSuggestion], applied: bool) -> str:
     """Tell the user what the importer noticed, without acting on it uninvited."""
     if not suggestions:
         return ""
@@ -402,8 +374,7 @@ def _inference_note(suggestions: list, applied: bool) -> str:
         f"{len(suggestions)} relationship(s) could be inferred from this book:",
     ]
     lines += [
-        f"  - {s.account_name}: {s.field} = {s.value_label} ({s.confidence:.0%})"
-        for s in suggestions[:8]
+        f"  - {s.account_name}: {s.field} = {s.value} ({s.confidence:.0%})" for s in suggestions[:8]
     ]
     if len(suggestions) > 8:
         lines.append(f"  ... and {len(suggestions) - 8} more")
@@ -411,50 +382,42 @@ def _inference_note(suggestions: list, applied: bool) -> str:
     return "\n".join(lines)
 
 
+def _suggestion_json(suggestion: AccountSuggestion) -> dict:
+    return {
+        "account": suggestion.account_name,
+        "field": suggestion.field,
+        "value": suggestion.value,
+        "confidence": float(suggestion.confidence),
+        "reason": suggestion.reason,
+    }
+
+
 def cmd_infer(args: argparse.Namespace) -> int:
     """Suggest relationships an imported book does not state."""
-    db = open_book(args.book, "r" if not args.apply else "w")
-    try:
-        result = inference.infer_all(db)
+    with book_api(args, "w" if args.apply else "r") as book:
+        suggestions = book.account_suggestions()
         rows = [
-            [
-                s.account_name,
-                s.field,
-                str(s.value_label or s.value),
-                f"{s.confidence:.0%}",
-                s.reason,
-            ]
-            for s in result.suggestions
+            [s.account_name, s.field, s.value, f"{s.confidence:.0%}", s.reason] for s in suggestions
         ]
+        headings = ["account", "setting", "value", "confidence", "because"]
         if args.apply:
-            chosen = [s for s in result.suggestions if s.confidence >= args.min_confidence]
-            applied = inference.apply_suggestions(db, chosen)
+            applied = book.apply_account_suggestions(
+                ApplyAccountSuggestions(min_confidence=Decimal(str(args.min_confidence)))
+            )
             emit(
-                {"applied": applied, "considered": len(result.suggestions)},
+                {"applied": applied.applied, "considered": applied.considered},
                 args,
-                f"Applied {applied} of {len(result.suggestions)} suggestion(s)\n\n"
-                + table(rows, ["account", "setting", "value", "confidence", "because"]),
+                f"Applied {applied.applied} of {applied.considered} suggestion(s)\n\n"
+                + table(rows, headings),
             )
             return 0
-
         emit(
-            [
-                {
-                    "account": s.account_name,
-                    "field": s.field,
-                    "value": s.value_label,
-                    "confidence": s.confidence,
-                    "reason": s.reason,
-                }
-                for s in result.suggestions
-            ],
+            [_suggestion_json(s) for s in suggestions],
             args,
-            table(rows, ["account", "setting", "value", "confidence", "because"])
-            + ("\n\nNothing is changed until you pass --apply." if result.suggestions else ""),
+            table(rows, headings)
+            + ("\n\nNothing is changed until you pass --apply." if suggestions else ""),
         )
         return 0
-    finally:
-        db.close()
 
 
 def register(add: AddCommand) -> None:
@@ -480,6 +443,7 @@ def register(add: AddCommand) -> None:
         action="store_true",
         help="apply confident suggestions rather than only listing them",
     )
+    add_server_options(imp)
     imp.set_defaults(func=cmd_import)
 
     csv_cmd = add(
@@ -571,4 +535,5 @@ def register(add: AddCommand) -> None:
     infer = add("infer", "Suggest loan/asset links and credit-card settings")
     infer.add_argument("--apply", action="store_true", help="write the suggestions")
     infer.add_argument("--min-confidence", type=float, default=0.6)
+    add_server_options(infer)
     infer.set_defaults(func=cmd_infer)
