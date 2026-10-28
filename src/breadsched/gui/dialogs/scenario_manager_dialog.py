@@ -351,13 +351,19 @@ class ScenarioManagerDialog(BoundedWindow):
         self.status.remove_css_class("negative")
 
     def _projection_accounts(self):
-        accounts = []
-        for account in self.db.iter_accounts():
-            if account.account_class is AccountClass.LIABILITY or (
-                account.account_class is AccountClass.ASSET and account.atype.is_investment
-            ):
-                accounts.append(account)
-        return sorted(accounts, key=lambda item: self.db.full_name(item).casefold())
+        """Liabilities and investments, by full name, through the book server (#358)."""
+        records = sorted(
+            book_server(self.db).accounts(), key=lambda record: record.full_name.casefold()
+        )
+        return [
+            record.account
+            for record in records
+            if record.account.account_class is AccountClass.LIABILITY
+            or (
+                record.account.account_class is AccountClass.ASSET
+                and record.account.atype.is_investment
+            )
+        ]
 
     def _update_account_summary(self) -> None:
         count = len(self._account_rates)
@@ -471,8 +477,10 @@ class AccountAssumptionsDialog(BoundedWindow):
             )
         )
         grid = Gtk.Grid(column_spacing=12, row_spacing=6)
+        names = {record.account.handle: record.full_name for record in book_server(db).accounts()}
         for row, account in enumerate(accounts):
-            grid.attach(Gtk.Label(label=db.full_name(account), xalign=0), 0, row, 1, 1)
+            label = names.get(account.handle, account.name)
+            grid.attach(Gtk.Label(label=label, xalign=0), 0, row, 1, 1)
             entry = Gtk.Entry(placeholder_text="inherit")
             if account.handle in values:
                 entry.set_text(str(values[account.handle] * Decimal("100")))
@@ -729,13 +737,19 @@ class AssumptionPeriodDialog(BoundedWindow):
         box.append(buttons)
 
     def _projection_accounts(self):
-        accounts = []
-        for account in self.db.iter_accounts():
-            if account.account_class is AccountClass.LIABILITY or (
-                account.account_class is AccountClass.ASSET and account.atype.is_investment
-            ):
-                accounts.append(account)
-        return sorted(accounts, key=lambda item: self.db.full_name(item).casefold())
+        """Liabilities and investments, by full name, through the book server (#358)."""
+        records = sorted(
+            book_server(self.db).accounts(), key=lambda record: record.full_name.casefold()
+        )
+        return [
+            record.account
+            for record in records
+            if record.account.account_class is AccountClass.LIABILITY
+            or (
+                record.account.account_class is AccountClass.ASSET
+                and record.account.atype.is_investment
+            )
+        ]
 
     def _update_account_summary(self) -> None:
         count = len(self._account_rates)

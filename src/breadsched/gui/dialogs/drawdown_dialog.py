@@ -25,6 +25,7 @@ def _percent(rate: Decimal) -> str:
 
 def drawdown_summary(db: DbSQLite, drawdown: Drawdown) -> str:
     """One line naming the accounts, dates, and how much a drawdown withdraws."""
+    names = {record.account.handle: record.full_name for record in book_server(db).accounts()}
     if drawdown.annual_rate is not None:
         amount = f"{_percent(drawdown.annual_rate)}% of the balance a year"
     else:
@@ -33,7 +34,8 @@ def drawdown_summary(db: DbSQLite, drawdown: Drawdown) -> str:
             amount += ", rising with inflation"
     through = drawdown.end.isoformat() if drawdown.end is not None else "onward"
     return (
-        f"{db.full_name(drawdown.account)} → {db.full_name(drawdown.into)}, "
+        f"{names.get(drawdown.account, drawdown.account)} → "
+        f"{names.get(drawdown.into, drawdown.into)}, "
         f"{drawdown.start.isoformat()} — {through}: {amount}"
     )
 
@@ -171,9 +173,15 @@ class DrawdownEditDialog(BoundedWindow):
         self.drawdown = drawdown
         self.callback = callback
         self.set_default_size(560, -1)
-        sources, targets = book_server(db).drawdown_accounts()
-        self._sources = sorted(sources, key=lambda handle: db.full_name(handle).casefold())
-        self._targets = sorted(targets, key=lambda handle: db.full_name(handle).casefold())
+        book = book_server(db)
+        sources, targets = book.drawdown_accounts()
+        self._names = {record.account.handle: record.full_name for record in book.accounts()}
+
+        def by_name(handle: str) -> str:
+            return self._names.get(handle, handle).casefold()
+
+        self._sources = sorted(sources, key=by_name)
+        self._targets = sorted(targets, key=by_name)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         for side in ("top", "bottom", "start", "end"):
@@ -253,7 +261,7 @@ class DrawdownEditDialog(BoundedWindow):
     def _account_dropdown(self, handles: list[str], selected: str | None) -> Gtk.DropDown:
         model = Gtk.StringList()
         for handle in handles:
-            model.append(self.db.full_name(handle))
+            model.append(self._names.get(handle, handle))
         picker = bounded_dropdown()
         picker.set_model(model)
         picker.set_hexpand(True)
