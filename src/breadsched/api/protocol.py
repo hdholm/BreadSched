@@ -82,6 +82,7 @@ from ..gen.services.categorization import (
 from ..gen.services.claims import (
     AcceptedClaimLinks,
     ClaimReportQuery,
+    ClaimStanding,
     CloseClaim,
     FsaClaimsView,
     FsaYearsView,
@@ -696,6 +697,10 @@ class BookApi(Protocol):
 
     def fsa_claims(self, as_of: date | None = None) -> FsaClaimsView:
         """Every claim's links and standing, and the splits a claim could link."""
+        ...
+
+    def fsa_claim_standing(self, claim: str) -> ClaimStanding:
+        """A stored claim's standing, or the reason it cannot be worked out."""
         ...
 
     def find_fsa_claim(self, reference: str) -> FsaClaim:

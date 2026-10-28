@@ -525,6 +525,13 @@ and linked documents with the attachment folder, and the FSA claims still open. 
 account editor names accounts from `accounts()` and lists `commodities()` (every
 currency and security, `GET /api/v1/commodities`).
 
+GTK's reconciliation window names accounts from `accounts()` and opens a row's
+transaction with `find_transaction`; its FSA claims editor takes its candidates, FSA
+accounts with their years, and payers from `fsa_claims()` and a claim's standing from
+`fsa_claim_standing(claim)` (`GET /api/v1/fsa-claims/{handle}/standing`), which returns
+the summary or the engine's reason it cannot be worked out; its loan editor takes its
+choices and precision from `loan_choices()`.
+
 **Still open (imports):** like copying a document in, an import names a file by a path
 the server reads. Through a proxy, a token holder could import any statement file the
 server's user can read; uploading the bytes (as the browser's upload already does

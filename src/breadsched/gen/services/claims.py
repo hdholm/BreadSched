@@ -414,3 +414,26 @@ def fsa_years_view(db: DbSQLite, as_of: date | None = None) -> FsaYearsView:
             for status in statuses
         },
     )
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimStanding:
+    """A stored claim's recomputed standing, or why it cannot be worked out."""
+
+    summary: fsa_claims.FsaClaimSummary | None = None
+    problem: str = ""
+
+
+def claim_standing(db: DbSQLite, claim: str) -> ServiceResult[ClaimStanding]:
+    """The standing an editor shows beside a claim (#358).
+
+    A claim whose links no longer add up is reported with the engine's own words,
+    not refused, so the editor can still show and correct it.
+    """
+    found = db.get_fsa_claim(claim)
+    if found is None:
+        return ServiceResult.failure(ServiceError("claim.not_found", ("handle",)))
+    try:
+        return ServiceResult.success(ClaimStanding(fsa_claims.claim_summary(db, found)))
+    except (fsa_claims.FsaClaimError, ValueError) as exc:
+        return ServiceResult.success(ClaimStanding(problem=str(exc)))

@@ -132,7 +132,7 @@ class ReconciliationDialog(BoundedWindow):
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite, account: Account) -> None:
         super().__init__(
-            title=f"Reconcile {db.full_name(account)}",
+            title=f"Reconcile {book_server(db).account(account.handle).full_name}",
             transient_for=parent,
             modal=False,
         )
@@ -201,10 +201,14 @@ class ReconciliationDialog(BoundedWindow):
         """Follow the book: the statement's lists and totals, or its start page."""
         if not self.db.is_open:
             return
-        if self.db.get_account(self.account.handle) is None:
+        try:
+            state = self.book.reconciliation(self.account.handle).current
+        except ApiError as error:
+            if error.status != 404:
+                raise
+            # The account was deleted while the window was open.
             self.close()
             return
-        state = self.book.reconciliation(self.account.handle).current
         handle = state.reconciliation.handle if state is not None else None
         if handle != self.session or state is None:
             if handle is None and self.session is None:
@@ -308,18 +312,19 @@ class ReconciliationDialog(BoundedWindow):
             getattr(box, f"set_margin_{side}")(8)
         self.entry_description = Gtk.Entry(text="Interest", hexpand=True)
         self.entry_description.set_width_chars(12)
-        self.entry_accounts = sorted(
+        records = sorted(
             (
-                account
-                for account in self.db.iter_accounts()
-                if not account.is_root
-                and not account.placeholder
-                and not account.hidden
-                and account.handle != self.account.handle
+                record
+                for record in self.book.accounts()
+                if not record.account.is_root
+                and not record.account.placeholder
+                and not record.account.hidden
+                and record.account.handle != self.account.handle
             ),
-            key=self.db.full_name,
+            key=lambda record: record.full_name,
         )
-        names = [self.db.full_name(account) for account in self.entry_accounts]
+        self.entry_accounts = [record.account for record in records]
+        names = [record.full_name for record in records]
         self.entry_account = bounded_dropdown(names or ["(none)"])
         self.entry_account.set_hexpand(True)
         interest = next(
@@ -659,8 +664,9 @@ class ReconciliationDialog(BoundedWindow):
         candidate = next((item for item in state.candidates if item.split == split), None)
         if candidate is None:
             return None
-        transaction = self.db.get_transaction(candidate.transaction)
-        if transaction is None:
+        try:
+            transaction = self.book.find_transaction(candidate.transaction)
+        except ApiError:
             return None
         dialog = TransactionDialog(self, self.db, transaction=transaction)
         dialog.present()

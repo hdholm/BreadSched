@@ -15,10 +15,8 @@ from decimal import Decimal, InvalidOperation
 from ...api import ApiError
 from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.currency import reporting_fraction
 from ...gen.engine.loans import LoanTerms, schedule_preview
 from ...gen.lib import Money
-from ...gen.lib.account import AccountClass
 from ...gen.services import SaveLoan
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
@@ -37,13 +35,12 @@ class LoanDialog(BoundedWindow):
         self.db = db
         self.set_default_size(620, 620)
 
-        self._liabilities = self._accounts_of(AccountClass.LIABILITY)
-        self._expenses = self._accounts_of(AccountClass.EXPENSE)
-        self._funding = [
-            a
-            for a in db.iter_accounts()
-            if a.atype.is_cash_like and not a.placeholder and not a.hidden
-        ]
+        # The accounts a loan may use and the amount precision, through the book
+        # server (#358).
+        self.choices = book_server(db).loan_choices()
+        self._liabilities = list(self.choices.liabilities)
+        self._expenses = list(self.choices.expenses)
+        self._funding = list(self.choices.payment_accounts)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         for side in ("top", "bottom", "start", "end"):
@@ -142,18 +139,8 @@ class LoanDialog(BoundedWindow):
 
     # ------------------------------------------------------------------ inputs
 
-    def _accounts_of(self, account_class: AccountClass) -> list:
-        return [
-            a
-            for a in self.db.iter_accounts()
-            if a.account_class is account_class
-            and not a.placeholder
-            and not a.is_root
-            and not a.hidden
-        ]
-
     def _picker(self, accounts: list) -> Gtk.DropDown:
-        picker = bounded_dropdown([self.db.full_name(a) for a in accounts] or ["(none available)"])
+        picker = bounded_dropdown([item.name for item in accounts] or ["(none available)"])
         picker.connect("notify::selected", self._recalculate)
         return picker
 
@@ -180,7 +167,7 @@ class LoanDialog(BoundedWindow):
             liability=self._liabilities[self.liability_picker.get_selected()].handle,
             interest_account=self._expenses[self.interest_picker.get_selected()].handle,
             payment_account=self._funding[self.funding_picker.get_selected()].handle,
-            fraction=reporting_fraction(self.db),
+            fraction=self.choices.fraction,
         )
 
     # ----------------------------------------------------------------- preview

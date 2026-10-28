@@ -94,6 +94,7 @@ from ..gen.services.categorization import (
 from ..gen.services.claims import (
     AcceptedClaimLinks,
     ClaimReportQuery,
+    ClaimStanding,
     CloseClaim,
     FsaClaimsView,
     FsaYearsView,
@@ -999,6 +1000,10 @@ class HttpBookClient:
 
     def fsa_claims(self, as_of: date | None = None) -> FsaClaimsView:
         return from_data(FsaClaimsView, self._call("GET", "/fsa-claims", {"as_of": as_of}))
+
+    def fsa_claim_standing(self, claim: str) -> ClaimStanding:
+        path = f"/fsa-claims/{quote(claim, safe='')}/standing"
+        return from_data(ClaimStanding, self._call("GET", path))
 
     def find_fsa_claim(self, reference: str) -> FsaClaim:
         found = self._call("GET", "/fsa-claims/lookup", {"reference": reference})

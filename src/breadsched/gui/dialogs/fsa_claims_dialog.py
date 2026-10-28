@@ -11,8 +11,6 @@ from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import fsa_claims
 from ...gen.lib import (
-    AccountClass,
-    AccountType,
     FsaClaim,
     Money,
     SplitLink,
@@ -189,16 +187,14 @@ def _event_text(event: FsaClaimEvent) -> str:
 
 
 class _AllocationRow(Gtk.Frame):
-    def __init__(self, db: DbSQLite, candidates, allocation=None, repayments=()) -> None:
+    def __init__(self, fsa_accounts: tuple, candidates, allocation=None, repayments=()) -> None:
         super().__init__()
-        self.db = db
-        self.accounts = [
-            account for account in db.iter_accounts() if account.atype is AccountType.FSA
-        ]
+        #: The FSA accounts with their funding years, as the book server listed them.
+        self.accounts = list(fsa_accounts)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.set_child(box)
         top = Gtk.Box(spacing=6)
-        self.account = bounded_dropdown([db.full_name(account) for account in self.accounts])
+        self.account = bounded_dropdown([account.name for account in self.accounts])
         self.account.connect("notify::selected", self._refresh_years)
         top.append(self.account)
         self.year = bounded_dropdown([])
@@ -223,7 +219,7 @@ class _AllocationRow(Gtk.Frame):
         self._refresh_years()
         if allocation is not None:
             selected_account = self.accounts[self.account.get_selected()]
-            for index, year in enumerate(selected_account.fsa.years):
+            for index, year in enumerate(selected_account.years):
                 if year.start == allocation.funding_year_start:
                     self.year.set_selected(index)
                     break
@@ -243,16 +239,16 @@ class _AllocationRow(Gtk.Frame):
             self.year.set_model(Gtk.StringList.new([]))
             return
         account = self.accounts[self.account.get_selected()]
-        labels = [f"{year.start} – {year.through}" for year in account.fsa.years]
+        labels = [f"{year.start} – {year.through}" for year in account.years]
         self.year.set_model(Gtk.StringList.new(labels))
 
     def value(self) -> ClaimAllocationInput:
         if not self.accounts:
             raise ValueError("Create an FSA account and funding year first")
         account = self.accounts[self.account.get_selected()]
-        if not account.fsa.years:
+        if not account.years:
             raise ValueError("Selected FSA account has no funding year")
-        year = account.fsa.years[self.year.get_selected()]
+        year = account.years[self.year.get_selected()]
         target_text = self.target.get_text().strip()
         rejections: list[ClaimRejectionInput] = []
         for raw in self.rejections.get_text().split(";"):
@@ -302,7 +298,10 @@ class FsaClaimsDialog(BoundedWindow):
         self.db = db
         _OPEN[id(db)] = self
         self.set_default_size(860, 700)
-        self.claims = [summary.claim for summary in book_server(db).fsa_claims().claims]
+        view = book_server(db).fsa_claims()
+        self.claims = [summary.claim for summary in view.claims]
+        #: FSA accounts with their years, and payers, as the book server listed them.
+        self.fsa_accounts = view.candidates.fsa_accounts
         self.current: FsaClaim | None = None
         self._allocation_rows: list[_AllocationRow] = []
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -340,16 +339,8 @@ class FsaClaimsDialog(BoundedWindow):
         self.eob_note = Gtk.Entry(placeholder_text="Why the EOB changed (kept in the history)")
         # A payer (an insurer) covering part of this same expense leaves the FSA
         # only the rest (issue #192); linked only from here, never inferred.
-        self.receivables = sorted(
-            db.iter_receivables(), key=lambda item: (item.incurred_date, item.payer)
-        )
-        self.payer = bounded_dropdown(
-            ["None"]
-            + [
-                f"{item.payer} — {item.description or 'expense'} ({item.incurred_date})"
-                for item in self.receivables
-            ]
-        )
+        self.receivables = list(view.candidates.receivables)
+        self.payer = bounded_dropdown(["None"] + [item.name for item in self.receivables])
         self.payer.set_tooltip_text(
             "A reimbursable expense whose payer covers part of this bill; "
             "the FSA then claims only the rest"
@@ -512,34 +503,31 @@ class FsaClaimsDialog(BoundedWindow):
         self._load(None)
         self.status.set_text("")
 
+    def _years(self) -> list:
+        return [year for account in self.fsa_accounts for year in account.years]
+
     def _candidates(self):
-        payments, refunds, reimbursements, repayments = [], [], [], []
-        fsa_years = [
-            year
-            for account in self.db.iter_accounts()
-            if account.atype is AccountType.FSA
-            for year in account.fsa.years
-        ]
-        candidate_start = min((year.start for year in fsa_years), default=None)
-        for transaction in self.db.iter_transactions():
-            if candidate_start is not None and transaction.post_date < candidate_start:
-                continue
-            for split in transaction.splits:
-                account = self.db.get_account(split.account)
-                if account is None:
-                    continue
-                amount = abs(split.value).format()
-                label = f"{transaction.post_date} {transaction.description} — {amount}"
-                item = (transaction.handle, split.handle, transaction.post_date, label)
-                if account.account_class is AccountClass.EXPENSE and split.value > 0:
-                    payments.append(item)
-                if account.account_class is AccountClass.EXPENSE and split.value < 0:
-                    refunds.append(item)
-                if account.atype is AccountType.FSA and split.value < 0:
-                    reimbursements.append(item)
-                if account.atype is AccountType.FSA and split.value > 0:
-                    repayments.append(item)
-        return payments, refunds, reimbursements, repayments
+        """What a claim could link, by role, through the book server (#358)."""
+        candidates = book_server(self.db).fsa_claims().candidates
+        self.fsa_accounts = candidates.fsa_accounts
+
+        def items(found) -> list:
+            return [
+                (
+                    item.transaction,
+                    item.split,
+                    item.date,
+                    f"{item.date} {item.description} — {item.amount.format()}",
+                )
+                for item in found
+            ]
+
+        return (
+            items(candidates.payments),
+            items(candidates.refunds),
+            items(candidates.reimbursements),
+            items(candidates.repayments),
+        )
 
     def _link_lists(self) -> list[_LinkList]:
         lists = [self.payments, self.refunds]
@@ -549,7 +537,7 @@ class FsaClaimsDialog(BoundedWindow):
 
     def _anchor(self, service_date: date) -> None:
         """Limit every candidate list to around this service date and its year."""
-        window = fsa_claims.claim_year_window(self.db, service_date)
+        window = fsa_claims.year_window(self._years(), service_date)
         for links in self._link_lists():
             links.set_anchor(service_date, window)
 
@@ -570,7 +558,7 @@ class FsaClaimsDialog(BoundedWindow):
 
     def _add_allocation(self, allocation=None) -> None:
         row = _AllocationRow(
-            self.db, self.reimbursement_candidates, allocation, self.repayment_candidates
+            self.fsa_accounts, self.reimbursement_candidates, allocation, self.repayment_candidates
         )
         self.allocations.append(row)
         self._allocation_rows.append(row)
@@ -578,7 +566,7 @@ class FsaClaimsDialog(BoundedWindow):
             service_date = date.fromisoformat(self.service.get_text().strip())
         except ValueError:
             return
-        window = fsa_claims.claim_year_window(self.db, service_date)
+        window = fsa_claims.year_window(self._years(), service_date)
         for links in (row.reimburse, row.repay):
             links.set_anchor(service_date, window)
 
@@ -631,9 +619,14 @@ class FsaClaimsDialog(BoundedWindow):
             self.history.set_text("")
             return
         try:
-            summary = fsa_claims.claim_summary(self.db, claim)
-        except (fsa_claims.FsaClaimError, ValueError) as exc:
-            self.standing.set_text(str(exc))
+            standing = book_server(self.db).fsa_claim_standing(claim.handle)
+        except ApiError as error:
+            # Deleted elsewhere since it was chosen.
+            self.standing.set_text(str(error))
+            return
+        summary = standing.summary
+        if summary is None:
+            self.standing.set_text(standing.problem)
             return
         parts = [
             summary.status.label,
@@ -687,11 +680,14 @@ class FsaClaimsDialog(BoundedWindow):
         shared = None
         if self.current is not None and self.current.receivable is not None:
             try:
-                shared = fsa_claims.claim_summary(self.db, self.current).shared
-            except (fsa_claims.FsaClaimError, ValueError) as exc:
-                self.shared.set_text(str(exc))
-                self.shared.set_visible(True)
+                standing = book_server(self.db).fsa_claim_standing(self.current.handle)
+            except ApiError:
+                standing = None
+            if standing is None or standing.summary is None:
+                self.shared.set_text(standing.problem if standing is not None else "")
+                self.shared.set_visible(standing is not None)
                 return
+            shared = standing.summary.shared
         self.shared.set_text(shared_cost_text(shared) if shared is not None else "")
         self.shared.set_visible(shared is not None)
 

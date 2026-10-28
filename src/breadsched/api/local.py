@@ -583,6 +583,9 @@ class LocalBookServer:
     def fsa_claims(self, as_of: date | None = None) -> FsaClaimsView:
         return claim_service.fsa_claims_view(self.db, as_of)
 
+    def fsa_claim_standing(self, claim: str) -> claim_service.ClaimStanding:
+        return unwrap(claim_service.claim_standing(self.db, claim))
+
     def find_fsa_claim(self, reference: str) -> FsaClaim:
         return _named(claim_service.find_claim(self.db, reference), reference, "FSA claim")
 

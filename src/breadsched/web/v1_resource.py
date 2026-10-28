@@ -289,6 +289,7 @@ __all__ = [
     "dashboard_settings_get",
     "dashboard_settings_patch",
     "find_post",
+    "fsa_claim_standing_get",
     "commodities_get",
     "transaction_editor_get",
     "scenario_schedule_fixed_draft",
@@ -1694,6 +1695,11 @@ def transaction_editor_get(api: Api, _path: Path, query: QueryParams) -> dict:
 def commodities_get(api: Api, _path: Path, query: QueryParams) -> dict:
     query.finish()
     return {"commodities": [item.serialize() for item in api.book.commodities()]}
+
+
+def fsa_claim_standing_get(api: Api, path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.fsa_claim_standing(path["handle"]))
 
 
 def historical_estimates_get(api: Api, _path: Path, query: QueryParams) -> dict:

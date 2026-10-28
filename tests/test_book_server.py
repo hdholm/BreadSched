@@ -1215,6 +1215,13 @@ def test_fsa_claims_alike(target, book):
     assert view.name(fsa.handle) == "Assets:Health FSA"
     assert paid.handle in {item.transaction for item in view.candidates.payments}
     assert back.handle in {item.transaction for item in view.candidates.reimbursements}
+    # A claim's standing, as the desktop editor shows it (#358).
+    standing = api.fsa_claim_standing(saved.handle)
+    assert standing.problem == "" and standing.summary is not None
+    assert standing.summary.paid == Money("200.00")
+    with pytest.raises(ApiError) as refused:
+        api.fsa_claim_standing("no-such-claim")
+    assert (refused.value.status, refused.value.code) == (404, "claim.not_found")
     assert [item.handle for item in view.candidates.fsa_accounts] == [fsa.handle]
     assert api.find_fsa_claim(saved.handle[:10]).provider == "Dentist"
 
