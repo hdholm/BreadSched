@@ -782,7 +782,8 @@ loopback address from the server record, so the proxy is never in their way.
 
 **Still open:** a Unix-socket listener readable only by the user, to close the
 local-user gap in item 8. The proxy would then reach the server through the socket
-(`proxy_pass http://unix:/run/user/1000/breadsched/books.sock`).
+(`proxy_pass http://unix:/run/user/1000/breadsched/books.sock`). Decision 0004's users would
+make it unnecessary: another account would need a credential of its own.
 
 **Linked documents over HTTP.** A server reached over HTTP (the browser's routes and
 `/api/v1` alike) links or relinks a document only by web address or inside the
@@ -800,9 +801,12 @@ would have let a token holder link any file through it, are now local only too (
   `due-review --json` list must read `schedules` instead. Each area that moves
   changes the same way, and the release that brings this to `main` must say so.
 - **Undo**: today one undo history belongs to the book. Shared editing must decide
-  whether undo stays global or becomes per client.
+  whether undo stays global or becomes per client; [decision
+  0004](0004-users-and-access.md) proposes per user.
 - **Security**: an independent server stays on the loopback interface, with a token
-  file only the user can read. Anything wider needs real authentication and TLS.
+  file only the user can read. Anything wider needs real authentication and TLS;
+  decision 0004 proposes users, passwords, and per-book roles, which would also keep
+  other accounts on the same computer out without a Unix socket.
 - **Long operations** (imports, quote fetches, projections) need jobs with progress
   and cancellation once a client is a separate process.
 - **Flatpak**: a sandboxed GTK client reaching a server outside the sandbox needs

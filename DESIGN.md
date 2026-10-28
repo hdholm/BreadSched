@@ -31,6 +31,7 @@ choices that were tested before being made:
 - [0001: Keep transactions as JSON with a derived split index](docs/design/decisions/0001-transaction-storage.md)
 - [0002: Third-party packages outside the core, and where online quotes come from](docs/design/decisions/0002-dependencies-and-online-quotes.md)
 - [0003: A book server that owns a book for every interface](docs/design/decisions/0003-book-server.md) (experimental)
+- [0004: People, not processes, use a book server](docs/design/decisions/0004-users-and-access.md) (proposed)
 
 ## Product boundary
 
