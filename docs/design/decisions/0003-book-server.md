@@ -747,11 +747,13 @@ server {
     location / {
         proxy_pass http://127.0.0.1:8765;
         proxy_http_version 1.1;
+        proxy_set_header X-Real-IP $remote_addr;   # whom sign-in throttling counts
     }
 
     location = /api/v1/events {
         proxy_pass http://127.0.0.1:8765;
         proxy_http_version 1.1;
+        proxy_set_header X-Real-IP $remote_addr;   # whom sign-in throttling counts
         proxy_buffering off;
         proxy_read_timeout 1h;
     }

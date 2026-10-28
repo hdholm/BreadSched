@@ -108,6 +108,58 @@ async function post(path, body) {
   return payload;
 }
 
+// Who is signed in (decision 0004). A page opened by BreadSched on its own computer
+// carries a token; any other signs in once and keeps a session cookie, which script
+// cannot read. A temporary password is changed before anything else.
+async function signedIn() {
+  for (;;) {
+    const response = await fetch("/api/v1/me", { headers: apiHeaders() });
+    if (response.ok) {
+      const me = await response.json();
+      if (!me.must_change) return me;
+      await accountForm("Choose your password", "Change password", [
+        ["current", "Temporary password", "current-password"],
+        ["new", "New password (10 characters or more)", "new-password"],
+      ], (values) => post("/api/v1/me/password", values));
+      continue;
+    }
+    await accountForm("Sign in to BreadSched", "Sign in", [
+      ["name", "User name", "username"],
+      ["password", "Password", "current-password"],
+    ], (values) => post("/api/v1/session", { ...values, device: navigator.platform || "Browser" }));
+  }
+}
+
+function accountForm(title, action, fields, submit) {
+  return new Promise((resolve) => {
+    const inputs = fields.map(([name, label, autocomplete]) => [label, el("input", {
+      name, autocomplete, required: "required",
+      type: name === "name" ? "text" : "password",
+      autocapitalize: "none",
+    })]);
+    const problem = el("p", { class: "note neg", role: "alert" });
+    const button = el("button", { type: "submit", class: "action" }, action);
+    const form = el("form", { class: "account-form" },
+      el("h2", {}, title),
+      ...inputs.map(([label, input]) => el("label", {}, label, input)),
+      problem, button);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      button.disabled = true;
+      problem.textContent = "";
+      try {
+        await submit(Object.fromEntries(inputs.map(([, input]) => [input.name, input.value])));
+        resolve();
+      } catch (error) {
+        problem.textContent = error.message;
+        button.disabled = false;
+      }
+    });
+    document.getElementById("view").replaceChildren(form);
+    inputs[0][1].focus();
+  });
+}
+
 // Contextual help: open this workflow's section of the browser guide in another
 // tab, so a form or dialog in progress here is kept.
 const helpButton = (topic) => el("button", {

@@ -145,8 +145,10 @@ async function showQuick() {
   amount.focus();
 }
 
-get("/api/summary").then((s) => {
-  // Only the file's name: a phone has no room for its folder.
-  document.getElementById("book").textContent = (s.book || "").split(/[\\/]/).pop();
-}).catch(() => {});
-showQuick().catch((error) => say(error.message, "error"));
+signedIn().then(() => {
+  get("/api/summary").then((s) => {
+    // Only the file's name: a phone has no room for its folder.
+    document.getElementById("book").textContent = (s.book || "").split(/[\\/]/).pop();
+  }).catch(() => {});
+  showQuick().catch((error) => say(error.message, "error"));
+});

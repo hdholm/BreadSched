@@ -16,6 +16,7 @@ from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 from functools import partial
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, TypeVar
@@ -24,7 +25,7 @@ from urllib.parse import unquote, urlencode, urlparse
 from ..api.local import local_caller
 from ..api.protocol import Change
 from ..api.typed_codec import to_data
-from ..api.users import Caller, User, UserDirectory
+from ..api.users import SESSION_DAYS, Caller, User, UserDirectory, UserError
 from ..api.views import change_json
 from ..gen.db.sqlite import DbSQLite
 from ..gen.lib import Money, Rate
@@ -79,6 +80,27 @@ STATIC_ASSETS = {
     "apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
     **{name: (name, "application/javascript; charset=utf-8") for name in SCRIPTS},
 }
+#: The browser's session cookie (decision 0004).
+SESSION_COOKIE = "breadsched_session"
+ACCOUNT_SESSION = "/api/v1/session"
+ACCOUNT_ME = "/api/v1/me"
+ACCOUNT_PASSWORD = "/api/v1/me/password"
+#: Answered before the caller is known (signing in) or while a temporary password
+#: must still be changed.
+ACCOUNT_PATHS = frozenset({ACCOUNT_SESSION, ACCOUNT_ME, ACCOUNT_PASSWORD})
+
+
+def _me(caller: Caller) -> dict[str, object]:
+    user = caller.user
+    return {
+        "name": user.name,
+        "display_name": user.display_name,
+        "administrator": user.administrator,
+        "must_change": user.must_change,
+        "this_computer": caller.host_files,
+    }
+
+
 #: The book server's two routes that take a file's bytes rather than JSON.
 _V1_UPLOAD = re.compile(
     r"^/api/v1/(?:imports/upload|transactions/(?P<transaction>[^/]+)/attachments/upload)$"
@@ -206,13 +228,28 @@ class Handler(BaseHTTPRequestHandler):
             return False
         if write and self.headers.get_content_type() != "application/json":
             return False
-        return self._caller() is not None
+        caller = self._caller()
+        # A temporary password must be changed before anything else (decision 0004).
+        return caller is not None and not caller.user.must_change
+
+    def _supplied_token(self) -> str:
+        """The token in ``X-BreadSched-Token``, else the browser's session cookie."""
+        header = self.headers.get("X-BreadSched-Token", "")
+        if header:
+            return header
+        cookie = SimpleCookie()
+        try:
+            cookie.load(self.headers.get("Cookie", ""))
+        except CookieError:
+            return ""
+        morsel = cookie.get(SESSION_COOKIE)
+        return morsel.value if morsel is not None else ""
 
     def _caller(self) -> Caller | None:
         """Who the request comes from (decision 0004): this server's own token (or its
         local token) is the computer account's user; any other token must be a device
-        token the host issued. None for anyone else."""
-        supplied = self.headers.get("X-BreadSched-Token", "")
+        token or session the host issued. None for anyone else."""
+        supplied = self._supplied_token()
         if not supplied:
             return None
         cached = getattr(self, "_resolved", None)
@@ -303,6 +340,9 @@ class Handler(BaseHTTPRequestHandler):
             self._error(403, "request.host.untrusted", ("Host",))
             return
         parsed = urlparse(self.path)
+        if parsed.path in ACCOUNT_PATHS:
+            self._account("GET")
+            return
         if parsed.path == "/api/attachment/content":
             self._attachment_content(parsed.query)
             return
@@ -379,6 +419,9 @@ class Handler(BaseHTTPRequestHandler):
             self.rfile.read(length)
 
     def do_POST(self) -> None:  # noqa: N802 - required by the base class
+        if urlparse(self.path).path in ACCOUNT_PATHS:
+            self._account("POST")
+            return
         if urlparse(self.path).path == "/api/import/upload":
             self._import_upload()
             return
@@ -429,6 +472,9 @@ class Handler(BaseHTTPRequestHandler):
         self._v1("PATCH")
 
     def do_DELETE(self) -> None:  # noqa: N802 - required by the base class
+        if urlparse(self.path).path in ACCOUNT_PATHS:
+            self._account("DELETE")
+            return
         self._v1("DELETE")
 
     # ---------------------------------------------------------------- /api/v1
@@ -445,6 +491,99 @@ class Handler(BaseHTTPRequestHandler):
             return int(raw.strip().removeprefix("W/").strip('"'))
         except ValueError:
             raise QueryError("request.if_match.invalid", ("If-Match",)) from None
+
+    # ------------------------------------------------------------- signing in
+
+    def _account(self, method: str) -> None:
+        """Sign in or out, say who is signed in, or change one's own password
+        (decision 0004). These are answered before the caller is known, or while a
+        temporary password still has to be changed."""
+        path = urlparse(self.path).path
+        write = method != "GET"
+        if (
+            not self._trusted_host()
+            or not self._trusted_origin()
+            or (method == "POST" and self.headers.get_content_type() != "application/json")
+        ):
+            if write:
+                self._discard_body()
+            self._error(403, "request.untrusted")
+            return
+        if self.users is None:
+            if write:
+                self._discard_body()
+            self._error(404, "resource.not_found")
+            return
+        try:
+            body: dict[str, Any] = {}
+            if method == "POST":
+                length = self._content_length()
+                if length is None:
+                    return
+                loaded = json.loads(self.rfile.read(length) or b"{}")
+                if not isinstance(loaded, dict):
+                    self._error(400, "request.body.object_required", ("body",))
+                    return
+                body = loaded
+            if (method, path) == ("POST", ACCOUNT_SESSION):
+                self._sign_in(body)
+                return
+            if (method, path) == ("DELETE", ACCOUNT_SESSION):
+                supplied = self._supplied_token()
+                ended = bool(supplied) and self.users.sign_out(supplied)
+                self._json(200, {"signed_out": ended}, {"Set-Cookie": self._cookie("", 0)})
+                return
+            caller = self._caller()
+            if caller is None:
+                self._error(403, "request.untrusted")
+                return
+            if (method, path) == ("GET", ACCOUNT_ME):
+                self._json(200, _me(caller))
+                return
+            if (method, path) == ("POST", ACCOUNT_PASSWORD):
+                changed = self.users.set_password(
+                    caller.user.name,
+                    str(body.get("new", "")),
+                    current=str(body.get("current", "")),
+                    keep=self._supplied_token(),
+                )
+                self._json(200, _me(Caller(changed, caller.host_files)))
+                return
+            self._error(405, "request.method.not_allowed")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self._error(400, "request.body.json_invalid", ("body",))
+        except UserError as exc:
+            status = {"signin.failed": 401, "signin.throttled": 429}.get(exc.code, 400)
+            self._error(status, exc.code, exc.fields, message=exc.message)
+        except Exception:  # noqa: BLE001 - isolate the threaded server
+            self._unexpected()
+
+    def _sign_in(self, body: dict[str, Any]) -> None:
+        assert self.users is not None
+        # Behind the proxy every request comes from loopback; the proxy names the
+        # client in X-Real-IP (decision 0003's nginx configuration).
+        client = self.headers.get("X-Real-IP") or self.client_address[0]
+        signed = self.users.sign_in(
+            str(body.get("name", "")),
+            str(body.get("password", "")),
+            client=client,
+            device=str(body.get("device") or "Browser")[:80],
+        )
+        days = SESSION_DAYS * 24 * 60 * 60
+        self._json(
+            200,
+            {**_me(Caller(signed.user, False)), "token": signed.token, "expires": signed.expires},
+            {"Set-Cookie": self._cookie(signed.token, days)},
+        )
+
+    def _cookie(self, token: str, max_age: int) -> str:
+        """The browser's session cookie: script cannot read it, other sites cannot send
+        it, and through the TLS proxy it travels only over TLS."""
+        secure = "; Secure" if self.headers.get("Origin", "").startswith("https://") else ""
+        return (
+            f"{SESSION_COOKIE}={token}; Path=/; Max-Age={max_age}; HttpOnly; "
+            f"SameSite=Strict{secure}"
+        )
 
     def _v1(self, method: str) -> None:
         """Serve one versioned book-server resource (#357)."""

@@ -272,3 +272,128 @@ def test_the_user_commands_manage_users_and_tokens(capsys, monkeypatch):
     assert main(["password", "--password-stdin"]) == 0
     assert UserDirectory().host_user().has_password
     assert main(["users", "remove", "alice"]) == 0
+
+
+# ------------------------------------------------------------- phase 2: over HTTP
+
+
+def _call(base, method, path, body=None, headers=None):
+    request = urllib.request.Request(
+        base + path,
+        data=None if body is None else json.dumps(body).encode(),
+        headers={"Content-Type": "application/json", **(headers or {})},
+        method=method,
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return response.status, json.loads(response.read() or b"null"), response.headers
+    except urllib.error.HTTPError as refused:
+        return refused.code, json.loads(refused.read() or b"null"), refused.headers
+
+
+def test_signing_in_over_http_gives_a_session_and_a_private_cookie(hosted):
+    UserDirectory().add_user("alice", "temporary-pass", display_name="Alice")
+    status, signed, headers = _call(
+        hosted.base, "POST", "/api/v1/session", {"name": "alice", "password": "temporary-pass"}
+    )
+    assert status == 200 and signed["name"] == "alice" and signed["must_change"] is True
+    cookie = headers["Set-Cookie"]
+    assert cookie.startswith(f"breadsched_session={signed['token']};")
+    assert "HttpOnly" in cookie and "SameSite=Strict" in cookie and "Secure" not in cookie
+    session = {"X-BreadSched-Token": signed["token"]}
+    # Nothing but choosing a password until the temporary one is changed.
+    assert _call(hosted.base, "GET", "/api/v1/book", headers=session)[0] == 403
+    status, me, _ = _call(hosted.base, "GET", "/api/v1/me", headers=session)
+    assert (status, me["must_change"], me["this_computer"]) == (200, True, False)
+    status, refused, _ = _call(
+        hosted.base,
+        "POST",
+        "/api/v1/me/password",
+        {"current": "wrong", "new": "x" * 12},
+        headers=session,
+    )
+    assert (status, refused["code"]) == (400, "users.password.wrong")
+    status, me, _ = _call(
+        hosted.base,
+        "POST",
+        "/api/v1/me/password",
+        {"current": "temporary-pass", "new": "alices-own-password"},
+        headers=session,
+    )
+    assert (status, me["must_change"]) == (200, False)
+    # The session that changed it goes on; the browser's cookie works as well.
+    assert _call(hosted.base, "GET", "/api/v1/book", headers=session)[0] == 200
+    cookie_only = {"Cookie": f"breadsched_session={signed['token']}"}
+    assert _call(hosted.base, "GET", "/api/v1/book", headers=cookie_only)[0] == 200
+    # Signing out ends it and clears the cookie.
+    status, ended, headers = _call(hosted.base, "DELETE", "/api/v1/session", headers=session)
+    assert (status, ended["signed_out"]) == (200, True)
+    assert "Max-Age=0" in headers["Set-Cookie"]
+    assert _call(hosted.base, "GET", "/api/v1/book", headers=session)[0] == 403
+
+
+def test_failed_and_foreign_sign_ins_are_refused(hosted, monkeypatch):
+    # One moment throughout, so the waits after failures cannot pass mid-test.
+    moment = datetime(2026, 11, 1, tzinfo=UTC)
+    monkeypatch.setattr("breadsched.api.users._now", lambda: moment)
+    UserDirectory().add_user("alice", "temporary-pass")
+    attempt = {"name": "alice", "password": "wrong-password"}
+    status, refused, _ = _call(hosted.base, "POST", "/api/v1/session", attempt)
+    assert (status, refused["code"]) == (401, "signin.failed")
+    # A page from another site may not sign anyone in.
+    status, _, _ = _call(
+        hosted.base, "POST", "/api/v1/session", attempt, {"Origin": "https://evil.example"}
+    )
+    assert status == 403
+    # Behind the proxy, the client's address comes from X-Real-IP.
+    for _ in range(users.FREE_FAILURES):
+        _call(
+            hosted.base,
+            "POST",
+            "/api/v1/session",
+            {"name": "x", "password": "y" * 12},
+            {"X-Real-IP": "192.0.2.7"},
+        )
+    status, waiting, _ = _call(
+        hosted.base,
+        "POST",
+        "/api/v1/session",
+        {"name": "z", "password": "y" * 12},
+        {"X-Real-IP": "192.0.2.7"},
+    )
+    assert (status, waiting["code"]) == (429, "signin.throttled")
+    assert (
+        _call(
+            hosted.base,
+            "POST",
+            "/api/v1/session",
+            {"name": "z", "password": "y" * 12},
+            {"X-Real-IP": "192.0.2.8"},
+        )[0]
+        == 401
+    )
+    # Without a token or cookie, who-am-I is refused.
+    assert _call(hosted.base, "GET", "/api/v1/me")[0] == 403
+
+
+def test_the_cookie_is_secure_through_the_tls_proxy(tmp_path):
+    path = tmp_path / "book.breadsched"
+    create_sample_book(path, as_of=date(2026, 10, 1))
+    db = DbSQLite()
+    db.load(str(path))
+    httpd = serve(db, host="127.0.0.1", port=0, trusted_origins=("https://books.example",))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        UserDirectory().add_user("alice", "temporary-pass")
+        status, _, headers = _call(
+            f"http://127.0.0.1:{httpd.server_port}",
+            "POST",
+            "/api/v1/session",
+            {"name": "alice", "password": "temporary-pass"},
+            {"Origin": "https://books.example"},
+        )
+        assert status == 200 and "; Secure" in headers["Set-Cookie"]
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        db.close()

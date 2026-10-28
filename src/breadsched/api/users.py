@@ -38,7 +38,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from ..gen.services.contracts import ServiceError
 from ..gen.utils.user_paths import config_directory, data_directory
+from ..presentation import service_error_message
 
 __all__ = [
     "Caller",
@@ -119,6 +121,11 @@ class UserError(Exception):
         self.code = code
         self.fields = fields
 
+    @property
+    def message(self) -> str:
+        """The wording the presentation layer gives this refusal."""
+        return service_error_message(ServiceError(self.code, self.fields))
+
 
 @dataclass(frozen=True, slots=True)
 class User:
@@ -165,7 +172,8 @@ class SignedIn:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC).replace(microsecond=0)
+    # Kept to the microsecond: the first waits after failed sign-ins are a second or two.
+    return datetime.now(UTC)
 
 
 def _text(when: datetime) -> str:
@@ -329,9 +337,11 @@ class UserDirectory:
                     raise UserError("users.user.last_administrator", ("name",))
             connection.execute("DELETE FROM users WHERE id = ?", (user.id,))
 
-    def set_password(self, name: str, new: str, *, current: str | None = None) -> User:
+    def set_password(
+        self, name: str, new: str, *, current: str | None = None, keep: str | None = None
+    ) -> User:
         """Change a user's own password. ``current`` is required once there is one;
-        every session of the user ends."""
+        every session of the user ends but ``keep`` (the session asking, if any)."""
         _check_password(new)
         with self._connect() as connection:
             row = self._find(connection, name)
@@ -347,7 +357,8 @@ class UserDirectory:
                 (_hash_password(new), row[0]),
             )
             connection.execute(
-                "DELETE FROM tokens WHERE user_id = ? AND kind = 'session'", (row[0],)
+                "DELETE FROM tokens WHERE user_id = ? AND kind = 'session' AND digest != ?",
+                (row[0], _digest(keep) if keep else ""),
             )
         return self.user(name)
 

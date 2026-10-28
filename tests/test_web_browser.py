@@ -1847,3 +1847,39 @@ def test_quick_entry_saves_from_a_phone(phone, served):
     assert len(list(db.iter_transactions())) == len(before) + 1
     # The full interface is a link away, keeping the token.
     assert "token=" in phone.locator("#full-view").get_attribute("href")
+
+
+def test_a_device_without_a_token_signs_in_and_chooses_its_password(served):
+    """Decision 0004: a phone opening the page has no token; it signs in, changes a
+    temporary password, and then keeps a session cookie across reloads."""
+    from breadsched.api.users import UserDirectory
+
+    _db, httpd = served
+    UserDirectory().add_user("alice", "temporary-pass", display_name="Alice")
+    with sync_api.sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch(executable_path=_chromium())
+        except Exception as exc:  # noqa: BLE001 - no usable browser here
+            pytest.skip(f"Chromium is not available: {exc}")
+        view = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
+        errors: list[str] = []
+        view.on("pageerror", lambda error: errors.append(str(error)))
+        view.goto(f"http://127.0.0.1:{httpd.server_port}/quick")
+        view.wait_for_selector("text=Sign in to BreadSched")
+        view.fill("input[name=name]", "alice")
+        view.fill("input[name=password]", "wrong-password")
+        view.click("button:has-text('Sign in')")
+        view.wait_for_selector("text=That name and password do not match")
+        view.fill("input[name=password]", "temporary-pass")
+        view.click("button:has-text('Sign in')")
+        view.wait_for_selector("text=Choose your password")
+        view.fill("input[name=current]", "temporary-pass")
+        view.fill("input[name=new]", "alices-own-password")
+        view.click("button:has-text('Change password')")
+        view.locator("#quick-amount").wait_for()
+        # The session cookie keeps the phone signed in, and script cannot read it.
+        assert view.evaluate("document.cookie") == ""
+        view.reload()
+        view.locator("#quick-amount").wait_for()
+        assert errors == []
+        browser.close()

@@ -148,6 +148,12 @@ the book through the TLS reverse proxy described in
 [Share a book with a running server](cli.md#share-a-book-with-a-running-server-experimental); add the page to the home screen to
 open it like an app, with BreadSched's icon.
 
+A phone or tablet opening the page without the address BreadSched printed asks you to
+**Sign in** with a user name and password (see
+[Users and devices](cli.md#users-and-devices-experimental)). The first time, or after
+your password was reset, you choose your own password. The device then stays signed
+in: its session lasts 30 days from when you last used it.
+
 ## Enter transactions in a register
 
 The register has a blank row at the bottom for a new entry, **Split** for split

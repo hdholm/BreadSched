@@ -252,9 +252,24 @@ other accounts; 3 and 4 make it a household application.
 - **Commands:** `breadsched users list|add|remove|reset-password`, `breadsched
   password`, and `breadsched token create|list|revoke`, acting on the computer
   account's own directory (so they need no password).
-- **Still to come in phase 2:** signing in over HTTP with the browser's cookie and a
-  sign-in page, device tokens in place of the server's own `--token-file` token, and
-  Preferences → Users in GTK.
+- **Signing in over HTTP:** `POST /api/v1/session` (`name`, `password`, `device`)
+  answers who signed in, with the session token, and sets the browser's
+  `breadsched_session` cookie (`HttpOnly`, `SameSite=Strict`, `Path=/`, and `Secure`
+  when the page came through an `https://` origin). `DELETE /api/v1/session` signs
+  out and clears it; `GET /api/v1/me` says who is signed in; `POST
+  /api/v1/me/password` (`current`, `new`) changes one's own password and keeps the
+  session asking. The server takes a token from `X-BreadSched-Token`, else the
+  cookie; the Host and Origin checks and JSON content type still apply, so the
+  cookie adds no cross-site risk. A failed sign-in is 401 (`signin.failed`), a
+  throttled one 429; the client's address is the proxy's `X-Real-IP` (added to the
+  nginx example), else the connection's.
+- **A temporary password first:** while a user must change their password, every
+  other request is refused (403).
+- **The pages:** the full page and quick entry ask `/api/v1/me` first; without a
+  token or session they show a sign-in form, and then the choice of a new password
+  when one is due. The cookie keeps a phone signed in across reloads.
+- **Still to come in phase 2:** Preferences → Users in GTK. The server's own
+  `--token-file` token keeps working for devices already given it.
 
 ## Answers to the review questions (2026-10-28)
 

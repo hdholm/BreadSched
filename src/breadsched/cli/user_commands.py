@@ -12,15 +12,13 @@ import getpass
 import sys
 
 from ..api.users import UserDirectory, UserError
-from ..gen.services.contracts import ServiceError
-from ..presentation import service_error_message
 from .common import AddCommand, CommandError, emit, table
 
 __all__ = ["register"]
 
 
 def _refused(error: UserError) -> CommandError:
-    return CommandError(service_error_message(ServiceError(error.code, error.fields)))
+    return CommandError(error.message)
 
 
 def _password(args: argparse.Namespace, prompt: str) -> str:

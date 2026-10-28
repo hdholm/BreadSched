@@ -38,6 +38,12 @@ its config folder, which the host's user directory knows only by its digest (dec
 - **Explicit server:** `--server` takes its token from a file or the environment,
   never from the command line, where other users could read it in the process list.
 
+A device without a token signs in with a user name and password (decision 0004):
+`scrypt` hashes, throttled attempts, and a session in an `HttpOnly`,
+`SameSite=Strict` cookie (`Secure` through the TLS proxy) that the existing Host,
+Origin, and content-type checks still guard. A temporary password must be changed
+before any other request is served.
+
 Reaching a book from another device goes only through a TLS reverse proxy on the
 same host, with authentication of its own; the server itself never listens beyond
 loopback. Decision 0003 documents the method, the checks the proxy must keep
