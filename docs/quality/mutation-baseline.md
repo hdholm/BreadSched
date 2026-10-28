@@ -13,7 +13,9 @@ and Amount tests, 59 were killed, 40 survived, and 24 lacked an applicable test.
 A new full run after those tests on Linux with mutmut 3.8.0 and Python 3.12, and
 after `reporting_currency_label` (the code a chart's currency is labelled with) was
 added to `currency.py` with direct tests for a configured code, the USD default,
-and an empty legacy book, yielded:
+and an empty legacy book, yielded the table below. mutmut 3.8.1, which the gate has
+used since pytest 9.2 removed the private `Item._nodeid` that 3.8.0 read, reproduces
+the same counts:
 
 | Result | Count |
 | --- | ---: |

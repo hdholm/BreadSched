@@ -32,6 +32,9 @@ section. Commits and pull requests hold the complete history.
   stay last. The browser's column headings do the same through
   `GET /api/reconciliation?sort=…&descending=…`, saving the checks first. Both use
   `reconciliation.sort_candidates`.
+- **CI.** The bounded mutation gate installs mutmut 3.8.1: pytest 9.2 removed the
+  private attribute 3.8.0 read, so every run failed before testing. The measured
+  baseline is unchanged (125 of 129 eligible mutants killed).
 
 ## 0.2.0a304 - 2026-10-26
 
