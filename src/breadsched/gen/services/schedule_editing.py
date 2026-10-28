@@ -33,6 +33,7 @@ __all__ = [
     "editor_view",
     "schedule_draft",
     "schedule_editor",
+    "schedule_layout",
     "scenario_events",
     "schedules_view",
 ]
@@ -63,6 +64,13 @@ def schedule_editor(db: DbSQLite, handle: str) -> ServiceResult[ScheduleEditorVi
     if scheduled is None:
         return ServiceResult.failure(ServiceError("schedule.not_found", ("schedule",)))
     return ServiceResult.success(editor_view(db, scheduled))
+
+
+def schedule_layout(
+    db: DbSQLite, definition: ScheduledTransaction
+) -> ServiceResult[ScheduleEditorView]:
+    """Any definition, saved or not (a duplicate, a draft), laid out for an editor."""
+    return ServiceResult.success(editor_view(db, definition))
 
 
 def schedule_draft(db: DbSQLite, transaction: str) -> ServiceResult[ScheduleEditorView]:

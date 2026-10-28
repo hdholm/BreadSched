@@ -368,6 +368,8 @@ def balance_summary_json(summary: BalanceSummary) -> dict[str, Any]:
         "cash_missing_quotes": list(summary.cash_missing_quotes),
         "net_worth_missing_quotes": list(summary.net_worth_missing_quotes),
         "net_worth_incompatible_accounts": list(summary.net_worth_incompatible_accounts),
+        "assets": to_json(summary.assets),
+        "liabilities": to_json(summary.liabilities),
     }
 
 
@@ -381,6 +383,8 @@ def balance_summary_from_json(payload: dict[str, Any]) -> BalanceSummary:
         tuple(payload["cash_missing_quotes"]),
         tuple(payload["net_worth_missing_quotes"]),
         tuple(payload["net_worth_incompatible_accounts"]),
+        money(payload.get("assets")),
+        money(payload.get("liabilities")),
     )
 
 

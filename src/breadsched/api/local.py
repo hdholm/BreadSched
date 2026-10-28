@@ -860,6 +860,11 @@ class LocalBookServer:
     def schedule_editor(self, schedule: str) -> schedule_editing.ScheduleEditorView:
         return unwrap(schedule_editing.schedule_editor(self.db, schedule))
 
+    def schedule_layout(
+        self, definition: ScheduledTransaction
+    ) -> schedule_editing.ScheduleEditorView:
+        return unwrap(schedule_editing.schedule_layout(self.db, definition))
+
     def schedule_draft(self, transaction: str) -> schedule_editing.ScheduleEditorView:
         return unwrap(schedule_editing.schedule_draft(self.db, transaction))
 

@@ -513,6 +513,11 @@ fixed/draft` and `/formula/draft`); the command line's `import-csv` gained
 `--server`. `import` stays on its own connection while its relationship inference
 has no server operation.
 
+GTK's schedule editor lays out any definition, saved or not (a duplicate, a draft),
+with `schedule_layout(definition)` (`POST /api/v1/schedules/layout`), and its account
+names come from `accounts()`. GTK's Accounts view reads `chart(include_hidden=True)` and
+`balance_summary()`, which now also carries the assets and liabilities totals.
+
 **Still open (imports):** like copying a document in, an import names a file by a path
 the server reads. Through a proxy, a token holder could import any statement file the
 server's user can read; uploading the bytes (as the browser's upload already does

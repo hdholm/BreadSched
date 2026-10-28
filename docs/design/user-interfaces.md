@@ -118,7 +118,10 @@ row, with headings, the security held, and which accounts hold securities), whic
 `RegisterSheet.apply_view` lays out, so restored and hidden register tabs are filled
 in the background and switching to one is immediate. A register a few saved
 transactions behind still rereads only those in place (#319). Account names come from
-`book.accounts()`. The other views still draw when shown; moving them onto the book
+`book.accounts()`. Accounts reads one `book.chart(include_hidden=True)` (each account's
+value and quote evidence) and `book.balance_summary()` (cash, assets, liabilities, and
+net worth), off GTK's loop as well; its filters re-lay the tree from the chart already
+read. The other views still draw when shown; moving them onto the book
 server brings them to the same path. An in-memory book has no snapshot and draws in
 place. The
 browser has no tab bar: `openInNewTab` opens a browser tab with the view and account

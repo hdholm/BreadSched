@@ -69,8 +69,8 @@ The rest of this file is unscheduled and comes after the first Beta.
   still to come, and copying a document in over HTTP still reads any path the server
   can. A phone-sized quick entry page (`/quick`) enters one transaction apart from the
   full interface, toward entering transactions from a phone before Beta. GTK draws
-  only the chosen remembered tab when a book opens and reads the Plan and registers
-  from a snapshot in the background; the other views follow as they move.
+  only the chosen remembered tab when a book opens and reads the Plan, Accounts, and
+  registers from a snapshot in the background; the other views follow as they move.
 
 - Split oversized modules/functions where ownership is clear. Split large GUI test
   modules only when the resulting fixture ownership and runtime isolation improve;

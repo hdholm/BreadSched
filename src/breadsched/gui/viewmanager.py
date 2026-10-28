@@ -493,7 +493,7 @@ class ViewManager(Gtk.ApplicationWindow):
         return GLib.SOURCE_REMOVE
 
     #: Views whose calculation runs on the snapshot reader, worth building hidden.
-    BACKGROUND_VIEWS = frozenset({"plan"})
+    BACKGROUND_VIEWS = frozenset({"plan", "accounts"})
 
     def _build_hidden(self, key: str):
         view = self._build_view(key)

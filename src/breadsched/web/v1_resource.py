@@ -196,7 +196,7 @@ from ..gen.engine.fsa_claim_report import GROUPINGS
 from ..gen.engine.fsa_claims import FsaClaimStatus
 from ..gen.engine.loans import LoanTerms
 from ..gen.engine.transaction_query import TransactionQuery
-from ..gen.lib import Scenario
+from ..gen.lib import Scenario, ScheduledTransaction
 from ..gen.lib.money import Money
 from ..gen.lib.scenario import AssumptionPeriod
 from ..gen.services import (
@@ -301,6 +301,7 @@ __all__ = [
     "scenario_schedule_fixed_post",
     "scenario_schedule_formula_post",
     "schedule_draft_get",
+    "schedule_layout_post",
     "schedule_editor_get",
     "schedules_view_get",
     "currencies_get",
@@ -1615,6 +1616,13 @@ def schedules_view_get(api: Api, _path: Path, query: QueryParams) -> dict:
 def schedule_editor_get(api: Api, path: Path, query: QueryParams) -> dict:
     query.finish()
     return to_data(api.book.schedule_editor(path["handle"]))
+
+
+def schedule_layout_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    raw = body.get("definition")
+    if not isinstance(raw, dict):
+        raise ValueError("definition must be a schedule")
+    return to_data(api.book.schedule_layout(ScheduledTransaction.from_dict(raw)))
 
 
 def schedule_draft_get(api: Api, path: Path, query: QueryParams) -> dict:

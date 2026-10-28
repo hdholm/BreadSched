@@ -745,6 +745,10 @@ class HttpBookClient:
         path = f"/schedules/{quote(schedule, safe='')}/editor"
         return from_data(ScheduleEditorView, self._call("GET", path))
 
+    def schedule_layout(self, definition: ScheduledTransaction) -> ScheduleEditorView:
+        body = {"definition": definition.serialize()}
+        return from_data(ScheduleEditorView, self._call("POST", "/schedules/layout", body=body))
+
     def schedule_draft(self, transaction: str) -> ScheduleEditorView:
         path = f"/transactions/{quote(transaction, safe='')}/schedule-draft"
         return from_data(ScheduleEditorView, self._call("GET", path))

@@ -13,7 +13,7 @@ from datetime import date
 
 from ..db.sqlite import DbSQLite
 from ..engine import ledger, valuation
-from ..lib.account import Account
+from ..lib.account import Account, AccountClass
 from ..lib.amount import Amount
 from ..lib.money import Money
 from ..lib.transaction import Split, Transaction
@@ -224,13 +224,26 @@ class BalanceSummary:
     cash_missing_quotes: tuple[str, ...]
     net_worth_missing_quotes: tuple[str, ...]
     net_worth_incompatible_accounts: tuple[str, ...]
+    #: Every asset, and every liability, in the reporting currency (None when a
+    #: quote one needs is missing), as the desktop's Accounts summary shows them.
+    assets: Money | None = None
+    liabilities: Money | None = None
 
 
 def balance_summary(db: DbSQLite, as_of: date | None = None) -> BalanceSummary:
     net_worth = valuation.aggregate_value(db, as_of=as_of, net_worth=True)
+    accounts = list(db.iter_accounts())
     cash = valuation.aggregate_value(
         db,
-        accounts=[a for a in db.iter_accounts() if a.atype.is_cash_like and not a.placeholder],
+        accounts=[a for a in accounts if a.atype.is_cash_like and not a.placeholder],
+        as_of=as_of,
+    )
+    assets = valuation.aggregate_value(
+        db, accounts=[a for a in accounts if a.account_class == AccountClass.ASSET], as_of=as_of
+    )
+    liabilities = valuation.aggregate_value(
+        db,
+        accounts=[a for a in accounts if a.account_class == AccountClass.LIABILITY],
         as_of=as_of,
     )
     return BalanceSummary(
@@ -239,6 +252,8 @@ def balance_summary(db: DbSQLite, as_of: date | None = None) -> BalanceSummary:
         tuple(cash.missing_quotes),
         tuple(net_worth.missing_quotes),
         tuple(net_worth.incompatible_accounts),
+        assets.amount.value if assets.amount is not None else None,
+        liabilities.amount.value if liabilities.amount is not None else None,
     )
 
 

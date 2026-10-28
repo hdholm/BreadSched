@@ -485,6 +485,10 @@ class BookApi(Protocol):
         """A saved definition's editor view, to check an edit against."""
         ...
 
+    def schedule_layout(self, definition: ScheduledTransaction) -> ScheduleEditorView:
+        """Any definition, saved or not, laid out as an editor shows it."""
+        ...
+
     def schedule_draft(self, transaction: str) -> ScheduleEditorView:
         """An unsaved one-time definition made from a recorded transaction."""
         ...

@@ -196,8 +196,8 @@ Each book remembers its tabs: opening it again brings back the same views,
 registers, and scenario tabs, in the same order, with the same tab selected. A tab for an account or
 scenario deleted since is left out. Another book has its own tabs. Only the selected
 tab is drawn when the book opens, so many open tabs no longer slow opening it; the
-others are drawn when you choose them. Registers and the Plan are read in the
-background instead: they are ready when you switch to them, and after a change the
+others are drawn when you choose them. Registers, Accounts, and the Plan are read in
+the background instead: they are ready when you switch to them, and after a change the
 Plan keeps showing what it had, marked **Updating…**, until the new figures are in.
 
 Registers can also open in independent windows; their account, filter, and cursor

@@ -19,7 +19,6 @@ from datetime import date
 from ...api import ApiError
 from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine import schedule as schedule_engine
 from ...gen.engine.entry_input import parse_amount_text
 from ...gen.lib import (
     AccountClass,
@@ -181,23 +180,24 @@ class ScheduleDialog(BoundedWindow):
 
     def _load_choices(self, source: ScheduledTransaction | None) -> None:
         referenced = {split.account for split in source.splits} if source is not None else set()
-        self._accounts = sorted(
+        # Accounts and their names through the book server (#358).
+        records = book_server(self.db).accounts()
+        self._by_handle = {record.account.handle: record.account for record in records}
+        self._full_names = {record.account.handle: record.full_name for record in records}
+        chosen = sorted(
             (
-                account
-                for account in self.db.iter_accounts()
-                if not account.is_root
-                and not account.placeholder
-                and (not account.hidden or account.handle in referenced)
+                record
+                for record in records
+                if not record.account.is_root
+                and not record.account.placeholder
+                and (not record.account.hidden or record.account.handle in referenced)
             ),
-            key=self.db.full_name,
+            key=lambda record: record.full_name,
         )
+        self._accounts = [record.account for record in chosen]
         self._names = [
-            (
-                f"{self.db.full_name(account)} (hidden)"
-                if account.hidden
-                else self.db.full_name(account)
-            )
-            for account in self._accounts
+            f"{record.full_name} (hidden)" if record.account.hidden else record.full_name
+            for record in chosen
         ]
 
     def _build_shell(self) -> tuple[Gtk.Box, Gtk.Box]:
@@ -477,8 +477,7 @@ class ScheduleDialog(BoundedWindow):
             "Splits:",
         ]
         for index, split in enumerate(source.splits, 1):
-            account = self.db.get_account(split.account)
-            account_name = self.db.full_name(account) if account is not None else split.account
+            account_name = self._full_names.get(split.account, split.account)
             value = f"formula {split.formula!r}" if split.formula else str(split.amount or Money(0))
             purpose = split.planning_flow.label if split.planning_flow is not None else "(none)"
             activity = (
@@ -584,8 +583,7 @@ class ScheduleDialog(BoundedWindow):
         for index, split in enumerate(source.splits):
             if not split.formula:
                 continue
-            account = self.db.get_account(split.account)
-            account_name = self.db.full_name(account) if account is not None else split.account
+            account_name = self._full_names.get(split.account, split.account)
             row = Gtk.Box(spacing=8)
             label = Gtk.Label(label=account_name, xalign=0)
             label.set_hexpand(True)
@@ -665,12 +663,12 @@ class ScheduleDialog(BoundedWindow):
                 if policy is source.growth_policy
             )
         )
-        projection = schedule_engine.schedule_edit_projection(self.db, source)
+        projection = book_server(self.db).schedule_layout(source).projection
         if projection.primary is not None and projection.funding is not None:
             flow_split = source.splits[projection.primary.index]
             funding_split = source.splits[projection.funding.index]
-            flow_account = self.db.get_account(flow_split.account)
-            funding_account = self.db.get_account(funding_split.account)
+            flow_account = self._by_handle.get(flow_split.account)
+            funding_account = self._by_handle.get(funding_split.account)
             if flow_account is not None and funding_account is not None:
                 funding_item = (funding_account, funding_split)
                 category_index = next(
@@ -733,7 +731,7 @@ class ScheduleDialog(BoundedWindow):
                 extra_values = []
                 for projected in projection.additional:
                     split = source.splits[projected.index]
-                    account = self.db.get_account(split.account)
+                    account = self._by_handle.get(split.account)
                     assert account is not None
                     account_index = next(
                         index
@@ -794,10 +792,17 @@ class ScheduleDialog(BoundedWindow):
         )
         split_changes: list[tuple[int, date, str]] = []
         for split in source.splits:
-            account = self.db.get_account(split.account)
-            if account is None or account not in self._accounts:
+            found = next(
+                (
+                    position
+                    for position, candidate in enumerate(self._accounts)
+                    if candidate.handle == split.account
+                ),
+                None,
+            )
+            if found is None:
                 continue
-            index = self._accounts.index(account)
+            index = found
             split_changes.extend(
                 (index, item.start, str(item.amount.to_decimal())) for item in split.amount_changes
             )

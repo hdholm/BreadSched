@@ -1453,7 +1453,8 @@ class TestLiveUpdates:
         # A setting change redraws the shown view now and the others when shown.
         accounts = window._views["accounts"]
         drawn = []
-        monkeypatch.setattr(accounts, "refresh", lambda: drawn.append(1))
+        # Accounts is drawn from a background read (#389): count its drawing.
+        monkeypatch.setattr(accounts, "_show_chart", lambda *_a: drawn.append(1))
         assert _spin(lambda: not accounts.get_mapped())
         window.refresh_views()
         assert repaints == [1, 1, 1] and drawn == []
@@ -1503,7 +1504,8 @@ class TestLiveUpdates:
         assert _spin(accounts.get_mapped)
         _spin(lambda: False, 0.2)
         repaints = []
-        monkeypatch.setattr(accounts, "refresh", lambda: repaints.append(1))
+        # Accounts is drawn from a background read (#389): count its drawing.
+        monkeypatch.setattr(accounts, "_show_chart", lambda *_a: repaints.append(1))
         for number in range(3):
             fund = Commodity(namespace="FUND", mnemonic=f"F{number}", fullname="Fund")
             with app.db.transaction(f"Fund {number}") as txn:
@@ -2717,7 +2719,9 @@ class TestColumnBehaviour:
         db = app.db
         usd = db.get_commodity_by_mnemonic("USD")
         euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
-        cash = Account(name="Euro cash", atype=AccountType.BANK, commodity=euro.handle)
+        # In the tree, where the Accounts view shows it.
+        root = db.root_account().handle
+        cash = Account(name="Euro cash", atype=AccountType.BANK, commodity=euro.handle, parent=root)
         opening = next(a for a in db.iter_accounts() if a.atype is AccountType.EQUITY)
         entry = Transaction(post_date=date(2026, 1, 2), description="Euro opening")
         entry.currency = euro.handle
@@ -2737,12 +2741,15 @@ class TestColumnBehaviour:
                 txn,
             )
         window.show_category("accounts")
+        assert window.wait_for_background()
         evidence = window._views["accounts"]._quote_evidence(db.get_account(cash.handle))
         assert evidence == "2026-01-03 · bank"
 
         # A security quoted only in euros names both quotes it was valued with.
         fund = Commodity(namespace="FUND", mnemonic="EUFND", fullname="Euro fund")
-        holding = Account(name="Euro fund", atype=AccountType.INVESTMENT, commodity=fund.handle)
+        holding = Account(
+            name="Euro fund", atype=AccountType.INVESTMENT, commodity=fund.handle, parent=root
+        )
         dollars = next(
             item
             for item in db.iter_accounts()
@@ -2768,8 +2775,11 @@ class TestColumnBehaviour:
                 ),
                 txn,
             )
-        evidence = window._views["accounts"]._quote_evidence(db.get_account(holding.handle))
-        assert evidence == "2026-01-04 · ofx; EUR→USD 2026-01-03 · bank"
+        view = window._views["accounts"]
+        expected = "2026-01-04 · ofx; EUR→USD 2026-01-03 · bank"
+        # Shown again, it redraws from a background read after the change (#389).
+        window.show_category("accounts")
+        assert _spin(lambda: view._quote_evidence(db.get_account(holding.handle)) == expected)
 
     def test_amounts_sort_as_numbers_not_text(self):
         from breadsched.gui.views._base import _numeric
@@ -9840,6 +9850,39 @@ class TestBackgroundRedraw:
         window._on_tab_clicked(registers[1])
         assert built == []
         assert window._views["register"].sheet.account == card
+
+    def test_the_accounts_view_is_valued_through_the_server_in_the_background(
+        self, app, window, populated_book
+    ):
+        """#389, #358: Accounts reads one chart; hidden, it is read off GTK's loop."""
+        from breadsched.api.local import book_server
+        from breadsched.gen.lib import Transaction
+
+        app.open_book(populated_book)
+        window.show_category("accounts")
+        view = window._views["accounts"]
+        chart = book_server(app.db).chart(include_hidden=True)
+        assert set(view._lines) == {line.record.account.handle for line in chart}
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        line = view._lines[checking.handle]
+        assert view._format_balance(checking) == line.balance.format(parens_negative=True)
+        cards = []
+        child = view.summary.get_first_child()
+        while child is not None:
+            cards.append(child.get_first_child().get_label())
+            child = child.get_next_sibling()
+        assert cards == ["Cash on hand", "Assets", "Liabilities", "Net worth"]
+        # Hidden, a change is read again in the background, not when shown.
+        window.show_category("dashboard")
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        with app.db.transaction("Rent") as txn:
+            app.db.add_transaction(
+                Transaction.simple(date.today(), "Rent", rent.handle, checking.handle, "9"), txn
+            )
+        assert _spin(lambda: window._prefill_source is None)
+        assert window.wait_for_background()
+        assert view.is_current()
+        assert view._lines[checking.handle].balance == line.balance - 9
 
     def test_the_snapshot_reader_reads_each_revision_once_and_reports_failures(
         self, populated_book

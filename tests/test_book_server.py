@@ -509,6 +509,19 @@ def test_registers_and_balances_read_alike(target, book):
     totals = api.balance_summary()
     assert totals.cash == Money("858.25")
     assert totals.cash_missing_quotes == ()
+    # The Accounts summary's totals travel too, as the engine values them (#358).
+    from breadsched.gen.engine import valuation
+    from breadsched.gen.lib.account import AccountClass
+
+    for kind, total in (
+        (AccountClass.ASSET, totals.assets),
+        (AccountClass.LIABILITY, totals.liabilities),
+    ):
+        valued = valuation.aggregate_value(
+            db, accounts=[a for a in db.iter_accounts() if a.account_class == kind]
+        )
+        assert total == (valued.amount.value if valued.amount is not None else None)
+    assert totals.assets == Money("858.25")
 
     for call, code in (
         (lambda: api.register(RegisterQuery("missing")), "account.not_found"),
@@ -1508,6 +1521,9 @@ def test_the_schedules_page_reads_alike(target, book):
         if not account.is_root and not account.placeholder
     }
     assert api.schedule_editor(rent.schedule.handle) == rent
+    # Any definition, saved or not, is laid out the same way.
+    copy = ScheduledTransaction.from_dict(rent.schedule.serialize())
+    assert api.schedule_layout(copy).projection == rent.projection
     # A transaction makes a one-time draft to review; nothing is saved.
     with db.transaction("Pay") as txn:
         paid = Transaction.simple(date(2026, 9, 1), "Gym", book.rent, book.checking, "40")
