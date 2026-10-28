@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import getpass
 import hmac
 import json
 import os
@@ -9,6 +10,7 @@ import queue
 import re
 import secrets
 import socketserver
+import sqlite3
 import threading
 from collections.abc import Callable
 from datetime import date
@@ -22,6 +24,7 @@ from urllib.parse import unquote, urlencode, urlparse
 from ..api.local import local_caller
 from ..api.protocol import Change
 from ..api.typed_codec import to_data
+from ..api.users import Caller, User, UserDirectory
 from ..api.views import change_json
 from ..gen.db.sqlite import DbSQLite
 from ..gen.lib import Money, Rate
@@ -107,6 +110,8 @@ class Handler(BaseHTTPRequestHandler):
     trusted_origins: frozenset[str] = frozenset()
     #: The second token that marks a request from a program on this computer.
     local_token: str = ""
+    #: The host's users and device tokens (decision 0004).
+    users: UserDirectory | None = None
     #: Runs a callable with exclusive use of the writer book (see ``_exclusive``).
     executor: Callable[[Callable[[], Any]], Any]
 
@@ -201,8 +206,40 @@ class Handler(BaseHTTPRequestHandler):
             return False
         if write and self.headers.get_content_type() != "application/json":
             return False
+        return self._caller() is not None
+
+    def _caller(self) -> Caller | None:
+        """Who the request comes from (decision 0004): this server's own token (or its
+        local token) is the computer account's user; any other token must be a device
+        token the host issued. None for anyone else."""
         supplied = self.headers.get("X-BreadSched-Token", "")
-        return secrets.compare_digest(supplied, self.token)
+        if not supplied:
+            return None
+        cached = getattr(self, "_resolved", None)
+        if cached is not None and cached[0] == supplied:
+            return cached[1]
+        caller: Caller | None = None
+        if secrets.compare_digest(supplied, self.token):
+            caller = Caller(self._host_user(), False)
+        elif self.local_token and secrets.compare_digest(supplied, self.local_token):
+            caller = Caller(self._host_user(), True)
+        elif self.users is not None:
+            try:
+                caller = self.users.authenticate(supplied)
+            except (OSError, sqlite3.Error):
+                LOG.exception("could not read the user directory")
+        self._resolved = (supplied, caller)
+        return caller
+
+    def _host_user(self) -> User:
+        """The computer account's user, or a stand-in when no directory can be kept."""
+        if self.users is not None:
+            try:
+                return self.users.host_user()
+            except (OSError, sqlite3.Error):
+                LOG.exception("could not read the user directory")
+        name = getpass.getuser()
+        return User("", name, name, True, True)
 
     def _unexpected(self) -> None:
         correlation_id = secrets.token_hex(8)
@@ -232,6 +269,9 @@ class Handler(BaseHTTPRequestHandler):
         """Whether the request carries the local token: only programs that read the
         server's record (a file only its user can read), or the page the server
         itself opened, hold it; a device reaching the server through a proxy does not."""
+        caller = self._caller()
+        if caller is not None and caller.host_files:
+            return True
         offered = self.headers.get("X-BreadSched-Local", "")
         return bool(self.local_token and offered) and hmac.compare_digest(
             offered.encode("utf-8"), self.local_token.encode("utf-8")
@@ -786,6 +826,7 @@ def build_handler(
     executor: Executor | None = None,
     trusted_origins: frozenset[str] = frozenset(),
     local_token: str = "",
+    users: UserDirectory | None = None,
 ) -> type[Handler]:
     """Bind one serialized writer and short-lived read snapshots to a handler.
 
@@ -808,6 +849,7 @@ def build_handler(
             "token": token,
             "trusted_origins": trusted_origins,
             "local_token": local_token,
+            "users": users,
             "executor": staticmethod(executor or locked),
         },
     )
@@ -822,6 +864,7 @@ def serve(
     *,
     token: str | None = None,
     trusted_origins: tuple[str, ...] = (),
+    users: UserDirectory | None = None,
 ) -> BreadSchedHTTPServer:
     """Start the server. Returns it without blocking; call ``serve_forever``.
 
@@ -837,7 +880,14 @@ def serve(
     local_token = secrets.token_urlsafe(32)
     server = BreadSchedHTTPServer(
         (host, port),
-        build_handler(db, token, executor, trusted_origins=origins, local_token=local_token),
+        build_handler(
+            db,
+            token,
+            executor,
+            trusted_origins=origins,
+            local_token=local_token,
+            users=users if users is not None else UserDirectory(),
+        ),
     )
     server.token = token
     server.local_token = local_token

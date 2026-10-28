@@ -244,6 +244,7 @@ class HttpBookClient:
         client_cert: str | None = None,
         client_key: str | None = None,
         local_token: str | None = None,
+        host_files: bool = False,
     ) -> None:
         parsed = urlparse(base_url)
         if parsed.scheme not in ("http", "https") or not parsed.hostname:
@@ -257,6 +258,9 @@ class HttpBookClient:
         #: with it the server reads files this client names; without it this client
         #: sends a file's bytes instead (#358).
         self.local_token = local_token
+        #: The token itself may name files on the server's computer: the computer
+        #: account's own device token (decision 0004).
+        self.host_files = host_files or bool(local_token)
         #: Files already sent, by (path, modification time, size): the server's copy.
         self._sent: dict[tuple[str, int, int], str] = {}
         self.timeout = timeout
@@ -1266,7 +1270,7 @@ class HttpBookClient:
     def _server_file(self, path: str) -> str:
         """A file the server may read: ``path`` itself for a client on its computer
         (holding the local token), else the server's copy of the file's bytes."""
-        if self.local_token:
+        if self.host_files:
             return path
         local = Path(path).expanduser()
         if not local.is_file():
@@ -1338,7 +1342,7 @@ class HttpBookClient:
 
     def attach_file(self, transaction: str, path: str, copy: bool = True) -> Transaction:
         local = Path(path).expanduser()
-        if not self.local_token and local.is_file():
+        if not self.host_files and local.is_file():
             # Not on the server's computer: send the document (it is always copied in).
             return self.attach_content(transaction, local.name, local.read_bytes())
         return self._attachments(transaction, "/files", {"path": path, "copy": copy})

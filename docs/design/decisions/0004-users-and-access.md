@@ -217,6 +217,27 @@ stored for the one user.
 Phases 1 and 2 already make the server safe to reach from other devices and from
 other accounts; 3 and 4 make it a household application.
 
+## Where it stands
+
+**Phase 1 is built** (`breadsched.api.users`):
+- **The user directory** is `users.sqlite` in the computer account's data folder
+  (`0600`, in a `0700` folder). The computer account's own user is made, as its
+  administrator, the first time it is needed.
+- **The device token** is made the first time a program of the account needs it,
+  kept `0600` as `device-token` in the account's config folder, and replaced if the
+  host no longer knows it. It may name files on the host. Tokens are kept only as
+  their SHA-256 digests, with when they were made and last used, and can be revoked.
+- **The server** answers a request for the user its token belongs to: its own
+  per-process token (and the local token of the page it opens) is the computer
+  account; any other token must be one the directory issued. A token from another
+  account's directory, or a revoked one, is refused (403).
+- **The server record** carries only the address, process, and lock. A program that
+  finds it connects with the account's device token
+  (`HttpBookClient(..., host_files=True)`), which also lets it name files on the host
+  (#358).
+- Single-user use is unchanged; `--token-file` still keeps the server's own token
+  for devices behind the proxy until phase 2 gives them device tokens of their own.
+
 ## Answers to the review questions (2026-10-28)
 
 1. **Roles:** owner, editor, and viewer, and an *entry* role as well.

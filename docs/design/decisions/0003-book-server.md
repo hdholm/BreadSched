@@ -584,9 +584,10 @@ sent back. The HTTP client decodes an import's result with the importers' own
 `ImportResult`, which the service names only for type checking.
 
 **Files a client names (#358).** A server makes a second, *local* token besides the
-API token. It is never printed or written to a token file: only the server record (in
-the user's runtime folder) and the page `breadsched web` opens itself carry it, and a
-request shows it in `X-BreadSched-Local`. Only such a request may name a file on the
+API token. It is never printed or written to a token file: only the page `breadsched
+web` opens itself carries it, and a request shows it in `X-BreadSched-Local`; the
+computer account's other programs name files with their device token instead
+(decision 0004, phase 1). Only such a request may name a file on the
 server (`import_book`, `inspect_csv`, `preview_csv`, `import_csv`, `attach_file`), link
 or relink a document outside the attachment folder, or change the attachment or
 GnuCash link folder (`attachment.folder.local_only`, 403); any other may name only a
@@ -642,8 +643,8 @@ Phase 4 (#358) has begun:
   publish a server record (`breadsched.api.discovery`): one user-only file per
   book in the runtime directory (`$XDG_RUNTIME_DIR/breadsched/servers`, or the
   data directory's `run` folder), named by a hash of the book's canonical path. It
-  holds the address, the token, and the process. The token never goes beside the
-  book.
+  holds the address and the process, and no token: a program of the same computer
+  account proves who it is with that account's device token (decision 0004).
 - **When a record counts:** the record names the server's writer lock by the
   lock's random token (`DbSQLite.writer_lock_token`). It counts only while the
   book's lock file carries that token and, on this host, the process is alive. Any

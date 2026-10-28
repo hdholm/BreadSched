@@ -281,11 +281,7 @@ def _serve_book(args: argparse.Namespace, *, open_browser: bool, read_only: bool
             raise CommandError(f"could not listen on {args.host}:{args.port}: {exc}") from exc
         base = f"http://{args.host}:{httpd.server_port}"
         lock = db.writer_lock_token
-        record = (
-            None
-            if read_only or lock is None
-            else publish_server(args.book, base, httpd.token, lock, local_token=httpd.local_token)
-        )
+        record = None if read_only or lock is None else publish_server(args.book, base, lock)
         if token is None:
             print(f"BreadSched is serving {args.book} at {base}/#token={httpd.token}")
         else:

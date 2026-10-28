@@ -249,8 +249,10 @@ While `breadsched serve` (or `breadsched web` without `--read-only`) holds a boo
 `attachments`, `net-worth`, `net-worth-change`, `project`, `compare`, `holdings`,
 `realized-gains`, `tax-year`, `jars`, `dashboard`, `activity`, `gnucash-writeback`,
 `estimate suggest`, `find`, `import`, `infer`, and `import-csv` for the same book work through that server instead of stopping
-because the book is already open for writing. The server records its address and token
-in a file only you can read, in your runtime folder, and removes it when it stops.
+because the book is already open for writing. The server records its address in a
+file only you can read, in your runtime folder, and removes it when it stops; your
+commands prove they are yours with a private token BreadSched keeps in your settings
+folder.
 `--server URL` names a server explicitly; its token comes from `--token-file PATH` or
 the `BREADSCHED_SERVER_TOKEN` environment variable. Other commands still need the book
 to themselves. The desktop application can share the book it has open the same way

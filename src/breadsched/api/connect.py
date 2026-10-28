@@ -16,6 +16,7 @@ from .discovery import find_server
 from .http_client import HttpBookClient
 from .local import open_book_server
 from .protocol import BookApi
+from .users import device_token
 
 __all__ = ["open_book_api"]
 
@@ -50,9 +51,10 @@ def open_book_api(
         return
     record = find_server(book, directory)
     if record is not None:
-        # On this computer: the record's local token lets the server read files named
-        # here, as the GnuCash write-back and imports by path need (#358).
-        yield HttpBookClient(record.url, record.token, local_token=record.local_token or None)
+        # The same computer account: its device token says who it is, and lets the
+        # server read files named here, as imports by path and the GnuCash write-back
+        # need (#358, decision 0004).
+        yield HttpBookClient(record.url, device_token(), host_files=True)
         return
     with open_book_server(book, mode) as server:
         yield server

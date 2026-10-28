@@ -63,9 +63,7 @@ def running(book_path):
     httpd = serve(db, host="127.0.0.1", port=0)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{httpd.server_port}"
-    record = publish_server(
-        str(book_path), base, httpd.token, db.writer_lock_token, local_token=httpd.local_token
-    )
+    record = publish_server(str(book_path), base, db.writer_lock_token)
     yield type("Running", (), {"db": db, "base": base, "token": httpd.token, "record": record})
     withdraw_server(record)
     httpd.shutdown()
@@ -112,7 +110,7 @@ def test_the_record_is_readable_only_by_its_user(running, book_path):
 def test_a_stale_record_is_ignored_and_removed(book_path):
     path = record_path(str(book_path))
     # No process holds the book's writer lock.
-    publish_server(str(book_path), "http://127.0.0.1:9", "secret", "no-such-lock")
+    publish_server(str(book_path), "http://127.0.0.1:9", "no-such-lock")
     assert find_server(str(book_path)) is None
     assert not path.exists()
     # A process that has exited.
@@ -144,9 +142,7 @@ def test_the_holder_is_the_lock_token_not_the_host_name(running, book_path, monk
 
 
 def test_withdrawing_removes_only_the_record_it_published(running, book_path):
-    impostor = ServerRecord(
-        running.record.book, running.base, "other", os.getpid(), "elsewhere", "lock"
-    )
+    impostor = ServerRecord(running.record.book, running.base, os.getpid() + 1, "elsewhere", "lock")
     withdraw_server(impostor)
     assert find_server(str(book_path)) == running.record
     withdraw_server(running.record)

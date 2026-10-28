@@ -25,8 +25,10 @@ an older book revision is refused with 412 and changes nothing. The browser's
 `EventSource` cannot send the token header, so the page does not use the stream yet;
 it is for programmatic clients such as `breadsched.api.http_client`.
 
-A writable server publishes its address and token for other BreadSched processes of
-the same user (#358):
+A writable server publishes its address for other BreadSched processes of the same
+user (#358); they prove who they are with the account's device token, kept `0600` in
+its config folder, which the host's user directory knows only by its digest (decision
+0004):
 - **Where:** one record per book in the per-user runtime directory, never beside the
   book, since a book folder may be shared or synced. The file is `0600` in a `0700`
   directory on POSIX.

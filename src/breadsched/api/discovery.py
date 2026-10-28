@@ -1,14 +1,16 @@
 """Finding the book server that already holds a book (#358).
 
 **Experimental.** A server started for a writable book (``breadsched serve`` or
-``breadsched web``) publishes a *server record*: the book, the server's address and
-token, and the process that holds the book's writer lock. Another interface opening
+``breadsched web``) publishes a *server record*: the book, the server's address, and
+the process that holds the book's writer lock. It carries no token: a program of the
+same computer account proves who it is with that account's device token
+(``api.users``, decision 0004). Another interface opening
 the same book reads the record and connects to that server instead of failing on
 the lock.
 
-The record lives in the user's runtime directory, not beside the book, so the
-token is never written to a folder the book may share with other people or a sync
-service: one user-only (``0600``) file per book, named by a hash of the book's
+The record lives in the user's runtime directory, not beside the book, so where an
+account's server listens is never written to a folder the book may share with other
+people or a sync service: one user-only (``0600``) file per book, named by a hash of the book's
 canonical path, in a user-only (``0700``) directory. A record names the writer
 lock its server holds by the lock's random token, and is trusted only while the
 book's lock file still carries that token (and, on this host, while the process is
@@ -37,14 +39,10 @@ class ServerRecord:
 
     book: str
     url: str
-    token: str
     pid: int
     host: str
     #: The token of the writer lock the server holds.
     lock: str
-    #: The server's local-only token: it lets a program on this computer name files
-    #: here (#358); "" for a record written before there was one.
-    local_token: str = ""
 
 
 def _canonical(book: str) -> str:
@@ -58,19 +56,9 @@ def record_path(book: str, directory: Path | None = None) -> Path:
     return root / f"{digest}.json"
 
 
-def publish_server(
-    book: str,
-    url: str,
-    token: str,
-    lock: str,
-    directory: Path | None = None,
-    *,
-    local_token: str = "",
-) -> ServerRecord:
+def publish_server(book: str, url: str, lock: str, directory: Path | None = None) -> ServerRecord:
     """Record that this process, holding ``book``'s writer lock ``lock``, serves it at ``url``."""
-    record = ServerRecord(
-        _canonical(book), url, token, os.getpid(), socket.gethostname(), lock, local_token
-    )
+    record = ServerRecord(_canonical(book), url, os.getpid(), socket.gethostname(), lock)
     path = record_path(book, directory)
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -84,11 +72,9 @@ def publish_server(
             {
                 "book": record.book,
                 "url": record.url,
-                "token": record.token,
                 "pid": record.pid,
                 "host": record.host,
                 "lock": record.lock,
-                "local_token": record.local_token,
             },
             handle,
             sort_keys=True,
@@ -101,7 +87,7 @@ def withdraw_server(record: ServerRecord, directory: Path | None = None) -> None
     """Remove ``record`` if it is still the published one."""
     path = record_path(record.book, directory)
     current = _read(path)
-    if current is not None and (current.pid, current.token) == (record.pid, record.token):
+    if current is not None and (current.pid, current.url) == (record.pid, record.url):
         try:
             path.unlink()
         except FileNotFoundError:
@@ -114,11 +100,9 @@ def _read(path: Path) -> ServerRecord | None:
         return ServerRecord(
             str(data["book"]),
             str(data["url"]),
-            str(data["token"]),
             int(data["pid"]),
             str(data["host"]),
             str(data["lock"]),
-            str(data.get("local_token", "")),
         )
     except (OSError, ValueError, TypeError, KeyError):
         return None
