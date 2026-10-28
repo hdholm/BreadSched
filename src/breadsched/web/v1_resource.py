@@ -594,10 +594,11 @@ def register_get(api: Api, path: Path, query: QueryParams) -> dict:
 
 
 def register_view_get(api: Api, path: Path, query: QueryParams) -> dict:
-    limit = query.integer("limit", default=250, minimum=1, maximum=10000)
+    # ``limit=all`` is every row, as the desktop register shows them.
+    every = query.text("limit") == "all"
+    limit = None if every else query.integer("limit", default=250, minimum=1, maximum=10000)
     needle = query.text("filter") or ""
     query.finish()
-    assert limit is not None
     return to_data(api.book.register_view(path["handle"], limit, needle))
 
 

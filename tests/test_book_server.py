@@ -1825,6 +1825,11 @@ def test_register_views_read_alike(target, book, tmp_path):
     ]
     assert view.holding is None
     assert len(api.register_view(book.checking).rows) == 2
+    # Every row, as the desktop register reads it (#389): ``limit=all`` over HTTP.
+    every = api.register_view(book.checking, None)
+    assert [item.transaction.handle for item in every.rows] == [
+        item.transaction.handle for item in ledger.register(db, book.checking)
+    ]
     # The register filter reaches the server: 1800 is the rent's amount (#382).
     assert [
         row.transaction.handle for row in api.register_view(book.checking, 250, "1800").rows

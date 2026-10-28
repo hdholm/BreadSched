@@ -475,8 +475,11 @@ window use it.
 GTK's slow views read through the server off the main loop (#389):
 `gui.background.SnapshotReader` runs a view's book-server read on one worker thread
 against a read-only snapshot of the book and hands the answer back to GTK's loop to
-draw. The Plan is first; a view moved onto the server can follow by splitting its
-refresh into that read and a draw. This is the in-process form of what a remote GTK
+draw. The Plan was first; GTK's register followed: its full read is
+`register_view(account, None)` (`limit=None` is every row; over HTTP `limit=all`) and
+its account names come from `accounts()`, while a reread of just-saved transactions
+stays in place. A view moved onto the server can follow by splitting its refresh into
+that read and a draw. This is the in-process form of what a remote GTK
 client needs anyway: reads that take time without freezing the window.
 
 A phone-sized **quick entry** page (`/quick`, `quick.html` with only `core.js` and

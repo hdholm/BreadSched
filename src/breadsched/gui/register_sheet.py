@@ -61,6 +61,7 @@ from ..gen.services import (
 )
 from ..gen.services.autocomplete import SuggestEntry
 from ..gen.services.entry_input import ReadEntryTrade
+from ..gen.services.register_view import RegisterView
 from ..presentation.investments import trade_price_text
 
 __all__ = [
@@ -254,7 +255,9 @@ class SheetRow:
 class RegisterSheet:
     """One account's register: rows, the cursor, and the transaction being typed."""
 
-    def __init__(self, db, account: str, *, today: date | None = None) -> None:
+    def __init__(
+        self, db, account: str, *, today: date | None = None, view: RegisterView | None = None
+    ) -> None:
         self.db = db
         self.account = account
         self.today = today
@@ -281,6 +284,9 @@ class RegisterSheet:
         #: Accounts a split may use (full name → handle), and the transfer choices.
         self.account_names: dict[str, str] = {}
         self.transfer_names: dict[str, str] = {}
+        #: Every account's full name by handle, and the accounts that hold securities.
+        self.full_names: dict[str, str] = {}
+        self.security_accounts: frozenset[str] = frozenset()
         #: Earlier descriptions in this register, most recent first.
         self.descriptions: list[str] = []
         self.debit_heading, self.credit_heading = "Increase", "Decrease"
@@ -290,7 +296,11 @@ class RegisterSheet:
         self.share_fraction = 1
         self.enabled = True
         self.disabled_reason = ""
-        self.reload(keep_cursor=False)
+        if view is not None:
+            # Read in the background through the book server (#389).
+            self.apply_view(view, keep_cursor=False)
+        else:
+            self.reload(keep_cursor=False)
 
     # ----------------------------------------------------------------- loading
 
@@ -312,15 +322,51 @@ class RegisterSheet:
         read. A draft with unsaved typing survives a reload; one whose transaction
         has gone (deleted elsewhere) returns the cursor to the blank transaction.
         """
-        account = self.account_object
-        if account is None:
-            self.ledger_rows = []
-            self.rows = [SheetRow(BLANK, current=True)]
-            self.enabled = False
+        if changed is not None and self.ledger_rows:
+            # Only the changed transactions are read again, in the book (#319).
+            account = self.account_object
+            if account is None:
+                self._lose_account()
+                return
+            self._refresh_draft(keep_cursor)
+            self._load_accounts()
+            self.ledger_rows = ledger.update_register(
+                self.db, self.account, self.ledger_rows, changed
+            )
+            self._finish_load(account)
             return
-        self.debit_heading, self.credit_heading = ledger.register_headings(account.atype)
-        self.security = ledger.security_of(self.db, account)
-        self.share_fraction = ledger.share_fraction(self.db, account)
+        try:
+            view = book_server(self.db).register_view(self.account, None)
+        except ApiError:
+            self._lose_account()
+            return
+        self.apply_view(view, keep_cursor=keep_cursor)
+
+    def apply_view(self, view: RegisterView, *, keep_cursor: bool = True) -> None:
+        """Show every row of a register read through the book server.
+
+        The view carries the rows with their running balances, the headings, and
+        the security the account holds, so the sheet reads them in one request,
+        which the register can make off GTK's loop (#389).
+        """
+        self.debit_heading, self.credit_heading = view.debit_label, view.credit_label
+        holding = view.holding
+        self.security = holding.security if holding is not None else None
+        self.share_fraction = (
+            holding.share_fraction if holding is not None else (view.account.commodity_scu or 1)
+        )
+        self.security_accounts = frozenset(view.security_accounts)
+        self._refresh_draft(keep_cursor)
+        self._load_accounts()
+        self.ledger_rows = list(view.rows)
+        self._finish_load(view.account)
+
+    def _lose_account(self) -> None:
+        self.ledger_rows = []
+        self.rows = [SheetRow(BLANK, current=True)]
+        self.enabled = False
+
+    def _refresh_draft(self, keep_cursor: bool) -> None:
         source = self.draft.source
         if not keep_cursor:
             self.draft = self._blank_draft()
@@ -330,13 +376,8 @@ class RegisterSheet:
                 self.draft = self._blank_draft()
             elif not self.draft.dirty():
                 self.draft = self._load_draft(fresh, self.draft.split_handle)
-        self._load_accounts()
-        if changed is not None and self.ledger_rows:
-            self.ledger_rows = ledger.update_register(
-                self.db, self.account, self.ledger_rows, changed
-            )
-        else:
-            self.ledger_rows = ledger.register(self.db, self.account)
+
+    def _finish_load(self, account) -> None:
         seen: dict[str, None] = {}
         for row in reversed(self.ledger_rows):
             if row.transaction.description.strip():
@@ -356,16 +397,28 @@ class RegisterSheet:
         if self.draft.source is not None:
             referenced = {split.account for split in self.draft.source.splits}
         names: dict[str, str] = {}
-        for item in self.db.iter_accounts():
+        records = book_server(self.db).accounts()
+        self.full_names = {record.account.handle: record.full_name for record in records}
+        for record in records:
+            item = record.account
             if item.is_root or item.placeholder or item.parent is None:
                 continue
             if item.hidden and item.handle not in referenced:
                 continue
-            names.setdefault(self.db.full_name(item), item.handle)
+            names.setdefault(record.full_name, item.handle)
         self.account_names = dict(sorted(names.items(), key=lambda pair: pair[0].casefold()))
         self.transfer_names = {
             name: handle for name, handle in self.account_names.items() if handle != self.account
         }
+
+    def _name(self, handle: str) -> str:
+        """An account's full name, as the book server listed it."""
+        name = self.full_names.get(handle)
+        if name is None:
+            # An account made since the list was read.
+            self._load_accounts()
+            name = self.full_names.get(handle, handle)
+        return name
 
     def set_double_line(self, on: bool) -> None:
         """Show or hide each transaction's notes line, keeping the cursor's place."""
@@ -508,7 +561,7 @@ class RegisterSheet:
             description=transaction.description,
             notes=transaction.notes or "",
         )
-        name = self.db.full_name(others[0].account) if len(others) == 1 else ""
+        name = self._name(others[0].account) if len(others) == 1 else ""
         if mine is not None and len(others) == 1 and others[0].account != mine.account and name:
             draft.transfer = name
             draft.simple_handles = (mine.handle, others[0].handle)
@@ -531,13 +584,13 @@ class RegisterSheet:
     def _line_of(self, split) -> Line:
         value = split.value
         line = Line(
-            account=self.db.full_name(split.account),
+            account=self._name(split.account),
             memo=split.memo,
             increase=value.format() if value > 0 else "",
             decrease=(-value).format() if value < 0 else "",
             handle=split.handle,
         )
-        if self.security is not None and ledger.security_of(self.db, split.account) is not None:
+        if self.security is not None and split.account in self.security_accounts:
             self._load_trade(line, split)
         return line
 
@@ -612,7 +665,7 @@ class RegisterSheet:
                 s for s in ledger_row.transaction.splits if s.handle != ledger_row.split.handle
             ]
             if len(others) == 1:
-                return self.db.full_name(others[0].account)
+                return self._name(others[0].account)
             return SPLIT_LABEL
         if column == "reconcile":
             return ledger_row.split.reconcile.value
@@ -848,7 +901,7 @@ class RegisterSheet:
 
     def _holds_security(self, line: Line) -> bool:
         handle = self.account_names.get(line.account.strip())
-        return handle is not None and ledger.security_of(self.db, handle) is not None
+        return handle is not None and handle in self.security_accounts
 
     def _read_shares(self, text: str) -> Decimal | None:
         """Typed shares, arithmetic evaluated; ``EntryInputError`` when unreadable."""
@@ -1054,7 +1107,7 @@ class RegisterSheet:
                 amount = None
             mine, other = draft.simple_handles
             memo = {split.handle: split.memo for split in getattr(draft.source, "splits", ())}
-            own = self.db.full_name(self.account)
+            own = self._name(self.account)
             draft.lines = [
                 Line(
                     account=own,
@@ -1081,7 +1134,7 @@ class RegisterSheet:
             self.cursor = self.header_index() + 1
             return True
         filled = [line for line in draft.lines if line.has_input()]
-        own = self.db.full_name(self.account)
+        own = self._name(self.account)
         own_line = next((line for line in filled if line.account == own), None)
         if len(filled) > 2 or (filled and own_line is None):
             return self._fail(
@@ -1345,7 +1398,7 @@ class RegisterSheet:
             moved = ", ".join(
                 sorted(
                     {
-                        self.db.full_name(split.account)
+                        self._name(split.account)
                         for split in splits
                         if split.account not in {item.account for item in draft.source.splits}
                     }

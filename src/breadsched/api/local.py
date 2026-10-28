@@ -414,7 +414,9 @@ class LocalBookServer:
     def register(self, query: RegisterQuery) -> RegisterPage:
         return unwrap(register_page(self.db, query))
 
-    def register_view(self, account: str, limit: int = 250, filter_text: str = "") -> RegisterView:
+    def register_view(
+        self, account: str, limit: int | None = 250, filter_text: str = ""
+    ) -> RegisterView:
         return unwrap(register_view_service.register_view(self.db, account, limit, filter_text))
 
     def account_balance(self, query: BalanceQuery) -> AccountBalance:

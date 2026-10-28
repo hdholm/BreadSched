@@ -9799,6 +9799,48 @@ class TestBackgroundRedraw:
         assert plan._report is not before and not plan.updating_label.get_visible()
         assert plan.is_current()
 
+    def test_restored_registers_are_read_in_the_background(
+        self, app, window, populated_book, tmp_path, monkeypatch
+    ):
+        """Hidden register tabs are filled off GTK's loop; switching reads nothing."""
+        from breadsched.gui import register_sheet
+
+        app.open_book(populated_book)
+        checking = app.db.get_account_by_name("Assets:Checking Account").handle
+        card = app.db.get_account_by_name("Credit Card").handle
+        window.open_register(checking)
+        window.open_register(card)
+        window.show_category("accounts")
+        other = tmp_path / "other.breadsched"
+        shutil.copyfile(populated_book, other)
+        app.open_book(str(other))
+        app.open_book(populated_book)
+        registers = [tab for tab in window._tabs if tab.key == "register"]
+        assert [tab.view.sheet for tab in registers] == [None, None]
+        assert window.wait_for_background()
+        assert all(tab.view.sheet is not None and tab.view.is_current() for tab in registers)
+        # Drawn from the server's view, the same rows a direct read gives.
+        sheet = registers[0].view.sheet
+        direct = register_sheet.RegisterSheet(app.db, checking)
+        assert [row.transaction.handle for row in sheet.ledger_rows] == [
+            row.transaction.handle for row in direct.ledger_rows
+        ]
+        assert [row.running for row in sheet.ledger_rows] == [
+            row.running for row in direct.ledger_rows
+        ]
+        assert sheet.account_names == direct.account_names
+        built: list[str] = []
+        original = register_sheet.RegisterSheet.__init__
+
+        def counting(sheet, db, account, *args, **kwargs):
+            built.append(account)
+            original(sheet, db, account, *args, **kwargs)
+
+        monkeypatch.setattr(register_sheet.RegisterSheet, "__init__", counting)
+        window._on_tab_clicked(registers[1])
+        assert built == []
+        assert window._views["register"].sheet.account == card
+
     def test_the_snapshot_reader_reads_each_revision_once_and_reports_failures(
         self, populated_book
     ):

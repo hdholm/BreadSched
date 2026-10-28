@@ -206,11 +206,58 @@ class RegisterView(BaseView):
         else:
             # A change made elsewhere: re-read, keeping the cursor and any typing.
             self.sheet.reload()
+        self._show_sheet()
+
+    def _show_sheet(self) -> None:
+        assert self.sheet is not None
         self._pending_changes.clear()
         self.sheet.set_double_line(self.double_line)
         self.sheet.set_filter(self.filter_entry.get_text())
         self.grid.set_sheet(self.sheet)
         self._show_balance()
+
+    def background_refresh(self):
+        """Every row, read through the book server off GTK's loop (#389).
+
+        A register a few saved transactions behind is brought up to date in place
+        instead (it rereads only those), which is quicker than reading it all.
+        """
+        db, handle = self.db, self.account_handle
+        if db is None or handle is None:
+            return None
+        sheet = self.sheet
+        if (
+            sheet is not None
+            and sheet.db is db
+            and sheet.account == handle
+            and not self._full_refresh_pending
+        ):
+            return None
+
+        def read(book):
+            return book.register_view(handle, None)
+
+        def show(view) -> None:
+            if self.db is not db or self.account_handle != handle:
+                return
+            self._updating = True
+            try:
+                self._populate_picker()
+            finally:
+                self._updating = False
+            account = view.account
+            self.reconcile_button.set_sensitive(
+                not account.placeholder
+                and account.account_class in {AccountClass.ASSET, AccountClass.LIABILITY}
+            )
+            current = self.sheet
+            if current is None or current.db is not db or current.account != handle:
+                self.sheet = RegisterSheet(db, handle, view=view)
+            else:
+                current.apply_view(view)
+            self._show_sheet()
+
+        return read, show
 
     # ------------------------------------------------------------- updates
 
@@ -224,6 +271,7 @@ class RegisterView(BaseView):
     def _on_transactions(self, handles) -> None:
         """Reload just the transactions a commit changed (#319)."""
         self._handled_commit = True
+        self._changes += 1
         sheet = self.sheet
         if sheet is None or sheet.db is not self.db:
             return

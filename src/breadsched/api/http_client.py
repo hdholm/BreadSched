@@ -505,9 +505,11 @@ class HttpBookClient:
         params = {"start": query.start, "end": query.end, "tag": query.tag, "limit": query.limit}
         return register_from_json(self._call("GET", path, params))
 
-    def register_view(self, account: str, limit: int = 250, filter_text: str = "") -> RegisterView:
+    def register_view(
+        self, account: str, limit: int | None = 250, filter_text: str = ""
+    ) -> RegisterView:
         path = f"/accounts/{quote(account, safe='')}/register-view"
-        params = {"limit": limit, "filter": filter_text or None}
+        params = {"limit": "all" if limit is None else limit, "filter": filter_text or None}
         return from_data(RegisterView, self._call("GET", path, params))
 
     def account_balance(self, query: BalanceQuery) -> AccountBalance:

@@ -113,8 +113,14 @@ change, or when shown out of date, then keeps the old figures under an **Updatin
 label and draws the new ones when they arrive, rereading if the book changed meanwhile.
 `ViewManager._prefill` redraws hidden tabs of such views (`BACKGROUND_VIEWS`) shortly
 after the book opens and after each change, so switching to them is immediate.
-Registers and the other views still draw when shown; moving them onto the book server
-brings them to the same path. An in-memory book has no snapshot and draws in place. The
+Registers read the same way: a full read is `book.register_view(account, None)` (every
+row, with headings, the security held, and which accounts hold securities), which
+`RegisterSheet.apply_view` lays out, so restored and hidden register tabs are filled
+in the background and switching to one is immediate. A register a few saved
+transactions behind still rereads only those in place (#319). Account names come from
+`book.accounts()`. The other views still draw when shown; moving them onto the book
+server brings them to the same path. An in-memory book has no snapshot and draws in
+place. The
 browser has no tab bar: `openInNewTab` opens a browser tab with the view and account
 or scenario in its query string.
 
