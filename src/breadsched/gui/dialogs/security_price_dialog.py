@@ -7,7 +7,6 @@ from datetime import date
 from ...api import ApiError
 from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.currency import reporting_currency_handle
 from ...gen.lib.money import Money
 from ...gen.services.quotes import QuoteRequest
 from ...gen.services.security_prices import SaveSecurityPrice
@@ -43,7 +42,7 @@ class SecurityPriceDialog(BoundedWindow):
         quotes = book_server(db).securities()
         self.securities = [quote.security for quote in quotes]
         self._latest = {quote.security.handle: quote.latest for quote in quotes}
-        self.currencies = [item for item in db.iter_commodities() if item.is_currency]
+        self.currencies = list(book_server(db).currencies(book_order=True))
         self.set_default_size(520, 430)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -225,8 +224,7 @@ class SecurityPriceDialog(BoundedWindow):
         source = security.quote_source.strip()
         if not source:
             return
-        reporting = self.db.get_commodity(reporting_currency_handle(self.db))
-        currency = reporting.mnemonic if reporting is not None else "USD"
+        currency = book_server(self.db).reporting_currency() or "USD"
         fetcher = self.fetcher_factory(alphavantage_key(self.settings))
         request = QuoteRequest(security.handle, security.mnemonic, source)
         self.quote_button.set_sensitive(False)

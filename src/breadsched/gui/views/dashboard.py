@@ -16,6 +16,7 @@ horizons they were judged against, so the numbers stay in sight.
 
 from __future__ import annotations
 
+from ...api import ApiError
 from ...api.local import book_server
 from ...gen.engine import dashboard as engine
 from ...gen.engine import receivables
@@ -572,8 +573,9 @@ class DashboardView(BaseView):
         if schedule is not None:
             self.manager.open_schedule(schedule.handle)
         elif bill.generated and bill.account is not None and self.db is not None:
-            account = self.db.get_account(bill.account)
-            if account is None:
+            try:
+                account = book_server(self.db).account(bill.account).account
+            except ApiError:
                 return
             from ..dialogs.account_dialog import AccountDialog
 

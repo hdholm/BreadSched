@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import py_compile
+import re
 from pathlib import Path
 
 import pytest
@@ -1428,6 +1429,9 @@ class TestBookServerBoundaries:
         "historical_estimates",
         "accept_historical_estimate",
         "register_changes",
+        "plan_bounds",
+        "book_counts",
+        "default_dashboard_settings",
     }
 
     @pytest.mark.parametrize(
@@ -1784,6 +1788,13 @@ class TestBookServerBoundaries:
                 ("_populate_scenarios", "_on_scenario_chosen", "_currency_label", "work"),
             ),
             ("gui/dialogs/projection_detail_dialog.py", ("_render",)),
+            ("gui/views/plan.py", ("_plan_bounds", "_populate_scenarios")),
+            (
+                "gui/viewmanager.py",
+                ("_refresh_status", "_account_record", "_scenario_exists", "open_register_tab"),
+            ),
+            ("gui/dialogs/dashboard_dialog.py", ("_on_reset", "save")),
+            ("gui/dialogs/historical_estimates_dialog.py", ("__init__",)),
             (
                 "gui/register_sheet.py",
                 ("reload", "_stored", "account_object", "_load_accounts"),
@@ -1835,6 +1846,18 @@ class TestBookServerBoundaries:
                 }
             }
             assert not engines, (name, engines)
+
+    def test_gtk_reads_the_book_only_through_the_server(self):
+        """#356: GTK's views, dialogs, and window ask the book server, never the
+        book's own reads (the read-only snapshots behind background reads aside)."""
+        reads = re.compile(r"\bdb\.(get_|iter_|full_name|summary|first_transaction)")
+        for module in sorted((SRC / "gui").rglob("*.py")):
+            found = [
+                number
+                for number, line in enumerate(module.read_text(encoding="utf-8").splitlines(), 1)
+                if reads.search(line)
+            ]
+            assert not found, (module.relative_to(SRC), found)
 
     def test_gtk_views_follow_the_book_through_the_server(self):
         """#356: GTK's views and its live dialogs hear of changes from the book

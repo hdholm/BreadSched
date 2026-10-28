@@ -123,10 +123,11 @@ class FindDialog(BoundedWindow):
         self.open_account = open_account
         self.result: FindResult | None = None
         self.set_default_size(820, 640)
-        self.accounts = sorted(
-            (account for account in db.iter_accounts() if not account.is_root),
-            key=db.full_name,
+        records = sorted(
+            (record for record in self.book.accounts() if not record.account.is_root),
+            key=lambda record: record.full_name,
         )
+        self.accounts = [record.account for record in records]
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         for side in ("top", "bottom", "start", "end"):
@@ -138,9 +139,7 @@ class FindDialog(BoundedWindow):
         self.text_entry = Gtk.Entry(placeholder_text="Anything a transaction holds")
         self.text_entry.connect("activate", lambda *_: self.find())
         form.add("Text", self.text_entry)
-        self.account = bounded_dropdown(
-            ["All accounts", *(db.full_name(account) for account in self.accounts)]
-        )
+        self.account = bounded_dropdown(["All accounts", *(record.full_name for record in records)])
         form.add("Account", self.account)
         self.subaccounts_check = Gtk.CheckButton(label="Include subaccounts")
         self.subaccounts_check.set_active(True)

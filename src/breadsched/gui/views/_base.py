@@ -336,11 +336,6 @@ class BaseView(Gtk.Box):
     def refresh(self) -> None:
         """Rebuild from the database.  Subclasses override."""
 
-    # ------------------------------------------------------------- convenience
-
-    def full_name(self, handle: str) -> str:
-        return self.db.full_name(handle) if self.db else ""
-
 
 def money_label(amount: Money, symbol: str = "", bold: bool = False) -> Gtk.Label:
     """A right-aligned, tabular-figure amount, coloured when negative."""

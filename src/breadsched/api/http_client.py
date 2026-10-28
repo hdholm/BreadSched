@@ -83,7 +83,7 @@ from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
 from ..gen.services.autocomplete import EntryProposal, SuggestEntry
-from ..gen.services.book_info import BookSummary
+from ..gen.services.book_info import BookCounts, BookSummary
 from ..gen.services.budget_jars import JarsView
 from ..gen.services.categorization import (
     AddRule,
@@ -130,7 +130,7 @@ from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
-from ..gen.services.plan import PlanQuery, PlanQueryResult
+from ..gen.services.plan import PlanBounds, PlanQuery, PlanQueryResult
 from ..gen.services.plan_cells import PlanCellDetail, PlanCellQuery
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
@@ -525,6 +525,9 @@ class HttpBookClient:
         return str(found["num"])
 
     # -------------------------------------------------------------------- book
+
+    def book_counts(self) -> BookCounts:
+        return from_data(BookCounts, self._call("GET", "/book/counts"))
 
     def book_summary(self) -> BookSummary:
         return from_data(BookSummary, self._call("GET", "/book/summary"))
@@ -1219,6 +1222,10 @@ class HttpBookClient:
     def dashboard_settings(self) -> DashboardSettings:
         return from_data(DashboardSettings, self._call("GET", "/dashboard/settings"))
 
+    def default_dashboard_settings(self) -> DashboardSettings:
+        found = self._call("GET", "/dashboard/settings/defaults")
+        return from_data(DashboardSettings, found)
+
     def save_dashboard_settings(self, request: SaveDashboardConfig) -> DashboardSettings:
         found = self._call("PATCH", "/dashboard/settings", body=to_data(request))
         return from_data(DashboardSettings, found)
@@ -1293,6 +1300,9 @@ class HttpBookClient:
     def plan_settings(self, default_start: date, default_end: date) -> PlanSettings:
         params = {"default_start": default_start, "default_end": default_end}
         return from_data(PlanSettings, self._call("GET", "/plan/settings", params))
+
+    def plan_bounds(self, today: date | None = None) -> PlanBounds:
+        return from_data(PlanBounds, self._call("GET", "/plan/bounds", {"today": today}))
 
     def save_plan_settings(self, settings: PlanSettings) -> PlanSettings:
         found = self._call("PATCH", "/plan/settings", body=to_data(settings))

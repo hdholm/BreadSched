@@ -150,7 +150,7 @@ from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
 from ..gen.services.autocomplete import EntryProposal, SuggestEntry, suggest_entry
-from ..gen.services.book_info import BookSummary
+from ..gen.services.book_info import BookCounts, BookSummary
 from ..gen.services.budget_jars import JarsView
 from ..gen.services.categorization import (
     AddRule,
@@ -189,7 +189,7 @@ from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
-from ..gen.services.plan import PlanQuery, PlanQueryResult
+from ..gen.services.plan import PlanBounds, PlanQuery, PlanQueryResult
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
     AcceptedReimbursements,
@@ -434,6 +434,9 @@ class LocalBookServer:
         return unwrap(entry_input.next_entry_num(self.db, account, text, step))
 
     # -------------------------------------------------------------------- book
+
+    def book_counts(self) -> BookCounts:
+        return book_info.book_counts(self.db)
 
     def book_summary(self) -> BookSummary:
         return book_info.book_summary(self.db)
@@ -757,6 +760,9 @@ class LocalBookServer:
     def dashboard_settings(self) -> DashboardSettings:
         return dashboard_config.dashboard_settings(self.db)
 
+    def default_dashboard_settings(self) -> DashboardSettings:
+        return dashboard_config.default_dashboard_settings(self.db)
+
     def save_dashboard_settings(self, request: SaveDashboardConfig) -> DashboardSettings:
         with self._changing("dashboard-config"):
             saved = unwrap(dashboard_config.save_dashboard_config(self.db, request))
@@ -837,6 +843,9 @@ class LocalBookServer:
     def save_plan_settings(self, settings: PlanSettings) -> PlanSettings:
         with self._changing("plan-settings"):
             return unwrap(plan_service.save_plan_settings(self.db, settings))
+
+    def plan_bounds(self, today: date | None = None) -> PlanBounds:
+        return plan_service.plan_bounds(self.db, today)
 
     def plan(self, query: PlanQuery) -> PlanQueryResult:
         return unwrap(plan_service.query_plan(self.db, query))

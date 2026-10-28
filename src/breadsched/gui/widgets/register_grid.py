@@ -262,8 +262,7 @@ class RegisterGrid(Gtk.Box):
         )
         if sheet is not None:
             self.ensure_visible(sheet.cursor)
-            account = sheet.account_object
-            name = sheet.db.full_name(account) if account is not None else ""
+            name = sheet.full_names.get(sheet.account, "")
             self.area.update_property([Gtk.AccessibleProperty.LABEL], [f"Register for {name}"])
         self._place_editor(focus)
         self.area.queue_draw()

@@ -144,6 +144,21 @@ def _baseline(db: DbSQLite, start: date, end: date) -> Scenario:
     return scenario
 
 
+@dataclass(frozen=True, slots=True)
+class PlanBounds:
+    """The months a Plan may show, each as its first day, as ``PlanQueryResult``
+    reports them: from the first month with book data through the last month that
+    ends before the 150th anniversary of today."""
+
+    minimum: date
+    maximum: date
+
+
+def plan_bounds(db: DbSQLite, today: date | None = None) -> PlanBounds:
+    """The range ``query_plan`` accepts, for controls to offer before calculating."""
+    return PlanBounds(*_bounds(db, today or date.today()))
+
+
 def query_plan(db: DbSQLite, request: PlanQuery) -> ServiceResult[PlanQueryResult]:
     """Validate selection state and calculate the primary and comparison reports."""
     today = request.today or date.today()

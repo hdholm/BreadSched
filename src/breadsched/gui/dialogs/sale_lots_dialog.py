@@ -47,8 +47,9 @@ class SaleLotsDialog(BoundedWindow):
             getattr(outer, f"set_margin_{side}")(14)
         self.set_child(outer)
         outer.append(help_row("specific-lots"))
+        account_name = book_server(db).account(current.account.handle).full_name
         heading = Gtk.Label(
-            label=f"{db.full_name(current.account)}: {sale_text(current.sale)}",
+            label=f"{account_name}: {sale_text(current.sale)}",
             xalign=0,
             wrap=True,
         )

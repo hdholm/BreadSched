@@ -71,7 +71,7 @@ from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
 from ..gen.services.autocomplete import EntryProposal, SuggestEntry
-from ..gen.services.book_info import BookSummary
+from ..gen.services.book_info import BookCounts, BookSummary
 from ..gen.services.budget_jars import JarsView
 from ..gen.services.categorization import (
     AddRule,
@@ -118,7 +118,7 @@ from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
 from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
-from ..gen.services.plan import PlanQuery, PlanQueryResult
+from ..gen.services.plan import PlanBounds, PlanQuery, PlanQueryResult
 from ..gen.services.plan_cells import PlanCellDetail, PlanCellQuery
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
@@ -325,6 +325,10 @@ class BookApi(Protocol):
         ...
 
     # -------------------------------------------------------------------- book
+
+    def book_counts(self) -> BookCounts:
+        """How many accounts and transactions the book holds, without valuing them."""
+        ...
 
     def book_summary(self) -> BookSummary:
         """The book's counts, cash, net worth, and scenarios."""
@@ -878,6 +882,10 @@ class BookApi(Protocol):
         """The Dashboard's groups, with their members, and its horizons."""
         ...
 
+    def default_dashboard_settings(self) -> DashboardSettings:
+        """What Reset offers: the settings a new book's Dashboard starts with."""
+        ...
+
     def save_dashboard_settings(self, request: SaveDashboardConfig) -> DashboardSettings: ...
 
     def explain_plan_cell(self, query: PlanCellQuery) -> PlanCellDetail:
@@ -953,6 +961,10 @@ class BookApi(Protocol):
 
     def save_plan_settings(self, settings: PlanSettings) -> PlanSettings:
         """Remember the Plan presentation every interface restores."""
+        ...
+
+    def plan_bounds(self, today: date | None = None) -> PlanBounds:
+        """The months a Plan may show, for its controls to offer."""
         ...
 
     def plan(self, query: PlanQuery) -> PlanQueryResult:

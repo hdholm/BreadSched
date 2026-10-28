@@ -38,7 +38,7 @@ class HistoricalEstimatesDialog(BoundedWindow):
         self.months = Gtk.SpinButton(adjustment=adjustment, numeric=True)
         controls.append(self.months)
 
-        self.scenarios = list(db.iter_scenarios())
+        self.scenarios = book_server(db).scenarios()
         self.target = bounded_dropdown(["Base", *[scenario.name for scenario in self.scenarios]])
         controls.append(Gtk.Label(label="Add to", xalign=0))
         controls.append(self.target)
@@ -132,9 +132,10 @@ class HistoricalEstimatesDialog(BoundedWindow):
             else:
                 from .scenario_schedule_dialog import ScenarioScheduleDialog
 
-                scenario = self.db.get_scenario(scenario_handle)
-                if scenario is None:
-                    raise ValueError("saved scenario no longer exists")
+                try:
+                    scenario = book_server(self.db).find_scenario(scenario_handle)
+                except ApiError as error:
+                    raise ValueError("saved scenario no longer exists") from error
                 scenario_draft = estimates.draft_scenario_estimate(self.db, proposal)
                 dialog = ScenarioScheduleDialog(self, self.db, scenario, current=scenario_draft)
         except ValueError as exc:

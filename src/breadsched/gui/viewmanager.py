@@ -31,7 +31,10 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .. import APP_NAME  # noqa: E402
+from ..api import ApiError
+from ..api.local import book_server
 from ..gen.db.sqlite import DbSQLite  # noqa: E402
+from ..gen.services.ledger_reads import AccountRecord
 from ..gen.utils.settings import Settings  # noqa: E402
 from .background import SnapshotReader
 from .gi_setup import Gdk, Gio, GLib, GObject, Gtk, Pango
@@ -640,8 +643,8 @@ class ViewManager(Gtk.ApplicationWindow):
     def _refresh_status(self) -> None:
         if self.db is None:
             return
-        counts = self.db.summary()
-        self.status.set_text(f"{counts['account']} accounts\n{counts['txn']} transactions")
+        counts = book_server(self.db).book_counts()
+        self.status.set_text(f"{counts.accounts} accounts\n{counts.transactions} transactions")
 
     def _on_undo_available(self, available: bool) -> None:
         application = self.get_application()
@@ -875,10 +878,21 @@ class ViewManager(Gtk.ApplicationWindow):
         if account_handle is None and self.db is not None:
             open_accounts = {view.account_handle for view in self._registers}
             candidates = sorted(
-                (a for a in self.db.iter_accounts() if not a.is_root and not a.placeholder),
-                key=self.db.full_name,
+                (
+                    record
+                    for record in book_server(self.db).accounts()
+                    if not record.account.is_root and not record.account.placeholder
+                ),
+                key=lambda record: record.full_name,
             )
-            spare = next((a.handle for a in candidates if a.handle not in open_accounts), None)
+            spare = next(
+                (
+                    record.account.handle
+                    for record in candidates
+                    if record.account.handle not in open_accounts
+                ),
+                None,
+            )
             current = self._views.get("register")
             account_handle = spare or (current.account_handle if current is not None else None)
         register = self._new_register(account_handle)
@@ -967,16 +981,32 @@ class ViewManager(Gtk.ApplicationWindow):
         self._update_tab_label(view)
         self._remember_tabs()
 
+    def _account_record(self, handle: str | None) -> AccountRecord | None:
+        """An account with its full name, as the book server stores it, if it exists."""
+        if self.db is None or not handle:
+            return None
+        try:
+            return book_server(self.db).account(handle)
+        except ApiError:
+            return None
+
+    def _scenario_exists(self, handle: str) -> bool:
+        assert self.db is not None
+        try:
+            book_server(self.db).find_scenario(handle)
+        except ApiError:
+            return False
+        return True
+
     def _tab_title(self, key: str, view) -> str:
         if view is None:
             return next((label for item, label, _icon in CATEGORIES if item == key), key)
         if key != "register":
             return view.tab_title
-        handle = view.account_handle
-        account = self.db.get_account(handle) if self.db is not None and handle else None
-        if account is None:
+        record = self._account_record(view.account_handle)
+        if record is None:
             return "Register"
-        return account.name
+        return record.account.name
 
     def _tab_for(self, key: str, view) -> _Tab | None:
         return next((tab for tab in self._tabs if tab.key == key and tab.view is view), None)
@@ -1009,9 +1039,9 @@ class ViewManager(Gtk.ApplicationWindow):
             return
         title = self._tab_title(tab.key, view)
         full = ""
-        if tab.key == "register" and self.db is not None and view.account_handle:
-            account = self.db.get_account(view.account_handle)
-            full = self.db.full_name(account) if account is not None else ""
+        if tab.key == "register":
+            record = self._account_record(view.account_handle)
+            full = record.full_name if record is not None else ""
         tab.set_title(title, full or title)
 
     def _on_tab_clicked(self, tab: _Tab) -> None:
@@ -1214,12 +1244,12 @@ class ViewManager(Gtk.ApplicationWindow):
         # A remembered tab comes back as a tab; what it shows is drawn when it is
         # chosen, or in the background (#389), not all at once as the book opens.
         if key == "register":
-            if not reference or self.db.get_account(reference) is None:
+            if self._account_record(reference) is None:
                 return None
             # Every remembered register tab comes back, even two on one account.
             return self._add_tab("register", self._new_register(reference))
         if len(entry) > 2 and key == "projection":
-            if reference and self.db.get_scenario(reference) is None:
+            if reference and not self._scenario_exists(reference):
                 return None
             return self._add_tab(key, self._new_projection(reference or None))
         return self._tab_for(key, None) or self._add_tab(key, None)
@@ -1242,9 +1272,8 @@ class ViewManager(Gtk.ApplicationWindow):
         self._register_windows.append(pair)
 
         def update_title(*_args) -> None:
-            handle = register.account_handle
-            account = self.db.get_account(handle) if self.db is not None and handle else None
-            name = self.db.full_name(account) if self.db is not None and account is not None else ""
+            record = self._account_record(register.account_handle)
+            name = record.full_name if record is not None else ""
             window.set_title(f"{name or 'Register'} — {APP_NAME}")
 
         def detach(*_args) -> bool:

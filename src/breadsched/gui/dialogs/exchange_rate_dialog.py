@@ -14,7 +14,6 @@ from ...api import ApiError
 from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import valuation
-from ...gen.engine.currency import reporting_currency_handle
 from ...gen.lib.commodity import CommodityPrice
 from ...gen.lib.money import Money
 from ...gen.services.exchange_rates import SaveExchangeRate
@@ -34,10 +33,7 @@ class ExchangeRateDialog(BoundedWindow):
         super().__init__(title="Exchange rate", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
         self.db = db
-        self.currencies = sorted(
-            (item for item in db.iter_commodities() if item.is_currency),
-            key=lambda item: item.mnemonic,
-        )
+        self.currencies = list(book_server(db).currencies())
         self.saved: CommodityPrice | None = None
         self.set_default_size(520, 320)
 
@@ -70,9 +66,9 @@ class ExchangeRateDialog(BoundedWindow):
         self.target_picker = bounded_dropdown(labels)
         grid.attach(Gtk.Label(label="To currency", xalign=0), 0, 1, 1, 1)
         grid.attach(self.target_picker, 1, 1, 1, 1)
-        reporting = reporting_currency_handle(db)
+        reporting = book_server(db).reporting_currency()
         target_index = next(
-            (i for i, item in enumerate(self.currencies) if item.handle == reporting), 0
+            (i for i, item in enumerate(self.currencies) if item.mnemonic == reporting), 0
         )
         self.target_picker.set_selected(target_index)
         self.source_picker.set_selected(

@@ -14,7 +14,7 @@ from ..db.verification import BookVerification
 from ..engine import valuation
 from ..engine.valuation import ValuationAggregate
 
-__all__ = ["BookSummary", "book_summary", "verify_book"]
+__all__ = ["BookCounts", "BookSummary", "book_counts", "book_summary", "verify_book"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +27,19 @@ class BookSummary:
     cash: ValuationAggregate
     net_worth: ValuationAggregate
     scenarios: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BookCounts:
+    """How many accounts and transactions the book holds; quick to read on every change."""
+
+    accounts: int
+    transactions: int
+
+
+def book_counts(db: DbSQLite) -> BookCounts:
+    counts = db.summary()
+    return BookCounts(counts["account"], counts["txn"])
 
 
 def book_summary(db: DbSQLite) -> BookSummary:

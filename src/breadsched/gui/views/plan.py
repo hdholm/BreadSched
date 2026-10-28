@@ -24,6 +24,7 @@ from ...gen.services import (
     PlanQuery,
     SuppressScenarioSchedule,
 )
+from ...gen.services.plan import PlanBounds
 from ...presentation import (
     PLAN_REIMBURSABLE_HEADING,
     plan_goal_text,
@@ -90,6 +91,7 @@ class PlanView(BaseView):
         self._period_index = 0
         self._measure_index = 0
         self._bounds_initialized = False
+        self._bounds_cache: tuple[int, PlanBounds] | None = None
         self._updating_controls = False
         self._scenarios: list[Scenario] = []
         self._scenario_handle: str | None = selected_scenario_handle(manager)
@@ -250,6 +252,7 @@ class PlanView(BaseView):
         self._scenario_handle = settings.scenario
         self._compare_handle = settings.compare
         self._bounds_initialized = False
+        self._bounds_cache = None
         self._updating_controls = True
         try:
             self.start_year.set_value(self._start_date.year)
@@ -265,7 +268,7 @@ class PlanView(BaseView):
     def _populate_scenarios(self) -> None:
         if self.db is None:
             return
-        self._scenarios = list(self.db.iter_scenarios())
+        self._scenarios = book_server(self.db).scenarios()
         model = Gtk.StringList()
         model.append("Base scenario")
         selected = 0
@@ -456,32 +459,24 @@ class PlanView(BaseView):
             return date(when.year - 1, 12, 1)
         return date(when.year, when.month - 1, 1)
 
+    def _plan_bounds(self) -> PlanBounds:
+        """The months the server's Plan accepts, read once per change to the book."""
+        assert self.db is not None
+        cached = self._bounds_cache
+        if cached is None or cached[0] != self._changes:
+            cached = (self._changes, book_server(self.db).plan_bounds())
+            self._bounds_cache = cached
+        return cached[1]
+
     def _earliest_data_date(self) -> date:
-        today = date.today()
         if self.db is None:
-            return date(today.year, 1, 1)
-        dates: list[date] = []
-        first = self.db.first_transaction_date()
-        if first is not None:
-            dates.append(first)
-        dates.extend(schedule.recurrence.start for schedule in self.db.iter_scheduled())
-        for scenario in self.db.iter_scenarios():
-            dates.extend(item.recurrence.start for item in scenario.schedule_overrides)
-            dates.extend(item.when for item in scenario.one_offs)
-        return min(dates, default=date(today.year, 1, 1))
+            return date(date.today().year, 1, 1)
+        return self._plan_bounds().minimum
 
     def _maximum_through_month(self) -> date:
-        today = date.today()
-        anniversary_year = today.year + 150
-        anniversary = date(
-            anniversary_year,
-            today.month,
-            min(today.day, monthrange(anniversary_year, today.month)[1]),
-        )
-        candidate = date(anniversary.year, anniversary.month, 1)
-        if self._month_end(candidate.year, candidate.month) > anniversary:
-            candidate = self._previous_month(candidate)
-        return candidate
+        if self.db is None:
+            return date(date.today().year + 149, 1, 1)
+        return self._plan_bounds().maximum
 
     def _initialize_range_bounds(self) -> None:
         if self.db is None or self._bounds_initialized:

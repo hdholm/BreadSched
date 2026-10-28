@@ -2211,6 +2211,29 @@ def test_register_changes_merge_like_a_full_read(target, book):
     assert refused.value.status == 404
 
 
+def test_counts_plan_bounds_and_dashboard_defaults_read_alike(target, book):
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.engine.dashboard import default_config
+    from breadsched.gen.services.dashboard_config import settings_of
+    from breadsched.gen.services.plan import PlanQuery
+
+    api, db = target.api, target.db
+    with db.transaction("Opening") as txn:
+        db.add_transaction(
+            Transaction.simple(date(2024, 3, 9), "Opening", book.checking, book.opening, "50"),
+            txn,
+        )
+    counts = api.book_counts()
+    summary = db.summary()
+    assert (counts.accounts, counts.transactions) == (summary["account"], summary["txn"])
+    bounds = api.plan_bounds(TODAY)
+    # The first month with book data, through the month before the 150th anniversary.
+    assert bounds.minimum == date(2024, 3, 1)
+    plan = api.plan(PlanQuery(today=TODAY))
+    assert (bounds.minimum, bounds.maximum) == (plan.minimum, plan.maximum)
+    assert to_data(api.default_dashboard_settings()) == to_data(settings_of(default_config(db)))
+
+
 def test_the_book_summary_and_verification_read_alike(target, book):
     from breadsched.api.typed_codec import to_data
     from breadsched.gen.engine import valuation

@@ -21,12 +21,13 @@ from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.dashboard import (
     GROUP_KINDS,
     SECTIONS,
-    DashboardConfig,
-    GroupConfig,
-    default_config,
 )
 from ...gen.services import DashboardGroupInput, SaveDashboardConfig
-from ...gen.services.dashboard_config import EMERGENCY_MONTHS_RANGE, LIQUIDITY_DAYS_RANGE
+from ...gen.services.dashboard_config import (
+    EMERGENCY_MONTHS_RANGE,
+    LIQUIDITY_DAYS_RANGE,
+    DashboardGroup,
+)
 from ..gi_setup import Gtk, Pango
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
@@ -67,14 +68,17 @@ class DashboardDialog(BoundedWindow):
         super().__init__(title="Configure Dashboard", transient_for=parent, modal=True)
         self.db = db
         self.settings = settings
-        self.config = DashboardConfig.load(db)
+        self.config = book_server(db).dashboard_settings()
         self.set_default_size(720, 580)
 
-        self.accounts = sorted(
-            (a for a in db.iter_accounts() if not a.is_root),
-            key=db.full_name,
+        records = sorted(
+            (record for record in book_server(db).accounts() if not record.account.is_root),
+            key=lambda record: record.full_name,
         )
-        self.names = {a.handle: db.full_name(a) or a.name for a in self.accounts}
+        self.accounts = [record.account for record in records]
+        self.names = {
+            record.account.handle: record.full_name or record.account.name for record in records
+        }
         self.rows: list[dict] = []
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -149,7 +153,7 @@ class DashboardDialog(BoundedWindow):
         self.section_checks: dict[str, Gtk.CheckButton] = {}
         for name, title in SECTIONS.items():
             check = Gtk.CheckButton(label=title)
-            check.set_active(self.config.shows(name))
+            check.set_active(self.config.sections[name])
             self.section_checks[name] = check
             page.append(check)
         page.append(
@@ -244,7 +248,7 @@ class DashboardDialog(BoundedWindow):
 
     # ------------------------------------------------------------------- rows
 
-    def add_group(self, group: GroupConfig | None = None) -> dict:
+    def add_group(self, group: DashboardGroup | None = None) -> dict:
         frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         frame.add_css_class("card")
 
@@ -341,7 +345,7 @@ class DashboardDialog(BoundedWindow):
     def _on_reset(self, _button) -> None:
         for row in list(self.rows):
             self._remove(row)
-        for group in default_config(self.db).groups:
+        for group in book_server(self.db).default_dashboard_settings().groups:
             self.add_group(group)
 
     # ----------------------------------------------------------------- saving
@@ -374,7 +378,7 @@ class DashboardDialog(BoundedWindow):
         except ApiError as error:
             self.status.set_text(str(error))
             return False
-        self.config = DashboardConfig.load(self.db)
+        self.config = book_server(self.db).dashboard_settings()
         return True
 
     def _on_save(self, _button) -> None:

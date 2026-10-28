@@ -13,7 +13,15 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from ..db.sqlite import DbSQLite
-from ..engine.dashboard import GROUP_KINDS, SECTIONS, Dashboard, DashboardConfig, GroupConfig, build
+from ..engine.dashboard import (
+    GROUP_KINDS,
+    SECTIONS,
+    Dashboard,
+    DashboardConfig,
+    GroupConfig,
+    build,
+    default_config,
+)
 from ..lib.money import Money
 from .contracts import ServiceError, ServiceResult
 
@@ -26,6 +34,7 @@ __all__ = [
     "SaveDashboardConfig",
     "dashboard_board",
     "dashboard_settings",
+    "default_dashboard_settings",
     "save_dashboard_config",
     "settings_of",
 ]
@@ -142,6 +151,11 @@ def settings_of(config: DashboardConfig) -> DashboardSettings:
 
 def dashboard_settings(db: DbSQLite) -> DashboardSettings:
     return settings_of(DashboardConfig.load(db))
+
+
+def default_dashboard_settings(db: DbSQLite) -> DashboardSettings:
+    """The groups and horizons a new book's Dashboard starts with, saving nothing."""
+    return settings_of(default_config(db))
 
 
 def dashboard_board(

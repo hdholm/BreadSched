@@ -490,7 +490,20 @@ test keeps them so). A view repaints for a change of a kind its `WATCHES` names,
 every change when it watches `database-changed`; a register rereads only the
 transactions a `Change` names (`transactions`, also in `/api/v1/events`) unless an
 account changed too. The view manager's undo, redo, status, and prefill still listen to
-the book itself. A view moved onto the server can follow by splitting its refresh into
+the book itself.
+
+No GTK view, dialog, or window now reads the book itself (an architecture test bans the
+book's `get_`/`iter_`/`full_name`/`summary` reads under `gui/`); only the read-only
+snapshots behind background reads open one. The last reads moved: the Plan's month
+limits from `plan_bounds(today)` (`GET /api/v1/plan/bounds`, the range `plan()`
+accepts), the status bar's counts from `book_counts()` (`GET /api/v1/book/counts`,
+without valuing the book as `book_summary()` does), the Dashboard editor's Reset from
+`default_dashboard_settings()` (`GET /api/v1/dashboard/settings/defaults`), and tab
+titles, remembered tabs, register windows, Find, exchange rates, security prices, sale
+lots, and historical estimates from `account()`, `accounts()`, `scenarios()`,
+`find_scenario()`, `currencies()`, and `reporting_currency()`. Some dialogs still pass
+the book to engines for drafts (historical estimates' scenario draft) or open other
+dialogs with it. A view moved onto the server can follow by splitting its refresh into
 that read and a draw. This is the in-process form of what a remote GTK
 client needs anyway: reads that take time without freezing the window.
 

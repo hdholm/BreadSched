@@ -112,7 +112,8 @@ Resources so far, all under ``/api/v1``:
 * ``GET /dashboard`` (``as_of``, ``liquidity_days``, ``emergency_months``) – the
   Dashboard computed once, over other horizons without saving them.
 * ``GET`` and ``PATCH /dashboard/settings`` (``SaveDashboardConfig``) – the
-  Dashboard's groups, with their members, and its horizons.
+  Dashboard's groups, with their members, and its horizons;
+  ``GET /dashboard/settings/defaults`` – the ones a new book starts with.
 * ``GET /schedules/view`` (``days``) – every saved definition with its editor view and
   next occurrence, card payments, upcoming occurrences, and account choices;
   ``GET /schedules/{handle}/editor`` and ``/transactions/{handle}/schedule-draft`` –
@@ -134,6 +135,7 @@ Resources so far, all under ``/api/v1``:
   ``/relink``; ``PATCH /attachment-folders`` (``folder`` or ``gnucash_folder``).
 * ``GET /net-worth`` (``start``, ``end``, ``period``, ``today``) and
   ``GET /net-worth/change`` (``start``, ``end``, ``today``).
+* ``GET /book/counts`` – how many accounts and transactions the book holds.
 * ``GET /book/summary`` – the book's counts, cash, net worth, and scenarios;
   ``GET /book/verification`` – its physical and logical checks.
 * ``GET /entry/suggestion`` (``description``, ``account``, ``currency``, ``exclude``),
@@ -152,6 +154,7 @@ Resources so far, all under ``/api/v1``:
   ``GET /tax-year`` (``year``; the latest year with a transaction when absent).
 * ``GET`` and ``PATCH /plan/settings`` (``default_start``, ``default_end``;
   ``PlanSettings``) – the Plan presentation every interface restores.
+* ``GET /plan/bounds`` (``today``) – the first and last months a Plan may show.
 * ``GET /reporting-currency`` – the reporting currency's code; ``POST /plan``
   (``PlanQuery``) and ``POST /expense-explorer`` (``query``, ``account``,
   ``period_index``, ``rollover``) – reads whose request is a typed query.
@@ -259,12 +262,14 @@ __all__ = [
     "projection_v1",
     "reporting_currency_get",
     "expense_explorer_v1",
+    "plan_bounds_get",
     "plan_settings_get",
     "plan_settings_patch",
     "plan_v1",
     "activity_get",
     "historical_estimate_accept_v1",
     "historical_estimates_get",
+    "book_counts_get",
     "book_summary_get",
     "book_verification_get",
     "entry_accounts_get",
@@ -290,6 +295,7 @@ __all__ = [
     "writeback_settings_get",
     "writeback_settings_patch",
     "dashboard_settings_get",
+    "dashboard_defaults_get",
     "dashboard_settings_patch",
     "find_post",
     "fsa_claim_standing_get",
@@ -1483,6 +1489,11 @@ def dashboard_settings_get(api: Api, _path: Path, query: QueryParams) -> dict:
     return to_data(api.book.dashboard_settings())
 
 
+def dashboard_defaults_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.default_dashboard_settings())
+
+
 def dashboard_settings_patch(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     request = from_data(SaveDashboardConfig, body, "request")
     return to_data(api.book.save_dashboard_settings(request))
@@ -1552,6 +1563,11 @@ def attachment_folders_patch(api: Api, _path: Path, body: dict[str, Any]) -> dic
         return {"folder": api.book.set_attachment_folder(change.folder)}
     assert change.gnucash_folder is not None
     return {"gnucash_folder": api.book.set_source_link_folder(change.gnucash_folder)}
+
+
+def book_counts_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.book_counts())
 
 
 def book_summary_get(api: Api, _path: Path, query: QueryParams) -> dict:
@@ -1803,6 +1819,12 @@ class _Explore:
     account: str | None = None
     period_index: int | None = None
     rollover: bool = False
+
+
+def plan_bounds_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    today = query.iso_date("today")
+    query.finish()
+    return to_data(api.book.plan_bounds(today))
 
 
 def plan_settings_get(api: Api, _path: Path, query: QueryParams) -> dict:
