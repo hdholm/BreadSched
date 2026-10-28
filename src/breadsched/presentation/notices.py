@@ -43,6 +43,12 @@ def book_upgrade_progress(path: str, schema: int) -> str:
     )
 
 
+def book_opening_progress(path: str) -> str:
+    """What to show while a book opens at start-up (#389)."""
+    name = path.replace("\\", "/").rsplit("/", 1)[-1]
+    return f"Opening {name}…"
+
+
 def book_open_notice(path: str, *, migration_backup: str | None = None) -> str | None:
     """What to tell the user after opening a book, or ``None`` when nothing needs saying.
 

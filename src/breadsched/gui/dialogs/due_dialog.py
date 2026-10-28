@@ -19,7 +19,9 @@ dismiss February or silence April.
 
 Occurrences of one schedule are grouped under a heading with their count and
 total. A schedule with several missed dates also gets a chooser that sets every
-one of its dates at once, while each date keeps its own answer.
+one of its dates at once, while each date keeps its own answer. Those dates are
+listed under an expander and built only when it is opened (#389): a book with
+hundreds of missed dates opened slowly when each had its own drop-down at once.
 
 Apply goes through the shared due-review service. It rechecks every chosen date
 against the book, so a date posted or skipped elsewhere since this window opened
@@ -40,6 +42,32 @@ from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
 
 __all__ = ["DueDialog"]
+
+
+class _Choice:
+    """One date's answer, with the drop-down that shows it once it is built.
+
+    Behaves like the drop-down for reading and setting the answer, so a date can
+    be decided (by its schedule's chooser or "for all") before its row exists.
+    """
+
+    def __init__(self, value: int) -> None:
+        self.value = value
+        self.widget: Gtk.DropDown | None = None
+
+    def get_selected(self) -> int:
+        return self.widget.get_selected() if self.widget is not None else self.value
+
+    def set_selected(self, value: int) -> None:
+        self.value = value
+        if self.widget is not None:
+            self.widget.set_selected(value)
+
+    def bind(self, widget: Gtk.DropDown) -> None:
+        widget.set_selected(self.value)
+        widget.connect("notify::selected", lambda w, _p: setattr(self, "value", w.get_selected()))
+        self.widget = widget
+
 
 POST, LATER, NEVER = 0, 1, 2
 
@@ -66,7 +94,8 @@ class DueDialog(BoundedWindow):
             groups.setdefault(occurrence.schedule.handle, []).append(occurrence)
         ordered = sorted(groups.values(), key=lambda items: min(o.when for o in items))
         self.occurrences = [o for items in ordered for o in sorted(items, key=lambda o: o.when)]
-        self.choosers: list[Gtk.DropDown] = []
+        #: One answer per date, in ``occurrences`` order.
+        self.choosers: list[_Choice] = []
         #: Per-schedule "set every date" choosers, keyed by schedule handle.
         self.group_choosers: dict[str, Gtk.DropDown] = {}
         self.set_default_size(700, 460)
@@ -107,6 +136,8 @@ class DueDialog(BoundedWindow):
 
         row = 1
         index = 0
+        #: Per-schedule expanders of dates, keyed by schedule handle.
+        self.expanders: dict[str, Gtk.Expander] = {}
         for items in ordered:
             items = sorted(items, key=lambda o: o.when)
             first = items[0]
@@ -117,6 +148,8 @@ class DueDialog(BoundedWindow):
             )
             heading.add_css_class("summary-label")
             grid.attach(heading, 0, row, 3, 1)
+            choices = [_Choice(LATER) for _item in items]
+            self.choosers.extend(choices)
             if len(items) > 1:
                 group = bounded_dropdown(_GROUP_CHOICES)
                 group.set_selected(0)
@@ -129,30 +162,26 @@ class DueDialog(BoundedWindow):
                 )
                 self.group_choosers[first.schedule.handle] = group
                 grid.attach(group, 3, row, 1, 1)
-            row += 1
-            for occurrence in items:
-                due = Gtk.Label(label=occurrence.when.isoformat(), xalign=0)
-                stage = review_stage(occurrence.schedule, occurrence.when, _today())
-                if stage is ReviewStage.OVERDUE:
-                    due.add_css_class("negative")
-                if stage is not ReviewStage.DUE:
-                    due.set_text(f"{occurrence.when.isoformat()}  ({_STAGE_NOTES[stage]})")
-                due.set_margin_start(18)
-                grid.attach(due, 0, row, 1, 1)
-                grid.attach(Gtk.Label(label=occurrence.name, xalign=0), 1, row, 1, 1)
-
-                amount = Gtk.Label(label=occurrence.amount.format(), xalign=1)
-                amount.add_css_class("numeric")
-                grid.attach(amount, 2, row, 1, 1)
-
-                chooser = bounded_dropdown(_CHOICES)
-                # Undecided by default: the safe answer to an unread question is to
-                # ask again, not to write to the ledger.
-                chooser.set_selected(LATER)
-                self.choosers.append(chooser)
-                grid.attach(chooser, 3, row, 1, 1)
                 row += 1
-                index += 1
+                # The dates themselves only when asked for (#389).
+                expander = Gtk.Expander(label=f"Show the {len(items)} dates")
+                expander.set_margin_start(18)
+                dates = Gtk.Grid(column_spacing=14, row_spacing=6)
+                expander.set_child(dates)
+                expander.connect(
+                    "notify::expanded",
+                    lambda widget, _pspec, items=items, choices=choices, dates=dates: (
+                        self._fill_dates(dates, items, choices) if widget.get_expanded() else None
+                    ),
+                )
+                self.expanders[first.schedule.handle] = expander
+                grid.attach(expander, 0, row, 4, 1)
+                row += 1
+            else:
+                row += 1
+                self._date_row(grid, row, items[0], choices[0])
+                row += 1
+            index += len(items)
 
         scroller = Gtk.ScrolledWindow(child=grid)
         scroller.set_vexpand(True)
@@ -171,6 +200,31 @@ class DueDialog(BoundedWindow):
         apply_button.connect("clicked", self._on_apply)
         buttons.append(apply_button)
         box.append(buttons)
+
+    def _date_row(self, grid: Gtk.Grid, row: int, occurrence, choice: _Choice) -> None:
+        due = Gtk.Label(label=occurrence.when.isoformat(), xalign=0)
+        stage = review_stage(occurrence.schedule, occurrence.when, _today())
+        if stage is ReviewStage.OVERDUE:
+            due.add_css_class("negative")
+        if stage is not ReviewStage.DUE:
+            due.set_text(f"{occurrence.when.isoformat()}  ({_STAGE_NOTES[stage]})")
+        due.set_margin_start(18)
+        grid.attach(due, 0, row, 1, 1)
+        grid.attach(Gtk.Label(label=occurrence.name, xalign=0), 1, row, 1, 1)
+        amount = Gtk.Label(label=occurrence.amount.format(), xalign=1)
+        amount.add_css_class("numeric")
+        grid.attach(amount, 2, row, 1, 1)
+        # Undecided by default: the safe answer to an unread question is to ask
+        # again, not to write to the ledger.
+        chooser = bounded_dropdown(_CHOICES)
+        choice.bind(chooser)
+        grid.attach(chooser, 3, row, 1, 1)
+
+    def _fill_dates(self, grid: Gtk.Grid, items: list, choices: list[_Choice]) -> None:
+        if grid.get_first_child() is not None:
+            return
+        for row, (occurrence, choice) in enumerate(zip(items, choices, strict=True)):
+            self._date_row(grid, row, occurrence, choice)
 
     # ------------------------------------------------------------------ choices
 

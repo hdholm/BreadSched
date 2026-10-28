@@ -1541,6 +1541,40 @@ def test_a_reconciliation_row_opens_its_transaction_in_the_register(page, served
     assert page.locator(f".detail-dialog input[value='{split}']").is_checked()
 
 
+def test_reconciliation_headings_sort_the_entries_and_keep_checks(page, served):
+    """#377: a column heading orders the statement's entries; again reverses them."""
+    db, _httpd = served
+    _open_register(page)
+    register = page.locator("select").first.input_value()
+    page.get_by_role("button", name="Reconcile…").click()
+    latest = max(t.post_date for t in db.iter_transactions(account=register))
+    page.locator(".detail-dialog input[type=date]").fill(latest.isoformat())
+    page.locator(".detail-dialog input[inputmode=decimal]").fill("0")
+    page.get_by_role("button", name="Start reconciliation").click()
+    rows = page.locator(".detail-dialog tbody tr")
+    rows.first.wait_for()
+    first = rows.first.locator("input[type=checkbox]")
+    first.uncheck()
+    checked_split = first.get_attribute("value")
+    first.check()
+
+    def amounts() -> list[float]:
+        cells = page.locator(".detail-dialog tbody tr td.num").all_inner_texts()
+        return [abs(float(text.replace(",", "").replace("(", "-").strip(")"))) for text in cells]
+
+    page.get_by_role("button", name="Amount").click()
+    page.get_by_role("button", name="Amount ▲").wait_for()
+    assert amounts() == sorted(amounts())
+    page.get_by_role("button", name="Amount ▲").click()
+    page.get_by_role("button", name="Amount ▼").wait_for()
+    assert amounts() == sorted(amounts(), reverse=True)
+    # The check made before sorting was saved and is still shown.
+    assert page.locator(f".detail-dialog input[value='{checked_split}']").is_checked()
+    page.get_by_role("button", name="✓").click()
+    page.get_by_role("button", name="✓ ▲").wait_for()
+    assert rows.first.locator("input[type=checkbox]").is_checked()
+
+
 def test_a_schedule_repeats_every_n_units_with_a_calculated_amount(page, served):
     """#370: Every N weeks/months/years, and arithmetic in the amount."""
     from breadsched.gen.lib import Money

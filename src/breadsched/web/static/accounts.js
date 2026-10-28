@@ -1217,15 +1217,17 @@ async function showAccounts() {
            { label: "Value", num: true }], rows));
 }
 
-async function openReconciliation(account) {
-  const data = await get(`/api/reconciliation?account=${encodeURIComponent(account.handle)}`);
+async function openReconciliation(account, order = {sort:"date", descending:false}) {
+  // The statement's entries come in the order chosen by a column heading (#377).
+  const data = await get(`/api/reconciliation?account=${encodeURIComponent(account.handle)}`
+    + `&sort=${order.sort}&descending=${order.descending}`);
   const backdrop = el("div", {
     class:"detail-backdrop",
     onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
   });
-  const reload = async () => {
+  const reload = async (next = order) => {
     backdrop.remove();
-    await openReconciliation(account);
+    await openReconciliation(account, next);
   };
   let content;
   if (!data.open) {
@@ -1294,6 +1296,20 @@ async function openReconciliation(account) {
       await saveChecks();
       await reload();
     };
+    // A heading orders the entries by its column; the same one again reverses it.
+    // The checks are saved first, so a new order never loses one.
+    const sortHeading = (label, key) => {
+      const current = session.sort === key;
+      const arrow = current ? (session.descending ? " ▼" : " ▲") : "";
+      return el("button", {class:"sort-heading", type:"button",
+        title:key === "checked" ? "Checked first" : `Order by ${label.toLowerCase()}`,
+        onclick:async()=>{
+          try {
+            await saveChecks();
+            await reload({sort:key, descending:current ? !session.descending : false});
+          } catch (error) { say(error.message, "error"); }
+        }}, label + arrow);
+    };
     const editFromReconciliation = async (item) => {
       await saveChecks();
       backdrop.remove();
@@ -1309,7 +1325,9 @@ async function openReconciliation(account) {
         `Prior reconciled ${money(session.opening_balance)} · Funds in `
         + `${money(session.selected_in)} · Funds out ${money(session.selected_out)} · Checked `
         + `${money(session.selected_balance)} · Difference ${money(session.difference)}`),
-      table(["✓", "Date", "Description", {label:"Amount", num:true}, "State", ""],
+      table([sortHeading("✓", "checked"), sortHeading("Date", "date"),
+        sortHeading("Description", "description"),
+        {label:sortHeading("Amount", "amount"), num:true}, "State", ""],
         checks.map(({row})=>row)),
       el("div", {class:"toolbar"},
         el("button", {class:"action", type:"button", onclick:()=>save().catch(

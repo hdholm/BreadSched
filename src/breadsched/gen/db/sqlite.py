@@ -968,6 +968,48 @@ class DbSQLite(ChangeVerification):
         sql += " ORDER BY s.post_date, s.handle"
         return list(self._require().execute(sql, params))
 
+    def has_scheduled_posting(self, schedule: str, when: date) -> bool:
+        """Whether a transaction dated ``when`` was posted from ``schedule``."""
+        row = (
+            self._require()
+            .execute(
+                "SELECT 1 FROM txn WHERE post_date = ? "
+                "AND json_extract(blob, '$.scheduled_from') = ? LIMIT 1",
+                (when.isoformat(), schedule),
+            )
+            .fetchone()
+        )
+        return row is not None
+
+    def split_totals(
+        self,
+        account: str,
+        start: date | None = None,
+        end: date | None = None,
+    ) -> list[tuple[str | None, int, int]]:
+        """``(currency, value_den, sum of value_num)`` for an account's splits (#389).
+
+        Summing numerators that share a denominator is exact, so a balance needs
+        one row per currency and denominator rather than one per split.
+        """
+        sql = (
+            "SELECT json_extract(t.blob, '$.currency') AS currency, s.value_den AS den, "
+            "SUM(s.value_num) AS num FROM split_index s JOIN txn t ON t.handle=s.txn "
+            "WHERE s.account=?"
+        )
+        params: list[Any] = [account]
+        if start:
+            sql += " AND s.post_date >= ?"
+            params.append(start.isoformat())
+        if end:
+            sql += " AND s.post_date <= ?"
+            params.append(end.isoformat())
+        sql += " GROUP BY currency, den ORDER BY currency, den"
+        return [
+            (row["currency"], int(row["den"]), int(row["num"]))
+            for row in self._require().execute(sql, params)
+        ]
+
     # ------------------------------------------------------------- commodities
 
     def add_commodity(self, commodity: Commodity, txn: DbTxn) -> str:
