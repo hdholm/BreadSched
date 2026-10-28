@@ -37,7 +37,7 @@ from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.engine.schedule import Occurrence
 from ..gen.engine.transaction_query import TransactionQuery
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
-from ..gen.lib.commodity import CommodityPrice
+from ..gen.lib.commodity import Commodity, CommodityPrice
 from ..gen.lib.fsa_claim import FsaClaim
 from ..gen.lib.money import Money
 from ..gen.lib.receivable import Receivable
@@ -97,6 +97,7 @@ from ..gen.services import (
     find_schedule,
     find_transaction,
     import_review,
+    ledger_reads,
     next_occurrence,
     pending_due_review,
     plan_cells,
@@ -116,6 +117,7 @@ from ..gen.services import (
     set_tags,
     tag_counts,
     transaction_currency,
+    transaction_editing,
     transaction_search,
     transactions_with_tag,
 )
@@ -437,6 +439,11 @@ class LocalBookServer:
     def find_transaction(self, reference: str) -> Transaction:
         return _named(find_transaction(self.db, reference), reference, "transaction")
 
+    def transaction_editor(
+        self, transaction: str | None = None
+    ) -> transaction_editing.TransactionEditorView:
+        return unwrap(transaction_editing.transaction_editor(self.db, transaction))
+
     def editable_transaction(self, transaction: str) -> TransactionInput:
         return unwrap(editable_transaction(self.db, transaction))
 
@@ -458,6 +465,9 @@ class LocalBookServer:
 
     def accounts(self) -> list[AccountRecord]:
         return list(account_records(self.db))
+
+    def commodities(self) -> tuple[Commodity, ...]:
+        return ledger_reads.commodities(self.db)
 
     def account(self, account: str) -> AccountRecord:
         return unwrap(account_record(self.db, account))

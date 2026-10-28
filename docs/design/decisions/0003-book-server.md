@@ -518,6 +518,13 @@ with `schedule_layout(definition)` (`POST /api/v1/schedules/layout`), and its ac
 names come from `accounts()`. GTK's Accounts view reads `chart(include_hidden=True)` and
 `balance_summary()`, which now also carries the assets and liabilities totals.
 
+GTK's transaction editor reads `transaction_editor(transaction)`
+(`GET /api/v1/transaction-editor`, `gen/services/transaction_editing`): every account
+with its full name, which hold securities, a stored transaction's escrow explanations
+and linked documents with the attachment folder, and the FSA claims still open. GTK's
+account editor names accounts from `accounts()` and lists `commodities()` (every
+currency and security, `GET /api/v1/commodities`).
+
 **Still open (imports):** like copying a document in, an import names a file by a path
 the server reads. Through a proxy, a token holder could import any statement file the
 server's user can read; uploading the bytes (as the browser's upload already does

@@ -289,6 +289,8 @@ __all__ = [
     "dashboard_settings_get",
     "dashboard_settings_patch",
     "find_post",
+    "commodities_get",
+    "transaction_editor_get",
     "scenario_schedule_fixed_draft",
     "scenario_schedule_formula_draft",
     "plan_cell_v1",
@@ -1681,6 +1683,17 @@ def scenario_schedule_fixed_draft(api: Api, _path: Path, body: dict[str, Any]) -
 def scenario_schedule_formula_draft(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     request = from_data(FormulaScenarioScheduleInput, body, "request")
     return {"schedule": api.book.draft_formula_scenario_schedule(request).serialize()}
+
+
+def transaction_editor_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    transaction = query.text("transaction")
+    query.finish()
+    return to_data(api.book.transaction_editor(transaction))
+
+
+def commodities_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return {"commodities": [item.serialize() for item in api.book.commodities()]}
 
 
 def historical_estimates_get(api: Api, _path: Path, query: QueryParams) -> dict:

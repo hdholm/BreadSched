@@ -30,7 +30,7 @@ from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.engine.schedule import Occurrence
 from ..gen.engine.transaction_query import TransactionQuery
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
-from ..gen.lib.commodity import CommodityPrice
+from ..gen.lib.commodity import Commodity, CommodityPrice
 from ..gen.lib.fsa_claim import FsaClaim
 from ..gen.lib.money import Money
 from ..gen.lib.receivable import Receivable
@@ -168,6 +168,7 @@ from ..gen.services.schedules import (
 )
 from ..gen.services.security_prices import SavedSecurityPrice, SaveSecurityPrice, SecurityQuote
 from ..gen.services.tax import SetTaxMarks, TaxMarks
+from ..gen.services.transaction_editing import TransactionEditorView
 from ..gen.services.transaction_search import FindResult
 
 __all__ = ["BookApi", "Change", "Listener"]
@@ -342,6 +343,11 @@ class BookApi(Protocol):
         """A transaction, as stored, by handle or unique handle prefix."""
         ...
 
+    def transaction_editor(self, transaction: str | None = None) -> TransactionEditorView:
+        """What an editor shows besides the transaction: accounts, which hold
+        securities, escrow explanations, documents, and open FSA claims."""
+        ...
+
     def editable_transaction(self, transaction: str) -> TransactionInput:
         """The stored transaction in the editors' input form."""
         ...
@@ -364,6 +370,10 @@ class BookApi(Protocol):
 
     def accounts(self) -> list[AccountRecord]:
         """Every account as stored, the root included, by full name."""
+        ...
+
+    def commodities(self) -> tuple[Commodity, ...]:
+        """Every commodity, currencies and securities, by namespace and code."""
         ...
 
     def account(self, account: str) -> AccountRecord:

@@ -42,7 +42,7 @@ from ..gen.engine.reconciliation import ReconciliationSummary
 from ..gen.engine.schedule import Occurrence
 from ..gen.engine.transaction_query import TransactionQuery
 from ..gen.lib import Scenario, ScheduledTransaction, Transaction
-from ..gen.lib.commodity import CommodityPrice
+from ..gen.lib.commodity import Commodity, CommodityPrice
 from ..gen.lib.fsa_claim import FsaClaim
 from ..gen.lib.money import Money
 from ..gen.lib.receivable import Receivable
@@ -180,6 +180,7 @@ from ..gen.services.schedules import (
 )
 from ..gen.services.security_prices import SavedSecurityPrice, SaveSecurityPrice, SecurityQuote
 from ..gen.services.tax import SetTaxMarks, TaxMarks
+from ..gen.services.transaction_editing import TransactionEditorView
 from ..gen.services.transaction_search import FindResult
 from .account_codec import save_account_json
 from .contract import ApiError, to_json
@@ -542,6 +543,10 @@ class HttpBookClient:
         found = self._call("GET", "/transactions/lookup", {"reference": reference})
         return Transaction.from_dict(found["transaction"])
 
+    def transaction_editor(self, transaction: str | None = None) -> TransactionEditorView:
+        found = self._call("GET", "/transaction-editor", {"transaction": transaction})
+        return from_data(TransactionEditorView, found)
+
     def editable_transaction(self, transaction: str) -> TransactionInput:
         path = f"/transactions/{quote(transaction, safe='')}/editable"
         return transaction_input_from_json(self._call("GET", path)["definition"])
@@ -571,6 +576,10 @@ class HttpBookClient:
     def accounts(self) -> list[AccountRecord]:
         found = self._call("GET", "/accounts")
         return [account_record_from_json(row) for row in found["accounts"]]
+
+    def commodities(self) -> tuple[Commodity, ...]:
+        found = self._call("GET", "/commodities")["commodities"]
+        return tuple(Commodity.from_dict(item) for item in found)
 
     def account(self, account: str) -> AccountRecord:
         return account_record_from_json(self._call("GET", f"/accounts/{quote(account, safe='')}"))

@@ -15,6 +15,7 @@ from ..db.sqlite import DbSQLite
 from ..engine import ledger, valuation
 from ..lib.account import Account, AccountClass
 from ..lib.amount import Amount
+from ..lib.commodity import Commodity
 from ..lib.money import Money
 from ..lib.transaction import Split, Transaction
 from .contracts import ServiceError, ServiceResult
@@ -270,6 +271,11 @@ def account_record(db: DbSQLite, handle: str) -> ServiceResult[AccountRecord]:
     if account is None:
         return ServiceResult.failure(ServiceError("account.not_found", ("account",)))
     return ServiceResult.success(AccountRecord(account, db.full_name(account)))
+
+
+def commodities(db: DbSQLite) -> tuple[Commodity, ...]:
+    """Every commodity, currencies and securities, by namespace and code."""
+    return tuple(sorted(db.iter_commodities(), key=lambda item: (item.namespace, item.mnemonic)))
 
 
 def account_records(db: DbSQLite) -> tuple[AccountRecord, ...]:

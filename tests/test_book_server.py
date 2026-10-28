@@ -1713,6 +1713,35 @@ def test_currencies_in_book_order_alike(target, book):
     assert by_code == sorted(by_code)
     assert held == [item.mnemonic for item in db.iter_commodities() if item.is_currency]
     assert sorted(held) == by_code
+    # Every commodity, currencies and securities, by namespace and code.
+    every = api.commodities()
+    assert [item.handle for item in every] == [
+        item.handle
+        for item in sorted(db.iter_commodities(), key=lambda c: (c.namespace, c.mnemonic))
+    ]
+
+
+def test_the_transaction_editor_reads_alike(target, book):
+    """#358: one read gives the editor its accounts, documents, and open claims."""
+    from breadsched.api.typed_codec import to_data
+    from breadsched.gen.services.transaction_editing import transaction_editor
+
+    api, db = target.api, target.db
+    with db.transaction("Rent") as txn:
+        paid = Transaction.simple(date(2026, 9, 6), "Rent", book.rent, book.checking, "1800")
+        db.add_transaction(paid, txn)
+    api.link_attachment(paid.handle, "https://example.com/lease")
+    fresh = api.transaction_editor()
+    assert to_data(fresh) == to_data(transaction_editor(db).value)
+    assert {record.account.handle for record in fresh.accounts} == {
+        account.handle for account in db.iter_accounts()
+    }
+    assert fresh.documents == () and fresh.escrow_explanations == ()
+    stored = api.transaction_editor(paid.handle)
+    assert [item.location for item in stored.documents] == ["https://example.com/lease"]
+    with pytest.raises(ApiError) as refused:
+        api.transaction_editor("no-such-transaction")
+    assert (refused.value.status, refused.value.code) == (404, "transaction.not_found")
 
 
 def test_attachments_alike(target, book, tmp_path):

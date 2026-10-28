@@ -207,7 +207,7 @@ class SplitEditor:
         """
         detail = self.dialog.show_planning_detail
         handle = self.account_handle
-        account = self.dialog.db.get_account(handle) if handle is not None else None
+        account = self.dialog.account(handle)
         investing = account is not None and account.atype.is_investment
         self.planning_purpose.set_visible(detail or self.planning_purpose.get_selected() != 0)
         self.investment_activity.set_visible(
@@ -223,7 +223,7 @@ class SplitEditor:
     def _label_columns(self) -> None:
         """Name the two amount columns for this row's account, as its register does."""
         handle = self.account_handle
-        account = self.dialog.db.get_account(handle) if handle is not None else None
+        account = self.dialog.account(handle)
         up, down = ledger.register_headings(account.atype) if account is not None else ("In", "Out")
         self._labels = (up, down)
         for entry, label in ((self.increase, up), (self.decrease, down)):
@@ -274,7 +274,7 @@ class SplitEditor:
         text = self.shares.get_text().strip()
         if not text:
             return None
-        account = self.dialog.db.get_account(handle)
+        account = self.dialog.account(handle)
         assert account is not None and account.commodity
         if text == self._loaded_shares and self.quantity is not None:
             return Amount(self.quantity, account.commodity)
@@ -342,20 +342,31 @@ class TransactionDialog(BoundedWindow):
         self.saved = False
         self.set_default_size(640, 460)
 
+        # What the editor shows besides the transaction, through the book server (#358).
+        self.book = book_server(db)
+        stored = transaction.handle if transaction is not None and editing else None
+        try:
+            self.context = self.book.transaction_editor(stored)
+        except ApiError:
+            self.context = self.book.transaction_editor(None)
+        self._by_handle = {
+            record.account.handle: record.account for record in self.context.accounts
+        }
         referenced = {split.account for split in transaction.splits} if transaction else set()
-        self.accounts = sorted(
+        chosen = sorted(
             (
-                account
-                for account in db.iter_accounts()
-                if not account.is_root
-                and not account.placeholder
-                and (not account.hidden or account.handle in referenced)
+                record
+                for record in self.context.accounts
+                if not record.account.is_root
+                and not record.account.placeholder
+                and (not record.account.hidden or record.account.handle in referenced)
             ),
-            key=db.full_name,
+            key=lambda record: record.full_name,
         )
+        self.accounts = [record.account for record in chosen]
         self.account_names = [
-            f"{db.full_name(account)} (hidden)" if account.hidden else db.full_name(account)
-            for account in self.accounts
+            f"{record.full_name} (hidden)" if record.account.hidden else record.full_name
+            for record in chosen
         ]
         self.splits: list[SplitEditor] = []
 
@@ -407,10 +418,9 @@ class TransactionDialog(BoundedWindow):
 
         self.escrow_treatment: Gtk.Label | None = None
         if transaction is not None:
-            accounts = {account.handle: account for account in db.iter_accounts()}
-            explanation = escrow.recognition(
-                ((split.account, split.value) for split in transaction.splits), accounts
-            ).explanations(accounts)
+            explanation = list(self.context.escrow_explanations) or escrow.recognition(
+                ((split.account, split.value) for split in transaction.splits), self._by_handle
+            ).explanations(self._by_handle)
             if explanation:
                 self.escrow_treatment = Gtk.Label(
                     label="\n".join(explanation),
@@ -465,11 +475,7 @@ class TransactionDialog(BoundedWindow):
         scroller.set_vexpand(True)
         box.append(scroller)
 
-        self.fsa_claims = [
-            claim
-            for claim in fsa_claims.iter_claims(db)
-            if not fsa_claims.claim_summary(db, claim).status.settled
-        ]
+        self.fsa_claims = list(self.context.open_claims)
         self.fsa_claim = None
         self.fsa_role = None
         if self.fsa_claims and not editing:
@@ -549,7 +555,8 @@ class TransactionDialog(BoundedWindow):
             note.add_css_class("dim")
             self.documents.append(note)
             return
-        for item in attachment_engine.statuses(self.db, self.transaction):
+        report = self.book.attachment_report(transaction=self.transaction.handle)
+        for item in report.attachments:
             row = Gtk.Box(spacing=6)
             label = Gtk.Label(
                 label=item.location + (" — missing" if item.missing else ""),
@@ -586,7 +593,7 @@ class TransactionDialog(BoundedWindow):
                 row.append(remove)
             self.documents.append(row)
             self.document_rows.append((item, row))
-        folder = attachment_engine.attachment_folder(self.db)
+        folder = report.folder
         controls = Gtk.Box(spacing=6)
         attach = Gtk.Button(label="Attach file…")
         attach.set_tooltip_text(
@@ -641,7 +648,7 @@ class TransactionDialog(BoundedWindow):
     def relink_document(self, location: str, path: Path) -> bool:
         if self.transaction is None:
             return False
-        new = attachment_engine.location_for(self.db, path)
+        new = attachment_engine.location_in(self.context.folder, path)
         handle = self.transaction.handle
         return self._document_changed(lambda book: book.relink_attachment(handle, location, new))
 
@@ -798,9 +805,13 @@ class TransactionDialog(BoundedWindow):
         tags = [part for part in self.tags_entry.get_text().split(",") if part.strip()]
         self.pages.set_count(MORE, len(tags) + len(self.document_rows))
 
+    def account(self, handle: str | None):
+        """An account as the book server listed it, or None."""
+        return self._by_handle.get(handle) if handle is not None else None
+
     def holds_security(self, account: str | None) -> bool:
         """Whether ``account`` holds a security, so its splits carry shares."""
-        return account is not None and ledger.security_of(self.db, account) is not None
+        return account is not None and account in self.context.security_accounts
 
     def add_split(self, split: Split | None = None) -> SplitEditor:
         editor = SplitEditor(self, split)
