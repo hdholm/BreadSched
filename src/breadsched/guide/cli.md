@@ -274,6 +274,27 @@ A command on another machine sends the files it names: `import`, `import-csv`, a
 server's own computer, which read its record, may name files there, change the
 attachment folder, or link a document outside it.
 
+### Users and devices (experimental)
+
+Used alone on one computer, BreadSched needs no user name or password. The people who
+may use this computer's books, and the devices they use, are managed with:
+
+```bash
+breadsched users list
+breadsched users add alice --display-name "Alice"   # asks for a temporary password
+breadsched users reset-password alice
+breadsched users remove alice
+breadsched password                                 # your own, to sign in elsewhere
+breadsched token create "Backup script"             # shown once; keep it in a private file
+breadsched token list
+breadsched token revoke TOKEN-ID
+```
+
+A new user, or one whose password was reset, chooses their own password the first
+time they sign in. Passwords are typed (or read with `--password-stdin`), never given
+as arguments. Your computer account is the administrator and can always reset a
+password, its own included, from this computer.
+
 ## Import files
 
 ```bash

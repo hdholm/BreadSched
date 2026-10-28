@@ -198,6 +198,16 @@ _SERVICE_MESSAGES = {
     "import.filename.invalid": "Choose a file with an ordinary file name",
     "import.file.empty": "That file is empty",
     "import.upload.book_required": "Save the book to a file before sending files to it",
+    "users.name.invalid": "A user name is 1 to 64 letters, digits, dots, dashes, or "
+    "underscores, starting with a letter or digit",
+    "users.name.taken": "That user name is taken",
+    "users.user.not_found": "There is no such user",
+    "users.user.host_account": "This computer's own account cannot be removed",
+    "users.user.last_administrator": "The last administrator cannot be removed",
+    "users.password.too_short": "A password needs at least 10 characters",
+    "users.password.wrong": "The current password is wrong",
+    "signin.failed": "That name and password do not match",
+    "signin.throttled": "Too many attempts; wait a little and try again",
     "file.local_only": "Send the file itself: only programs on the book's own computer "
     "may name files there",
     "attachment.folder.local_only": "Only programs on the book's own computer may change "

@@ -31,6 +31,7 @@ from . import (
     projection_commands,
     quote_commands,
     tax_commands,
+    user_commands,
 )
 from .common import CommandError
 
@@ -51,6 +52,7 @@ COMMAND_MODULES = (
     investment_commands,
     tax_commands,
     quote_commands,
+    user_commands,
 )
 
 

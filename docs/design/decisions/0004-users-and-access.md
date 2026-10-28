@@ -238,6 +238,24 @@ other accounts; 3 and 4 make it a household application.
 - Single-user use is unchanged; `--token-file` still keeps the server's own token
   for devices behind the proxy until phase 2 gives them device tokens of their own.
 
+**Phase 2 has begun** with accounts in the directory:
+- **Users and passwords:** `add_user` (a temporary password the user must change),
+  `remove_user` (never the computer account or the last administrator),
+  `set_password` (the current one required once there is one), and `reset_password`;
+  passwords are `scrypt` hashes with their salt and parameters. Changing or resetting
+  a password ends the user's sessions.
+- **Signing in** (`sign_in`) makes a session token that lapses after 30 days without
+  use and is renewed by use. A wrong password and an unknown name fail alike
+  (`signin.failed`, at the same cost); after five failures for a name, or from an
+  address, each attempt must wait twice as long as the last, up to 15 minutes
+  (`signin.throttled`).
+- **Commands:** `breadsched users list|add|remove|reset-password`, `breadsched
+  password`, and `breadsched token create|list|revoke`, acting on the computer
+  account's own directory (so they need no password).
+- **Still to come in phase 2:** signing in over HTTP with the browser's cookie and a
+  sign-in page, device tokens in place of the server's own `--token-file` token, and
+  Preferences → Users in GTK.
+
 ## Answers to the review questions (2026-10-28)
 
 1. **Roles:** owner, editor, and viewer, and an *entry* role as well.
