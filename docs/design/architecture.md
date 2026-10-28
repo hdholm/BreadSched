@@ -255,8 +255,8 @@ So `due-review`, `scheduled-next`, `scheduled-advance`, `scheduled`, `accounts`,
 review commands, `import-review`, `sale-lots`, `tax-marks`, `quotes`, `quote-source`,
 `rate`, `attachments`, `net-worth`, `net-worth-change`, `project`, `compare`,
 `holdings`, `realized-gains`, `tax-year`, `jars`, `dashboard`, `activity`,
-`gnucash-writeback`, `estimate suggest`, and `find` work while another process holds
-the book
+`gnucash-writeback`, `estimate suggest`, `find`, and `import-csv` work while another
+process holds the book
 (#358). `cli.common.book_api` and `add_server_options` give each such command the
 connection and its `--server` and `--token-file` options. `tests/test_book_sharing.py`
 covers the record's life, stale records, the commands through a holding server, an

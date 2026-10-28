@@ -13,7 +13,7 @@ from ..gen.services import (
     ResolveHeldImports,
     import_book,
 )
-from ..gen.services.csv_import import CsvImportRequest, CsvMapping, import_csv, preview_csv_import
+from ..gen.services.csv_import import CsvImportRequest, CsvMapping
 from ..gen.services.gnucash_writeback import (
     ApplyWriteback,
 )
@@ -31,7 +31,6 @@ from .common import (
     book_api,
     emit,
     open_book,
-    resolve_account,
     table,
 )
 
@@ -142,19 +141,23 @@ def _split_columns(values: list[str] | None) -> tuple[tuple[str, str], ...]:
     return tuple(pairs)
 
 
-def _splits_text(db, splits) -> str:
+def _splits_text(names: dict[str, str], splits) -> str:
     return "; ".join(
-        f"{db.full_name(account)} {value.format(parens_negative=True)}" for account, value in splits
+        f"{names.get(account, account)} {value.format(parens_negative=True)}"
+        for account, value in splits
     )
 
 
 def cmd_import_csv(args: argparse.Namespace) -> int:
-    """Preview or import a CSV statement into one account through a column mapping."""
-    db = open_book(args.book, "r" if args.preview else "w")
-    try:
+    """Preview or import a CSV statement into one account through a column mapping.
+
+    Through the book server (#358), so it works while another process holds the book.
+    """
+    with book_api(args, "r" if args.preview else "w") as book:
+        names = {record.account.handle: record.full_name for record in book.accounts()}
         request = CsvImportRequest(
             source=args.source,
-            account=resolve_account(db, args.account).handle,
+            account=book.find_account(args.account).handle,
             mapping=CsvMapping(
                 date=args.date,
                 amount=args.amount,
@@ -176,10 +179,7 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
             link_transfers=args.link_transfers,
         )
         if args.preview:
-            previewed = preview_csv_import(db, request)
-            if previewed.value is None:
-                raise CommandError(service_error_message(previewed.errors[0]))
-            preview = previewed.value
+            preview = book.preview_csv(request)
             rows = [
                 [
                     row.line,
@@ -187,7 +187,7 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                     row.amount.format(parens_negative=True) if row.amount is not None else "",
                     row.description,
                     row.status.replace("_", " "),
-                    row.reason or _splits_text(db, row.splits),
+                    row.reason or _splits_text(names, row.splits),
                 ]
                 for row in preview.rows
             ]
@@ -218,9 +218,9 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                             "status": row.status,
                             "reason": row.reason,
                             "existing": row.existing,
-                            "category": db.full_name(row.category) if row.category else None,
+                            "category": names.get(row.category) if row.category else None,
                             "splits": [
-                                {"category": db.full_name(account), "amount": value}
+                                {"category": names.get(account, account), "amount": value}
                                 for account, value in row.splits
                             ],
                         }
@@ -231,11 +231,9 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                 text,
             )
             return 0
-        imported = import_csv(db, request)
-        if imported.value is None:
-            raise CommandError(service_error_message(imported.errors[0]))
-        result = imported.value.result
-        preview = imported.value.preview
+        imported = book.import_csv(request)
+        result = imported.result
+        preview = imported.preview
         summary = {
             "transactions_new": result.transactions_new,
             "transactions_unchanged": result.transactions_unchanged,
@@ -245,7 +243,7 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
             "possible_transfers": preview.count("possible_transfer"),
             "skipped": result.skipped,
             "skipped_by_reason": result.reasons(),
-            "reimbursement_proposals": len(reimbursement_proposals(db).value or ()),
+            "reimbursement_proposals": len(book.reimbursement_proposals()),
         }
         emit(
             summary,
@@ -258,8 +256,6 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
             + _reimbursement_note(int(summary["reimbursement_proposals"])),
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_gnucash_writeback(args: argparse.Namespace) -> int:
@@ -529,6 +525,7 @@ def register(add: AddCommand) -> None:
         help="complete each offered transfer instead of importing that row as new",
     )
     csv_cmd.add_argument("--preview", action="store_true", help="show rows; write nothing")
+    add_server_options(csv_cmd)
     csv_cmd.set_defaults(func=cmd_import_csv)
 
     held = add(

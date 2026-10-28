@@ -11,21 +11,13 @@ from __future__ import annotations
 
 import re
 
+from ...api import ApiError
 from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib.account import AccountClass
-from ...gen.services.csv_import import (
-    CsvImportRequest,
-    CsvMapping,
-    CsvPreview,
-    InspectCsv,
-    import_csv,
-    inspect_csv,
-    preview_csv_import,
-)
-from ...gen.services.receivables import reimbursement_proposals
+from ...gen.services.csv_import import CsvImportRequest, CsvMapping, CsvPreview, InspectCsv
 from ...plugins.importer.gnucash_common import ImportResult
-from ...presentation import claim_link_notice, reimbursement_notice, service_error_message
+from ...presentation import claim_link_notice, reimbursement_notice
 from ..gi_setup import GLib, Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
@@ -81,6 +73,8 @@ class CsvImportDialog(BoundedWindow):
         super().__init__(title="Import CSV statement", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
         self.db = db
+        #: Inspects, previews, and imports through the book server (#358).
+        self.book = book_server(db)
         self.path: str | None = None
         self.columns: tuple[str, ...] = ()
         self.set_default_size(900, 680)
@@ -124,16 +118,20 @@ class CsvImportDialog(BoundedWindow):
 
         grid = Gtk.Grid(column_spacing=10, row_spacing=6)
         box.append(grid)
-        self.accounts = sorted(
+        records = self.book.accounts()
+        #: Every account's full name, for the preview's categories.
+        self.names = {record.account.handle: record.full_name for record in records}
+        chosen = sorted(
             (
-                account
-                for account in db.iter_accounts()
-                if not account.placeholder
-                and account.account_class in (AccountClass.ASSET, AccountClass.LIABILITY)
+                record
+                for record in records
+                if not record.account.placeholder
+                and record.account.account_class in (AccountClass.ASSET, AccountClass.LIABILITY)
             ),
-            key=lambda account: db.full_name(account).casefold(),
+            key=lambda record: record.full_name.casefold(),
         )
-        self.account = bounded_dropdown([db.full_name(account) for account in self.accounts])
+        self.accounts = [record.account for record in chosen]
+        self.account = bounded_dropdown([record.full_name for record in chosen])
         grid.attach(Gtk.Label(label="Account", xalign=0), 0, 0, 1, 1)
         grid.attach(self.account, 1, 0, 1, 1)
 
@@ -223,12 +221,14 @@ class CsvImportDialog(BoundedWindow):
         self._clear_rows()
         if self.path is None:
             return False
-        result = inspect_csv(InspectCsv(self.path, header=self.header.get_active()))
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            inspection = self.book.inspect_csv(
+                InspectCsv(self.path, header=self.header.get_active())
+            )
+        except ApiError as error:
+            self._message(str(error), True)
             self._set_ready(False)
             return False
-        inspection = result.value
         self.columns = inspection.columns
         options = ["(none)", *self.columns]
         for field, picker in self.pickers.items():
@@ -319,12 +319,12 @@ class CsvImportDialog(BoundedWindow):
         request = self._request()
         if request is None:
             return None
-        result = preview_csv_import(self.db, request)
-        if result.value is None:
+        try:
+            preview = self.book.preview_csv(request)
+        except ApiError as error:
             self._clear_rows()
-            self._message(service_error_message(result.errors[0]), True)
+            self._message(str(error), True)
             return None
-        preview = result.value
         counts = " · ".join(
             f"{label}: {preview.count(status)}"  # type: ignore[arg-type]
             for status, label in _STATUS_LABELS.items()
@@ -342,10 +342,10 @@ class CsvImportDialog(BoundedWindow):
                     row.amount.format(parens_negative=True) if row.amount is not None else "",
                     row.description,
                     "; ".join(
-                        f"{self.db.full_name(account)} {value.format(parens_negative=True)}"
+                        f"{self.names.get(account, account)} {value.format(parens_negative=True)}"
                         for account, value in row.splits
                     )
-                    or (self.db.full_name(row.category) if row.category else ""),
+                    or (self.names.get(row.category, row.category) if row.category else ""),
                     _STATUS_LABELS[row.status],
                     row.reason,
                 ]
@@ -359,8 +359,8 @@ class CsvImportDialog(BoundedWindow):
     def _reimbursement_notice(self) -> str | None:
         """Waiting receivable reimbursements and FSA claim links, if any."""
         notices = [
-            reimbursement_notice(len(reimbursement_proposals(self.db).value or ())),
-            claim_link_notice(len(book_server(self.db).claim_link_proposals())),
+            reimbursement_notice(len(self.book.reimbursement_proposals())),
+            claim_link_notice(len(self.book.claim_link_proposals())),
         ]
         return " ".join(item for item in notices if item) or None
 
@@ -369,11 +369,11 @@ class CsvImportDialog(BoundedWindow):
         request = self._request()
         if request is None:
             return None
-        result = import_csv(self.db, request)
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            imported = self.book.import_csv(request)
+        except ApiError as error:
+            self._message(str(error), True)
             return None
-        imported = result.value
         outcome = imported.result
         held = imported.preview.count("possible_duplicate")
         self.preview()

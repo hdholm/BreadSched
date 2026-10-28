@@ -43,7 +43,7 @@ from ..gen.lib.money import Money
 from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
-from ..gen.lib.scenario import AssumptionPeriod, Assumptions, Drawdown
+from ..gen.lib.scenario import AssumptionPeriod, Assumptions, Drawdown, ScenarioSchedule
 from ..gen.lib.transaction import ReconcileState
 from ..gen.plug import remembered_import_source
 from ..gen.services import (
@@ -361,6 +361,16 @@ class LocalBookServer:
         self, request: schedule_services.FormulaScenarioScheduleInput
     ) -> schedule_services.SavedScenarioSchedule:
         return unwrap(schedule_services.save_formula_scenario_schedule(self.db, request))
+
+    def draft_fixed_scenario_schedule(
+        self, request: schedule_services.SaveFixedScenarioSchedule
+    ) -> ScenarioSchedule:
+        return unwrap(schedule_services.build_fixed_scenario_schedule(self.db, request))
+
+    def draft_formula_scenario_schedule(
+        self, request: schedule_services.FormulaScenarioScheduleInput
+    ) -> ScenarioSchedule:
+        return unwrap(schedule_services.build_formula_scenario_schedule(self.db, request))
 
     # ------------------------------------------------------------ transactions
 

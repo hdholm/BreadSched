@@ -11,6 +11,8 @@ import re
 from collections.abc import Callable
 from datetime import date
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.entry_input import parse_amount_text
 from ...gen.lib import (
@@ -37,10 +39,6 @@ from ...gen.services import (
     FixedSplitInput,
     FormulaScenarioScheduleInput,
     SaveFixedScenarioSchedule,
-    build_fixed_scenario_schedule,
-    build_formula_scenario_schedule,
-    save_fixed_scenario_schedule,
-    save_formula_scenario_schedule,
 )
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
@@ -112,15 +110,21 @@ class ScenarioScheduleDialog(BoundedWindow):
         self._formula_variables_original = ""
         self._category_ledger_direction: int | None = None
         self.set_default_size(580, 500)
-        self._accounts = sorted(
+        # Accounts and their names through the book server (#358).
+        self.book = book_server(db)
+        records = self.book.accounts()
+        self._by_handle = {record.account.handle: record.account for record in records}
+        self._full_names = {record.account.handle: record.full_name for record in records}
+        chosen = sorted(
             (
-                account
-                for account in db.iter_accounts()
-                if not account.is_root and not account.placeholder
+                record
+                for record in records
+                if not record.account.is_root and not record.account.placeholder
             ),
-            key=db.full_name,
+            key=lambda record: record.full_name,
         )
-        self._names = [db.full_name(account) for account in self._accounts]
+        self._accounts = [record.account for record in chosen]
+        self._names = [record.full_name for record in chosen]
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         for side in ("top", "bottom", "start", "end"):
@@ -326,7 +330,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         flow_split = investment_flows[0] if len(source.splits) == 2 and investment_flows else None
         if flow_split is None:
             for split in source.splits:
-                account = self.db.get_account(split.account)
+                account = self._by_handle.get(split.account)
                 if account is not None and account.account_class in (
                     AccountClass.INCOME,
                     AccountClass.EXPENSE,
@@ -348,7 +352,7 @@ class ScenarioScheduleDialog(BoundedWindow):
             (
                 split
                 for split in others
-                if (account := self.db.get_account(split.account)) is not None
+                if (account := self._by_handle.get(split.account)) is not None
                 and account.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE)
                 and split.planning_flow is None
             ),
@@ -395,7 +399,7 @@ class ScenarioScheduleDialog(BoundedWindow):
                 0,
             )
         )
-        category = self.db.get_account(flow_split.account)
+        category = self._by_handle.get(flow_split.account)
         resolved = flow_split.resolve(source.variables)
         amount = resolved
         if flow_split.investment_activity is not None:
@@ -409,7 +413,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         for split in others:
             if split is funding_split:
                 continue
-            account = self.db.get_account(split.account)
+            account = self._by_handle.get(split.account)
             account_index = self._account_index(split.account)
             if account is None or account_index is None:
                 continue
@@ -483,8 +487,7 @@ class ScenarioScheduleDialog(BoundedWindow):
             "Protected splits:",
         ]
         for index, split in enumerate(source.splits, 1):
-            account = self.db.get_account(split.account)
-            account_name = self.db.full_name(account) if account is not None else split.account
+            account_name = self._full_names.get(split.account, split.account)
             value = f"formula {split.formula!r}" if split.formula else str(split.amount or Money(0))
             lines.append(f"  {index}. {account_name}: {value}")
         if source.variables:
@@ -505,8 +508,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         for index, split in enumerate(source.splits):
             if not split.formula:
                 continue
-            account = self.db.get_account(split.account)
-            account_name = self.db.full_name(account) if account is not None else split.account
+            account_name = self._full_names.get(split.account, split.account)
             row = Gtk.Box(spacing=8)
             label = Gtk.Label(label=account_name, xalign=0)
             label.set_hexpand(True)
@@ -772,8 +774,12 @@ class ScenarioScheduleDialog(BoundedWindow):
                     problems.append("additional split amounts must be greater than zero")
                     break
             if not problems:
-                validation = build_fixed_scenario_schedule(self.db, self._fixed_request())
-                if validation.value is None:
+                try:
+                    self.book.draft_fixed_scenario_schedule(self._fixed_request())
+                    refused = None
+                except ApiError as error:
+                    refused = error.code
+                if refused is not None:
                     messages = {
                         "schedule.accounts.same": "choose two different accounts",
                         "schedule.accounts.duplicate": (
@@ -787,9 +793,7 @@ class ScenarioScheduleDialog(BoundedWindow):
                             "or investment activity"
                         ),
                     }
-                    problems.append(
-                        messages.get(validation.errors[0].code, validation.errors[0].code)
-                    )
+                    problems.append(messages.get(refused, refused))
 
         self.save_button.set_sensitive(not problems)
         self.status.set_text("; ".join(problems).capitalize() if problems else "")
@@ -901,22 +905,17 @@ class ScenarioScheduleDialog(BoundedWindow):
         recurrence = self._recurrence()
         assert recurrence is not None
         if self._formula_mode:
-            result = build_formula_scenario_schedule(self.db, self._formula_request())
-            assert result.value is not None
-            return result.value
-
-        result = build_fixed_scenario_schedule(self.db, self._fixed_request())
-        assert result.value is not None
-        return result.value
+            return self.book.draft_formula_scenario_schedule(self._formula_request())
+        return self.book.draft_fixed_scenario_schedule(self._fixed_request())
 
     def _on_save(self, _button) -> None:
-        result = (
-            save_formula_scenario_schedule(self.db, self._formula_request())
-            if self._formula_mode
-            else save_fixed_scenario_schedule(self.db, self._fixed_request())
-        )
-        if result.value is None:
-            self.status.set_text(result.errors[0].code)
+        try:
+            if self._formula_mode:
+                self.book.save_formula_scenario_schedule(self._formula_request())
+            else:
+                self.book.save_fixed_scenario_schedule(self._fixed_request())
+        except ApiError as error:
+            self.status.set_text(error.code)
             return
         self.close()
 
@@ -934,7 +933,9 @@ class ScenarioSchedulePickerDialog(BoundedWindow):
     ) -> None:
         super().__init__(title=title, transient_for=parent, modal=True)
         self._callback = callback
-        self._schedules = list(db.iter_scheduled())
+        self._schedules = [
+            editor.schedule for editor in book_server(db).schedules_view(0).definitions
+        ]
         self.set_default_size(460, 180)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)

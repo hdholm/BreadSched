@@ -1561,7 +1561,36 @@ def test_scenario_estimates_read_and_save_alike(target, book):
     [change] = api.scenario_events(scenario.handle).changes
     assert change.schedule.name == "Smaller rent" and change.source_name == "Rent"
     assert db.get_scheduled(rent.handle).amount() == rent.amount()  # the baseline is kept
+    # A draft is checked and laid out but not saved (an editor's preview).
+    draft_request = SaveFixedScenarioSchedule(
+        scenario_handle=scenario.handle,
+        definition=FixedScheduleInput(
+            name="Parking",
+            recurrence=Recurrence(period=PeriodType.MONTH, interval=1, start=date(2026, 11, 1)),
+            category=book.rent,
+            funding=book.checking,
+            amount=Money("60"),
+        ),
+    )
+    draft = api.draft_fixed_scenario_schedule(draft_request)
+    assert draft.name == "Parking"
+    assert sorted(abs(split.amount) for split in draft.splits) == [Money("60"), Money("60")]
     before = repr(db.get_scenario(scenario.handle).serialize())
+    assert len(db.get_scenario(scenario.handle).schedule_overrides) == 1
+    with pytest.raises(ApiError) as refused:
+        api.draft_fixed_scenario_schedule(
+            SaveFixedScenarioSchedule(
+                scenario_handle=scenario.handle,
+                definition=FixedScheduleInput(
+                    name="Same",
+                    recurrence=draft_request.definition.recurrence,
+                    category=book.checking,
+                    funding=book.checking,
+                    amount=Money("60"),
+                ),
+            )
+        )
+    assert refused.value.code == "schedule.accounts.same"
     with pytest.raises(ApiError) as refused:
         api.scenario_events("no-such-scenario")
     assert (refused.value.status, refused.value.code) == (404, "scenario.not_found")

@@ -48,7 +48,7 @@ from ..gen.lib.money import Money
 from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
-from ..gen.lib.scenario import AssumptionPeriod, Assumptions, Drawdown
+from ..gen.lib.scenario import AssumptionPeriod, Assumptions, Drawdown, ScenarioSchedule
 from ..gen.lib.transaction import ReconcileState
 from ..gen.services import (
     AccountBalance,
@@ -459,6 +459,16 @@ class HttpBookClient:
     ) -> SavedScenarioSchedule:
         found = self._call("POST", "/scenario-schedules/formula", body=to_data(request))
         return from_data(SavedScenarioSchedule, found)
+
+    def draft_fixed_scenario_schedule(self, request: SaveFixedScenarioSchedule) -> ScenarioSchedule:
+        found = self._call("POST", "/scenario-schedules/fixed/draft", body=to_data(request))
+        return ScenarioSchedule.from_dict(found["schedule"])
+
+    def draft_formula_scenario_schedule(
+        self, request: FormulaScenarioScheduleInput
+    ) -> ScenarioSchedule:
+        found = self._call("POST", "/scenario-schedules/formula/draft", body=to_data(request))
+        return ScenarioSchedule.from_dict(found["schedule"])
 
     # ------------------------------------------------------------ transactions
 

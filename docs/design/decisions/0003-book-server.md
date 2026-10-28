@@ -505,6 +505,14 @@ document route reads the book it serves):
 - **Currencies:** `currencies(book_order=True)` keeps the book's order, whose first is
   an editor's default quote currency.
 
+GTK's CSV import and file import dialogs and its scenario-estimate editor use the
+same operations, and the editor checks each change with
+`draft_fixed_scenario_schedule` or `draft_formula_scenario_schedule`, which build the
+estimate a save would store without saving it (`POST /api/v1/scenario-schedules/
+fixed/draft` and `/formula/draft`); the command line's `import-csv` gained
+`--server`. `import` stays on its own connection while its relationship inference
+has no server operation.
+
 **Still open (imports):** like copying a document in, an import names a file by a path
 the server reads. Through a proxy, a token holder could import any statement file the
 server's user can read; uploading the bytes (as the browser's upload already does

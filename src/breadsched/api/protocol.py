@@ -36,7 +36,7 @@ from ..gen.lib.money import Money
 from ..gen.lib.receivable import Receivable
 from ..gen.lib.reconciliation import Reconciliation
 from ..gen.lib.savings_goal import SavingsGoal
-from ..gen.lib.scenario import AssumptionPeriod, Assumptions, Drawdown
+from ..gen.lib.scenario import AssumptionPeriod, Assumptions, Drawdown, ScenarioSchedule
 from ..gen.lib.transaction import ReconcileState
 from ..gen.services import (
     AccountBalance,
@@ -270,6 +270,16 @@ class BookApi(Protocol):
         self, request: FormulaScenarioScheduleInput
     ) -> SavedScenarioSchedule:
         """Replace a baseline formula schedule's inputs within one scenario."""
+        ...
+
+    def draft_fixed_scenario_schedule(self, request: SaveFixedScenarioSchedule) -> ScenarioSchedule:
+        """The estimate a save would store, checked but not saved (an editor's preview)."""
+        ...
+
+    def draft_formula_scenario_schedule(
+        self, request: FormulaScenarioScheduleInput
+    ) -> ScenarioSchedule:
+        """The formula estimate a save would store, checked but not saved."""
         ...
 
     # ------------------------------------------------------------ transactions

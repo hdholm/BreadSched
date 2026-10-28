@@ -289,6 +289,8 @@ __all__ = [
     "dashboard_settings_get",
     "dashboard_settings_patch",
     "find_post",
+    "scenario_schedule_fixed_draft",
+    "scenario_schedule_formula_draft",
     "plan_cell_v1",
     "csv_inspect_v1",
     "csv_preview_v1",
@@ -1661,6 +1663,16 @@ def import_source_get(api: Api, _path: Path, query: QueryParams) -> dict:
 
 def plan_cell_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     return to_data(api.book.explain_plan_cell(from_data(PlanCellQuery, body, "request")))
+
+
+def scenario_schedule_fixed_draft(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(SaveFixedScenarioSchedule, body, "request")
+    return {"schedule": api.book.draft_fixed_scenario_schedule(request).serialize()}
+
+
+def scenario_schedule_formula_draft(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(FormulaScenarioScheduleInput, body, "request")
+    return {"schedule": api.book.draft_formula_scenario_schedule(request).serialize()}
 
 
 def historical_estimates_get(api: Api, _path: Path, query: QueryParams) -> dict:

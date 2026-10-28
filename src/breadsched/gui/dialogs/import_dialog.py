@@ -15,15 +15,11 @@ from __future__ import annotations
 
 from pathlib import Path  # noqa: E402
 
+from ...api import ApiError
 from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite  # noqa: E402
-from ...gen.plug import (  # noqa: E402
-    IMPORTER,
-    PluginManager,
-    remembered_import_source,
-)
-from ...gen.services import ImportBook, import_book  # noqa: E402
-from ...gen.services.receivables import reimbursement_proposals
+from ...gen.plug import IMPORTER, PluginManager  # noqa: E402
+from ...gen.services import ImportBook  # noqa: E402
 from ...gen.utils import logs  # noqa: E402
 from ...gen.utils.cancellation import OperationCancelled  # noqa: E402
 from ...gen.utils.user_paths import companion_path
@@ -31,7 +27,6 @@ from ...plugins.importer.gnucash_common import ImportResult  # noqa: E402
 from ...presentation import (  # noqa: E402
     claim_link_notice,
     reimbursement_notice,
-    service_error_message,
 )
 from ..background import BackgroundJob  # noqa: E402
 from ..gi_setup import Gio, GLib, Gtk, Pango
@@ -168,7 +163,7 @@ class ImportDialog(BoundedWindow):
         buttons.append(self.import_button)
         box.append(buttons)
 
-        remembered = remembered_import_source(self.db)
+        remembered = book_server(self.db).import_source()
         if remembered is not None and Path(remembered).is_file():
             self.set_source(remembered)
 
@@ -176,7 +171,7 @@ class ImportDialog(BoundedWindow):
 
     def _on_choose(self, _button) -> None:
         dialog = Gtk.FileDialog(title="Choose a financial-data file")
-        remembered = remembered_import_source(self.db)
+        remembered = book_server(self.db).import_source()
         if remembered is not None:
             previous = Path(remembered)
             if previous.is_file():
@@ -288,23 +283,26 @@ class ImportDialog(BoundedWindow):
 
         def work(_cancel, report) -> ImportResult:
             try:
-                outcome = import_book(
-                    self.db,
-                    ImportBook(
-                        source=path,
-                        format=plugin.id,
-                        include_scheduled=include_scheduled,
-                        include_duplicates=include_duplicates,
-                        number_format=number_format,
-                        date_format=date_format,
-                        notify=False,
-                        progress=lambda stage, done, total: report((stage, done, total)),
-                    ),
+                # Through the book server, in process, so the request's progress
+                # reaches this window (#358).
+                return (
+                    book_server(self.db)
+                    .import_book(
+                        ImportBook(
+                            source=path,
+                            format=plugin.id,
+                            include_scheduled=include_scheduled,
+                            include_duplicates=include_duplicates,
+                            number_format=number_format,
+                            date_format=date_format,
+                            notify=False,
+                            progress=lambda stage, done, total: report((stage, done, total)),
+                        ),
+                    )
+                    .result
                 )
-                if not outcome.ok:
-                    raise ValueError(service_error_message(outcome.errors[0]))
-                assert outcome.value is not None
-                return outcome.value.result
+            except ApiError as error:
+                raise ValueError(str(error)) from None
             finally:
                 logs.configure(verbosity=0)
 
@@ -331,7 +329,7 @@ class ImportDialog(BoundedWindow):
         text = (
             result.detail(limit=WARNING_LIMIT) + "\n\nThis import is a single undo step (Ctrl+Z)."
         )
-        notice = reimbursement_notice(len(reimbursement_proposals(self.db).value or ()))
+        notice = reimbursement_notice(len(book_server(self.db).reimbursement_proposals()))
         if notice:
             # Imported deposits may be money back on a reimbursable expense.
             text += f"\n\n{notice}"
