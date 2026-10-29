@@ -56,7 +56,7 @@ def _undo(httpd, origin: str | None) -> int:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
+        with urllib.request.urlopen(request, timeout=30) as response:
             return response.status
     except urllib.error.HTTPError as error:
         return error.code
