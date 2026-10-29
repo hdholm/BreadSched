@@ -74,12 +74,13 @@ def cmd_users(args: argparse.Namespace) -> int:
         if not args.name:
             raise CommandError(f"users {args.action} needs a user name")
         if args.action == "add":
-            user = directory.add_user(
+            directory.add_user(
                 args.name,
                 _password(args, "Temporary password"),
                 display_name=args.display_name or "",
                 administrator=args.administrator,
             )
+            user = directory.user(args.name)
             emit(
                 _user_json(user),
                 args,
@@ -96,7 +97,9 @@ def cmd_users(args: argparse.Namespace) -> int:
                 f"Turned off {args.name}'s two-step sign-in; they sign in with their password.",
             )
         else:
-            user = directory.reset_password(args.name, _password(args, "Temporary password"))
+            directory.reset_password(args.name, _password(args, "Temporary password"))
+            # Shown from a fresh read: nothing from the call given the password is printed.
+            user = directory.user(args.name)
             emit(
                 _user_json(user),
                 args,
@@ -119,11 +122,11 @@ def cmd_password(args: argparse.Namespace) -> int:
                 if args.password_stdin
                 else getpass.getpass("Current password: ")
             )
-        changed = directory.set_password(
-            user.name, _password(args, "New password"), current=current
-        )
+        directory.set_password(user.name, _password(args, "New password"), current=current)
     except UserError as error:
         raise _refused(error) from error
+    # Shown from a fresh read: nothing from the call given the password is printed.
+    changed = directory.user(user.name)
     emit(_user_json(changed), args, f"Set the password for {changed.name}")
     return 0
 
