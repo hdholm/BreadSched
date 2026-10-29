@@ -18,7 +18,6 @@ from datetime import date
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.entry_input import parse_amount_text
 from ...gen.lib import (
     AccountClass,
@@ -43,11 +42,10 @@ from ...gen.services import (
     FixedSplitInput,
     FormulaScheduleInput,
     SaveFixedSchedule,
-    build_fixed_schedule,
-    build_formula_schedule,
 )
 from .. import hidden_accounts
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
@@ -132,7 +130,7 @@ class ScheduleDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         source: ScheduledTransaction | None = None,
         read_only_reason: str | None = None,
         creating: bool = False,
@@ -1041,8 +1039,12 @@ class ScheduleDialog(BoundedWindow):
                 problems.append("additional split amounts must be greater than zero")
                 break
         if not problems:
-            validation = build_fixed_schedule(self.db, self._fixed_request())
-            if validation.value is None:
+            try:
+                book_server(self.db).draft_fixed_schedule(self._fixed_request())
+                refused: str | None = None
+            except ApiError as error:
+                refused = error.code
+            if refused is not None:
                 messages = {
                     "schedule.accounts.same": "choose two different accounts",
                     "schedule.accounts.duplicate": (
@@ -1056,7 +1058,7 @@ class ScheduleDialog(BoundedWindow):
                         "or an investment activity"
                     ),
                 }
-                problems.append(messages.get(validation.errors[0].code, validation.errors[0].code))
+                problems.append(messages.get(refused, refused))
 
         self.save_button.set_sensitive(not problems)
         self.status.set_text("; ".join(problems).capitalize() if problems else "")
@@ -1171,14 +1173,10 @@ class ScheduleDialog(BoundedWindow):
         """The schedule the current form describes."""
         recurrence = self._recurrence()
         assert recurrence is not None
+        book = book_server(self.db)
         if self._formula_mode:
-            result = build_formula_schedule(self.db, self._formula_request())
-            assert result.value is not None
-            return result.value
-
-        result = build_fixed_schedule(self.db, self._fixed_request())
-        assert result.value is not None
-        return result.value
+            return book.draft_formula_schedule(self._formula_request())
+        return book.draft_fixed_schedule(self._fixed_request())
 
     def _on_save(self, _button) -> None:
         # Through the book server, as the browser saves (#359).

@@ -92,3 +92,11 @@ def save_exchange_rate(db: DbSQLite, request: SaveExchangeRate) -> ServiceResult
         value=request.rate,
     )
     return ServiceResult.success(quote)
+
+
+def latest_exchange_rate(db: DbSQLite, source: str, target: str) -> CommodityPrice | None:
+    """The latest direct quote of ``source`` in ``target`` (handles), if one is recorded."""
+    found, into = db.get_commodity(source), db.get_commodity(target)
+    if found is None or into is None:
+        return None
+    return valuation.latest_price(db, found, currency=into)

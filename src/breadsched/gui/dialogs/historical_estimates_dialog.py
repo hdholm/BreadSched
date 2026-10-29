@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
-from ...gen.engine import estimates
+from ...gen.services.historical_estimates import AcceptHistoricalEstimate
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -17,7 +17,7 @@ __all__ = ["HistoricalEstimatesDialog"]
 class HistoricalEstimatesDialog(BoundedWindow):
     """Offer historical category estimates without applying them silently."""
 
-    def __init__(self, parent: Gtk.Window, db: DbSQLite) -> None:
+    def __init__(self, parent: Gtk.Window, db: OpenBook) -> None:
         super().__init__(title="Suggest estimates from history", transient_for=parent)
         self.db = db
         self.set_default_size(760, 520)
@@ -136,7 +136,16 @@ class HistoricalEstimatesDialog(BoundedWindow):
                     scenario = book_server(self.db).find_scenario(scenario_handle)
                 except ApiError as error:
                     raise ValueError("saved scenario no longer exists") from error
-                scenario_draft = estimates.draft_scenario_estimate(self.db, proposal)
+                try:
+                    scenario_draft = book_server(self.db).draft_scenario_estimate(
+                        AcceptHistoricalEstimate(
+                            key=proposal.key,
+                            months=self.months.get_value_as_int(),
+                            scenario=scenario_handle,
+                        )
+                    )
+                except ApiError as error:
+                    raise ValueError(str(error)) from error
                 dialog = ScenarioScheduleDialog(self, self.db, scenario, current=scenario_draft)
         except ValueError as exc:
             self.status.set_text(str(exc))

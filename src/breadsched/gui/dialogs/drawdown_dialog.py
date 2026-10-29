@@ -7,10 +7,10 @@ from decimal import Decimal, InvalidOperation
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.lib import Drawdown, Money, Scenario
 from ...gen.services import SaveDrawdown
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
@@ -23,7 +23,7 @@ def _percent(rate: Decimal) -> str:
     return f"{(rate * 100).normalize():f}"
 
 
-def drawdown_summary(db: DbSQLite, drawdown: Drawdown) -> str:
+def drawdown_summary(db: OpenBook, drawdown: Drawdown) -> str:
     """One line naming the accounts, dates, and how much a drawdown withdraws."""
     names = {record.account.handle: record.full_name for record in book_server(db).accounts()}
     if drawdown.annual_rate is not None:
@@ -46,7 +46,7 @@ class DrawdownsDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window,
-        db: DbSQLite,
+        db: OpenBook,
         scenario: Scenario,
         saved_callback: Callable[[str], None] | None = None,
     ) -> None:
@@ -158,7 +158,7 @@ class DrawdownEditDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window,
-        db: DbSQLite,
+        db: OpenBook,
         scenario: Scenario,
         drawdown: Drawdown | None,
         callback: Callable[[str], None],

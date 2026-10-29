@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.currency import reporting_currency_label
 from ...gen.lib.money import Money
 from ...gen.services.expense_explorer import (
     ExpenseExplorer,
     category_trend_chart,
     expense_drilldown,
-    query_expense_explorer,
     spending_charts,
 )
 from ...gen.services.plan import PlanQuery
 from ...gen.utils import logs
 from ..background import BackgroundJob
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook, worker_book
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -40,12 +41,12 @@ class ExpenseExplorerDialog(BoundedWindow):
     category.
     """
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite, request: PlanQuery) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook, request: PlanQuery) -> None:
         super().__init__(title="Expense Explorer", transient_for=parent)
         self.set_default_size(1200, 820)
         self._db = db
         self._request = request
-        self._currency = reporting_currency_label(db)
+        self._currency = book_server(db).reporting_currency()
         self._report: ExpenseExplorer | None = None
         self._generation = 0
         #: True while a calculation is running; choices wait for it.
@@ -142,20 +143,9 @@ class ExpenseExplorerDialog(BoundedWindow):
         db, request, rollover = self._db, self._request, self.rollover.get_active()
 
         def work(_cancel, _report) -> ExpenseExplorer:
-            worker = db
-            path = db.path
-            owns = path is not None and path != ":memory:"
-            if path is not None and owns:
-                worker = DbSQLite()
-                worker.load(path, "r")
-            try:
-                result = query_expense_explorer(worker, request, rollover=rollover)
-            finally:
-                if owns:
-                    worker.close()
-            if result.value is None:
-                raise ValueError(result.errors[0].code)
-            return result.value
+            # A snapshot of the file, or the host's book (#358).
+            with worker_book(db) as book:
+                return book.expense_explorer(request, rollover=rollover)
 
         self.job = BackgroundJob()
         self.job.start(
@@ -206,11 +196,23 @@ class ExpenseExplorerDialog(BoundedWindow):
         while child := self.content.get_first_child():
             self.content.remove(child)
 
+    def _explained(self, account: str, index: int) -> ExpenseExplorer | None:
+        """``account`` in period ``index`` explained: from the loaded result for the
+        open file (no new Plan), or by the host for a book it holds."""
+        assert self._report is not None
+        if isinstance(self._db, DbSQLite):
+            return expense_drilldown(self._db, self._report, account, index).value
+        try:
+            return book_server(self._db).expense_explorer(
+                self._request, account, index, self.rollover.get_active()
+            )
+        except ApiError:
+            return None
+
     def _drilldown(self, account: str, index: int):
         """One category-period explained from the loaded result, not a new Plan."""
-        assert self._report is not None
-        result = expense_drilldown(self._db, self._report, account, index)
-        return result.value.drilldown if result.value is not None else None
+        explained = self._explained(account, index)
+        return explained.drilldown if explained is not None else None
 
     def _toggle_rollover(self, _button) -> None:
         if self._report is not None:
@@ -226,13 +228,8 @@ class ExpenseExplorerDialog(BoundedWindow):
         period_index = self.period.get_selected()
         if category_index >= len(self.report.categories):
             return
-        result = expense_drilldown(
-            self._db,
-            self._report,
-            self.report.categories[category_index].account,
-            period_index,
-        )
-        if result.value is None:
+        explained = self._explained(self.report.categories[category_index].account, period_index)
+        if explained is None:
             return
         income_detail = None
         choices = self.report.income_categories
@@ -240,7 +237,7 @@ class ExpenseExplorerDialog(BoundedWindow):
         if self.report.income and chosen < len(choices):
             income_detail = self._drilldown(choices[chosen].account, period_index)
         printing.print_document(
-            self, expense_explorer_layout(result.value, income_detail, self._currency)
+            self, expense_explorer_layout(explained, income_detail, self._currency)
         )
 
     @staticmethod

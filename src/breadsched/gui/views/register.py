@@ -29,7 +29,7 @@ from ...api.local import book_server
 from ...api.protocol import Change
 from ...gen.engine import ledger
 from ...gen.lib.account import Account, AccountClass, AccountType
-from ...presentation.investments import register_share_summary
+from ...presentation.investments import share_summary_text
 from ..gi_setup import GLib, Gtk
 from ..register_sheet import RegisterSheet
 from ..widgets.choice import bounded_dropdown
@@ -322,11 +322,14 @@ class RegisterView(BaseView):
             self.grid.sync(focus=self.get_mapped())
 
     def _show_balance(self) -> None:
-        summary = (
-            register_share_summary(self.db, self.sheet.account)
-            if self.sheet is not None and self.sheet.security is not None
-            else None
-        )
+        summary = None
+        if self.sheet is not None and self.sheet.security is not None and self.db is not None:
+            # The holding and its quote evidence through the book server (#358).
+            holding = book_server(self.db).register_view(self.sheet.account, 1).holding
+            if holding is not None:
+                summary = share_summary_text(
+                    holding.security.mnemonic, holding.held, holding.valued, holding.evidence
+                )
         if summary is not None:
             # A security's footer is its shares and what they are worth (#323).
             self.balance_label.set_text(summary)

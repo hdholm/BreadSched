@@ -10,12 +10,12 @@ from __future__ import annotations
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.services.gnucash_writeback import (
     ApplyWriteback,
     WritebackPlan,
 )
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.help import help_row
 
@@ -25,7 +25,7 @@ __all__ = ["GnuCashWritebackDialog"]
 class GnuCashWritebackDialog(BoundedWindow):
     """One row per writable transaction, each chosen explicitly."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
         super().__init__(title="Write changes to GnuCash", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
         self.set_default_size(820, 520)

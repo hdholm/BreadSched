@@ -8,7 +8,6 @@ from datetime import date
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import fsa_claims
 from ...gen.lib import (
     FsaClaim,
@@ -28,6 +27,7 @@ from ...gen.services import (
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import shared_cost_text
 from ..gi_setup import GLib, Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
@@ -281,7 +281,7 @@ class FsaClaimsDialog(BoundedWindow):
 
     @classmethod
     def present_for(
-        cls, parent: Gtk.Window | None, db: DbSQLite, claim_handle: str | None = None
+        cls, parent: Gtk.Window | None, db: OpenBook, claim_handle: str | None = None
     ) -> FsaClaimsDialog:
         """Show the book's claims window, opening one only if none is open (#366)."""
         existing = _OPEN.get(id(db))
@@ -294,7 +294,7 @@ class FsaClaimsDialog(BoundedWindow):
         dialog.present()
         return dialog
 
-    def __init__(self, parent: Gtk.Window, db: DbSQLite, claim_handle: str | None = None) -> None:
+    def __init__(self, parent: Gtk.Window, db: OpenBook, claim_handle: str | None = None) -> None:
         super().__init__(title="FSA claims", transient_for=parent)
         self.db = db
         _OPEN[id(db)] = self

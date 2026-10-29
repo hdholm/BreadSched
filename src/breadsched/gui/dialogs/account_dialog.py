@@ -19,7 +19,6 @@ from decimal import InvalidOperation
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.lib import (
     Account,
     AccountClass,
@@ -35,6 +34,7 @@ from ...gen.services import (
 from ...gen.utils.amount_input import parse_user_amount
 from .. import hidden_accounts
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
@@ -56,7 +56,7 @@ class AccountDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         account: Account | None = None,
         default_parent: str | None = None,
     ) -> None:

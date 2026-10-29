@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.services.quotes import QuoteUpdate, SetQuoteSource, StoreQuotes
 from ...gen.utils.settings import Settings
 from ...plugins.quotes import (
@@ -24,6 +23,7 @@ from ...plugins.quotes import (
 from ...presentation import price_text
 from ..background import BackgroundJob
 from ..gi_setup import Gtk, Pango
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.help import help_row
 
@@ -87,7 +87,7 @@ class OnlineQuotesDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         settings: Settings | None = None,
         fetcher_factory=None,
     ) -> None:

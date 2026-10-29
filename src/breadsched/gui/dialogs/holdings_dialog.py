@@ -5,11 +5,11 @@ from __future__ import annotations
 from datetime import date
 
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.cost_basis import HoldingCostBasis, shares_text
 from ...gen.lib.money import Money
 from ...presentation import holding_cost_text, lot_move_text, lot_text, sale_text
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.help import help_row
 from ..widgets.model_chart import ModelChartView
@@ -35,7 +35,7 @@ def _capital(text: str) -> str:
 class HoldingsDialog(BoundedWindow):
     """Shares, cost basis, market value, and gains per holding."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite, as_of: date | None = None) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook, as_of: date | None = None) -> None:
         super().__init__(title="Holdings and Cost Basis", transient_for=parent)
         self.db = db
         self.as_of = as_of

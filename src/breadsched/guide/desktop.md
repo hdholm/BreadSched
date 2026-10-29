@@ -836,6 +836,11 @@ work. They are kept in your own settings, not in a book:
   is already open. Their changes appear here at once and can be undone here. It is
   off unless you turn it on; see
   [Share a book with a running server](cli.md#share-a-book-with-a-running-server-experimental).
+  The other way round works too: opening a book that `breadsched serve` (or another
+  BreadSched window sharing it) already holds uses it through that server, as you,
+  without a prompt, so the desktop and phones or tablets work on one book at once.
+  Everything works as usual; a projection says only when it is done, and the book
+  stays open for the others when you close it here.
 - **Users** (experimental): says "Only you" until someone else may use this
   computer's books. **Users and devices…** sets your own password (needed only to
   sign in from another device), adds a person with a temporary password they replace

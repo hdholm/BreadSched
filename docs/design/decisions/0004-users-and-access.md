@@ -330,11 +330,23 @@ other accounts; 3 and 4 make it a household application.
   `--trusted-origin`, `--token-file`, and `--open` do not apply, and it says so. A host
   record that does not answer is ignored, and the command serves the book itself.
   GTK's sharing serves only the book it has open and cannot be joined.
-- **GTK opening a book the host holds** waits on GTK being wholly a client of the
-  protocol: about fifty GUI modules still reach the book, its services, or its
-  engines directly (and its storage signals redraw the views), so GTK cannot yet run
-  over `HttpBookClient`. Until then GTK opens a book itself, and a book the host
-  holds is refused on its writer lock as before. Phase 3 is otherwise built.
+- **GTK opens a book the host holds** through the host (`gui/remote_book.py`): when
+  the book's server record is live, `open_book` makes a `RemoteBook`, the book
+  reached as the computer account's user with its device token, without a prompt.
+  GTK's views and dialogs reach a book only through `book_server(db)`, which gives
+  them the host's book API (`MainLoopBook`: one change stream, its notices delivered
+  on GTK's main loop as the in-process server's are); `OpenBook` (the file or a
+  `RemoteBook`) is what GTK holds, and the extended type check holds every GUI module
+  to it. What GTK still did with the file itself now goes through book operations:
+  editors' previews (`draft_transaction`, `draft_fixed_schedule`,
+  `draft_formula_schedule`, `draft_scenario_estimate`), a pair's latest quote
+  (`latest_exchange_rate`), Plan cells (`explain_plan_cell`), a register's holding
+  (`register_view`), and the transaction and reporting currencies. Long reads run
+  on a worker against the host (`worker_book`, and the snapshot reader with `api=`),
+  which reads its own snapshots; an export or a backup reads a read-only snapshot of
+  the file (`book_snapshot`). A remote book is shared already, so GTK does not share
+  it again; a projection over the host shows no progress, only its result. Phase 3
+  is built.
 
 **Phase 4 has begun** with personal preferences:
 - **Kept with the person,** in the user directory's `preferences` table (user, book id,
@@ -385,9 +397,8 @@ other accounts; 3 and 4 make it a household application.
   `breadsched two-step on|off|status` use them; an administrator's
   `users reset-two-step` (or GTK's **Turn off two-step**) is for a lost phone.
 
-All five phases are built on the experimental branch. What remains is GTK opening a
-book the host holds (it waits on GTK being wholly a protocol client) and the
-security review before the proxy is used with all of this.
+All five phases are built on the experimental branch. What remains is the security
+review before the proxy is used with all of this.
 
 ## Answers to the review questions (2026-10-28)
 

@@ -6,9 +6,7 @@ from datetime import date
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.activity import ReportingPeriod
-from ...gen.engine.currency import reporting_currency_label
 from ...gen.lib.money import Money
 from ...gen.lib.recurrence import add_months
 from ...gen.services.net_worth import (
@@ -18,6 +16,7 @@ from ...gen.services.net_worth import (
     net_worth_charts,
 )
 from ..gi_setup import GLib, Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -38,12 +37,12 @@ def history_request(months_back: int, today: date) -> tuple[date, date]:
 
 
 class NetWorthHistoryDialog(BoundedWindow):
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite, today: date | None = None) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook, today: date | None = None) -> None:
         super().__init__(title="Net Worth History", transient_for=parent)
         self.set_default_size(820, 600)
         self._db = db
         self._today = today or date.today()
-        self._currency = reporting_currency_label(db)
+        self._currency = book_server(db).reporting_currency()
         self.history: NetWorthHistory | None = None
         self.change: NetWorthChange | None = None
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)

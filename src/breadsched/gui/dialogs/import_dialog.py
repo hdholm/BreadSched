@@ -17,7 +17,7 @@ from pathlib import Path  # noqa: E402
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite  # noqa: E402
+from ...gen.db.sqlite import DbSQLite
 from ...gen.plug import IMPORTER, PluginManager  # noqa: E402
 from ...gen.services import ImportBook  # noqa: E402
 from ...gen.utils import logs  # noqa: E402
@@ -30,6 +30,7 @@ from ...presentation import (  # noqa: E402
 )
 from ..background import BackgroundJob  # noqa: E402
 from ..gi_setup import Gio, GLib, Gtk, Pango
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -45,7 +46,7 @@ WARNING_LIMIT = 50
 class ImportDialog(BoundedWindow):
     """Choose a GnuCash file, check what it is, then import it."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
         super().__init__(title="Import financial data", transient_for=parent, modal=True)
         self.db = db
         self.path: str | None = None
@@ -317,9 +318,11 @@ class ImportDialog(BoundedWindow):
     def _import_succeeded(self, path: str, result: ImportResult, log_path: Path | None) -> None:
         # The worker suppressed synchronous database callbacks: GTK must only be
         # notified after commit, here on its own main thread.
-        self.db.emit("database-changed", (self.db,))
-        self.db.emit("undo-available", (bool(self.db.undo_stack),))
-        self.db.emit("redo-available", (False,))
+        if isinstance(self.db, DbSQLite):
+            self.db.emit("database-changed", (self.db,))
+            self.db.emit("undo-available", (bool(self.db.undo_stack),))
+            self.db.emit("redo-available", (False,))
+        # A book another process holds tells the views itself, by its change stream.
         result.log_path = str(log_path) if log_path else None
         self.progress.set_fraction(1.0)
         self.progress.set_text("Finished")

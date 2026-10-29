@@ -14,17 +14,13 @@ from ...api import ApiError
 from ...api.local import book_server
 from ...gen.engine.activity import PlanMeasure, PlanSettings, ReportingPeriod
 from ...gen.engine.category_report import CategoryReport
-from ...gen.engine.plan_detail import (
-    explain_category_period,
-    explain_mortgage_payment_period,
-    explain_planning_flow_period,
-)
 from ...gen.lib import Money, Scenario
 from ...gen.services import (
     PlanQuery,
     SuppressScenarioSchedule,
 )
 from ...gen.services.plan import PlanBounds
+from ...gen.services.plan_cells import PlanCellQuery
 from ...presentation import (
     PLAN_REIMBURSABLE_HEADING,
     plan_goal_text,
@@ -915,46 +911,37 @@ class PlanView(BaseView):
         return row + 1
 
     def _on_flow_cell_clicked(self, _button, flow, period) -> None:
-        if self.db is None:
-            return
-        scenario = self._selected_scenario() or baseline_scenario(self.manager, self.db)
-        detail = explain_planning_flow_period(
-            self.db, flow.kind, flow.account, period.start, period.end, scenario=scenario
-        )
-        from ..dialogs.plan_detail_dialog import PlanDetailDialog
-
-        PlanDetailDialog(
-            self.get_root(),
-            self.db,
-            detail,
-            period_label=period.label,
-            scenario_name=("Base scenario" if self._scenario_handle is None else scenario.name),
-        ).present()
+        self._explain(period, account=flow.account, flow_kind=flow.kind)
 
     def _on_mortgage_cell_clicked(self, _button, payment, period) -> None:
-        if self.db is None:
-            return
-        scenario = self._selected_scenario() or baseline_scenario(self.manager, self.db)
-        detail = explain_mortgage_payment_period(
-            self.db, payment.account, period.start, period.end, scenario=scenario
-        )
-        from ..dialogs.plan_detail_dialog import PlanDetailDialog
-
-        PlanDetailDialog(
-            self.get_root(),
-            self.db,
-            detail,
-            period_label=period.label,
-            scenario_name=("Base scenario" if self._scenario_handle is None else scenario.name),
-        ).present()
+        self._explain(period, account=payment.account, requirement_kind="mortgage")
 
     def _on_plan_cell_clicked(self, _button, category, period) -> None:
+        self._explain(period, account=category.account)
+
+    def _explain(self, period, *, account: str, flow_kind=None, requirement_kind=None) -> None:
+        """Explain one cell of the Plan through the book server, which reads the saved
+        scenario (or the Base assumptions as saved) itself."""
         if self.db is None:
             return
-        scenario = self._selected_scenario() or baseline_scenario(self.manager, self.db)
-        detail = explain_category_period(
-            self.db, category.account, period.start, period.end, scenario=scenario
-        )
+        try:
+            explained = book_server(self.db).explain_plan_cell(
+                PlanCellQuery(
+                    account=account,
+                    start=period.start,
+                    end=period.end,
+                    scenario=self._scenario_handle,
+                    flow_kind=flow_kind,
+                    requirement_kind=requirement_kind,
+                )
+            )
+        except ApiError as error:
+            self.control_status.set_text(str(error))
+            self.control_status.add_css_class("negative")
+            return
+        detail = explained.category or explained.flow or explained.mortgage
+        if detail is None:
+            return
         from ..dialogs.plan_detail_dialog import PlanDetailDialog
 
         PlanDetailDialog(
@@ -962,5 +949,5 @@ class PlanView(BaseView):
             self.db,
             detail,
             period_label=period.label,
-            scenario_name=("Base scenario" if self._scenario_handle is None else scenario.name),
+            scenario_name=explained.scenario_name,
         ).present()

@@ -13,7 +13,6 @@ from functools import partial
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.savings_goals import goals_chart
 from ...gen.lib.money import Money
 from ...gen.lib.savings_goal import SavingsGoal
@@ -26,6 +25,7 @@ from ...gen.services.savings_goals import (
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import goal_override_text, goal_status_text
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
@@ -39,7 +39,7 @@ __all__ = ["SavingsGoalsDialog"]
 class SavingsGoalsDialog(BoundedWindow):
     """Goal list with each goal's progress, above the goal editor."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite, today: date | None = None) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook, today: date | None = None) -> None:
         super().__init__(title="Savings Goals", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
         self.set_default_size(900, 640)

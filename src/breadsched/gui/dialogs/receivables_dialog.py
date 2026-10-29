@@ -14,7 +14,6 @@ from datetime import date
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.lib.money import Money
 from ...gen.lib.receivable import Receivable
 from ...gen.services.receivables import (
@@ -30,6 +29,7 @@ from ...presentation import (
     shared_cost_text,
 )
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
@@ -68,7 +68,7 @@ class ReceivablesDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         *,
         expense: tuple[str, str] | None = None,
     ) -> None:

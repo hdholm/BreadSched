@@ -7,7 +7,6 @@ from datetime import date
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.cost_basis import shares_text
 from ...gen.engine.tax_year import TaxYearReport
 from ...gen.lib.money import Money
@@ -16,6 +15,7 @@ from ...gen.services.investment_reports import TaxYearView
 from ...plugins.export.report_layout import tax_year_layout
 from .. import printing
 from ..gi_setup import Gtk, Pango
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -53,7 +53,7 @@ def _check_row(body: Gtk.Box, text: str, accessible: str, active: bool) -> Gtk.C
 class TaxYearDialog(BoundedWindow):
     """Gains by term, tax-relevant accounts and tags, and income by source for a year."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite, year: int | None = None) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook, year: int | None = None) -> None:
         super().__init__(title="Tax Year", transient_for=parent)
         self.db = db
         self.set_default_size(900, 640)
@@ -247,7 +247,7 @@ class TaxMarksDialog(BoundedWindow):
     """Check the accounts (with those beneath them) and tags the tax year totals."""
 
     def __init__(
-        self, parent: Gtk.Window | None, db: DbSQLite, on_saved: Callable[[], None] | None = None
+        self, parent: Gtk.Window | None, db: OpenBook, on_saved: Callable[[], None] | None = None
     ) -> None:
         super().__init__(title="Tax-Relevant Accounts and Tags", transient_for=parent)
         self.db = db

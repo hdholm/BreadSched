@@ -13,12 +13,12 @@ import re
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.lib.account import AccountClass
 from ...gen.services.csv_import import CsvImportRequest, CsvMapping, CsvPreview, InspectCsv
 from ...plugins.importer.gnucash_common import ImportResult
 from ...presentation import claim_link_notice, reimbursement_notice
 from ..gi_setup import GLib, Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -69,7 +69,7 @@ class CsvImportDialog(BoundedWindow):
     DATE_FORMATS = ("auto", "iso", "month-first", "day-first")
     NUMBER_FORMATS = ("auto", "dot", "comma")
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
         super().__init__(title="Import CSV statement", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
         self.db = db

@@ -13,13 +13,13 @@ from functools import partial
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.services.categorization import (
     AddRule,
     AppliedCategories,
     CategoryRule,
 )
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
@@ -31,7 +31,7 @@ __all__ = ["RulesDialog"]
 class RulesDialog(BoundedWindow):
     """Ordered rule list and editor above the proposals awaiting acceptance."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
         super().__init__(title="Categorization rules", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
         self.set_default_size(900, 640)

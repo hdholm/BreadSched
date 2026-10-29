@@ -1420,6 +1420,9 @@ def test_exchange_rates_alike(target, book):
     )
     assert again.handle == saved.handle
     assert [price.value for price in db.iter_prices(commodity=euro.handle)] == [Money("1.09")]
+    latest = api.latest_exchange_rate(euro.handle, usd.handle)
+    assert latest is not None and latest.value == Money("1.09")
+    assert api.latest_exchange_rate(euro.handle, "missing") is None
 
     before = sorted(repr(price.serialize()) for price in db.iter_prices())
     for call, status, code in (
@@ -2136,6 +2139,21 @@ def test_historical_estimates_are_proposed_and_accepted_alike(target, book):
             api.accept_historical_estimate(request)
         assert refused.value.code == code
     assert len(list(db.iter_scheduled())) == before
+
+    # A scenario's draft of the same proposal, for an editor to adjust, saves nothing.
+    from breadsched.gen.lib import Scenario
+
+    scenario = Scenario(name="Leaner")
+    with db.transaction("Scenario") as txn:
+        db.add_scenario(scenario, txn)
+    snapshot = _snapshot(db)
+    drafted = api.draft_scenario_estimate(
+        AcceptHistoricalEstimate(
+            key=proposal.key, months=3, min_active_months=1, scenario=scenario.handle, as_of=as_of
+        )
+    )
+    assert drafted.placeholder and drafted.name == proposal.estimate_name
+    assert _snapshot(db) == snapshot
 
     accepted = api.accept_historical_estimate(
         AcceptHistoricalEstimate(key=proposal.key, months=3, min_active_months=1, as_of=as_of)
@@ -3120,3 +3138,59 @@ def test_open_book_server_closes_the_book(tmp_path):
         assert served.due_review(TODAY) is not None
         db = served.db
     assert db._conn is None
+
+
+def test_editors_previews_save_nothing_alike(target, book):
+    """GTK's editors check what a save would store through the server (decision 0004),
+    so a book the host holds previews the same way; nothing is saved."""
+    from breadsched.gen.services import transaction_currency
+
+    api, db = target.api, target.db
+    book.currency = transaction_currency(db)
+    loan = ScheduledTransaction(
+        name="Formula loan",
+        recurrence=Recurrence(period=PeriodType.MONTH, start=date(2026, 1, 1)),
+        splits=[
+            ScheduledSplit(book.utilities, formula="payment"),
+            ScheduledSplit(book.checking, formula="-payment"),
+        ],
+    )
+    loan.variables = {"payment": "100"}
+    with db.transaction("Formula fixture") as txn:
+        db.add_scheduled(loan, txn)
+    before = _snapshot(db)
+    schedule = api.draft_fixed_schedule(SaveFixedSchedule(_fixed(book, remind_days=5)))
+    assert (schedule.name, schedule.amount(), schedule.remind_days) == ("Gym", Money("45.00"), 5)
+    transaction = api.draft_transaction(SaveTransaction(_transaction(book)))
+    assert transaction.description == "Shop" and transaction.is_balanced()
+    formula = api.draft_formula_schedule(
+        FormulaScheduleInput(
+            existing_handle=loan.handle,
+            name="Previewed",
+            recurrence=loan.recurrence,
+            formulas={0: "payment + 25", 1: "-(payment + 25)"},
+            variables={"payment": "100"},
+            enabled=True,
+            auto_create=False,
+            placeholder=False,
+            growth_policy=loan.growth_policy,
+        )
+    )
+    assert formula.name == "Previewed"
+    assert [split.formula for split in formula.splits] == ["payment + 25", "-(payment + 25)"]
+    for call, code in (
+        (
+            lambda: api.draft_fixed_schedule(SaveFixedSchedule(_fixed(book, category="missing"))),
+            "schedule.account.not_found",
+        ),
+        (
+            lambda: api.draft_transaction(
+                SaveTransaction(_transaction(book), existing_handle="missing")
+            ),
+            "transaction.not_found",
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert refused.value.code == code
+    assert _snapshot(db) == before

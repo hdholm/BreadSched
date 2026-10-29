@@ -5,12 +5,12 @@ from __future__ import annotations
 from datetime import date
 
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.activity import ReportingPeriod
 from ...gen.engine.budget_jars import JarPeriod, JarsReport, jar_kind_label
 from ...plugins.export.report_layout import budget_jars_layout
 from .. import printing
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -56,7 +56,7 @@ class BudgetJarsDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         start: date | None = None,
         end: date | None = None,
         period: ReportingPeriod = ReportingPeriod.MONTH,

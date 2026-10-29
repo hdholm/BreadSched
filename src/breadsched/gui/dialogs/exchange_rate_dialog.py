@@ -12,13 +12,12 @@ from datetime import date
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
-from ...gen.engine import valuation
 from ...gen.lib.commodity import CommodityPrice
 from ...gen.lib.money import Money
 from ...gen.services.exchange_rates import SaveExchangeRate
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
@@ -30,7 +29,7 @@ __all__ = ["ExchangeRateDialog"]
 class ExchangeRateDialog(BoundedWindow):
     """Choose two currencies, a date, and an exact rate."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
         super().__init__(title="Exchange rate", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
         self.db = db
@@ -123,7 +122,7 @@ class ExchangeRateDialog(BoundedWindow):
         if source is None or target is None or source.handle == target.handle:
             self.current.set_text("")
             return
-        latest = valuation.latest_price(self.db, source, currency=target)
+        latest = book_server(self.db).latest_exchange_rate(source.handle, target.handle)
         if latest is None:
             self.current.set_text(f"No {source.mnemonic}→{target.mnemonic} quote is recorded yet.")
             return

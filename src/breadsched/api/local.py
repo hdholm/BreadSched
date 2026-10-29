@@ -20,7 +20,7 @@ from contextvars import ContextVar
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal, Protocol, cast
 
 from ..gen.db.base import current_author
 from ..gen.db.sqlite import DbSQLite
@@ -154,6 +154,7 @@ from ..gen.services import scenarios as scenario_service
 from ..gen.services import schedules as schedule_service
 from ..gen.services import schedules as schedule_services
 from ..gen.services import tax as tax_service
+from ..gen.services import transactions as transaction_services
 from ..gen.services import uploads as upload_service
 from ..gen.services.account_inference import (
     AccountSuggestion,
@@ -246,11 +247,12 @@ from ..gen.services.security_prices import SavedSecurityPrice, SaveSecurityPrice
 from ..gen.services.tax import SetTaxMarks, TaxMarks
 from ..presentation import service_error_message
 from .contract import ApiError, unwrap
-from .protocol import Change, Listener
+from .protocol import BookApi, Change, Listener
 from .users import User, UserDirectory, acting_user
 
 __all__ = [
     "LocalBookServer",
+    "HeldElsewhere",
     "book_server",
     "local_caller",
     "lookup_schedule",
@@ -407,6 +409,12 @@ class LocalBookServer:
     def save_formula_schedule(self, request: FormulaScheduleInput) -> SavedSchedule:
         return unwrap(save_formula_schedule(self.db, request))
 
+    def draft_fixed_schedule(self, request: SaveFixedSchedule) -> ScheduledTransaction:
+        return unwrap(schedule_services.build_fixed_schedule(self.db, request))
+
+    def draft_formula_schedule(self, request: FormulaScheduleInput) -> ScheduledTransaction:
+        return unwrap(schedule_services.build_formula_schedule(self.db, request))
+
     def scenario_events(self, scenario: str) -> schedule_editing.ScenarioEventsView:
         return unwrap(schedule_editing.scenario_events(self.db, scenario))
 
@@ -434,6 +442,9 @@ class LocalBookServer:
 
     def save_transaction(self, request: SaveTransaction) -> SavedTransaction:
         return unwrap(save_transaction(self.db, request))
+
+    def draft_transaction(self, request: SaveTransaction) -> Transaction:
+        return unwrap(transaction_services.build_transaction(self.db, request))
 
     def delete_transaction(self, transaction: str) -> SavedTransaction:
         return unwrap(delete_transaction(self.db, DeleteTransaction(transaction)))
@@ -794,6 +805,9 @@ class LocalBookServer:
             return unwrap(found)
         return _named(found, reference, "currency")
 
+    def latest_exchange_rate(self, source: str, target: str) -> CommodityPrice | None:
+        return exchange_rates.latest_exchange_rate(self.db, source, target)
+
     def save_exchange_rate(self, request: SaveExchangeRate) -> CommodityPrice:
         return unwrap(exchange_rates.save_exchange_rate(self.db, request))
 
@@ -1077,6 +1091,9 @@ class LocalBookServer:
             )
         )
 
+    def draft_scenario_estimate(self, request: AcceptHistoricalEstimate) -> ScenarioSchedule:
+        return unwrap(estimate_service.draft_scenario_estimate(self.db, request))
+
     def accept_historical_estimate(self, request: AcceptHistoricalEstimate) -> AcceptedEstimate:
         return unwrap(estimate_service.accept_historical_estimate(self.db, request))
 
@@ -1315,13 +1332,23 @@ class LocalBookServer:
         return unwrap(categorization.apply_category_proposals(self.db, transactions))
 
 
-def book_server(db: DbSQLite) -> LocalBookServer:
-    """The one in-process server over ``db``, for code that holds the book itself.
+class HeldElsewhere(Protocol):
+    """A book another process holds, reached through that process's server (GTK's
+    ``RemoteBook``, decision 0004)."""
 
-    GTK holds its book directly; each view and dialog moved onto the book API asks
-    for the server here, so one server (and one set of storage-signal connections)
-    serves the whole application.
+    book_api: BookApi
+
+
+def book_server(db: DbSQLite | HeldElsewhere) -> BookApi:
+    """The book API for what a caller holds: the one in-process server over ``db``,
+    or the server of the process that holds the book.
+
+    GTK holds its book directly, or (when the account's host holds it) through the
+    host; each view and dialog asks for the book here, so one server (and one set of
+    storage-signal connections, or one change stream) serves the whole application.
     """
+    if not isinstance(db, DbSQLite):
+        return db.book_api
     # Kept on the book itself (a cycle the collector frees with it), not in a cache
     # whose values would keep every book ever opened alive.
     server = getattr(db, "_book_server", None)

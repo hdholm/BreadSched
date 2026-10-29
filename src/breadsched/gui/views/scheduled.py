@@ -18,7 +18,6 @@ from datetime import date, timedelta
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import schedule
 from ...gen.engine.schedule import AccountPaymentDefinition
 from ...gen.lib import ScheduledTransaction
@@ -32,6 +31,7 @@ from ...gen.services import (
 from ...gen.services.schedule_editing import ScheduledPage
 from ...presentation import service_error_message
 from ..gi_setup import Gio, Gtk, Pango
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ._base import BaseView, Row, column, sorted_model, table_section, unwrap
@@ -105,7 +105,7 @@ class ScheduledView(BaseView):
         self._page: ScheduledPage | None = None
         self._build()
 
-    def set_db(self, db: DbSQLite | None) -> None:
+    def set_db(self, db: OpenBook | None) -> None:
         if self._suggest_dialog is not None and db is not self.db:
             self._suggest_dialog.close()
             self._suggest_dialog = None

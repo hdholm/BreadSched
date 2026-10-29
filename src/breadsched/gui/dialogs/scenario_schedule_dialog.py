@@ -13,7 +13,6 @@ from datetime import date
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.entry_input import parse_amount_text
 from ...gen.lib import (
     AccountClass,
@@ -41,6 +40,7 @@ from ...gen.services import (
     SaveFixedScenarioSchedule,
 )
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
@@ -90,7 +90,7 @@ class ScenarioScheduleDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         scenario: Scenario,
         source: ScheduledTransaction | None = None,
         current: ScenarioSchedule | None = None,
@@ -927,7 +927,7 @@ class ScenarioSchedulePickerDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         title: str,
         action_label: str,
         callback: Callable[[ScheduledTransaction], None],

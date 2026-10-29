@@ -24,6 +24,7 @@ from ..presentation import (  # noqa: E402
 )
 from ..user_guide import help_target
 from .gi_setup import Gdk, Gio, GLib, Gtk
+from .remote_book import OpenBook, book_snapshot, open_held_book
 from .user_guide import UserGuideWindow
 from .view_catalog import CATEGORIES as MENU_CATEGORIES  # noqa: E402
 from .view_catalog import VIEW_ACTIONS, view_action_name  # noqa: E402
@@ -76,7 +77,7 @@ class BreadSchedApplication(Gtk.Application):
         if not unique:
             flags |= Gio.ApplicationFlags.NON_UNIQUE
         super().__init__(application_id=application_id, flags=flags)
-        self.db: DbSQLite | None = None
+        self.db: OpenBook | None = None
         self.book_path: str | None = None
         #: The open book shared with other commands, when that is on (#359).
         self.shared_book: SharedBook | None = None
@@ -270,7 +271,12 @@ class BreadSchedApplication(Gtk.Application):
     # ------------------------------------------------------------------- book
 
     def open_book(self, path: str) -> None:
-        """Close whatever is open and load ``path``, then tell the windows."""
+        """Close whatever is open and load ``path``, then tell the windows.
+
+        A book the computer account's host already holds (``breadsched serve``, say)
+        is used through that host, as this account's own user and without a prompt
+        (decision 0004); any other is opened here.
+        """
         if self.db is not None:
             # Views own signal handlers and deferred GLib callbacks tied to this
             # connection. Detach them before closing it so no stale repaint can
@@ -280,8 +286,13 @@ class BreadSchedApplication(Gtk.Application):
                     window.book_closing()
             self.stop_sharing()
             self.db.close()
-        self.db = DbSQLite()
-        self.db.load(path)
+        held = open_held_book(path)
+        if held is not None:
+            self.db = held
+        else:
+            book = DbSQLite()
+            book.load(path)
+            self.db = book
         self.book_path = path
         self.update_sharing()
         # Remembered so the next start reopens it. Written immediately rather than
@@ -319,8 +330,9 @@ class BreadSchedApplication(Gtk.Application):
         """Share the open book with other commands exactly when the preference is on."""
         from .book_sharing import SETTING, share_book
 
-        wanted = self.settings.get_bool(*SETTING) and self.db is not None
-        if wanted and self.shared_book is None and self.book_path and self.db is not None:
+        # A book another process holds is shared already, by that process.
+        wanted = self.settings.get_bool(*SETTING) and isinstance(self.db, DbSQLite)
+        if wanted and self.shared_book is None and self.book_path and isinstance(self.db, DbSQLite):
             self.shared_book = share_book(self.db, self.book_path)
         elif not wanted:
             self.stop_sharing()
@@ -334,7 +346,7 @@ class BreadSchedApplication(Gtk.Application):
         self.stop_sharing()
         Gtk.Application.do_shutdown(self)
 
-    def require_db(self) -> DbSQLite | None:
+    def require_db(self) -> OpenBook | None:
         return self.db
 
     def set_action_enabled(self, name: str, enabled: bool) -> None:
@@ -603,7 +615,8 @@ class BreadSchedApplication(Gtk.Application):
             from ..plugins.export.csv_export import export_transactions
 
             if self.db is not None:
-                export_transactions(self.db, file.get_path())
+                with book_snapshot(self.db) as book:
+                    export_transactions(book, file.get_path())
 
         dialog.save(self.props.active_window, None, on_saved)
 
@@ -623,7 +636,8 @@ class BreadSchedApplication(Gtk.Application):
                 return
             try:
                 assert self.db is not None
-                destination = self.db.backup_to(file.get_path(), overwrite=True)
+                with book_snapshot(self.db) as book:
+                    destination = book.backup_to(file.get_path(), overwrite=True)
             except Exception as exc:  # noqa: BLE001 - surfaced to the user
                 self._report(f"Could not back up the book: {exc}")
                 return

@@ -7,7 +7,6 @@ from decimal import Decimal, InvalidOperation
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.lib import AccountClass, AssumptionPeriod, Rate, Scenario
 from ...gen.services import DuplicateScenario, SaveScenarioAssumptions
 from ..gi_setup import Gtk
@@ -16,6 +15,7 @@ from ..planning_context import (
     notify_planning_scenario_changed,
     persist_baseline_assumptions,
 )
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
@@ -38,7 +38,7 @@ _ASSUMPTIONS = (
 class ScenarioManagerDialog(BoundedWindow):
     """Rename, duplicate, delete, and edit a saved scenario's assumptions and drawdowns."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite, manager) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook, manager) -> None:
         super().__init__(title="Manage scenarios", transient_for=parent, modal=True)
         self.db = db
         self.manager = manager
@@ -529,7 +529,7 @@ class AssumptionTimelineDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window,
-        db: DbSQLite,
+        db: OpenBook,
         scenario: Scenario,
         saved_callback,
     ) -> None:
@@ -670,7 +670,7 @@ class AssumptionPeriodDialog(BoundedWindow):
     """Edit one dated set of optional annual-rate overrides."""
 
     def __init__(
-        self, parent: Gtk.Window, db: DbSQLite, period: AssumptionPeriod | None, callback
+        self, parent: Gtk.Window, db: OpenBook, period: AssumptionPeriod | None, callback
     ) -> None:
         super().__init__(
             title="Edit dated assumptions" if period is not None else "Add dated assumptions",
@@ -807,7 +807,7 @@ class ScenarioDeleteDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window,
-        db: DbSQLite,
+        db: OpenBook,
         scenario: Scenario,
         deleted_callback,
     ) -> None:

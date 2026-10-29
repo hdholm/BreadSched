@@ -33,7 +33,6 @@ from pathlib import Path
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import attachments as attachment_engine
 from ...gen.engine import escrow, fsa_claims, ledger
 from ...gen.engine.cost_basis import shares_text
@@ -52,14 +51,13 @@ from ...gen.services import (
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
-    build_transaction,
-    transaction_currency,
 )
 from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import claim_role_label, service_error_message
+from ...presentation import claim_role_label
 from .. import hidden_accounts
 from ..gi_setup import Gio, GLib, Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, keeps_enter
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
@@ -324,7 +322,7 @@ class TransactionDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         default_account: str | None = None,
         default_date: date | None = None,
         transaction: Transaction | None = None,
@@ -766,7 +764,7 @@ class TransactionDialog(BoundedWindow):
                 SuggestEntry(
                     description=self.description_entry.get_text(),
                     account=self.default_account,
-                    currency=transaction_currency(self.db),
+                    currency=book_server(self.db).transaction_currency(),
                 )
             )
         except ApiError:
@@ -934,9 +932,9 @@ class TransactionDialog(BoundedWindow):
         """Translate the form into the shared typed service contract."""
         when = parse_date_text(self.date_entry.get_text().strip())
         residual = self.residual()
-        currency = transaction_currency(
-            self.db, self.transaction.currency if self.transaction is not None else None
-        )
+        currency = (
+            self.transaction.currency if self.transaction is not None else None
+        ) or book_server(self.db).transaction_currency()
         notes_start, notes_end = self.notes_view.get_buffer().get_bounds()
         splits: list[TransactionSplitInput] = []
         for editor in self.splits:
@@ -983,10 +981,10 @@ class TransactionDialog(BoundedWindow):
 
     def build(self) -> Transaction:
         """Return the service-built preview used by editor interactions and tests."""
-        result = build_transaction(self.db, self._request())
-        if result.value is None:
-            raise ValueError(service_error_message(result.errors[0]))
-        return result.value
+        try:
+            return book_server(self.db).draft_transaction(self._request())
+        except ApiError as error:
+            raise ValueError(str(error)) from error
 
     def _on_save(self, _button) -> None:
         try:

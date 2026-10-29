@@ -21,7 +21,6 @@ from time import monotonic
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import projection
 from ...gen.engine.completeness import combine
 from ...gen.engine.projection_result import projection_balances_chart, projection_chart
@@ -41,6 +40,7 @@ from ..planning_context import (
     select_scenario,
     selected_scenario_handle,
 )
+from ..remote_book import OpenBook, worker_book
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.model_chart import ModelChartView  # noqa: E402
@@ -227,7 +227,7 @@ class ProjectionView(BaseView):
 
     # ------------------------------------------------------------------- model
 
-    def set_db(self, db: DbSQLite | None) -> None:
+    def set_db(self, db: OpenBook | None) -> None:
         """Attach a book and invalidate, but do not project while hidden."""
         self._cancel_projection(invalidate=True, wait=True)
         self._projection_dirty = True
@@ -390,7 +390,6 @@ class ProjectionView(BaseView):
         self._cancel_projection()
         self._job_generation += 1
         generation = self._job_generation
-        path = self.db.path
         source_db = self.db
         snapshot = scenario.clone()
         self._progress_started = monotonic()
@@ -398,23 +397,15 @@ class ProjectionView(BaseView):
         self._show_projection_notes(["Calculating projection…"])
 
         def work(cancel, report) -> projection.Projection:
-            worker_db = source_db
-            owns_worker = False
-            if path is not None and path != ":memory:":
-                worker_db = DbSQLite()
-                worker_db.load(path, "r")
-                owns_worker = True
-
             def progress_callback(update: projection.ProjectionProgress) -> None:
                 if cancel.is_set():
                     raise OperationCancelled()
                 report(update)
 
-            try:
-                return book_server(worker_db).project(snapshot, progress=progress_callback)
-            finally:
-                if owns_worker:
-                    worker_db.close()
+            # A snapshot of the file, or the host's book (#358); a host reports no
+            # progress, only the finished projection.
+            with worker_book(source_db) as book:
+                return book.project(snapshot, progress=progress_callback)
 
         self._job = BackgroundJob()
         self._job.start(

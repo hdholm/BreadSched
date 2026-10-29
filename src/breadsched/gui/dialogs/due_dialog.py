@@ -35,9 +35,9 @@ from __future__ import annotations
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.services import DueDecision, DueItem, DueScheduleReview, ResolveDue
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -84,7 +84,7 @@ class DueDialog(BoundedWindow):
     """One row per due occurrence, each with its own decision."""
 
     def __init__(
-        self, parent: Gtk.Window | None, db: DbSQLite, reviews: list[DueScheduleReview]
+        self, parent: Gtk.Window | None, db: OpenBook, reviews: list[DueScheduleReview]
     ) -> None:
         super().__init__(title="Scheduled transactions due", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)

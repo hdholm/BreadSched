@@ -25,7 +25,6 @@ from datetime import date
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import reconciliation
 from ...gen.lib import Account, Money, ReconciliationStatus
 from ...gen.services import AddStatementEntry, StartReconciliation, UpdateReconciliation
@@ -33,6 +32,7 @@ from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import claim_link_notice, reimbursement_notice
 from .. import hidden_accounts
 from ..gi_setup import Gdk, GLib, Gtk, Pango
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
@@ -134,7 +134,7 @@ class ReconciliationDialog(BoundedWindow):
 
     @classmethod
     def present_for(
-        cls, parent: Gtk.Window | None, db: DbSQLite, account: Account
+        cls, parent: Gtk.Window | None, db: OpenBook, account: Account
     ) -> ReconciliationDialog:
         """Show the account's reconcile window, opening one only if none is open."""
         existing = _OPEN.get((id(db), account.handle))
@@ -145,7 +145,7 @@ class ReconciliationDialog(BoundedWindow):
         dialog.present()
         return dialog
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite, account: Account) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook, account: Account) -> None:
         # Not transient for the main window: a transient window is kept above its
         # parent, and the main window must be able to come in front of this one
         # while a statement is worked through. It still belongs to the application

@@ -18,13 +18,13 @@ from __future__ import annotations
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.services import (
     HeldImportChange,
     HeldImportDecision,
     ResolveHeldImports,
 )
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -48,7 +48,7 @@ class ImportReviewDialog(BoundedWindow):
     """One row per held GnuCash change, each with its own decision."""
 
     def __init__(
-        self, parent: Gtk.Window | None, db: DbSQLite, changes: list[HeldImportChange]
+        self, parent: Gtk.Window | None, db: OpenBook, changes: list[HeldImportChange]
     ) -> None:
         super().__init__(
             title="GnuCash changes to reconciled transactions", transient_for=parent, modal=True

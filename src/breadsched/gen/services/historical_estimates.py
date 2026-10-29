@@ -15,6 +15,7 @@ from datetime import date
 from ..db.sqlite import DbSQLite
 from ..engine import estimates
 from ..engine.estimates import HistoricalEstimateProposal
+from ..lib.scenario import ScenarioSchedule
 from .contracts import ServiceError, ServiceResult
 from .schedule_editing import ScheduleEditorView, editor_view
 
@@ -105,10 +106,10 @@ def historical_estimates(
     return ServiceResult.success(HistoricalEstimatesView(months, proposals, drafts, targets))
 
 
-def accept_historical_estimate(
+def _proposal(
     db: DbSQLite, request: AcceptHistoricalEstimate
-) -> ServiceResult[AcceptedEstimate]:
-    """Save one current proposal as an ordinary Base or scenario estimate."""
+) -> ServiceResult[HistoricalEstimateProposal]:
+    """The current proposal ``request`` names."""
     found = historical_estimates(
         db, request.months, request.min_active_months, request.scenario, request.as_of
     )
@@ -124,6 +125,31 @@ def accept_historical_estimate(
     )
     if proposal is None:
         return ServiceResult.failure(ServiceError("estimate.proposal.unavailable", ("key",)))
+    return ServiceResult.success(proposal)
+
+
+def draft_scenario_estimate(
+    db: DbSQLite, request: AcceptHistoricalEstimate
+) -> ServiceResult[ScenarioSchedule]:
+    """The scenario estimate accepting ``request``'s proposal would add, unsaved, for an
+    editor to adjust first."""
+    found = _proposal(db, request)
+    if found.value is None:
+        return ServiceResult.failure(*found.errors)
+    try:
+        return ServiceResult.success(estimates.draft_scenario_estimate(db, found.value))
+    except ValueError:
+        return ServiceResult.failure(ServiceError("estimate.draft.invalid", ("key",)))
+
+
+def accept_historical_estimate(
+    db: DbSQLite, request: AcceptHistoricalEstimate
+) -> ServiceResult[AcceptedEstimate]:
+    """Save one current proposal as an ordinary Base or scenario estimate."""
+    found = _proposal(db, request)
+    if found.value is None:
+        return ServiceResult.failure(*found.errors)
+    proposal = found.value
     try:
         handle = estimates.accept_historical_estimate(
             db, proposal, scenario_handle=request.scenario

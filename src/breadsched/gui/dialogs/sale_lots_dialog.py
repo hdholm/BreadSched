@@ -6,11 +6,11 @@ from collections.abc import Callable
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.cost_basis import shares_text
 from ...gen.services import SaleLots, SetSaleLots
 from ...presentation import lot_text, sale_text
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.help import help_row
 
@@ -25,7 +25,7 @@ class SaleLotsDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         transaction: str,
         split: str,
         on_saved: Callable[[SaleLots], None] | None = None,

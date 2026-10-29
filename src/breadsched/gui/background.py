@@ -21,6 +21,7 @@ from ..gen.db.sqlite import DbSQLite
 from ..gen.utils.cancellation import OperationCancelled
 from ..gen.utils.logs import get_logger
 from .gi_setup import GLib
+from .remote_book import OpenBook
 
 __all__ = ["BackgroundJob", "OperationCancelled", "SnapshotReader"]
 
@@ -110,10 +111,16 @@ class SnapshotReader:
     serves every read until the book's revision moves on, so refreshing several
     tabs after a change copies the book once. Reads run one at a time, in the order
     asked; each answer is delivered on GTK's main loop.
+
+    For a book another process holds, ``api`` is that process's book server, which
+    answers each read from its own snapshot; the worker only waits for it.
     """
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str | None = None, *, api: BookApi | None = None) -> None:
+        if (path is None) == (api is None):
+            raise ValueError("a snapshot reader reads a file or a book server, not both")
         self.path = path
+        self._api = api
         self._jobs: queue.SimpleQueue[tuple[int, Read, Answer] | None] = queue.SimpleQueue()
         #: Reads asked for whose answers have not been delivered (main loop only).
         self._pending = 0
@@ -133,7 +140,7 @@ class SnapshotReader:
         self._jobs.put((revision, read, answer))
 
     def _run(self) -> None:
-        snapshot: DbSQLite | None = None
+        snapshot: OpenBook | None = None
         server: LocalBookServer | None = None
         held = -1
         try:
@@ -145,17 +152,21 @@ class SnapshotReader:
                 result: Any = None
                 error: BaseException | None = None
                 try:
-                    if snapshot is None or held != revision:
-                        if server is not None:
-                            server.close()
-                        if snapshot is not None:
-                            snapshot.close()
-                        snapshot = server = None
-                        fresh = DbSQLite()
-                        fresh.load(self.path, "r")
-                        snapshot, server, held = fresh, LocalBookServer(fresh), revision
-                    assert server is not None
-                    result = read(server)
+                    if self._api is not None:
+                        result = read(self._api)
+                    else:
+                        if snapshot is None or held != revision:
+                            if server is not None:
+                                server.close()
+                            if snapshot is not None:
+                                snapshot.close()
+                            snapshot = server = None
+                            fresh = DbSQLite()
+                            assert self.path is not None
+                            fresh.load(self.path, "r")
+                            snapshot, server, held = fresh, LocalBookServer(fresh), revision
+                        assert server is not None
+                        result = read(server)
                 except Exception as exc:  # noqa: BLE001 - delivered to the view
                     error = exc
                 GLib.idle_add(self._deliver, answer, result, error)

@@ -275,6 +275,14 @@ class BookApi(Protocol):
         """Replace a formula schedule's editable inputs, keeping its structure."""
         ...
 
+    def draft_fixed_schedule(self, request: SaveFixedSchedule) -> ScheduledTransaction:
+        """The schedule a save would store, checked but not saved (an editor's preview)."""
+        ...
+
+    def draft_formula_schedule(self, request: FormulaScheduleInput) -> ScheduledTransaction:
+        """The formula schedule a save would store, checked but not saved."""
+        ...
+
     def scenario_events(self, scenario: str) -> ScenarioEventsView:
         """A saved scenario's own estimates beside the baseline schedules."""
         ...
@@ -305,6 +313,10 @@ class BookApi(Protocol):
 
     def save_transaction(self, request: SaveTransaction) -> SavedTransaction:
         """Add a transaction, or replace one, with an optional claim link."""
+        ...
+
+    def draft_transaction(self, request: SaveTransaction) -> Transaction:
+        """The transaction a save would store, checked but not saved (an editor's preview)."""
         ...
 
     def delete_transaction(self, transaction: str) -> SavedTransaction:
@@ -552,6 +564,10 @@ class BookApi(Protocol):
         as_of: date | None = None,
     ) -> HistoricalEstimatesView:
         """Category estimates proposed from closed history, each with its draft."""
+        ...
+
+    def draft_scenario_estimate(self, request: AcceptHistoricalEstimate) -> ScenarioSchedule:
+        """The scenario estimate accepting a proposal would add, unsaved."""
         ...
 
     def accept_historical_estimate(self, request: AcceptHistoricalEstimate) -> AcceptedEstimate:
@@ -866,6 +882,10 @@ class BookApi(Protocol):
 
     def find_currency(self, reference: str) -> CurrencyChoice:
         """A currency by exact handle or unambiguous code."""
+        ...
+
+    def latest_exchange_rate(self, source: str, target: str) -> CommodityPrice | None:
+        """The latest direct quote of currency ``source`` in ``target``, if any."""
         ...
 
     def save_exchange_rate(self, request: SaveExchangeRate) -> CommodityPrice:

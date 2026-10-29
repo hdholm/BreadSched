@@ -270,7 +270,8 @@ until you press Ctrl+C there. Commands on this computer still find each
 book by its file. A `--server` command for a server holding several books names one
 with `--book-id ID`; a browser asks which of the books shared with you to open. Other commands still need the book
 to themselves. The desktop application can share the book it has open the same way
-(**Edit → Preferences… → Sharing**).
+(**Edit → Preferences… → Sharing**). The other way round, opening a book in the desktop
+application while `breadsched serve` holds it uses it through that server, as you.
 
 To reach the book from another device, put a TLS reverse proxy such as nginx in
 front of the server on the same machine; the server itself only listens on this

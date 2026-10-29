@@ -14,13 +14,13 @@ from decimal import Decimal, InvalidOperation
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.loans import LoanTerms, schedule_preview
 from ...gen.lib import Money
 from ...gen.services import SaveLoan
 from ...gen.utils.amount_input import parse_user_amount
 from .. import hidden_accounts
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
@@ -32,7 +32,7 @@ __all__ = ["LoanDialog"]
 class LoanDialog(BoundedWindow):
     """Enter a loan's terms and create its scheduled payment."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
         super().__init__(title="Set up a loan", transient_for=parent, modal=True)
         self.db = db
         self.set_default_size(620, 620)

@@ -6,7 +6,6 @@ from datetime import date
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.lib.money import Money
 from ...gen.services.quotes import QuoteRequest
 from ...gen.services.security_prices import SaveSecurityPrice
@@ -15,6 +14,7 @@ from ...gen.utils.settings import Settings
 from ...plugins.quotes import OnlineQuotes, alphavantage_key
 from ..background import BackgroundJob
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
@@ -29,7 +29,7 @@ class SecurityPriceDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         settings: Settings | None = None,
         fetcher_factory=None,
     ) -> None:

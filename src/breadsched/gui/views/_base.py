@@ -16,10 +16,10 @@ from typing import Any
 
 from ...api.local import book_server
 from ...api.protocol import Change
-from ...gen.db.sqlite import DbSQLite  # noqa: E402
 from ...gen.lib.money import Money  # noqa: E402
 from ...gen.utils.logs import get_logger  # noqa: E402
 from ..gi_setup import GLib, GObject, Gtk, Pango
+from ..remote_book import OpenBook
 
 __all__ = [
     "BaseView",
@@ -64,7 +64,7 @@ class BaseView(Gtk.Box):
     def __init__(self, manager) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.manager = manager
-        self.db: DbSQLite | None = None
+        self.db: OpenBook | None = None
         self._unsubscribe: Callable[[], None] | None = None
         self._refresh_pending = False
         self._refresh_source_id: int | None = None
@@ -102,7 +102,7 @@ class BaseView(Gtk.Box):
         book_path = getattr(self.manager.get_application(), "book_path", None)
         return Path(book_path).name if book_path else ""
 
-    def set_db(self, db: DbSQLite | None) -> None:
+    def set_db(self, db: OpenBook | None) -> None:
         """Attach to ``db``, or detach when ``None`` is supplied.
 
         A view can have an idle repaint queued when a book is switched or a window

@@ -274,6 +274,7 @@ __all__ = [
     "plan_v1",
     "activity_get",
     "historical_estimate_accept_v1",
+    "historical_estimate_draft",
     "historical_estimates_get",
     "book_counts_get",
     "book_id_get",
@@ -307,6 +308,9 @@ __all__ = [
     "find_post",
     "fsa_claim_standing_get",
     "commodities_get",
+    "schedule_draft_fixed",
+    "schedule_draft_formula",
+    "transaction_draft",
     "transaction_editor_get",
     "scenario_schedule_fixed_draft",
     "scenario_schedule_formula_draft",
@@ -326,6 +330,7 @@ __all__ = [
     "schedules_view_get",
     "currencies_get",
     "currency_lookup",
+    "exchange_rate_latest",
     "exchange_rate_save",
     "securities_get",
     "security_price_save",
@@ -604,6 +609,20 @@ def schedule_save_fixed(api: Api, _path: Path, body: dict[str, Any]) -> dict:
 
 def schedule_save_formula(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     return saved_schedule_json(api.book.save_formula_schedule(formula_request_from_json(body)))
+
+
+def schedule_draft_fixed(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return {"schedule": api.book.draft_fixed_schedule(fixed_request_from_json(body)).serialize()}
+
+
+def schedule_draft_formula(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = formula_request_from_json(body)
+    return {"schedule": api.book.draft_formula_schedule(request).serialize()}
+
+
+def transaction_draft(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = save_transaction_from_json(body)
+    return {"transaction": api.book.draft_transaction(request).serialize()}
 
 
 def transaction_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
@@ -1473,6 +1492,14 @@ def currency_lookup(api: Api, _path: Path, query: QueryParams) -> dict:
     return {"currency": to_data(api.book.find_currency(reference))}
 
 
+def exchange_rate_latest(api: Api, _path: Path, query: QueryParams) -> dict:
+    source = query.text("source", required=True) or ""
+    target = query.text("target", required=True) or ""
+    query.finish()
+    rate = api.book.latest_exchange_rate(source, target)
+    return {"rate": to_data(rate) if rate is not None else None}
+
+
 def exchange_rate_save(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     request = from_data(SaveExchangeRate, body, "request")
     return {"rate": to_data(api.book.save_exchange_rate(request))}
@@ -1789,6 +1816,11 @@ def historical_estimates_get(api: Api, _path: Path, query: QueryParams) -> dict:
     query.finish()
     assert months is not None and minimum is not None
     return to_data(api.book.historical_estimates(months, minimum, scenario, as_of))
+
+
+def historical_estimate_draft(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    request = from_data(AcceptHistoricalEstimate, body, "request")
+    return {"schedule": api.book.draft_scenario_estimate(request).serialize()}
 
 
 def historical_estimate_accept_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:

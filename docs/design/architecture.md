@@ -266,8 +266,10 @@ connection and its `--server` and `--token-file` options. `tests/test_book_shari
 covers the record's life, stale records, the commands through a holding server, an
 explicit server, and `serve`.
 
-GTK reaches the same server in process through `api.local.book_server(db)` for the
-due review, Enter Next and Skip Next, and the Upcoming count (#359).
+GTK reaches every book only through `api.local.book_server(db)`: the in-process
+server over the file it opened, or, for a book the account's host already holds,
+that host's book API (`gui.remote_book`, decision 0004), so the same views and
+dialogs work on either.
 `gui.book_sharing` serves GTK's own book when **Preferences → Sharing** is on.
 `web.transport.serve` takes an executor that runs each writer request on the GTK
 main loop instead of under the transport's lock.

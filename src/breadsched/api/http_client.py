@@ -501,6 +501,14 @@ class HttpBookClient:
         found = self._call("POST", "/schedules/formula", body=formula_request_json(request))
         return saved_schedule_from_json(found)
 
+    def draft_fixed_schedule(self, request: SaveFixedSchedule) -> ScheduledTransaction:
+        found = self._call("POST", "/schedule-drafts/fixed", body=fixed_request_json(request))
+        return ScheduledTransaction.from_dict(found["schedule"])
+
+    def draft_formula_schedule(self, request: FormulaScheduleInput) -> ScheduledTransaction:
+        found = self._call("POST", "/schedule-drafts/formula", body=formula_request_json(request))
+        return ScheduledTransaction.from_dict(found["schedule"])
+
     def scenario_events(self, scenario: str) -> ScenarioEventsView:
         path = f"/scenarios/{quote(scenario, safe='')}/events"
         return from_data(ScenarioEventsView, self._call("GET", path))
@@ -532,6 +540,10 @@ class HttpBookClient:
     def save_transaction(self, request: SaveTransaction) -> SavedTransaction:
         found = self._call("POST", "/transactions", body=save_transaction_json(request))
         return saved_transaction_from_json(found)
+
+    def draft_transaction(self, request: SaveTransaction) -> Transaction:
+        found = self._call("POST", "/transaction-drafts", body=save_transaction_json(request))
+        return Transaction.from_dict(found["transaction"])
 
     def delete_transaction(self, transaction: str) -> SavedTransaction:
         path = f"/transactions/{quote(transaction, safe='')}"
@@ -857,6 +869,10 @@ class HttpBookClient:
         return from_data(
             HistoricalEstimatesView, self._call("GET", "/historical-estimates", params)
         )
+
+    def draft_scenario_estimate(self, request: AcceptHistoricalEstimate) -> ScenarioSchedule:
+        found = self._call("POST", "/historical-estimates/draft", body=to_data(request))
+        return ScenarioSchedule.from_dict(found["schedule"])
 
     def accept_historical_estimate(self, request: AcceptHistoricalEstimate) -> AcceptedEstimate:
         found = self._call("POST", "/historical-estimates", body=to_data(request))
@@ -1249,6 +1265,11 @@ class HttpBookClient:
     def find_currency(self, reference: str) -> CurrencyChoice:
         found = self._call("GET", "/currencies/lookup", {"reference": reference})
         return from_data(CurrencyChoice, found["currency"], "currency")
+
+    def latest_exchange_rate(self, source: str, target: str) -> CommodityPrice | None:
+        found = self._call("GET", "/exchange-rates/latest", {"source": source, "target": target})
+        rate = found["rate"]
+        return from_data(CommodityPrice, rate, "rate") if rate is not None else None
 
     def save_exchange_rate(self, request: SaveExchangeRate) -> CommodityPrice:
         found = self._call("POST", "/exchange-rates", body=to_data(request))

@@ -17,7 +17,6 @@ from collections.abc import Sequence
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.dashboard import (
     GROUP_KINDS,
     SECTIONS,
@@ -29,6 +28,7 @@ from ...gen.services.dashboard_config import (
     DashboardGroup,
 )
 from ..gi_setup import Gtk, Pango
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -61,7 +61,7 @@ class DashboardDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         tables: Sequence[tuple[str, str, Gtk.ColumnView]] = (),
         settings=None,
     ) -> None:

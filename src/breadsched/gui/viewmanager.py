@@ -34,12 +34,12 @@ from .. import APP_NAME  # noqa: E402
 from ..api import ApiError
 from ..api.local import book_server
 from ..api.protocol import Change
-from ..gen.db.sqlite import DbSQLite  # noqa: E402
 from ..gen.services.ledger_reads import AccountRecord
 from ..gen.utils.settings import Settings  # noqa: E402
 from .background import SnapshotReader
 from .gi_setup import Gdk, Gio, GLib, GObject, Gtk, Pango
 from .paths import default_book_path  # noqa: E402
+from .remote_book import OpenBook, RemoteBook
 from .view_catalog import (
     CATEGORIES,
     TOOLBAR,
@@ -79,7 +79,7 @@ class ViewManager(Gtk.ApplicationWindow):
         self.set_default_size(1180, 760)
         # The last size and maximized state, from the user's settings (#349).
         restore_size(self, "main")
-        self.db: DbSQLite | None = None
+        self.db: OpenBook | None = None
         self._views: dict[str, Gtk.Widget] = {}
         #: Every register tab's view; ``_views["register"]`` is the one shown.
         self._registers: list[Gtk.Widget] = []
@@ -426,10 +426,13 @@ class ViewManager(Gtk.ApplicationWindow):
         self._detach_views()
         super().destroy()
 
-    def book_opened(self, db: DbSQLite, path: str) -> None:
+    def book_opened(self, db: OpenBook, path: str) -> None:
         self.db = db
         self.set_title(f"{path.rsplit('/', 1)[-1]} — {APP_NAME}")
-        if db.path and db.path != ":memory:":
+        if isinstance(db, RemoteBook):
+            # The host reads from its own snapshots; this one only waits for it.
+            self.snapshot_reader = SnapshotReader(api=db.book_api)
+        elif db.path and db.path != ":memory:":
             self.snapshot_reader = SnapshotReader(db.path)
         # The window hears of changes, as its views do, from the book server (#356).
         self._unsubscribe = book_server(db).subscribe(self._on_book_change)

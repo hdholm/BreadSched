@@ -17,11 +17,11 @@ from decimal import InvalidOperation
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.transaction_query import DIRECTIONS, GROUPINGS, SORTS, TransactionQuery
 from ...gen.lib import Money
 from ...gen.services.transaction_search import FindResult
 from ..gi_setup import Gio, Gtk
+from ..remote_book import OpenBook
 from ..views._base import Row, column
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
@@ -115,7 +115,7 @@ class FindDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         open_account: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(title="Find transactions", transient_for=parent, modal=False)

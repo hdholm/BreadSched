@@ -19,10 +19,10 @@ from functools import partial
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import ledger
 from ...gen.lib.transaction import Transaction
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.confirm import delete_button
 from ..widgets.help import help_row
@@ -30,7 +30,7 @@ from ..widgets.help import help_row
 __all__ = ["PostedTransactionsDialog", "split_lines"]
 
 
-def split_lines(db: DbSQLite, transaction: Transaction) -> list[tuple[str, str, str, str]]:
+def split_lines(db: OpenBook, transaction: Transaction) -> list[tuple[str, str, str, str]]:
     """Each split as (account, memo, heading, amount), money in before money out.
 
     The heading is the split account's own register heading for its direction
@@ -64,7 +64,7 @@ class PostedTransactionsDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         handles: Iterable[str],
         *,
         skipped: int = 0,

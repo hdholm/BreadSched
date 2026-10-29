@@ -57,7 +57,6 @@ from ..gen.services import (
     ToggleCleared,
     TransactionInput,
     TransactionSplitInput,
-    transaction_currency,
 )
 from ..gen.services.autocomplete import SuggestEntry
 from ..gen.services.entry_input import ReadEntryTrade
@@ -945,7 +944,8 @@ class RegisterSheet:
                     price=holder.price,
                     amount=amount_text,
                     changed="amount" if column in ("increase", "decrease") else column,  # type: ignore[arg-type]
-                    currency=transaction_currency(self.db, source.currency if source else None),
+                    currency=(source.currency if source else None)
+                    or book_server(self.db).transaction_currency(),
                 )
             )
         except ApiError as error:
@@ -1015,7 +1015,9 @@ class RegisterSheet:
     def read_amount(self, text: str) -> Money:
         """Typed text as an amount, arithmetic evaluated; ``ValueError`` if unreadable."""
         source = self.draft.source
-        currency = transaction_currency(self.db, source.currency if source is not None else None)
+        currency = (source.currency if source is not None else None) or book_server(
+            self.db
+        ).transaction_currency()
         try:
             value = book_server(self.db).entry_amount(text, currency).value
         except ApiError:
@@ -1382,9 +1384,9 @@ class RegisterSheet:
         description = draft.description.strip()
         if not description:
             return self._fail("Enter a description.", "description")
-        currency = transaction_currency(
-            self.db, draft.source.currency if draft.source is not None else None
-        )
+        currency = (draft.source.currency if draft.source is not None else None) or book_server(
+            self.db
+        ).transaction_currency()
         if draft.expanded:
             splits = self._line_splits(currency)
             if not splits:

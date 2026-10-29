@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.cost_basis import shares_text
 from ...gen.engine.realized_gains import RealizedGainsReport
 from ...gen.services.investment_reports import RealizedGainsView
@@ -11,6 +10,7 @@ from ...plugins.export.report_layout import realized_gains_layout
 from ...presentation import lot_text
 from .. import printing
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -28,7 +28,7 @@ def _cell(text: str, *, numeric: bool = False) -> Gtk.Label:
 class RealizedGainsDialog(BoundedWindow):
     """Totals by year and currency, then each sale with its lots and how they were chosen."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
         super().__init__(title="Realized Gains", transient_for=parent)
         self.db = db
         self.set_default_size(900, 600)

@@ -11734,3 +11734,93 @@ class TestFindTransactions:
                         if child is not None:
                             stack.append(child)
         assert "Find _Transactions…" in labels
+
+
+class TestABookTheHostHolds:
+    """Decision 0004: a book the computer account's host already holds opens in GTK
+    through that host, as the account's own user, and works as if opened here."""
+
+    @pytest.fixture
+    def held(self, populated_book):
+        import threading
+
+        from breadsched.api.discovery import publish_server, withdraw_server
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.web.server import serve
+
+        db = DbSQLite()
+        db.load(str(populated_book))
+        httpd = serve(db, host="127.0.0.1", port=0)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        url = f"http://127.0.0.1:{httpd.server_port}"
+        record = publish_server(
+            str(populated_book), url, db.writer_lock_token, book_id=httpd.books[db.path]
+        )
+        yield db
+        withdraw_server(record)
+        httpd.shutdown()
+        httpd.server_close()
+        db.close()
+
+    def test_gtk_uses_the_hosts_book_and_follows_its_changes(
+        self, app, window, populated_book, held
+    ):
+        from breadsched.api.local import book_server
+        from breadsched.gen.lib import Transaction
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+        from breadsched.gui.remote_book import RemoteBook
+
+        app.open_book(str(populated_book))
+        assert isinstance(app.db, RemoteBook)
+        before = len(list(held.iter_transactions()))
+
+        # An entry made in GTK is saved by the host.
+        dialog = TransactionDialog(window, app.db)
+        dialog.description_entry.set_text("Entered in GTK")
+        dialog.splits[0].set_amount_text("12.00")
+        dialog._on_save(None)
+        assert any(t.description == "Entered in GTK" for t in held.iter_transactions())
+        assert len(list(held.iter_transactions())) == before + 1
+
+        # A change made elsewhere reaches GTK by the host's change stream, and the open
+        # register shows it.
+        checking = held.get_account_by_name("Assets:Checking Account")
+        rent = held.get_account_by_name("Expenses:Rent")
+        window.open_register(checking.handle)
+        view = window._views["register"]
+        heard = []
+        app.db.book_api.subscribe(heard.append)
+        with held.transaction("Elsewhere") as txn:
+            held.add_transaction(
+                Transaction.simple(
+                    date.today(), "Entered elsewhere", rent.handle, checking.handle, "3"
+                ),
+                txn,
+            )
+        assert _spin(lambda: any(change.revision == held.revision() for change in heard), 20)
+        view.refresh()
+        assert _spin(
+            lambda: any(
+                row.transaction.description == "Entered elsewhere" for row in view.sheet.ledger_rows
+            ),
+            20,
+        )
+        # Undo is the host's, and names who made the step.
+        assert app.actions["undo"].get_enabled() is True
+        app.on_undo()
+        assert _spin(
+            lambda: not any(t.description == "Entered elsewhere" for t in held.iter_transactions()),
+            20,
+        )
+        assert book_server(app.db).revision == held.revision()
+
+    def test_the_views_open_on_the_hosts_book(self, app, window, populated_book, held):
+        from breadsched.gui.remote_book import RemoteBook
+
+        app.open_book(str(populated_book))
+        assert isinstance(app.db, RemoteBook)
+        for category in ("dashboard", "accounts", "scheduled", "plan", "projection"):
+            window.show_category(category)
+            view = window._views[category]
+            assert _spin(lambda v=view: not getattr(v, "_background_running", False), 30)
+        window.snapshot_reader.wait(30)

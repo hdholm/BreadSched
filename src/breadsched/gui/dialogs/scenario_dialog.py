@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from ...api import ApiError  # noqa: E402
 from ...api.local import book_server  # noqa: E402
-from ...gen.db.sqlite import DbSQLite  # noqa: E402
 from ...gen.lib import Scenario  # noqa: E402
 from ...gen.services import SaveScenario  # noqa: E402
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.help import help_row
 
@@ -22,7 +22,7 @@ class SaveScenarioDialog(BoundedWindow):
     from which nobody recovers.
     """
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite, scenario: Scenario) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook, scenario: Scenario) -> None:
         super().__init__(title="Save scenario", transient_for=parent, modal=True)
         self.db = db
         self.scenario = scenario

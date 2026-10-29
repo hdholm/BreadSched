@@ -15,7 +15,6 @@ from datetime import date
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.payroll import (
     PayChangePlan,
     PaycheckBreakdown,
@@ -30,6 +29,7 @@ from ...gen.lib.recurrence import PeriodType, Recurrence
 from ...gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, keeps_enter
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
@@ -80,7 +80,7 @@ class PayrollDialog(BoundedWindow):
     """A paycheck's lines, its pay changes, and reusable payroll templates."""
 
     def __init__(
-        self, parent: Gtk.Window | None, db: DbSQLite, schedule: str | None = None
+        self, parent: Gtk.Window | None, db: OpenBook, schedule: str | None = None
     ) -> None:
         super().__init__(title="Payroll", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
