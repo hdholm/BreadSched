@@ -296,7 +296,10 @@ other accounts; 3 and 4 make it a household application.
   request), and sets it for the request on whichever thread runs the book
   (`acting_as`). The web layer's `Api.book` is a `GuardedBook` that checks it before
   every operation, refusing with 403 `book.permission.denied`; only the transport may
-  reach the unguarded `Api.server`. In process nothing is checked.
+  reach the unguarded `Api.server`. The two routes that touch the book file
+  itself (a document's content, which needs `READ`, and an import upload, which
+  needs `WRITE` before the file is kept) check the role first, and an architecture
+  test holds that list. In process nothing is checked.
 - **The entry role's view:** `account_outline()` (`GET /api/v1/account-outline`) is
   the account tree with depths and no values, which quick entry now reads.
 - **Sharing:** `breadsched share BOOK [USER --role ROLE | USER --remove]`, and **Who

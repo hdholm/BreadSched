@@ -43,6 +43,7 @@ __all__ = [
     "acting_as",
     "current_role",
     "require",
+    "require_permission",
 ]
 
 
@@ -314,6 +315,14 @@ def require(operation: str) -> None:
         return
     permission = OPERATIONS.get(operation)
     if permission is None or permission not in ROLE_PERMISSIONS.get(role, frozenset()):
+        raise _refuse("book.permission.denied")
+
+
+def require_permission(permission: Permission) -> None:
+    """Refuse unless the current role holds ``permission``: for the few web routes that
+    reach the book file itself rather than through :class:`GuardedBook`."""
+    role = _ROLE.get()
+    if role is not None and permission not in ROLE_PERMISSIONS.get(role, frozenset()):
         raise _refuse("book.permission.denied")
 
 

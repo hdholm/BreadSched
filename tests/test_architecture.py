@@ -1056,6 +1056,19 @@ class TestBookServerBoundaries:
         }
         assert operations == set(OPERATIONS)
 
+    def test_adapters_that_reach_the_book_file_check_the_role(self):
+        """Decision 0004: an adapter given the book file itself, not the guarded book,
+        must check the request's role before it reads or keeps anything."""
+        reaching = {
+            module.name
+            for module in (SRC / "web").glob("*_resource.py")
+            if ": DbSQLite" in module.read_text(encoding="utf-8")
+        }
+        assert reaching == {"attachment_resource.py", "upload_resource.py"}
+        for name in reaching:
+            source = (SRC / "web" / name).read_text(encoding="utf-8")
+            assert "require(" in source or "require_permission(" in source, name
+
     #: Service calls the book server now owns for these adapters.
     OWNED = {
         "pending_due_review",

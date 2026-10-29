@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..api.contract import ApiError
+from ..api.permissions import require
 from ..gen.db.sqlite import DbSQLite
 from ..gen.services.uploads import store_import_upload
 from .context import Api
@@ -20,6 +21,8 @@ def import_upload(
     include_duplicates: bool = False,
 ) -> dict:
     """Import a selected file; reuse its path for later uploads of the same name."""
+    # The file is kept beside the book before the import itself is asked for.
+    require("upload_import_file")
     stored = store_import_upload(db, filename, content)
     if stored.value is None:
         raise ApiError.from_service(stored.errors[0])

@@ -15,6 +15,7 @@ import mimetypes
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from ..api.permissions import Permission, require_permission
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import attachments as attachment_engine
 from ..gen.engine.attachments import AttachmentStatus
@@ -117,6 +118,8 @@ def attachment_upload(
 
 def attachment_content(db: DbSQLite, transaction: str, location: str) -> tuple[bytes, str]:
     """The bytes and media type of one document the transaction lists."""
+    # Read from the book itself, so the role is checked here (decision 0004).
+    require_permission(Permission.READ)
     stored = db.get_transaction(transaction)
     if stored is None:
         raise _refuse(404, "transaction.not_found", "transaction")

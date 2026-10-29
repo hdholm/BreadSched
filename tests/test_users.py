@@ -493,6 +493,31 @@ def test_each_role_may_do_what_it_is_given_and_no_more(hosted):
     assert HttpBookClient(hosted.base, device_token()).writeback_keep_backups() >= 0
 
 
+def test_the_routes_that_reach_the_book_file_check_the_role_too(hosted):
+    """Documents and import uploads are read or kept by the web layer itself, around
+    the guarded book, so they check the role before touching the file."""
+    directory = UserDirectory()
+    book_id = hosted.db.get_metadata("book.id")
+    viewer = _person(directory, "vera", "viewer", book_id)
+    entry = _person(directory, "eli", "entry", book_id)
+    document = "/api/attachment/content?transaction=missing&location=receipt.pdf"
+    status, body, _ = _call(hosted.base, "GET", document, headers={"X-BreadSched-Token": entry})
+    assert (status, body["code"]) == (403, "book.permission.denied")
+    status, body, _ = _call(hosted.base, "GET", document, headers={"X-BreadSched-Token": viewer})
+    assert (status, body["code"]) == (404, "transaction.not_found")
+    request = urllib.request.Request(
+        hosted.base + "/api/import/upload?filename=statement.qif",
+        data=b"!Type:Bank\nD10/01/2026\nT-5.00\n^\n",
+        headers={"Content-Type": "application/octet-stream", "X-BreadSched-Token": viewer},
+        method="POST",
+    )
+    with pytest.raises(urllib.error.HTTPError) as refused:
+        urllib.request.urlopen(request, timeout=20)
+    assert refused.value.code == 403
+    assert json.loads(refused.value.read())["code"] == "book.permission.denied"
+    assert not any(hosted.path.parent.glob("*.uploads"))
+
+
 def test_grants_name_known_users_and_real_roles(hosted):
     directory = UserDirectory()
     book_id = hosted.db.get_metadata("book.id")
