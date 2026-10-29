@@ -248,15 +248,10 @@ breadsched scheduled-next household.breadsched Rent --enter
 ```
 
 While `breadsched serve` (or `breadsched web` without `--read-only`) holds a book,
-`due-review`, `scheduled-next`, `scheduled-advance`, `scheduled`, `accounts`,
-`account`, `register`, `balance`, `add`, `edit`, `delete`, `rules`, `tags`, `goals`,
-`receivables`, `scenario`, `drawdown`, `payroll`, `claims`, `review`,
-`plan-unresolved`, `plan-matches`, `plan-resolve`, `plan-reject`, `plan-unexpected`,
-`import-review`, `sale-lots`, `tax-marks`, `quotes`, `quote-source`, `rate`,
-`attachments`, `net-worth`, `net-worth-change`, `project`, `compare`, `holdings`,
-`realized-gains`, `tax-year`, `jars`, `dashboard`, `activity`, `gnucash-writeback`,
-`estimate suggest`, `find`, `import`, `infer`, and `import-csv` for the same book work through that server instead of stopping
-because the book is already open for writing. The server records its address in a
+every command for that book works through that server instead of stopping
+because the book is already open for writing. Only `migrate` and `restore` need the
+file to themselves; `backup`, `verify`, and `export` read it beside the server. The
+server records its address in a
 file only you can read, in your runtime folder, and removes it when it stops; your
 commands prove they are yours with a private token BreadSched keeps in your settings
 folder.
@@ -268,8 +263,7 @@ rental.breadsched` prints each book's id. While it runs, `breadsched serve
 cabin.breadsched` adds that book to the same server rather than starting another,
 until you press Ctrl+C there. Commands on this computer still find each
 book by its file. A `--server` command for a server holding several books names one
-with `--book-id ID`; a browser asks which of the books shared with you to open. Other commands still need the book
-to themselves. The desktop application can share the book it has open the same way
+with `--book-id ID`; a browser asks which of the books shared with you to open. The desktop application can share the book it has open the same way
 (**Edit → Preferences… → Sharing**). The other way round, opening a book in the desktop
 application while `breadsched serve` holds it uses it through that server, as you.
 

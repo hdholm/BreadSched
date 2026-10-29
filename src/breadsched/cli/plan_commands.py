@@ -22,35 +22,27 @@ from ..gen.lib import (
     Money,
     PeriodType,
     Recurrence,
-    ScheduledSplit,
     ScheduledTransaction,
 )
 from ..gen.services import (
-    DeleteSchedule,
     DueDecision,
+    FixedScheduleInput,
     PostDue,
     PostedDue,
     ResolveDue,
     ResolveNext,
     ReviewOccurrence,
-    SaveSchedule,
+    SaveFixedSchedule,
     SetAdvanceDays,
-    delete_schedule,
-    save_schedule,
 )
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
-from ..presentation import (
-    service_error_message,
-)
 from .common import (
     AddCommand,
     CommandError,
     add_server_options,
     book_api,
     emit,
-    open_book,
     parse_date,
-    resolve_account,
     table,
 )
 
@@ -656,16 +648,11 @@ def cmd_estimate(args: argparse.Namespace) -> int:
     """Manage placeholder flows: recurring estimates that are never posted."""
     if args.action == "suggest":
         return _estimate_suggestions(args)
-    db = open_book(
-        args.book if args.action not in {"list", "suggest"} else args.book,
-        "r" if args.action in {"list", "suggest"} else "w",
-    )
-    try:
+    with book_api(args, "r" if args.action == "list" else "w") as book:
+        estimates = [s for s in book.scheduled_page().schedules if s.placeholder]
         if args.action == "list":
             rows, payload = [], []
-            for sched in db.iter_scheduled():
-                if not sched.placeholder:
-                    continue
+            for sched in estimates:
                 rows.append(
                     [
                         sched.name,
@@ -686,46 +673,45 @@ def cmd_estimate(args: argparse.Namespace) -> int:
             return 0
 
         if args.action == "remove":
-            match = next(
-                (s for s in db.iter_scheduled() if s.placeholder and s.name == args.name), None
-            )
+            match = next((s for s in estimates if s.name == args.name), None)
             if match is None:
                 raise CommandError(f"no estimate named {args.name!r}")
-            result = delete_schedule(db, DeleteSchedule(match.handle))
-            if not result.ok:
-                raise CommandError(service_error_message(result.errors[0]))
+            book.delete_schedule(match.handle)
             emit({"removed": args.name}, args, f"Removed estimate {args.name!r}")
             return 0
 
-        account = resolve_account(db, args.account)
-        funding = resolve_account(db, args.funded_from)
+        account = book.find_account(args.account)
+        funding = book.find_account(args.funded_from)
         recurrence = Recurrence(
             period=args.every,
             interval=args.interval,
             start=parse_date(args.start) or date.today().replace(day=1),
         )
         value = Money(args.amount)
-        sched = ScheduledTransaction(
-            name=args.name,
-            recurrence=recurrence,
-            splits=[
-                ScheduledSplit(account.handle, value),
-                ScheduledSplit(funding.handle, -value),
-            ],
+        if not value:
+            raise CommandError("--amount must not be zero")
+        # The amount goes to the account as given (a negative one for income), and
+        # the funding account takes the other side.
+        saved = book.save_fixed_schedule(
+            SaveFixedSchedule(
+                FixedScheduleInput(
+                    name=args.name,
+                    recurrence=recurrence,
+                    category=account.handle,
+                    funding=funding.handle,
+                    amount=abs(value),
+                    category_ledger_direction=1 if value > 0 else -1,
+                    placeholder=True,
+                )
+            )
         )
-        sched.placeholder = True
-        result = save_schedule(db, SaveSchedule(sched))
-        if not result.ok:
-            raise CommandError(service_error_message(result.errors[0]))
         emit(
-            {"name": sched.name, "handle": sched.handle},
+            {"name": args.name, "handle": saved.handle},
             args,
-            f"Added estimate {sched.name!r}: {Money(args.amount).format()} on "
-            f"{db.full_name(account)} {recurrence.describe()}",
+            f"Added estimate {args.name!r}: {value.format()} on "
+            f"{account.full_name} {recurrence.describe()}",
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_jars(args: argparse.Namespace) -> int:

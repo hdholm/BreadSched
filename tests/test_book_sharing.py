@@ -234,6 +234,30 @@ def test_account_commands_work_through_the_server_holding_the_book(running, book
     assert "breadsched:" in capsys.readouterr().err
 
 
+def test_estimate_commands_work_through_the_server_holding_the_book(running, book_path, capsys):
+    path = str(book_path)
+    start = running.db.revision()
+    add = ["estimate", path, "add", "--name", "Pay", "--account", "Income:Wages"]
+    add += ["--funded-from", "Assets:Checking", "--amount", "-3000", "--every", "month"]
+    assert main([*add, "--start", "2026-04-01", "--json"]) == 0
+    handle = json.loads(capsys.readouterr().out)["handle"]
+    saved = running.db.get_scheduled(handle)
+    assert saved.placeholder and running.db.revision() == start + 1
+    # The amount goes to the account as given, the funding account the other side.
+    wages = running.db.get_account_by_name("Income:Wages").handle
+    assert {split.account == wages: split.amount for split in saved.splits} == {
+        True: Money("-3000"),
+        False: Money("3000"),
+    }
+    assert main(["estimate", path, "list", "--json"]) == 0
+    [listed] = [row for row in json.loads(capsys.readouterr().out) if row["name"] == "Pay"]
+    assert listed["amount"] == "3000.00"
+    assert main(["estimate", path, "remove", "--name", "Pay"]) == 0
+    assert running.db.get_scheduled(handle) is None
+    assert main(["estimate", path, "remove", "--name", "Pay"]) == 2
+    assert "no estimate named 'Pay'" in capsys.readouterr().err
+
+
 def test_rules_work_through_the_server_holding_the_book(running, book_path, capsys):
     path = str(book_path)
     add = ["rules", path, "--add-description", "Corner Grocer", "--category", "Groceries"]
