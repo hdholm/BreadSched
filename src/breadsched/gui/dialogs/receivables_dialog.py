@@ -33,6 +33,7 @@ from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.help import help_row
 
 __all__ = ["ReceivablesDialog"]
@@ -114,10 +115,10 @@ class ReceivablesDialog(BoundedWindow):
         form = Gtk.Grid(column_spacing=10, row_spacing=6)
         self.payer_entry = Gtk.Entry(hexpand=True, placeholder_text="Acme Insurance")
         self.description_entry = Gtk.Entry(hexpand=True, placeholder_text="What it was for")
-        self.incurred_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD")
+        self.incurred_entry = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
         self.expected_entry = Gtk.Entry(placeholder_text="Optional", xalign=1)
         self.expected_entry.add_css_class("numeric")
-        self.cash_date_entry = Gtk.Entry(placeholder_text="Optional YYYY-MM-DD")
+        self.cash_date_entry = attach_date_keys(Gtk.Entry(placeholder_text="Optional YYYY-MM-DD"))
         self.account_picker = bounded_dropdown()
         self.account_picker.set_tooltip_text(
             "The Receivable account holding what is owed; by default one per currency, "
@@ -206,7 +207,7 @@ class ReceivablesDialog(BoundedWindow):
         self.detail.append(credit_row)
 
         dispute_row = Gtk.Box(spacing=8)
-        self.dispute_date = Gtk.Entry(placeholder_text="YYYY-MM-DD")
+        self.dispute_date = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
         self.dispute_note = Gtk.Entry(hexpand=True, placeholder_text="Why the payer contests it")
         mark = Gtk.Button(label="Mark disputed")
         mark.connect("clicked", lambda _b: self.dispute())
@@ -221,7 +222,7 @@ class ReceivablesDialog(BoundedWindow):
         write_row = Gtk.Box(spacing=8)
         self.write_off_amount = Gtk.Entry(placeholder_text="0.00", xalign=1)
         self.write_off_amount.add_css_class("numeric")
-        self.write_off_date = Gtk.Entry(placeholder_text="YYYY-MM-DD")
+        self.write_off_date = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
         self.write_off_reason = Gtk.Entry(hexpand=True, placeholder_text="Reason")
         # The expense a write-off becomes; a direct charge has none of its own (#378).
         self.write_off_account = bounded_dropdown()
@@ -251,7 +252,7 @@ class ReceivablesDialog(BoundedWindow):
             "What the payer pays in that scenario; 0 for nothing. The rest is projected "
             "as written off."
         )
-        self.scenario_date = Gtk.Entry(placeholder_text="YYYY-MM-DD")
+        self.scenario_date = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
         self.scenario_date.set_tooltip_text("When the payer pays in that scenario")
         self.scenario_button = Gtk.Button(label="Apply to scenario")
         self.scenario_button.set_tooltip_text(
@@ -575,7 +576,7 @@ class ReceivablesDialog(BoundedWindow):
         if not text and optional:
             return None
         try:
-            return date.fromisoformat(text)
+            return parse_date_text(text)
         except ValueError:
             raise ValueError(f"Enter the {label} as YYYY-MM-DD.") from None
 

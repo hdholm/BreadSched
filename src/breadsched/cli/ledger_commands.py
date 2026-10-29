@@ -346,7 +346,8 @@ def cmd_account(args: argparse.Namespace) -> int:
                 parent=parent,
                 code=args.code or "",
                 description=args.description or "",
-                placeholder=args.placeholder,
+                placeholder=bool(args.placeholder),
+                hidden=bool(args.hidden),
             )
             _apply_account_options(book, account, args)
             saved = book.save_account(
@@ -383,6 +384,10 @@ def cmd_account(args: argparse.Namespace) -> int:
             account.code = args.code
         if args.parent:
             account.parent = book.find_account(args.parent).handle
+        if args.placeholder is not None:
+            account.placeholder = args.placeholder
+        if args.hidden is not None:
+            account.hidden = args.hidden
         _apply_account_options(book, account, args)
         book.save_account(SaveAccount(account, existing_handle=account.handle, source=source))
         name = book.account(account.handle).full_name
@@ -440,7 +445,19 @@ def register(add: AddCommand) -> None:
     account.add_argument("--parent")
     account.add_argument("--description")
     account.add_argument("--code")
-    account.add_argument("--placeholder", action="store_true")
+    account.add_argument(
+        "--placeholder",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="hold only other accounts (--no-placeholder to take transactions again)",
+    )
+    account.add_argument(
+        "--hidden",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="hide the account from lists unless hidden accounts are shown "
+        "(--no-hidden shows it again, an imported one too)",
+    )
     account.add_argument("--group", help="dashboard group this account belongs to")
     account.add_argument("--linked-asset", help="for a loan: the asset behind it")
     account.add_argument(

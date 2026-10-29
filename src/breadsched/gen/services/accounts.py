@@ -8,6 +8,7 @@ from datetime import date
 from ..db.base import DbError
 from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass, AccountType
+from ..lib.imported import baseline
 from ..lib.money import Money
 from ..lib.transaction import Transaction
 from .contracts import ServiceError, ServiceResult
@@ -59,6 +60,12 @@ def save_account(db: DbSQLite, request: SaveAccount) -> ServiceResult[SavedAccou
     if errors:
         return ServiceResult.failure(*errors)
 
+    if request.existing_handle is not None and not account.imported_values:
+        # An account imported before its GnuCash fields could be changed holds the
+        # values it was imported with: keep them, so a re-import keeps this edit.
+        saved = db.stored_account(request.existing_handle)
+        if saved is not None and (saved.source_guid or saved.source_type):
+            account.imported_values = baseline(saved)
     action = "Edit" if existing is not None else "Add"
     with db.transaction(f"{action} account {account.name}") as txn:
         if existing is None:
@@ -120,13 +127,6 @@ def _account_errors(
     errors.extend(_card_errors(db, account, existing))
     errors.extend(_fsa_errors(account))
     errors.extend(_investment_errors(account))
-    if existing is not None and (existing.source_guid or existing.source_type):
-        protected = ("name", "parent", "code", "description")
-        changed = tuple(
-            field for field in protected if getattr(account, field) != getattr(existing, field)
-        )
-        if changed:
-            errors.append(ServiceError("account.source_fields.read_only", changed))
     if existing is None or (account.name, account.parent) != (existing.name, existing.parent):
         duplicate = next(
             (

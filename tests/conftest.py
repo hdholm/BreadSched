@@ -73,6 +73,16 @@ def isolate_user_directory(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def hidden_accounts_put_away():
+    """Each test starts with hidden accounts not shown (an application-wide toggle)."""
+    from breadsched.gui import hidden_accounts
+
+    hidden_accounts.set_shown(False)
+    yield
+    hidden_accounts.set_shown(False)
+
+
+@pytest.fixture(autouse=True)
 def isolate_logging():
     """Stop one test's logging setup leaking into the next.
 

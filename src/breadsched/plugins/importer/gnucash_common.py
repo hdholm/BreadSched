@@ -34,6 +34,7 @@ from ...gen.lib.account import (
 )
 from ...gen.lib.commodity import Commodity, CommodityPrice
 from ...gen.lib.formula import FormulaError, evaluate
+from ...gen.lib.imported import imported_values, merge_reimport
 from ...gen.lib.money import Money
 from ...gen.lib.notes import notes_digest, reconcile_imported_notes
 from ...gen.lib.recurrence import PeriodType
@@ -552,6 +553,8 @@ class ImportSink:
         #: Transactions and accounts whose note changed on both sides since the
         #: last import, so BreadSched's note was kept (#385).
         self.notes_kept = 0
+        #: Account fields changed in both BreadSched and GnuCash since the last import.
+        self.fields_kept = 0
 
     # ------------------------------------------------------------- commodities
 
@@ -742,6 +745,7 @@ class ImportSink:
             account.source_type = source_type
             account.source_fields = list(source_fields)
             self._preserve_breadsched_account_state(account, existing)
+            self.fields_kept += merge_reimport(existing, account)
             self._take_notes(account, existing, notes)
             self.db.commit_account(account, self.txn)
             if existing.handle != guid:
@@ -771,6 +775,10 @@ class ImportSink:
             account.source_type = source_type
             account.source_fields = list(source_fields)
             self._preserve_breadsched_account_state(account, twin)
+            if twin.source_guid:
+                self.fields_kept += merge_reimport(twin, account)
+            else:
+                account.imported_values = imported_values(account)
             self._take_notes(account, twin, notes)
             self.db.commit_account(account, self.txn)
             self._source_accounts[guid] = twin.handle
@@ -799,6 +807,7 @@ class ImportSink:
         account.source_guid = guid
         account.source_type = source_type
         account.source_fields = list(source_fields)
+        account.imported_values = imported_values(account)
         self.db.add_account(account, self.txn)
         self._source_accounts[guid] = account.handle
         self._known_accounts.add(guid)
@@ -818,7 +827,13 @@ class ImportSink:
         return False
 
     def report_kept_notes(self) -> None:
-        """Say how many notes changed on both sides, so BreadSched's were kept (#385)."""
+        """Say how many notes changed on both sides, so BreadSched's were kept (#385),
+        and how many account fields did."""
+        if self.fields_kept:
+            self.result.warn(
+                f"kept BreadSched's value of {self.fields_kept} account field(s) changed "
+                "in both BreadSched and GnuCash since the last import"
+            )
         if self.notes_kept:
             self.result.warn(
                 f"kept BreadSched's notes on {self.notes_kept} transaction(s) or "

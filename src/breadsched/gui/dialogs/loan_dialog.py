@@ -19,9 +19,11 @@ from ...gen.engine.loans import LoanTerms, schedule_preview
 from ...gen.lib import Money
 from ...gen.services import SaveLoan
 from ...gen.utils.amount_input import parse_user_amount
+from .. import hidden_accounts
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.help import help_row
 
 __all__ = ["LoanDialog"]
@@ -37,7 +39,7 @@ class LoanDialog(BoundedWindow):
 
         # The accounts a loan may use and the amount precision, through the book
         # server (#358).
-        self.choices = book_server(db).loan_choices()
+        self.choices = book_server(db).loan_choices(hidden_accounts.shown())
         self._liabilities = list(self.choices.liabilities)
         self._expenses = list(self.choices.expenses)
         self._funding = list(self.choices.payment_accounts)
@@ -79,7 +81,7 @@ class LoanDialog(BoundedWindow):
         grid.attach(self.years_spin, 1, row, 1, 1)
         row += 1
 
-        self.start_entry = Gtk.Entry(text=date.today().replace(day=1).isoformat())
+        self.start_entry = attach_date_keys(Gtk.Entry(text=date.today().replace(day=1).isoformat()))
         self.start_entry.connect("changed", self._recalculate)
         grid.attach(Gtk.Label(label="First payment", xalign=0), 0, row, 1, 1)
         grid.attach(self.start_entry, 1, row, 1, 1)
@@ -152,7 +154,7 @@ class LoanDialog(BoundedWindow):
         try:
             principal = Money(parse_user_amount(self.amount_entry.get_text().strip()))
             rate = Decimal(self.rate_entry.get_text().strip() or "0") / Decimal(100)
-            start = date.fromisoformat(self.start_entry.get_text().strip())
+            start = parse_date_text(self.start_entry.get_text().strip())
         except (ValueError, ArithmeticError, InvalidOperation):
             return None
         if principal <= 0 or rate < 0:

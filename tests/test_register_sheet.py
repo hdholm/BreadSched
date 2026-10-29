@@ -629,3 +629,22 @@ class TestEnterAfterEditing:
                 assert sheet.ordinals[index] == sheet.ordinals[index - 1]
         transactions = [sheet.ordinals[i] for i, k in enumerate(kinds) if k in (TRANSACTION, BLANK)]
         assert transactions == list(range(len(transactions)))
+
+
+def test_a_hidden_account_is_usable_while_hidden_accounts_are_shown(db, book):
+    """A hidden account takes no new transactions and is no transfer choice, until
+    View → Show Hidden Accounts is on; then it is fully usable."""
+    from breadsched.gui import hidden_accounts
+
+    savings = db.get_account(book.savings)
+    savings.hidden = True
+    with db.transaction("Hide savings") as txn:
+        db.commit_account(savings, txn)
+    name = db.full_name(db.get_account(book.savings))
+    assert name not in _sheet(db, book).transfer_names
+    hidden_register = RegisterSheet(db, book.savings, today=TODAY)
+    assert hidden_register.enabled is False
+    hidden_accounts.set_shown(True)
+    assert name in _sheet(db, book).transfer_names
+    shown_register = RegisterSheet(db, book.savings, today=TODAY)
+    assert shown_register.enabled is True

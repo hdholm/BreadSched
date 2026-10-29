@@ -14,6 +14,7 @@ from __future__ import annotations
 from ...api.local import book_server  # noqa: E402
 from ...gen.lib.account import Account  # noqa: E402
 from ...gen.services import BalanceSummary, ChartLine  # noqa: E402
+from .. import hidden_accounts  # noqa: E402
 from ..gi_setup import Gio, Gtk, Pango
 from ._base import (
     BaseView,
@@ -360,5 +361,12 @@ class AccountTreeView(BaseView):
         self._lay_out()
 
     def set_show_hidden(self, show: bool) -> None:
+        """Show hidden accounts here and make them usable everywhere (registers,
+        dialogs), or put them away again."""
         self._show_hidden = show
+        hidden_accounts.set_shown(show)
+        root = self.get_root()
+        refresh = getattr(root, "refresh_views", None)
+        if callable(refresh):
+            refresh()
         self._lay_out()

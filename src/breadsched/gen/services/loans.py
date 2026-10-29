@@ -142,12 +142,16 @@ class LoanChoices:
     fraction: int
 
 
-def loan_choices(db: DbSQLite) -> LoanChoices:
+def loan_choices(db: DbSQLite, include_hidden: bool = False) -> LoanChoices:
+    """The accounts a new loan may use; hidden ones too when ``include_hidden`` (the
+    desktop's Show Hidden Accounts)."""
     accounts = sorted(
         (
             account
             for account in db.iter_accounts()
-            if not account.is_root and not account.placeholder and not account.hidden
+            if not account.is_root
+            and not account.placeholder
+            and (include_hidden or not account.hidden)
         ),
         key=db.full_name,
     )

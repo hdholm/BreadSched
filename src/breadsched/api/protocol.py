@@ -847,8 +847,9 @@ class BookApi(Protocol):
 
     # ------------------------------------------------------------------- loans
 
-    def loan_choices(self) -> LoanChoices:
-        """The accounts a new loan may use, and the book's amount precision."""
+    def loan_choices(self, include_hidden: bool = False) -> LoanChoices:
+        """The accounts a new loan may use (hidden ones too with ``include_hidden``),
+        and the book's amount precision."""
         ...
 
     def preview_loan(self, terms: LoanTerms) -> LoanPreview:

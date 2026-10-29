@@ -348,7 +348,8 @@ other accounts; 3 and 4 make it a household application.
   `READ` operation: a viewer keeps their own. A book without an id (read-only, in
   memory) still keeps its own.
 - **The Dashboard** is next: its whole configuration (horizons, sections, groups,
-  and the groups' members) is kept as the person's own (`dashboard`,
+  and the groups' members) is kept as the person's own for that one book, by the
+  book's id, since each book's accounts and purpose differ (`dashboard`,
   `DashboardConfig.serialize_personal`, which lists each group's members, since the
   accounts carry only the book's). `dashboard`, `dashboard_settings`, and
   `save_dashboard_settings` use it, else the book's arrangement (the accounts'

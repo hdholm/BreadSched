@@ -73,6 +73,7 @@ def reconciliation(api: Api, query: QueryParams) -> dict[str, object]:
                         "transaction": item.transaction,
                         "split": item.split,
                         "date": item.post_date,
+                        "num": item.num,
                         "description": item.description,
                         "amount": item.amount,
                         "state": item.state.value,

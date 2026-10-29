@@ -485,12 +485,16 @@ class TestImport:
         assert checking["notes"] == "Generic account note"
         assert checking["source_fields"][0]["name"] == "account:non-standard-scu"
 
-    def test_imported_source_owned_chart_fields_cannot_be_edited(
+    def test_imported_accounts_are_editable_and_a_reimport_keeps_the_edits(
         self, capsys, book_path, gnucash_sqlite_path
     ):
+        """GnuCash is not the system of record: an imported account's name and hidden
+        flag can be changed here, and a later import keeps those changes while still
+        bringing what changed only in GnuCash."""
+        import sqlite3
+
         run(capsys, "init", book_path)
         run(capsys, "import", book_path, gnucash_sqlite_path.path)
-
         code, _out = run(
             capsys,
             "account",
@@ -499,29 +503,45 @@ class TestImport:
             "--name",
             "Assets:Checking Account",
             "--rename",
-            "Local rename",
-        )
-
-        assert code == 2
-        code, _out = run(
-            capsys,
-            "account",
-            book_path,
-            "edit",
-            "--name",
-            "Assets:Checking Account",
+            "Everyday",
+            "--hidden",
             "--group",
             "Cash:Daily",
+        )
+        assert code == 0
+        # Meanwhile in GnuCash: a new description (only there), and a new name too.
+        conn = sqlite3.connect(gnucash_sqlite_path.path)
+        conn.execute(
+            "UPDATE accounts SET description = 'Joint account', name = 'Checking (old)'"
+            " WHERE guid = ?",
+            (gnucash_sqlite_path.ids.checking,),
+        )
+        conn.commit()
+        conn.close()
+        code, out = run(capsys, "import", book_path, gnucash_sqlite_path.path)
+        assert code == 0
+        assert "kept BreadSched's value of 1 account field(s)" in out
+
+        db = DbSQLite()
+        db.load(book_path, mode="r")
+        try:
+            assert db.get_account_by_name("Assets:Checking Account") is None
+            checking = db.get_account_by_name("Assets:Everyday")
+            assert checking is not None
+            assert (checking.hidden, checking.group) == (True, "Cash:Daily")
+            assert checking.description == "Joint account"
+            assert checking.imported_values["name"] == "Checking (old)"
+        finally:
+            db.close()
+        # And shown again, from here.
+        code, _out = run(
+            capsys, "account", book_path, "edit", "--name", "Assets:Everyday", "--no-hidden"
         )
         assert code == 0
         db = DbSQLite()
         db.load(book_path, mode="r")
         try:
-            assert db.get_account_by_name("Assets:Checking Account") is not None
-            assert db.get_account_by_name("Assets:Local rename") is None
-            checking = db.get_account_by_name("Assets:Checking Account")
-            assert checking is not None
-            assert checking.group == "Cash:Daily"
+            assert db.get_account_by_name("Assets:Everyday").hidden is False
         finally:
             db.close()
 

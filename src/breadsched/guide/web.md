@@ -230,7 +230,8 @@ Choose **Reconcile…** in the register, enter the statement date and ending bal
 check entries until the difference is zero, and finish. The totals show the checked
 Funds In and Funds Out separately, and entries dated after the statement are listed,
 shaded and marked *after statement*, in case a date is wrong; they are never checked
-for you. Choose the **✓**, **Date**, **Description**, or **Amount** heading to order
+for you. Each entry shows its **Num** (a check number, say), sometimes all a
+statement lists. Choose the **✓**, **Date**, **Num**, **Description**, or **Amount** heading to order
 the entries by it (checked first, or by size for Amount), and the same heading again
 to reverse it; the checks are saved first, and later entries stay at the end.
 **Edit** on a row saves the checks and opens that transaction for editing

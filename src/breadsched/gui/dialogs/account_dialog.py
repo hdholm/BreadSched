@@ -13,6 +13,7 @@ same makes one household look poorer than it is and the other richer.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from decimal import InvalidOperation
 
@@ -26,15 +27,18 @@ from ...gen.lib import (
     FsaFundingYear,
     Money,
 )
+from ...gen.lib.account import GnuCashAccountField
 from ...gen.services import (
     COST_BASIS_METHODS,
     SaveAccount,
 )
 from ...gen.utils.amount_input import parse_user_amount
+from .. import hidden_accounts
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.help import help_row
 
 __all__ = ["AccountDialog"]
@@ -113,6 +117,9 @@ class AccountDialog(BoundedWindow):
         source_box = Gtk.Box(spacing=8)
         source_box.append(self.source_summary)
         self.source_button = Gtk.Button(label="Details…")
+        self.source_button.set_tooltip_text("The other fields GnuCash keeps for this account")
+        #: The GnuCash fields as changed in Details, saved with the account.
+        self.source_fields = list(account.source_fields) if account is not None else []
         self.source_button.connect("clicked", self._show_source_details)
         source_box.append(self.source_button)
         imported = account is not None and bool(account.source_guid or account.source_type)
@@ -273,23 +280,11 @@ class AccountDialog(BoundedWindow):
         row += 1
 
         if imported:
-            source_owned = (
-                self.name_entry,
-                self.commodity_picker,
-                self.commodity_scu_entry,
-                self.parent_picker,
-                self.code_entry,
-                self.description_entry,
-                self.placeholder_check,
-                self.hidden_check,
-            )
-            for control in source_owned:
-                control.set_sensitive(False)
-                control.set_tooltip_text(
-                    "Controlled by the GnuCash source; change it there, then re-import"
-                )
+            # GnuCash is not the system of record: every imported field may be changed
+            # here, and a re-import keeps the change (``gen.lib.imported``).
             self.source_summary.set_tooltip_text(
-                "Chart fields are source-controlled; BreadSched planning fields remain editable"
+                "Imported from GnuCash; every field can be changed here, and a later "
+                "import keeps your changes"
             )
 
         self.emergency_check = Gtk.CheckButton(label="Carry in emergency fund")
@@ -364,7 +359,7 @@ class AccountDialog(BoundedWindow):
             for a in all_accounts
             if a.atype.is_cash_like
             and not a.placeholder
-            and (not a.hidden or a.handle == current_payment)
+            and (not a.hidden or hidden_accounts.shown() or a.handle == current_payment)
         ]
         self.payment_accounts.sort(key=by_name)
 
@@ -439,7 +434,8 @@ class AccountDialog(BoundedWindow):
     # -------------------------------------------------------------- reactions
 
     def _show_source_details(self, _button) -> None:
-        """Show imported provenance without making source-owned fields editable."""
+        """The account's imported identity and its other GnuCash fields, each of which
+        can be changed; the changes are saved with the account."""
         if self.account is None:
             return
         window = BoundedWindow(
@@ -451,35 +447,62 @@ class AccountDialog(BoundedWindow):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(14)
-        heading = Gtk.Label(
-            label="Read-only GnuCash provenance",
-            xalign=0,
-        )
+        heading = Gtk.Label(label="Imported from GnuCash", xalign=0)
         heading.add_css_class("title-3")
         box.append(heading)
-        lines = [
-            f"Source GUID: {self.account.source_guid or '(not retained)'}",
-            f"Source type: {self.account.source_type or '(unknown)'}",
-        ]
-        if self.account.source_fields:
-            lines.append("")
-            lines.extend(
-                f"{field.name} [{field.value_type}]: {field.value}"
-                for field in self.account.source_fields
-            )
+        identity = Gtk.Label(
+            label=(
+                f"Source GUID: {self.account.source_guid or '(not retained)'}\n"
+                f"Source type: {self.account.source_type or '(unknown)'}"
+            ),
+            xalign=0,
+            selectable=True,
+        )
+        box.append(identity)
+        grid = Gtk.Grid(column_spacing=10, row_spacing=6)
+        entries: list[tuple[GnuCashAccountField, Gtk.Entry]] = []
+        for row, field in enumerate(self.source_fields):
+            label = Gtk.Label(label=f"{field.name} [{field.value_type}]", xalign=0)
+            label.set_wrap(True)
+            entry = Gtk.Entry(text=field.value, hexpand=True)
+            entry.update_property([Gtk.AccessibleProperty.LABEL], [field.name])
+            grid.attach(label, 0, row, 1, 1)
+            grid.attach(entry, 1, row, 1, 1)
+            entries.append((field, entry))
+        if not entries:
+            box.append(Gtk.Label(label="No other GnuCash fields were imported.", xalign=0))
         else:
-            lines.extend(("", "No additional source fields were retained."))
-        details = Gtk.TextView(editable=False, cursor_visible=False, monospace=True)
-        details.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        details.get_buffer().set_text("\n".join(lines))
-        scroller = Gtk.ScrolledWindow(child=details)
+            box.append(
+                Gtk.Label(
+                    label="Change any of these; they are saved with the account, and a "
+                    "later import keeps your changes.",
+                    xalign=0,
+                    wrap=True,
+                )
+            )
+        scroller = Gtk.ScrolledWindow(child=grid)
         scroller.set_vexpand(True)
         scroller.set_hexpand(True)
         box.append(scroller)
-        close = Gtk.Button(label="Close", halign=Gtk.Align.END)
-        close.connect("clicked", lambda *_: window.close())
-        box.append(close)
+        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+        cancel = Gtk.Button(label="Cancel")
+        cancel.connect("clicked", lambda *_: window.close())
+        keep = Gtk.Button(label="Keep changes")
+        keep.add_css_class("suggested-action")
+
+        def on_keep(*_args) -> None:
+            self.source_fields = [
+                replace(field, value=entry.get_text()) for field, entry in entries
+            ]
+            window.close()
+
+        keep.connect("clicked", on_keep)
+        buttons.append(cancel)
+        buttons.append(keep)
+        box.append(buttons)
         window.set_child(box)
+        #: The open details window and its entries, for tests.
+        self.details = (window, entries, keep)
         window.present()
 
     @property
@@ -493,15 +516,15 @@ class AccountDialog(BoundedWindow):
         rules = Gtk.Box(spacing=6)
         row.append(dates)
         row.append(rules)
-        start = Gtk.Entry(placeholder_text="Start YYYY-MM-DD")
-        through = Gtk.Entry(placeholder_text="Through YYYY-MM-DD")
+        start = attach_date_keys(Gtk.Entry(placeholder_text="Start YYYY-MM-DD"))
+        through = attach_date_keys(Gtk.Entry(placeholder_text="Through YYYY-MM-DD"))
         election = Gtk.Entry(placeholder_text="Election")
-        runout = Gtk.Entry(placeholder_text="Run-out through (optional)")
+        runout = attach_date_keys(Gtk.Entry(placeholder_text="Run-out through (optional)"))
         carryover = Gtk.Entry(placeholder_text="Carryover limit (optional)")
         carryover.set_tooltip_text(
             "The most unused election the plan carries into the next plan year"
         )
-        grace = Gtk.Entry(placeholder_text="Grace through (optional)")
+        grace = attach_date_keys(Gtk.Entry(placeholder_text="Grace through (optional)"))
         grace.set_tooltip_text("Services up to this date may still be claimed against this year")
         if funding_year is not None:
             start.set_text(funding_year.start.isoformat())
@@ -533,7 +556,6 @@ class AccountDialog(BoundedWindow):
         self._validate()
 
     def _fsa_year_values(self) -> list[FsaFundingYear]:
-        from datetime import date
 
         years: list[FsaFundingYear] = []
         child = self.fsa_rows.get_first_child()
@@ -543,16 +565,16 @@ class AccountDialog(BoundedWindow):
             grace_text = grace.get_text().strip()
             years.append(
                 FsaFundingYear(
-                    date.fromisoformat(start.get_text().strip()),
-                    date.fromisoformat(through.get_text().strip()),
+                    parse_date_text(start.get_text().strip()),
+                    parse_date_text(through.get_text().strip()),
                     Money(parse_user_amount(election.get_text().strip())),
-                    date.fromisoformat(runout.get_text().strip())
+                    parse_date_text(runout.get_text().strip())
                     if runout.get_text().strip()
                     else None,
                     carryover_limit=(
                         Money(parse_user_amount(carryover_text)) if carryover_text else None
                     ),
-                    grace_through=date.fromisoformat(grace_text) if grace_text else None,
+                    grace_through=parse_date_text(grace_text) if grace_text else None,
                 )
             )
             child = child.get_next_sibling()
@@ -624,6 +646,7 @@ class AccountDialog(BoundedWindow):
         account.atype = self.selected_type
         account.code = self.code_entry.get_text().strip()
         account.description = self.description_entry.get_text().strip()
+        account.source_fields = list(self.source_fields)
         notes_buffer = self.notes_view.get_buffer()
         notes_start, notes_end = notes_buffer.get_bounds()
         account.notes = notes_buffer.get_text(notes_start, notes_end, True).strip()

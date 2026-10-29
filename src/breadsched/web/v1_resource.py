@@ -1448,8 +1448,9 @@ def quote_source_patch(api: Api, path: Path, body: dict[str, Any]) -> dict:
 
 
 def loan_choices_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    hidden = query.choice("hidden", ("true", "false"), "false") == "true"
     query.finish()
-    return to_data(api.book.loan_choices())
+    return to_data(api.book.loan_choices(hidden))
 
 
 def loan_preview_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:

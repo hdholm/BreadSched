@@ -47,7 +47,14 @@ breadsched tax-marks household.breadsched --account "Expenses:Medical=on" \
     --tag "Charity=on"                            # off, or gnucash for an account
 breadsched account household.breadsched edit --name "Assets:Brokerage" \
     --cost-basis average                          # or fifo (the default)
+breadsched account household.breadsched edit --name "Assets:Old Savings" \
+    --no-hidden --rename "Savings"                # imported ones too; --hidden hides
 ```
+
+`account edit` changes any account, one imported from GnuCash included: `--rename`,
+`--parent`, `--code`, `--description`, `--placeholder`/`--no-placeholder`, and
+`--hidden`/`--no-hidden`. A later import keeps those changes (see
+[Organize and edit accounts](../USER_GUIDE.md#organize-and-edit-accounts)).
 
 Start the other interfaces on the same book with `breadsched gui household.breadsched`
 ([Desktop guide](desktop.md)) or `breadsched web household.breadsched`

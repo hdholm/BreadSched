@@ -774,8 +774,8 @@ class LocalBookServer:
 
     # ------------------------------------------------------------------- loans
 
-    def loan_choices(self) -> LoanChoices:
-        return loan_service.loan_choices(self.db)
+    def loan_choices(self, include_hidden: bool = False) -> LoanChoices:
+        return loan_service.loan_choices(self.db, include_hidden)
 
     def preview_loan(self, terms: LoanTerms) -> LoanPreview:
         return unwrap(loan_service.preview_loan(self.db, terms))

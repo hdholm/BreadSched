@@ -59,6 +59,9 @@ class ReconciliationCandidate:
     #: A debit: money into an asset, or a payment on a liability. GnuCash's
     #: reconcile window lists these as Funds In and the credits as Funds Out.
     funds_in: bool = False
+    #: The transaction's number (a check number, say): sometimes all a statement
+    #: gives to tell its entries apart.
+    num: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +148,7 @@ def _candidate_rows(
                 selected=split.handle in selected,
                 after_statement=transaction.post_date > through,
                 funds_in=split.value > 0,
+                num=transaction.num,
             )
         )
     candidates.sort(key=lambda item: (item.post_date, item.transaction, item.split))
@@ -171,7 +175,7 @@ def reconciled_balance(db: DbSQLite, account: str, through: date) -> Money:
 
 
 #: How a statement's lists can be ordered (#377); ``date`` is the order they start in.
-CANDIDATE_SORTS = ("date", "description", "amount", "checked")
+CANDIDATE_SORTS = ("date", "num", "description", "amount", "checked")
 
 
 def sort_candidates(
@@ -179,6 +183,7 @@ def sort_candidates(
 ) -> list[ReconciliationCandidate]:
     """``candidates`` in a column's order, so a missing entry is easier to find (#377).
 
+    ``num`` orders numbers by value, then other text, then entries without one;
     ``amount`` orders by size, as both lists show it; ``checked`` puts the checked
     entries first (last when descending). Entries dated after the statement stay
     below the others in either direction, since they are listed only in case a date
@@ -188,6 +193,11 @@ def sort_candidates(
         raise ValueError(f"sort must be one of {', '.join(CANDIDATE_SORTS)}")
 
     def key(item: ReconciliationCandidate):
+        if sort == "num":
+            text = item.num.strip()
+            if not text:
+                return (2, 0, "")
+            return (0, int(text), "") if text.isdigit() else (1, 0, text.casefold())
         if sort == "description":
             return item.description.casefold()
         if sort == "amount":

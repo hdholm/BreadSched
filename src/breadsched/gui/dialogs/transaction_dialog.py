@@ -58,10 +58,12 @@ from ...gen.services import (
 from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import claim_role_label, service_error_message
+from .. import hidden_accounts
 from ..gi_setup import Gio, GLib, Gtk
 from ..widgets.bounded import BoundedWindow, keeps_enter
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.form_pages import FormPages
 from ..widgets.help import help_row
 
@@ -359,7 +361,11 @@ class TransactionDialog(BoundedWindow):
                 for record in self.context.accounts
                 if not record.account.is_root
                 and not record.account.placeholder
-                and (not record.account.hidden or record.account.handle in referenced)
+                and (
+                    not record.account.hidden
+                    or hidden_accounts.shown()
+                    or record.account.handle in referenced
+                )
             ),
             key=lambda record: record.full_name,
         )
@@ -384,7 +390,7 @@ class TransactionDialog(BoundedWindow):
         more = self.pages.page(MORE)
 
         when = (transaction.post_date if transaction is not None else default_date) or date.today()
-        self.date_entry = Gtk.Entry(text=when.isoformat())
+        self.date_entry = attach_date_keys(Gtk.Entry(text=when.isoformat()))
         self.date_entry.connect("changed", self.revalidate)
         header.add("Date", self.date_entry)
 
@@ -888,7 +894,7 @@ class TransactionDialog(BoundedWindow):
                 problems.append("check the shares")
                 break
         try:
-            date.fromisoformat(self.date_entry.get_text().strip())
+            parse_date_text(self.date_entry.get_text().strip())
         except ValueError:
             problems.append("check the date (YYYY-MM-DD)")
 
@@ -926,7 +932,7 @@ class TransactionDialog(BoundedWindow):
 
     def _request(self) -> SaveTransaction:
         """Translate the form into the shared typed service contract."""
-        when = date.fromisoformat(self.date_entry.get_text().strip())
+        when = parse_date_text(self.date_entry.get_text().strip())
         residual = self.residual()
         currency = transaction_currency(
             self.db, self.transaction.currency if self.transaction is not None else None

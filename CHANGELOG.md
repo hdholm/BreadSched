@@ -10,6 +10,33 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a306 - 2026-10-29
+
+- **Dates read alike everywhere (#393).** Every desktop date field reads a date as
+  the register does (`gui.widgets.date_entry`, over `entry_input.parse_entry_date`):
+  `3/15/26`, `3/15`, `15`, and the register's single-key shortcuts (**t**, **+**,
+  **-**, **]**, **[**, **m**, **h**, **y**, **r**), shown as `YYYY-MM-DD` when the
+  field is left. The reconcile window took only `YYYY-MM-DD` before.
+- **The reconcile window can go behind the main window (#393).** It is no longer
+  transient for the main window, so the main window can be brought in front while a
+  statement is worked through; it still belongs to the application and closes with
+  the main window.
+- **Reconciliation shows check numbers (#393).** Each entry shows its number, which
+  is sometimes all a statement lists, in the desktop window and the browser, and both
+  lists sort by it (`CANDIDATE_SORTS` gains `num`).
+- **Imported accounts are editable (#393).** GnuCash is not the system of record: an
+  imported account's name, parent, code, description, commodity, SCU, placeholder and
+  hidden state, and its other GnuCash fields (editable under **Details…**) can be
+  changed, and `breadsched account edit` gains `--hidden`/`--no-hidden` and
+  `--no-placeholder`. Each account keeps the values it was last imported with
+  (`Account.imported_values`, `gen.lib.imported`), and a re-import keeps what was
+  changed here while bringing what changed only in GnuCash; a field changed on both
+  sides keeps BreadSched's value and is counted in a warning.
+- **Shown hidden accounts are usable (#393).** With **View → Show Hidden Accounts**
+  on, a hidden account takes transactions in its register and is a choice in every
+  register, the transaction editor, schedules, reconciliation, loans, and the card
+  payment account (`gui.hidden_accounts`).
+
 ## 0.2.0a305 - 2026-10-28
 
 - **Faster start-up, and a page that says a book is opening (#389).**

@@ -98,7 +98,9 @@ wording; service error codes and field paths contain no English API prose.
 
 Account lifecycle and settings mutations likewise cross one typed service boundary.
 The service validates identity and parent chains, relationships to commodities,
-linked assets and card payment accounts, FSA period overlap, and source-owned fields.
+linked assets and card payment accounts, and FSA period overlap; an imported
+account's fields are editable, and the first edit records what was imported
+(`gen.lib.imported`) so a re-import keeps it.
 For a new account, the account and optional opening-balance transaction commit in one
 database transaction; deletion converts protected or referenced-account failures to
 a stable service error.

@@ -1359,7 +1359,14 @@ class TestRegisterGrid:
         view = window._views["register"]
         view.grid.paint(900, 320)
         assert not view.grid.editor.get_visible()
-        assert view.sheet.disabled_reason == "Hidden accounts take no new transactions"
+        assert view.sheet.disabled_reason.startswith("Hidden accounts take no new transactions")
+        # With hidden accounts shown, the account takes transactions like any other.
+        window.show_category("accounts")
+        window._views["accounts"].set_show_hidden(True)
+        window.open_register(account.handle)
+        view = window._views["register"]
+        view.refresh()
+        assert view.sheet.enabled is True
 
     @pytest.mark.parametrize(
         ("answer", "switches", "saved"),
@@ -1809,6 +1816,46 @@ class TestDialogs:
         assert dialog.wait_for_background()
         assert dialog.heading.get_text() == "No problems found"
         assert "relationships are clean" in dialog.details.get_text()
+
+    def test_hidden_accounts_are_choices_while_they_are_shown(self, app, window, populated_book):
+        from breadsched.gui import hidden_accounts
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        rent.hidden = True
+        with app.db.transaction("Hide rent") as txn:
+            app.db.commit_account(rent, txn)
+        dialog = TransactionDialog(window, app.db)
+        assert not any("Rent" in name for name in dialog.account_names)
+        dialog.destroy()
+        window.show_category("accounts")
+        window._views["accounts"].set_show_hidden(True)
+        assert hidden_accounts.shown()
+        dialog = TransactionDialog(window, app.db)
+        assert any("Rent" in name for name in dialog.account_names)
+        dialog.destroy()
+
+    def test_dialog_date_fields_take_the_registers_dates_and_keys(self, app, window):
+        from breadsched.gui.gi_setup import Gdk, Gtk
+        from breadsched.gui.widgets.date_entry import attach_date_keys, read_date
+
+        entry = attach_date_keys(Gtk.Entry(text="2030-01-31"))
+        controllers = list(entry.observe_controllers())
+        keys = next(c for c in controllers if isinstance(c, Gtk.EventControllerKey))
+        focus = next(c for c in controllers if isinstance(c, Gtk.EventControllerFocus))
+        assert keys.emit("key-pressed", Gdk.KEY_plus, 0, 0) is True
+        assert entry.get_text() == "2030-02-01"
+        assert keys.emit("key-pressed", Gdk.KEY_bracketright, 0, 0) is True
+        assert entry.get_text() == "2030-03-01"
+        # A partly typed date takes the key as typed text.
+        entry.set_text("2030-0")
+        assert keys.emit("key-pressed", Gdk.KEY_minus, 0, 0) is False
+        entry.set_text("3/15/30")
+        assert read_date(entry) == date(2030, 3, 15)
+        focus.emit("leave")
+        assert entry.get_text() == "2030-03-15"
+        assert read_date(Gtk.Entry(text="15"), date(2030, 4, 1)) == date(2030, 4, 15)
 
     def test_the_transaction_dialog_starts_with_two_splits(self, app, window, populated_book):
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
@@ -6799,14 +6846,18 @@ class TestAccountEditor:
         assert dialog.commodity_handles[dialog.commodity_picker.get_selected()] == commodity.handle
         assert dialog.source_summary.get_text() == "STOCK"
         assert dialog.source_button.get_visible() is True
-        assert dialog.name_entry.get_sensitive() is False
-        assert dialog.commodity_picker.get_sensitive() is False
-        assert dialog.commodity_scu_entry.get_sensitive() is False
-        assert dialog.parent_picker.get_sensitive() is False
-        assert dialog.code_entry.get_sensitive() is False
-        assert dialog.description_entry.get_sensitive() is False
-        assert dialog.placeholder_check.get_sensitive() is False
-        assert dialog.hidden_check.get_sensitive() is False
+        # GnuCash is not the system of record: every imported field can be changed.
+        for control in (
+            dialog.name_entry,
+            dialog.commodity_picker,
+            dialog.commodity_scu_entry,
+            dialog.parent_picker,
+            dialog.code_entry,
+            dialog.description_entry,
+            dialog.placeholder_check,
+            dialog.hidden_check,
+        ):
+            assert control.get_sensitive() is True
         assert dialog.type_picker.get_sensitive() is True
         assert dialog.notes_view.get_sensitive() is True
         assert dialog.group_entry.get_sensitive() is True
@@ -6824,6 +6875,20 @@ class TestAccountEditor:
         assert rebuilt.source_guid == "imported-account-guid"
         assert rebuilt.source_type == "STOCK"
         assert rebuilt.source_fields == child.source_fields
+
+        # Unhide it, and change a GnuCash field in Details; both are saved.
+        dialog.hidden_check.set_active(False)
+        dialog._show_source_details(None)
+        window, entries, keep = dialog.details
+        [(_field, color)] = entries
+        color.set_text("#aa0000")
+        keep.emit("clicked")
+        dialog._on_save(None)
+        saved = app.db.get_account(child.handle)
+        assert saved.hidden is False
+        assert saved.source_fields == [GnuCashAccountField("slot:color", "string", "#aa0000")]
+        assert saved.imported_values["hidden"] is True
+        assert saved.imported_values["field:slot:color"] == "#315a74"
 
     def test_loan_fields_only_show_for_a_loan(self, accounts_view, app):
         from breadsched.gen.lib import AccountType
@@ -9478,6 +9543,56 @@ class TestReconcileWindow:
                 if handle == split:
                     return column, row
         raise AssertionError(split)
+
+    def test_the_window_stays_out_of_the_main_windows_way(self, app, window, populated_book):
+        """It may go behind the main window (not transient for it), still belongs to the
+        application, and closes when the main window does."""
+        db, card, _rent, _made = self._card(app, populated_book)
+        from breadsched.gui.dialogs.reconciliation_dialog import ReconciliationDialog
+
+        dialog = ReconciliationDialog.present_for(window, db, card)
+        try:
+            assert dialog.get_transient_for() is None
+            assert dialog.get_application() is app
+            window.emit("close-request")
+            assert _spin(lambda: not dialog.get_visible())
+        finally:
+            dialog.destroy()
+
+    def test_the_statement_date_is_read_as_the_register_reads_dates(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.engine import reconciliation
+
+        db, card, _rent, _made = self._card(app, populated_book)
+        dialog = self._start(window, db, card)
+        try:
+            dialog.abandon()
+            expected = reconciliation.reconciled_balance(db, card.handle, date(2030, 1, 31))
+            for typed in ("1/31/30", "1/31/2030", "2030-01-31"):
+                dialog.statement_date.set_text(typed)
+                assert dialog.starting_balance.get_text() == expected.format(
+                    parens_negative=True
+                ), typed
+        finally:
+            dialog.destroy()
+
+    def test_rows_show_the_check_number_and_sort_by_it(self, app, window, populated_book):
+        db, card, _rent, made = self._card(app, populated_book)
+        numbers = {"Groceries": "1002", "Fuel": "998", "Late": ""}
+        with db.transaction("Numbers") as txn:
+            for name, num in numbers.items():
+                stored = db.get_transaction(made[name].handle)
+                stored.num = num
+                db.commit_transaction(stored, txn)
+        dialog = self._start(window, db, card)
+        try:
+            column = dialog.funds_out
+            column.sort_by("num")
+            shown = [_texts(row) for row in self._rows(column) if row in column.splits]
+            assert "998" in shown[0] and "1002" in shown[1]
+        finally:
+            dialog.destroy()
 
     def test_the_start_page_shows_the_reconciled_starting_balance(
         self, app, window, populated_book

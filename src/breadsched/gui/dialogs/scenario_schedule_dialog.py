@@ -43,6 +43,7 @@ from ...gen.services import (
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.form_pages import FormPages
 from ..widgets.frequency import FrequencyPicker
 from ..widgets.help import help_row
@@ -234,7 +235,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         self.frequency.connect_changed(self._recurrence_changed)
         basics.add("Frequency", self.frequency)
 
-        self.start_entry = Gtk.Entry(text=date.today().replace(day=1).isoformat())
+        self.start_entry = attach_date_keys(Gtk.Entry(text=date.today().replace(day=1).isoformat()))
         self.start_entry.connect("changed", self._recurrence_changed)
         basics.add("First occurrence", self.start_entry)
 
@@ -242,7 +243,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         self.ends.connect("notify::selected", self._recurrence_changed)
         basics.add("Ends", self.ends)
 
-        self.end_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD")
+        self.end_entry = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
         self.end_entry.connect("changed", self._recurrence_changed)
         basics.add("End date", self.end_entry)
 
@@ -579,7 +580,7 @@ class ScenarioScheduleDialog(BoundedWindow):
 
     def _recurrence(self) -> Recurrence | None:
         try:
-            start = date.fromisoformat(self.start_entry.get_text().strip())
+            start = parse_date_text(self.start_entry.get_text().strip())
         except ValueError:
             return None
         period, interval = self.frequency.value()
@@ -588,7 +589,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         if period is not PeriodType.ONCE:
             if self.ends.get_selected() == 1:
                 try:
-                    end = date.fromisoformat(self.end_entry.get_text().strip())
+                    end = parse_date_text(self.end_entry.get_text().strip())
                 except ValueError:
                     return None
                 if end < start:
@@ -650,7 +651,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         changes = []
         try:
             for when_text, amount_text in values:
-                when = date.fromisoformat(when_text)
+                when = parse_date_text(when_text)
                 amount = Money(parse_amount_text(amount_text))
                 if amount <= 0:
                     return None
@@ -668,7 +669,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         if recurrence is None:
             return None
         try:
-            skipped = [date.fromisoformat(raw) for raw in values]
+            skipped = [parse_date_text(raw) for raw in values]
         except ValueError:
             return None
         if len(set(skipped)) != len(skipped):
@@ -703,7 +704,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         changes = []
         try:
             for when_text, amount_text in values:
-                when = date.fromisoformat(when_text)
+                when = parse_date_text(when_text)
                 amount = Money(parse_amount_text(amount_text))
                 if amount <= 0:
                     return None

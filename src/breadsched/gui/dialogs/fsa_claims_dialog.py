@@ -31,6 +31,7 @@ from ..gi_setup import GLib, Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.help import help_row
 
 __all__ = ["FsaClaimsDialog"]
@@ -260,7 +261,7 @@ class _AllocationRow(Gtk.Frame):
                 raise ValueError("Rejected attempts use date | amount | reason")
             rejections.append(
                 ClaimRejectionInput(
-                    date.fromisoformat(parts[0]),
+                    parse_date_text(parts[0]),
                     Money(parse_user_amount(parts[1])),
                     parts[2] if len(parts) > 2 else "",
                 )
@@ -332,7 +333,7 @@ class FsaClaimsDialog(BoundedWindow):
         outer.append(top)
 
         fields = Gtk.Grid(column_spacing=8, row_spacing=6)
-        self.service = Gtk.Entry(placeholder_text="YYYY-MM-DD")
+        self.service = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
         self.provider = Gtk.Entry(placeholder_text="Provider")
         self.description = Gtk.Entry(placeholder_text="Description")
         self.eob = Gtk.Entry(placeholder_text="EOB patient responsibility")
@@ -545,7 +546,7 @@ class FsaClaimsDialog(BoundedWindow):
 
     def _service_changed(self, _entry) -> None:
         try:
-            service_date = date.fromisoformat(self.service.get_text().strip())
+            service_date = parse_date_text(self.service.get_text().strip())
         except ValueError:
             return
         self._anchor(service_date)
@@ -565,7 +566,7 @@ class FsaClaimsDialog(BoundedWindow):
         self.allocations.append(row)
         self._allocation_rows.append(row)
         try:
-            service_date = date.fromisoformat(self.service.get_text().strip())
+            service_date = parse_date_text(self.service.get_text().strip())
         except ValueError:
             return
         window = fsa_claims.year_window(self._years(), service_date)
@@ -590,7 +591,7 @@ class FsaClaimsDialog(BoundedWindow):
         )
         self.eob_note.set_text("")
         self.close_reason.set_text("")
-        service_date = claim.service_date if claim else date.fromisoformat(self.service.get_text())
+        service_date = claim.service_date if claim else parse_date_text(self.service.get_text())
         self.payments.set_links(claim.payments if claim else [])
         self.refunds.set_links(claim.refunds if claim else [])
         self._clear_allocations()
@@ -702,7 +703,7 @@ class FsaClaimsDialog(BoundedWindow):
             eob_text = self.eob.get_text().strip()
             request = SaveClaim(
                 ClaimInput(
-                    service_date=date.fromisoformat(self.service.get_text().strip()),
+                    service_date=parse_date_text(self.service.get_text().strip()),
                     provider=self.provider.get_text().strip(),
                     description=self.description.get_text().strip(),
                     eob_responsibility=Money(parse_user_amount(eob_text)) if eob_text else None,

@@ -872,6 +872,12 @@ class DbSQLite(ChangeVerification):
     def get_account(self, handle: str) -> Account | None:
         return self._accounts.get(handle)
 
+    def stored_account(self, handle: str) -> Account | None:
+        """The account as last saved, apart from the shared object ``get_account``
+        returns, which an editor may already have changed."""
+        stored = self._read("account", handle)
+        return Account.from_dict(stored) if stored is not None else None
+
     def iter_accounts(self) -> Iterator[Account]:
         return iter(list(self._accounts.values()))
 

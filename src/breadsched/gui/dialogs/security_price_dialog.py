@@ -17,6 +17,7 @@ from ..background import BackgroundJob
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.help import help_row
 
 __all__ = ["SecurityPriceDialog"]
@@ -104,7 +105,7 @@ class SecurityPriceDialog(BoundedWindow):
         grid.attach(self.currency_picker, 1, row, 1, 1)
         row += 1
 
-        self.date_entry = Gtk.Entry(text=date.today().isoformat())
+        self.date_entry = attach_date_keys(Gtk.Entry(text=date.today().isoformat()))
         grid.attach(Gtk.Label(label="As of", xalign=0), 0, row, 1, 1)
         grid.attach(self.date_entry, 1, row, 1, 1)
         row += 1
@@ -184,7 +185,7 @@ class SecurityPriceDialog(BoundedWindow):
         index = self.security_picker.get_selected()
         security_handle = self.securities[index - 1].handle if index else None
         try:
-            quote_date = date.fromisoformat(self.date_entry.get_text().strip())
+            quote_date = parse_date_text(self.date_entry.get_text().strip())
             value = Money(parse_user_amount(self.price_entry.get_text().strip()))
             fraction = int(self.fraction_entry.get_text().strip())
         except (ValueError, ArithmeticError) as exc:

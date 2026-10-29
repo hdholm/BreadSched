@@ -1355,6 +1355,16 @@ def test_loans_alike(target, book):
     choices = api.loan_choices()
     assert book.card in {item.handle for item in choices.liabilities}
     assert book.checking in {item.handle for item in choices.payment_accounts}
+    # A hidden account is a choice only while hidden accounts are shown (#393).
+    for hidden in (True, False):
+        card = db.get_account(book.card)
+        card.hidden = hidden
+        with db.transaction("Hide or show the card") as txn:
+            db.commit_account(card, txn)
+        if hidden:
+            assert book.card not in {item.handle for item in api.loan_choices().liabilities}
+            shown = api.loan_choices(include_hidden=True)
+            assert book.card in {item.handle for item in shown.liabilities}
     terms = LoanTerms(
         name=" Car ",
         principal=Money("12000"),

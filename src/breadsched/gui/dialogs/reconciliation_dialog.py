@@ -8,8 +8,9 @@ its checked total, under a running reconciled balance and difference. Several
 rows can be selected and checked or unchecked together, and an entry dated after
 the statement is listed below a heading, shaded, in case its date is wrong.
 
-The window is not modal, and there is one per account: while it is open the rest
-of the application can still be used, for example to enter a missed scheduled
+The window is not modal, nor kept above the main window, and there is one per
+account: while it is open the rest of the application can still be used and brought
+in front of it, for example to enter a missed scheduled
 transaction, and the lists follow every change to the book. Each check is saved
 with the open statement at once, so **Postpone** simply closes the window and the
 statement resumes when it is reopened; **Abandon** cancels the statement, which
@@ -30,9 +31,11 @@ from ...gen.lib import Account, Money, ReconciliationStatus
 from ...gen.services import AddStatementEntry, StartReconciliation, UpdateReconciliation
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import claim_link_notice, reimbursement_notice
+from .. import hidden_accounts
 from ..gi_setup import Gdk, GLib, Gtk, Pango
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.help import help_row
 
 __all__ = ["ReconciliationDialog"]
@@ -50,6 +53,7 @@ def _candidate_key(candidate: reconciliation.ReconciliationCandidate) -> tuple:
     return (
         candidate.split,
         candidate.post_date,
+        candidate.num,
         candidate.description,
         candidate.amount,
         candidate.after_statement,
@@ -58,7 +62,13 @@ def _candidate_key(candidate: reconciliation.ReconciliationCandidate) -> tuple:
 
 
 #: The sort buttons above each list, and what each orders by (#377).
-_SORT_LABELS = {"checked": "✓", "date": "Date", "description": "Description", "amount": "Amount"}
+_SORT_LABELS = {
+    "checked": "✓",
+    "date": "Date",
+    "num": "Num",
+    "description": "Description",
+    "amount": "Amount",
+}
 
 
 class _Column:
@@ -80,7 +90,11 @@ class _Column:
             button = Gtk.Button(label=_SORT_LABELS[key])
             button.set_has_frame(False)
             button.set_tooltip_text(
-                "Checked first" if key == "checked" else f"Order by {_SORT_LABELS[key].lower()}"
+                "Checked first"
+                if key == "checked"
+                else "Order by number"
+                if key == "num"
+                else f"Order by {_SORT_LABELS[key].lower()}"
             )
             button.connect("clicked", lambda _b, k=key: self.sort_by(k))
             self.sort_buttons[key] = button
@@ -132,11 +146,23 @@ class ReconciliationDialog(BoundedWindow):
         return dialog
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite, account: Account) -> None:
+        # Not transient for the main window: a transient window is kept above its
+        # parent, and the main window must be able to come in front of this one
+        # while a statement is worked through. It still belongs to the application
+        # and closes with the window that opened it.
         super().__init__(
-            title=f"Reconcile {book_server(db).account(account.handle).full_name}",
-            transient_for=parent,
-            modal=False,
+            title=f"Reconcile {book_server(db).account(account.handle).full_name}", modal=False
         )
+        self.opener = parent
+        if parent is not None:
+            application = parent.get_application()
+            if application is not None:
+                self.set_application(application)
+            self._opener_handler: int | None = parent.connect(
+                "close-request", lambda *_: self.close() or False
+            )
+        else:
+            self._opener_handler = None
         self.db = db
         self.book = book_server(db)
         self.account = account
@@ -187,6 +213,9 @@ class ReconciliationDialog(BoundedWindow):
         if self._unsubscribe is not None:
             self._unsubscribe()
             self._unsubscribe = None
+        if self._opener_handler is not None and self.opener is not None:
+            self.opener.disconnect(self._opener_handler)
+            self._opener_handler = None
         if _OPEN.get((id(self.db), self.account.handle)) is self:
             del _OPEN[(id(self.db), self.account.handle)]
 
@@ -274,7 +303,7 @@ class ReconciliationDialog(BoundedWindow):
         explanation.add_css_class("dim")
         self.body.append(explanation)
         grid = Gtk.Grid(column_spacing=10, row_spacing=8)
-        self.statement_date = Gtk.Entry(text=date.today().isoformat())
+        self.statement_date = attach_date_keys(Gtk.Entry(text=date.today().isoformat()))
         self.statement_date.connect("changed", lambda *_: self._show_starting_balance())
         self.starting_balance = Gtk.Label(xalign=1)
         self.starting_balance.add_css_class("numeric")
@@ -321,7 +350,7 @@ class ReconciliationDialog(BoundedWindow):
                 for record in self.book.accounts()
                 if not record.account.is_root
                 and not record.account.placeholder
-                and not record.account.hidden
+                and (not record.account.hidden or hidden_accounts.shown())
                 and record.account.handle != self.account.handle
             ),
             key=lambda record: record.full_name,
@@ -468,6 +497,11 @@ class ReconciliationDialog(BoundedWindow):
         check.update_property([Gtk.AccessibleProperty.LABEL], [f"Check {candidate.description}"])
         self._checks[candidate.split] = check
         when = Gtk.Label(label=candidate.post_date.isoformat(), xalign=0)
+        # The check number: sometimes all a statement lists for an entry.
+        num = Gtk.Label(label=candidate.num, xalign=0)
+        num.set_width_chars(5)
+        num.set_ellipsize(Pango.EllipsizeMode.END)
+        num.add_css_class("numeric")
         description = Gtk.Label(
             label=candidate.description or "(no description)", xalign=0, hexpand=True
         )
@@ -475,7 +509,7 @@ class ReconciliationDialog(BoundedWindow):
         description.set_width_chars(8)
         amount = Gtk.Label(label=abs(candidate.amount).format(), xalign=1)
         amount.add_css_class("numeric")
-        for widget in (check, when, description, amount):
+        for widget in (check, when, num, description, amount):
             box.append(widget)
         row.set_child(box)
         if candidate.after_statement:
@@ -497,7 +531,7 @@ class ReconciliationDialog(BoundedWindow):
         if self.session is not None or not hasattr(self, "starting_balance"):
             return
         try:
-            when = date.fromisoformat(self.statement_date.get_text().strip())
+            when = parse_date_text(self.statement_date.get_text().strip())
         except ValueError:
             self.starting_balance.set_text("—")
             return
@@ -678,7 +712,7 @@ class ReconciliationDialog(BoundedWindow):
     def add_statement_entry(self) -> bool:
         """Add the quick-add line, cleared, dated on the statement date."""
         try:
-            when = date.fromisoformat(self.statement_date.get_text().strip())
+            when = parse_date_text(self.statement_date.get_text().strip())
             amount = Money(parse_user_amount(self.entry_amount.get_text().strip()))
         except (ValueError, ArithmeticError):
             self.status.set_text("Enter a statement date and an amount to add.")
@@ -738,7 +772,7 @@ class ReconciliationDialog(BoundedWindow):
 
     def _on_start(self, _button) -> None:
         try:
-            statement_date = date.fromisoformat(self.statement_date.get_text().strip())
+            statement_date = parse_date_text(self.statement_date.get_text().strip())
             ending = Money(parse_user_amount(self.ending_balance.get_text().strip()))
             self.book.start_reconciliation(
                 StartReconciliation(self.account.handle, statement_date, ending)

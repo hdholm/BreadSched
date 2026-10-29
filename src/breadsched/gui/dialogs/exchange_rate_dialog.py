@@ -21,6 +21,7 @@ from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.help import help_row
 
 __all__ = ["ExchangeRateDialog"]
@@ -75,7 +76,7 @@ class ExchangeRateDialog(BoundedWindow):
             next((i for i in range(len(self.currencies)) if i != target_index), 0)
         )
 
-        self.date_entry = Gtk.Entry(text=date.today().isoformat())
+        self.date_entry = attach_date_keys(Gtk.Entry(text=date.today().isoformat()))
         grid.attach(Gtk.Label(label="As of", xalign=0), 0, 2, 1, 1)
         grid.attach(self.date_entry, 1, 2, 1, 1)
 
@@ -138,7 +139,7 @@ class ExchangeRateDialog(BoundedWindow):
             self._error("Add a second currency before entering an exchange rate.")
             return None
         try:
-            quote_date = date.fromisoformat(self.date_entry.get_text().strip())
+            quote_date = parse_date_text(self.date_entry.get_text().strip())
         except ValueError:
             self._error("Enter the quote date as YYYY-MM-DD.")
             return None

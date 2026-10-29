@@ -304,3 +304,31 @@ def test_a_second_serve_joins_the_running_host_until_it_stops(tmp_path, monkeypa
     again = DbSQLite()
     again.load(str(rental))
     again.close()
+
+
+def test_a_persons_dashboard_belongs_to_one_book(host):
+    """Decision 0004: a Dashboard arrangement is the person's own for one book (by the
+    book's id), since each book's accounts and purpose differ."""
+    from breadsched.gen.services import DashboardGroupInput, SaveDashboardConfig
+
+    token = device_token()
+    home = HttpBookClient(host.base, token, book_id=host.ids["home"])
+    rental = HttpBookClient(host.base, token, book_id=host.ids["rental"])
+    before = rental.dashboard_settings()
+    checking = next(
+        account.handle
+        for account in host.home.iter_accounts()
+        if account.atype.value == "BANK" and not account.placeholder
+    )
+    saved = home.save_dashboard_settings(
+        SaveDashboardConfig(
+            groups=(DashboardGroupInput("House money", "liquid", (checking,)),),
+            liquidity_days=21,
+        )
+    )
+    assert home.dashboard_settings() == saved
+    assert rental.dashboard_settings() == before
+    directory = UserDirectory()
+    me = directory.host_user()
+    assert directory.preference(me, host.ids["home"], "dashboard")["liquidity_days"] == 21
+    assert directory.preference(me, host.ids["rental"], "dashboard") is None

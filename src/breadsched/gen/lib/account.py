@@ -286,7 +286,7 @@ SEPARATOR = ":"
 
 @dataclass(frozen=True)
 class GnuCashAccountField:
-    """One read-only source field not promoted into BreadSched semantics."""
+    """One source field not promoted into BreadSched semantics, kept as text."""
 
     name: str
     value_type: str
@@ -416,8 +416,13 @@ class Account(PrimaryObject):
         self.source_guid: str | None = None
         #: Exact type text, including an unrecognized or historical source type.
         self.source_type: str = ""
-        #: Typed, read-only GnuCash fields which BreadSched does not interpret.
+        #: Typed GnuCash fields which BreadSched does not interpret; shown, and
+        #: editable, with the account's imported details.
         self.source_fields: list[GnuCashAccountField] = []
+        #: The chart fields and GnuCash fields as last imported (``lib.imported``),
+        #: so a re-import changes only what changed in GnuCash and keeps what was
+        #: changed here. Empty for an account never imported.
+        self.imported_values: dict[str, Any] = {}
         # Per-type settings: these are what turn a chart of accounts into a model.
         self.card = CardTerms()
         self.liability = LiabilityTerms()
@@ -486,6 +491,8 @@ class Account(PrimaryObject):
             "source_guid": self.source_guid,
             "source_type": self.source_type,
             "source_fields": [field.serialize() for field in self.source_fields],
+            # Written only when set, so every other account's stored form is unchanged.
+            **({"imported_values": dict(self.imported_values)} if self.imported_values else {}),
             # The per-type records are stored flat, as before #339.
             "fsa_years": [year.serialize() for year in self.fsa.years],
             "fsa_dependent_care": self.fsa.dependent_care,
@@ -535,6 +542,8 @@ class Account(PrimaryObject):
             for field in data.get("source_fields", [])
             if isinstance(field, dict)
         ]
+        raw_imported = data.get("imported_values")
+        self.imported_values = dict(raw_imported) if isinstance(raw_imported, dict) else {}
         notes = str(data.get("notes", ""))
         if "source_notes" in data:
             # Two notes from 0204 until schema 13 (#385): merged into one.

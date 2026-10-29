@@ -1229,8 +1229,9 @@ class HttpBookClient:
 
     # ------------------------------------------------------------------- loans
 
-    def loan_choices(self) -> LoanChoices:
-        return from_data(LoanChoices, self._call("GET", "/loans/choices"))
+    def loan_choices(self, include_hidden: bool = False) -> LoanChoices:
+        query = {"hidden": "true" if include_hidden else None}
+        return from_data(LoanChoices, self._call("GET", "/loans/choices", query))
 
     def preview_loan(self, terms: LoanTerms) -> LoanPreview:
         found = self._call("POST", "/loans/preview", body=to_data(terms))
