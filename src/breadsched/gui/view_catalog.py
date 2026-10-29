@@ -97,7 +97,7 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             "manage-claims",
             "Manage _FSA Claims…",
             "_on_fsa_claims",
-            "emblem-documents-symbolic",
+            "folder-documents-symbolic",
             toolbar=True,
         ),
     ),

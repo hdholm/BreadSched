@@ -1002,8 +1002,11 @@ class ViewManager(Gtk.ApplicationWindow):
 
     def _on_find(self, *_args) -> None:
         """Ctrl+F: the shown register's filter, the one search a view has."""
-        entry = getattr(self.shown_register(), "filter_entry", None)
+        register = self.shown_register()
+        entry = getattr(register, "filter_entry", None)
         if entry is not None:
+            # A tab's own request to focus its cursor's cell is overtaken.
+            register.cancel_focus_entry()
             entry.grab_focus()
 
     @property
