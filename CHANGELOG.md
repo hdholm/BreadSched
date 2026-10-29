@@ -10,6 +10,19 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a309 - 2026-10-29
+
+- **Make a register transaction repeat (#392).** **Actions → Make Scheduled…** in a
+  desktop register opens a new scheduled transaction made from the transaction
+  under the cursor, every split kept, to choose how often it repeats and whether it
+  is a commitment or an estimate before saving; typing not yet entered is saved
+  first. The transaction editor's **Make scheduled…** and the browser register's
+  row action make the same draft.
+- **Such a draft repeats monthly from a month later.** It had been a one-time
+  schedule on the transaction's own date, which came up due at once and could post
+  the recorded transaction again. A transaction late in its month keeps its day in
+  shorter months, and one on a month's last day stays on the last day.
+
 ## 0.2.0a308 - 2026-10-29
 
 The book server (decisions 0003 and 0004, #354–#359), tried on its own branch since

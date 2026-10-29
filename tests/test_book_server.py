@@ -1567,13 +1567,13 @@ def test_the_schedules_page_reads_alike(target, book):
     # Any definition, saved or not, is laid out the same way.
     copy = ScheduledTransaction.from_dict(rent.schedule.serialize())
     assert api.schedule_layout(copy).projection == rent.projection
-    # A transaction makes a one-time draft to review; nothing is saved.
+    # A transaction makes a monthly draft from a month later to review; nothing is saved.
     with db.transaction("Pay") as txn:
         paid = Transaction.simple(date(2026, 9, 1), "Gym", book.rent, book.checking, "40")
         db.add_transaction(paid, txn)
     before = len(list(db.iter_scheduled()))
     draft = api.schedule_draft(paid.handle)
-    assert draft.schedule.name == "Gym" and draft.schedule.recurrence.start == date(2026, 9, 1)
+    assert draft.schedule.name == "Gym" and draft.schedule.recurrence.start == date(2026, 10, 1)
     assert len(list(db.iter_scheduled())) == before
     for call, status, code in (
         (lambda: api.schedule_editor("no-such-schedule"), 404, "schedule.not_found"),

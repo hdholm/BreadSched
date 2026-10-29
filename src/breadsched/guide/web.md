@@ -256,7 +256,9 @@ investment or retirement account. The scenario event editor folds the same way.
 **Enter**'s two-split form offers investment activity only when one of its accounts
 is an investment or retirement account. Review the
 result before relying on a projection. Scenario-only estimates and scenario changes
-to baseline schedules are made in the same view.
+to baseline schedules are made in the same view. A register row's **Make
+scheduled…** starts a new schedule from that transaction, with its splits, monthly
+from a month later.
 
 ### Paychecks and pay changes
 

@@ -8,6 +8,7 @@ a laptop that sleeps through a month boundary can easily happen twice in a minut
 
 from __future__ import annotations
 
+import calendar
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -620,11 +621,22 @@ def duplicate_saved_definition(
 
 
 def from_transaction(transaction: Transaction) -> ScheduledTransaction:
-    """Build an unsaved one-time template from every financial leg of an actual."""
+    """Build an unsaved template from every financial leg of an actual, to repeat it.
+
+    It repeats monthly from a month after the actual (#392): the actual itself is
+    already in the ledger, so a draft starting on its date would come up due at
+    once and post it again. A transaction late in its month keeps its day, the last
+    day staying the last, in months too short to hold it.
+    """
+    posted = transaction.post_date
+    last = calendar.monthrange(posted.year, posted.month)[1]
+    day = -1 if posted.day == last else posted.day if posted.day > 28 else None
     return ScheduledTransaction(
         name=transaction.description or "Scheduled transaction",
         description=transaction.description,
-        recurrence=Recurrence(PeriodType.ONCE, start=transaction.post_date),
+        recurrence=Recurrence(
+            PeriodType.MONTH, start=add_months(posted, 1, day=day), day_of_month=day
+        ),
         splits=[
             ScheduledSplit(
                 split.account,

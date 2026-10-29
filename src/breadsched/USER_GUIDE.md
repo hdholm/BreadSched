@@ -699,6 +699,13 @@ documents on a second tab and shows each split's planning purpose and investment
 activity on request ([desktop](guide/desktop.md#scheduled-activity),
 [browser](guide/web.md#scheduled-activity)).
 
+To make a transaction you have recorded repeat, choose **Make Scheduled…** for it in
+a register: a new scheduled transaction opens with its splits, repeating monthly
+from a month after it, so the one already recorded is not posted again. Change how often it
+repeats, and whether it is a commitment or an estimate, before saving
+([desktop](guide/desktop.md#scheduled-activity),
+[browser](guide/web.md#scheduled-activity)).
+
 For alternate assumptions, add a scenario-only estimate or alter an eligible
 baseline schedule within a saved scenario. The original baseline definition stays
 intact. An invalid exception, such as skipping and overriding the same occurrence,

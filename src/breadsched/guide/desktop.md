@@ -518,7 +518,10 @@ credits are waiting.
 ## Scheduled activity
 
 Use **New Scheduled** for a fixed or formula-driven commitment or estimate, and
-**Suggest** for reviewable estimate drafts from history. **Frequency** is **Every**
+**Suggest** for reviewable estimate drafts from history. To repeat a transaction
+already recorded, put a register's cursor on it and choose **Actions → Make
+Scheduled…** (or **Make scheduled…** in its transaction editor): the new schedule
+starts with its splits, monthly from a month later, ready to change before saving. **Frequency** is **Every**
 a number and a unit: days, weeks, months, months on the same weekday, months on the
 last weekday, or years; **twice a month** and **once** take no number. The first due
 date sets the day. Amounts can be calculations such as `76.84*1.06`. The editor opens
