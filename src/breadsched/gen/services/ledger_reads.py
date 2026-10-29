@@ -31,7 +31,9 @@ __all__ = [
     "RegisterLine",
     "RegisterPage",
     "RegisterQuery",
+    "OutlineLine",
     "account_balance",
+    "account_outline",
     "account_record",
     "account_records",
     "balance_summary",
@@ -313,6 +315,32 @@ class ChartLine:
     #: Mnemonics of the commodity held and the currency it was valued in.
     commodity: str | None
     currency: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class OutlineLine:
+    """One account in the tree, with its depth and no value."""
+
+    record: AccountRecord
+    depth: int
+
+
+def account_outline(db: DbSQLite, include_hidden: bool = False) -> tuple[OutlineLine, ...]:
+    """The account tree below the root, depth first, as the chart orders it but
+    without valuing anything: what choosing an account needs (decision 0004's entry
+    role sees only this), and quick to read."""
+    lines: list[OutlineLine] = []
+
+    def walk(handle: str | None, depth: int) -> None:
+        for account in db.child_accounts(handle):
+            if account.hidden and not include_hidden:
+                continue
+            lines.append(OutlineLine(AccountRecord(account, db.full_name(account)), depth))
+            walk(account.handle, depth + 1)
+
+    root = db.root_account()
+    walk(root.handle if root else None, 0)
+    return tuple(lines)
 
 
 def chart_of_accounts(

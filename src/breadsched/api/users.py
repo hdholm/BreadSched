@@ -45,6 +45,8 @@ from ..presentation import service_error_message
 __all__ = [
     "Caller",
     "DeviceToken",
+    "Grant",
+    "HostedBook",
     "FREE_FAILURES",
     "MAX_DELAY",
     "MIN_PASSWORD_LENGTH",
@@ -68,6 +70,8 @@ MIN_PASSWORD_LENGTH = 10
 FREE_FAILURES = 5
 #: The longest wait between attempts.
 MAX_DELAY = timedelta(minutes=15)
+#: The roles a user may be granted in a book (``api.permissions.ROLES``).
+_ROLES = ("owner", "editor", "viewer", "entry")
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 #: scrypt cost: 16 MiB and well under a second per attempt on a household computer.
 _SCRYPT = {"n": 2**14, "r": 8, "p": 1}
@@ -93,6 +97,17 @@ CREATE TABLE IF NOT EXISTS tokens (
     last_used TEXT,
     kind TEXT NOT NULL DEFAULT 'device',
     expires TEXT
+);
+CREATE TABLE IF NOT EXISTS books (
+    id TEXT PRIMARY KEY,
+    path TEXT NOT NULL,
+    seen TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS grants (
+    book_id TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    PRIMARY KEY (book_id, user_id)
 );
 CREATE TABLE IF NOT EXISTS failures (
     key TEXT PRIMARY KEY,
@@ -160,6 +175,22 @@ class DeviceToken:
     last_used: str | None
     kind: str = "device"
     expires: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Grant:
+    """A user's role in one book."""
+
+    user: User
+    role: str
+
+
+@dataclass(frozen=True, slots=True)
+class HostedBook:
+    """A book the host has served, by its permanent id, where it was last seen."""
+
+    id: str
+    path: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -446,6 +477,69 @@ class UserDirectory:
                 "DELETE FROM tokens WHERE digest = ? AND kind = 'session'", (_digest(token),)
             )
             return cursor.rowcount > 0
+
+    # ---------------------------------------------------------------- books
+
+    def remember_book(self, book_id: str, path: str) -> None:
+        """Note that the host serves ``book_id`` from ``path``, for listing its books."""
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO books VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE"
+                " SET path = excluded.path, seen = excluded.seen",
+                (book_id, path, _text(_now())),
+            )
+
+    def books(self) -> tuple[HostedBook, ...]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT id, path FROM books ORDER BY path").fetchall()
+        return tuple(HostedBook(row[0], row[1]) for row in rows)
+
+    def role(self, book_id: str | None, user: User) -> str | None:
+        """``user``'s role in ``book_id``: the computer account owns every book it
+        holds; anyone else has the role they were granted, or none."""
+        if user.host_account:
+            return "owner"
+        if not book_id:
+            return None
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT role FROM grants WHERE book_id = ? AND user_id = ?", (book_id, user.id)
+            ).fetchone()
+        return row[0] if row is not None else None
+
+    def grant(self, book_id: str, name: str, role: str) -> Grant:
+        """Give ``name`` ``role`` in the book (replacing any role they had)."""
+        if role not in _ROLES:
+            raise UserError("users.role.invalid", ("role",))
+        user = self.user(name)
+        if user.host_account:
+            raise UserError("users.grant.host_account", ("name",))
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO grants VALUES (?, ?, ?) ON CONFLICT(book_id, user_id)"
+                " DO UPDATE SET role = excluded.role",
+                (book_id, user.id, role),
+            )
+        return Grant(user, role)
+
+    def revoke_grant(self, book_id: str, name: str) -> bool:
+        user = self.user(name)
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM grants WHERE book_id = ? AND user_id = ?", (book_id, user.id)
+            )
+            return cursor.rowcount > 0
+
+    def grants(self, book_id: str) -> tuple[Grant, ...]:
+        """Who besides the computer account may use the book, and in which role."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"SELECT {', '.join('u.' + c for c in _USER_COLUMNS.split(', '))}, g.role"
+                " FROM grants g JOIN users u ON u.id = g.user_id WHERE g.book_id = ?"
+                " ORDER BY u.name",
+                (book_id,),
+            ).fetchall()
+        return tuple(Grant(self._user(row[:7]), row[7]) for row in rows)
 
     # --------------------------------------------------------------- signing in
 

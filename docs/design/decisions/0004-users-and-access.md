@@ -275,6 +275,33 @@ other accounts; 3 and 4 make it a household application.
 - **Phase 2 is built.** The server's own `--token-file` token keeps working for
   devices already given it.
 
+**Phase 3 has begun** with roles in each book (the host for several books follows):
+- **Book ids:** `book_id()` (`GET /api/v1/book/id`, `gen/services/book_info`) is the
+  book's permanent id, kept in its metadata as `book.id` and made the first time it
+  is asked for in a writable book. A server notes the book it serves in the host's
+  `books` table under that id.
+- **Grants** live in the user directory (`grants`, by book id and user):
+  `grant(book_id, name, role)`, `revoke_grant`, `grants`, and `role`. The computer
+  account owns every book it holds and cannot be given a role; a removed user's
+  grants go with them.
+- **Permissions** (`api/permissions.py`): every `BookApi` operation is `ANY`,
+  `LOOKUP`, `READ`, `ENTRY`, `WRITE`, or `OWNER`, and an architecture test requires
+  the table to match the protocol exactly. A viewer has `ANY`, `LOOKUP`, and `READ`;
+  an entry user `ANY`, `LOOKUP`, and `ENTRY` (and `save_transaction` only of a new
+  transaction); an editor all but `OWNER`; an owner everything. The display
+  settings (`save_plan_settings`, `save_dashboard_settings`) are `WRITE` until
+  phase 4 makes them personal.
+- **Enforcement:** the transport works out the caller's role in the served book
+  (`owner` for the computer account; else the grant, or none, which refuses the
+  request), and sets it for the request on whichever thread runs the book
+  (`acting_as`). The web layer's `Api.book` is a `GuardedBook` that checks it before
+  every operation, refusing with 403 `book.permission.denied`; only the transport may
+  reach the unguarded `Api.server`. In process nothing is checked.
+- **The entry role's view:** `account_outline()` (`GET /api/v1/account-outline`) is
+  the account tree with depths and no values, which quick entry now reads.
+- **Sharing:** `breadsched share BOOK [USER --role ROLE | USER --remove]`, and **Who
+  may use** the open book in GTK's **Users and devices**.
+
 ## Answers to the review questions (2026-10-28)
 
 1. **Roles:** owner, editor, and viewer, and an *entry* role as well.

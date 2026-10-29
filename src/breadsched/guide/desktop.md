@@ -828,8 +828,11 @@ work. They are kept in your own settings, not in a book:
   sign in from another device), adds a person with a temporary password they replace
   when they first sign in, resets or removes them, and lists your devices and scripts:
   **Add a device or script…** makes a token shown only once, and **Revoke** stops
-  one at once. The same can be done with `breadsched users`, `password`, and `token`
-  (see [Users and devices](cli.md#users-and-devices-experimental)).
+  one at once. With a book open it also lists **Who may use** it: you own it, and
+  each other person has a role (owner, editor, viewer, or entry, which only adds
+  transactions) that you can change, take away, or give with **Give someone
+  access…**. The same can be done with `breadsched users`, `password`, `token`, and
+  `share` (see [Users and devices](cli.md#users-and-devices-experimental)).
 
 **Save** stores them all and redraws open registers; **Cancel** or Escape changes
 nothing.

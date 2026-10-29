@@ -41,7 +41,12 @@ function accountSelect(name, label, groups, chosen) {
 
 async function showQuick() {
   const view = document.getElementById("view");
-  const all = await get("/api/accounts");
+  // The account tree without values: all an entry-only user may see (decision 0004).
+  const outline = await get("/api/v1/account-outline");
+  const all = outline.lines.map((line) => ({
+    handle: line.account.handle, full_name: line.full_name, class: line.class,
+    placeholder: line.account.placeholder, hidden: line.account.hidden,
+  }));
   const { funds, categories, others } = quickAccounts(all);
   const fullView = document.getElementById("full-view");
   fullView.href = `/#${tokenFragment()}`;
@@ -82,7 +87,8 @@ async function showQuick() {
       const query = new URLSearchParams({ description: text });
       if (fundsSelect.value) query.set("account", fundsSelect.value);
       const { suggestion } = await get(`/api/entry/suggest?${query}`);
-      if (!suggestion) return;
+      // A reply that arrives after the form moved on (saved, or retyped) is stale.
+      if (!suggestion || description.value.trim() !== text) return;
       if (suggestion.transfer && !categorySelect.value) categorySelect.value = suggestion.transfer;
       if (suggestion.amount && !amount.value.trim()) {
         amount.value = String(Math.abs(Number(suggestion.amount)).toFixed(2));

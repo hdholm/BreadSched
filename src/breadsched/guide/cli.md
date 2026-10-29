@@ -288,7 +288,16 @@ breadsched password                                 # your own, to sign in elsew
 breadsched token create "Backup script"             # shown once; keep it in a private file
 breadsched token list
 breadsched token revoke TOKEN-ID
+breadsched share household.breadsched                     # who may use this book
+breadsched share household.breadsched alice --role viewer # owner, editor, viewer, entry
+breadsched share household.breadsched alice --remove
 ```
+
+Your computer account owns every book it serves. Anyone else may use a book only in
+the role it gives them: an *editor* reads and changes it (and may undo anyone's
+change), a *viewer* only reads, an *entry* user only adds transactions (quick entry
+from a phone, say) and sees nothing but the accounts to choose from, and another
+*owner* may also change where documents are kept and write back to GnuCash.
 
 A new user, or one whose password was reset, chooses their own password the first
 time they sign in. Passwords are typed (or read with `--password-stdin`), never given

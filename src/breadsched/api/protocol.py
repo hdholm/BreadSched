@@ -51,6 +51,7 @@ from ..gen.services import (
     DuplicateSchedule,
     FormulaScheduleInput,
     NextOccurrence,
+    OutlineLine,
     PostDue,
     PostedDue,
     RegisterPage,
@@ -334,6 +335,11 @@ class BookApi(Protocol):
 
     # -------------------------------------------------------------------- book
 
+    def book_id(self) -> str | None:
+        """The book's permanent id, by which its host keeps who may use it; made the
+        first time it is asked for in a writable book (decision 0004)."""
+        ...
+
     def book_counts(self) -> BookCounts:
         """How many accounts and transactions the book holds, without valuing them."""
         ...
@@ -400,6 +406,10 @@ class BookApi(Protocol):
 
     def account(self, account: str) -> AccountRecord:
         """One account as stored, by handle."""
+        ...
+
+    def account_outline(self, include_hidden: bool = False) -> tuple[OutlineLine, ...]:
+        """The account tree, depth first, without values: what choosing an account needs."""
         ...
 
     def chart(self, as_of: date | None = None, include_hidden: bool = False) -> list[ChartLine]:

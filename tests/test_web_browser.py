@@ -1852,10 +1852,13 @@ def test_quick_entry_saves_from_a_phone(phone, served):
 def test_a_device_without_a_token_signs_in_and_chooses_its_password(served):
     """Decision 0004: a phone opening the page has no token; it signs in, changes a
     temporary password, and then keeps a session cookie across reloads."""
+    from breadsched.api.local import book_server
     from breadsched.api.users import UserDirectory
 
-    _db, httpd = served
-    UserDirectory().add_user("alice", "temporary-pass", display_name="Alice")
+    db, httpd = served
+    directory = UserDirectory()
+    directory.add_user("alice", "temporary-pass", display_name="Alice")
+    directory.grant(book_server(db).book_id() or "", "alice", "editor")
     with sync_api.sync_playwright() as playwright:
         try:
             browser = playwright.chromium.launch(executable_path=_chromium())
@@ -1882,4 +1885,47 @@ def test_a_device_without_a_token_signs_in_and_chooses_its_password(served):
         view.reload()
         view.locator("#quick-amount").wait_for()
         assert errors == []
+        browser.close()
+
+
+def test_an_entry_user_adds_transactions_from_a_phone_and_nothing_else(served):
+    """Decision 0004's entry role: quick entry works; the full view's book is refused."""
+    from breadsched.api.users import UserDirectory
+
+    db, httpd = served
+    directory = UserDirectory()
+    directory.add_user("kid", "temporary-pass")
+    directory.set_password("kid", "kids-own-password", current="temporary-pass")
+    from breadsched.api.local import book_server
+
+    directory.grant(book_server(db).book_id() or "", "kid", "entry")
+    base = f"http://127.0.0.1:{httpd.server_port}"
+    with sync_api.sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch(executable_path=_chromium())
+        except Exception as exc:  # noqa: BLE001 - no usable browser here
+            pytest.skip(f"Chromium is not available: {exc}")
+        view = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
+        view.goto(f"{base}/quick")
+        view.fill("input[name=name]", "kid")
+        view.fill("input[name=password]", "kids-own-password")
+        view.click("button:has-text('Sign in')")
+        view.locator("#quick-account option").nth(1).wait_for(state="attached")
+        expense = next(
+            account
+            for account in db.iter_accounts()
+            if account.account_class.value == "expense" and not account.placeholder
+        )
+        before = {item.handle for item in db.iter_transactions()}
+        view.locator("#quick-amount").fill("3.50")
+        view.locator("#quick-description").fill("Ice cream")
+        view.locator("#quick-account").select_option(index=1)
+        view.locator("#quick-category").select_option(expense.handle)
+        view.get_by_role("button", name="Save").click()
+        view.locator(".quick-recent li").first.wait_for()
+        [made] = [item for item in db.iter_transactions() if item.handle not in before]
+        assert made.description == "Ice cream"
+        # The full view reads the book, which an entry user may not.
+        status = view.evaluate("async () => (await fetch('/api/v1/chart')).status")
+        assert status == 403
         browser.close()

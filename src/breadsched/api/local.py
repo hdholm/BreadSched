@@ -63,6 +63,7 @@ from ..gen.services import (
     DuplicateSchedule,
     FormulaScheduleInput,
     NextOccurrence,
+    OutlineLine,
     PostDue,
     PostedDue,
     RegisterPage,
@@ -81,6 +82,7 @@ from ..gen.services import (
     TransactionInput,
     account_balance,
     account_inference,
+    account_outline,
     account_record,
     account_records,
     balance_summary,
@@ -468,6 +470,9 @@ class LocalBookServer:
 
     # -------------------------------------------------------------------- book
 
+    def book_id(self) -> str | None:
+        return book_info.book_id(self.db)
+
     def book_counts(self) -> BookCounts:
         return book_info.book_counts(self.db)
 
@@ -523,6 +528,9 @@ class LocalBookServer:
 
     def account(self, account: str) -> AccountRecord:
         return unwrap(account_record(self.db, account))
+
+    def account_outline(self, include_hidden: bool = False) -> tuple[OutlineLine, ...]:
+        return account_outline(self.db, include_hidden)
 
     def chart(self, as_of: date | None = None, include_hidden: bool = False) -> list[ChartLine]:
         return list(chart_of_accounts(self.db, as_of, include_hidden))

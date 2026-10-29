@@ -23,6 +23,7 @@ from typing import Any, TypeVar
 from urllib.parse import unquote, urlencode, urlparse
 
 from ..api.local import local_caller
+from ..api.permissions import acting_as
 from ..api.protocol import Change
 from ..api.typed_codec import to_data
 from ..api.users import SESSION_DAYS, Caller, User, UserDirectory, UserError
@@ -134,6 +135,8 @@ class Handler(BaseHTTPRequestHandler):
     local_token: str = ""
     #: The host's users and device tokens (decision 0004).
     users: UserDirectory | None = None
+    #: The served book's permanent id, by which the host keeps who may use it.
+    book_id: str | None = None
     #: Runs a callable with exclusive use of the writer book (see ``_exclusive``).
     executor: Callable[[Callable[[], Any]], Any]
 
@@ -229,8 +232,24 @@ class Handler(BaseHTTPRequestHandler):
         if write and self.headers.get_content_type() != "application/json":
             return False
         caller = self._caller()
-        # A temporary password must be changed before anything else (decision 0004).
-        return caller is not None and not caller.user.must_change
+        # A temporary password must be changed before anything else, and a user given
+        # no role in this book may not use it at all (decision 0004).
+        return caller is not None and not caller.user.must_change and self._role() != "none"
+
+    def _role(self) -> str:
+        """The caller's role in the book served here; "none" for anyone without one."""
+        caller = self._caller()
+        if caller is None:
+            return "none"
+        if caller.user.host_account:
+            return "owner"
+        if self.users is None:
+            return "none"
+        try:
+            return self.users.role(self.book_id, caller.user) or "none"
+        except (OSError, sqlite3.Error):
+            LOG.exception("could not read the user directory")
+            return "none"
 
     def _supplied_token(self) -> str:
         """The token in ``X-BreadSched-Token``, else the browser's session cookie."""
@@ -295,9 +314,10 @@ class Handler(BaseHTTPRequestHandler):
         only when the request carries the server's local token (#358).
         """
         local = self._local_request()
+        role = self._role()
 
         def as_caller() -> T:
-            with local_caller(local):
+            with local_caller(local), acting_as(role):
                 return work()
 
         return self.executor(as_caller)
@@ -336,6 +356,11 @@ class Handler(BaseHTTPRequestHandler):
             reader.close()
 
     def do_GET(self) -> None:  # noqa: N802 - required by the base class
+        # Reads run in this thread: the user's role guards every operation they reach.
+        with acting_as(self._role()):
+            self._get()
+
+    def _get(self) -> None:
         if not self._trusted_host():
             self._error(403, "request.host.untrusted", ("Host",))
             return
@@ -972,6 +997,15 @@ def build_handler(
     Writer work runs under one lock in the request's thread unless ``executor``
     runs it elsewhere (GTK runs it on its main loop, #359).
     """
+    api_object = Api(db)
+    # The book's permanent id, made now in a writable book; the host lists the book
+    # under it, and grants name it (decision 0004).
+    book_id = api_object.server.book_id()
+    if users is not None and book_id and db.path and db.path != ":memory:":
+        try:
+            users.remember_book(book_id, str(Path(db.path).resolve()))
+        except (OSError, sqlite3.Error):
+            LOG.exception("could not note the book in the user directory")
     lock = threading.Lock()
 
     def locked(work: Callable[[], Any]) -> Any:
@@ -982,7 +1016,8 @@ def build_handler(
         "BoundHandler",
         (Handler,),
         {
-            "api_object": Api(db),
+            "api_object": api_object,
+            "book_id": book_id,
             "writer_db": db,
             "lock": lock,
             "token": token,

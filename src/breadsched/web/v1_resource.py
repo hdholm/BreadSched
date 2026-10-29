@@ -34,7 +34,8 @@ Resources so far, all under ``/api/v1``:
 * ``GET /accounts/{handle}/balance`` (``as_of``, ``recursive``) and ``GET /balances``
   (``as_of``) – one account's balance, or the book's cash and net worth.
 * ``GET /accounts`` and ``GET /accounts/{handle}`` – accounts as stored, with full
-  names; ``GET /chart`` (``as_of``, ``hidden``) – the valued account tree.
+  names; ``GET /chart`` (``as_of``, ``hidden``) – the valued account tree;
+  ``GET /account-outline`` (``hidden``) – the same tree with depths and no values.
 * ``POST /accounts`` (``api.account_codec``'s form of ``SaveAccount``) and
   ``DELETE /accounts/{handle}``.
 * ``GET`` and ``POST /rules`` (``category``, ``description``, ``position``) – the
@@ -138,7 +139,8 @@ Resources so far, all under ``/api/v1``:
   ``/relink``; ``PATCH /attachment-folders`` (``folder`` or ``gnucash_folder``).
 * ``GET /net-worth`` (``start``, ``end``, ``period``, ``today``) and
   ``GET /net-worth/change`` (``start``, ``end``, ``today``).
-* ``GET /book/counts`` – how many accounts and transactions the book holds.
+* ``GET /book/counts`` – how many accounts and transactions the book holds;
+  ``GET /book/id`` – its permanent id (decision 0004).
 * ``GET /book/summary`` – the book's counts, cash, net worth, and scenarios;
   ``GET /book/verification`` – its physical and logical checks.
 * ``GET /entry/suggestion`` (``description``, ``account``, ``currency``, ``exclude``),
@@ -274,6 +276,7 @@ __all__ = [
     "historical_estimate_accept_v1",
     "historical_estimates_get",
     "book_counts_get",
+    "book_id_get",
     "book_summary_get",
     "book_verification_get",
     "entry_accounts_get",
@@ -425,6 +428,7 @@ __all__ = [
     "account_get",
     "account_save",
     "accounts_get",
+    "account_outline_get",
     "chart_get",
     "account_balance_get",
     "account_lookup",
@@ -688,6 +692,21 @@ def accounts_get(api: Api, _path: Path, query: QueryParams) -> dict:
 def account_get(api: Api, path: Path, query: QueryParams) -> dict:
     query.finish()
     return account_record_json(api.book.account(path["handle"]))
+
+
+def account_outline_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    hidden = query.choice("hidden", ("true", "false"), "false") == "true"
+    query.finish()
+    return {
+        "lines": [
+            {
+                **account_record_json(line.record),
+                "depth": line.depth,
+                "class": line.record.account.account_class.value,
+            }
+            for line in api.book.account_outline(hidden)
+        ]
+    }
 
 
 def chart_get(api: Api, _path: Path, query: QueryParams) -> dict:
@@ -1579,6 +1598,11 @@ def attachment_folders_patch(api: Api, _path: Path, body: dict[str, Any]) -> dic
         return {"folder": api.book.set_attachment_folder(change.folder)}
     assert change.gnucash_folder is not None
     return {"gnucash_folder": api.book.set_source_link_folder(change.gnucash_folder)}
+
+
+def book_id_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return {"id": api.book.book_id()}
 
 
 def book_counts_get(api: Api, _path: Path, query: QueryParams) -> dict:

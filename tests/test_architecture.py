@@ -1043,6 +1043,19 @@ class TestPresentationPackage:
 class TestBookServerBoundaries:
     """Interfaces moved onto the book server reach the book only through it (#356)."""
 
+    def test_every_operation_declares_its_permission(self):
+        """Decision 0004: each BookApi operation has exactly one permission, so a new
+        one cannot be served open."""
+        from breadsched.api.permissions import OPERATIONS
+        from breadsched.api.protocol import BookApi
+
+        operations = {
+            name
+            for name, value in vars(BookApi).items()
+            if not name.startswith("_") and (callable(value) or isinstance(value, property))
+        }
+        assert operations == set(OPERATIONS)
+
     #: Service calls the book server now owns for these adapters.
     OWNED = {
         "pending_due_review",
@@ -1915,11 +1928,17 @@ class TestBookServerBoundaries:
 class TestWebBoundaries:
     def test_the_request_context_holds_only_the_book(self):
         """Every handler is a resource adapter; ``Api`` carries the open book alone,
-        and the book server over it (#356)."""
+        and the book server over it (#356), guarded by the caller's role (0004)."""
         tree = ast.parse((SRC / "web/context.py").read_text(encoding="utf-8"))
         [api] = [node for node in tree.body if isinstance(node, ast.ClassDef)]
         methods = [node.name for node in api.body if isinstance(node, ast.FunctionDef)]
-        assert methods == ["__init__", "book"]
+        assert methods == ["__init__", "server", "book"]
+        # Only the transport may reach the unguarded server; every resource goes through
+        # ``api.book``, which checks the caller's role (decision 0004).
+        for module in (SRC / "web").glob("*.py"):
+            if module.name in {"context.py", "transport.py"}:
+                continue
+            assert "api.server" not in module.read_text(encoding="utf-8"), module.name
         resources = (SRC / "web/resources.py").read_text(encoding="utf-8")
         assert "getattr(api" not in resources
 

@@ -11,7 +11,10 @@ import argparse
 import getpass
 import sys
 
+from ..api.connect import open_book_api as book_api_for
+from ..api.permissions import ROLES
 from ..api.users import UserDirectory, UserError
+from ..gen.db.base import DbError
 from .common import AddCommand, CommandError, emit, table
 
 __all__ = ["register"]
@@ -160,6 +163,57 @@ def cmd_token(args: argparse.Namespace) -> int:
     return 0
 
 
+def _book_id(path: str) -> str:
+    """The book's permanent id, made if it has none (which needs the book writable)."""
+    with book_api_for(path, "r") as book:
+        found = book.book_id()
+    if found:
+        return found
+    try:
+        with book_api_for(path, "w") as book:
+            found = book.book_id()
+    except DbError as error:
+        raise CommandError(f"could not give the book an id: {error}") from error
+    if not found:
+        raise CommandError("the book has no id yet and cannot be written to give it one")
+    return found
+
+
+def cmd_share(args: argparse.Namespace) -> int:
+    """Say who may use a book, give someone a role in it, or take it away."""
+    directory = UserDirectory()
+    book_id = _book_id(args.book)
+    try:
+        if args.user and args.remove:
+            if not directory.revoke_grant(book_id, args.user):
+                raise CommandError(f"{args.user} had no role in this book")
+            emit({"removed": args.user}, args, f"{args.user} may no longer use this book")
+            return 0
+        if args.user:
+            grant = directory.grant(book_id, args.user, args.role)
+            emit(
+                {"user": grant.user.name, "role": grant.role},
+                args,
+                f"{grant.user.display_name} now has the {grant.role} role in this book",
+            )
+            return 0
+    except UserError as error:
+        raise _refused(error) from error
+    host = directory.host_user()
+    grants = directory.grants(book_id)
+    emit(
+        [{"user": host.name, "role": "owner"}]
+        + [{"user": grant.user.name, "role": grant.role} for grant in grants],
+        args,
+        table(
+            [[host.display_name, "owner (this computer's account)"]]
+            + [[grant.user.display_name, grant.role] for grant in grants],
+            ["user", "role"],
+        ),
+    )
+    return 0
+
+
 def register(add: AddCommand) -> None:
     """Add the user subcommands."""
     users = add("users", "List, add, or remove the people who may use this computer's books", False)
@@ -189,3 +243,15 @@ def register(add: AddCommand) -> None:
     token.add_argument("name", nargs="?", help="the device's name (create) or token id (revoke)")
     token.add_argument("--user", help="whose tokens (default: this computer's account)")
     token.set_defaults(func=cmd_token)
+
+    share = add("share", "Say who may use a book, or give or take away someone's role in it")
+    share.add_argument("user", nargs="?", help="the user to give a role, or to remove")
+    share.add_argument(
+        "--role",
+        choices=ROLES,
+        default="editor",
+        help="owner, editor (reads and writes), viewer (reads), or entry (adds "
+        "transactions only); default editor",
+    )
+    share.add_argument("--remove", action="store_true", help="take the user's role away")
+    share.set_defaults(func=cmd_share)

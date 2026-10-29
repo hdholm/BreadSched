@@ -292,7 +292,9 @@ def _call(base, method, path, body=None, headers=None):
 
 
 def test_signing_in_over_http_gives_a_session_and_a_private_cookie(hosted):
-    UserDirectory().add_user("alice", "temporary-pass", display_name="Alice")
+    directory = UserDirectory()
+    directory.add_user("alice", "temporary-pass", display_name="Alice")
+    directory.grant(hosted.db.get_metadata("book.id"), "alice", "viewer")
     status, signed, headers = _call(
         hosted.base, "POST", "/api/v1/session", {"name": "alice", "password": "temporary-pass"}
     )
@@ -397,3 +399,151 @@ def test_the_cookie_is_secure_through_the_tls_proxy(tmp_path):
         httpd.shutdown()
         httpd.server_close()
         db.close()
+
+
+# ------------------------------------------------------------ phase 3: roles
+
+
+def _person(directory: UserDirectory, name: str, role: str | None, book_id: str) -> str:
+    """A user with their own password, the role given in the book, and a token."""
+    directory.add_user(name, "temporary-pass")
+    directory.set_password(name, f"{name}-own-password", current="temporary-pass")
+    if role is not None:
+        directory.grant(book_id, name, role)
+    return directory.issue_token(directory.user(name), f"{name}'s phone")
+
+
+def _new_transaction(db, client: HttpBookClient):
+    from breadsched.gen.lib import AccountType, Amount, Money
+    from breadsched.gen.services.transactions import (
+        SaveTransaction,
+        TransactionInput,
+        TransactionSplitInput,
+    )
+
+    def leaf(atype):
+        return next(
+            account.handle
+            for account in db.iter_accounts()
+            if account.atype is atype and not account.placeholder
+        )
+
+    currency = client.transaction_currency()
+    amount = Money("7.25")
+    return SaveTransaction(
+        TransactionInput(
+            post_date=date(2026, 10, 2),
+            description="Lunch",
+            currency=currency,
+            splits=(
+                TransactionSplitInput(leaf(AccountType.EXPENSE), Amount(amount, currency)),
+                TransactionSplitInput(leaf(AccountType.BANK), Amount(-amount, currency)),
+            ),
+        )
+    )
+
+
+def test_each_role_may_do_what_it_is_given_and_no_more(hosted):
+    from dataclasses import replace
+
+    from breadsched.api import ApiError
+
+    directory = UserDirectory()
+    book_id = hosted.db.get_metadata("book.id")
+    assert book_id and [book.id for book in directory.books()] == [book_id]
+
+    def client(name, role):
+        return HttpBookClient(hosted.base, _person(directory, name, role, book_id))
+
+    def refused(call, code="book.permission.denied"):
+        with pytest.raises(ApiError) as caught:
+            call()
+        assert (caught.value.status, caught.value.code) == (403, code)
+
+    viewer = client("vera", "viewer")
+    entry = client("eli", "entry")
+    editor = client("eddie", "editor")
+    stranger = client("nora", None)
+
+    # A viewer reads anything and changes nothing.
+    assert viewer.chart() and viewer.plan_bounds()
+    refused(lambda: viewer.save_transaction(_new_transaction(hosted.db, viewer)))
+    refused(lambda: viewer.undo())
+
+    # An entry user sees the accounts without values and adds transactions, nothing else.
+    assert entry.account_outline()
+    added = entry.save_transaction(_new_transaction(hosted.db, entry))
+    assert hosted.db.get_transaction(added.handle) is not None
+    refused(lambda: entry.chart())
+    refused(lambda: entry.register_view(next(iter(hosted.db.iter_accounts())).handle))
+    refused(lambda: entry.undo())
+    change = _new_transaction(hosted.db, entry)
+    refused(lambda: entry.save_transaction(replace(change, existing_handle=added.handle)))
+    refused(lambda: entry.delete_transaction(added.handle))
+
+    # An editor writes and undoes anyone's change, but not what only the owner may.
+    assert editor.undo() is True
+    assert hosted.db.get_transaction(added.handle) is None
+    refused(lambda: editor.set_attachment_folder("/tmp"))
+    refused(lambda: editor.writeback_preview())
+
+    # Someone known to the host but given no role here may not use the book at all.
+    refused(lambda: stranger.revision, "request.untrusted")
+    # The computer account owns every book it holds.
+    assert HttpBookClient(hosted.base, device_token()).writeback_keep_backups() >= 0
+
+
+def test_grants_name_known_users_and_real_roles(hosted):
+    directory = UserDirectory()
+    book_id = hosted.db.get_metadata("book.id")
+    directory.add_user("vera", "temporary-pass")
+    for name, role, code in (
+        ("vera", "boss", "users.role.invalid"),
+        ("nobody", "viewer", "users.user.not_found"),
+        (getpass.getuser(), "viewer", "users.grant.host_account"),
+    ):
+        with pytest.raises(users.UserError) as refused:
+            directory.grant(book_id, name, role)
+        assert refused.value.code == code
+    directory.grant(book_id, "vera", "viewer")
+    directory.grant(book_id, "vera", "editor")
+    [grant] = directory.grants(book_id)
+    assert (grant.user.name, grant.role) == ("vera", "editor")
+    assert directory.role(book_id, directory.user("vera")) == "editor"
+    assert directory.revoke_grant(book_id, "vera") is True
+    assert directory.grants(book_id) == ()
+    # Removing a user removes their grants with them.
+    directory.grant(book_id, "vera", "viewer")
+    directory.remove_user("vera")
+    assert directory.grants(book_id) == ()
+
+
+def test_the_share_command_grants_changes_and_removes_roles(tmp_path, capsys, monkeypatch):
+    from breadsched.cli.main import main
+
+    path = tmp_path / "book.breadsched"
+    create_sample_book(path, as_of=date(2026, 10, 1))
+    UserDirectory().add_user("alice", "temporary-pass", display_name="Alice")
+    book = str(path)
+    assert main(["share", book, "alice", "--role", "entry"]) == 0
+    assert "Alice now has the entry role in this book" in capsys.readouterr().out
+    assert main(["share", book, "--json"]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert listed == [
+        {"user": getpass.getuser(), "role": "owner"},
+        {"user": "alice", "role": "entry"},
+    ]
+    # The book now carries its id, by which the grant is kept.
+    reader = DbSQLite()
+    reader.load(book, "r")
+    try:
+        book_id = reader.get_metadata("book.id")
+    finally:
+        reader.close()
+    assert UserDirectory().role(book_id, UserDirectory().user("alice")) == "entry"
+    with pytest.raises(SystemExit):
+        main(["share", book, "alice", "--role", "boss"])
+    capsys.readouterr()
+    assert main(["share", book, "alice", "--remove"]) == 0
+    assert main(["share", book, "alice", "--remove"]) == 2
+    assert "had no role" in capsys.readouterr().err

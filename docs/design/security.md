@@ -42,7 +42,9 @@ A device without a token signs in with a user name and password (decision 0004):
 `scrypt` hashes, throttled attempts, and a session in an `HttpOnly`,
 `SameSite=Strict` cookie (`Secure` through the TLS proxy) that the existing Host,
 Origin, and content-type checks still guard. A temporary password must be changed
-before any other request is served.
+before any other request is served. Each request is served in the caller's role in
+the book (owner, editor, viewer, or entry; decision 0004), checked before every book
+operation, and a user given no role there is refused.
 
 Reaching a book from another device goes only through a TLS reverse proxy on the
 same host, with authentication of its own; the server itself never listens beyond

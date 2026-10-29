@@ -7,14 +7,27 @@ book without reading it.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 
+from ..db.base import DbError
 from ..db.sqlite import DbSQLite
 from ..db.verification import BookVerification
 from ..engine import valuation
 from ..engine.valuation import ValuationAggregate
 
-__all__ = ["BookCounts", "BookSummary", "book_counts", "book_summary", "verify_book"]
+__all__ = [
+    "BOOK_ID_KEY",
+    "BookCounts",
+    "BookSummary",
+    "book_counts",
+    "book_id",
+    "book_summary",
+    "verify_book",
+]
+
+#: The book's permanent id, by which a host keeps who may use it (decision 0004).
+BOOK_ID_KEY = "book.id"
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,3 +74,18 @@ def book_summary(db: DbSQLite) -> BookSummary:
 def verify_book(db: DbSQLite) -> BookVerification:
     """Physical and logical checks of the open book; writes nothing."""
     return db.verification_report()
+
+
+def book_id(db: DbSQLite) -> str | None:
+    """The book's permanent id, made the first time it is asked for in a book open for
+    writing; None for a book open only to read that has none yet. A copy of the book
+    keeps it, so access is granted to the book wherever its host serves it."""
+    found = db.get_metadata(BOOK_ID_KEY)
+    if isinstance(found, str) and found:
+        return found
+    made = uuid.uuid4().hex
+    try:
+        db.set_metadata(BOOK_ID_KEY, made)
+    except DbError:
+        return None
+    return made

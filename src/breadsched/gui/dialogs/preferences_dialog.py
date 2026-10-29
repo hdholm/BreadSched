@@ -27,7 +27,9 @@ over toolbars:
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
+from ...api.local import book_server
 from ...api.users import UserDirectory
 from ...plugins.quotes import alphavantage_key, save_alphavantage_key
 from ..book_sharing import SETTING as SHARE_SETTING
@@ -218,7 +220,11 @@ class PreferencesDialog(BoundedWindow):
         )
 
     def _on_users(self, _button) -> UsersDialog:
-        dialog = UsersDialog(self)
+        # With a book open, the window also says who may use it (decision 0004).
+        db = getattr(self.application, "db", None)
+        book_id = book_server(db).book_id() if db is not None else None
+        path = getattr(self.application, "book_path", "") or ""
+        dialog = UsersDialog(self, book_id=book_id, book_name=Path(path).name if path else "")
 
         def closed(*_args) -> bool:
             self._show_users_summary()

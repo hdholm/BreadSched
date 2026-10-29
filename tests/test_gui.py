@@ -10979,6 +10979,34 @@ class TestPreferences:
         users.close()
         dialog.close()
 
+    def test_the_open_book_is_shared_from_users_and_devices(self, app, window, populated_book):
+        """Decision 0004: with a book open, Users and devices says who may use it and in
+        which role, and gives, changes, and takes away access."""
+        from breadsched.api.local import book_server
+        from breadsched.api.users import UserDirectory
+
+        directory = UserDirectory()
+        directory.add_user("alice", "temporary-pass", display_name="Alice")
+        app.open_book(populated_book)
+        book_id = book_server(app.db).book_id()
+        dialog = app.on_preferences()
+        users = dialog._on_users(None)
+        texts = _texts(users.content)
+        assert "Who may use gui.breadsched" in texts
+        assert "owner (this computer's account)" in texts
+        users._ask_grant([directory.user("alice")])
+        people, roles, give = users.grant_form
+        roles.set_selected(3)  # entry
+        give.emit("clicked")
+        assert directory.role(book_id, directory.user("alice")) == "entry"
+        assert "Alice now has the entry role" in users.status.get_text()
+        users._set_role(directory.user("alice"), "viewer")
+        assert directory.role(book_id, directory.user("alice")) == "viewer"
+        users._take_away(directory.user("alice"))
+        assert directory.grants(book_id) == ()
+        users.close()
+        dialog.close()
+
     def test_forget_and_cancel(self, app, window, populated_book):
         app.open_book(populated_book)
         stored = app.settings.get("general", "last_book_path")

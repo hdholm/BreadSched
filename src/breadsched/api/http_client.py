@@ -64,6 +64,7 @@ from ..gen.services import (
     DuplicateSchedule,
     FormulaScheduleInput,
     NextOccurrence,
+    OutlineLine,
     PostDue,
     PostedDue,
     RegisterPage,
@@ -550,6 +551,9 @@ class HttpBookClient:
 
     # -------------------------------------------------------------------- book
 
+    def book_id(self) -> str | None:
+        return self._call("GET", "/book/id")["id"]
+
     def book_counts(self) -> BookCounts:
         return from_data(BookCounts, self._call("GET", "/book/counts"))
 
@@ -617,6 +621,14 @@ class HttpBookClient:
 
     def account(self, account: str) -> AccountRecord:
         return account_record_from_json(self._call("GET", f"/accounts/{quote(account, safe='')}"))
+
+    def account_outline(self, include_hidden: bool = False) -> tuple[OutlineLine, ...]:
+        found = self._call(
+            "GET", "/account-outline", {"hidden": "true" if include_hidden else None}
+        )
+        return tuple(
+            OutlineLine(account_record_from_json(row), int(row["depth"])) for row in found["lines"]
+        )
 
     def chart(self, as_of: date | None = None, include_hidden: bool = False) -> list[ChartLine]:
         params = {"as_of": as_of, "hidden": "true" if include_hidden else None}

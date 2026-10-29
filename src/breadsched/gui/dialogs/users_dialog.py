@@ -10,21 +10,42 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from ...api.permissions import ROLES
 from ...api.users import User, UserDirectory, UserError
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
+from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
 
 __all__ = ["UsersDialog"]
 
 
+#: How each role reads in a choice.
+ROLE_LABELS = {
+    "owner": "Owner: everything, including sharing",
+    "editor": "Editor: reads and changes",
+    "viewer": "Viewer: reads",
+    "entry": "Entry: adds transactions only",
+}
+
+
 class UsersDialog(BoundedWindow):
     """You, the other people who may use the books, and your devices."""
 
-    def __init__(self, parent: Gtk.Window | None, directory: UserDirectory | None = None) -> None:
+    def __init__(
+        self,
+        parent: Gtk.Window | None,
+        directory: UserDirectory | None = None,
+        *,
+        book_id: str | None = None,
+        book_name: str = "",
+    ) -> None:
         super().__init__(title="Users and devices", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
         self.directory = directory if directory is not None else UserDirectory()
+        #: The open book, whose sharing this window also shows (decision 0004).
+        self.book_id = book_id
+        self.book_name = book_name
         self.set_default_size(560, -1)
         #: The form the window shows in place of its lists, if any.
         self.form: _Form | None = None
@@ -98,6 +119,9 @@ class UsersDialog(BoundedWindow):
             )
         self.content.append(_row(_button("Add a person…", self._ask_add)))
 
+        if self.book_id:
+            self._show_book(you, others)
+
         self._heading("Your devices")
         tokens = self.directory.tokens(you)
         if not tokens:
@@ -125,6 +149,94 @@ class UsersDialog(BoundedWindow):
                 )
             )
         )
+
+    def _show_book(self, you: User, others: list[User]) -> None:
+        """Who may use the open book: you own it; others have the role given them."""
+        assert self.book_id is not None
+        self._heading(f"Who may use {self.book_name or 'this book'}")
+        self.content.append(
+            Gtk.Label(label=f"{you.display_name}: owner (this computer's account)", xalign=0)
+        )
+        grants = self.directory.grants(self.book_id)
+        for grant in grants:
+            roles = bounded_dropdown([ROLE_LABELS[role] for role in ROLES])
+            roles.set_selected(ROLES.index(grant.role))
+            roles.update_property(
+                [Gtk.AccessibleProperty.LABEL], [f"{grant.user.display_name}'s role"]
+            )
+            roles.connect(
+                "notify::selected",
+                lambda dropdown, _p, u=grant.user: self._set_role(
+                    u, ROLES[dropdown.get_selected()]
+                ),
+            )
+            self.content.append(
+                _row(
+                    Gtk.Label(label=grant.user.display_name, xalign=0, hexpand=True),
+                    roles,
+                    _button("Remove", lambda *_, u=grant.user: self._take_away(u)),
+                )
+            )
+        granted = {grant.user.id for grant in grants}
+        candidates = [user for user in others if user.id not in granted]
+        if candidates:
+            self.content.append(
+                _row(_button("Give someone access…", lambda *_: self._ask_grant(candidates)))
+            )
+        elif not others:
+            self.content.append(
+                Gtk.Label(label="Add a person first to share this book.", xalign=0, wrap=True)
+            )
+
+    def _set_role(self, user: User, role: str) -> None:
+        assert self.book_id is not None
+        book_id = self.book_id
+
+        def give() -> str:
+            self.directory.grant(book_id, user.name, role)
+            return f"{user.display_name} now has the {role} role in this book."
+
+        self._attempt(give)
+
+    def _take_away(self, user: User) -> None:
+        assert self.book_id is not None
+        book_id = self.book_id
+
+        def take() -> str:
+            self.directory.revoke_grant(book_id, user.name)
+            return f"{user.display_name} may no longer use this book."
+
+        self._attempt(take)
+
+    def _ask_grant(self, candidates: list[User]) -> None:
+        form = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        heading = Gtk.Label(label="Give someone access", xalign=0)
+        heading.add_css_class("heading")
+        form.append(heading)
+        people = bounded_dropdown([user.display_name for user in candidates])
+        people.update_property([Gtk.AccessibleProperty.LABEL], ["Person"])
+        roles = bounded_dropdown([ROLE_LABELS[role] for role in ROLES])
+        roles.set_selected(ROLES.index("editor"))
+        roles.update_property([Gtk.AccessibleProperty.LABEL], ["Role"])
+        for label, widget in (("Person", people), ("Role", roles)):
+            form.append(Gtk.Label(label=label, xalign=0))
+            form.append(widget)
+        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+        buttons.append(_button("Cancel", lambda *_: self.refresh()))
+        give = _button(
+            "Give access",
+            lambda *_: self._set_role(
+                candidates[people.get_selected()], ROLES[roles.get_selected()]
+            ),
+        )
+        give.add_css_class("suggested-action")
+        buttons.append(give)
+        form.append(buttons)
+        #: For tests: the choices and the button of the form shown.
+        self.grant_form = (people, roles, give)
+        _clear(self.content)
+        self.content.append(form)
+        self.status.set_text("")
 
     def _heading(self, text: str) -> None:
         label = Gtk.Label(label=text, xalign=0)

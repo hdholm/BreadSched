@@ -207,6 +207,9 @@ _SERVICE_MESSAGES = {
     "users.password.too_short": "A password needs at least 10 characters",
     "users.password.wrong": "The current password is wrong",
     "users.password.mismatch": "The two new passwords differ",
+    "users.role.invalid": "A role is owner, editor, viewer, or entry",
+    "users.grant.host_account": "This computer's own account always owns its books",
+    "book.permission.denied": "Your role in this book does not allow that",
     "signin.failed": "That name and password do not match",
     "signin.throttled": "Too many attempts; wait a little and try again",
     "file.local_only": "Send the file itself: only programs on the book's own computer "

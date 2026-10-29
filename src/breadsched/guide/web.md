@@ -152,7 +152,9 @@ A phone or tablet opening the page without the address BreadSched printed asks y
 **Sign in** with a user name and password (see
 [Users and devices](cli.md#users-and-devices-experimental)). The first time, or after
 your password was reset, you choose your own password. The device then stays signed
-in: its session lasts 30 days from when you last used it.
+in: its session lasts 30 days from when you last used it. What you may do depends on
+the role the book's owner gave you; someone given only the entry role uses quick
+entry and nothing else.
 
 ## Enter transactions in a register
 
