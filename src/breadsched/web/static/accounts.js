@@ -1278,6 +1278,8 @@ async function openReconciliation(account, order = {sort:"date", descending:fals
       return {item, check, row:el("tr", {class:item.after_statement ? "after-statement" : null},
         el("td", {}, check),
         el("td", {}, item.date),
+        // The check number: sometimes all a statement lists for an entry.
+        el("td", {}, item.num || ""),
         el("td", {}, item.description || "(no description)"),
         el("td", {class:`num ${cls(item.amount)}`}, money(item.amount)),
         el("td", {class:"muted"}, item.after_statement ? `${state}, after statement` : state),
@@ -1302,7 +1304,8 @@ async function openReconciliation(account, order = {sort:"date", descending:fals
       const current = session.sort === key;
       const arrow = current ? (session.descending ? " ▼" : " ▲") : "";
       return el("button", {class:"sort-heading", type:"button",
-        title:key === "checked" ? "Checked first" : `Order by ${label.toLowerCase()}`,
+        title:key === "checked" ? "Checked first"
+          : key === "num" ? "Order by number" : `Order by ${label.toLowerCase()}`,
         onclick:async()=>{
           try {
             await saveChecks();
@@ -1326,7 +1329,7 @@ async function openReconciliation(account, order = {sort:"date", descending:fals
         + `${money(session.selected_in)} · Funds out ${money(session.selected_out)} · Checked `
         + `${money(session.selected_balance)} · Difference ${money(session.difference)}`),
       table([sortHeading("✓", "checked"), sortHeading("Date", "date"),
-        sortHeading("Description", "description"),
+        sortHeading("Num", "num"), sortHeading("Description", "description"),
         {label:sortHeading("Amount", "amount"), num:true}, "State", ""],
         checks.map(({row})=>row)),
       el("div", {class:"toolbar"},

@@ -322,12 +322,16 @@ has a different household meaning.
 
 Use parent accounts to create a readable hierarchy. Placeholder accounts organize
 children but should not receive transaction splits. Hidden accounts remain visible
-where old records refer to them but are omitted from new-entry choices.
+where old records refer to them but are omitted from new-entry choices, until
+**View → Show Hidden Accounts** is on: then a hidden account is listed and usable
+everywhere an account is chosen, its own register included.
 
-Imported GnuCash chart fields are read-only because GnuCash owns those values.
-Change the source name, parent, code, description, commodity, placeholder, or hidden
-state in GnuCash and import again. BreadSched-local type, notes, Dashboard group,
-projection settings, and household relationships remain editable.
+An account imported from GnuCash is yours to change like any other: its name,
+parent, code, description, commodity, placeholder and hidden state, and the other
+GnuCash fields under **Details…** (a color or tax code, say). GnuCash is not the
+system of record. A later import keeps what you changed and still brings what
+changed only in GnuCash; a field changed in both keeps your value, and the import
+summary says how many it kept. Account changes are not written back to GnuCash.
 
 ### Currencies and exchange rates
 
@@ -1674,6 +1678,8 @@ each period rather than recording the same activity in both.
   review (see below). Changes to its date, description, number, or currency, or
   to a reconciled split's account, amount, quantity, memo, or action, are held.
   Changes confined to its other splits apply normally.
+- Change an imported account's name, parent, hidden state, or other fields freely;
+  re-import keeps your changes (see [Organize and edit accounts](#organize-and-edit-accounts)).
 - Use BreadSched for planning work: account types and Dashboard groups, Plan
   matches and rejections, split planning/FSA/investment classifications, FSA
   claims, estimates, scenarios, and schedule planning timelines. These survive

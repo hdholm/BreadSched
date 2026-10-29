@@ -29,6 +29,7 @@ from ..planning_context import (
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.help import help_row
 from .drawdown_dialog import DrawdownsDialog
 
@@ -690,11 +691,11 @@ class AssumptionPeriodDialog(BoundedWindow):
         grid = Gtk.Grid(column_spacing=12, row_spacing=8)
         box.append(grid)
         grid.attach(Gtk.Label(label="Start (YYYY-MM-DD)", xalign=0), 0, 0, 1, 1)
-        self.start_entry = Gtk.Entry()
+        self.start_entry = attach_date_keys(Gtk.Entry())
         self.start_entry.set_text(period.start.isoformat() if period else date.today().isoformat())
         grid.attach(self.start_entry, 1, 0, 1, 1)
         grid.attach(Gtk.Label(label="Through (blank = onward)", xalign=0), 0, 1, 1, 1)
-        self.end_entry = Gtk.Entry()
+        self.end_entry = attach_date_keys(Gtk.Entry())
         if period is not None and period.end is not None:
             self.end_entry.set_text(period.end.isoformat())
         grid.attach(self.end_entry, 1, 1, 1, 1)
@@ -768,9 +769,9 @@ class AssumptionPeriodDialog(BoundedWindow):
 
     def _on_save(self, _button) -> None:
         try:
-            start = date.fromisoformat(self.start_entry.get_text().strip())
+            start = parse_date_text(self.start_entry.get_text().strip())
             end_text = self.end_entry.get_text().strip()
-            end = date.fromisoformat(end_text) if end_text else None
+            end = parse_date_text(end_text) if end_text else None
             values: dict[str, Decimal | None] = {}
             for attribute, entry in self.rate_entries.items():
                 text = entry.get_text().strip()

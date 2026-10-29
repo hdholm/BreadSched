@@ -29,6 +29,7 @@ from ..gi_setup import Gio, Gtk
 from ..views._base import Row, column
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.form_pages import FormGrid
 from ..widgets.help import help_row
 
@@ -149,8 +150,8 @@ class FindDialog(BoundedWindow):
         self.subaccounts_check.set_active(True)
         form.add(None, self.subaccounts_check)
         dates = Gtk.Box(spacing=6)
-        self.start_entry = Gtk.Entry(placeholder_text="From YYYY-MM-DD")
-        self.end_entry = Gtk.Entry(placeholder_text="To YYYY-MM-DD")
+        self.start_entry = attach_date_keys(Gtk.Entry(placeholder_text="From YYYY-MM-DD"))
+        self.end_entry = attach_date_keys(Gtk.Entry(placeholder_text="To YYYY-MM-DD"))
         dates.append(self.start_entry)
         dates.append(self.end_entry)
         form.add("Dates", dates)
@@ -222,7 +223,7 @@ class FindDialog(BoundedWindow):
         if not text:
             return None
         try:
-            return date.fromisoformat(text)
+            return parse_date_text(text)
         except ValueError:
             raise ValueError(f"check the {label} date (YYYY-MM-DD)") from None
 

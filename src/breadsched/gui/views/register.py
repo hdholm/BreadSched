@@ -30,6 +30,7 @@ from ...presentation.investments import register_share_summary
 from ..gi_setup import GLib, Gtk
 from ..register_sheet import RegisterSheet
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import parse_date_text
 from ..widgets.register_grid import BANDING, RegisterGrid
 from ._base import BaseView
 
@@ -583,7 +584,7 @@ class RegisterView(BaseView):
 
         draft = sheet.draft
         try:
-            when = date.fromisoformat(draft.date.strip())
+            when = parse_date_text(draft.date.strip())
         except ValueError:
             when = date.today()
         dialog = TransactionDialog(

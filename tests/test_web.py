@@ -808,7 +808,7 @@ class TestItServes:
 
         plain = entries()
         assert plain["sort"] == "date" and plain["descending"] is False
-        assert plain["sorts"] == ["date", "description", "amount", "checked"]
+        assert plain["sorts"] == ["date", "num", "description", "amount", "checked"]
         assert len(plain["candidates"]) > 1
         largest = entries(sort="amount", descending="true")
         sizes = [abs(Money(item["amount"])) for item in largest["candidates"]]

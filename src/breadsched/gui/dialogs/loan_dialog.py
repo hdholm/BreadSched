@@ -20,9 +20,11 @@ from ...gen.lib.account import AccountClass
 from ...gen.services import SaveLoan, save_loan
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
+from .. import hidden_accounts
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.help import help_row
 
 __all__ = ["LoanDialog"]
@@ -41,7 +43,9 @@ class LoanDialog(BoundedWindow):
         self._funding = [
             a
             for a in db.iter_accounts()
-            if a.atype.is_cash_like and not a.placeholder and not a.hidden
+            if a.atype.is_cash_like
+            and not a.placeholder
+            and (not a.hidden or hidden_accounts.shown())
         ]
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -81,7 +85,7 @@ class LoanDialog(BoundedWindow):
         grid.attach(self.years_spin, 1, row, 1, 1)
         row += 1
 
-        self.start_entry = Gtk.Entry(text=date.today().replace(day=1).isoformat())
+        self.start_entry = attach_date_keys(Gtk.Entry(text=date.today().replace(day=1).isoformat()))
         self.start_entry.connect("changed", self._recalculate)
         grid.attach(Gtk.Label(label="First payment", xalign=0), 0, row, 1, 1)
         grid.attach(self.start_entry, 1, row, 1, 1)
@@ -148,7 +152,7 @@ class LoanDialog(BoundedWindow):
             if a.account_class is account_class
             and not a.placeholder
             and not a.is_root
-            and not a.hidden
+            and (not a.hidden or hidden_accounts.shown())
         ]
 
     def _picker(self, accounts: list) -> Gtk.DropDown:
@@ -164,7 +168,7 @@ class LoanDialog(BoundedWindow):
         try:
             principal = Money(parse_user_amount(self.amount_entry.get_text().strip()))
             rate = Decimal(self.rate_entry.get_text().strip() or "0") / Decimal(100)
-            start = date.fromisoformat(self.start_entry.get_text().strip())
+            start = parse_date_text(self.start_entry.get_text().strip())
         except (ValueError, ArithmeticError, InvalidOperation):
             return None
         if principal <= 0 or rate < 0:

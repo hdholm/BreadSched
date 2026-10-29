@@ -52,9 +52,6 @@ _SERVICE_MESSAGES = {
         "A dependent care FSA cannot carry unused money into the next plan year"
     ),
     "account.fsa_years.overlap": "FSA funding years cannot overlap",
-    "account.source_fields.read_only": (
-        "Imported name, parent, code, and description are controlled by the source book"
-    ),
     "account.opening.equity.not_found": "No equity account can receive the opening balance",
     "account.root.protected": "The root account cannot be deleted",
     "account.in_use": "Accounts with history or children cannot be deleted",
