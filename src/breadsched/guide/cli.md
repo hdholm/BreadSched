@@ -257,7 +257,9 @@ folder.
 the `BREADSCHED_SERVER_TOKEN` environment variable.
 
 One server can hold several books on one address: `breadsched serve home.breadsched
-rental.breadsched` prints each book's id. Commands on this computer still find each
+rental.breadsched` prints each book's id. While it runs, `breadsched serve
+cabin.breadsched` adds that book to the same server rather than starting another,
+until you press Ctrl+C there. Commands on this computer still find each
 book by its file. A `--server` command for a server holding several books names one
 with `--book-id ID`; a browser asks which of the books shared with you to open. Other commands still need the book
 to themselves. The desktop application can share the book it has open the same way

@@ -59,13 +59,16 @@ def pytest_configure(config):
 
 @pytest.fixture(autouse=True)
 def isolate_user_directory(tmp_path_factory):
-    """Keep the book host's users and this account's device token out of the real
-    data and config folders (decision 0004): each test has its own. A patch of its
-    own, so a test's ``monkeypatch`` is still undone before its other fixtures close."""
+    """Keep the book host's users, this account's device token, and the host and
+    server records out of the real data, config, and runtime folders (decision 0004):
+    each test has its own, so tests run side by side never join each other's host. A
+    patch of its own, so a test's ``monkeypatch`` is still undone before its other
+    fixtures close."""
     folder = tmp_path_factory.mktemp("users")
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr("breadsched.api.users.users_path", lambda: folder / "users.sqlite")
         patch.setattr("breadsched.api.users.device_token_path", lambda: folder / "device-token")
+        patch.setattr("breadsched.api.discovery.runtime_directory", lambda: folder / "run")
         yield
 
 

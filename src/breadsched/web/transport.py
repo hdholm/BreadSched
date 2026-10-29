@@ -24,7 +24,14 @@ from typing import Any, TypeVar
 from urllib.parse import unquote, urlencode, urlparse
 
 from ..api.contract import ApiError
-from ..api.host import BOOK_HEADER, HostedBook, choose_book, hosted_name
+from ..api.host import (
+    BOOK_HEADER,
+    HostedBook,
+    JoinedBooks,
+    choose_book,
+    host_refusal,
+    hosted_name,
+)
 from ..api.local import local_caller
 from ..api.permissions import acting_as
 from ..api.protocol import Change
@@ -94,6 +101,9 @@ ACCOUNT_BOOKS = "/api/v1/books"
 #: Answered before the caller is known (signing in) or while a temporary password
 #: must still be changed, or for no one book.
 ACCOUNT_PATHS = frozenset({ACCOUNT_SESSION, ACCOUNT_ME, ACCOUNT_PASSWORD, ACCOUNT_BOOKS})
+#: Another command of the computer account asking the host to serve a book, or to let
+#: it go (decision 0004: one host per account).
+HOST_BOOKS = "/api/v1/host/books"
 
 
 @dataclass(frozen=True, slots=True)
@@ -524,6 +534,9 @@ class Handler(BaseHTTPRequestHandler):
             self.rfile.read(length)
 
     def do_POST(self) -> None:  # noqa: N802 - required by the base class
+        if urlparse(self.path).path == HOST_BOOKS:
+            self._host_books("POST")
+            return
         if urlparse(self.path).path in ACCOUNT_PATHS:
             self._account("POST")
             return
@@ -577,6 +590,9 @@ class Handler(BaseHTTPRequestHandler):
         self._v1("PATCH")
 
     def do_DELETE(self) -> None:  # noqa: N802 - required by the base class
+        if urlparse(self.path).path.startswith(HOST_BOOKS + "/"):
+            self._host_books("DELETE")
+            return
         if urlparse(self.path).path in ACCOUNT_PATHS:
             self._account("DELETE")
             return
@@ -666,6 +682,56 @@ class Handler(BaseHTTPRequestHandler):
         except UserError as exc:
             status = {"signin.failed": 401, "signin.throttled": 429}.get(exc.code, 400)
             self._error(status, exc.code, exc.fields, message=exc.message)
+        except Exception:  # noqa: BLE001 - isolate the threaded server
+            self._unexpected()
+
+    def _host_books(self, method: str) -> None:
+        """Open a book for another of the computer account's commands, or let one go.
+        Only the account itself, from this computer, may change what the host serves."""
+        joined: JoinedBooks | None = getattr(self.server, "joined", None)
+        if (
+            not self._trusted_host()
+            or not self._trusted_origin()
+            or (method == "POST" and self.headers.get_content_type() != "application/json")
+        ):
+            self._discard_body()
+            self._error(403, "request.untrusted")
+            return
+        caller = self._caller()
+        if caller is None:
+            self._discard_body()
+            self._error(403, "request.untrusted")
+            return
+        if not caller.user.host_account or not self._local_request():
+            self._discard_body()
+            refused = host_refusal(403, "host.local_only")
+            self._error(refused.status, refused.code, message=refused.message)
+            return
+        if joined is None:
+            self._discard_body()
+            self._error(404, "resource.not_found")
+            return
+        try:
+            if method == "POST":
+                length = self._content_length()
+                if length is None:
+                    return
+                body = json.loads(self.rfile.read(length) or b"{}")
+                path = body.get("path") if isinstance(body, dict) else None
+                if not isinstance(path, str) or not path:
+                    self._error(400, "request.invalid", ("path",))
+                    return
+                self._json(200, {"id": joined.open(path)})
+                return
+            self._discard_body()
+            key = unquote(urlparse(self.path).path[len(HOST_BOOKS) + 1 :])
+            if not joined.close(key):
+                raise host_refusal(404, "host.book.not_joined")
+            self._json(200, {"closed": key})
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self._error(400, "request.body.json_invalid", ("body",))
+        except ApiError as exc:
+            self._error(exc.status, exc.code, exc.fields, message=exc.message)
         except Exception:  # noqa: BLE001 - isolate the threaded server
             self._unexpected()
 
@@ -1014,6 +1080,42 @@ class BreadSchedHTTPServer(ThreadingHTTPServer):
     stopping: threading.Event
     #: Each served book's path and the id a request names it by.
     books: dict[str, str]
+    #: The books other commands asked this host to open; None where a host may not
+    #: be joined (GTK shares only the book it has open).
+    joined: JoinedBooks | None = None
+    #: How books added later are run, as those given at the start.
+    executor: Executor | None = None
+    users: UserDirectory | None = None
+    _changing = threading.Lock()
+
+    def add_book(self, db: DbSQLite) -> str:
+        """Serve one more book; the id requests name it by. ``ValueError`` if this
+        host already serves it."""
+        handler: type[Handler] = self.RequestHandlerClass  # type: ignore[assignment]
+        with self._changing:
+            file = _file_of(db)
+            if file and any(_file_of(other.db) == file for other in handler.books.values()):
+                raise ValueError(f"{db.path} is already served here")
+            book = _hosted(db, self.executor, self.users)
+            if book.key in handler.books:
+                raise ValueError(f"{db.path} is already served here")
+            # A new table, never one changed in place: requests read it without a lock.
+            handler.books = {**handler.books, book.key: book}
+            self.books = {**self.books, db.path or "": book.key}
+        return book.key
+
+    def remove_book(self, key: str) -> bool:
+        """Stop serving a book once its writer work in progress is done; the caller
+        closes it. The host's last book stays."""
+        handler: type[Handler] = self.RequestHandlerClass  # type: ignore[assignment]
+        with self._changing:
+            book = handler.books.get(key)
+            if book is None or len(handler.books) == 1:
+                return False
+            book.executor(lambda: None)
+            handler.books = {name: each for name, each in handler.books.items() if name != key}
+            self.books = {path: name for path, name in self.books.items() if name != key}
+        return True
 
     def shutdown(self) -> None:
         self.stopping.set()
@@ -1081,6 +1183,11 @@ def token_from_file(path: str | Path) -> str:
     return token
 
 
+def _file_of(db: DbSQLite) -> str:
+    """The book's file, resolved; "" for a book in memory."""
+    return str(Path(db.path).resolve()) if db.path and db.path != ":memory:" else ""
+
+
 def _hosted(db: DbSQLite, executor: Executor | None, users: UserDirectory | None) -> _Book:
     api_object = Api(db)
     # The book's permanent id, made now in a writable book; the host lists the book
@@ -1125,7 +1232,7 @@ def build_handler(
     books: dict[str, _Book] = {}
     files: set[str] = set()
     for each in [db] if isinstance(db, DbSQLite) else db:
-        file = str(Path(each.path).resolve()) if each.path and each.path != ":memory:" else ""
+        file = _file_of(each)
         if file and file in files:
             raise ValueError(f"{each.path} is already served here")
         book = _hosted(each, executor, users)
@@ -1182,6 +1289,8 @@ def serve(
     )
     server = BreadSchedHTTPServer((host, port), handler)
     server.books = {book.db.path or "": book.key for book in handler.books.values()}
+    server.executor = executor
+    server.users = handler.users
     server.token = token
     server.local_token = local_token
     server.stopping = threading.Event()

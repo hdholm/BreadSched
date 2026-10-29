@@ -31,7 +31,18 @@ from pathlib import Path
 from ..gen.db.book_lock import BookWriterLock
 from ..gen.utils.user_paths import runtime_directory
 
-__all__ = ["ServerRecord", "find_server", "publish_server", "record_path", "withdraw_server"]
+__all__ = [
+    "HostRecord",
+    "ServerRecord",
+    "find_host",
+    "find_server",
+    "host_record_path",
+    "publish_host",
+    "publish_server",
+    "record_path",
+    "withdraw_host",
+    "withdraw_server",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +59,16 @@ class ServerRecord:
     book_id: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class HostRecord:
+    """The computer account's running book host, which other books may join
+    (decision 0004: one host per computer account)."""
+
+    url: str
+    pid: int
+    host: str
+
+
 def _canonical(book: str) -> str:
     return str(Path(book).expanduser().resolve())
 
@@ -59,6 +80,70 @@ def record_path(book: str, directory: Path | None = None) -> Path:
     return root / f"{digest}.json"
 
 
+def _private_root(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(path.parent, 0o700)
+    except OSError:
+        pass
+
+
+def _write_private(path: Path, data: dict[str, object]) -> None:
+    temporary = path.with_name(f".{path.name}.{os.getpid()}")
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, sort_keys=True)
+    os.replace(temporary, path)
+
+
+def host_record_path(directory: Path | None = None) -> Path:
+    """Where the computer account's host record is kept."""
+    root = runtime_directory() if directory is None else directory
+    return root / "host.json"
+
+
+def publish_host(url: str, directory: Path | None = None) -> HostRecord:
+    """Record that this process is the account's book host, at ``url``."""
+    record = HostRecord(url, os.getpid(), socket.gethostname())
+    path = host_record_path(directory)
+    _private_root(path)
+    _write_private(path, {"url": record.url, "pid": record.pid, "host": record.host})
+    return record
+
+
+def withdraw_host(record: HostRecord, directory: Path | None = None) -> None:
+    """Remove ``record`` if it is still the published host."""
+    path = host_record_path(directory)
+    if _read_host(path) == record:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _read_host(path: Path) -> HostRecord | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return HostRecord(str(data["url"]), int(data["pid"]), str(data["host"]))
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+
+
+def find_host(directory: Path | None = None) -> HostRecord | None:
+    """The account's live book host on this computer, or None (removing a stale record)."""
+    path = host_record_path(directory)
+    record = _read_host(path)
+    if record is None:
+        return None
+    if record.host == socket.gethostname() and BookWriterLock.pid_is_alive(record.pid):
+        return record
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+    return None
+
+
 def publish_server(
     book: str, url: str, lock: str, directory: Path | None = None, *, book_id: str = ""
 ) -> ServerRecord:
@@ -66,27 +151,18 @@ def publish_server(
     ``url``, where requests name it ``book_id``."""
     record = ServerRecord(_canonical(book), url, os.getpid(), socket.gethostname(), lock, book_id)
     path = record_path(book, directory)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        os.chmod(path.parent, 0o700)
-    except OSError:
-        pass
-    temporary = path.with_name(f".{path.name}.{os.getpid()}")
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(
-            {
-                "book": record.book,
-                "url": record.url,
-                "pid": record.pid,
-                "host": record.host,
-                "lock": record.lock,
-                "book_id": record.book_id,
-            },
-            handle,
-            sort_keys=True,
-        )
-    os.replace(temporary, path)
+    _private_root(path)
+    _write_private(
+        path,
+        {
+            "book": record.book,
+            "url": record.url,
+            "pid": record.pid,
+            "host": record.host,
+            "lock": record.lock,
+            "book_id": record.book_id,
+        },
+    )
     return record
 
 

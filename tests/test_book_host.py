@@ -211,3 +211,96 @@ def test_serve_holds_several_books_and_commands_reach_each_through_it(
     out = capsys.readouterr().out
     assert "BreadSched is serving 2 books at" in out
     assert f"{rental}: book {ids[rental]}" in out
+
+
+def test_a_host_opens_books_for_the_accounts_own_commands_and_lets_them_go(host, tmp_path):
+    from breadsched.api.host import JoinedBooks
+
+    third = tmp_path / "Cabin.breadsched"
+    create_sample_book(third, as_of=date(2026, 10, 1))
+    token = device_token()
+    client = HttpBookClient(host.base, token)
+    # A host that may not be joined (GTK's sharing) says there is nothing here.
+    assert _refused(lambda: client.host_open(str(third))) == (404, "resource.not_found")
+    host.httpd.joined = JoinedBooks(host.httpd, host.base)
+
+    cabin = client.host_open(str(third))
+    assert find_server(str(third)).book_id == cabin
+    assert find_server(str(third)).url == host.base
+    assert [book.name for book in client.hosted_books()] == ["Cabin", "Home", "Rental"]
+    with open_book_api(str(third)) as api:
+        assert api.book_id() == cabin
+    client.host_close(cabin)
+    assert [book.name for book in client.hosted_books()] == ["Home", "Rental"]
+    assert find_server(str(third)) is None
+    # The host let go of the book itself: it opens for writing here now.
+    again = DbSQLite()
+    again.load(str(third))
+    again.close()
+
+    # A book the host was started with stays; one already held, or missing, is refused.
+    assert _refused(lambda: client.host_close(host.ids["home"])) == (404, "host.book.not_joined")
+    assert _refused(lambda: client.host_open(host.home.path)) == (409, "host.book.held")
+    missing = str(tmp_path / "missing.breadsched")
+    assert _refused(lambda: client.host_open(missing)) == (404, "host.book.missing")
+    # Nobody but the computer account may change what its host serves.
+    phone = person(UserDirectory(), "vera", "owner", host.ids["home"])
+    stranger = HttpBookClient(host.base, phone)
+    assert _refused(lambda: stranger.host_open(str(third))) == (403, "host.local_only")
+
+
+def test_a_second_serve_joins_the_running_host_until_it_stops(tmp_path, monkeypatch, capsys):
+    import breadsched.cli.book_commands as book_commands
+    import breadsched.web.transport as transport
+    from breadsched.api.discovery import find_host
+
+    home, rental = tmp_path / "Home.breadsched", tmp_path / "Rental.breadsched"
+    for path in (home, rental):
+        create_sample_book(path, as_of=date(2026, 10, 1))
+    monkeypatch.setattr(book_commands, "HOST_CHECK_SECONDS", 0.05)
+    started = []
+    real_serve = transport.serve
+
+    def capture(*args, **kwargs):
+        httpd = real_serve(*args, **kwargs)
+        started.append(httpd)
+        return httpd
+
+    monkeypatch.setattr(transport, "serve", capture)
+    first: list[int] = []
+    second: list[int] = []
+    hosting = threading.Thread(
+        target=lambda: first.append(main(["serve", str(home), "--port", "0"])), daemon=True
+    )
+    hosting.start()
+    deadline = time.monotonic() + 30
+    while find_host() is None:
+        assert hosting.is_alive() and time.monotonic() < deadline, capsys.readouterr()
+        time.sleep(0.05)
+    joining = threading.Thread(
+        target=lambda: second.append(main(["serve", str(rental), "--port", "9"])), daemon=True
+    )
+    joining.start()
+    while find_server(str(rental)) is None:
+        assert joining.is_alive() and time.monotonic() < deadline, capsys.readouterr()
+        time.sleep(0.05)
+    # One server for both: the second command started none of its own.
+    assert len(started) == 1
+    assert find_server(str(rental)).url == find_host().url
+    with open_book_api(str(rental)) as api:
+        assert api.book_id() == find_server(str(rental)).book_id
+        assert [book.name for book in api.hosted_books()] == ["Home", "Rental"]
+
+    # When the host stops, the joining command ends too, and the book is let go.
+    started[0].shutdown()
+    hosting.join(timeout=10)
+    joining.join(timeout=10)
+    assert first == [0] and second == [0]
+    assert find_host() is None and find_server(str(rental)) is None
+    out = capsys.readouterr().out
+    assert f"now serves {rental}" in out
+    assert "It keeps its own settings; --port did not apply." in out
+    assert "The server stopped." in out
+    again = DbSQLite()
+    again.load(str(rental))
+    again.close()

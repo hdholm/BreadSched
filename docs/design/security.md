@@ -47,7 +47,10 @@ the book (owner, editor, viewer, or entry; decision 0004), checked before every 
 operation, and a user given no role there is refused. A server holding several books
 answers a request for the one its `X-BreadSched-Book` header names; `GET
 /api/v1/books` lists only those the caller has a role in, and someone the server does
-not know is refused before it says whether a named book is there.
+not know is refused before it says whether a named book is there. Only the computer
+account, from its own computer (its device token or the server's local token), may
+ask the host to open a book by path or let one go; the host record that lets a later
+`serve` find it is user-only, like the server records.
 
 Reaching a book from another device goes only through a TLS reverse proxy on the
 same host, with authentication of its own; the server itself never listens beyond

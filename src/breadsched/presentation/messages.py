@@ -212,6 +212,10 @@ _SERVICE_MESSAGES = {
     "book.permission.denied": "Your role in this book does not allow that",
     "book.not_found": "This host does not hold that book",
     "book.required": "This host holds several books; say which one",
+    "host.book.missing": "There is no book at that path",
+    "host.book.held": "That book is already open, here or in another program",
+    "host.book.not_joined": "This host was not asked to serve that book",
+    "host.local_only": "Only your own commands on this computer may change what the host serves",
     "signin.failed": "That name and password do not match",
     "signin.throttled": "Too many attempts; wait a little and try again",
     "file.local_only": "Send the file itself: only programs on the book's own computer "

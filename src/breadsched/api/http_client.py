@@ -354,6 +354,16 @@ class HttpBookClient:
     def revision(self) -> int:
         return int(self._call("GET", "/book")["revision"])
 
+    def host_open(self, path: str) -> str:
+        """Ask the computer account's host to serve the book at ``path`` (on its
+        computer); the id requests name it by. Only the account's own commands there
+        may (decision 0004)."""
+        return str(self._call("POST", "/host/books", body={"path": path})["id"])
+
+    def host_close(self, book_id: str) -> None:
+        """Ask the host to stop serving a book :meth:`host_open` gave it."""
+        self._call("DELETE", f"/host/books/{quote(book_id, safe='')}")
+
     def hosted_books(self) -> tuple[HostedBook, ...]:
         """The books the host holds that this client's user may use (not a book
         operation: it is answered for no one book)."""

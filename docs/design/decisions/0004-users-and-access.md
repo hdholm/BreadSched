@@ -317,9 +317,22 @@ other accounts; 3 and 4 make it a household application.
   `--book-id` chooses the book for `--server`. The browser page asks which book when
   several are shared with you, keeps it in the address (`#book=`), and offers **Other
   books**.
-- **Still to come in phase 3:** a second `serve` joining the account's running host
-  rather than starting another, and GTK opening a book that host holds as the
-  computer account's user, without a prompt.
+- **One host per computer account:** a writable `serve` or `web` publishes a host
+  record (`host.json` in the runtime folder, user-only: address, process, computer).
+  A later `breadsched serve BOOK` that finds a live one *joins* it: it asks the host to
+  open the book (`POST /api/v1/host/books`, `path`), stays until Ctrl+C or the host
+  stops, and then asks it to let the book go (`DELETE /api/v1/host/books/{id}`). The
+  host opens the book itself, so it holds the writer lock and publishes the book's
+  record; it adds and removes books without stopping (`add_book`, `remove_book`, the
+  book's writer work in progress finishing first). Only the computer account from
+  this computer may do either (403 `host.local_only`); a book already open is 409
+  `host.book.held`, a missing one 404 `host.book.missing`, and only books opened this
+  way can be let go (404 `host.book.not_joined`). The joining command's own `--port`,
+  `--trusted-origin`, `--token-file`, and `--open` do not apply, and it says so. A host
+  record that does not answer is ignored, and the command serves the book itself.
+  GTK's sharing serves only the book it has open and cannot be joined.
+- **Still to come in phase 3:** GTK opening a book the host holds, as the computer
+  account's user and without a prompt.
 
 ## Answers to the review questions (2026-10-28)
 

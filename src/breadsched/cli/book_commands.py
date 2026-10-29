@@ -11,6 +11,7 @@ import argparse
 from contextlib import ExitStack, closing
 from datetime import date
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.lib import (
@@ -28,6 +29,9 @@ from .common import (
     resolve_account,
     table,
 )
+
+if TYPE_CHECKING:
+    from ..api.discovery import HostRecord
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -266,9 +270,18 @@ def _serve_book(args: argparse.Namespace, *, open_browser: bool, read_only: bool
 
     One host serves every book named (decision 0004); a request names the book it is
     for. A writable server publishes each book's address (``api.discovery``) so other
-    commands for the same book connect to it instead of failing on the writer lock.
+    commands for the same book connect to it instead of failing on the writer lock,
+    and itself as the account's host, which a later ``serve`` joins rather than
+    starting another server.
     """
-    from ..api.discovery import publish_server, withdraw_server
+    from ..api.discovery import (
+        find_host,
+        publish_host,
+        publish_server,
+        withdraw_host,
+        withdraw_server,
+    )
+    from ..api.host import JoinedBooks
     from ..web.transport import serve, token_from_file, trusted_origin
 
     try:
@@ -277,6 +290,9 @@ def _serve_book(args: argparse.Namespace, *, open_browser: bool, read_only: bool
     except (OSError, ValueError) as exc:
         raise CommandError(str(exc)) from exc
     paths = [args.book, *getattr(args, "more_books", [])]
+    host = None if read_only else find_host()
+    if host is not None and _join_host(host, paths, args, open_browser=open_browser):
+        return 0
     with ExitStack() as books:
         dbs = [
             books.enter_context(closing(open_book(path, "r" if read_only else "w")))
@@ -296,6 +312,10 @@ def _serve_book(args: argparse.Namespace, *, open_browser: bool, read_only: bool
         except OSError as exc:
             raise CommandError(f"could not listen on {args.host}:{args.port}: {exc}") from exc
         base = f"http://{args.host}:{httpd.server_port}"
+        host_record = None
+        if not read_only:
+            httpd.joined = JoinedBooks(httpd, base)
+            host_record = publish_host(base)
         records = []
         for path, db in zip(paths, dbs, strict=True):
             lock = db.writer_lock_token
@@ -315,17 +335,78 @@ def _serve_book(args: argparse.Namespace, *, open_browser: bool, read_only: bool
         if records:
             which = "this book" if len(records) == 1 else "these books"
             print(f"Other BreadSched commands for {which} use this server while it runs.")
+            print("Serving another book now adds it to this server.")
         print("Press Ctrl+C to stop.")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
             print("\nStopped.")
         finally:
+            if host_record is not None:
+                withdraw_host(host_record)
             for record in records:
                 withdraw_server(record)
             httpd.shutdown()
             httpd.server_close()
+            if httpd.joined is not None:
+                httpd.joined.close_all()
         return 0
+
+
+#: Seconds between checks that the host a book joined still runs.
+HOST_CHECK_SECONDS = 1.0
+
+
+def _join_host(
+    host: HostRecord, paths: list[str], args: argparse.Namespace, *, open_browser: bool
+) -> bool:
+    """Have the account's running host serve ``paths`` until Ctrl+C or it stops
+    (decision 0004). False if it does not answer, so this command serves them itself."""
+    import time
+
+    from ..api import ApiError
+    from ..api.discovery import find_host
+    from ..api.http_client import HttpBookClient
+    from ..api.users import device_token
+
+    client = HttpBookClient(host.url, device_token(), host_files=True)
+    joined: list[str] = []
+    try:
+        for path in paths:
+            try:
+                book_id = client.host_open(str(Path(path).expanduser().resolve()))
+            except ApiError as exc:
+                if exc.code == "server.unreachable" and not joined:
+                    return False
+                raise CommandError(f"could not serve {path}: {exc}") from exc
+            joined.append(book_id)
+            print(f"BreadSched's running server at {host.url} now serves {path} (book {book_id}).")
+        ignored = [
+            name
+            for name, given in (
+                ("--port", args.port != 8765),
+                ("--trusted-origin", bool(args.trusted_origin)),
+                ("--token-file", bool(args.token_file)),
+                ("--open", open_browser),
+            )
+            if given
+        ]
+        if ignored:
+            print(f"It keeps its own settings; {', '.join(ignored)} did not apply.")
+        print("Press Ctrl+C to stop serving it.")
+        try:
+            while find_host() == host:
+                time.sleep(HOST_CHECK_SECONDS)
+            print("The server stopped.")
+        except KeyboardInterrupt:
+            print("\nStopped.")
+    finally:
+        for book_id in joined:
+            try:
+                client.host_close(book_id)
+            except ApiError:
+                pass  # the host stopped, and the book with it
+    return True
 
 
 def cmd_gui(args: argparse.Namespace) -> int:
