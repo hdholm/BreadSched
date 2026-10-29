@@ -6253,7 +6253,9 @@ class TestDashboardView:
         assert dialog.emergency_spin.get_value() == view.config.emergency_months
         dialog.destroy()
 
-    def test_changing_a_horizon_is_saved_on_the_book_and_changes_the_verdict(self, view, app):
+    def test_changing_a_horizon_is_kept_as_ones_own_and_changes_the_verdict(self, view, app):
+        from user_fixtures import own_preference
+
         from breadsched.gen.engine.dashboard import DashboardConfig
 
         before = view.board.emergency_fund
@@ -6262,8 +6264,11 @@ class TestDashboardView:
         dialog.liquidity_spin.set_value(45)
         assert dialog.save() is True
         dialog.destroy()
-        stored = DashboardConfig.load(app.db)
+        # The computer account's own Dashboard (decision 0004); the book keeps its own.
+        stored = DashboardConfig.load(app.db, own_preference(app.db, "dashboard"))
         assert (stored.emergency_months, stored.liquidity_days) == (12, 45)
+        book = DashboardConfig.load(app.db)
+        assert (book.emergency_months, book.liquidity_days) != (12, 45)
         view.refresh()
         assert view.board.emergency_fund > before
 
@@ -6303,6 +6308,8 @@ class TestDashboardView:
         dialog.destroy()
 
     def test_the_group_dialog_builds_and_saves(self, view, app):
+        from user_fixtures import own_preference
+
         from breadsched.gen.engine.dashboard import DashboardConfig
         from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
 
@@ -6317,12 +6324,14 @@ class TestDashboardView:
         assert row["picker"].get_selected() == 0
         dialog._on_save(None)
 
-        saved = DashboardConfig.load(app.db)
+        # Kept as the computer account's own arrangement, members and all (decision
+        # 0004): the book's accounts and configuration are left as they were.
+        saved = DashboardConfig.load(app.db, own_preference(app.db, "dashboard"))
         assert any(g.name == "Property" and g.kind == "property" for g in saved.groups)
-        # Membership is stored on the account, not in the configuration (#337).
         member = dialog.accounts[0]
-        assert app.db.get_account(member.handle).group == "Property"
-        assert "accounts" not in str(app.db.get_metadata("dashboard"))
+        assert any(g.name == "Property" and member.handle in g.accounts for g in saved.groups)
+        assert app.db.get_account(member.handle).group != "Property"
+        assert "Property" not in str(app.db.get_metadata("dashboard"))
 
     def test_the_group_dialog_refuses_an_account_in_two_groups(self, view, app):
         from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
@@ -6731,9 +6740,14 @@ class TestAccountEditor:
     def test_an_edit_is_stored(self, accounts_view, app):
         account = app.db.get_account_by_name("Assets:Checking Account")
         dialog = self._dialog(accounts_view, account)
+        book_group = account.group
         dialog.group_entry.set_text("Cash")
         dialog._on_save(None)
-        assert app.db.get_account(account.handle).group == "Cash"
+        # The Dashboard group is the computer account's own (decision 0004).
+        from breadsched.api.local import book_server
+
+        assert book_server(app.db).account(account.handle).account.group == "Cash"
+        assert app.db.get_account(account.handle).group == book_group
 
     def test_imported_account_parent_hidden_and_commodity_round_trip(self, accounts_view, app):
         from breadsched.gen.lib import (

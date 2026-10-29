@@ -12,10 +12,12 @@ with the book, so every process that opens it agrees on it (#357).
 
 from __future__ import annotations
 
+import copy
 import sqlite3
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from typing import Literal, cast
@@ -26,7 +28,7 @@ from ..gen.engine import projection as projection_engine
 from ..gen.engine.activity import PlanSettings, ReportingPeriod
 from ..gen.engine.category_report import CategoryActivity
 from ..gen.engine.currency import reporting_currency_label
-from ..gen.engine.dashboard import Dashboard
+from ..gen.engine.dashboard import Dashboard, DashboardConfig
 from ..gen.engine.entry_input import TradeFill
 from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
 from ..gen.engine.fsa_claim_report import ClaimReport
@@ -524,13 +526,13 @@ class LocalBookServer:
     # ---------------------------------------------------------------- accounts
 
     def accounts(self) -> list[AccountRecord]:
-        return list(account_records(self.db))
+        return self._regrouped(account_records(self.db))
 
     def commodities(self) -> tuple[Commodity, ...]:
         return ledger_reads.commodities(self.db)
 
     def account(self, account: str) -> AccountRecord:
-        return unwrap(account_record(self.db, account))
+        return self._regrouped([unwrap(account_record(self.db, account))])[0]
 
     def account_outline(self, include_hidden: bool = False) -> tuple[OutlineLine, ...]:
         return account_outline(self.db, include_hidden)
@@ -539,7 +541,24 @@ class LocalBookServer:
         return list(chart_of_accounts(self.db, as_of, include_hidden))
 
     def save_account(self, request: SaveAccount) -> SavedAccount:
-        return unwrap(save_account(self.db, request))
+        """Save the account; its Dashboard group is the caller's own arrangement
+        (decision 0004), so the book keeps the group it had and the caller's
+        arrangement takes the one asked for."""
+        keep = self._keeper(DashboardConfig.KEY)
+        if keep is None:
+            return unwrap(save_account(self.db, request))
+        config = DashboardConfig.load(self.db, self._own_dashboard())
+        existing = self.db.get_account(request.existing_handle) if request.existing_handle else None
+        wanted = request.account.group.strip()
+        current = config.group_of(existing.handle) if existing is not None else ""
+        account = copy.deepcopy(request.account)
+        account.group = existing.group if existing is not None else ""
+        saved = unwrap(save_account(self.db, replace(request, account=account)))
+        stored = self.db.get_account(saved.handle)
+        if wanted != current and stored is not None:
+            config.place(stored, wanted)
+            keep(config.serialize_personal())
+        return saved
 
     def delete_account(self, account: str) -> SavedAccount:
         return unwrap(delete_account(self.db, DeleteAccount(account)))
@@ -804,19 +823,51 @@ class LocalBookServer:
         liquidity_days: int | None = None,
         emergency_months: int | None = None,
     ) -> Dashboard:
-        found = dashboard_config.dashboard_board(self.db, as_of, liquidity_days, emergency_months)
+        found = dashboard_config.dashboard_board(
+            self.db, as_of, liquidity_days, emergency_months, self._own_dashboard()
+        )
         return unwrap(found)
 
     def dashboard_settings(self) -> DashboardSettings:
-        return dashboard_config.dashboard_settings(self.db)
+        return dashboard_config.dashboard_settings(self.db, self._own_dashboard())
 
     def default_dashboard_settings(self) -> DashboardSettings:
         return dashboard_config.default_dashboard_settings(self.db)
 
     def save_dashboard_settings(self, request: SaveDashboardConfig) -> DashboardSettings:
+        """The caller's own Dashboard (decision 0004), its groups' members with it; the
+        book's only for a book without an id."""
+        keep = self._keeper(DashboardConfig.KEY)
+        if keep is not None:
+            saved = unwrap(
+                dashboard_config.save_dashboard_config(
+                    self.db, request, self._own_dashboard(), keep
+                )
+            )
+            return dashboard_config.settings_of(saved)
         with self._changing("dashboard-config"):
             saved = unwrap(dashboard_config.save_dashboard_config(self.db, request))
         return dashboard_config.settings_of(saved)
+
+    def _own_dashboard(self) -> object:
+        return self._preference(DashboardConfig.KEY)
+
+    def _regrouped(self, records: Sequence[AccountRecord]) -> list[AccountRecord]:
+        """``records`` with each account's Dashboard group the caller's own, where
+        they have arranged their own (decision 0004)."""
+        stored = self._own_dashboard()
+        if not isinstance(stored, dict):
+            return list(records)
+        config = DashboardConfig.load(self.db, stored)
+        regrouped = []
+        for record in records:
+            group = config.group_of(record.account.handle)
+            if group != record.account.group:
+                account = copy.deepcopy(record.account)
+                account.group = group
+                record = replace(record, account=account)
+            regrouped.append(record)
+        return regrouped
 
     def explain_plan_cell(self, query: plan_cells.PlanCellQuery) -> plan_cells.PlanCellDetail:
         return unwrap(plan_cells.explain_plan_cell(self.db, query))

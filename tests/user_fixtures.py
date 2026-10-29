@@ -45,3 +45,9 @@ def new_transaction(db, client: HttpBookClient):
             ),
         )
     )
+
+
+def own_preference(db, key: str) -> object:
+    """What the computer account kept as its own ``key`` for the book (decision 0004)."""
+    directory = UserDirectory()
+    return directory.preference(directory.host_user(), db.get_metadata("book.id"), key)

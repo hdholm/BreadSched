@@ -1464,7 +1464,10 @@ def test_dashboard_settings_alike(target, book):
         ("Debt", (book.card,)),
     ]
     assert (saved.liquidity_days, saved.emergency_months) == (14, 36)
-    assert db.get_account(book.checking).group == "Cash"
+    # Each person's own arrangement (decision 0004): the book's accounts keep theirs,
+    # and the accounts as this caller reads them show this one.
+    assert db.get_account(book.checking).group == ""
+    assert api.account(book.checking).account.group == "Cash"
     assert api.dashboard_settings() == saved
     # Sections travel with the settings and the board (#381).
     assert saved.sections["reimbursables"] is False
@@ -1485,6 +1488,7 @@ def test_dashboard_settings_alike(target, book):
             api.save_dashboard_settings(SaveDashboardConfig(groups=groups))
         assert refused.value.status == 400
     assert (repr(db.get_metadata("dashboard")), db.get_account(book.card).group) == before
+    assert api.dashboard_settings() == shown
 
 
 def test_find_reads_alike(target, book):

@@ -288,9 +288,8 @@ other accounts; 3 and 4 make it a household application.
   `LOOKUP`, `READ`, `ENTRY`, `WRITE`, or `OWNER`, and an architecture test requires
   the table to match the protocol exactly. A viewer has `ANY`, `LOOKUP`, and `READ`;
   an entry user `ANY`, `LOOKUP`, and `ENTRY` (and `save_transaction` only of a new
-  transaction); an editor all but `OWNER`; an owner everything. Saving the
-  Dashboard configuration is `WRITE` until phase 4 makes it personal; saving one's
-  own Plan view is `READ` (see phase 4).
+  transaction); an editor all but `OWNER`; an owner everything. Saving one's
+  own Plan view or Dashboard is `READ` (see phase 4).
 - **Enforcement:** the transport works out the caller's role in the served book
   (`owner` for the computer account; else the grant, or none, which refuses the
   request), and sets it for the request on whichever thread runs the book
@@ -348,9 +347,19 @@ other accounts; 3 and 4 make it a household application.
   else the defaults. Saving it changes nothing in the book (no revision), so it is a
   `READ` operation: a viewer keeps their own. A book without an id (read-only, in
   memory) still keeps its own.
-- **Still to come in phase 4:** the Dashboard configuration (with its groups'
-  members, now kept on the accounts), undo and redo naming each step's user, and
-  change attribution.
+- **The Dashboard** is next: its whole configuration (horizons, sections, groups,
+  and the groups' members) is kept as the person's own (`dashboard`,
+  `DashboardConfig.serialize_personal`, which lists each group's members, since the
+  accounts carry only the book's). `dashboard`, `dashboard_settings`, and
+  `save_dashboard_settings` use it, else the book's arrangement (the accounts'
+  groups and the book's configuration), which is where everyone starts. Saving is
+  `READ`. An account's Dashboard group is the reader's own as well: `accounts` and
+  `account` show it, and `save_account` moves the account in the caller's
+  arrangement while the book's account keeps its group, so the account editor and
+  `breadsched account --group` act on one's own Dashboard. The book's arrangement
+  no longer changes through a book with an id.
+- **Still to come in phase 4:** undo and redo naming each step's user, and change
+  attribution.
 
 ## Answers to the review questions (2026-10-28)
 

@@ -515,6 +515,57 @@ def test_each_person_keeps_their_own_plan_view(hosted):
     )
 
 
+def test_each_person_arranges_their_own_dashboard(hosted):
+    """Decision 0004: the whole Dashboard configuration is personal, its groups'
+    members included; the book's arrangement is where anyone starts."""
+
+    from breadsched.gen.lib import AccountType
+    from breadsched.gen.services import DashboardGroupInput, SaveAccount, SaveDashboardConfig
+
+    directory = UserDirectory()
+    book_id = hosted.db.get_metadata("book.id")
+    vera = HttpBookClient(hosted.base, person(directory, "vera", "viewer", book_id))
+    eddie = HttpBookClient(hosted.base, person(directory, "eddie", "editor", book_id))
+    owner = HttpBookClient(hosted.base, device_token())
+    bank = next(
+        account.handle
+        for account in hosted.db.iter_accounts()
+        if account.atype is AccountType.BANK and not account.placeholder
+    )
+    book = owner.dashboard_settings()
+    revision = owner.revision
+
+    # A viewer may arrange their own; nobody else's view, nor the book, changes.
+    mine = vera.save_dashboard_settings(
+        SaveDashboardConfig(
+            groups=(DashboardGroupInput("Spending money", "liquid", (bank,)),),
+            liquidity_days=14,
+        )
+    )
+    assert [(group.name, group.accounts) for group in mine.groups] == [("Spending money", (bank,))]
+    assert vera.dashboard_settings() == mine
+    assert vera.dashboard().config.liquidity_days == 14
+    assert vera.account(bank).account.group == "Spending money"
+    assert owner.dashboard_settings() == book
+    assert owner.account(bank).account.group == hosted.db.get_account(bank).group
+    assert owner.revision == revision
+
+    # An editor moving an account between groups moves it in their own arrangement;
+    # the book keeps its group, and the viewer keeps hers.
+    record = eddie.account(bank)
+    book_group = record.account.group
+    moved = record.account
+    moved.group = "Everyday"
+    eddie.save_account(SaveAccount(moved, existing_handle=bank))
+    assert eddie.account(bank).account.group == "Everyday"
+    assert any(
+        group.name == "Everyday" and bank in group.accounts
+        for group in eddie.dashboard_settings().groups
+    )
+    assert hosted.db.get_account(bank).group == book_group
+    assert vera.account(bank).account.group == "Spending money"
+
+
 def test_grants_name_known_users_and_real_roles(hosted):
     directory = UserDirectory()
     book_id = hosted.db.get_metadata("book.id")

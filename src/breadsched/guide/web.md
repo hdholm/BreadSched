@@ -57,7 +57,8 @@ cost method. See [Accounts](../USER_GUIDE.md#accounts).
 ## Configure the Dashboard
 
 On the **Dashboard**, **Configure Dashboard…** opens one dialog for everything the
-Dashboard can be told:
+Dashboard can be told. It is your own arrangement of the book; anyone else it is
+shared with keeps theirs:
 
 - **Horizons**: **Liquid for** so many days of bills, and how many months of
   outgoings the **Emergency fund covers**.

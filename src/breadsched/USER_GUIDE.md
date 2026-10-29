@@ -841,8 +841,10 @@ you turn it on.
 bills cash must cover, and how many months of outgoings the emergency fund should
 last), which sections show (account groups, pending bills, expected income, pending
 reimbursables, and savings goals), the groups and their accounts, and each table's
-columns. The horizons, sections, and groups belong to the book, so everyone who opens
-it sees the same Dashboard; the columns are each person's own choice. The command
+columns. All of it is each person's own: when a book is shared with other people,
+each arranges the Dashboard as it makes sense to them, starting from the book's
+arrangement, and an account's **Dashboard group** set while editing the account is
+your own too. The columns are kept in each browser. The command
 line's `breadsched dashboard` and the printed Dashboard show the sections chosen
 there.
 
@@ -898,8 +900,9 @@ carry the same totals as the screen.
 ## Plan
 
 Choose From, Through, Group by, Show, scenario, and comparison values, then apply
-them. These controls are saved with the book and shared between the desktop
-application and the browser. To compare assumptions, select a different saved
+them. These controls are your own for this book, shared between the desktop
+application and the browser on the computer that keeps the book; anyone else the
+book is shared with keeps their own. To compare assumptions, select a different saved
 scenario or Base as the comparison and apply the controls. The comparison shows
 amounts for both cases and differences for matching categories, cash-bridge entries,
 mortgage requirements, and planning flows; the original scenarios and recorded

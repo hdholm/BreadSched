@@ -8,9 +8,10 @@ is never put in two groups and a rejected change leaves the book as it was.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import date
+from typing import Any
 
 from ..db.sqlite import DbSQLite
 from ..engine.dashboard import (
@@ -67,10 +68,15 @@ def _clamp(value: int, bounds: tuple[int, int]) -> int:
 
 
 def save_dashboard_config(
-    db: DbSQLite, request: SaveDashboardConfig
+    db: DbSQLite,
+    request: SaveDashboardConfig,
+    stored: object = None,
+    keep: Callable[[dict[str, Any]], None] | None = None,
 ) -> ServiceResult[DashboardConfig]:
-    """Validate and store the Dashboard configuration and its accounts' groups."""
-    config = DashboardConfig.load(db)
+    """Validate and store the Dashboard configuration and its accounts' groups: in the
+    book, or with ``keep`` as a person's own arrangement (decision 0004), changing
+    their ``stored`` one (else starting from the book's)."""
+    config = DashboardConfig.load(db, stored)
     if request.groups is not None:
         errors: list[ServiceError] = []
         groups: list[GroupConfig] = []
@@ -110,7 +116,10 @@ def save_dashboard_config(
         config.liquidity_days = _clamp(request.liquidity_days, LIQUIDITY_DAYS_RANGE)
     if request.emergency_months is not None:
         config.emergency_months = _clamp(request.emergency_months, EMERGENCY_MONTHS_RANGE)
-    config.save(db)
+    if keep is None:
+        config.save(db)
+    else:
+        keep(config.serialize_personal())
     return ServiceResult.success(config)
 
 
@@ -149,8 +158,9 @@ def settings_of(config: DashboardConfig) -> DashboardSettings:
     )
 
 
-def dashboard_settings(db: DbSQLite) -> DashboardSettings:
-    return settings_of(DashboardConfig.load(db))
+def dashboard_settings(db: DbSQLite, stored: object = None) -> DashboardSettings:
+    """The Dashboard's settings: a person's own ``stored`` ones, else the book's."""
+    return settings_of(DashboardConfig.load(db, stored))
 
 
 def default_dashboard_settings(db: DbSQLite) -> DashboardSettings:
@@ -163,6 +173,7 @@ def dashboard_board(
     as_of: date | None = None,
     liquidity_days: int | None = None,
     emergency_months: int | None = None,
+    stored: object = None,
 ) -> ServiceResult[Dashboard]:
     """The Dashboard on ``as_of`` (today when none), computed once.
 
@@ -176,7 +187,7 @@ def dashboard_board(
         errors.append(ServiceError("dashboard.emergency_months.invalid", ("emergency_months",)))
     if errors:
         return ServiceResult.failure(*errors)
-    config = DashboardConfig.load(db)
+    config = DashboardConfig.load(db, stored)
     if liquidity_days:
         config.liquidity_days = liquidity_days
     if emergency_months:

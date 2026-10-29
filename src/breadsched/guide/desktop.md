@@ -215,7 +215,8 @@ needs, saying why. See [Accounts](../USER_GUIDE.md#accounts).
 ## Configure the Dashboard
 
 On the Dashboard, **Configure Dashboard** (toolbar icon or the Actions menu) holds
-everything the Dashboard can be told, on three pages:
+everything the Dashboard can be told, on three pages. All of it is your own
+arrangement of this book: anyone else it is shared with keeps theirs.
 
 - **General**: the two horizons, **Liquid for** so many days of bills and how many
   months of outgoings the **Emergency fund covers**, and which sections show:
@@ -813,7 +814,8 @@ work. They are kept in your own settings, not in a book:
 - **Online quotes**: the Alpha Vantage API key, the same key **Online Quotes…**
   keeps (see [Online quotes](#online-quotes)).
 - **Dashboard**: **Configure Dashboard…** opens the open book's Dashboard settings
-  (see [Configure the Dashboard](#configure-the-dashboard)); they belong to the book.
+  (see [Configure the Dashboard](#configure-the-dashboard)); they are your own for
+  the book.
 - **Windows**: **Forget remembered window sizes** returns every window to its own
   size. BreadSched remembers the main window's size (and whether it was maximized)
   and an independent register window's size each time you close them, and the

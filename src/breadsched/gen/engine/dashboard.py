@@ -120,7 +120,9 @@ class DashboardConfig:
     """What the dashboard shows, and the two horizons it judges against.
 
     Stored in the book rather than in user settings, because it names accounts:
-    carrying it between books would silently point at the wrong ones.
+    carrying it between books would silently point at the wrong ones. A person's own
+    arrangement of one book (decision 0004) is kept apart, with its members, by
+    :meth:`serialize_personal`, and read back by :meth:`load` given ``stored``.
     """
 
     groups: list[GroupConfig] = field(default_factory=list)
@@ -171,15 +173,28 @@ class DashboardConfig:
 
     KEY = "dashboard"
 
+    def serialize_personal(self) -> dict[str, Any]:
+        """The stored form of a person's own arrangement: each group with its members,
+        since the accounts carry only the book's."""
+        data = self.serialize()
+        data["groups"] = [
+            {**group.serialize(), "accounts": list(group.accounts)} for group in self.groups
+        ]
+        return data
+
     @classmethod
-    def load(cls, db: DbSQLite) -> DashboardConfig:
-        """The stored settings, with each group's members read from its accounts.
+    def load(cls, db: DbSQLite, stored: object = None) -> DashboardConfig:
+        """The stored settings, with each group's members read from its accounts; or,
+        given a person's own ``stored`` arrangement (:meth:`serialize_personal`), that,
+        with its members as it lists them (accounts since removed left out).
 
         Groups keep their stored order; a group named only on accounts follows,
         taking its kind from its first account.
         """
-        stored = db.get_metadata(cls.KEY)
-        config = cls.from_dict(stored) if stored else default_config(db)
+        if isinstance(stored, dict):
+            return cls._personal(db, stored)
+        book = db.get_metadata(cls.KEY)
+        config = cls.from_dict(book) if book else default_config(db)
         by_name = {group.name: group for group in config.groups}
         for account in db.iter_accounts():
             if account.is_root or not account.group:
@@ -191,6 +206,36 @@ class DashboardConfig:
                 config.groups.append(group)
             group.accounts.append(account.handle)
         return config
+
+    @classmethod
+    def _personal(cls, db: DbSQLite, stored: dict[str, Any]) -> DashboardConfig:
+        config = cls.from_dict(stored)
+        placed: set[str] = set()
+        for group, data in zip(config.groups, stored.get("groups", []), strict=False):
+            for handle in data.get("accounts", ()) if isinstance(data, dict) else ():
+                account = db.get_account(str(handle))
+                if account is None or account.is_root or account.handle in placed:
+                    continue
+                placed.add(account.handle)
+                group.accounts.append(account.handle)
+        return config
+
+    def group_of(self, handle: str) -> str:
+        """The group ``handle`` is in here; "" for none."""
+        return next((group.name for group in self.groups if handle in group.accounts), "")
+
+    def place(self, account: Account, group: str) -> None:
+        """Put ``account`` in ``group`` (made after the others if new), or in none."""
+        for each in self.groups:
+            if account.handle in each.accounts:
+                each.accounts.remove(account.handle)
+        if not group:
+            return
+        target = next((each for each in self.groups if each.name == group), None)
+        if target is None:
+            target = GroupConfig(group, kind=_kind_for(account))
+            self.groups.append(target)
+        target.accounts.append(account.handle)
 
     def save(self, db: DbSQLite) -> None:
         """Store the settings and each account's group in one change.

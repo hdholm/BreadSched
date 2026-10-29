@@ -170,8 +170,6 @@ _WRITE = {
     "save_loan",
     "save_exchange_rate",
     "save_security_price",
-    # Book-wide until decision 0004's phase 4 makes the Dashboard's choices personal.
-    "save_dashboard_settings",
     "import_csv",
     "import_book",
     "upload_import_file",
@@ -266,8 +264,10 @@ _READ = {
     "find",
     "attachment_report",
     "plan_settings",
-    # Each person's own Plan view (decision 0004): whoever reads may keep theirs.
+    # Each person's own Plan view and Dashboard (decision 0004): whoever reads may
+    # keep theirs.
     "save_plan_settings",
+    "save_dashboard_settings",
     "plan_bounds",
     "plan",
     "expense_explorer",

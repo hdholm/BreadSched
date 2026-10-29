@@ -281,7 +281,10 @@ change. Both editors save through `services.save_dashboard_config`, which refuse
 blank or repeated group name, an unknown kind or account, and an account in two
 groups, leaving the book unchanged; it also refuses a section name it does not
 know. `resolve_groups` therefore merges nothing: the configuration it is given is
-complete. The book holds what the household decides (horizons, sections, groups);
+complete. On the experimental book server (decision 0004) this is the book's own
+arrangement, where each person starts: a person's saved arrangement is kept with them,
+members included (`DashboardConfig.serialize_personal`, and `load(db, stored)`), and
+the server never changes the book's. The book holds what the household decides (horizons, sections, groups);
 each table's columns are a user's own and stay in their view settings (desktop) or
 the browser's local storage (web), never in the book. `Dashboard.reimbursables` is
 the receivable summaries behind `receivables_owed`, soonest expected first

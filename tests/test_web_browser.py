@@ -1701,9 +1701,12 @@ def test_configure_dashboard_sets_sections_groups_and_columns(page, served):
     assert "Frequency" not in headers and "Item" in headers
     assert page.locator("text=Needed in 45 days").count() == 1
 
+    from user_fixtures import own_preference
+
     from breadsched.gen.engine.dashboard import DashboardConfig
 
-    stored = DashboardConfig.load(db)
+    # The page is the computer account's, so its own Dashboard (decision 0004).
+    stored = DashboardConfig.load(db, own_preference(db, "dashboard"))
     assert stored.liquidity_days == 45
     assert stored.shows("bills") is False and stored.shows("reimbursables") is True
     [group] = [item for item in stored.groups if item.name == "Browser group"]
