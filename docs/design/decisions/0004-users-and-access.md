@@ -358,8 +358,14 @@ other accounts; 3 and 4 make it a household application.
   arrangement while the book's account keeps its group, so the account editor and
   `breadsched account --group` act on one's own Dashboard. The book's arrangement
   no longer changes through a book with an id.
-- **Still to come in phase 4:** undo and redo naming each step's user, and change
-  attribution.
+- **Undo names each step's user:** a book server serving someone makes its changes
+  as theirs (`gen.db.base.authored_by`, set with `acting_for`), so each undo step
+  (`DbTxn.author`, `undo_author`) and each change notice (`Change.by`, and
+  `Change.undo_by` for the step left to undo) names who made it; in process no one
+  is named. GTK's Undo says whose step it is ("Undo: Add transaction (Eddie)").
+  Editors and owners undo anyone's step; viewers and entry users cannot (`WRITE`).
+  The history stays in the host's memory, as before; a durable "entered by" on each
+  transaction is not kept. **Phase 4 is built.**
 
 ## Answers to the review questions (2026-10-28)
 

@@ -835,7 +835,9 @@ work. They are kept in your own settings, not in a book:
   each other person has a role (owner, editor, viewer, or entry, which only adds
   transactions) that you can change, take away, or give with **Give someone
   access…**. The same can be done with `breadsched users`, `password`, `token`, and
-  `share` (see [Users and devices](cli.md#users-and-devices-experimental)).
+  `share` (see [Users and devices](cli.md#users-and-devices-experimental)). When
+  someone changes a book you share, **Undo** names them ("Undo: Add transaction
+  (Eddie)"); an editor or owner may undo anyone's change.
 
 **Save** stores them all and redraws open registers; **Cancel** or Escape changes
 nothing.

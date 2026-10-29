@@ -1604,6 +1604,14 @@ class TestLiveUpdates:
             )
         assert app.actions["undo"].get_enabled() is True
         assert window.tool_buttons["app.undo"].get_tooltip_text() == "Undo: Something"
+        # A step someone else made through the shared book says whose it is (0004).
+        from breadsched.gen.db.base import authored_by
+
+        with authored_by("Eddie"), app.db.transaction("Their change") as txn:
+            app.db.add_transaction(
+                Transaction.simple(date(2026, 4, 2), "y", other, handle, Money("2")), txn
+            )
+        assert window.tool_buttons["app.undo"].get_tooltip_text() == "Undo: Their change (Eddie)"
         # The window follows the book server's change notices for undo and redo too.
         while app.db.undo_stack:
             app.db.undo()

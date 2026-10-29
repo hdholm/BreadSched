@@ -22,6 +22,7 @@ from datetime import date
 from pathlib import Path
 from typing import Literal, cast
 
+from ..gen.db.base import current_author
 from ..gen.db.sqlite import DbSQLite
 from ..gen.db.verification import BookVerification
 from ..gen.engine import projection as projection_engine
@@ -339,6 +340,8 @@ class LocalBookServer:
             frozenset(self._transactions),
             bool(self.db.undo_stack),
             bool(self.db.redo_stack),
+            current_author(),
+            self.db.undo_author(),
         )
         self._pending.clear()
         self._transactions.clear()

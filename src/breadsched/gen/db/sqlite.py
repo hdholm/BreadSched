@@ -846,6 +846,10 @@ class DbSQLite(ChangeVerification):
     def redo_message(self) -> str | None:
         return self.redo_stack[-1].message if self.redo_stack else None
 
+    def undo_author(self) -> str | None:
+        """Who made the step :meth:`undo` would undo, when someone was named."""
+        return self.undo_stack[-1].author if self.undo_stack else None
+
     # ---------------------------------------------------------------- accounts
 
     def add_account(self, account: Account, txn: DbTxn) -> str:

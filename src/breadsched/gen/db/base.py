@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date
 from typing import Any, Literal
 
@@ -31,7 +33,24 @@ from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import Transaction
 from ..utils.callback import Callback
 
-__all__ = ["DbBase", "DbTxn", "DbError", "DbReadonlyError"]
+__all__ = ["DbBase", "DbTxn", "DbError", "DbReadonlyError", "authored_by", "current_author"]
+
+_AUTHOR: ContextVar[str | None] = ContextVar("breadsched_change_author", default=None)
+
+
+@contextmanager
+def authored_by(name: str | None) -> Iterator[None]:
+    """Name ``name`` as who makes the changes inside the block (in this thread): a
+    book server serving someone (decision 0004). None, in process, names no one."""
+    token = _AUTHOR.set(name)
+    try:
+        yield
+    finally:
+        _AUTHOR.reset(token)
+
+
+def current_author() -> str | None:
+    return _AUTHOR.get()
 
 
 class DbError(Exception):
@@ -63,6 +82,8 @@ class DbTxn:
         #: (table, handle, before, after) with ``None`` meaning absent.
         self.records: list[tuple[str, str, dict | None, dict | None]] = []
         self.timestamp: float = 0.0
+        #: Who made the change, when a book server made it for someone (decision 0004).
+        self.author: str | None = _AUTHOR.get()
 
     def add(self, table: str, handle: str, before: dict | None, after: dict | None) -> None:
         self.records.append((table, handle, before, after))

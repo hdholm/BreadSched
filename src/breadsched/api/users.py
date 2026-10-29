@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from ..gen.db.base import authored_by
 from ..gen.services.contracts import ServiceError
 from ..gen.utils.user_paths import config_directory, data_directory
 from ..presentation import service_error_message
@@ -652,7 +653,9 @@ def acting_for(directory: UserDirectory | None, user: User | None) -> Iterator[N
     preferences ``directory`` keeps; None for the computer account, in process."""
     token = _ACTING.set((directory, user) if directory is not None and user else None)
     try:
-        yield
+        # The changes they make are theirs (decision 0004: undo names each step's user).
+        with authored_by(user.display_name or user.name if user else None):
+            yield
     finally:
         _ACTING.reset(token)
 

@@ -653,7 +653,10 @@ class ViewManager(Gtk.ApplicationWindow):
     def _on_book_change(self, change: Change) -> None:
         self._refresh_status()
         self._queue_prefill()
-        self._on_undo_available(change.can_undo, change.label)
+        label = change.label
+        if label and change.undo_by:
+            label = f"{label} ({change.undo_by})"
+        self._on_undo_available(change.can_undo, label)
         self._on_redo_available(change.can_redo)
 
     def _on_undo_available(self, available: bool, message: str | None = None) -> None:

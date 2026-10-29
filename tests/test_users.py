@@ -566,6 +566,44 @@ def test_each_person_arranges_their_own_dashboard(hosted):
     assert vera.account(bank).account.group == "Spending money"
 
 
+def test_each_change_and_undo_step_names_who_made_it(hosted):
+    """Decision 0004: a change made for someone names them, and so does the undo step
+    it leaves; an editor or owner may undo anyone's."""
+    import queue
+
+    directory = UserDirectory()
+    book_id = hosted.db.get_metadata("book.id")
+    directory.add_user("eddie", "temporary-pass", display_name="Eddie")
+    directory.set_password("eddie", "eddie-own-password", current="temporary-pass")
+    directory.grant(book_id, "eddie", "editor")
+    eddie = HttpBookClient(hosted.base, directory.issue_token(directory.user("eddie"), "phone"))
+    owner = HttpBookClient(hosted.base, device_token())
+    heard: queue.Queue = queue.Queue()
+    stop = owner.subscribe(heard.put)
+    try:
+        eddie.save_transaction(new_transaction(hosted.db, eddie))
+        change = heard.get(timeout=20)
+        assert (change.by, change.undo_by) == ("Eddie", "Eddie")
+        assert hosted.db.undo_author() == "Eddie"
+        assert owner.undo() is True
+        undone = heard.get(timeout=20)
+        assert undone.by == directory.host_user().display_name
+        assert undone.can_redo
+    finally:
+        stop()
+    # In process no one is named: the book is the computer account's own.
+    from breadsched.api.local import book_server
+
+    local = book_server(hosted.db)
+    seen = []
+    stop = local.subscribe(seen.append)
+    try:
+        local.redo()
+    finally:
+        stop()
+    assert seen and seen[-1].by is None
+
+
 def test_grants_name_known_users_and_real_roles(hosted):
     directory = UserDirectory()
     book_id = hosted.db.get_metadata("book.id")

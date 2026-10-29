@@ -193,6 +193,8 @@ def change_json(change: Change) -> dict[str, Any]:
         "transactions": sorted(change.transactions),
         "can_undo": change.can_undo,
         "can_redo": change.can_redo,
+        "by": change.by,
+        "undo_by": change.undo_by,
     }
 
 
@@ -260,6 +262,8 @@ def change_from_json(payload: dict[str, Any]) -> Change:
         frozenset(payload.get("transactions", ())),
         bool(payload.get("can_undo", False)),
         bool(payload.get("can_redo", False)),
+        payload.get("by"),
+        payload.get("undo_by"),
     )
 
 

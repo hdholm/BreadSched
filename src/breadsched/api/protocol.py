@@ -203,6 +203,10 @@ class Change:
     #: Whether a step is left to undo, and one to redo, after the change.
     can_undo: bool = False
     can_redo: bool = False
+    #: Who made the change, and who made the step left to undo, when a book server
+    #: made them for someone (decision 0004); None in process.
+    by: str | None = None
+    undo_by: str | None = None
 
 
 Listener = Callable[[Change], None]
