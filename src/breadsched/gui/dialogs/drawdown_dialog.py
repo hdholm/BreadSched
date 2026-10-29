@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from ...gen.db.sqlite import DbSQLite
@@ -13,6 +12,7 @@ from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.help import help_row
 
 __all__ = ["DrawdownEditDialog", "DrawdownsDialog", "drawdown_summary"]
@@ -191,13 +191,13 @@ class DrawdownEditDialog(BoundedWindow):
         )
         grid.attach(self.into_picker, 1, 1, 1, 1)
         grid.attach(Gtk.Label(label="Start (YYYY-MM-DD)", xalign=0), 0, 2, 1, 1)
-        self.start_entry = Gtk.Entry()
+        self.start_entry = attach_date_keys(Gtk.Entry())
         self.start_entry.set_text(
             drawdown.start.isoformat() if drawdown else scenario.start.isoformat()
         )
         grid.attach(self.start_entry, 1, 2, 1, 1)
         grid.attach(Gtk.Label(label="Through (blank = onward)", xalign=0), 0, 3, 1, 1)
-        self.end_entry = Gtk.Entry()
+        self.end_entry = attach_date_keys(Gtk.Entry())
         if drawdown is not None and drawdown.end is not None:
             self.end_entry.set_text(drawdown.end.isoformat())
         grid.attach(self.end_entry, 1, 3, 1, 1)
@@ -276,9 +276,9 @@ class DrawdownEditDialog(BoundedWindow):
     def _on_save(self, _button) -> None:
         fixed = self.amount_choice.get_active()
         try:
-            start = date.fromisoformat(self.start_entry.get_text().strip())
+            start = parse_date_text(self.start_entry.get_text().strip())
             end_text = self.end_entry.get_text().strip()
-            end = date.fromisoformat(end_text) if end_text else None
+            end = parse_date_text(end_text) if end_text else None
             amount_text = self.amount_entry.get_text().strip()
             rate_text = self.rate_entry.get_text().strip().rstrip("%").strip()
             amount = Money(amount_text) if fixed and amount_text else None

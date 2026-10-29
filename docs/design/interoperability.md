@@ -23,10 +23,18 @@ changing the native schema.
 
 ## Ownership on re-import
 
-BreadSched-owned planning state must not be destroyed by re-import. On a matching
-GnuCash account GUID, source-owned chart fields (name, source type, parent,
-commodity, code, description, placeholder/hidden state, and commodity SCU)
-may refresh from the source, while the BreadSched account type, FSA funding years,
+BreadSched-owned planning state must not be destroyed by re-import. GnuCash is not
+the system of record (#393): an imported account's chart fields (name, parent,
+commodity, code, description, placeholder/hidden state, and commodity SCU) and its
+other GnuCash fields are editable in BreadSched, and the account keeps the values it
+was last imported with (`Account.imported_values`, `gen.lib.imported`). On a matching
+GnuCash account GUID a re-import decides each field as account notes are decided:
+a field still equal to its imported value takes GnuCash's new one, a field changed
+only in BreadSched keeps BreadSched's, and a field changed on both sides keeps
+BreadSched's and is counted in a warning. An account imported before this had no
+stored values; its fields were read-only until then, so its first edit records the
+values it held as the imported ones. Account edits are never written back. The
+source type always refreshes, while the BreadSched account type, FSA funding years,
 projection-rate overrides, projection exclusion, dashboard grouping,
 linked-asset/card behavior, usual payment, payment day, and BreadSched's tax-relevant
 mark are retained. GnuCash's own *tax related* slot stays a read-only source field;

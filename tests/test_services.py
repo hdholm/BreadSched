@@ -154,7 +154,9 @@ def test_account_service_atomically_adds_an_opening_balance(db, book):
     assert db.undo_stack[-1].message == "Add account New savings"
 
 
-def test_account_service_validates_parent_identity_and_source_owned_fields(db, book):
+def test_account_service_validates_parent_identity_and_edits_imported_fields(db, book):
+    """An imported account is BreadSched's to change, its name and hidden flag too;
+    the first edit remembers what the import brought, so a re-import keeps it."""
     duplicate = Account(name="Savings", atype=AccountType.BANK, parent=book.assets)
     duplicate_result = save_account(db, SaveAccount(duplicate))
     imported = db.get_account(book.checking)
@@ -162,11 +164,16 @@ def test_account_service_validates_parent_identity_and_source_owned_fields(db, b
     imported.source_guid = "source-account"
     with db.transaction("Imported identity") as txn:
         db.commit_account(imported, txn)
+    original = imported.name
     imported.name = "Renamed"
+    imported.hidden = True
     source_result = save_account(db, SaveAccount(imported, existing_handle=imported.handle))
 
     assert duplicate_result.errors == (ServiceError("account.name.duplicate", ("name", "parent")),)
-    assert source_result.errors == (ServiceError("account.source_fields.read_only", ("name",)),)
+    assert source_result.ok
+    saved = db.get_account(book.checking)
+    assert (saved.name, saved.hidden) == ("Renamed", True)
+    assert (saved.imported_values["name"], saved.imported_values["hidden"]) == (original, False)
 
 
 def test_account_service_deletes_unused_accounts_and_rejects_accounts_in_use(db, book):

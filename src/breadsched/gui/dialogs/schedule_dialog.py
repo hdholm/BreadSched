@@ -47,9 +47,11 @@ from ...gen.services import (
     save_fixed_schedule,
     save_formula_schedule,
 )
+from .. import hidden_accounts
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.form_pages import FormGrid, FormPages
 from ..widgets.frequency import FrequencyPicker
 from ..widgets.help import help_row
@@ -187,7 +189,7 @@ class ScheduleDialog(BoundedWindow):
                 for account in self.db.iter_accounts()
                 if not account.is_root
                 and not account.placeholder
-                and (not account.hidden or account.handle in referenced)
+                and (not account.hidden or hidden_accounts.shown() or account.handle in referenced)
             ),
             key=self.db.full_name,
         )
@@ -338,7 +340,7 @@ class ScheduleDialog(BoundedWindow):
         self.frequency.connect_changed(self._recurrence_changed)
         basics.add("Frequency", self.frequency)
 
-        self.start_entry = Gtk.Entry(text=date.today().replace(day=1).isoformat())
+        self.start_entry = attach_date_keys(Gtk.Entry(text=date.today().replace(day=1).isoformat()))
         self.start_entry.connect("changed", self._recurrence_changed)
         basics.add("First due", self.start_entry)
 
@@ -346,7 +348,7 @@ class ScheduleDialog(BoundedWindow):
         self.ends.connect("notify::selected", self._recurrence_changed)
         basics.add("Ends", self.ends)
 
-        self.end_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD")
+        self.end_entry = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
         self.end_entry.connect("changed", self._recurrence_changed)
         basics.add("End date", self.end_entry)
 
@@ -811,7 +813,7 @@ class ScheduleDialog(BoundedWindow):
 
     def _recurrence(self) -> Recurrence | None:
         try:
-            start = date.fromisoformat(self.start_entry.get_text().strip())
+            start = parse_date_text(self.start_entry.get_text().strip())
         except ValueError:
             return None
         period, interval = self.frequency.value()
@@ -820,7 +822,7 @@ class ScheduleDialog(BoundedWindow):
         if period is not PeriodType.ONCE:
             if self.ends.get_selected() == 1:
                 try:
-                    end = date.fromisoformat(self.end_entry.get_text().strip())
+                    end = parse_date_text(self.end_entry.get_text().strip())
                 except ValueError:
                     return None
                 if end < start:
@@ -885,7 +887,7 @@ class ScheduleDialog(BoundedWindow):
         changes = []
         try:
             for when_text, amount_text in values:
-                when = date.fromisoformat(when_text)
+                when = parse_date_text(when_text)
                 amount = Money(parse_amount_text(amount_text))
                 if amount <= 0:
                     return None
@@ -902,7 +904,7 @@ class ScheduleDialog(BoundedWindow):
         try:
             for account_index, when_text, amount_text in self.split_amount_changes_editor.values():
                 account = self._accounts[account_index]
-                when = date.fromisoformat(when_text)
+                when = parse_date_text(when_text)
                 amount = Money(parse_amount_text(amount_text))
                 key = (account.handle, when)
                 if key in seen:
@@ -939,7 +941,7 @@ class ScheduleDialog(BoundedWindow):
         if recurrence is None:
             return None
         try:
-            skipped = [date.fromisoformat(raw) for raw in values]
+            skipped = [parse_date_text(raw) for raw in values]
         except ValueError:
             return None
         if len(set(skipped)) != len(skipped):
@@ -959,7 +961,7 @@ class ScheduleDialog(BoundedWindow):
         changes = []
         try:
             for when_text, amount_text in values:
-                when = date.fromisoformat(when_text)
+                when = parse_date_text(when_text)
                 amount = Money(parse_amount_text(amount_text))
                 if amount <= 0:
                     return None

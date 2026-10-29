@@ -38,6 +38,7 @@ from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.help import help_row
 from ..widgets.model_chart import ModelChartView
 
@@ -93,8 +94,8 @@ class SavingsGoalsDialog(BoundedWindow):
         self.name_entry = Gtk.Entry(hexpand=True, placeholder_text="New roof")
         self.account_picker = bounded_dropdown()
         self.target_entry = Gtk.Entry(placeholder_text="12000.00")
-        self.start_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD")
-        self.target_date_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD")
+        self.start_entry = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
+        self.target_date_entry = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
         self.description_entry = Gtk.Entry(placeholder_text="Optional")
         for row, (label, widget) in enumerate(
             (
@@ -122,7 +123,7 @@ class SavingsGoalsDialog(BoundedWindow):
         allocate = Gtk.Box(spacing=8)
         allocate.append(Gtk.Label(label="Allocate extra"))
         self.allocate_amount = Gtk.Entry(placeholder_text="Amount")
-        self.allocate_date = Gtk.Entry(text=self.today.isoformat())
+        self.allocate_date = attach_date_keys(Gtk.Entry(text=self.today.isoformat()))
         self.allocate_memo = Gtk.Entry(placeholder_text="Memo", hexpand=True)
         self.allocate_button = Gtk.Button(label="Allocate to goal")
         self.allocate_button.connect("clicked", lambda _b: self.allocate())
@@ -140,7 +141,9 @@ class SavingsGoalsDialog(BoundedWindow):
         override.append(Gtk.Label(label="In scenario"))
         self.scenario_picker = bounded_dropdown()
         self.override_target = Gtk.Entry(placeholder_text="Target amount", width_chars=12)
-        self.override_date = Gtk.Entry(placeholder_text="Target date", width_chars=12)
+        self.override_date = attach_date_keys(
+            Gtk.Entry(placeholder_text="Target date", width_chars=12)
+        )
         self.override_excluded = Gtk.CheckButton(label="Leave out")
         # Model the purchase in that scenario: the target is spent on this date.
         self.purchase_on = Gtk.Entry(placeholder_text="Buy on", width_chars=12)
@@ -287,7 +290,7 @@ class SavingsGoalsDialog(BoundedWindow):
 
     def _date(self, entry: Gtk.Entry, label: str) -> date:
         try:
-            return date.fromisoformat(entry.get_text().strip())
+            return parse_date_text(entry.get_text().strip())
         except ValueError:
             raise ValueError(f"Enter the {label} as YYYY-MM-DD.") from None
 

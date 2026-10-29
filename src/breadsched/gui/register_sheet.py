@@ -63,6 +63,7 @@ from ..gen.services.autocomplete import SuggestEntry, suggest_entry
 from ..gen.services.entry_input import next_entry_num, read_entry_amount, read_entry_trade
 from ..presentation import service_error_message
 from ..presentation.investments import trade_price_text
+from . import hidden_accounts
 
 __all__ = [
     "COLUMNS",
@@ -344,8 +345,11 @@ class RegisterSheet:
                 seen.setdefault(row.transaction.description, None)
         self.descriptions = list(seen)
         self.enabled, self.disabled_reason = True, ""
-        if account.hidden:
-            self.enabled, self.disabled_reason = False, "Hidden accounts take no new transactions"
+        if account.hidden and not hidden_accounts.shown():
+            self.enabled, self.disabled_reason = (
+                False,
+                "Hidden accounts take no new transactions; show hidden accounts to use it",
+            )
         elif account.placeholder:
             self.enabled, self.disabled_reason = False, "Placeholder accounts take no transactions"
         elif not self.transfer_names:
@@ -360,7 +364,7 @@ class RegisterSheet:
         for item in self.db.iter_accounts():
             if item.is_root or item.placeholder or item.parent is None:
                 continue
-            if item.hidden and item.handle not in referenced:
+            if item.hidden and not hidden_accounts.shown() and item.handle not in referenced:
                 continue
             names.setdefault(self.db.full_name(item), item.handle)
         self.account_names = dict(sorted(names.items(), key=lambda pair: pair[0].casefold()))

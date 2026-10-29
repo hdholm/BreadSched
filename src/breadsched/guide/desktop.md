@@ -121,8 +121,16 @@ the Actions menu in every view),
 **New Loan** in Scheduled, **New Scenario**, **Scenarios**, and **Explore** in Plan,
 and **Compare**, **Export**, and **New tab** in Projection. Each icon stands for one
 command, so the same picture never means two things. **View → Hide Empty
-Accounts** and **View → Show Hidden Accounts** filter the account tree, and **View
-→ Double Line** shows every register's notes line. Buttons that act on a selected
+Accounts** filters the account tree. **View → Show Hidden Accounts** lists hidden
+accounts there and makes them usable everywhere an account is chosen (registers, the
+transaction editor, schedules, reconciliation, loans) until it is turned off. **View
+→ Double Line** shows every register's notes line.
+
+Every date field reads dates as the register does: `2026-03-15`, `3/15/26`, `3/15`
+(this year), or `15` (this month); in a field holding a date, **t** is today, **+**
+and **-** move a day, **]** and **[** a month, **m** and **h** go to the month's
+first and last day, and **y** and **r** the year's. Leaving the field shows the date
+as `2026-03-15`. Buttons that act on a selected
 row, such as a schedule's **View / Edit…**, stay beside their table.
 
 **New Transaction…** (the toolbar's **Transaction**, or Ctrl+T) opens the
@@ -474,9 +482,10 @@ each leg that matches. Activate a row to open its register. See
    and **Funds Out**, each with its checked total; below them are the starting,
    reconciled, and ending balances and the difference. Entries dated after the
    statement are listed below an **After** heading, shaded, in case a date is wrong.
-   To find an entry, order a column with the buttons above it: **✓** (checked
-   first), **Date**, **Description**, or **Amount**; choose the same one again to
-   reverse it. Each column keeps its own order, and later entries stay below the
+   Each entry shows its number (a check number, say) beside its date: sometimes all
+   a statement lists. To find an entry, order a column with the buttons above it:
+   **✓** (checked first), **Date**, **Num**, **Description**, or **Amount**; choose
+   the same one again to reverse it. Each column keeps its own order, and later entries stay below the
    heading.
 4. Check entries until the difference is zero. Click a row (or its check) to check
    or uncheck it, or press Enter or Space on it. A click selects only that row, in
@@ -486,8 +495,9 @@ each leg that matches. Activate a row to open its register. See
    transaction; the double-click leaves its check as it was.
 5. Choose **Finish** to mark the checked splits reconciled.
 
-The window does not block the rest of BreadSched: you can enter a missed scheduled
-transaction or correct one in a register while it is open, and the lists follow.
+The window does not block the rest of BreadSched, nor stay on top of it: you can
+bring the main window in front, enter a missed scheduled transaction or correct one
+in a register, and the lists follow. It closes when the main window does.
 **New Transaction…** enters one in this account dated on the statement, and **Edit
 Transaction…** opens the transaction of the selected row you clicked last. Choosing Reconcile again brings
 the open window forward.

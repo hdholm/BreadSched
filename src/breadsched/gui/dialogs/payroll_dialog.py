@@ -48,6 +48,7 @@ from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, keeps_enter
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
+from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.help import help_row
 
 __all__ = ["PAY_PERIODS", "PayrollDialog"]
@@ -177,7 +178,9 @@ class PayrollDialog(BoundedWindow):
         page = self._page()
         row = Gtk.Box(spacing=8)
         row.append(Gtk.Label(label="As of"))
-        self.as_of_entry = Gtk.Entry(text=date.today().isoformat(), width_chars=12)
+        self.as_of_entry = attach_date_keys(
+            Gtk.Entry(text=date.today().isoformat(), width_chars=12)
+        )
         keeps_enter(self.as_of_entry)
         self.as_of_entry.connect("activate", lambda _entry: self.show_breakdown())
         row.append(self.as_of_entry)
@@ -208,7 +211,9 @@ class PayrollDialog(BoundedWindow):
         )
         form = Gtk.Box(spacing=8)
         form.append(Gtk.Label(label="From"))
-        self.change_start_entry = Gtk.Entry(width_chars=12, placeholder_text="YYYY-MM-DD")
+        self.change_start_entry = attach_date_keys(
+            Gtk.Entry(width_chars=12, placeholder_text="YYYY-MM-DD")
+        )
         form.append(self.change_start_entry)
         form.append(Gtk.Label(label="New gross"))
         self.change_gross_entry = Gtk.Entry(width_chars=12, placeholder_text="0.00")
@@ -296,8 +301,10 @@ class PayrollDialog(BoundedWindow):
         )
         create = Gtk.Box(spacing=8)
         self.new_name_entry = Gtk.Entry(placeholder_text="Schedule name", hexpand=True)
-        self.new_start_entry = Gtk.Entry(
-            text=date.today().isoformat(), width_chars=12, placeholder_text="First payday"
+        self.new_start_entry = attach_date_keys(
+            Gtk.Entry(
+                text=date.today().isoformat(), width_chars=12, placeholder_text="First payday"
+            )
         )
         self.new_period_picker = bounded_dropdown([label for label, *_rest in PAY_PERIODS])
         self.new_gross_entry = Gtk.Entry(width_chars=12, placeholder_text="Gross (optional)")
@@ -357,7 +364,7 @@ class PayrollDialog(BoundedWindow):
             )
             return None
         try:
-            when = date.fromisoformat(self.as_of_entry.get_text().strip())
+            when = parse_date_text(self.as_of_entry.get_text().strip())
         except ValueError:
             self._message("Enter the date as YYYY-MM-DD.", True)
             return None
@@ -434,7 +441,7 @@ class PayrollDialog(BoundedWindow):
         if selected is None:
             return None
         try:
-            start = date.fromisoformat(self.change_start_entry.get_text().strip())
+            start = parse_date_text(self.change_start_entry.get_text().strip())
         except ValueError:
             self._message("Enter the pay change date as YYYY-MM-DD.", True)
             return None
@@ -662,7 +669,7 @@ class PayrollDialog(BoundedWindow):
             self._message("Save or choose a template first.", True)
             return None
         try:
-            start = date.fromisoformat(self.new_start_entry.get_text().strip())
+            start = parse_date_text(self.new_start_entry.get_text().strip())
         except ValueError:
             self._message("Enter the first payday as YYYY-MM-DD.", True)
             return None
