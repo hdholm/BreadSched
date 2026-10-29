@@ -15,6 +15,10 @@ a book file may be copied or synced and must not carry anyone's credentials.
   to a random token), with when they were made and last used. A *device* token lasts
   until it is revoked; a *session* from signing in ends after
   :data:`SESSION_DAYS` without use, and when its user's password changes.
+- **Personal preferences** (decision 0004, phase 4) are kept per user and book:
+  each person's own view of shared data (the Plan's period and range, say), never
+  in the book. :func:`acting_for` names the user a request is served for; in process
+  it is the computer account.
 - **Signing in is throttled:** after :data:`FREE_FAILURES` failures for one name or
   from one address, each further attempt must wait twice as long as the last (up to
   :data:`MAX_DELAY`). A failure never says whether the name exists.
@@ -26,6 +30,7 @@ import base64
 import getpass
 import hashlib
 import hmac
+import json
 import os
 import re
 import secrets
@@ -34,6 +39,7 @@ import sqlite3
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -55,6 +61,8 @@ __all__ = [
     "User",
     "UserDirectory",
     "UserError",
+    "acting_for",
+    "acting_user",
     "device_token",
     "device_token_path",
     "users_path",
@@ -108,6 +116,13 @@ CREATE TABLE IF NOT EXISTS grants (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     role TEXT NOT NULL,
     PRIMARY KEY (book_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS preferences (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    book_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (user_id, book_id, key)
 );
 CREATE TABLE IF NOT EXISTS failures (
     key TEXT PRIMARY KEY,
@@ -541,6 +556,31 @@ class UserDirectory:
             ).fetchall()
         return tuple(Grant(self._user(row[:7]), row[7]) for row in rows)
 
+    # ------------------------------------------------------- personal preferences
+
+    def preference(self, user: User, book_id: str, key: str) -> object | None:
+        """``user``'s own ``key`` for the book, or None if they have kept none."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT value FROM preferences WHERE user_id = ? AND book_id = ? AND key = ?",
+                (user.id, book_id, key),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            return json.loads(row[0])
+        except ValueError:
+            return None
+
+    def set_preference(self, user: User, book_id: str, key: str, value: object) -> None:
+        """Keep ``value`` (anything JSON can hold) as ``user``'s own ``key`` for the book."""
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO preferences VALUES (?, ?, ?, ?)"
+                " ON CONFLICT(user_id, book_id, key) DO UPDATE SET value = excluded.value",
+                (user.id, book_id, key, json.dumps(value, sort_keys=True)),
+            )
+
     # --------------------------------------------------------------- signing in
 
     def _wait(self, connection: sqlite3.Connection, key: str, moment: datetime) -> timedelta:
@@ -599,6 +639,31 @@ class UserDirectory:
         if failed or row is None:
             raise UserError("signin.failed", ())
         return SignedIn(self._user(row), token, expires)
+
+
+_ACTING: ContextVar[tuple[UserDirectory, User] | None] = ContextVar(
+    "breadsched_acting_user", default=None
+)
+
+
+@contextmanager
+def acting_for(directory: UserDirectory | None, user: User | None) -> Iterator[None]:
+    """Serve the calls inside the block (in this thread) for ``user``, whose personal
+    preferences ``directory`` keeps; None for the computer account, in process."""
+    token = _ACTING.set((directory, user) if directory is not None and user else None)
+    try:
+        yield
+    finally:
+        _ACTING.reset(token)
+
+
+def acting_user() -> tuple[UserDirectory, User | None]:
+    """The directory and user calls are served for: the request's, else the computer
+    account's own directory (its user is made when first asked for)."""
+    acting = _ACTING.get()
+    if acting is not None:
+        return acting
+    return UserDirectory(), None
 
 
 def device_token(directory: UserDirectory | None = None, path: Path | None = None) -> str:

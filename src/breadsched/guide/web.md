@@ -291,7 +291,9 @@ When nothing is offered, the page says why.
 
 ## Plan and projection
 
-Set the Plan controls and apply them; they are shared with the desktop application.
+Set the Plan controls and apply them; they are yours, shared with the desktop
+application on the computer that serves the book, while anyone else the book is shared
+with keeps their own.
 The Plan response carries a `currency` object with the conversion evidence shown in
 the foreign-currency note. The summary cards give planned change, actual, and
 variance through the as-of date; **Show** chooses Plan, Period actual, or Period

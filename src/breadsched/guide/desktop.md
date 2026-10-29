@@ -563,7 +563,8 @@ occurrence joins the review; its rows say *(in advance)* or *(reminder)*. See
 
 ## Plan and projection
 
-Set the Plan controls and apply them; they are shared with the browser. Select a
+Set the Plan controls and apply them; they are yours, shared with the browser when you
+use it on this computer, while anyone else the book is shared with keeps their own. Select a
 value to inspect its occurrences and actual splits, and use **Resolve actuals…** to
 match an actual, mark it unexpected, or review it. In **Resolve actuals**, each
 candidate lists why it is offered, the buttons explain themselves on hover, and the

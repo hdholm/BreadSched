@@ -4463,7 +4463,11 @@ class TestDerivedPlanView:
         assert quarterly.activity.actual_cash_change == monthly_actual
         assert len(quarterly.activity.periods) < len(monthly.activity.periods)
 
-    def test_applied_controls_are_persisted_with_the_book(self, app, window, populated_book):
+    def test_applied_controls_are_kept_as_this_persons_own(self, app, window, populated_book):
+        """Decision 0004: the Plan view is the computer account's own, for this book;
+        the book itself keeps none."""
+        from breadsched.api.users import UserDirectory
+
         app.open_book(populated_book)
         window.show_category("plan")
         view = window._views["plan"]
@@ -4472,7 +4476,10 @@ class TestDerivedPlanView:
         view.measure.set_selected(2)
         view.apply_button.emit("clicked")
 
-        stored = app.db.get_metadata("plan.view")
+        assert app.db.get_metadata("plan.view") is None
+        directory = UserDirectory()
+        book_id = app.db.get_metadata("book.id")
+        stored = directory.preference(directory.host_user(), book_id, "plan.view")
         assert stored["start"] == view._start_date.isoformat()
         assert stored["end"] == view._end_date.isoformat()
         assert stored["period"] == "quarter"

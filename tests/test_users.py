@@ -480,6 +480,41 @@ def test_the_routes_that_reach_the_book_file_check_the_role_too(hosted):
     assert not any(hosted.path.parent.glob("*.uploads"))
 
 
+def test_each_person_keeps_their_own_plan_view(hosted):
+    """Decision 0004: display choices are personal. A viewer may keep theirs, and
+    neither person's choice changes the other's or the book."""
+    from breadsched.gen.engine.activity import PlanMeasure, PlanSettings, ReportingPeriod
+
+    directory = UserDirectory()
+    book_id = hosted.db.get_metadata("book.id")
+    vera = HttpBookClient(hosted.base, person(directory, "vera", "viewer", book_id))
+    owner = HttpBookClient(hosted.base, device_token())
+    defaults = (date(2026, 1, 1), date(2027, 12, 31))
+    quarters = PlanSettings(*defaults, ReportingPeriod.QUARTER, PlanMeasure.ACTUAL)
+    years = PlanSettings(date(2026, 1, 1), date(2030, 12, 31), ReportingPeriod.YEAR)
+    revision = owner.revision
+    assert vera.save_plan_settings(quarters) == quarters
+    assert owner.save_plan_settings(years) == years
+    assert vera.plan_settings(*defaults) == quarters
+    assert owner.plan_settings(*defaults) == years
+    # Saved with the person, not in the book: its revision and stored view are as they were.
+    assert owner.revision == revision
+    assert hosted.db.get_metadata(PlanSettings.KEY) is None
+    assert directory.preference(directory.user("vera"), book_id, PlanSettings.KEY) == (
+        quarters.serialize()
+    )
+    # The Plan itself opens on each person's own view.
+    from breadsched.gen.services.plan import PlanQuery
+
+    assert vera.plan(PlanQuery(use_saved=True)).period is ReportingPeriod.QUARTER
+    assert owner.plan(PlanQuery(use_saved=True)).period is ReportingPeriod.YEAR
+    # Removing a person removes what they kept.
+    directory.remove_user("vera")
+    assert directory.preference(directory.host_user(), book_id, PlanSettings.KEY) == (
+        years.serialize()
+    )
+
+
 def test_grants_name_known_users_and_real_roles(hosted):
     directory = UserDirectory()
     book_id = hosted.db.get_metadata("book.id")

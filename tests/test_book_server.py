@@ -2142,7 +2142,8 @@ def test_plan_settings_are_kept_alike(target, book):
     )
     assert api.save_plan_settings(chosen) == chosen
     assert api.plan_settings(*defaults) == chosen
-    assert PlanSettings.load(db, *defaults) == chosen
+    # Each person's own (decision 0004): the book itself is left as it was.
+    assert PlanSettings.load(db, *defaults) == PlanSettings(*defaults)
     for refused_settings, code in (
         (PlanSettings(date(2026, 9, 1), date(2026, 8, 31)), "plan.end.before_start"),
         (PlanSettings(*defaults, scenario="gone"), "plan.scenario.not_found"),

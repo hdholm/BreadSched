@@ -265,13 +265,14 @@ def query_expense_explorer(
     account: str | None = None,
     period_index: int | None = None,
     rollover: bool = False,
+    saved: object = None,
 ) -> ServiceResult[ExpenseExplorer]:
     """Reuse Plan periods and category values; optionally explain one category cell.
 
     Merchant groups exist only in this result. Their totals are actual amounts;
     the category plan is deliberately never apportioned between merchants.
     """
-    result = query_plan(db, request)
+    result = query_plan(db, request, saved)
     if result.value is None:
         return ServiceResult.failure(*result.errors)
     plan = result.value

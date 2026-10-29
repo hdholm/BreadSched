@@ -212,6 +212,7 @@ _SERVICE_MESSAGES = {
     "book.permission.denied": "Your role in this book does not allow that",
     "book.not_found": "This host does not hold that book",
     "book.required": "This host holds several books; say which one",
+    "preferences.unavailable": "Your own settings could not be saved on this computer",
     "host.book.missing": "There is no book at that path",
     "host.book.held": "That book is already open, here or in another program",
     "host.book.not_joined": "This host was not asked to serve that book",

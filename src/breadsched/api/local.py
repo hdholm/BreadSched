@@ -12,6 +12,7 @@ with the book, so every process that opens it agrees on it (#357).
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -240,8 +241,10 @@ from ..gen.services.scenarios import (
 )
 from ..gen.services.security_prices import SavedSecurityPrice, SaveSecurityPrice, SecurityQuote
 from ..gen.services.tax import SetTaxMarks, TaxMarks
+from ..presentation import service_error_message
 from .contract import ApiError, unwrap
 from .protocol import Change, Listener
+from .users import User, UserDirectory, acting_user
 
 __all__ = [
     "LocalBookServer",
@@ -911,9 +914,16 @@ class LocalBookServer:
         return reporting_currency_label(self.db)
 
     def plan_settings(self, default_start: date, default_end: date) -> PlanSettings:
-        return plan_service.plan_settings(self.db, default_start, default_end)
+        return plan_service.plan_settings(
+            self.db, default_start, default_end, self._preference(PlanSettings.KEY)
+        )
 
     def save_plan_settings(self, settings: PlanSettings) -> PlanSettings:
+        """The caller's own Plan view (decision 0004); the book's only for a book
+        without an id, which no one else can be given."""
+        keep = self._keeper(PlanSettings.KEY)
+        if keep is not None:
+            return unwrap(plan_service.save_plan_settings(self.db, settings, keep))
         with self._changing("plan-settings"):
             return unwrap(plan_service.save_plan_settings(self.db, settings))
 
@@ -921,7 +931,7 @@ class LocalBookServer:
         return plan_service.plan_bounds(self.db, today)
 
     def plan(self, query: PlanQuery) -> PlanQueryResult:
-        return unwrap(plan_service.query_plan(self.db, query))
+        return unwrap(plan_service.query_plan(self.db, query, self._preference(PlanSettings.KEY)))
 
     def expense_explorer(
         self,
@@ -931,7 +941,12 @@ class LocalBookServer:
         rollover: bool = False,
     ) -> ExpenseExplorer:
         found = expense_service.query_expense_explorer(
-            self.db, query, account=account, period_index=period_index, rollover=rollover
+            self.db,
+            query,
+            account=account,
+            period_index=period_index,
+            rollover=rollover,
+            saved=self._preference(PlanSettings.KEY),
         )
         return unwrap(found)
 
@@ -1172,6 +1187,46 @@ class LocalBookServer:
         return unwrap(savings_goals.set_goal_override(self.db, request))
 
     # ------------------------------------------------- categorization rules
+
+    # --------------------------------------------------- personal preferences
+
+    def _personal(self) -> tuple[UserDirectory, User, str] | None:
+        """Whose preferences calls are served with, and the book's id; None for a
+        book without an id (read-only, or in memory), whose own settings serve."""
+        book_id = self.book_id()
+        if not book_id:
+            return None
+        directory, user = acting_user()
+        try:
+            return directory, user or directory.host_user(), book_id
+        except (OSError, sqlite3.Error):
+            return None
+
+    def _preference(self, key: str) -> object:
+        personal = self._personal()
+        if personal is None:
+            return None
+        directory, user, book_id = personal
+        try:
+            return directory.preference(user, book_id, key)
+        except (OSError, sqlite3.Error):
+            return None
+
+    def _keeper(self, key: str) -> Callable[[object], None] | None:
+        personal = self._personal()
+        if personal is None:
+            return None
+        directory, user, book_id = personal
+
+        def keep(value: object) -> None:
+            try:
+                directory.set_preference(user, book_id, key, value)
+            except (OSError, sqlite3.Error) as exc:
+                code = "preferences.unavailable"
+                message = service_error_message(ServiceError(code, ()))
+                raise ApiError(503, code, (), message) from exc
+
+        return keep
 
     @contextmanager
     def _changing(self, kind: str) -> Iterator[None]:

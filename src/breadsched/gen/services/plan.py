@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from calendar import monthrange
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
@@ -159,16 +160,16 @@ def plan_bounds(db: DbSQLite, today: date | None = None) -> PlanBounds:
     return PlanBounds(*_bounds(db, today or date.today()))
 
 
-def query_plan(db: DbSQLite, request: PlanQuery) -> ServiceResult[PlanQueryResult]:
-    """Validate selection state and calculate the primary and comparison reports."""
+def query_plan(
+    db: DbSQLite, request: PlanQuery, saved: object = None
+) -> ServiceResult[PlanQueryResult]:
+    """Validate selection state and calculate the primary and comparison reports.
+    ``use_saved`` restores ``saved`` (a person's own view, decision 0004), else the
+    book's."""
     today = request.today or date.today()
     minimum, maximum_month = _bounds(db, today)
     maximum = _month_end(maximum_month)
-    defaults = PlanSettings.load(
-        db,
-        date(today.year, 1, 1),
-        date(today.year + 1, 12, 31),
-    )
+    defaults = plan_settings(db, date(today.year, 1, 1), date(today.year + 1, 12, 31), saved)
     if request.use_saved:
         start = defaults.start
         end = defaults.end
@@ -278,13 +279,23 @@ def query_plan(db: DbSQLite, request: PlanQuery) -> ServiceResult[PlanQueryResul
     )
 
 
-def plan_settings(db: DbSQLite, default_start: date, default_end: date) -> PlanSettings:
-    """The Plan presentation last applied in this book, or the defaults."""
+def plan_settings(
+    db: DbSQLite, default_start: date, default_end: date, stored: object = None
+) -> PlanSettings:
+    """The Plan presentation last applied: a person's own ``stored`` one (their
+    :meth:`PlanSettings.serialize`), else the one kept in the book, else the defaults."""
+    if isinstance(stored, dict):
+        return PlanSettings.from_stored(stored, default_start, default_end)
     return PlanSettings.load(db, default_start, default_end)
 
 
-def save_plan_settings(db: DbSQLite, settings: PlanSettings) -> ServiceResult[PlanSettings]:
-    """Remember the Plan presentation GTK and the browser both restore."""
+def save_plan_settings(
+    db: DbSQLite,
+    settings: PlanSettings,
+    keep: Callable[[dict[str, object]], None] | None = None,
+) -> ServiceResult[PlanSettings]:
+    """Remember the Plan presentation GTK and the browser both restore: with ``keep``
+    (a person's own preferences, decision 0004) or else in the book."""
     errors = []
     if settings.end < settings.start:
         errors.append(ServiceError("plan.end.before_start", ("end",)))
@@ -295,5 +306,8 @@ def save_plan_settings(db: DbSQLite, settings: PlanSettings) -> ServiceResult[Pl
         errors.append(ServiceError("plan.comparison.not_found", ("compare",)))
     if errors:
         return ServiceResult.failure(*errors)
-    settings.save(db)
+    if keep is None:
+        settings.save(db)
+    else:
+        keep(settings.serialize())
     return ServiceResult.success(settings)

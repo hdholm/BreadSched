@@ -36,7 +36,7 @@ from ..api.local import local_caller
 from ..api.permissions import acting_as
 from ..api.protocol import Change
 from ..api.typed_codec import to_data
-from ..api.users import SESSION_DAYS, Caller, User, UserDirectory, UserError
+from ..api.users import SESSION_DAYS, Caller, User, UserDirectory, UserError, acting_for
 from ..api.views import change_json
 from ..gen.db.sqlite import DbSQLite
 from ..gen.lib import Money, Rate
@@ -341,6 +341,11 @@ class Handler(BaseHTTPRequestHandler):
             LOG.exception("could not read the user directory")
             return "none"
 
+    def _acting_user(self) -> User | None:
+        """The user whose personal preferences serve this request (decision 0004)."""
+        caller = self._caller()
+        return caller.user if caller is not None and caller.user.id else None
+
     def _supplied_token(self) -> str:
         """The token in ``X-BreadSched-Token``, else the browser's session cookie."""
         header = self.headers.get("X-BreadSched-Token", "")
@@ -405,9 +410,10 @@ class Handler(BaseHTTPRequestHandler):
         """
         local = self._local_request()
         role = self._role()
+        user = self._acting_user()
 
         def as_caller() -> T:
-            with local_caller(local), acting_as(role):
+            with local_caller(local), acting_as(role), acting_for(self.users, user):
                 return work()
 
         return self.executor(as_caller)
@@ -446,8 +452,9 @@ class Handler(BaseHTTPRequestHandler):
             reader.close()
 
     def do_GET(self) -> None:  # noqa: N802 - required by the base class
-        # Reads run in this thread: the user's role guards every operation they reach.
-        with acting_as(self._role()):
+        # Reads run in this thread: the user's role guards every operation they reach,
+        # and their own preferences serve them.
+        with acting_as(self._role()), acting_for(self.users, self._acting_user()):
             self._get()
 
     def _get(self) -> None:

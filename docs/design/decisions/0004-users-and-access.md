@@ -288,9 +288,9 @@ other accounts; 3 and 4 make it a household application.
   `LOOKUP`, `READ`, `ENTRY`, `WRITE`, or `OWNER`, and an architecture test requires
   the table to match the protocol exactly. A viewer has `ANY`, `LOOKUP`, and `READ`;
   an entry user `ANY`, `LOOKUP`, and `ENTRY` (and `save_transaction` only of a new
-  transaction); an editor all but `OWNER`; an owner everything. The display
-  settings (`save_plan_settings`, `save_dashboard_settings`) are `WRITE` until
-  phase 4 makes them personal.
+  transaction); an editor all but `OWNER`; an owner everything. Saving the
+  Dashboard configuration is `WRITE` until phase 4 makes it personal; saving one's
+  own Plan view is `READ` (see phase 4).
 - **Enforcement:** the transport works out the caller's role in the served book
   (`owner` for the computer account; else the grant, or none, which refuses the
   request), and sets it for the request on whichever thread runs the book
@@ -331,8 +331,26 @@ other accounts; 3 and 4 make it a household application.
   `--trusted-origin`, `--token-file`, and `--open` do not apply, and it says so. A host
   record that does not answer is ignored, and the command serves the book itself.
   GTK's sharing serves only the book it has open and cannot be joined.
-- **Still to come in phase 3:** GTK opening a book the host holds, as the computer
-  account's user and without a prompt.
+- **GTK opening a book the host holds** waits on GTK being wholly a client of the
+  protocol: about fifty GUI modules still reach the book, its services, or its
+  engines directly (and its storage signals redraw the views), so GTK cannot yet run
+  over `HttpBookClient`. Until then GTK opens a book itself, and a book the host
+  holds is refused on its writer lock as before. Phase 3 is otherwise built.
+
+**Phase 4 has begun** with personal preferences:
+- **Kept with the person,** in the user directory's `preferences` table (user, book id,
+  key, JSON value), removed with the user, never in the book. The transport serves
+  every request for its caller (`api.users.acting_for`); in process it is the computer
+  account.
+- **The Plan view** (`plan.view`: range, period, measure, scenario, comparison) is the
+  first: `plan_settings`, `save_plan_settings`, and the Plan and Expense Explorer
+  opened on the saved view use the caller's own, else the view a book saved before,
+  else the defaults. Saving it changes nothing in the book (no revision), so it is a
+  `READ` operation: a viewer keeps their own. A book without an id (read-only, in
+  memory) still keeps its own.
+- **Still to come in phase 4:** the Dashboard configuration (with its groups'
+  members, now kept on the accounts), undo and redo naming each step's user, and
+  change attribution.
 
 ## Answers to the review questions (2026-10-28)
 
