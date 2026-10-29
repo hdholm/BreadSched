@@ -1384,6 +1384,8 @@ class TestItServes:
         assert unchanged.serialize() == restored.serialize()
 
     def test_an_actual_can_seed_a_reviewable_unsaved_schedule(self, client):
+        from breadsched.gen.lib.recurrence import add_months
+
         _status, accounts = client.get("/api/accounts")
         checking = next(account for account in accounts if account["name"] == "Checking")
         _status, register = client.get(
@@ -1396,8 +1398,10 @@ class TestItServes:
         assert status == 200
         assert draft["handle"] is None
         assert draft["name"] == "Rent"
-        assert draft["frequency_key"] == "once"
-        assert draft["start"] == rent["date"]
+        # It repeats monthly from a month later, as the desktop's does (#392).
+        assert (draft["frequency_key"], draft["interval"]) == ("months", 1)
+        posted = date.fromisoformat(rent["date"])
+        assert posted.day <= 28 and draft["start"] == add_months(posted, 1).isoformat()
         assert draft["account_handles"] == [draft["category"], draft["funding"]]
 
     def test_schedule_rejects_an_unknown_growth_policy(self, client):

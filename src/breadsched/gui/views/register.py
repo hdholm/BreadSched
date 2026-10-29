@@ -564,6 +564,53 @@ class RegisterView(BaseView):
         parent = root if isinstance(root, Gtk.Window) else None
         return opener(expense=(transaction.handle, cost.handle), parent=parent)
 
+    def make_selected_scheduled(self, *_args):
+        """Open a new scheduled transaction made from the cursor's transaction (#392).
+
+        The draft repeats it monthly from a month later, every split kept; the dialog
+        sets how often, and whether it is a commitment or an estimate, before
+        anything is saved. Typing not yet entered is saved first, as for tracking a
+        reimbursable expense.
+        """
+        if self.db is None or self.sheet is None:
+            return self._refuse_scheduling("Open a register before making a schedule.")
+        sheet = self.sheet
+        handle = sheet.draft.source.handle if sheet.draft.source is not None else None
+        if sheet.draft.dirty():
+            if not sheet.leave():
+                self.grid.sync()
+                return self._refuse_scheduling(
+                    f"Save the transaction first: {sheet.message or 'it could not be saved.'}"
+                )
+            handle = sheet.last_saved
+            if handle is not None:
+                sheet.select_transaction(handle)
+            self.grid.sync()
+        if handle is None:
+            return self._refuse_scheduling(
+                "Put the cursor on a transaction to make a scheduled transaction from it."
+            )
+        try:
+            draft = book_server(self.db).schedule_draft(handle).schedule
+        except ApiError as refused:
+            return self._refuse_scheduling(refused.message or refused.code)
+        from ..dialogs.schedule_dialog import ScheduleDialog
+
+        root = self.get_root()
+        dialog = ScheduleDialog(
+            root if isinstance(root, Gtk.Window) else None, self.db, source=draft, creating=True
+        )
+        dialog.present()
+        return dialog
+
+    def _refuse_scheduling(self, text: str) -> None:
+        self.set_entry_status(text, error=True)
+        root = self.get_root()
+        Gtk.AlertDialog(message="No scheduled transaction made", detail=text).show(
+            root if isinstance(root, Gtk.Window) else None
+        )
+        return None
+
     def _refuse_tracking(self, text: str) -> None:
         self.set_entry_status(text, error=True)
         root = self.get_root()

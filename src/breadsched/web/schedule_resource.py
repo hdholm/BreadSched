@@ -213,8 +213,9 @@ def scheduled_draft(api: Api, payload: dict) -> dict:
         "handle": None,
         "name": draft.name,
         "frequency": draft.recurrence.describe(),
-        "frequency_key": "once",
-        "interval": 1,
+        # It repeats monthly from a month after the actual (#392).
+        "frequency_key": frequency_key(draft.recurrence),
+        "interval": draft.recurrence.interval,
         "amount": draft.amount(),
         "enabled": True,
         "placeholder": False,

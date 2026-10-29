@@ -136,6 +136,7 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
         ViewAction("cancel", "_Cancel Transaction", "cancel_transaction"),
         ViewAction("edit-in-place", "Edit Transaction in _Place", "edit_selected_in_place"),
         ViewAction("track-reimbursable", "Track as Rei_mbursable…", "track_selected_reimbursable"),
+        ViewAction("make-scheduled", "Make _Scheduled…", "make_selected_scheduled"),
         ViewAction("new-window", "Open in New _Window", "_on_open_window_clicked"),
         ViewAction(
             "reconcile",

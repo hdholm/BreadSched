@@ -9465,6 +9465,40 @@ class TestReceivablesDialog:
         finally:
             dialog.destroy()
 
+    def test_a_register_transaction_makes_a_repeating_schedule(self, app, window, populated_book):
+        """#392: Actions → Make Scheduled… opens the new schedule from the cursor's row."""
+        from breadsched.gen.lib.recurrence import PeriodType, add_months
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        db, rent_txn, _rent, _cost = self._book(app, populated_book)
+        assert window.lookup_action("register-make-scheduled") is not None
+        window.open_register(db.get_account_by_name("Assets:Checking Account").handle)
+        view = window._views["register"]
+        before = {item.handle for item in db.iter_scheduled()}
+        # The blank row is no transaction to repeat.
+        view.sheet.to_blank()
+        assert view.make_selected_scheduled() is None
+        assert "Put the cursor on a transaction" in view.entry_status.get_text()
+        assert view.sheet.select_transaction(rent_txn.handle)
+        dialog = view.make_selected_scheduled()
+        try:
+            assert isinstance(dialog, ScheduleDialog) and dialog.creating
+            # Nothing is saved until the dialog saves it.
+            assert {item.handle for item in db.iter_scheduled()} == before
+            assert dialog.name_entry.get_text() == "Rent"
+            start = add_months(rent_txn.post_date, 1)
+            assert dialog.start_entry.get_text() == start.isoformat()
+            built = dialog.build()
+            assert built.recurrence.period is PeriodType.MONTH
+            assert sorted((split.account, split.amount) for split in built.splits) == sorted(
+                (split.account, split.value) for split in rent_txn.splits
+            )
+            dialog._on_save(None)
+        finally:
+            dialog.destroy()
+        [made] = [item for item in db.iter_scheduled() if item.handle not in before]
+        assert made.name == "Rent" and made.recurrence.start == start
+
     def test_the_menu_and_register_actions_exist(self, app, window, populated_book):
         app.open_book(populated_book)
         assert app.lookup_action("receivables").get_enabled() is True

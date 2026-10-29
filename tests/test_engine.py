@@ -1,6 +1,6 @@
 """Ledger reading, reporting, and scheduled-transaction execution."""
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -476,8 +476,9 @@ class TestScheduleEngine:
         assert copied.source_recurrence == {"source": "custom-cycle"}
         assert db.get_scheduled(copied.handle) is not None
 
-    def test_actual_becomes_an_unsaved_one_time_template(self, db, book):
+    def test_actual_becomes_an_unsaved_repeating_template(self, db, book):
         from breadsched.gen.lib import PlanningFlowKind, Transaction
+        from breadsched.gen.lib.recurrence import add_months
 
         actual = Transaction(post_date=date(2026, 4, 9), description="Annual service")
         actual.add_split(
@@ -492,11 +493,36 @@ class TestScheduleEngine:
 
         draft = schedule.from_transaction(actual)
 
-        assert draft.recurrence.period.value == "once"
-        assert draft.recurrence.start == actual.post_date
+        # It repeats monthly from a month later (#392): the actual is already
+        # recorded, so the draft must not come up due on its date.
+        assert draft.recurrence.period.value == "month"
+        assert draft.recurrence.start == add_months(actual.post_date, 1)
+        assert draft.recurrence.day_of_month is None
         assert [split.account for split in draft.splits] == [book.utilities, book.checking]
         assert [split.memo for split in draft.splits] == ["service leg", "cash leg"]
         assert draft.splits[0].planning_flow is PlanningFlowKind.BENEFIT_FUNDING
+
+    @pytest.mark.parametrize(
+        ("posted", "start", "day"),
+        [
+            (date(2026, 1, 31), date(2026, 2, 28), -1),
+            (date(2026, 2, 28), date(2026, 3, 31), -1),
+            (date(2026, 1, 30), date(2026, 2, 28), 30),
+            (date(2026, 1, 15), date(2026, 2, 15), None),
+        ],
+    )
+    def test_a_late_day_in_the_month_is_kept_by_the_draft(self, book, posted, start, day):
+        from breadsched.gen.lib import Transaction
+
+        actual = Transaction.simple(posted, "Rent", book.utilities, book.checking, "900")
+        draft = schedule.from_transaction(actual)
+        assert (draft.recurrence.start, draft.recurrence.day_of_month) == (start, day)
+        # Later months fall on the same day, or the last day for a month-end one.
+        later = draft.recurrence.occurrences(until=date(2026, 6, 30))
+        if day == -1:
+            assert all((when + timedelta(days=1)).day == 1 for when in later)
+        else:
+            assert later[-1].day == posted.day
 
     def test_deletion_is_atomic_and_undoable(self, db, payday_schedule):
         deleted = schedule.delete_definition(db, payday_schedule.handle)
