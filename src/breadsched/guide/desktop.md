@@ -140,8 +140,8 @@ named for that account, as its register names them (for example **Payment** and
 **Charge** for a credit card, **Expense** and **Rebate** for an expense), so you
 never need a minus sign. A blank row shows what it would take to balance the
 others, and saving fills it in. When every row has an amount and they do not
-balance, a new row appears holding the rest, waiting for you to choose its
-account; it goes again if you balance the others yourself.
+balance, a new row appears holding the rest, showing **Choose an account…** until
+you choose its account; it goes again if you balance the others yourself.
 
 Categorization rules and reimbursable expenses open from **Actions →
 Categorization Rules…** and **Actions → Reimbursable Expenses…**.

@@ -238,7 +238,11 @@ Windows must stay usable on small screens whatever the book holds:
   account choice, including the register's account picker, filters as the
   register's account cell does (#334). Such a list opens at least `LIST_MIN_HEIGHT`
   tall (the list's scrolled window inside the drop-down's popover), so it never shows
-  only two or three rows (#381). View
+  only two or three rows (#381). GTK 4.16 and later cannot unselect a drop-down, so a
+  choice that may be left empty is a real item: a split row's account list ends with
+  **Choose an account…**, which the row holding the rest of an unbalanced entry
+  shows (#395). Toolbar icons are ones current Adwaita still ships
+  (`TestMenusAndIcons`). View
   toolbars scroll, Dashboard cards wrap in a `Gtk.FlowBox`, and the main stacks are
   not homogeneous, so the window's minimum is the shown page's.
 - Every secondary window is a `widgets.bounded.BoundedWindow`, which opens at its

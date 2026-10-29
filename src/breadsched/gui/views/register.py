@@ -75,6 +75,8 @@ class RegisterView(BaseView):
     SETTINGS_SECTION = "register"
 
     def __init__(self, manager) -> None:
+        #: A focus request still waiting for the grid to be shown (``focus_entry``).
+        self._focus_source = 0
         super().__init__(manager)
         self.account_handle: str | None = None
         self.sheet: RegisterSheet | None = None
@@ -269,6 +271,12 @@ class RegisterView(BaseView):
         else:
             super()._on_book_change(change)
 
+    def set_db(self, db) -> None:
+        super().set_db(db)
+        if db is None:
+            # Nothing is left to focus once the book has closed.
+            self.cancel_focus_entry()
+
     def _on_transactions(self, handles) -> None:
         """Reload just the transactions a commit changed (#319)."""
         self._changes += 1
@@ -322,8 +330,11 @@ class RegisterView(BaseView):
             self.grid.sync(focus=self.get_mapped())
 
     def _show_balance(self) -> None:
+        if self.db is None:
+            # The book has closed; this register is waiting to be dropped.
+            return
         summary = None
-        if self.sheet is not None and self.sheet.security is not None and self.db is not None:
+        if self.sheet is not None and self.sheet.security is not None:
             # The holding and its quote evidence through the book server (#358).
             holding = book_server(self.db).register_view(self.sheet.account, 1).holding
             if holding is not None:
@@ -422,12 +433,11 @@ class RegisterView(BaseView):
         """Put keyboard focus in the cell under the cursor, once the grid is shown.
 
         One request at a time: a newer one replaces it, and it is dropped if the
-        register is hidden or the keyboard has moved elsewhere since it was made
-        (Ctrl+F into the filter), rather than taking the keyboard back later.
+        register is hidden, its book has closed, or the keyboard has moved elsewhere
+        since it was made (Ctrl+F into the filter), rather than taking the keyboard
+        back later.
         """
-        previous = getattr(self, "_focus_source", None)
-        if previous is not None:
-            GLib.source_remove(previous)
+        self.cancel_focus_entry()
         root = self.get_root()
         asked_from = root.get_focus() if root is not None else None
         tries = [0]
@@ -436,17 +446,31 @@ class RegisterView(BaseView):
             # A register just shown may not be sized yet; the editor has no cell
             # to sit on until it is, so wait for that (briefly) before focusing.
             grid = self.grid
-            if (not grid.get_mapped() or not grid._widths or grid._height <= 0) and tries[0] < 50:
+            ready = grid.get_mapped() and grid._widths and grid._height > 0
+            if not ready and tries[0] < 50:
                 tries[0] += 1
                 return GLib.SOURCE_CONTINUE
-            self._focus_source = None
+            self._focus_source = 0
             now = root.get_focus() if root is not None else None
             moved = now is not None and now is not asked_from and not now.is_ancestor(grid)
-            if self.get_mapped() and not moved:
+            # A register whose book closed, or never shown, has nothing to focus.
+            if (
+                ready
+                and self.get_mapped()
+                and not moved
+                and self.db is not None
+                and self.sheet is not None
+            ):
                 grid.sync()
             return GLib.SOURCE_REMOVE
 
         self._focus_source = GLib.timeout_add(20, focus)
+
+    def cancel_focus_entry(self) -> None:
+        """Forget a focus request still waiting for the grid (Ctrl+F moved it)."""
+        if self._focus_source:
+            GLib.source_remove(self._focus_source)
+        self._focus_source = 0
 
     def edit_selected_in_place(self, *_args) -> bool:
         """Typing goes into the transaction under the cursor; this puts focus there."""

@@ -69,6 +69,8 @@ __all__ = ["MORE", "TransactionDialog"]
 
 #: The second page: tags, documents, and escrow detail; its tab counts them (#383).
 MORE = "Tags & documents"
+#: A split row's choice of no account yet (the row holding the rest of an entry).
+CHOOSE_ACCOUNT = "Choose an account…"
 
 _INVESTMENT_ACTIVITIES = [
     ("Ordinary", None),
@@ -98,7 +100,9 @@ class SplitEditor:
         #: entry, so it can take it away again once the entry balances (#369).
         self.auto: bool = False
         self.box = Gtk.Box(spacing=8)
-        self.account = bounded_dropdown(dialog.account_names or ["(none)"])
+        # The last choice is no account: what a row holding the rest shows until one
+        # is chosen. GTK 4.16 and later cannot unselect a drop-down.
+        self.account = bounded_dropdown([*dialog.account_names, CHOOSE_ACCOUNT])
         self.account.set_hexpand(True)
         self.account.connect("notify::selected", dialog.revalidate)
         self.account.connect("notify::selected", lambda *_: self._show_shares())
@@ -865,7 +869,7 @@ class TransactionDialog(BoundedWindow):
         if residual and not blanks and len(typed) >= 2:
             editor = self.add_split()
             editor.auto = True
-            editor.account.set_selected(Gtk.INVALID_LIST_POSITION)
+            editor.account.set_selected(len(self.accounts))
             blanks = [editor]
         elif not residual:
             for editor in [e for e in blanks if e.auto and len(self.splits) > 2]:
