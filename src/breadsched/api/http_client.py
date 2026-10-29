@@ -193,6 +193,7 @@ from ..gen.services.transaction_editing import TransactionEditorView
 from ..gen.services.transaction_search import FindResult
 from .account_codec import save_account_json
 from .contract import ApiError, to_json
+from .host import BOOK_HEADER, HostedBook
 from .protocol import Change, Listener
 from .schedule_codec import fixed_request_json, formula_request_json
 from .transaction_codec import save_transaction_json, transaction_input_from_json
@@ -246,6 +247,7 @@ class HttpBookClient:
         client_key: str | None = None,
         local_token: str | None = None,
         host_files: bool = False,
+        book_id: str | None = None,
     ) -> None:
         parsed = urlparse(base_url)
         if parsed.scheme not in ("http", "https") or not parsed.hostname:
@@ -262,6 +264,9 @@ class HttpBookClient:
         #: The token itself may name files on the server's computer: the computer
         #: account's own device token (decision 0004).
         self.host_files = host_files or bool(local_token)
+        #: The book this client uses on a host that holds several (decision 0004);
+        #: None for the only one it holds.
+        self.chosen_book = book_id
         #: Files already sent, by (path, modification time, size): the server's copy.
         self._sent: dict[tuple[str, int, int], str] = {}
         self.timeout = timeout
@@ -277,6 +282,14 @@ class HttpBookClient:
         self.require_revision: int | None = None
 
     # -------------------------------------------------------------- transport
+
+    def _headers(self, accept: str) -> dict[str, str]:
+        headers = {"X-BreadSched-Token": self.token, "Accept": accept}
+        if self.local_token:
+            headers["X-BreadSched-Local"] = self.local_token
+        if self.chosen_book:
+            headers[BOOK_HEADER] = self.chosen_book
+        return headers
 
     def _connection(self, timeout: float | None) -> http.client.HTTPConnection:
         if self._tls is not None:
@@ -297,9 +310,7 @@ class HttpBookClient:
         present = {key: to_json(value) for key, value in (query or {}).items() if value is not None}
         if present:
             target += "?" + urlencode(present)
-        headers = {"X-BreadSched-Token": self.token, "Accept": "application/json"}
-        if self.local_token:
-            headers["X-BreadSched-Local"] = self.local_token
+        headers = self._headers("application/json")
         payload = None
         if content is not None:
             # A file's bytes, as they are (``upload_import_file``, ``attach_content``).
@@ -343,6 +354,14 @@ class HttpBookClient:
     def revision(self) -> int:
         return int(self._call("GET", "/book")["revision"])
 
+    def hosted_books(self) -> tuple[HostedBook, ...]:
+        """The books the host holds that this client's user may use (not a book
+        operation: it is answered for no one book)."""
+        return tuple(
+            HostedBook(str(item["id"]), str(item["name"]), str(item["role"]))
+            for item in self._call("GET", "/books")["books"]
+        )
+
     def subscribe(self, listener: Listener) -> Callable[[], None]:
         """Follow the server's change stream until the returned function is called.
 
@@ -355,7 +374,7 @@ class HttpBookClient:
         connection.request(
             "GET",
             "/api/v1/events?" + urlencode({"since": since}),
-            headers={"X-BreadSched-Token": self.token, "Accept": "text/event-stream"},
+            headers=self._headers("text/event-stream"),
         )
         response = connection.getresponse()
         if response.status != 200:

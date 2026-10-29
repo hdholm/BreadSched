@@ -247,7 +247,9 @@ The same operations are served as versioned resources under `/api/v1` (#357):
   in-process server and this client.
 
 A writable `breadsched serve` or `breadsched web` publishes a server record
-(`api.discovery`; see [Security](security.md)). `api.connect.open_book_api` gives a
+(`api.discovery`; see [Security](security.md)) for each book it holds; one server may
+hold several (`api.host`, decision 0004), and a request names its book by id in
+`X-BreadSched-Book`. `api.connect.open_book_api` gives a
 command an explicit `--server`, else the recorded server, else an in-process server.
 So `due-review`, `scheduled-next`, `scheduled-advance`, `scheduled`, `accounts`,
 `account`, `register`, `balance`, `add`, `edit`, `delete`, `rules`, `tags`, `goals`,

@@ -79,13 +79,24 @@ const apiToken = params.get("token") || "";
 // Only the page the server opens on its own computer is given the local token,
 // which lets it name files there; a page reached through a proxy sends files instead.
 const localToken = params.get("local") || "";
-if (params.has("token")) history.replaceState(null, "", window.location.pathname + window.location.search);
-const apiHeaders = () => (localToken
-  ? { "X-BreadSched-Token": apiToken, "X-BreadSched-Local": localToken }
-  : { "X-BreadSched-Token": apiToken });
-// The fragment that carries this page's tokens to another of its pages.
-const tokenFragment = () => new URLSearchParams(
-  localToken ? { token: apiToken, local: localToken } : { token: apiToken }).toString();
+// The book this page uses, on a host that serves several (decision 0004). Unlike the
+// tokens it is no secret, so it stays in the address and a reload keeps it.
+let bookId = params.get("book") || "";
+const keepBookInAddress = () => history.replaceState(null, "",
+  window.location.pathname + window.location.search
+  + (bookId ? `#${new URLSearchParams({ book: bookId })}` : ""));
+if (params.has("token")) keepBookInAddress();
+const apiHeaders = () => ({
+  "X-BreadSched-Token": apiToken,
+  ...(localToken ? { "X-BreadSched-Local": localToken } : {}),
+  ...(bookId ? { "X-BreadSched-Book": bookId } : {}),
+});
+// The fragment that carries this page's tokens, and its book, to another of its pages.
+const tokenFragment = (withBook = true) => new URLSearchParams({
+  token: apiToken,
+  ...(localToken ? { local: localToken } : {}),
+  ...(withBook && bookId ? { book: bookId } : {}),
+}).toString();
 const browserNumberFormat = (() => {
   const decimal = new Intl.NumberFormat().formatToParts(1.1)
     .find((part) => part.type === "decimal")?.value;
@@ -128,6 +139,44 @@ async function signedIn() {
       ["password", "Password", "current-password"],
     ], (values) => post("/api/v1/session", { ...values, device: navigator.platform || "Browser" }));
   }
+}
+
+// Signed in, and with a book: the only one this person may use here, the one the
+// address names, or the one they choose (decision 0004). Answers that book, and how
+// many there were to choose from.
+async function ready() {
+  await signedIn();
+  const { books } = await get("/api/v1/books");
+  let chosen = books.find((book) => book.id === bookId);
+  if (!chosen && books.length === 1) [chosen] = books;
+  if (!chosen && !books.length) {
+    document.getElementById("view").replaceChildren(el("p", { class: "note" },
+      "No book here has been shared with you yet. Ask its owner to share it."));
+    return new Promise(() => {});
+  }
+  if (!chosen) chosen = await chooseBook(books);
+  bookId = chosen.id;
+  keepBookInAddress();
+  return { book: chosen, choices: books.length };
+}
+
+const ROLE_NAMES = { owner: "Owner", editor: "Editor", viewer: "Viewer", entry: "Entry only" };
+
+function chooseBook(books) {
+  return new Promise((resolve) => {
+    document.getElementById("view").replaceChildren(el("section", { class: "book-choice" },
+      el("h2", {}, "Choose a book"),
+      el("ul", {}, ...books.map((book) => el("li", {},
+        el("button", { type: "button", class: "action", onclick: () => resolve(book) },
+          book.name),
+        el("span", { class: "note" }, ` ${ROLE_NAMES[book.role] || book.role}`))))));
+  });
+}
+
+// Back to the choice of book: the page reloads with its tokens but no book.
+function otherBooks() {
+  window.location.hash = tokenFragment(false);
+  window.location.reload();
 }
 
 function accountForm(title, action, fields, submit) {

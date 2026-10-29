@@ -151,7 +151,7 @@ async function showQuick() {
   amount.focus();
 }
 
-signedIn().then(() => {
+ready().then(() => {
   get("/api/summary").then((s) => {
     // Only the file's name: a phone has no room for its folder.
     document.getElementById("book").textContent = (s.book || "").split(/[\\/]/).pop();

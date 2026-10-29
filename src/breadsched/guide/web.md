@@ -154,7 +154,9 @@ A phone or tablet opening the page without the address BreadSched printed asks y
 your password was reset, you choose your own password. The device then stays signed
 in: its session lasts 30 days from when you last used it. What you may do depends on
 the role the book's owner gave you; someone given only the entry role uses quick
-entry and nothing else.
+entry and nothing else. When the server holds several books shared with you, the page
+asks which to open, keeps that choice when it reloads, and **Other books** goes back
+to the choice.
 
 ## Enter transactions in a register
 

@@ -275,7 +275,7 @@ other accounts; 3 and 4 make it a household application.
 - **Phase 2 is built.** The server's own `--token-file` token keeps working for
   devices already given it.
 
-**Phase 3 has begun** with roles in each book (the host for several books follows):
+**Phase 3 has begun** with roles in each book and a host for several books:
 - **Book ids:** `book_id()` (`GET /api/v1/book/id`, `gen/services/book_info`) is the
   book's permanent id, kept in its metadata as `book.id` and made the first time it
   is asked for in a writable book. A server notes the book it serves in the host's
@@ -304,6 +304,22 @@ other accounts; 3 and 4 make it a household application.
   the account tree with depths and no values, which quick entry now reads.
 - **Sharing:** `breadsched share BOOK [USER --role ROLE | USER --remove]`, and **Who
   may use** the open book in GTK's **Users and devices**.
+- **A host for several books:** `serve()` and `build_handler()` take one book or
+  several, each with its own writer, lock (or GTK's executor), read snapshots,
+  revision, and change stream; the same file twice is refused. A request names its
+  book by id in `X-BreadSched-Book` (`api.host`); a host holding one book needs no
+  header. Naming none of several is 400 `book.required`, an id the host does not hold
+  404 `book.not_found`, but only for a caller the host knows. `GET /api/v1/books`
+  lists the books the caller has a role in (id, name, role;
+  `HttpBookClient.hosted_books()`). `breadsched serve BOOK [BOOK ...]` (and `web`)
+  holds several and prints their ids; each book's server record carries its id, which
+  `open_book_api` sends, so commands on the computer still find a book by its file.
+  `--book-id` chooses the book for `--server`. The browser page asks which book when
+  several are shared with you, keeps it in the address (`#book=`), and offers **Other
+  books**.
+- **Still to come in phase 3:** a second `serve` joining the account's running host
+  rather than starting another, and GTK opening a book that host holds as the
+  computer account's user, without a prompt.
 
 ## Answers to the review questions (2026-10-28)
 

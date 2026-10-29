@@ -12,7 +12,8 @@ import secrets
 import socketserver
 import sqlite3
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from functools import partial
@@ -22,6 +23,8 @@ from pathlib import Path
 from typing import Any, TypeVar
 from urllib.parse import unquote, urlencode, urlparse
 
+from ..api.contract import ApiError
+from ..api.host import BOOK_HEADER, HostedBook, choose_book, hosted_name
 from ..api.local import local_caller
 from ..api.permissions import acting_as
 from ..api.protocol import Change
@@ -86,9 +89,28 @@ SESSION_COOKIE = "breadsched_session"
 ACCOUNT_SESSION = "/api/v1/session"
 ACCOUNT_ME = "/api/v1/me"
 ACCOUNT_PASSWORD = "/api/v1/me/password"
+#: The books this host holds that the caller may use (decision 0004).
+ACCOUNT_BOOKS = "/api/v1/books"
 #: Answered before the caller is known (signing in) or while a temporary password
-#: must still be changed.
-ACCOUNT_PATHS = frozenset({ACCOUNT_SESSION, ACCOUNT_ME, ACCOUNT_PASSWORD})
+#: must still be changed, or for no one book.
+ACCOUNT_PATHS = frozenset({ACCOUNT_SESSION, ACCOUNT_ME, ACCOUNT_PASSWORD, ACCOUNT_BOOKS})
+
+
+@dataclass(frozen=True, slots=True)
+class _Book:
+    """One book a host serves: its writer, read snapshots, and who may use it."""
+
+    #: What a request names it by: its permanent id, or a stand-in for a book that
+    #: has none (read-only or in memory), which no grant can name.
+    key: str
+    #: The permanent id grants name, if the book has one.
+    book_id: str | None
+    name: str
+    api: Api
+    db: DbSQLite
+    lock: threading.Lock
+    #: Runs a callable with exclusive use of the writer book (see ``_exclusive``).
+    executor: Callable[[Callable[[], Any]], Any]
 
 
 def _me(caller: Caller) -> dict[str, object]:
@@ -124,9 +146,8 @@ class Handler(BaseHTTPRequestHandler):
     """Serve static files and dispatch authenticated JSON resource calls."""
 
     server_version = "BreadSched"
-    api_object: Api
-    writer_db: DbSQLite
-    lock: threading.Lock
+    #: The books this host serves, by the key a request names (``X-BreadSched-Book``).
+    books: dict[str, _Book]
     token: str
     #: Origins besides loopback whose pages may use the API: the public origin of
     #: a TLS proxy in front of the server (``serve(trusted_origins=...)``).
@@ -135,12 +156,49 @@ class Handler(BaseHTTPRequestHandler):
     local_token: str = ""
     #: The host's users and device tokens (decision 0004).
     users: UserDirectory | None = None
-    #: The served book's permanent id, by which the host keeps who may use it.
-    book_id: str | None = None
-    #: Runs a callable with exclusive use of the writer book (see ``_exclusive``).
-    executor: Callable[[Callable[[], Any]], Any]
 
     _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+    #: Per request: why ``_trusted_api_request`` turned it away, the book it named,
+    #: and who sent it. One handler serves every request on a kept-alive connection.
+    _why: ApiError | None = None
+    _chosen: tuple[str, _Book] | None = None
+    _resolved: tuple[str, Caller | None] | None = None
+
+    def parse_request(self) -> bool:
+        self._why = None
+        self._chosen = None
+        self._resolved = None
+        return super().parse_request()
+
+    # ------------------------------------------------------------ the book asked for
+
+    def _book(self) -> _Book:
+        """The book this request is for: the one its ``X-BreadSched-Book`` names, or
+        the only one the host holds. An ``ApiError`` if it names none of them."""
+        wanted = self.headers.get(BOOK_HEADER, "").strip()
+        cached = self._chosen
+        if cached is not None and cached[0] == wanted:
+            return cached[1]
+        chosen = choose_book(self.books, wanted)
+        self._chosen = (wanted, chosen)
+        return chosen
+
+    @property
+    def api_object(self) -> Api:
+        return self._book().api
+
+    @property
+    def writer_db(self) -> DbSQLite:
+        return self._book().db
+
+    @property
+    def lock(self) -> threading.Lock:
+        return self._book().lock
+
+    @property
+    def executor(self) -> Callable[[Callable[[], Any]], Any]:
+        return self._book().executor
 
     def log_message(self, fmt: str, *args) -> None:  # noqa: A003 - base class name
         LOG.debug("%s %s", self.address_string(), fmt % args)
@@ -227,17 +285,35 @@ class Handler(BaseHTTPRequestHandler):
         return parsed.scheme in {"http", "https"} and parsed.hostname in self._LOCAL_HOSTS
 
     def _trusted_api_request(self, *, write: bool = False) -> bool:
+        self._why = None
         if not self._trusted_host() or not self._trusted_origin():
             return False
         if write and self.headers.get_content_type() != "application/json":
             return False
         caller = self._caller()
-        # A temporary password must be changed before anything else, and a user given
-        # no role in this book may not use it at all (decision 0004).
-        return caller is not None and not caller.user.must_change and self._role() != "none"
+        # A temporary password must be changed before anything else.
+        if caller is None or caller.user.must_change:
+            return False
+        try:
+            self._book()
+        except ApiError as refused:
+            # Only someone the host knows learns that the book they named is not here.
+            self._why = refused
+            return False
+        # A user given no role in this book may not use it at all (decision 0004).
+        return self._role() != "none"
 
-    def _role(self) -> str:
-        """The caller's role in the book served here; "none" for anyone without one."""
+    def _refuse(self) -> None:
+        """Answer a request ``_trusted_api_request`` turned away."""
+        refused = self._why
+        if refused is None:
+            self._error(403, "request.untrusted")
+        else:
+            self._error(refused.status, refused.code, refused.fields, message=refused.message)
+
+    def _role(self, book: _Book | None = None) -> str:
+        """The caller's role in ``book`` (the one asked for); "none" for anyone without
+        one, or when the request names no book here."""
         caller = self._caller()
         if caller is None:
             return "none"
@@ -246,7 +322,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.users is None:
             return "none"
         try:
-            return self.users.role(self.book_id, caller.user) or "none"
+            book_id = (book or self._book()).book_id
+        except ApiError:
+            return "none"
+        try:
+            return self.users.role(book_id, caller.user) or "none"
         except (OSError, sqlite3.Error):
             LOG.exception("could not read the user directory")
             return "none"
@@ -271,7 +351,7 @@ class Handler(BaseHTTPRequestHandler):
         supplied = self._supplied_token()
         if not supplied:
             return None
-        cached = getattr(self, "_resolved", None)
+        cached = self._resolved
         if cached is not None and cached[0] == supplied:
             return cached[1]
         caller: Caller | None = None
@@ -382,7 +462,7 @@ class Handler(BaseHTTPRequestHandler):
             self._static("index.html" if parsed.path in ("/", "") else parsed.path[1:])
             return
         if not self._trusted_api_request():
-            self._error(403, "request.untrusted")
+            self._refuse()
             return
         try:
             query = QueryParams(parsed.query)
@@ -462,7 +542,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not self._trusted_api_request(write=True):
             self._discard_body()
-            self._error(403, "request.untrusted")
+            self._refuse()
             return
         parsed = urlparse(self.path)
         route = POST_ROUTES.get(parsed.path)
@@ -532,7 +612,7 @@ class Handler(BaseHTTPRequestHandler):
         ):
             if write:
                 self._discard_body()
-            self._error(403, "request.untrusted")
+            self._refuse()
             return
         if self.users is None:
             if write:
@@ -560,10 +640,16 @@ class Handler(BaseHTTPRequestHandler):
                 return
             caller = self._caller()
             if caller is None:
-                self._error(403, "request.untrusted")
+                self._refuse()
                 return
             if (method, path) == ("GET", ACCOUNT_ME):
                 self._json(200, _me(caller))
+                return
+            if (method, path) == ("GET", ACCOUNT_BOOKS):
+                if caller.user.must_change:
+                    self._error(403, "request.untrusted")
+                    return
+                self._json(200, {"books": [to_data(book) for book in self._usable_books()]})
                 return
             if (method, path) == ("POST", ACCOUNT_PASSWORD):
                 changed = self.users.set_password(
@@ -582,6 +668,15 @@ class Handler(BaseHTTPRequestHandler):
             self._error(status, exc.code, exc.fields, message=exc.message)
         except Exception:  # noqa: BLE001 - isolate the threaded server
             self._unexpected()
+
+    def _usable_books(self) -> list[HostedBook]:
+        """The books here the caller has a role in, by name."""
+        usable = []
+        for book in self.books.values():
+            role = self._role(book)
+            if role != "none":
+                usable.append(HostedBook(book.key, book.name, role))
+        return sorted(usable, key=lambda book: (book.name.casefold(), book.id))
 
     def _sign_in(self, body: dict[str, Any]) -> None:
         assert self.users is not None
@@ -618,7 +713,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._trusted_api_request(write=write and not bodiless):
             if write:
                 self._discard_body()
-            self._error(403, "request.untrusted")
+            self._refuse()
             return
         parsed = urlparse(self.path)
         try:
@@ -697,7 +792,7 @@ class Handler(BaseHTTPRequestHandler):
         Each later ``change`` event is one :class:`~breadsched.api.protocol.Change`.
         """
         if not self._trusted_api_request():
-            self._error(403, "request.untrusted")
+            self._refuse()
             return
         try:
             query = QueryParams(raw_query)
@@ -751,7 +846,7 @@ class Handler(BaseHTTPRequestHandler):
             or self.headers.get_content_type() != "application/octet-stream"
         ):
             self._discard_body(limit)
-            self._error(403, "request.untrusted")
+            self._refuse()
             return
         try:
             query = QueryParams(urlparse(self.path).query)
@@ -795,7 +890,7 @@ class Handler(BaseHTTPRequestHandler):
             or self.headers.get_content_type() != "application/octet-stream"
         ):
             self._discard_body(MAX_UPLOAD_BODY)
-            self._error(403, "request.untrusted")
+            self._refuse()
             return
         try:
             query = QueryParams(urlparse(self.path).query)
@@ -845,7 +940,7 @@ class Handler(BaseHTTPRequestHandler):
     def _attachment_content(self, raw_query: str) -> None:
         """Send one document a transaction lists, as bytes the page opens or saves."""
         if not self._trusted_api_request():
-            self._error(403, "request.untrusted")
+            self._refuse()
             return
         try:
             query = QueryParams(raw_query)
@@ -872,7 +967,7 @@ class Handler(BaseHTTPRequestHandler):
             or self.headers.get_content_type() != "application/octet-stream"
         ):
             self._discard_body(MAX_ATTACHMENT_BYTES)
-            self._error(403, "request.untrusted")
+            self._refuse()
             return
         try:
             query = QueryParams(urlparse(self.path).query)
@@ -917,6 +1012,8 @@ class BreadSchedHTTPServer(ThreadingHTTPServer):
     local_token: str
     #: Set on shutdown so open change streams end.
     stopping: threading.Event
+    #: Each served book's path and the id a request names it by.
+    books: dict[str, str]
 
     def shutdown(self) -> None:
         self.stopping.set()
@@ -984,19 +1081,7 @@ def token_from_file(path: str | Path) -> str:
     return token
 
 
-def build_handler(
-    db: DbSQLite,
-    token: str,
-    executor: Executor | None = None,
-    trusted_origins: frozenset[str] = frozenset(),
-    local_token: str = "",
-    users: UserDirectory | None = None,
-) -> type[Handler]:
-    """Bind one serialized writer and short-lived read snapshots to a handler.
-
-    Writer work runs under one lock in the request's thread unless ``executor``
-    runs it elsewhere (GTK runs it on its main loop, #359).
-    """
+def _hosted(db: DbSQLite, executor: Executor | None, users: UserDirectory | None) -> _Book:
     api_object = Api(db)
     # The book's permanent id, made now in a writable book; the host lists the book
     # under it, and grants name it (decision 0004).
@@ -1012,25 +1097,59 @@ def build_handler(
         with lock:
             return work()
 
+    return _Book(
+        key=book_id or f"unnamed-{secrets.token_hex(8)}",
+        book_id=book_id,
+        name=hosted_name(db.path),
+        api=api_object,
+        db=db,
+        lock=lock,
+        executor=executor or locked,
+    )
+
+
+def build_handler(
+    db: DbSQLite | Sequence[DbSQLite],
+    token: str,
+    executor: Executor | None = None,
+    trusted_origins: frozenset[str] = frozenset(),
+    local_token: str = "",
+    users: UserDirectory | None = None,
+) -> type[Handler]:
+    """Bind each book's serialized writer and short-lived read snapshots to a handler.
+
+    ``db`` is one book or several (decision 0004): a request names the one it is for.
+    Each book's writer work runs under its own lock in the request's thread unless
+    ``executor`` runs it elsewhere (GTK runs it on its main loop, #359).
+    """
+    books: dict[str, _Book] = {}
+    files: set[str] = set()
+    for each in [db] if isinstance(db, DbSQLite) else db:
+        file = str(Path(each.path).resolve()) if each.path and each.path != ":memory:" else ""
+        if file and file in files:
+            raise ValueError(f"{each.path} is already served here")
+        book = _hosted(each, executor, users)
+        if book.key in books:
+            raise ValueError(f"{each.path} is already served here")
+        files.add(file)
+        books[book.key] = book
+    if not books:
+        raise ValueError("a host serves at least one book")
     return type(
         "BoundHandler",
         (Handler,),
         {
-            "api_object": api_object,
-            "book_id": book_id,
-            "writer_db": db,
-            "lock": lock,
+            "books": books,
             "token": token,
             "trusted_origins": trusted_origins,
             "local_token": local_token,
             "users": users,
-            "executor": staticmethod(executor or locked),
         },
     )
 
 
 def serve(
-    db: DbSQLite,
+    db: DbSQLite | Sequence[DbSQLite],
     host: str = "127.0.0.1",
     port: int = 8765,
     open_browser: bool = False,
@@ -1040,7 +1159,8 @@ def serve(
     trusted_origins: tuple[str, ...] = (),
     users: UserDirectory | None = None,
 ) -> BreadSchedHTTPServer:
-    """Start the server. Returns it without blocking; call ``serve_forever``.
+    """Start the server for one book or several. Returns it without blocking; call
+    ``serve_forever``. ``server.books`` maps each book's path to its id.
 
     ``token`` is a kept token (``token_from_file``), else a new one is made.
     ``trusted_origins`` are the public origins of a TLS proxy in front of it.
@@ -1052,17 +1172,16 @@ def serve(
     # Never written to a token file or printed: it reaches only the server record
     # (user-only) and the page this server opens itself (#358).
     local_token = secrets.token_urlsafe(32)
-    server = BreadSchedHTTPServer(
-        (host, port),
-        build_handler(
-            db,
-            token,
-            executor,
-            trusted_origins=origins,
-            local_token=local_token,
-            users=users if users is not None else UserDirectory(),
-        ),
+    handler = build_handler(
+        db,
+        token,
+        executor,
+        trusted_origins=origins,
+        local_token=local_token,
+        users=users if users is not None else UserDirectory(),
     )
+    server = BreadSchedHTTPServer((host, port), handler)
+    server.books = {book.db.path or "": book.key for book in handler.books.values()}
     server.token = token
     server.local_token = local_token
     server.stopping = threading.Event()

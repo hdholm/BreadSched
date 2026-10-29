@@ -1929,3 +1929,74 @@ def test_an_entry_user_adds_transactions_from_a_phone_and_nothing_else(served):
         status = view.evaluate("async () => (await fetch('/api/v1/chart')).status")
         assert status == 403
         browser.close()
+
+
+def test_a_person_chooses_among_the_books_a_host_shares_with_them(tmp_path):
+    """Decision 0004: one host serves several books; each person chooses among those
+    shared with them, the page remembers the choice, and one shared book needs none."""
+    from breadsched.api.users import UserDirectory
+
+    books = []
+    for name in ("Home", "Rental"):
+        path = tmp_path / f"{name}.breadsched"
+        create_sample_book(path, as_of=date.today())
+        db = DbSQLite()
+        db.load(str(path))
+        books.append(db)
+    httpd = serve(books, host="127.0.0.1", port=0)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    home_id, rental_id = (db.get_metadata("book.id") for db in books)
+    directory = UserDirectory()
+    for name in ("vera", "kid"):
+        directory.add_user(name, "temporary-pass")
+        directory.set_password(name, f"{name}-own-password", current="temporary-pass")
+    directory.grant(home_id, "vera", "editor")
+    directory.grant(rental_id, "vera", "viewer")
+    directory.grant(home_id, "kid", "entry")
+    base = f"http://127.0.0.1:{httpd.server_port}"
+    try:
+        with sync_api.sync_playwright() as playwright:
+            try:
+                browser = playwright.chromium.launch(executable_path=_chromium())
+            except Exception as exc:  # noqa: BLE001 - no usable browser here
+                pytest.skip(f"Chromium is not available: {exc}")
+            view = browser.new_page()
+            errors: list[str] = []
+            view.on("pageerror", lambda error: errors.append(str(error)))
+            view.goto(base + "/")
+            view.fill("input[name=name]", "vera")
+            view.fill("input[name=password]", "vera-own-password")
+            view.click("button:has-text('Sign in')")
+            view.wait_for_selector("text=Choose a book")
+            choices = view.locator(".book-choice li").all_inner_texts()
+            assert [" ".join(choice.split()) for choice in choices] == [
+                "Home Editor",
+                "Rental Viewer",
+            ]
+            view.get_by_role("button", name="Rental").click()
+            view.locator("#book", has_text="Rental").wait_for()
+            assert f"book={rental_id}" in view.url
+            assert f"book={rental_id}" in view.locator("#quick-entry").get_attribute("href")
+            # A reload keeps the book; Other books goes back to the choice.
+            view.reload()
+            view.locator("#book", has_text="Rental").wait_for()
+            assert view.locator(".book-choice").count() == 0
+            view.get_by_role("button", name="Other books").click()
+            view.wait_for_selector("text=Choose a book")
+            view.get_by_role("button", name="Home").click()
+            view.locator("#book", has_text="Home").wait_for()
+            assert errors == []
+            # Someone given one book goes straight to it.
+            phone = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
+            phone.goto(base + "/quick")
+            phone.fill("input[name=name]", "kid")
+            phone.fill("input[name=password]", "kid-own-password")
+            phone.click("button:has-text('Sign in')")
+            phone.locator("#quick-account option").nth(1).wait_for(state="attached")
+            assert phone.locator(".book-choice").count() == 0
+            browser.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        for db in books:
+            db.close()

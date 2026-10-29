@@ -1,7 +1,8 @@
 """Finding the book server that already holds a book (#358).
 
 **Experimental.** A server started for a writable book (``breadsched serve`` or
-``breadsched web``) publishes a *server record*: the book, the server's address, and
+``breadsched web``) publishes a *server record*: the book, the server's address, the
+id requests name the book by there (a host may serve several, decision 0004), and
 the process that holds the book's writer lock. It carries no token: a program of the
 same computer account proves who it is with that account's device token
 (``api.users``, decision 0004). Another interface opening
@@ -43,6 +44,8 @@ class ServerRecord:
     host: str
     #: The token of the writer lock the server holds.
     lock: str
+    #: The id a request names the book by, on a host serving several (decision 0004).
+    book_id: str = ""
 
 
 def _canonical(book: str) -> str:
@@ -56,9 +59,12 @@ def record_path(book: str, directory: Path | None = None) -> Path:
     return root / f"{digest}.json"
 
 
-def publish_server(book: str, url: str, lock: str, directory: Path | None = None) -> ServerRecord:
-    """Record that this process, holding ``book``'s writer lock ``lock``, serves it at ``url``."""
-    record = ServerRecord(_canonical(book), url, os.getpid(), socket.gethostname(), lock)
+def publish_server(
+    book: str, url: str, lock: str, directory: Path | None = None, *, book_id: str = ""
+) -> ServerRecord:
+    """Record that this process, holding ``book``'s writer lock ``lock``, serves it at
+    ``url``, where requests name it ``book_id``."""
+    record = ServerRecord(_canonical(book), url, os.getpid(), socket.gethostname(), lock, book_id)
     path = record_path(book, directory)
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -75,6 +81,7 @@ def publish_server(book: str, url: str, lock: str, directory: Path | None = None
                 "pid": record.pid,
                 "host": record.host,
                 "lock": record.lock,
+                "book_id": record.book_id,
             },
             handle,
             sort_keys=True,
@@ -103,6 +110,7 @@ def _read(path: Path) -> ServerRecord | None:
             int(data["pid"]),
             str(data["host"]),
             str(data["lock"]),
+            str(data.get("book_id", "")),
         )
     except (OSError, ValueError, TypeError, KeyError):
         return None

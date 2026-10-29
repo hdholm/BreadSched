@@ -89,5 +89,5 @@ def share_book(db: DbSQLite, path: str) -> SharedBook | None:
     url = f"http://127.0.0.1:{httpd.server_port}"
     thread = threading.Thread(target=httpd.serve_forever, name="breadsched-share", daemon=True)
     thread.start()
-    record = publish_server(path, url, lock)
+    record = publish_server(path, url, lock, book_id=httpd.books.get(db.path or "", ""))
     return SharedBook(path, url, record, httpd, thread)

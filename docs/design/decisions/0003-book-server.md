@@ -643,7 +643,8 @@ Phase 4 (#358) has begun:
   publish a server record (`breadsched.api.discovery`): one user-only file per
   book in the runtime directory (`$XDG_RUNTIME_DIR/breadsched/servers`, or the
   data directory's `run` folder), named by a hash of the book's canonical path. It
-  holds the address and the process, and no token: a program of the same computer
+  holds the address, the process, and the id requests name the book by on a server
+  holding several (decision 0004), and no token: a program of the same computer
   account proves who it is with that account's device token (decision 0004).
 - **When a record counts:** the record names the server's writer lock by the
   lock's random token (`DbSQLite.writer_lock_token`). It counts only while the

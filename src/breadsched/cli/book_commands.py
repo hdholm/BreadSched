@@ -8,6 +8,7 @@ Here it is done by reading the file, so no GnuCash installation is required.
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack, closing
 from datetime import date
 from pathlib import Path
 
@@ -234,6 +235,16 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return _serve_book(args, open_browser=False, read_only=False)
 
 
+def _add_more_books(parser: argparse.ArgumentParser) -> None:
+    """Further books for the same host (decision 0004)."""
+    parser.add_argument(
+        "more_books",
+        nargs="*",
+        metavar="BOOK",
+        help="more books to serve on the same address; a request names the one it is for",
+    )
+
+
 def _add_listener_options(parser: argparse.ArgumentParser) -> None:
     """Options for serving through a TLS reverse proxy (experimental, #358)."""
     parser.add_argument(
@@ -251,10 +262,11 @@ def _add_listener_options(parser: argparse.ArgumentParser) -> None:
 
 
 def _serve_book(args: argparse.Namespace, *, open_browser: bool, read_only: bool) -> int:
-    """Hold the book and serve it until Ctrl+C.
+    """Hold the books and serve them on one address until Ctrl+C.
 
-    A writable server publishes its address (``api.discovery``) so other commands
-    for the same book connect to it instead of failing on the writer lock.
+    One host serves every book named (decision 0004); a request names the book it is
+    for. A writable server publishes each book's address (``api.discovery``) so other
+    commands for the same book connect to it instead of failing on the writer lock.
     """
     from ..api.discovery import publish_server, withdraw_server
     from ..web.transport import serve, token_from_file, trusted_origin
@@ -264,11 +276,15 @@ def _serve_book(args: argparse.Namespace, *, open_browser: bool, read_only: bool
         token = token_from_file(args.token_file) if args.token_file else None
     except (OSError, ValueError) as exc:
         raise CommandError(str(exc)) from exc
-    db = open_book(args.book, "r" if read_only else "w")
-    try:
+    paths = [args.book, *getattr(args, "more_books", [])]
+    with ExitStack() as books:
+        dbs = [
+            books.enter_context(closing(open_book(path, "r" if read_only else "w")))
+            for path in paths
+        ]
         try:
             httpd = serve(
-                db,
+                dbs,
                 host=args.host,
                 port=args.port,
                 open_browser=open_browser,
@@ -280,29 +296,36 @@ def _serve_book(args: argparse.Namespace, *, open_browser: bool, read_only: bool
         except OSError as exc:
             raise CommandError(f"could not listen on {args.host}:{args.port}: {exc}") from exc
         base = f"http://{args.host}:{httpd.server_port}"
-        lock = db.writer_lock_token
-        record = None if read_only or lock is None else publish_server(args.book, base, lock)
+        records = []
+        for path, db in zip(paths, dbs, strict=True):
+            lock = db.writer_lock_token
+            if not read_only and lock is not None:
+                book_id = httpd.books.get(db.path or "", "")
+                records.append(publish_server(path, base, lock, book_id=book_id))
+        where = paths[0] if len(paths) == 1 else f"{len(paths)} books"
         if token is None:
-            print(f"BreadSched is serving {args.book} at {base}/#token={httpd.token}")
+            print(f"BreadSched is serving {where} at {base}/#token={httpd.token}")
         else:
-            print(f"BreadSched is serving {args.book} at {base}; the token is in {args.token_file}")
+            print(f"BreadSched is serving {where} at {base}; the token is in {args.token_file}")
+        if len(paths) > 1:
+            for path, db in zip(paths, dbs, strict=True):
+                print(f"  {path}: book {httpd.books.get(db.path or '', '')}")
         if origins:
             print("Pages from the trusted origins given may also use it.")
-        if record is not None:
-            print("Other BreadSched commands for this book use this server while it runs.")
+        if records:
+            which = "this book" if len(records) == 1 else "these books"
+            print(f"Other BreadSched commands for {which} use this server while it runs.")
         print("Press Ctrl+C to stop.")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
             print("\nStopped.")
         finally:
-            if record is not None:
+            for record in records:
                 withdraw_server(record)
             httpd.shutdown()
             httpd.server_close()
         return 0
-    finally:
-        db.close()
 
 
 def cmd_gui(args: argparse.Namespace) -> int:
@@ -394,6 +417,7 @@ def register(add: AddCommand) -> None:
     web.add_argument("--port", type=int, default=8765)
     web.add_argument("--open", action="store_true", help="open a browser window")
     web.add_argument("--read-only", action="store_true")
+    _add_more_books(web)
     _add_listener_options(web)
     web.set_defaults(func=cmd_web)
 
@@ -403,6 +427,7 @@ def register(add: AddCommand) -> None:
     )
     serve_cmd.add_argument("--host", default="127.0.0.1")
     serve_cmd.add_argument("--port", type=int, default=8765)
+    _add_more_books(serve_cmd)
     _add_listener_options(serve_cmd)
     serve_cmd.set_defaults(func=cmd_serve)
 

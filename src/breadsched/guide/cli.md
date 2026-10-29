@@ -254,7 +254,12 @@ file only you can read, in your runtime folder, and removes it when it stops; yo
 commands prove they are yours with a private token BreadSched keeps in your settings
 folder.
 `--server URL` names a server explicitly; its token comes from `--token-file PATH` or
-the `BREADSCHED_SERVER_TOKEN` environment variable. Other commands still need the book
+the `BREADSCHED_SERVER_TOKEN` environment variable.
+
+One server can hold several books on one address: `breadsched serve home.breadsched
+rental.breadsched` prints each book's id. Commands on this computer still find each
+book by its file. A `--server` command for a server holding several books names one
+with `--book-id ID`; a browser asks which of the books shared with you to open. Other commands still need the book
 to themselves. The desktop application can share the book it has open the same way
 (**Edit → Preferences… → Sharing**).
 

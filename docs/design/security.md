@@ -44,7 +44,10 @@ A device without a token signs in with a user name and password (decision 0004):
 Origin, and content-type checks still guard. A temporary password must be changed
 before any other request is served. Each request is served in the caller's role in
 the book (owner, editor, viewer, or entry; decision 0004), checked before every book
-operation, and a user given no role there is refused.
+operation, and a user given no role there is refused. A server holding several books
+answers a request for the one its `X-BreadSched-Book` header names; `GET
+/api/v1/books` lists only those the caller has a role in, and someone the server does
+not know is refused before it says whether a named book is there.
 
 Reaching a book from another device goes only through a TLS reverse proxy on the
 same host, with authentication of its own; the server itself never listens beyond

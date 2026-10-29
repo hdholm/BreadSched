@@ -54,9 +54,14 @@ async function render() {
 }
 
 document.getElementById("print-view").addEventListener("click", () => window.print());
-// Quick entry is its own page; it needs the token to use the book too.
-document.getElementById("quick-entry").href = `/quick#${tokenFragment()}`;
-signedIn().then(() => {
+ready().then(({ choices }) => {
+  // Quick entry is its own page; it needs the token, and the book, too.
+  document.getElementById("quick-entry").href = `/quick#${tokenFragment()}`;
+  const switcher = document.getElementById("other-books");
+  if (choices > 1) {
+    switcher.hidden = false;
+    switcher.addEventListener("click", otherBooks);
+  }
   get("/api/summary").then((s) => {
     document.getElementById("book").textContent = s.book || "";
   }).catch(() => {});

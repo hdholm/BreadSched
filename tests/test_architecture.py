@@ -1978,9 +1978,10 @@ class TestWebBoundaries:
     def test_transport_keeps_one_writer_and_opens_file_reads_read_only(self):
         source = (SRC / "web/transport.py").read_text(encoding="utf-8")
         assert 'reader.load(path, mode="r")' in source
-        assert '"writer_db": db' in source
-        # Every writer request runs through one executor: the transport's lock by
-        # default, or a host's own thread (GTK's main loop, #359).
+        # One writer per book a host serves (decision 0004), each with one executor:
+        # the transport's lock by default, or a host's own thread (GTK's main loop,
+        # #359).
+        assert "db=db," in source and "executor=executor or locked," in source
         assert "with lock:" in source
         assert "self._exclusive(lambda: route(self.api_object, body))" in source
         assert source.count("route(self.api_object") == 1

@@ -210,6 +210,8 @@ _SERVICE_MESSAGES = {
     "users.role.invalid": "A role is owner, editor, viewer, or entry",
     "users.grant.host_account": "This computer's own account always owns its books",
     "book.permission.denied": "Your role in this book does not allow that",
+    "book.not_found": "This host does not hold that book",
+    "book.required": "This host holds several books; say which one",
     "signin.failed": "That name and password do not match",
     "signin.throttled": "Too many attempts; wait a little and try again",
     "file.local_only": "Send the file itself: only programs on the book's own computer "

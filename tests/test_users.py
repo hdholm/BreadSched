@@ -12,6 +12,7 @@ import urllib.request
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
+from user_fixtures import new_transaction, person
 
 from breadsched.api import users
 from breadsched.api.discovery import publish_server, record_path
@@ -142,7 +143,7 @@ def test_the_server_record_carries_no_token(hosted, tmp_path, monkeypatch):
     monkeypatch.setattr("breadsched.api.discovery.runtime_directory", lambda: tmp_path / "run")
     publish_server(str(hosted.path), hosted.base, hosted.db.writer_lock_token or "")
     record = json.loads(record_path(str(hosted.path)).read_text(encoding="utf-8"))
-    assert set(record) == {"book", "url", "pid", "host", "lock"}
+    assert set(record) == {"book", "url", "pid", "host", "lock", "book_id"}
     for token in (hosted.httpd.token, hosted.httpd.local_token):
         assert token not in json.dumps(record)
 
@@ -404,45 +405,6 @@ def test_the_cookie_is_secure_through_the_tls_proxy(tmp_path):
 # ------------------------------------------------------------ phase 3: roles
 
 
-def _person(directory: UserDirectory, name: str, role: str | None, book_id: str) -> str:
-    """A user with their own password, the role given in the book, and a token."""
-    directory.add_user(name, "temporary-pass")
-    directory.set_password(name, f"{name}-own-password", current="temporary-pass")
-    if role is not None:
-        directory.grant(book_id, name, role)
-    return directory.issue_token(directory.user(name), f"{name}'s phone")
-
-
-def _new_transaction(db, client: HttpBookClient):
-    from breadsched.gen.lib import AccountType, Amount, Money
-    from breadsched.gen.services.transactions import (
-        SaveTransaction,
-        TransactionInput,
-        TransactionSplitInput,
-    )
-
-    def leaf(atype):
-        return next(
-            account.handle
-            for account in db.iter_accounts()
-            if account.atype is atype and not account.placeholder
-        )
-
-    currency = client.transaction_currency()
-    amount = Money("7.25")
-    return SaveTransaction(
-        TransactionInput(
-            post_date=date(2026, 10, 2),
-            description="Lunch",
-            currency=currency,
-            splits=(
-                TransactionSplitInput(leaf(AccountType.EXPENSE), Amount(amount, currency)),
-                TransactionSplitInput(leaf(AccountType.BANK), Amount(-amount, currency)),
-            ),
-        )
-    )
-
-
 def test_each_role_may_do_what_it_is_given_and_no_more(hosted):
     from dataclasses import replace
 
@@ -453,7 +415,7 @@ def test_each_role_may_do_what_it_is_given_and_no_more(hosted):
     assert book_id and [book.id for book in directory.books()] == [book_id]
 
     def client(name, role):
-        return HttpBookClient(hosted.base, _person(directory, name, role, book_id))
+        return HttpBookClient(hosted.base, person(directory, name, role, book_id))
 
     def refused(call, code="book.permission.denied"):
         with pytest.raises(ApiError) as caught:
@@ -467,17 +429,17 @@ def test_each_role_may_do_what_it_is_given_and_no_more(hosted):
 
     # A viewer reads anything and changes nothing.
     assert viewer.chart() and viewer.plan_bounds()
-    refused(lambda: viewer.save_transaction(_new_transaction(hosted.db, viewer)))
+    refused(lambda: viewer.save_transaction(new_transaction(hosted.db, viewer)))
     refused(lambda: viewer.undo())
 
     # An entry user sees the accounts without values and adds transactions, nothing else.
     assert entry.account_outline()
-    added = entry.save_transaction(_new_transaction(hosted.db, entry))
+    added = entry.save_transaction(new_transaction(hosted.db, entry))
     assert hosted.db.get_transaction(added.handle) is not None
     refused(lambda: entry.chart())
     refused(lambda: entry.register_view(next(iter(hosted.db.iter_accounts())).handle))
     refused(lambda: entry.undo())
-    change = _new_transaction(hosted.db, entry)
+    change = new_transaction(hosted.db, entry)
     refused(lambda: entry.save_transaction(replace(change, existing_handle=added.handle)))
     refused(lambda: entry.delete_transaction(added.handle))
 
@@ -498,8 +460,8 @@ def test_the_routes_that_reach_the_book_file_check_the_role_too(hosted):
     the guarded book, so they check the role before touching the file."""
     directory = UserDirectory()
     book_id = hosted.db.get_metadata("book.id")
-    viewer = _person(directory, "vera", "viewer", book_id)
-    entry = _person(directory, "eli", "entry", book_id)
+    viewer = person(directory, "vera", "viewer", book_id)
+    entry = person(directory, "eli", "entry", book_id)
     document = "/api/attachment/content?transaction=missing&location=receipt.pdf"
     status, body, _ = _call(hosted.base, "GET", document, headers={"X-BreadSched-Token": entry})
     assert (status, body["code"]) == (403, "book.permission.denied")

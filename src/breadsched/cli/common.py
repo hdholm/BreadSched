@@ -158,6 +158,11 @@ def add_server_options(parser: argparse.ArgumentParser) -> None:
         help=f"file holding the --server token (default: ${SERVER_TOKEN_ENV})",
     )
     parser.add_argument(
+        "--book-id",
+        metavar="ID",
+        help="the book to use on a --server that holds several (GET /api/v1/books lists them)",
+    )
+    parser.add_argument(
         "--ca-file",
         metavar="PATH",
         help="certificate authority for an https:// --server (default: the system's)",
@@ -194,6 +199,7 @@ def book_api(args: argparse.Namespace, mode: str) -> AbstractContextManager[Book
             ca_file=getattr(args, "ca_file", None),
             client_cert=getattr(args, "client_cert", None),
             client_key=getattr(args, "client_key", None),
+            book_id=getattr(args, "book_id", None),
         )
     except (OSError, ValueError) as exc:
         raise CommandError(f"could not use --server {url}: {exc}") from exc
