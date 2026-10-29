@@ -43,7 +43,7 @@ def _user_json(user) -> dict:
         "display_name": user.display_name,
         "administrator": user.administrator,
         "this_computer": user.host_account,
-        "has_password": user.has_password,
+        "has_password": user.can_sign_in,
         "must_change": user.must_change,
     }
 
@@ -116,7 +116,7 @@ def cmd_password(args: argparse.Namespace) -> int:
     user = directory.host_user()
     try:
         current = None
-        if user.has_password:
+        if user.can_sign_in:
             current = (
                 sys.stdin.readline().rstrip("\n")
                 if args.password_stdin

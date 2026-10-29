@@ -191,7 +191,9 @@ class User:
     administrator: bool
     #: The computer account that runs the host.
     host_account: bool
-    has_password: bool = False
+    #: A password is set, so the user can sign in from another device. (Named for
+    #: what it allows: nothing holding a password's state is printed or logged.)
+    can_sign_in: bool = False
     #: Signed in with a temporary password that must be changed.
     must_change: bool = False
 

@@ -220,7 +220,7 @@ def test_changing_a_password_needs_the_old_one_and_ends_the_sessions():
         directory.sign_in("alice", "a-new-password", client="10.0.0.2")
     # The computer account sets its first password without a current one.
     host = directory.set_password(getpass.getuser(), "host-password")
-    assert host.has_password
+    assert host.can_sign_in
 
 
 def test_failed_sign_ins_say_nothing_and_are_throttled():
@@ -274,7 +274,7 @@ def test_the_user_commands_manage_users_and_tokens(capsys, monkeypatch):
     assert UserDirectory().authenticate(made["token"]) is None
     monkeypatch.setattr("sys.stdin", io.StringIO("host-password\n"))
     assert main(["password", "--password-stdin"]) == 0
-    assert UserDirectory().host_user().has_password
+    assert UserDirectory().host_user().can_sign_in
     assert main(["users", "remove", "alice"]) == 0
 
 

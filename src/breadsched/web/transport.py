@@ -149,7 +149,7 @@ def _me(caller: Caller, two_step: bool = False) -> dict[str, object]:
         "display_name": user.display_name,
         "administrator": user.administrator,
         "must_change": user.must_change,
-        "has_password": user.has_password,
+        "has_password": user.can_sign_in,
         "this_computer": caller.host_files,
         "two_step": two_step,
     }

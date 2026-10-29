@@ -74,7 +74,7 @@ class UsersDialog(BoundedWindow):
         others = [user for user in self.directory.users() if not user.host_account]
 
         self._heading("You")
-        password = "Change your password…" if you.has_password else "Set a password…"
+        password = "Change your password…" if you.can_sign_in else "Set a password…"
         self.content.append(
             _row(
                 Gtk.Label(
@@ -300,7 +300,7 @@ class UsersDialog(BoundedWindow):
     def _ask_own_password(self, *_args) -> None:
         you = self.directory.host_user()
         fields = [("new", "New password"), ("again", "New password again")]
-        if you.has_password:
+        if you.can_sign_in:
             fields.insert(0, ("current", "Current password"))
 
         def save(values: dict[str, str]) -> str:
@@ -368,7 +368,7 @@ class UsersDialog(BoundedWindow):
             self.directory.stop_two_step(you, values.get("password", ""))
             return "Two-step sign-in is off."
 
-        fields = [("password", "Your password")] if you.has_password else []
+        fields = [("password", "Your password")] if you.can_sign_in else []
         if not fields:
             self._attempt(lambda: off({}))
             return

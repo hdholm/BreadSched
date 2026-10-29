@@ -11130,7 +11130,7 @@ class TestPreferences:
         assert users.status.get_text() == "The two new passwords differ"
         users.form.fill(again="host-password")
         users.form.submit_button.emit("clicked")
-        assert directory.host_user().has_password
+        assert directory.host_user().can_sign_in
 
         # A token for a script is shown once, then listed and revocable.
         users._ask_token()
