@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
 import sys
+from pathlib import Path
 
 from ..api.connect import open_book_api as book_api_for
 from ..api.permissions import ROLES
@@ -136,18 +138,37 @@ def cmd_two_step(args: argparse.Namespace) -> int:
             on = directory.two_step_on(user)
             emit({"two_step": on}, args, f"Two-step sign-in is {'on' if on else 'off'}.")
         elif args.action == "on":
+            if not args.setup_file:
+                raise CommandError(
+                    "two-step on needs --setup-file PATH: the authenticator's secret and "
+                    "the recovery codes are written there, never to the terminal"
+                )
             setup = directory.start_two_step(user)
+            setup_file = Path(args.setup_file)
+            _write_private(
+                setup_file,
+                "Add this to your authenticator app (or open the link on your phone):\n"
+                f"  secret: {setup.secret}\n  link:   {setup.uri}\n",
+            )
             if not args.json:
-                print("Add this to your authenticator app (or open the link on your phone):")
-                print(f"  secret: {setup.secret}")
-                print(f"  link:   {setup.uri}")
+                print(f"Add the secret in {setup_file} to your authenticator app, then enter")
+                print("the code it shows.")
             code = sys.stdin.readline().strip() if args.code_stdin else input("Code: ").strip()
-            codes = directory.confirm_two_step(user, code)
+            try:
+                codes = directory.confirm_two_step(user, code)
+            except UserError:
+                setup_file.unlink(missing_ok=True)
+                raise
+            with setup_file.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    "Recovery codes, each signing you in once without the app:\n"
+                    + "".join(f"  {c}\n" for c in codes)
+                )
             emit(
-                {"two_step": True, "secret": setup.secret, "recovery_codes": list(codes)},
+                {"two_step": True, "setup_file": str(setup_file)},
                 args,
-                "Two-step sign-in is on. Keep these recovery codes somewhere safe; each "
-                "signs you in once without the app:\n" + "\n".join(f"  {c}" for c in codes),
+                f"Two-step sign-in is on. {setup_file} holds the secret and ten recovery "
+                "codes; keep the codes somewhere safe, then delete the file.",
             )
         else:
             password = (
@@ -160,6 +181,18 @@ def cmd_two_step(args: argparse.Namespace) -> int:
     except UserError as error:
         raise _refused(error) from error
     return 0
+
+
+def _write_private(path: Path, text: str) -> None:
+    """Write ``text`` to a new file only this computer account can read."""
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError as error:
+        raise CommandError(f"{path} already exists; choose a new file") from error
+    except OSError as error:
+        raise CommandError(f"cannot write {path}: {error.strerror}") from error
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(text)
 
 
 def cmd_token(args: argparse.Namespace) -> int:
@@ -294,6 +327,12 @@ def register(add: AddCommand) -> None:
         "--code-stdin",
         action="store_true",
         help="read the app's code (on) or your password (off) from standard input",
+    )
+    two_step.add_argument(
+        "--setup-file",
+        metavar="PATH",
+        help="on: a new file, readable only by you, for the authenticator's secret and "
+        "the recovery codes",
     )
     two_step.set_defaults(func=cmd_two_step)
 

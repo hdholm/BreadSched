@@ -395,7 +395,9 @@ other accounts; 3 and 4 make it a household application.
   (`code`; the recovery codes), and `.../off` (`password`); `/api/v1/me` says
   `two_step`. The browser's **Account** view, GTK's **Users and devices**, and
   `breadsched two-step on|off|status` use them; an administrator's
-  `users reset-two-step` (or GTK's **Turn off two-step**) is for a lost phone.
+  `users reset-two-step` (or GTK's **Turn off two-step**) is for a lost phone. The
+  command never prints the secret or the recovery codes: it writes them to a new
+  file only the account can read (`--setup-file`), as `--token-file` keeps tokens.
 
 All five phases are built on the experimental branch. What remains is the security
 review before the proxy is used with all of this.

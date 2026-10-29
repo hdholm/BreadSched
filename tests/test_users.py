@@ -6,6 +6,8 @@ import base64
 import getpass
 import io
 import json
+import os
+import stat
 import sys
 import threading
 import urllib.error
@@ -784,7 +786,7 @@ def test_two_step_sign_in_over_http(hosted):
     assert (status, off["two_step"]) == (200, False)
 
 
-def test_the_two_step_commands_turn_it_on_and_off(capsys, monkeypatch):
+def test_the_two_step_commands_turn_it_on_and_off(capsys, monkeypatch, tmp_path):
     from breadsched.cli.main import main
 
     fixed = b"12345678901234567890"
@@ -798,9 +800,20 @@ def test_the_two_step_commands_turn_it_on_and_off(capsys, monkeypatch):
     assert "off" in capsys.readouterr().out
     step = int(datetime.now(UTC).timestamp()) // users.TOTP_STEP
     monkeypatch.setattr("sys.stdin", io.StringIO(users.totp_code(secret, step) + "\n"))
-    assert main(["two-step", "on", "--code-stdin", "--json"]) == 0
-    shown = json.loads(capsys.readouterr().out)
-    assert shown["two_step"] and shown["secret"] == secret and len(shown["recovery_codes"]) == 10
+    assert main(["two-step", "on", "--code-stdin"]) == 2
+    assert "--setup-file" in capsys.readouterr().err
+    setup_file = tmp_path / "two-step.txt"
+    command = ["two-step", "on", "--code-stdin", "--json", "--setup-file", str(setup_file)]
+    assert main(command) == 0
+    shown = capsys.readouterr().out
+    # The secret and the recovery codes reach only the private file, never the terminal.
+    assert json.loads(shown) == {"two_step": True, "setup_file": str(setup_file)}
+    written = setup_file.read_text(encoding="utf-8")
+    assert f"secret: {secret}" in written and secret not in shown
+    recovery = written.split("without the app:\n", 1)[1].split()
+    assert len(recovery) == 10 and not any(code in shown for code in recovery)
+    if os.name == "posix":
+        assert stat.S_IMODE(setup_file.stat().st_mode) == 0o600
     assert UserDirectory().two_step_on(UserDirectory().host_user())
     # The computer account has no password yet, so turning it off asks for none.
     monkeypatch.setattr("sys.stdin", io.StringIO("\n"))
