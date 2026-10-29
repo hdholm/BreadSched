@@ -20,29 +20,19 @@ never changed a ledger split.
 from __future__ import annotations
 
 import weakref
+from collections.abc import Callable
 from datetime import date
 
-from ...gen.db.sqlite import DbSQLite
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.engine import reconciliation
 from ...gen.lib import Account, Money, ReconciliationStatus
-from ...gen.services import (
-    AddStatementEntry,
-    ReconciliationAction,
-    StartReconciliation,
-    UpdateReconciliation,
-    add_statement_entry,
-    cancel_reconciliation,
-    complete_reconciliation,
-    reopen_reconciliation,
-    start_reconciliation,
-    update_reconciliation,
-)
-from ...gen.services.claims import claim_link_proposals
-from ...gen.services.receivables import reimbursement_proposals
+from ...gen.services import AddStatementEntry, StartReconciliation, UpdateReconciliation
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import claim_link_notice, reimbursement_notice, service_error_message
+from ...presentation import claim_link_notice, reimbursement_notice
 from .. import hidden_accounts
 from ..gi_setup import Gdk, GLib, Gtk, Pango
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
@@ -140,11 +130,11 @@ class _Column:
 
 
 class ReconciliationDialog(BoundedWindow):
-    """Thin GTK presentation over the shared reconciliation service."""
+    """Thin GTK presentation over the book server's reconciliation workflow."""
 
     @classmethod
     def present_for(
-        cls, parent: Gtk.Window | None, db: DbSQLite, account: Account
+        cls, parent: Gtk.Window | None, db: OpenBook, account: Account
     ) -> ReconciliationDialog:
         """Show the account's reconcile window, opening one only if none is open."""
         existing = _OPEN.get((id(db), account.handle))
@@ -155,12 +145,14 @@ class ReconciliationDialog(BoundedWindow):
         dialog.present()
         return dialog
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite, account: Account) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook, account: Account) -> None:
         # Not transient for the main window: a transient window is kept above its
         # parent, and the main window must be able to come in front of this one
         # while a statement is worked through. It still belongs to the application
         # and closes with the window that opened it.
-        super().__init__(title=f"Reconcile {db.full_name(account)}", modal=False)
+        super().__init__(
+            title=f"Reconcile {book_server(db).account(account.handle).full_name}", modal=False
+        )
         self.opener = parent
         if parent is not None:
             application = parent.get_application()
@@ -172,6 +164,7 @@ class ReconciliationDialog(BoundedWindow):
         else:
             self._opener_handler = None
         self.db = db
+        self.book = book_server(db)
         self.account = account
         self.set_default_size(900, 640)
         _OPEN[(id(db), account.handle)] = self
@@ -197,7 +190,9 @@ class ReconciliationDialog(BoundedWindow):
         self._anchor: tuple[_Column, Gtk.ListBoxRow] | None = None
         self._last_split: str | None = None
         self._refresh_source = 0
-        self._handler: int | None = db.connect("database-changed", self._on_book_changed)
+        self._unsubscribe: Callable[[], None] | None = book_server(db).subscribe(
+            self._on_book_changed
+        )
         self.connect("destroy", self._on_destroy)
         self.connect("close-request", self._on_close_request)
         self._render()
@@ -215,9 +210,9 @@ class ReconciliationDialog(BoundedWindow):
         if self._refresh_source:
             GLib.source_remove(self._refresh_source)
             self._refresh_source = 0
-        if self._handler is not None:
-            self.db.disconnect(self._handler)
-            self._handler = None
+        if self._unsubscribe is not None:
+            self._unsubscribe()
+            self._unsubscribe = None
         if self._opener_handler is not None and self.opener is not None:
             self.opener.disconnect(self._opener_handler)
             self._opener_handler = None
@@ -238,18 +233,21 @@ class ReconciliationDialog(BoundedWindow):
         """Follow the book: the statement's lists and totals, or its start page."""
         if not self.db.is_open:
             return
-        if self.db.get_account(self.account.handle) is None:
+        try:
+            state = self.book.reconciliation(self.account.handle).current
+        except ApiError as error:
+            if error.status != 404:
+                raise
+            # The account was deleted while the window was open.
             self.close()
             return
-        current = reconciliation.open_for_account(self.db, self.account.handle)
-        handle = current.handle if current is not None else None
-        if handle != self.session or handle is None:
+        handle = state.reconciliation.handle if state is not None else None
+        if handle != self.session or state is None:
             if handle is None and self.session is None:
                 self._show_starting_balance()
                 return
             self._render()
             return
-        state = reconciliation.summary(self.db, handle)
         if tuple(_candidate_key(item) for item in state.candidates) != self._keys:
             self._fill(state)
         else:
@@ -268,8 +266,8 @@ class ReconciliationDialog(BoundedWindow):
         self._clear(self.body)
         self._clear(self.footer)
         self.set_primary(None)
-        proposals = reimbursement_proposals(self.db, account=self.account.handle).value or ()
-        notice = reimbursement_notice(len(proposals))
+        view = self.book.reconciliation(self.account.handle)
+        notice = reimbursement_notice(view.reimbursement_proposals)
         #: Points at waiting reimbursement proposals: a deposit on this statement
         #: may be money back on a reimbursable expense.
         self.reimbursement_note: Gtk.Label | None = None
@@ -278,20 +276,19 @@ class ReconciliationDialog(BoundedWindow):
             self.reimbursement_note.add_css_class("dim")
             self.body.append(self.reimbursement_note)
         # An FSA statement line may belong on a claim.
-        claims = claim_link_proposals(self.db, account=self.account.handle).value or ()
         self.claim_link_note: Gtk.Label | None = None
-        if claim_notice := claim_link_notice(len(claims)):
+        if claim_notice := claim_link_notice(view.claim_link_proposals):
             self.claim_link_note = Gtk.Label(label=claim_notice, xalign=0, wrap=True)
             self.claim_link_note.add_css_class("dim")
             self.body.append(self.claim_link_note)
-        current = reconciliation.open_for_account(self.db, self.account.handle)
-        self.session = current.handle if current is not None else None
+        current = view.current
+        self.session = current.reconciliation.handle if current is not None else None
         if current is None:
-            self._render_start()
+            self._render_start(view.history)
         else:
-            self._render_session(current.handle)
+            self._render_session(current)
 
-    def _render_start(self) -> None:
+    def _render_start(self, history) -> None:
         explanation = Gtk.Label(
             label=(
                 "Enter the statement date and ending balance. Compare the starting "
@@ -324,11 +321,7 @@ class ReconciliationDialog(BoundedWindow):
         self.status = Gtk.Label(xalign=0, wrap=True)
         self.body.append(self.status)
 
-        completed = [
-            item
-            for item in self.db.iter_reconciliations(self.account.handle)
-            if item.status is ReconciliationStatus.COMPLETED
-        ]
+        completed = [item for item in history if item.status is ReconciliationStatus.COMPLETED]
         if completed:
             latest = max(completed, key=lambda item: item.statement_date)
             reopen = Gtk.Button(label=f"Reopen statement through {latest.statement_date}")
@@ -351,18 +344,19 @@ class ReconciliationDialog(BoundedWindow):
             getattr(box, f"set_margin_{side}")(8)
         self.entry_description = Gtk.Entry(text="Interest", hexpand=True)
         self.entry_description.set_width_chars(12)
-        self.entry_accounts = sorted(
+        records = sorted(
             (
-                account
-                for account in self.db.iter_accounts()
-                if not account.is_root
-                and not account.placeholder
-                and (not account.hidden or hidden_accounts.shown())
-                and account.handle != self.account.handle
+                record
+                for record in self.book.accounts()
+                if not record.account.is_root
+                and not record.account.placeholder
+                and (not record.account.hidden or hidden_accounts.shown())
+                and record.account.handle != self.account.handle
             ),
-            key=self.db.full_name,
+            key=lambda record: record.full_name,
         )
-        names = [self.db.full_name(account) for account in self.entry_accounts]
+        self.entry_accounts = [record.account for record in records]
+        names = [record.full_name for record in records]
         self.entry_account = bounded_dropdown(names or ["(none)"])
         self.entry_account.set_hexpand(True)
         interest = next(
@@ -382,9 +376,9 @@ class ReconciliationDialog(BoundedWindow):
         frame.set_child(box)
         return frame
 
-    def _render_session(self, handle: str) -> None:
-        state = reconciliation.summary(self.db, handle)
+    def _render_session(self, state: reconciliation.ReconciliationSummary) -> None:
         session = state.reconciliation
+        handle = session.handle
         heading = Gtk.Label(label=f"Statement through {session.statement_date}", xalign=0)
         heading.add_css_class("title-3")
         self.body.append(heading)
@@ -463,7 +457,9 @@ class ReconciliationDialog(BoundedWindow):
 
     def _resort(self, handle: str) -> None:
         """Rebuild the lists in their chosen order; checks and selection are kept."""
-        self._fill(reconciliation.summary(self.db, handle))
+        state = self.book.reconciliation(self.account.handle).current
+        if state is not None and state.reconciliation.handle == handle:
+            self._fill(state)
 
     def _fill_lists(self, state: reconciliation.ReconciliationSummary, selected: set) -> None:
         statement = state.reconciliation.statement_date
@@ -539,7 +535,7 @@ class ReconciliationDialog(BoundedWindow):
         except ValueError:
             self.starting_balance.set_text("—")
             return
-        balance = reconciliation.reconciled_balance(self.db, self.account.handle, when)
+        balance = self.book.reconciled_balance(self.account.handle, when)
         self.starting_balance.set_text(balance.format(parens_negative=True))
 
     def _show_totals(self, state: reconciliation.ReconciliationSummary) -> None:
@@ -563,15 +559,16 @@ class ReconciliationDialog(BoundedWindow):
         if self.session is None:
             return
         ordered = [split for split in self._checks if split in checked]
-        result = update_reconciliation(
-            self.db, UpdateReconciliation(self.session, selected_splits=tuple(ordered))
-        )
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            state = self.book.update_reconciliation(
+                UpdateReconciliation(self.session, selected_splits=tuple(ordered))
+            )
+        except ApiError as error:
+            self.status.set_text(str(error))
             return
         self.status.set_text("")
-        self._set_checks(result.value)
-        self._show_totals(result.value)
+        self._set_checks(state)
+        self._show_totals(state)
 
     def _on_check_toggled(self, *_args) -> None:
         if self._updating:
@@ -675,7 +672,7 @@ class ReconciliationDialog(BoundedWindow):
         self._save_checks(current | chosen if checked else current - chosen)
 
     def _statement(self) -> reconciliation.ReconciliationSummary | None:
-        return reconciliation.summary(self.db, self.session) if self.session else None
+        return self.book.reconciliation(self.account.handle).current if self.session else None
 
     def new_transaction(self) -> Gtk.Window:
         """Enter a transaction in this account, dated on the statement."""
@@ -704,8 +701,9 @@ class ReconciliationDialog(BoundedWindow):
         candidate = next((item for item in state.candidates if item.split == split), None)
         if candidate is None:
             return None
-        transaction = self.db.get_transaction(candidate.transaction)
-        if transaction is None:
+        try:
+            transaction = self.book.find_transaction(candidate.transaction)
+        except ApiError:
             return None
         dialog = TransactionDialog(self, self.db, transaction=transaction)
         dialog.present()
@@ -725,17 +723,15 @@ class ReconciliationDialog(BoundedWindow):
             return False
         other = self.entry_accounts[index]
         description = self.entry_description.get_text().strip()
-        result = add_statement_entry(
-            self.db,
-            AddStatementEntry(self.account.handle, other.handle, when, description, amount),
-        )
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            saved = self.book.add_statement_entry(
+                AddStatementEntry(self.account.handle, other.handle, when, description, amount)
+            )
+        except ApiError as error:
+            self.status.set_text(str(error))
             return False
         self.entry_amount.set_text("")
-        self.status.set_text(
-            f"Added {result.value.description} on {when}, cleared; it starts checked."
-        )
+        self.status.set_text(f"Added {saved.description} on {when}, cleared; it starts checked.")
         self._show_starting_balance()
         return True
 
@@ -766,9 +762,10 @@ class ReconciliationDialog(BoundedWindow):
     def abandon(self) -> bool:
         if self.session is None:
             return False
-        result = cancel_reconciliation(self.db, ReconciliationAction(self.session))
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            self.book.cancel_reconciliation(self.session)
+        except ApiError as error:
+            self.status.set_text(str(error))
             return False
         self._render()
         return True
@@ -777,46 +774,44 @@ class ReconciliationDialog(BoundedWindow):
         try:
             statement_date = parse_date_text(self.statement_date.get_text().strip())
             ending = Money(parse_user_amount(self.ending_balance.get_text().strip()))
-            result = start_reconciliation(
-                self.db,
-                StartReconciliation(self.account.handle, statement_date, ending),
+            self.book.start_reconciliation(
+                StartReconciliation(self.account.handle, statement_date, ending)
             )
-        except (ValueError, ArithmeticError) as exc:
+        except (ValueError, ArithmeticError, ApiError) as exc:
             self.status.set_text(str(exc))
-            return
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
             return
         self._render()
 
     def _on_update_target(self, handle: str) -> None:
         try:
             ending = Money(parse_user_amount(self.target_entry.get_text().strip()))
-            result = update_reconciliation(
-                self.db,
-                UpdateReconciliation(handle, ending_balance=ending),
-            )
         except (ValueError, ArithmeticError):
             self.status.set_text("Enter a valid ending balance")
             self.finish.set_sensitive(False)
             return
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            state = self.book.update_reconciliation(
+                UpdateReconciliation(handle, ending_balance=ending)
+            )
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.finish.set_sensitive(False)
             return
         self.status.set_text("")
-        self._show_totals(result.value)
+        self._show_totals(state)
 
     def _on_finish(self, handle: str) -> None:
-        result = complete_reconciliation(self.db, ReconciliationAction(handle))
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            self.book.complete_reconciliation(handle)
+        except ApiError as error:
+            self.status.set_text(str(error))
             return
         self.close()
 
     def _on_reopen(self, handle: str) -> None:
-        result = reopen_reconciliation(self.db, ReconciliationAction(handle))
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            self.book.reopen_reconciliation(handle)
+        except ApiError as error:
+            self.status.set_text(str(error))
             return
         self._render()

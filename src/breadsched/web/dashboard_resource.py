@@ -5,26 +5,22 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import dashboard as engine
-from ..gen.services import DashboardGroupInput, SaveDashboardConfig, save_dashboard_config
-from .controls import service_error
+from ..gen.services import DashboardGroupInput, SaveDashboardConfig
+from ..gen.services.dashboard_config import DashboardGroup
 from .savings_goal_resource import goal_json
 
 if TYPE_CHECKING:
+    from ..api.protocol import BookApi
     from .context import Api
 
 
 def dashboard_report(
-    db: DbSQLite, liquidity_days: int | None, emergency_months: int | None
+    book: BookApi, liquidity_days: int | None, emergency_months: int | None
 ) -> dict:
-    """Build and serialize Dashboard state for the web presentation."""
-    config = engine.DashboardConfig.load(db)
-    if liquidity_days:
-        config.liquidity_days = liquidity_days
-    if emergency_months:
-        config.emergency_months = emergency_months
-    board = engine.build(db, config)
+    """Serialize the book server's Dashboard for the web presentation."""
+    board = book.dashboard(None, liquidity_days, emergency_months)
+    config = board.config
 
     return {
         "summary": _plain(board.report_summary()),
@@ -53,9 +49,9 @@ def dashboard_report(
             "section_titles": dict(engine.SECTIONS),
             "groups": [group_json(group) for group in config.groups],
             "accounts": [
-                {"handle": account.handle, "name": db.full_name(account)}
-                for account in db.iter_accounts()
-                if not account.is_root
+                {"handle": record.account.handle, "name": record.full_name}
+                for record in book.accounts()
+                if not record.account.is_root
             ],
         },
         "groups": [
@@ -231,8 +227,7 @@ def dashboard_config_save(api: Api, payload: dict) -> dict:
                 accounts=tuple(str(handle) for handle in raw_handles),
             )
         )
-    result = save_dashboard_config(
-        api.db,
+    config = api.book.save_dashboard_settings(
         SaveDashboardConfig(
             groups=tuple(groups) if groups is not None else None,
             liquidity_days=int(payload["liquidity_days"]) if "liquidity_days" in payload else None,
@@ -242,17 +237,14 @@ def dashboard_config_save(api: Api, payload: dict) -> dict:
             sections={str(k): v for k, v in sections.items()} if sections is not None else None,
         ),
     )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    config = result.value
     return {
         "groups": [group_json(group) for group in config.groups],
         "liquidity_days": config.liquidity_days,
         "emergency_months": config.emergency_months,
-        "sections": {name: config.shows(name) for name in engine.SECTIONS},
+        "sections": dict(config.sections),
     }
 
 
-def group_json(group: engine.GroupConfig) -> dict:
+def group_json(group: engine.GroupConfig | DashboardGroup) -> dict:
     """A configured group with its member accounts, as both editors show it."""
     return {"name": group.name, "kind": group.kind, "accounts": list(group.accounts)}

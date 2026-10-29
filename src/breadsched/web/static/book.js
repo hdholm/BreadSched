@@ -1,4 +1,4 @@
-// Verify and the packaged user guide.
+// Verify, the packaged user guide, and your own account (decision 0004).
 
 async function showVerify() {
   const data = await get("/api/verify");
@@ -124,4 +124,111 @@ async function showGuide() {
     }, entry.title)));
   if (anchor) setTimeout(() => jump(guideSlug(anchor)), 0);
   return el("div", {}, switcher, body);
+}
+
+// Your own account: your password, two-step sign-in, and signing out. Nothing here
+// touches the book.
+async function showAccount() {
+  const me = await get("/api/v1/me");
+  const wrap = el("section", { class: "account-view" },
+    el("h2", {}, "Your account"),
+    el("p", {}, `Signed in as ${me.display_name || me.name} (${me.name}).`));
+
+  // Password: the current one once there is one; the two new entries must agree.
+  const current = el("input", { type: "password", name: "current", autocomplete: "current-password" });
+  const fresh = el("input", { type: "password", name: "new", autocomplete: "new-password" });
+  const again = el("input", { type: "password", name: "again", autocomplete: "new-password" });
+  const passwordNote = el("p", { class: "note", role: "status" });
+  const passwordForm = el("form", { class: "account-form" },
+    el("h3", {}, me.has_password ? "Change your password" : "Set a password"),
+    me.has_password ? el("label", {}, "Current password", current) : null,
+    el("label", {}, "New password (10 characters or more)", fresh),
+    el("label", {}, "New password again", again),
+    passwordNote,
+    el("button", { type: "submit", class: "action" }, "Save password"));
+  passwordForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (fresh.value !== again.value) {
+      passwordNote.textContent = "The two new passwords differ.";
+      return;
+    }
+    try {
+      await post("/api/v1/me/password", { current: current.value, new: fresh.value });
+      passwordNote.textContent = "Your password is saved.";
+      current.value = fresh.value = again.value = "";
+    } catch (error) {
+      passwordNote.textContent = error.message;
+    }
+  });
+
+  const twoStep = el("section", { class: "two-step" });
+  const showTwoStep = (on) => {
+    const note = el("p", { class: "note", role: "status" });
+    if (on) {
+      const password = el("input", { type: "password", name: "password", autocomplete: "current-password" });
+      const off = el("form", { class: "account-form" },
+        el("h3", {}, "Two-step sign-in is on"),
+        el("p", {}, "Signing in from another device asks for a code from your authenticator app."),
+        el("label", {}, "Password, to turn it off", password), note,
+        el("button", { type: "submit", class: "action" }, "Turn off"));
+      off.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        try {
+          await post("/api/v1/me/two-step/off", { password: password.value });
+          showTwoStep(false);
+        } catch (error) { note.textContent = error.message; }
+      });
+      twoStep.replaceChildren(off);
+      return;
+    }
+    const start = el("button", { type: "button", class: "action" }, "Turn on two-step sign-in");
+    start.addEventListener("click", async () => {
+      let setup;
+      try { setup = await post("/api/v1/me/two-step", {}); } catch (error) {
+        note.textContent = error.message;
+        return;
+      }
+      const code = el("input", { type: "text", name: "code", inputmode: "numeric",
+        autocomplete: "one-time-code" });
+      const confirm = el("form", { class: "account-form" },
+        el("h3", {}, "Add BreadSched to your authenticator app"),
+        el("p", {}, "Open this on the phone with the app, or type the secret into it:"),
+        el("p", {}, el("a", { href: setup.uri, class: "action" }, "Open in authenticator app")),
+        el("p", {}, el("code", { class: "two-step-secret" }, setup.secret)),
+        el("label", {}, "The code the app shows now", code), note,
+        el("button", { type: "submit", class: "action" }, "Turn on"));
+      confirm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        try {
+          const turned = await post("/api/v1/me/two-step/confirm", { code: code.value });
+          showTwoStep(true);
+          twoStep.prepend(el("div", { class: "recovery-codes" },
+            el("h3", {}, "Your recovery codes"),
+            el("p", {}, "Keep these somewhere safe. Each signs you in once without the app; "
+              + "they are not shown again."),
+            el("ul", {}, ...turned.recovery_codes.map((item) => el("li", {}, el("code", {}, item))))));
+        } catch (error) { note.textContent = error.message; }
+      });
+      twoStep.replaceChildren(confirm);
+      code.focus();
+    });
+    twoStep.replaceChildren(el("div", { class: "account-form" },
+      el("h3", {}, "Two-step sign-in is off"),
+      el("p", {}, "Turn it on to need a code from an authenticator app as well as your "
+        + "password when you sign in from another device."),
+      note, start));
+  };
+  showTwoStep(Boolean(me.two_step));
+
+  wrap.append(passwordForm, twoStep);
+  // A page opened with a token (by BreadSched itself) has no session to end.
+  if (!apiToken) {
+    const out = el("button", { type: "button", class: "action" }, "Sign out");
+    out.addEventListener("click", async () => {
+      await fetch("/api/v1/session", { method: "DELETE", headers: apiHeaders() });
+      window.location.reload();
+    });
+    wrap.append(el("div", { class: "account-form" }, out));
+  }
+  return wrap;
 }

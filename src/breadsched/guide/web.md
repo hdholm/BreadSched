@@ -57,7 +57,8 @@ cost method. See [Accounts](../USER_GUIDE.md#accounts).
 ## Configure the Dashboard
 
 On the **Dashboard**, **Configure Dashboard…** opens one dialog for everything the
-Dashboard can be told:
+Dashboard can be told. It is your own arrangement of the book; anyone else it is
+shared with keeps theirs:
 
 - **Horizons**: **Liquid for** so many days of bills, and how many months of
   outgoings the **Emergency fund covers**.
@@ -134,6 +135,34 @@ settings and never shown again (`/api/quotes`, `/api/quotes/source`,
 `/api/quotes/key`, `/api/quotes/update`). See
 [Online quotes](../USER_GUIDE.md#online-quotes).
 
+## Quick entry from a phone
+
+**Quick entry** in the page's header (or the address ending in `/quick`) opens a small
+page for entering one transaction, sized for a phone. Choose **Spent** or
+**Received**, type the amount and description, and choose the account the money came
+from (or went into) and its category; the date starts as today. A description you have
+used before fills in its category, and its amount if you have not typed one.
+**Save** enters it and clears the form for the next one; the account is remembered on
+that device, and **Saved here** lists what you entered. **Full view** opens the
+complete interface. To use it from a phone or tablet away from this computer, reach
+the book through the TLS reverse proxy described in
+[Share a book with a running server](cli.md#share-a-book-with-a-running-server); add the page to the home screen to
+open it like an app, with BreadSched's icon.
+
+A phone or tablet opening the page without the address BreadSched printed asks you to
+**Sign in** with a user name and password (see
+[Users and devices](cli.md#users-and-devices)). The first time, or after
+your password was reset, you choose your own password. The device then stays signed
+in: its session lasts 30 days from when you last used it. What you may do depends on
+the role the book's owner gave you; someone given only the entry role uses quick
+entry and nothing else. **Account** (the last view) changes your password, signs out,
+and turns on **two-step sign-in**: open the link on the phone with your authenticator
+app (or type the secret into it), enter the code it shows, and keep the ten recovery
+codes it then shows once. Signing in then asks for the app's newest code (or a
+recovery code) after your password. When the server holds several books shared with you, the page
+asks which to open, keeps that choice when it reloads, and **Other books** goes back
+to the choice.
+
 ## Enter transactions in a register
 
 The register has a blank row at the bottom for a new entry, **Split** for split
@@ -180,7 +209,8 @@ by commas and choose **Save tags**. **Attach file** copies the chosen file into 
 book's attachment folder and links it; **Link** links a web address or a file that
 is already in the attachment folder. For safety, the browser cannot link a file
 anywhere else; use **Attach file**, or the desktop or command line, for those.
-**Open** shows a PDF, image, or text file in a new tab and saves any other kind,
+**Open** shows a PDF, image, or text file in a new tab and saves any other kind
+(a web page or script attached here is never run, even at its own address),
 **Relink…** asks where in the attachment folder a moved or missing file is now, and
 **Remove**
 unlinks a document without deleting the file. A document linked in GnuCash can only
@@ -268,7 +298,9 @@ When nothing is offered, the page says why.
 
 ## Plan and projection
 
-Set the Plan controls and apply them; they are shared with the desktop application.
+Set the Plan controls and apply them; they are yours, shared with the desktop
+application on the computer that serves the book, while anyone else the book is shared
+with keeps their own.
 The Plan response carries a `currency` object with the conversion evidence shown in
 the foreign-currency note. The summary cards give planned change, actual, and
 variance through the as-of date; **Show** chooses Plan, Period actual, or Period
@@ -400,7 +432,9 @@ and closes, reopens, or deletes a claim (deleting asks first). See
 ## Import files
 
 In **Import**, select a QIF, OFX/QFX, or GnuCash file from the browser (up to
-32 MiB), or enter a path visible to the BreadSched server. Uploaded files are
+32 MiB), or enter a path visible to the BreadSched server. Only the page that
+`breadsched web` opens on the server's own computer may enter a path; a page reached
+from another device, or through a proxy, selects the file instead. Uploaded files are
 retained beside the native book in a `<book>.uploads` directory; keep that directory
 with the book if you want to repeat an import from its remembered path. Uploading
 the same filename again refreshes the same source identity; different filenames are

@@ -61,9 +61,22 @@ def test_metainfo_names_the_application_and_its_desktop_entry():
 
 
 def test_icon_is_a_scalable_svg():
+    """The scalable icon carries the 512-pixel artwork that ``scripts/brand_assets.py``
+    makes from ``data/brand``, filling the whole view."""
+    import base64
+
     root = ET.parse(ICON).getroot()
     assert root.tag == "{http://www.w3.org/2000/svg}svg"
-    assert root.get("viewBox") == "0 0 128 128"
+    assert root.get("viewBox") == "0 0 512 512"
+    [image] = root.findall("{http://www.w3.org/2000/svg}image")
+    assert (image.get("width"), image.get("height")) == ("512", "512")
+    location = image.get("{http://www.w3.org/1999/xlink}href")
+    prefix = "data:image/png;base64,"
+    assert location.startswith(prefix)
+    png = base64.b64decode(location[len(prefix) :])
+    assert png.startswith(b"\x89PNG\r\n\x1a\n")
+    # The PNG header's width and height.
+    assert (int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big")) == (512, 512)
 
 
 def test_flatpak_manifest_installs_each_desktop_file_under_the_app_id():

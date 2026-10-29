@@ -2,7 +2,9 @@
 
 Choosing a source and storing quotes go through ``gen/services/quotes``; fetching
 uses ``plugins.quotes`` and is the only network access the web server makes. The
-key is never sent back to the browser, which learns only whether one is set.
+key is never sent back to the browser, which learns only whether one is set. The
+web adapter fetches and the book server, ``api.book``, stores (#354), so the book
+server itself never reaches the network.
 """
 
 from __future__ import annotations
@@ -10,14 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from ..gen.engine.currency import reporting_currency_handle
-from ..gen.services.quotes import (
-    Prefetched,
-    SetQuoteSource,
-    quote_requests,
-    set_quote_source,
-    update_quotes,
-)
+from ..gen.services.quotes import SetQuoteSource, StoreQuotes
 from ..gen.utils.settings import Settings
 from ..plugins.quotes import (
     OnlineQuotes,
@@ -28,7 +23,6 @@ from ..plugins.quotes import (
     save_alphavantage_key,
 )
 from ..presentation import price_text
-from .controls import service_error
 
 if TYPE_CHECKING:
     from .context import Api
@@ -52,8 +46,6 @@ def _text(payload: Mapping[str, Any], key: str) -> str:
 
 
 def quotes(api: Api) -> dict[str, object]:
-    db = api.db
-    reporting = reporting_currency_handle(db)
     info = finance_quote_info()
     return {
         "commodities": [
@@ -61,11 +53,11 @@ def quotes(api: Api) -> dict[str, object]:
                 "handle": item.handle,
                 "mnemonic": item.mnemonic,
                 "fullname": item.fullname,
-                "currency": item.is_currency,
+                "currency": item.currency,
                 "quote_source": item.quote_source,
             }
-            for item in sorted(db.iter_commodities(), key=lambda c: (c.is_currency, c.mnemonic))
-            if item.handle != reporting
+            for item in api.book.quote_plan().commodities
+            if not item.reporting
         ],
         "finance_quote": {"available": info.available, "reason": info.reason},
         # Every source a commodity may name, offered as choices (#317).
@@ -75,15 +67,10 @@ def quotes(api: Api) -> dict[str, object]:
 
 
 def quote_source_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    result = set_quote_source(
-        api.db, SetQuoteSource(_text(payload, "commodity"), _text(payload, "source"))
+    source = api.book.set_quote_source(
+        SetQuoteSource(_text(payload, "commodity"), _text(payload, "source"))
     )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return {
-        "source": result.value,
-        "warning": quote_source_warning(result.value, finance_quote_info()),
-    }
+    return {"source": source, "warning": quote_source_warning(source, finance_quote_info())}
 
 
 def quote_key_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
@@ -93,16 +80,12 @@ def quote_key_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
 
 
 def quotes_update(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    db = api.db
-    requests = quote_requests(db)
-    reporting = db.get_commodity(reporting_currency_handle(db))
+    plan = api.book.quote_plan()
     fetched: tuple[list, list] = ([], [])
-    if requests and reporting is not None:
-        fetched = make_fetcher(alphavantage_key(settings())).fetch(requests, reporting.mnemonic)
-    result = update_quotes(db, Prefetched(*fetched))
-    if result.value is None:
-        raise service_error(result.errors[0])
-    update = result.value
+    if plan.requests and plan.currency is not None:
+        fetched = make_fetcher(alphavantage_key(settings())).fetch(plan.requests, plan.currency)
+    quotes, failures = fetched
+    update = api.book.store_quotes(StoreQuotes(tuple(quotes), tuple(failures)))
     return {
         "stored": [
             {

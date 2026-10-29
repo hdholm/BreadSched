@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import InvalidOperation
 from typing import TYPE_CHECKING, Any
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, unquote
 
 from ..gen.lib.money import Money
 from .account_resource import (
@@ -151,6 +151,206 @@ from .schedule_resource import (
     scheduled_save,
 )
 from .tax_resource import tax_marks_save, tax_marks_view, tax_year_report
+from .v1_resource import (
+    account_balance_get,
+    account_delete,
+    account_get,
+    account_lookup,
+    account_outline_get,
+    account_save,
+    account_suggestions_apply,
+    account_suggestions_get,
+    accounts_get,
+    activity_get,
+    advance_days_get,
+    advance_days_patch,
+    assumption_period_delete,
+    assumption_period_save,
+    attachment_file_v1,
+    attachment_folders_patch,
+    attachment_link_v1,
+    attachment_relink_v1,
+    attachment_remove_v1,
+    attachments_get,
+    balances_get,
+    base_assumptions_get,
+    base_assumptions_save,
+    benefit_years_get,
+    book_counts_get,
+    book_get,
+    book_id_get,
+    book_summary_get,
+    book_verification_get,
+    budget_jars_get,
+    chart_get,
+    claim_links_accept,
+    claim_proposals_get,
+    cleared_toggle,
+    commodities_get,
+    csv_import_v1,
+    csv_inspect_v1,
+    csv_preview_v1,
+    currencies_get,
+    currency_get,
+    currency_lookup,
+    dashboard_defaults_get,
+    dashboard_get,
+    dashboard_settings_get,
+    dashboard_settings_patch,
+    drawdown_accounts_get,
+    drawdown_remove,
+    drawdown_save,
+    due_occurrences_get,
+    due_review_get,
+    due_review_post,
+    entry_accounts_get,
+    entry_amount_get,
+    entry_num_get,
+    entry_suggestion_get,
+    entry_trade_get,
+    exchange_rate_latest,
+    exchange_rate_save,
+    expense_explorer_v1,
+    find_post,
+    fsa_claim_close_v1,
+    fsa_claim_lookup,
+    fsa_claim_remove,
+    fsa_claim_reopen_v1,
+    fsa_claim_report_get,
+    fsa_claim_standing_get,
+    fsa_claim_store,
+    fsa_claims_get,
+    goal_allocate,
+    goal_close,
+    goal_delete,
+    goal_lookup,
+    goal_override,
+    goal_reopen,
+    goal_save,
+    goals_get,
+    held_imports_get,
+    held_imports_resolve,
+    historical_estimate_accept_v1,
+    historical_estimate_draft,
+    historical_estimates_get,
+    holdings_get,
+    import_book_v1,
+    import_source_get,
+    loan_choices_get,
+    loan_preview_v1,
+    loan_save_v1,
+    net_worth_change_get,
+    net_worth_history_get,
+    next_get,
+    next_post,
+    pay_change_apply,
+    pay_change_preview,
+    paycheck_create,
+    paycheck_get,
+    payroll_get,
+    payroll_template_draft,
+    payroll_template_remove,
+    payroll_template_store,
+    plan_bounds_get,
+    plan_cell_v1,
+    plan_matches_get,
+    plan_occurrence_lookup,
+    plan_occurrences_get,
+    plan_settings_get,
+    plan_settings_patch,
+    plan_v1,
+    post_due_post,
+    projection_month_v1,
+    projection_v1,
+    quote_plan_get,
+    quote_source_patch,
+    quotes_store,
+    realized_gains_get,
+    receivable_candidates_get,
+    receivable_clear_dispute,
+    receivable_costs_get,
+    receivable_detach,
+    receivable_lookup,
+    receivables_get,
+    reconciled_balance_get,
+    reconciliation_get,
+    redo_post,
+    register_changes_v1,
+    register_get,
+    register_view_get,
+    reimbursement_proposals_accept,
+    reimbursement_proposals_get,
+    reporting_currency_get,
+    review_claim_v1,
+    review_detail_get,
+    review_match_v1,
+    review_queue_get,
+    review_reject_v1,
+    review_skip_v1,
+    review_unexpected_v1,
+    sale_lots_get,
+    sale_lots_post,
+    scenario_assumptions_save,
+    scenario_delete_v1,
+    scenario_duplicate_v1,
+    scenario_events_get,
+    scenario_lookup,
+    scenario_save_v1,
+    scenario_schedule_fixed_draft,
+    scenario_schedule_fixed_post,
+    scenario_schedule_formula_draft,
+    scenario_schedule_formula_post,
+    scenario_suppress,
+    scenarios_get,
+    schedule_delete,
+    schedule_draft_fixed,
+    schedule_draft_formula,
+    schedule_draft_get,
+    schedule_duplicate,
+    schedule_editor_get,
+    schedule_layout_post,
+    schedule_lookup,
+    schedule_save_fixed,
+    schedule_save_formula,
+    scheduled_page_get,
+    schedules_view_get,
+    securities_get,
+    security_price_save,
+    statement_entry_add,
+    tagged_get,
+    tags_get,
+    tags_patch,
+    tax_marks_get,
+    tax_marks_patch,
+    tax_year_get,
+    transaction_delete,
+    transaction_draft,
+    transaction_editable,
+    transaction_editor_get,
+    transaction_lookup,
+    transaction_save,
+    undo_post,
+    writeback_apply,
+    writeback_get,
+    writeback_settings_get,
+    writeback_settings_patch,
+)
+from .v1_resource import receivable_delete as v1_receivable_delete
+from .v1_resource import receivable_dispute as v1_receivable_dispute
+from .v1_resource import receivable_link as v1_receivable_link
+from .v1_resource import receivable_save as v1_receivable_save
+from .v1_resource import receivable_write_off as v1_receivable_write_off
+from .v1_resource import reconciliation_cancel as v1_reconciliation_cancel
+from .v1_resource import reconciliation_complete as v1_reconciliation_complete
+from .v1_resource import reconciliation_reopen as v1_reconciliation_reopen
+from .v1_resource import reconciliation_start as v1_reconciliation_start
+from .v1_resource import reconciliation_update as v1_reconciliation_update
+from .v1_resource import reimbursement_override as v1_reimbursement_override
+from .v1_resource import rule_add as v1_rule_add
+from .v1_resource import rule_delete as v1_rule_delete
+from .v1_resource import rule_move as v1_rule_move
+from .v1_resource import rules_accept as v1_rules_accept
+from .v1_resource import rules_get as v1_rules_get
 
 if TYPE_CHECKING:
     from .context import Api
@@ -266,7 +466,7 @@ def _dashboard(api: Api, query: QueryParams) -> object:
     emergency = query.integer("emergency_months", default=0, minimum=0, maximum=1200)
     query.finish()
     assert liquidity is not None and emergency is not None
-    return dashboard_report(api.db, liquidity, emergency)
+    return dashboard_report(api.book, liquidity, emergency)
 
 
 def _scheduled(api: Api, query: QueryParams) -> object:
@@ -290,7 +490,7 @@ def _plan(api: Api, query: QueryParams) -> object:
         query.text(name) for name in ("from", "through", "period", "scenario", "compare", "measure")
     )
     query.finish()
-    return plan_report(api.db, *values)
+    return plan_report(api.book, *values)
 
 
 def _plan_detail(api: Api, query: QueryParams) -> object:
@@ -302,7 +502,7 @@ def _plan_detail(api: Api, query: QueryParams) -> object:
     requirement_kind = query.text("requirement_kind")
     query.finish()
     assert account is not None and start is not None and end is not None
-    return plan_detail_report(api.db, account, start, end, scenario, flow_kind, requirement_kind)
+    return plan_detail_report(api.book, account, start, end, scenario, flow_kind, requirement_kind)
 
 
 def _expense_explorer(api: Api, query: QueryParams) -> object:
@@ -316,7 +516,9 @@ def _expense_explorer(api: Api, query: QueryParams) -> object:
     if rollover not in (None, "0", "1"):
         raise QueryError("query.invalid", ("rollover",))
     query.finish()
-    return expense_report(api.db, start, through, period, scenario, account, index, rollover == "1")
+    return expense_report(
+        api.book, start, through, period, scenario, account, index, rollover == "1"
+    )
 
 
 def _projection(api: Api, query: QueryParams) -> object:
@@ -402,7 +604,7 @@ def _without_body(route: Callable[[Api], object]) -> PostRoute:
 
 
 def _currency_quote(api: Api, body: Mapping[str, Any]) -> object:
-    return save_currency_quote(api.db, body)
+    return save_currency_quote(api, body)
 
 
 POST_ROUTES: dict[str, PostRoute] = {
@@ -499,3 +701,249 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/projection/explain": projection_explain,
     "/api/projection/save": projection_save,
 }
+
+
+# ------------------------------------------------------------------ /api/v1
+#
+# The versioned book-server resources (#357). A route is a method and
+# a path pattern whose ``{name}`` segments are handed to the handler; GET handlers
+# take the typed query, writes the JSON body. ``/api/v1/events`` is a stream the
+# transport serves itself.
+
+V1Get = Callable[["Api", dict[str, str], QueryParams], object]
+V1Write = Callable[["Api", dict[str, str], dict[str, Any]], object]
+
+V1_PREFIX = "/api/v1"
+V1_EVENTS = "/api/v1/events"
+
+V1_ROUTES: tuple[tuple[str, str, Callable[..., object]], ...] = (
+    ("GET", "/book", book_get),
+    ("GET", "/due-review", due_review_get),
+    ("GET", "/schedules/due", due_occurrences_get),
+    ("POST", "/due-review", due_review_post),
+    ("GET", "/schedules/lookup", schedule_lookup),
+    ("GET", "/schedules/view", schedules_view_get),
+    ("GET", "/schedules/{handle}/editor", schedule_editor_get),
+    ("POST", "/schedules/layout", schedule_layout_post),
+    ("GET", "/schedules/page", scheduled_page_get),
+    ("GET", "/transactions/{handle}/schedule-draft", schedule_draft_get),
+    ("GET", "/schedules/{handle}/next", next_get),
+    ("POST", "/schedules/{handle}/next", next_post),
+    ("GET", "/schedules/{handle}/advance-days", advance_days_get),
+    ("PATCH", "/schedules/{handle}/advance-days", advance_days_patch),
+    ("DELETE", "/schedules/{handle}", schedule_delete),
+    ("POST", "/schedules/{handle}/duplicate", schedule_duplicate),
+    ("POST", "/post-due", post_due_post),
+    ("POST", "/schedules/fixed", schedule_save_fixed),
+    ("POST", "/schedules/formula", schedule_save_formula),
+    ("POST", "/transactions", transaction_save),
+    ("POST", "/transaction-drafts", transaction_draft),
+    ("POST", "/schedule-drafts/fixed", schedule_draft_fixed),
+    ("POST", "/schedule-drafts/formula", schedule_draft_formula),
+    ("DELETE", "/transactions/{handle}", transaction_delete),
+    ("GET", "/currency", currency_get),
+    ("GET", "/accounts/lookup", account_lookup),
+    ("GET", "/transactions/lookup", transaction_lookup),
+    ("GET", "/transactions/{handle}/editable", transaction_editable),
+    ("GET", "/accounts/{handle}/register", register_get),
+    ("GET", "/accounts/{handle}/register-view", register_view_get),
+    ("POST", "/accounts/{handle}/register-changes", register_changes_v1),
+    ("GET", "/accounts/{handle}/balance", account_balance_get),
+    ("GET", "/balances", balances_get),
+    ("GET", "/accounts", accounts_get),
+    ("POST", "/accounts", account_save),
+    ("GET", "/accounts/{handle}", account_get),
+    ("DELETE", "/accounts/{handle}", account_delete),
+    ("GET", "/account-outline", account_outline_get),
+    ("GET", "/chart", chart_get),
+    ("GET", "/receivables", receivables_get),
+    ("POST", "/receivables", v1_receivable_save),
+    ("GET", "/receivables/lookup", receivable_lookup),
+    ("GET", "/receivables/costs", receivable_costs_get),
+    ("GET", "/receivables/candidates", receivable_candidates_get),
+    ("POST", "/receivables/{handle}/splits", v1_receivable_link),
+    ("DELETE", "/receivables/{handle}/splits/{transaction}/{split}", receivable_detach),
+    ("POST", "/receivables/{handle}/dispute", v1_receivable_dispute),
+    ("DELETE", "/receivables/{handle}/dispute", receivable_clear_dispute),
+    ("POST", "/receivables/{handle}/write-offs", v1_receivable_write_off),
+    ("DELETE", "/receivables/{handle}", v1_receivable_delete),
+    ("GET", "/reimbursement-proposals", reimbursement_proposals_get),
+    ("POST", "/reimbursement-proposals/accept", reimbursement_proposals_accept),
+    ("POST", "/scenarios/{handle}/reimbursements", v1_reimbursement_override),
+    ("GET", "/scenarios", scenarios_get),
+    ("POST", "/scenarios", scenario_save_v1),
+    ("GET", "/scenarios/lookup", scenario_lookup),
+    ("POST", "/scenario-assumptions", scenario_assumptions_save),
+    ("POST", "/scenarios/duplicate", scenario_duplicate_v1),
+    ("DELETE", "/scenarios/{handle}", scenario_delete_v1),
+    ("POST", "/scenarios/{handle}/suppressed-schedules", scenario_suppress),
+    ("GET", "/drawdown-accounts", drawdown_accounts_get),
+    ("POST", "/drawdowns", drawdown_save),
+    ("DELETE", "/scenarios/{handle}/drawdowns/{drawdown}", drawdown_remove),
+    ("GET", "/assumptions", base_assumptions_get),
+    ("POST", "/assumptions", base_assumptions_save),
+    ("POST", "/scenarios/{handle}/periods", assumption_period_save),
+    ("DELETE", "/scenarios/{handle}/periods/{index}", assumption_period_delete),
+    ("GET", "/payroll", payroll_get),
+    ("GET", "/schedules/{handle}/paycheck", paycheck_get),
+    ("POST", "/payroll/templates/draft", payroll_template_draft),
+    ("POST", "/payroll/templates", payroll_template_store),
+    ("DELETE", "/payroll/templates/{name}", payroll_template_remove),
+    ("POST", "/payroll/paychecks", paycheck_create),
+    ("POST", "/payroll/pay-changes/preview", pay_change_preview),
+    ("POST", "/payroll/pay-changes", pay_change_apply),
+    ("GET", "/fsa-claims", fsa_claims_get),
+    ("GET", "/fsa-claims/lookup", fsa_claim_lookup),
+    ("GET", "/fsa-claims/{handle}/standing", fsa_claim_standing_get),
+    ("GET", "/fsa-claims/report", fsa_claim_report_get),
+    ("POST", "/fsa-claims", fsa_claim_store),
+    ("DELETE", "/fsa-claims/{handle}", fsa_claim_remove),
+    ("POST", "/fsa-claims/{handle}/close", fsa_claim_close_v1),
+    ("POST", "/fsa-claims/{handle}/reopen", fsa_claim_reopen_v1),
+    ("GET", "/fsa-years", benefit_years_get),
+    ("GET", "/fsa-claim-proposals", claim_proposals_get),
+    ("POST", "/fsa-claim-proposals/accept", claim_links_accept),
+    ("GET", "/review", review_queue_get),
+    ("GET", "/review/{transaction}", review_detail_get),
+    ("POST", "/review/{transaction}/match", review_match_v1),
+    ("POST", "/review/{transaction}/reject", review_reject_v1),
+    ("POST", "/review/{transaction}/skip", review_skip_v1),
+    ("POST", "/review/{transaction}/unexpected", review_unexpected_v1),
+    ("POST", "/review/{transaction}/claim", review_claim_v1),
+    ("GET", "/plan/occurrences", plan_occurrences_get),
+    ("GET", "/plan/occurrences/lookup", plan_occurrence_lookup),
+    ("GET", "/transactions/{handle}/plan-matches", plan_matches_get),
+    ("GET", "/held-imports", held_imports_get),
+    ("GET", "/account-suggestions", account_suggestions_get),
+    ("POST", "/account-suggestions/apply", account_suggestions_apply),
+    ("POST", "/held-imports/resolve", held_imports_resolve),
+    ("GET", "/transactions/{handle}/splits/{split}/lots", sale_lots_get),
+    ("POST", "/transactions/{handle}/splits/{split}/lots", sale_lots_post),
+    ("GET", "/tax-marks", tax_marks_get),
+    ("PATCH", "/tax-marks", tax_marks_patch),
+    ("GET", "/quotes", quote_plan_get),
+    ("POST", "/quotes", quotes_store),
+    ("PATCH", "/commodities/{handle}/quote-source", quote_source_patch),
+    ("GET", "/loans/choices", loan_choices_get),
+    ("POST", "/loans/preview", loan_preview_v1),
+    ("POST", "/loans", loan_save_v1),
+    ("GET", "/currencies", currencies_get),
+    ("GET", "/currencies/lookup", currency_lookup),
+    ("POST", "/exchange-rates", exchange_rate_save),
+    ("GET", "/exchange-rates/latest", exchange_rate_latest),
+    ("GET", "/securities", securities_get),
+    ("POST", "/security-prices", security_price_save),
+    ("GET", "/dashboard", dashboard_get),
+    ("GET", "/gnucash/writeback", writeback_get),
+    ("POST", "/gnucash/writeback", writeback_apply),
+    ("GET", "/gnucash/writeback/settings", writeback_settings_get),
+    ("PATCH", "/gnucash/writeback/settings", writeback_settings_patch),
+    ("GET", "/dashboard/settings", dashboard_settings_get),
+    ("GET", "/dashboard/settings/defaults", dashboard_defaults_get),
+    ("PATCH", "/dashboard/settings", dashboard_settings_patch),
+    ("POST", "/find", find_post),
+    ("GET", "/commodities", commodities_get),
+    ("GET", "/transaction-editor", transaction_editor_get),
+    ("POST", "/plan/cell", plan_cell_v1),
+    ("POST", "/imports/csv/inspect", csv_inspect_v1),
+    ("POST", "/imports/csv/preview", csv_preview_v1),
+    ("POST", "/imports/csv", csv_import_v1),
+    ("POST", "/imports", import_book_v1),
+    ("GET", "/imports/source", import_source_get),
+    ("GET", "/scenarios/{handle}/events", scenario_events_get),
+    ("POST", "/scenario-schedules/fixed", scenario_schedule_fixed_post),
+    ("POST", "/scenario-schedules/formula", scenario_schedule_formula_post),
+    ("POST", "/scenario-schedules/fixed/draft", scenario_schedule_fixed_draft),
+    ("POST", "/scenario-schedules/formula/draft", scenario_schedule_formula_draft),
+    ("GET", "/attachments", attachments_get),
+    ("POST", "/transactions/{handle}/attachments", attachment_link_v1),
+    ("POST", "/transactions/{handle}/attachments/files", attachment_file_v1),
+    ("POST", "/transactions/{handle}/attachments/remove", attachment_remove_v1),
+    ("POST", "/transactions/{handle}/attachments/relink", attachment_relink_v1),
+    ("PATCH", "/attachment-folders", attachment_folders_patch),
+    ("GET", "/net-worth", net_worth_history_get),
+    ("GET", "/reporting-currency", reporting_currency_get),
+    ("POST", "/plan", plan_v1),
+    ("GET", "/plan/bounds", plan_bounds_get),
+    ("GET", "/plan/settings", plan_settings_get),
+    ("PATCH", "/plan/settings", plan_settings_patch),
+    ("POST", "/projection", projection_v1),
+    ("POST", "/projection/month", projection_month_v1),
+    ("POST", "/expense-explorer", expense_explorer_v1),
+    ("GET", "/net-worth/change", net_worth_change_get),
+    ("GET", "/activity", activity_get),
+    ("GET", "/historical-estimates", historical_estimates_get),
+    ("POST", "/historical-estimates", historical_estimate_accept_v1),
+    ("POST", "/historical-estimates/draft", historical_estimate_draft),
+    ("GET", "/book/counts", book_counts_get),
+    ("GET", "/book/id", book_id_get),
+    ("GET", "/book/summary", book_summary_get),
+    ("GET", "/book/verification", book_verification_get),
+    ("GET", "/entry/suggestion", entry_suggestion_get),
+    ("GET", "/entry/amount", entry_amount_get),
+    ("GET", "/entry/trade", entry_trade_get),
+    ("GET", "/entry/accounts", entry_accounts_get),
+    ("GET", "/entry/num", entry_num_get),
+    ("GET", "/budget-jars", budget_jars_get),
+    ("GET", "/holdings", holdings_get),
+    ("GET", "/realized-gains", realized_gains_get),
+    ("GET", "/tax-year", tax_year_get),
+    ("GET", "/accounts/{handle}/reconciliation", reconciliation_get),
+    ("POST", "/reconciliations", v1_reconciliation_start),
+    ("PATCH", "/reconciliations/{handle}", v1_reconciliation_update),
+    ("POST", "/reconciliations/{handle}/complete", v1_reconciliation_complete),
+    ("POST", "/reconciliations/{handle}/cancel", v1_reconciliation_cancel),
+    ("POST", "/reconciliations/{handle}/reopen", v1_reconciliation_reopen),
+    ("POST", "/transactions/{handle}/splits/{split}/cleared", cleared_toggle),
+    ("GET", "/accounts/{handle}/reconciled-balance", reconciled_balance_get),
+    ("POST", "/accounts/{handle}/statement-entries", statement_entry_add),
+    ("GET", "/goals", goals_get),
+    ("POST", "/goals", goal_save),
+    ("GET", "/goals/lookup", goal_lookup),
+    ("POST", "/goals/{handle}/allocations", goal_allocate),
+    ("POST", "/goals/{handle}/close", goal_close),
+    ("POST", "/goals/{handle}/reopen", goal_reopen),
+    ("POST", "/goals/{handle}/override", goal_override),
+    ("DELETE", "/goals/{handle}", goal_delete),
+    ("GET", "/tags", tags_get),
+    ("GET", "/tags/transactions", tagged_get),
+    ("PATCH", "/transactions/{handle}/tags", tags_patch),
+    ("GET", "/rules", v1_rules_get),
+    ("POST", "/rules", v1_rule_add),
+    ("POST", "/rules/accept", v1_rules_accept),
+    ("PATCH", "/rules/{handle}", v1_rule_move),
+    ("DELETE", "/rules/{handle}", v1_rule_delete),
+    ("POST", "/undo", undo_post),
+    ("POST", "/redo", redo_post),
+)
+
+
+def match_v1(method: str, path: str) -> tuple[Callable[..., object], dict[str, str]] | None:
+    """The handler and path values for ``method path``, or None.
+
+    A path that names a resource with other methods raises ``LookupError`` so the
+    transport can answer 405 rather than 404.
+    """
+    if not path.startswith(V1_PREFIX + "/"):
+        return None
+    parts = path[len(V1_PREFIX) :].strip("/").split("/")
+    other_method = False
+    for route_method, pattern, handler in V1_ROUTES:
+        expected = pattern.strip("/").split("/")
+        if len(expected) != len(parts):
+            continue
+        values: dict[str, str] = {}
+        for want, got in zip(expected, parts, strict=True):
+            if want.startswith("{") and want.endswith("}"):
+                if not got:
+                    break
+                values[want[1:-1]] = unquote(got)
+            elif want != got:
+                break
+        else:
+            if route_method == method:
+                return handler, values
+            other_method = True
+    if other_method:
+        raise LookupError(path)
+    return None

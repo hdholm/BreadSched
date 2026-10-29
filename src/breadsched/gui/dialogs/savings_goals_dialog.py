@@ -1,4 +1,4 @@
-"""Add, fund, close, and review savings goals through the shared goal service.
+"""Add, fund, close, and review savings goals through the book server.
 
 A goal sets aside a prorated share of each income received until its target
 date, like a pending bill; extra money can be allocated at any time. The goal
@@ -11,8 +11,8 @@ from __future__ import annotations
 from datetime import date
 from functools import partial
 
-from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.currency import reporting_currency_label
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.engine.savings_goals import goals_chart
 from ...gen.lib.money import Money
 from ...gen.lib.savings_goal import SavingsGoal
@@ -21,20 +21,11 @@ from ...gen.services.savings_goals import (
     SaveSavingsGoal,
     SavingsGoalReport,
     SetGoalOverride,
-    allocate_to_goal,
-    close_savings_goal,
-    delete_savings_goal,
-    goal_accounts,
-    goal_overrides,
-    purchase_accounts,
-    query_savings_goals,
-    reopen_savings_goal,
-    save_savings_goal,
-    set_goal_override,
 )
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import goal_override_text, goal_status_text, service_error_message
+from ...presentation import goal_override_text, goal_status_text
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
@@ -48,7 +39,7 @@ __all__ = ["SavingsGoalsDialog"]
 class SavingsGoalsDialog(BoundedWindow):
     """Goal list with each goal's progress, above the goal editor."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite, today: date | None = None) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook, today: date | None = None) -> None:
         super().__init__(title="Savings Goals", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
         self.set_default_size(900, 640)
@@ -186,26 +177,27 @@ class SavingsGoalsDialog(BoundedWindow):
     # ------------------------------------------------------------------ views
 
     def _load_accounts(self) -> None:
-        choices = goal_accounts(self.db)
-        self._accounts = [handle for handle, _name in choices]
-        self.account_picker.set_model(Gtk.StringList.new([name for _handle, name in choices]))
-        scenarios = sorted(self.db.iter_scenarios(), key=lambda item: item.name.casefold())
+        view = book_server(self.db).savings_goals(self.today)
+        choices = view.accounts
+        self._accounts = [choice.handle for choice in choices]
+        self.account_picker.set_model(Gtk.StringList.new([choice.name for choice in choices]))
+        scenarios = view.scenarios
         self._scenarios = [scenario.handle for scenario in scenarios]
         self.scenario_picker.set_model(
             Gtk.StringList.new([scenario.name for scenario in scenarios])
         )
-        purchases = purchase_accounts(self.db)
-        self._purchase_accounts = [handle for handle, _name in purchases]
+        purchases = view.purchase_accounts
+        self._purchase_accounts = [choice.handle for choice in purchases]
         self.purchase_picker.set_model(
-            Gtk.StringList.new(["No purchase", *(f"Buy into {name}" for _h, name in purchases)])
+            Gtk.StringList.new(["No purchase", *(f"Buy into {item.name}" for item in purchases)])
         )
 
     def refresh(self) -> None:
         """Reload every goal's progress on today's date."""
-        result = query_savings_goals(
-            self.db, self.today, include_closed=self.show_closed.get_active()
+        view = book_server(self.db).savings_goals(
+            self.today, include_closed=self.show_closed.get_active()
         )
-        self.report = report = result.value
+        self.report = report = view.report
         _clear(self.goal_rows)
         headings = (
             "Goal",
@@ -217,7 +209,6 @@ class SavingsGoalsDialog(BoundedWindow):
             "Status",
             "Scenario changes",
         )
-        changes = goal_overrides(self.db)
         for column, heading in enumerate(headings):
             label = Gtk.Label(label=heading, xalign=1 if 3 <= column <= 5 else 0)
             label.add_css_class("dim")
@@ -236,8 +227,8 @@ class SavingsGoalsDialog(BoundedWindow):
                 (goal_status_text(item), False),
                 (
                     "\n".join(
-                        goal_override_text(scenario.name, override)
-                        for scenario, override in changes.get(item.goal.handle, [])
+                        goal_override_text(line.scenario_name, line.override)
+                        for line in view.overrides.get(item.goal.handle, ())
                     )
                     or "—",
                     False,
@@ -260,7 +251,7 @@ class SavingsGoalsDialog(BoundedWindow):
             )
             for offset, button in enumerate((edit, toggle, delete)):
                 self.goal_rows.attach(button, 8 + offset, row, 1, 1)
-        model = goals_chart(goals, reporting_currency_label(self.db))
+        model = goals_chart(goals, view.currency)
         self.chart.set_model(model)
         self.chart.set_visible(not model.empty)
         if report is not None and goals:
@@ -273,7 +264,7 @@ class SavingsGoalsDialog(BoundedWindow):
 
     def edit(self, handle: str | None) -> None:
         """Load a goal into the form, or clear it to add a new one."""
-        goal = self.db.get_savings_goal(handle) if handle is not None else None
+        goal = self._stored(handle) if handle is not None else None
         self.editing = goal.handle if goal is not None else None
         self.name_entry.set_text(goal.name if goal is not None else "")
         if goal is not None and goal.account in self._accounts:
@@ -285,6 +276,12 @@ class SavingsGoalsDialog(BoundedWindow):
         self.save_button.set_label("Save changes" if goal is not None else "Add goal")
         self.allocate_button.set_sensitive(goal is not None)
         self.override_button.set_sensitive(goal is not None and bool(self._scenarios))
+
+    def _stored(self, handle: str) -> SavingsGoal | None:
+        try:
+            return book_server(self.db).find_savings_goal(handle)
+        except ApiError:
+            return None
 
     # ----------------------------------------------------------------- writes
 
@@ -318,14 +315,15 @@ class SavingsGoalsDialog(BoundedWindow):
         except ValueError as exc:
             self._message(str(exc), True)
             return None
-        result = save_savings_goal(self.db, request)
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            goal = book_server(self.db).save_savings_goal(request)
+        except ApiError as error:
+            self._message(str(error), True)
             return None
-        self.edit(result.value.handle)
+        self.edit(goal.handle)
         self.refresh()
-        self._message(f"Saved {result.value.name}.", False)
-        return result.value
+        self._message(f"Saved {goal.name}.", False)
+        return goal
 
     def allocate(self) -> SavingsGoal | None:
         """Set extra money aside for the goal being edited."""
@@ -342,15 +340,16 @@ class SavingsGoalsDialog(BoundedWindow):
         except ValueError as exc:
             self._message(str(exc), True)
             return None
-        result = allocate_to_goal(self.db, request)
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            goal = book_server(self.db).allocate_to_goal(request)
+        except ApiError as error:
+            self._message(str(error), True)
             return None
         self.allocate_amount.set_text("")
         self.allocate_memo.set_text("")
         self.refresh()
-        self._message(f"Allocated {request.amount.format()} to {result.value.name}.", False)
-        return result.value
+        self._message(f"Allocated {request.amount.format()} to {goal.name}.", False)
+        return goal
 
     def apply_override(self) -> bool:
         """Change the goal being edited in the chosen scenario, or clear the change."""
@@ -374,50 +373,53 @@ class SavingsGoalsDialog(BoundedWindow):
             if 0 < picked <= len(self._purchase_accounts)
             else None
         )
-        result = set_goal_override(
-            self.db,
-            SetGoalOverride(
-                scenario,
-                self.editing,
-                target,
-                when,
-                self.override_excluded.get_active(),
-                purchase_on=bought,
-                purchase_account=into,
-            ),
-        )
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        try:
+            changed = book_server(self.db).set_goal_override(
+                SetGoalOverride(
+                    scenario,
+                    self.editing,
+                    target,
+                    when,
+                    self.override_excluded.get_active(),
+                    purchase_on=bought,
+                    purchase_account=into,
+                ),
+            )
+        except ApiError as error:
+            self._message(str(error), True)
             return False
-        override = result.value.goal_overrides.get(self.editing)
+        override = changed.goal_overrides.get(self.editing)
         self.refresh()
         self._message(
-            goal_override_text(result.value.name, override)
+            goal_override_text(changed.name, override)
             if override is not None
-            else f"{result.value.name} follows the goal unchanged.",
+            else f"{changed.name} follows the goal unchanged.",
             False,
         )
         return True
 
     def toggle_closed(self, handle: str, closed: bool) -> SavingsGoal | None:
-        result = (
-            reopen_savings_goal(self.db, handle)
-            if closed
-            else close_savings_goal(self.db, handle, self.today)
-        )
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        book = book_server(self.db)
+        try:
+            goal = (
+                book.reopen_savings_goal(handle)
+                if closed
+                else book.close_savings_goal(handle, self.today)
+            )
+        except ApiError as error:
+            self._message(str(error), True)
             return None
         self.refresh()
         verb = "Reopened" if closed else "Closed"
-        self._message(f"{verb} {result.value.name}.", False)
-        return result.value
+        self._message(f"{verb} {goal.name}.", False)
+        return goal
 
     def delete(self, handle: str) -> bool:
-        goal = self.db.get_savings_goal(handle)
-        result = delete_savings_goal(self.db, handle)
-        if result.value is None:
-            self._message(service_error_message(result.errors[0]), True)
+        goal = self._stored(handle)
+        try:
+            book_server(self.db).delete_savings_goal(handle)
+        except ApiError as error:
+            self._message(str(error), True)
             return False
         if self.editing == handle:
             self.edit(None)

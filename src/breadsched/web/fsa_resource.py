@@ -2,7 +2,8 @@
 
 Availability comes from ``gen/engine/fsa`` and the claims, their totals, and the
 reasons one needs attention from ``gen/engine/fsa_claim_report``; this adapter
-parses the grouping and serializes.
+parses the grouping and serializes. The report, the benefit years, and the
+claim-link proposals come from the book server, ``api.book`` (#354).
 """
 
 from __future__ import annotations
@@ -10,9 +11,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from ..gen.engine import fsa
-from ..gen.engine.fsa_claim_report import GROUPINGS, ClaimGroup, claim_report
-from ..gen.services.claims import accept_claim_links, claim_link_proposals
+from ..gen.engine.fsa_claim_report import GROUPINGS, ClaimGroup
+from ..gen.services.claims import ClaimReportQuery
 from ..presentation import claim_role_label, fsa_usage_text
 
 if TYPE_CHECKING:
@@ -47,7 +47,8 @@ def fsa_dashboard(api: Api, query: QueryParams) -> dict[str, object]:
         from .resources import QueryError  # resources imports this module
 
         raise QueryError("query.invalid", ("by",))
-    report = claim_report(api.db, by=by)
+    report = api.book.fsa_claim_report(ClaimReportQuery(by=by))
+    years = api.book.benefit_years()
     return {
         "claims": [
             {
@@ -88,11 +89,11 @@ def fsa_dashboard(api: Api, query: QueryParams) -> dict[str, object]:
                 "amount": _amount(item.amount),
                 "reason": item.reason,
             }
-            for item in claim_link_proposals(api.db).value or ()
+            for item in api.book.claim_link_proposals()
         ],
         "years": [
             {
-                "account": api.db.full_name(status.account),
+                "account": years.name(status.account.handle),
                 "account_handle": status.account.handle,
                 "start": status.year.start.isoformat(),
                 "through": status.year.through.isoformat(),
@@ -124,7 +125,7 @@ def fsa_dashboard(api: Api, query: QueryParams) -> dict[str, object]:
                 "forfeited": _amount(status.forfeited),
                 "phase": status.phase,
             }
-            for status in fsa.dashboard_statuses(api.db)
+            for status in years.years
         ],
     }
 
@@ -137,6 +138,5 @@ def fsa_claim_links_accept(api: Api, payload: Mapping[str, Any]) -> dict[str, ob
         for item in raw
     ):
         raise ValueError("links must be a list of [claim, transaction, split]")
-    accepted = accept_claim_links(api.db, tuple((item[0], item[1], item[2]) for item in raw))
-    assert accepted.value is not None
-    return {"linked": accepted.value.linked, "unchanged": accepted.value.unchanged}
+    accepted = api.book.accept_claim_links(tuple((item[0], item[1], item[2]) for item in raw))
+    return {"linked": accepted.linked, "unchanged": accepted.unchanged}

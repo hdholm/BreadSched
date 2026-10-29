@@ -33,6 +33,8 @@ from datetime import date
 from decimal import Decimal
 from fractions import Fraction
 
+from ..api import ApiError
+from ..api.local import book_server
 from ..gen.engine import ledger
 from ..gen.engine.cost_basis import shares_text
 from ..gen.engine.entry_input import (
@@ -45,7 +47,7 @@ from ..gen.engine.entry_input import (
     quickfill_description,
     trade_price,
 )
-from ..gen.lib.account import AccountClass, AccountType
+from ..gen.lib.account import Account, AccountClass, AccountType
 from ..gen.lib.amount import Amount
 from ..gen.lib.commodity import Commodity
 from ..gen.lib.money import Money
@@ -55,13 +57,10 @@ from ..gen.services import (
     ToggleCleared,
     TransactionInput,
     TransactionSplitInput,
-    save_transaction,
-    toggle_cleared,
-    transaction_currency,
 )
-from ..gen.services.autocomplete import SuggestEntry, suggest_entry
-from ..gen.services.entry_input import next_entry_num, read_entry_amount, read_entry_trade
-from ..presentation import service_error_message
+from ..gen.services.autocomplete import SuggestEntry
+from ..gen.services.entry_input import ReadEntryTrade
+from ..gen.services.register_view import RegisterView
 from ..presentation.investments import trade_price_text
 from . import hidden_accounts
 
@@ -256,7 +255,9 @@ class SheetRow:
 class RegisterSheet:
     """One account's register: rows, the cursor, and the transaction being typed."""
 
-    def __init__(self, db, account: str, *, today: date | None = None) -> None:
+    def __init__(
+        self, db, account: str, *, today: date | None = None, view: RegisterView | None = None
+    ) -> None:
         self.db = db
         self.account = account
         self.today = today
@@ -283,6 +284,11 @@ class RegisterSheet:
         #: Accounts a split may use (full name → handle), and the transfer choices.
         self.account_names: dict[str, str] = {}
         self.transfer_names: dict[str, str] = {}
+        #: Every account's full name by handle, and the accounts that hold securities.
+        self.full_names: dict[str, str] = {}
+        #: Every account as the book server listed it, by handle.
+        self.accounts: dict[str, Account] = {}
+        self.security_accounts: frozenset[str] = frozenset()
         #: Earlier descriptions in this register, most recent first.
         self.descriptions: list[str] = []
         self.debit_heading, self.credit_heading = "Increase", "Decrease"
@@ -292,13 +298,27 @@ class RegisterSheet:
         self.share_fraction = 1
         self.enabled = True
         self.disabled_reason = ""
-        self.reload(keep_cursor=False)
+        if view is not None:
+            # Read in the background through the book server (#389).
+            self.apply_view(view, keep_cursor=False)
+        else:
+            self.reload(keep_cursor=False)
 
     # ----------------------------------------------------------------- loading
 
     @property
-    def account_object(self):
-        return self.db.get_account(self.account)
+    def account_object(self) -> Account | None:
+        try:
+            return book_server(self.db).account(self.account).account
+        except ApiError:
+            return None
+
+    def _stored(self, handle: str) -> Transaction | None:
+        """A transaction as the book now stores it, or ``None`` once it is gone."""
+        try:
+            return book_server(self.db).find_transaction(handle)
+        except ApiError:
+            return None
 
     @property
     def columns(self) -> tuple[str, ...]:
@@ -314,31 +334,61 @@ class RegisterSheet:
         read. A draft with unsaved typing survives a reload; one whose transaction
         has gone (deleted elsewhere) returns the cursor to the blank transaction.
         """
-        account = self.account_object
-        if account is None:
-            self.ledger_rows = []
-            self.rows = [SheetRow(BLANK, current=True)]
-            self.enabled = False
+        if changed is not None and self.ledger_rows:
+            # Only the changed transactions are read again (#319).
+            try:
+                changes = book_server(self.db).register_changes(self.account, tuple(changed))
+            except ApiError:
+                self._lose_account()
+                return
+            self._refresh_draft(keep_cursor)
+            self._load_accounts()
+            self.ledger_rows = changes.apply(self.ledger_rows)
+            self._finish_load(changes.account)
             return
-        self.debit_heading, self.credit_heading = ledger.register_headings(account.atype)
-        self.security = ledger.security_of(self.db, account)
-        self.share_fraction = ledger.share_fraction(self.db, account)
+        try:
+            view = book_server(self.db).register_view(self.account, None)
+        except ApiError:
+            self._lose_account()
+            return
+        self.apply_view(view, keep_cursor=keep_cursor)
+
+    def apply_view(self, view: RegisterView, *, keep_cursor: bool = True) -> None:
+        """Show every row of a register read through the book server.
+
+        The view carries the rows with their running balances, the headings, and
+        the security the account holds, so the sheet reads them in one request,
+        which the register can make off GTK's loop (#389).
+        """
+        self.debit_heading, self.credit_heading = view.debit_label, view.credit_label
+        holding = view.holding
+        self.security = holding.security if holding is not None else None
+        self.share_fraction = (
+            holding.share_fraction if holding is not None else (view.account.commodity_scu or 1)
+        )
+        self.security_accounts = frozenset(view.security_accounts)
+        self._refresh_draft(keep_cursor)
+        self._load_accounts()
+        self.ledger_rows = list(view.rows)
+        self._finish_load(view.account)
+
+    def _lose_account(self) -> None:
+        self.ledger_rows = []
+        self.rows = [SheetRow(BLANK, current=True)]
+        self.enabled = False
+
+    def _refresh_draft(self, keep_cursor: bool) -> None:
         source = self.draft.source
         if not keep_cursor:
             self.draft = self._blank_draft()
         elif source is not None:
-            fresh = self.db.get_transaction(source.handle)
+            fresh = self._stored(source.handle)
             if fresh is None:
                 self.draft = self._blank_draft()
             elif not self.draft.dirty():
                 self.draft = self._load_draft(fresh, self.draft.split_handle)
-        self._load_accounts()
-        if changed is not None and self.ledger_rows:
-            self.ledger_rows = ledger.update_register(
-                self.db, self.account, self.ledger_rows, changed
-            )
-        else:
-            self.ledger_rows = ledger.register(self.db, self.account)
+
+    def _finish_load(self, account) -> None:
         seen: dict[str, None] = {}
         for row in reversed(self.ledger_rows):
             if row.transaction.description.strip():
@@ -361,16 +411,29 @@ class RegisterSheet:
         if self.draft.source is not None:
             referenced = {split.account for split in self.draft.source.splits}
         names: dict[str, str] = {}
-        for item in self.db.iter_accounts():
+        records = book_server(self.db).accounts()
+        self.full_names = {record.account.handle: record.full_name for record in records}
+        self.accounts = {record.account.handle: record.account for record in records}
+        for record in records:
+            item = record.account
             if item.is_root or item.placeholder or item.parent is None:
                 continue
             if item.hidden and not hidden_accounts.shown() and item.handle not in referenced:
                 continue
-            names.setdefault(self.db.full_name(item), item.handle)
+            names.setdefault(record.full_name, item.handle)
         self.account_names = dict(sorted(names.items(), key=lambda pair: pair[0].casefold()))
         self.transfer_names = {
             name: handle for name, handle in self.account_names.items() if handle != self.account
         }
+
+    def _name(self, handle: str) -> str:
+        """An account's full name, as the book server listed it."""
+        name = self.full_names.get(handle)
+        if name is None:
+            # An account made since the list was read.
+            self._load_accounts()
+            name = self.full_names.get(handle, handle)
+        return name
 
     def set_double_line(self, on: bool) -> None:
         """Show or hide each transaction's notes line, keeping the cursor's place."""
@@ -386,7 +449,9 @@ class RegisterSheet:
         self._rebuild()
 
     def _matches(self, row: ledger.RegisterRow) -> bool:
-        return ledger.transaction_matches(self.db, row.transaction, self.filter_text)
+        return ledger.transaction_matches_named(
+            row.transaction, self.filter_text, lambda handle: self.full_names.get(handle, "")
+        )
 
     def _rebuild(self) -> None:
         """Lay the rows out again around the draft, keeping the cursor's place."""
@@ -513,7 +578,7 @@ class RegisterSheet:
             description=transaction.description,
             notes=transaction.notes or "",
         )
-        name = self.db.full_name(others[0].account) if len(others) == 1 else ""
+        name = self._name(others[0].account) if len(others) == 1 else ""
         if mine is not None and len(others) == 1 and others[0].account != mine.account and name:
             draft.transfer = name
             draft.simple_handles = (mine.handle, others[0].handle)
@@ -536,13 +601,13 @@ class RegisterSheet:
     def _line_of(self, split) -> Line:
         value = split.value
         line = Line(
-            account=self.db.full_name(split.account),
+            account=self._name(split.account),
             memo=split.memo,
             increase=value.format() if value > 0 else "",
             decrease=(-value).format() if value < 0 else "",
             handle=split.handle,
         )
-        if self.security is not None and ledger.security_of(self.db, split.account) is not None:
+        if self.security is not None and split.account in self.security_accounts:
             self._load_trade(line, split)
         return line
 
@@ -617,7 +682,7 @@ class RegisterSheet:
                 s for s in ledger_row.transaction.splits if s.handle != ledger_row.split.handle
             ]
             if len(others) == 1:
-                return self.db.full_name(others[0].account)
+                return self._name(others[0].account)
             return SPLIT_LABEL
         if column == "reconcile":
             return ledger_row.split.reconcile.value
@@ -783,8 +848,10 @@ class RegisterSheet:
         """The number ``step`` on; None lets the key be typed into other text."""
         if text.strip() and not text.strip()[-1].isdigit():
             return None
-        result = next_entry_num(self.db, self.account, text, step)
-        return result.value if result.value is not None else None
+        try:
+            return book_server(self.db).next_num(self.account, text, step)
+        except ApiError:
+            return None
 
     def _date_base(self) -> date:
         source = self.draft.source
@@ -851,7 +918,7 @@ class RegisterSheet:
 
     def _holds_security(self, line: Line) -> bool:
         handle = self.account_names.get(line.account.strip())
-        return handle is not None and ledger.security_of(self.db, handle) is not None
+        return handle is not None and handle in self.security_accounts
 
     def _read_shares(self, text: str) -> Decimal | None:
         """Typed shares, arithmetic evaluated; ``EntryInputError`` when unreadable."""
@@ -869,18 +936,20 @@ class RegisterSheet:
         account = (
             self.account_names[holder.account.strip()] if isinstance(holder, Line) else self.account
         )
-        result = read_entry_trade(
-            self.db,
-            account,
-            shares=holder.shares,
-            price=holder.price,
-            amount=amount_text,
-            changed="amount" if column in ("increase", "decrease") else column,  # type: ignore[arg-type]
-            currency=transaction_currency(self.db, source.currency if source else None),
-        )
-        if result.value is None:
-            return self._fail(service_error_message(result.errors[0]))
-        filled = result.value
+        try:
+            filled = book_server(self.db).entry_trade(
+                ReadEntryTrade(
+                    account,
+                    shares=holder.shares,
+                    price=holder.price,
+                    amount=amount_text,
+                    changed="amount" if column in ("increase", "decrease") else column,  # type: ignore[arg-type]
+                    currency=(source.currency if source else None)
+                    or book_server(self.db).transaction_currency(),
+                )
+            )
+        except ApiError as error:
+            return self._fail(str(error))
         selling = holder.shares.strip().startswith("-")
         if filled.shares is not None and (amount_text or filled.amount):
             holder.shares = shares_text(Money(filled.shares))
@@ -946,21 +1015,29 @@ class RegisterSheet:
     def read_amount(self, text: str) -> Money:
         """Typed text as an amount, arithmetic evaluated; ``ValueError`` if unreadable."""
         source = self.draft.source
-        currency = transaction_currency(self.db, source.currency if source is not None else None)
-        result = read_entry_amount(self.db, text, currency=currency)
-        if result.value is None or result.value.value is None:
+        currency = (source.currency if source is not None else None) or book_server(
+            self.db
+        ).transaction_currency()
+        try:
+            value = book_server(self.db).entry_amount(text, currency).value
+        except ApiError:
+            raise ValueError(text) from None
+        if value is None:
             raise ValueError(text)
-        return Money(result.value.value)
+        return Money(value)
 
     def propose(self) -> bool:
         """Fill a new entry's untouched cells from the latest matching transaction."""
         draft = self.draft
         if draft.source is not None or not self.enabled or not draft.description.strip():
             return False
-        result = suggest_entry(
-            self.db, SuggestEntry(description=draft.description, account=self.account)
-        )
-        suggestion = result.value.suggestion if result.value is not None else None
+        try:
+            proposal = book_server(self.db).suggest_entry(
+                SuggestEntry(description=draft.description, account=self.account)
+            )
+        except ApiError:
+            return False
+        suggestion = proposal.suggestion
         if suggestion is None:
             return False
         source = f"{suggestion.when.isoformat()} “{suggestion.description}”"
@@ -970,7 +1047,7 @@ class RegisterSheet:
             draft.expanded = True
             draft.lines = [
                 Line(
-                    account=self.db.full_name(split.account),
+                    account=proposal.name(split.account),
                     memo=split.memo,
                     increase=split.value.format() if split.value > 0 else "",
                     decrease=(-split.value).format() if split.value < 0 else "",
@@ -988,7 +1065,7 @@ class RegisterSheet:
             return True
         filled = []
         if not draft.transfer_touched and suggestion.transfer_account is not None:
-            name = self.db.full_name(suggestion.transfer_account)
+            name = proposal.name(suggestion.transfer_account)
             if name in self.transfer_names:
                 draft.transfer = name
                 filled.append(name)
@@ -1050,7 +1127,7 @@ class RegisterSheet:
                 amount = None
             mine, other = draft.simple_handles
             memo = {split.handle: split.memo for split in getattr(draft.source, "splits", ())}
-            own = self.db.full_name(self.account)
+            own = self._name(self.account)
             draft.lines = [
                 Line(
                     account=own,
@@ -1077,7 +1154,7 @@ class RegisterSheet:
             self.cursor = self.header_index() + 1
             return True
         filled = [line for line in draft.lines if line.has_input()]
-        own = self.db.full_name(self.account)
+        own = self._name(self.account)
         own_line = next((line for line in filled if line.account == own), None)
         if len(filled) > 2 or (filled and own_line is None):
             return self._fail(
@@ -1127,7 +1204,7 @@ class RegisterSheet:
             if handle is None:
                 self.draft = self._blank_draft()
             else:
-                fresh = self.db.get_transaction(handle)
+                fresh = self._stored(handle)
                 if fresh is None:
                     return self._fail("That transaction is no longer in the book.")
                 self.draft = self._load_draft(fresh, split)
@@ -1203,7 +1280,7 @@ class RegisterSheet:
         if row is None or row.kind == SPLIT or self.draft.expanded:
             return target
         name = self._resolve_account(self.draft.transfer.strip(), self.account_names)
-        account = self.db.get_account(self.account_names[name]) if name is not None else None
+        account = self.accounts.get(self.account_names[name]) if name is not None else None
         if account is None or account.account_class is not AccountClass.EXPENSE:
             return target
         return next(
@@ -1257,7 +1334,7 @@ class RegisterSheet:
         if source is None:
             self.draft = self._blank_draft()
         else:
-            fresh = self.db.get_transaction(source.handle)
+            fresh = self._stored(source.handle)
             self.draft = (
                 self._load_draft(fresh, self.draft.split_handle)
                 if fresh is not None
@@ -1307,9 +1384,9 @@ class RegisterSheet:
         description = draft.description.strip()
         if not description:
             return self._fail("Enter a description.", "description")
-        currency = transaction_currency(
-            self.db, draft.source.currency if draft.source is not None else None
-        )
+        currency = (draft.source.currency if draft.source is not None else None) or book_server(
+            self.db
+        ).transaction_currency()
         if draft.expanded:
             splits = self._line_splits(currency)
             if not splits:
@@ -1324,11 +1401,11 @@ class RegisterSheet:
             splits, amount = built
         self.saving = True
         try:
-            result = self._save_transaction(when, description, currency, splits)
+            saved = self._save_transaction(when, description, currency, splits)
+        except ApiError as error:
+            return self._fail(str(error))
         finally:
             self.saving = False
-        if not result.ok:
-            return self._fail(service_error_message(result.errors[0]))
         if draft.source is None:
             self.last_date = when
             heading = self.debit_heading if amount > 0 else self.credit_heading
@@ -1341,7 +1418,7 @@ class RegisterSheet:
             moved = ", ".join(
                 sorted(
                     {
-                        self.db.full_name(split.account)
+                        self._name(split.account)
                         for split in splits
                         if split.account not in {item.account for item in draft.source.splits}
                     }
@@ -1355,20 +1432,19 @@ class RegisterSheet:
         else:
             self._say(f"Saved changes to {description}.")
         self.draft = self._blank_draft()
-        self.last_saved = result.value.handle if result.value is not None else None
-        changed = {result.value.handle} if result.value is not None else set()
+        self.last_saved = saved.handle
+        changed = {saved.handle}
         if draft.source is not None:
             changed.add(draft.source.handle)
         self.reload(keep_cursor=False, changed=changed)
-        if result.value is not None and draft.source is not None:
+        if draft.source is not None:
             self.select_transaction(draft.source.handle)
         return True
 
     def _save_transaction(self, when, description: str, currency: str, splits):
-        """Write the draft as one balanced transaction through the shared service."""
+        """Write the draft as one balanced transaction through the book server (#359)."""
         draft = self.draft
-        return save_transaction(
-            self.db,
+        return book_server(self.db).save_transaction(
             SaveTransaction(
                 TransactionInput(
                     post_date=when,
@@ -1506,7 +1582,7 @@ class RegisterSheet:
         """Shares as an amount of the account's security, for the shared service."""
         if quantity is None:
             return None
-        obj = self.db.get_account(account)
+        obj = self.accounts.get(account)
         return Amount(quantity, obj.commodity) if obj is not None and obj.commodity else None
 
     # ---------------------------------------------------------------- reconcile
@@ -1516,13 +1592,13 @@ class RegisterSheet:
         row = self.rows[index]
         if row.kind != TRANSACTION or row.register_row is None:
             return False
-        result = toggle_cleared(
-            self.db,
-            ToggleCleared(row.register_row.transaction.handle, row.register_row.split.handle),
-        )
-        if result.value is None:
-            return self._fail(service_error_message(result.errors[0]))
-        state = "cleared" if result.value is ReconcileState.CLEARED else "not cleared"
+        try:
+            toggled = book_server(self.db).toggle_cleared(
+                ToggleCleared(row.register_row.transaction.handle, row.register_row.split.handle),
+            )
+        except ApiError as error:
+            return self._fail(str(error))
+        state = "cleared" if toggled is ReconcileState.CLEARED else "not cleared"
         self._say(f"Marked {row.register_row.description} {state}.")
         self.reload(changed={row.register_row.transaction.handle})
         return True

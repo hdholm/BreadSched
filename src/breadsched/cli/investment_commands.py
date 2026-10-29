@@ -4,43 +4,41 @@ from __future__ import annotations
 
 import argparse
 
-from ..gen.engine.cost_basis import holdings_cost_basis, shares_text
-from ..gen.engine.realized_gains import realized_gains
-from ..gen.services import SetSaleLots, sale_lots, set_sale_lots
+from ..api import ApiError
+from ..gen.engine.cost_basis import shares_text
+from ..gen.services import SetSaleLots
 from ..presentation import (
     holding_cost_text,
     lot_move_text,
     lot_text,
     sale_text,
-    service_error_message,
 )
 from .common import (
     AddCommand,
     CommandError,
+    add_server_options,
+    book_api,
     emit,
-    find_transaction,
-    open_book,
     parse_date,
-    resolve_account,
     table,
 )
 
 
 def cmd_holdings(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r")
-    try:
-        holdings = holdings_cost_basis(db, as_of=parse_date(args.as_of))
+    with book_api(args, "r") as book:
+        view = book.holdings(parse_date(args.as_of))
+        holdings = view.holdings
         rows = [
             {
                 **item.as_dict(),
-                "name": db.full_name(item.account),
+                "name": view.name(item.account.handle),
                 "text": holding_cost_text(item),
             }
             for item in holdings
         ]
         lines = []
         for item in holdings:
-            lines.append(f"{db.full_name(item.account)}: {holding_cost_text(item)}")
+            lines.append(f"{view.name(item.account.handle)}: {holding_cost_text(item)}")
             if args.lots:
                 for lot in item.lots:
                     lines.append(
@@ -50,14 +48,12 @@ def cmd_holdings(args: argparse.Namespace) -> int:
                 for sale in item.sales:
                     lines.append(f"  {sale_text(sale)} [{sale.transaction[:8]}]")
                 for move in item.moves:
-                    other = db.get_account(move.other_account) if move.other_account else None
-                    name = db.full_name(other) if other is not None else None
-                    lines.append(f"  {lot_move_text(move, name)}")
+                    lines.append(f"  {lot_move_text(move, view.other_name(move.other_account))}")
             lines.extend(f"  note: {problem}" for problem in item.problems)
         summary = table(
             [
                 [
-                    db.full_name(item.account),
+                    view.name(item.account.handle),
                     shares_text(item.quantity),
                     item.cost.format(),
                     item.market_value.format() if item.market_value is not None else "—",
@@ -76,21 +72,14 @@ def cmd_holdings(args: argparse.Namespace) -> int:
             summary + "\n\n" + "\n".join(lines) if holdings else "No security holdings.",
         )
         return 0
-    finally:
-        db.close()
-
-
-def _mnemonic(db, handle: str | None) -> str:
-    commodity = db.get_commodity(handle) if handle else None
-    return commodity.mnemonic if commodity is not None else "—"
 
 
 def cmd_realized_gains(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r")
-    try:
-        account = resolve_account(db, args.account).handle if args.account else None
-        report = realized_gains(db, year=args.year, account=account)
-        data = report.as_dict(db)
+    with book_api(args, "r") as book:
+        account = book.find_account(args.account).handle if args.account else None
+        view = book.realized_gains(args.year, account)
+        report = view.report
+        data = report.as_dict(view.mnemonics)
         lines = []
         for sale in report.sales:
             lines.append(
@@ -101,7 +90,7 @@ def cmd_realized_gains(args: argparse.Namespace) -> int:
             [
                 [
                     str(total.year),
-                    _mnemonic(db, total.currency),
+                    view.mnemonics.get(total.currency, "—") if total.currency else "—",
                     str(total.sales),
                     total.proceeds.format(),
                     total.cost.format(),
@@ -120,19 +109,23 @@ def cmd_realized_gains(args: argparse.Namespace) -> int:
         )
         emit(data, args, text)
         return 0
-    finally:
-        db.close()
 
 
 def cmd_sale_lots(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r" if not (args.lot or args.clear) else "w")
-    try:
-        txn = find_transaction(db, args.transaction)
+    with book_api(args, "r" if not (args.lot or args.clear) else "w") as book:
+        txn = book.find_transaction(args.transaction)
+
+        def sells(split) -> bool:
+            try:
+                book.sale_lots(txn.handle, split.handle)
+            except ApiError:
+                return False
+            return True
+
         sales = [
             split
             for split in txn.splits
-            if (args.split is None or split.handle.startswith(args.split))
-            and sale_lots(db, txn.handle, split.handle).value is not None
+            if (args.split is None or split.handle.startswith(args.split)) and sells(split)
         ]
         if len(sales) != 1:
             raise CommandError(
@@ -147,13 +140,10 @@ def cmd_sale_lots(args: argparse.Namespace) -> int:
                 lot, separator, shares = text.partition("=")
                 if not separator:
                     raise CommandError(f"{text!r} is not LOT=SHARES")
-                picks.append((find_transaction(db, lot.strip()).handle, shares.strip()))
-            result = set_sale_lots(db, SetSaleLots(txn.handle, split.handle, tuple(picks)))
+                picks.append((book.find_transaction(lot.strip()).handle, shares.strip()))
+            chosen = book.set_sale_lots(SetSaleLots(txn.handle, split.handle, tuple(picks)))
         else:
-            result = sale_lots(db, txn.handle, split.handle)
-        if result.value is None:
-            raise CommandError("; ".join(service_error_message(error) for error in result.errors))
-        chosen = result.value
+            chosen = book.sale_lots(txn.handle, split.handle)
         payload = {
             "transaction": txn.handle,
             "split": split.handle,
@@ -184,7 +174,7 @@ def cmd_sale_lots(args: argparse.Namespace) -> int:
             "gain": chosen.sale.gain,
         }
         lines = [
-            f"{db.full_name(chosen.account)}: {sale_text(chosen.sale)}",
+            f"{book.find_account(chosen.account.handle).full_name}: {sale_text(chosen.sale)}",
             "Lots held before the sale:",
             *(f"  [{lot.transaction[:8]}] {lot_text(lot)}" for lot in chosen.offered),
             "Lots sold:",
@@ -192,8 +182,6 @@ def cmd_sale_lots(args: argparse.Namespace) -> int:
         ]
         emit(payload, args, "\n".join(lines))
         return 0
-    finally:
-        db.close()
 
 
 def register(add: AddCommand) -> None:
@@ -208,11 +196,13 @@ def register(add: AddCommand) -> None:
         action="store_true",
         help="list open lots, each sale, and each transfer or share split",
     )
+    add_server_options(holdings)
     holdings.set_defaults(func=cmd_holdings)
 
     gains = add("realized-gains", "Realized gains of every sale, with its lots, by year")
     gains.add_argument("--year", type=int, help="only sales in this calendar year")
     gains.add_argument("--account", help="only this security account (name or handle)")
+    add_server_options(gains)
     gains.set_defaults(func=cmd_realized_gains)
 
     lots = add(
@@ -232,4 +222,5 @@ def register(add: AddCommand) -> None:
         action="store_true",
         help="sell by the account's method again (first-in, first-out or average cost)",
     )
+    add_server_options(lots)
     lots.set_defaults(func=cmd_sale_lots)

@@ -11,6 +11,7 @@ from __future__ import annotations
 import sys
 from importlib import resources
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .. import APP_ID, APP_NAME, __version__  # noqa: E402
 from ..gen.db.sqlite import SCHEMA_VERSION, DbSQLite, stored_schema_version  # noqa: E402
@@ -23,11 +24,16 @@ from ..presentation import (  # noqa: E402
 )
 from ..user_guide import help_target
 from .gi_setup import Gdk, Gio, GLib, Gtk
+from .remote_book import OpenBook, book_snapshot, open_held_book
 from .user_guide import UserGuideWindow
 from .view_catalog import CATEGORIES as MENU_CATEGORIES  # noqa: E402
 from .view_catalog import VIEW_ACTIONS, view_action_name  # noqa: E402
 from .viewmanager import ViewManager  # noqa: E402
+from .widgets.brand import install_icons, logo_texture
 from .widgets.presented import when_presented
+
+if TYPE_CHECKING:
+    from .book_sharing import SharedBook
 
 __all__ = ["BreadSchedApplication", "main"]
 
@@ -71,8 +77,10 @@ class BreadSchedApplication(Gtk.Application):
         if not unique:
             flags |= Gio.ApplicationFlags.NON_UNIQUE
         super().__init__(application_id=application_id, flags=flags)
-        self.db: DbSQLite | None = None
+        self.db: OpenBook | None = None
         self.book_path: str | None = None
+        #: The open book shared with other commands, when that is on (#359).
+        self.shared_book: SharedBook | None = None
         #: Deliberate preferences, and remembered interface state. Kept apart so a
         #: user can delete the second without losing the first.
         self.settings = Settings("settings", directory=settings_directory)
@@ -97,6 +105,8 @@ class BreadSchedApplication(Gtk.Application):
         show_scrollbars()
         # The installed desktop entry, AppStream metadata, and icon share the
         # application id, so windows use the themed icon wherever it is installed.
+        # A checkout or pip install has no installed icon: the package carries it.
+        install_icons(display)
         Gtk.Window.set_default_icon_name(APP_ID)
         self._install_actions()
         #: The Actions menu follows the active window's current view (#182).
@@ -261,7 +271,12 @@ class BreadSchedApplication(Gtk.Application):
     # ------------------------------------------------------------------- book
 
     def open_book(self, path: str) -> None:
-        """Close whatever is open and load ``path``, then tell the windows."""
+        """Close whatever is open and load ``path``, then tell the windows.
+
+        A book the computer account's host already holds (``breadsched serve``, say)
+        is used through that host, as this account's own user and without a prompt
+        (decision 0004); any other is opened here.
+        """
         if self.db is not None:
             # Views own signal handlers and deferred GLib callbacks tied to this
             # connection. Detach them before closing it so no stale repaint can
@@ -269,10 +284,17 @@ class BreadSchedApplication(Gtk.Application):
             for window in self.get_windows():
                 if isinstance(window, ViewManager):
                     window.book_closing()
+            self.stop_sharing()
             self.db.close()
-        self.db = DbSQLite()
-        self.db.load(path)
+        held = open_held_book(path)
+        if held is not None:
+            self.db = held
+        else:
+            book = DbSQLite()
+            book.load(path)
+            self.db = book
         self.book_path = path
+        self.update_sharing()
         # Remembered so the next start reopens it. Written immediately rather than
         # at shutdown: a crash should not cost the setting.
         self.settings.set("general", "last_book_path", str(Path(path).resolve()))
@@ -302,7 +324,29 @@ class BreadSchedApplication(Gtk.Application):
             if isinstance(window, ViewManager):
                 window.book_opened(self.db, path)
 
-    def require_db(self) -> DbSQLite | None:
+    # --------------------------------------------------------------- sharing
+
+    def update_sharing(self) -> None:
+        """Share the open book with other commands exactly when the preference is on."""
+        from .book_sharing import SETTING, share_book
+
+        # A book another process holds is shared already, by that process.
+        wanted = self.settings.get_bool(*SETTING) and isinstance(self.db, DbSQLite)
+        if wanted and self.shared_book is None and self.book_path and isinstance(self.db, DbSQLite):
+            self.shared_book = share_book(self.db, self.book_path)
+        elif not wanted:
+            self.stop_sharing()
+
+    def stop_sharing(self) -> None:
+        if self.shared_book is not None:
+            self.shared_book.stop()
+            self.shared_book = None
+
+    def do_shutdown(self) -> None:
+        self.stop_sharing()
+        Gtk.Application.do_shutdown(self)
+
+    def require_db(self) -> OpenBook | None:
         return self.db
 
     def set_action_enabled(self, name: str, enabled: bool) -> None:
@@ -571,7 +615,8 @@ class BreadSchedApplication(Gtk.Application):
             from ..plugins.export.csv_export import export_transactions
 
             if self.db is not None:
-                export_transactions(self.db, file.get_path())
+                with book_snapshot(self.db) as book:
+                    export_transactions(book, file.get_path())
 
         dialog.save(self.props.active_window, None, on_saved)
 
@@ -591,7 +636,8 @@ class BreadSchedApplication(Gtk.Application):
                 return
             try:
                 assert self.db is not None
-                destination = self.db.backup_to(file.get_path(), overwrite=True)
+                with book_snapshot(self.db) as book:
+                    destination = book.backup_to(file.get_path(), overwrite=True)
             except Exception as exc:  # noqa: BLE001 - surfaced to the user
                 self._report(f"Could not back up the book: {exc}")
                 return
@@ -693,7 +739,8 @@ class BreadSchedApplication(Gtk.Application):
         return dialog
 
     def preferences_changed(self) -> None:
-        """Show saved preferences in every window's menus (View → Double Line)."""
+        """Apply saved preferences: menus (View → Double Line) and book sharing."""
+        self.update_sharing()
         double_line = self.view_settings.get_bool("register", "double_line")
         for window in self.get_windows():
             action = getattr(window, "double_line_action", None)
@@ -709,6 +756,7 @@ class BreadSchedApplication(Gtk.Application):
             comments="Plan cash flow from scheduled financial events and compare "
             "the plan with actual activity.",
             license_type=Gtk.License.AGPL_3_0,
+            logo=logo_texture(),
         )
         about.present()
 

@@ -1,18 +1,23 @@
-"""HTTP input and output for manual currency quotes."""
+"""HTTP input and output for manual currency quotes.
+
+The quote is checked and saved by the book server, ``api.book`` (#354).
+"""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import date
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ..gen.db.sqlite import DbSQLite
-from ..gen.engine import valuation
 from ..gen.lib import Money
+from ..gen.services.exchange_rates import SaveExchangeRate
+
+if TYPE_CHECKING:
+    from .context import Api
 
 
-def save_currency_quote(db: DbSQLite, payload: Mapping[str, Any]) -> dict[str, str]:
-    """Parse web fields; let shared valuation validate and write the entire quote."""
+def save_currency_quote(api: Api, payload: Mapping[str, Any]) -> dict[str, str]:
+    """Parse web fields; the shared service validates and writes the entire quote."""
     source = payload.get("from")
     target = payload.get("to")
     raw_date = payload.get("date")
@@ -31,13 +36,7 @@ def save_currency_quote(db: DbSQLite, payload: Mapping[str, Any]) -> dict[str, s
         rate = Money(raw_rate)
     except (ValueError, ZeroDivisionError) as exc:
         raise ValueError("rate must be a valid exact number") from exc
-    quote = valuation.save_currency_quote(
-        db,
-        source_handle=source,
-        target_handle=target,
-        quote_date=quote_date,
-        value=rate,
-    )
+    quote = api.book.save_exchange_rate(SaveExchangeRate(source, target, quote_date, rate))
     return {
         "handle": quote.handle,
         "from": source,

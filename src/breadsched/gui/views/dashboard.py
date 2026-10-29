@@ -16,6 +16,8 @@ horizons they were judged against, so the numbers stay in sight.
 
 from __future__ import annotations
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.engine import dashboard as engine
 from ...gen.engine import receivables
 from ...gen.lib.money import Money
@@ -358,8 +360,9 @@ class DashboardView(BaseView):
     def refresh(self) -> None:
         if self.db is None:
             return
-        self.config = engine.DashboardConfig.load(self.db)
-        self.board = engine.build(self.db, self.config)
+        self.board = book_server(self.db).dashboard()
+        self.config = self.board.config
+
         self._render_cards()
         self._render_groups()
 
@@ -570,8 +573,9 @@ class DashboardView(BaseView):
         if schedule is not None:
             self.manager.open_schedule(schedule.handle)
         elif bill.generated and bill.account is not None and self.db is not None:
-            account = self.db.get_account(bill.account)
-            if account is None:
+            try:
+                account = book_server(self.db).account(bill.account).account
+            except ApiError:
                 return
             from ..dialogs.account_dialog import AccountDialog
 
@@ -580,6 +584,33 @@ class DashboardView(BaseView):
             dialog.present()
         elif bill.account is not None:
             self.manager.open_register(bill.account)
+
+    def _on_setting_changed(self, *_args) -> None:
+        if self._updating or self.db is None or self.config is None:
+            return
+        # Saved on the book, not in user settings: these name a household's own
+        # circumstances, and carrying them to another book would mislead. The
+        # service rereads the groups, so a group changed since this view was
+        # drawn is kept as stored.
+        from ...api import ApiError
+        from ...gen.services import SaveDashboardConfig
+
+        request = SaveDashboardConfig(
+            liquidity_days=int(self.liquidity_spin.get_value()),
+            emergency_months=int(self.emergency_spin.get_value()),
+        )
+        try:
+            saved = book_server(self.db).save_dashboard_settings(request)
+        except ApiError:
+            saved = None
+        if saved is not None:
+            # The shown board reads its horizons from this object, so it answers
+            # at once; the refresh below rereads the rest.
+            self.config.liquidity_days = saved.liquidity_days
+            self.config.emergency_months = saved.emergency_months
+        # Rebuilt on the idle: this runs inside the spin button's own event, and
+        # refresh() replaces the widgets around it.
+        self.schedule_refresh()
 
     def _on_configure(self, _button) -> None:
         if self.db is None:

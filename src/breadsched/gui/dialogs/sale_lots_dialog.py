@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from ...gen.db.sqlite import DbSQLite
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.engine.cost_basis import shares_text
-from ...gen.services import SaleLots, SetSaleLots, sale_lots, set_sale_lots
-from ...presentation import lot_text, sale_text, service_error_message
+from ...gen.services import SaleLots, SetSaleLots
+from ...presentation import lot_text, sale_text
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.help import help_row
 
@@ -23,7 +25,7 @@ class SaleLotsDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         transaction: str,
         split: str,
         on_saved: Callable[[SaleLots], None] | None = None,
@@ -34,9 +36,10 @@ class SaleLotsDialog(BoundedWindow):
         self.split = split
         self.on_saved = on_saved
         self.set_default_size(620, 420)
-        current = sale_lots(db, transaction, split).value
-        if current is None:
-            raise ValueError("not a sale of shares")
+        try:
+            current = book_server(db).sale_lots(transaction, split)
+        except ApiError as error:
+            raise ValueError("not a sale of shares") from error
         self.current = current
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -44,8 +47,9 @@ class SaleLotsDialog(BoundedWindow):
             getattr(outer, f"set_margin_{side}")(14)
         self.set_child(outer)
         outer.append(help_row("specific-lots"))
+        account_name = book_server(db).account(current.account.handle).full_name
         heading = Gtk.Label(
-            label=f"{db.full_name(current.account)}: {sale_text(current.sale)}",
+            label=f"{account_name}: {sale_text(current.sale)}",
             xalign=0,
             wrap=True,
         )
@@ -104,15 +108,15 @@ class SaleLotsDialog(BoundedWindow):
         scroll_body(self)
 
     def _store(self, picks: tuple[tuple[str, str], ...]) -> bool:
-        result = set_sale_lots(self.db, SetSaleLots(self.transaction, self.split, picks))
-        if result.value is None:
-            self.message.set_text(
-                "\n".join(service_error_message(error) for error in result.errors)
-            )
+        request = SetSaleLots(self.transaction, self.split, picks)
+        try:
+            chosen = book_server(self.db).set_sale_lots(request)
+        except ApiError as error:
+            self.message.set_text(str(error))
             return False
-        self.current = result.value
+        self.current = chosen
         if self.on_saved is not None:
-            self.on_saved(result.value)
+            self.on_saved(chosen)
         self.close()
         return True
 

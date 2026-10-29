@@ -5,37 +5,36 @@ translates the results; validation and every write stay in the service, so a
 rejected request leaves the stored transaction unchanged. A document is served
 only when the transaction lists it, and the browser can link or relink only a web
 address or a file inside the attachment folder (``contained_location``), so the
-routes cannot be used to read an arbitrary file.
+routes cannot be used to read an arbitrary file. The book server applies that
+confinement for every request served over HTTP, the ``/api/v1`` routes included.
 """
 
 from __future__ import annotations
 
 import mimetypes
-import os
-import tempfile
-from collections.abc import Mapping
-from pathlib import Path
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
+from ..api.permissions import Permission, require_permission
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import attachments as attachment_engine
+from ..gen.engine.attachments import AttachmentStatus
 from ..gen.lib.transaction import Transaction
-from ..gen.services import (
-    attach_file,
-    attach_location,
-    contained_location,
-    detach,
-    relink,
-    set_tags,
-)
 from ..gen.services.contracts import ServiceError
 from ..presentation import service_error_message
-from .controls import ResourceError, service_error
+from .controls import ResourceError
 
 if TYPE_CHECKING:
     from .context import Api
 
+#: The document types a browser may open in place (``accounts.js`` opens these, and
+#: saves anything else): none of them runs script.
+SAFE_DOCUMENT_TYPES = frozenset(
+    {"application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp", "text/plain"}
+)
+
 __all__ = [
+    "SAFE_DOCUMENT_TYPES",
     "attachment_content",
     "attachment_upload",
     "document_json",
@@ -55,8 +54,8 @@ def _refuse(status: int, code: str, field: str) -> Exception:
     return ResourceError(status, code, error.fields, service_error_message(error))
 
 
-def document_json(db: DbSQLite, transaction: Transaction) -> list[dict[str, object]]:
-    """Every linked document of a transaction, with whether it can be found."""
+def document_json(statuses: Iterable[AttachmentStatus]) -> list[dict[str, object]]:
+    """Linked documents, with whether each can be found."""
     return [
         {
             "location": item.location,
@@ -66,7 +65,7 @@ def document_json(db: DbSQLite, transaction: Transaction) -> list[dict[str, obje
             "owner": item.owner,
             "path": str(item.path) if item.path is not None else None,
         }
-        for item in attachment_engine.statuses(db, transaction)
+        for item in statuses
     ]
 
 
@@ -77,14 +76,15 @@ def _text(payload: Mapping[str, Any], key: str) -> str:
     return value
 
 
-def _changed(api: Api, result: Any) -> dict[str, object]:
-    if result.value is None:
-        raise service_error(result.errors[0])
-    transaction = result.value
+def _documents(api: Api, transaction: Transaction) -> list[dict[str, object]]:
+    return document_json(api.book.attachment_report(transaction=transaction.handle).attachments)
+
+
+def _changed(api: Api, transaction: Transaction) -> dict[str, object]:
     return {
         "handle": transaction.handle,
         "tags": list(transaction.tags),
-        "documents": document_json(api.db, transaction),
+        "documents": _documents(api, transaction),
     }
 
 
@@ -93,60 +93,40 @@ def transaction_tags(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     tags = payload.get("tags")
     if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
         raise ValueError("tags must be a list of text")
-    return _changed(api, set_tags(api.db, _text(payload, "transaction"), tags))
-
-
-def _contained(api: Api, location: str) -> str:
-    confined = contained_location(api.db, location)
-    if isinstance(confined, ServiceError):
-        raise service_error(confined)
-    return confined
+    return _changed(api, api.book.set_tags(_text(payload, "transaction"), tags))
 
 
 def transaction_attachment_link(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """Link a web address or a file already in the attachment folder."""
     transaction = _text(payload, "transaction")
-    location = _contained(api, _text(payload, "location"))
-    return _changed(api, attach_location(api.db, transaction, location))
+    # The book server confines the location to the attachment folder (or a web address).
+    return _changed(api, api.book.link_attachment(transaction, _text(payload, "location")))
 
 
 def transaction_attachment_remove(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """Unlink a document; the file itself is kept."""
-    return _changed(api, detach(api.db, _text(payload, "transaction"), _text(payload, "location")))
+    transaction = _text(payload, "transaction")
+    return _changed(api, api.book.unlink_attachment(transaction, _text(payload, "location")))
 
 
 def transaction_attachment_relink(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """Point a moved or missing document at its place in the attachment folder."""
     transaction = _text(payload, "transaction")
     location = _text(payload, "location")
-    target = _contained(api, _text(payload, "to"))
-    return _changed(api, relink(api.db, transaction, location, target))
+    return _changed(api, api.book.relink_attachment(transaction, location, _text(payload, "to")))
 
 
 def attachment_upload(
     api: Api, db: DbSQLite, *, transaction: str, filename: str, content: bytes
 ) -> dict[str, object]:
     """Copy a browser-selected file into the attachment folder and link it."""
-    if (
-        not filename
-        or filename in {".", ".."}
-        or len(filename.encode("utf-8")) > 255
-        or any(c in filename for c in "/\\\0")
-    ):
-        raise _refuse(400, "attachment.filename.invalid", "filename")
-    if not content:
-        raise _refuse(400, "attachment.file.empty", "file")
-    with tempfile.TemporaryDirectory(prefix="breadsched-attachment-") as staging:
-        root = os.path.realpath(staging)
-        staged = os.path.normpath(os.path.join(root, filename))
-        if not staged.startswith(root + os.sep):
-            raise _refuse(400, "attachment.filename.invalid", "filename")
-        Path(staged).write_bytes(content)
-        return _changed(api, attach_file(db, transaction, Path(staged)))
+    return _changed(api, api.book.attach_content(transaction, filename, content))
 
 
 def attachment_content(db: DbSQLite, transaction: str, location: str) -> tuple[bytes, str]:
     """The bytes and media type of one document the transaction lists."""
+    # Read from the book itself, so the role is checked here (decision 0004).
+    require_permission(Permission.READ)
     stored = db.get_transaction(transaction)
     if stored is None:
         raise _refuse(404, "transaction.not_found", "transaction")
@@ -161,4 +141,8 @@ def attachment_content(db: DbSQLite, transaction: str, location: str) -> tuple[b
     if not item.path.is_file():
         raise _refuse(404, "attachment.missing", "location")
     kind = mimetypes.guess_type(item.path.name)[0] or "application/octet-stream"
+    # Anything else (a web page, a script, an SVG image) would run as this site if
+    # opened, with the reader's session: it is only ever saved, as bytes.
+    if kind not in SAFE_DOCUMENT_TYPES:
+        kind = "application/octet-stream"
     return item.path.read_bytes(), kind

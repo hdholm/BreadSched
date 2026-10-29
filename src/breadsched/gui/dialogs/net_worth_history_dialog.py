@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from datetime import date
 
-from ...gen.db.sqlite import DbSQLite
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.engine.activity import ReportingPeriod
-from ...gen.engine.currency import reporting_currency_label
 from ...gen.lib.money import Money
 from ...gen.lib.recurrence import add_months
 from ...gen.services.net_worth import (
@@ -14,10 +14,9 @@ from ...gen.services.net_worth import (
     NetWorthHistory,
     NetWorthPoint,
     net_worth_charts,
-    query_net_worth_change,
-    query_net_worth_history,
 )
 from ..gi_setup import GLib, Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -38,12 +37,12 @@ def history_request(months_back: int, today: date) -> tuple[date, date]:
 
 
 class NetWorthHistoryDialog(BoundedWindow):
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite, today: date | None = None) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook, today: date | None = None) -> None:
         super().__init__(title="Net Worth History", transient_for=parent)
         self.set_default_size(820, 600)
         self._db = db
         self._today = today or date.today()
-        self._currency = reporting_currency_label(db)
+        self._currency = book_server(db).reporting_currency()
         self.history: NetWorthHistory | None = None
         self.change: NetWorthChange | None = None
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -91,11 +90,14 @@ class NetWorthHistoryDialog(BoundedWindow):
             self.content.remove(child)
         _label, period, back = GROUPINGS[self.grouping.get_selected()]
         start, end = history_request(back, self._today)
-        result = query_net_worth_history(self._db, start, end, period, self._today)
-        if result.value is None:
-            self.content.append(self._label(result.errors[0].code))
+        try:
+            history = book_server(self._db).net_worth_history(
+                start, end, ReportingPeriod(period), self._today
+            )
+        except ApiError as error:
+            self.content.append(self._label(str(error)))
             return
-        self.history = history = result.value
+        self.history = history
         explanation = self._label(
             "Assets less debts, market-valued at each period end (the last on "
             f"{history.as_of.isoformat()}). A point with a missing quote is left out "
@@ -172,11 +174,12 @@ class NetWorthHistoryDialog(BoundedWindow):
     def _explain(self, _button, point: NetWorthPoint) -> None:
         """Show the postings behind ``point``'s change, reconciled to market movement."""
         self._close_change()
-        result = query_net_worth_change(self._db, point.start, point.end, self._today)
-        if result.value is None:
-            self.change_box.append(self._label(result.errors[0].code))
+        try:
+            change = book_server(self._db).net_worth_change(point.start, point.end, self._today)
+        except ApiError as error:
+            self.change_box.append(self._label(str(error)))
             return
-        self.change = change = result.value
+        self.change = change
         heading = f"Net worth change {change.start.isoformat()} through {change.closing_on}"
         self.change_box.append(
             self._label(heading + (" (to date)" if change.partial else ""), heading=True)

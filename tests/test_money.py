@@ -254,3 +254,25 @@ class TestFormatting:
 
     def test_plain_negative_by_default(self):
         assert Money("-42").format("$") == "-$42.00"
+
+
+def test_plain_int_construction_matches_the_general_path():
+    """The int fast path (report speed) reduces and signs exactly as before."""
+    import numbers
+
+    class Count(int):
+        """An int subclass still takes the general Integral path."""
+
+    for num, den in ((6, 4), (-6, 4), (6, -4), (0, 7), (10**30 + 2, 4), (3, 1)):
+        fast = Money(num, den)
+        general = Money(Count(num), Count(den))
+        assert isinstance(Count(num), numbers.Integral)
+        assert (fast.numerator, fast.denominator) == (general.numerator, general.denominator)
+        assert fast.denominator > 0
+    assert (Money(6, -4).numerator, Money(6, -4).denominator) == (-3, 2)
+    assert Money(True) == Money(1)
+    with pytest.raises(ZeroDivisionError):
+        Money(1, 0)
+    # Comparing and adding with a plain int coerces it the same way.
+    assert Money("2.50") + 1 == Money("3.50") and 1 + Money("2.50") == Money("3.50")
+    assert Money("-0.01") < 0 <= Money(0) and Money("0.01") > 0

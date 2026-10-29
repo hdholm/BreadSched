@@ -4,16 +4,12 @@ from __future__ import annotations
 
 from datetime import date
 
-from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.cost_basis import (
-    HoldingCostBasis,
-    holdings_charts,
-    holdings_cost_basis,
-    shares_text,
-)
+from ...api.local import book_server
+from ...gen.engine.cost_basis import HoldingCostBasis, shares_text
 from ...gen.lib.money import Money
 from ...presentation import holding_cost_text, lot_move_text, lot_text, sale_text
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.help import help_row
 from ..widgets.model_chart import ModelChartView
@@ -39,7 +35,7 @@ def _capital(text: str) -> str:
 class HoldingsDialog(BoundedWindow):
     """Shares, cost basis, market value, and gains per holding."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite, as_of: date | None = None) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook, as_of: date | None = None) -> None:
         super().__init__(title="Holdings and Cost Basis", transient_for=parent)
         self.db = db
         self.as_of = as_of
@@ -80,7 +76,6 @@ class HoldingsDialog(BoundedWindow):
 
     def refresh(self) -> None:
         """Recompute every holding and redraw (after a sale's lots change)."""
-        db = self.db
         # Holdings the user had open stay open after the redraw.
         expanded = {
             holding.account.handle
@@ -89,7 +84,8 @@ class HoldingsDialog(BoundedWindow):
             )
             if detail.get_expanded()
         }
-        self.holdings: list[HoldingCostBasis] = holdings_cost_basis(db, as_of=self.as_of)
+        view = book_server(self.db).holdings(self.as_of)
+        self.holdings: list[HoldingCostBasis] = list(view.holdings)
         child = self.body.get_first_child()
         while child is not None:
             following = child.get_next_sibling()
@@ -98,7 +94,7 @@ class HoldingsDialog(BoundedWindow):
 
         # Cost, market value, and unrealized gain per holding, one chart per currency.
         self.charts: list[ModelChartView] = []
-        for model in holdings_charts(db, self.holdings):
+        for model in view.charts:
             if model.empty:
                 continue
             chart = ModelChartView(model, height=220)
@@ -116,7 +112,7 @@ class HoldingsDialog(BoundedWindow):
         for row, item in enumerate(self.holdings, start=1):
             for column, text in enumerate(
                 (
-                    db.full_name(item.account),
+                    view.name(item.account.handle),
                     shares_text(item.quantity),
                     item.cost.format(),
                     _money(item.market_value),
@@ -129,7 +125,7 @@ class HoldingsDialog(BoundedWindow):
         self.choose_buttons: list[Gtk.Button] = []
         for item in self.holdings:
             expander = Gtk.Expander(
-                label=f"{db.full_name(item.account)}: {holding_cost_text(item)}"
+                label=f"{view.name(item.account.handle)}: {holding_cost_text(item)}"
             )
             expander.get_label_widget().set_wrap(True)
             expander.set_expanded(item.account.handle in expanded)
@@ -154,8 +150,7 @@ class HoldingsDialog(BoundedWindow):
                 box.append(line)
                 self.choose_buttons.append(choose)
             for move in item.moves:
-                other = db.get_account(move.other_account) if move.other_account else None
-                text = lot_move_text(move, db.full_name(other) if other is not None else None)
+                text = lot_move_text(move, view.other_name(move.other_account))
                 box.append(_cell(_capital(text)))
             for problem in item.problems:
                 warning = _cell(problem)

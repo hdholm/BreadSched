@@ -31,7 +31,8 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from ...gen.db.sqlite import DbSQLite
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.engine import attachments as attachment_engine
 from ...gen.engine import escrow, fsa_claims, ledger
 from ...gen.engine.cost_basis import shares_text
@@ -47,24 +48,16 @@ from ...gen.lib import (
 )
 from ...gen.services import (
     ClaimAttachment,
-    DeleteTransaction,
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
-    attach_file,
-    attach_location,
-    build_transaction,
-    delete_transaction,
-    detach,
-    relink,
-    save_transaction,
-    transaction_currency,
 )
-from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry, suggest_entry
+from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import claim_role_label, service_error_message
+from ...presentation import claim_role_label
 from .. import hidden_accounts
 from ..gi_setup import Gio, GLib, Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, keeps_enter
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
@@ -218,7 +211,7 @@ class SplitEditor:
         """
         detail = self.dialog.show_planning_detail
         handle = self.account_handle
-        account = self.dialog.db.get_account(handle) if handle is not None else None
+        account = self.dialog.account(handle)
         investing = account is not None and account.atype.is_investment
         self.planning_purpose.set_visible(detail or self.planning_purpose.get_selected() != 0)
         self.investment_activity.set_visible(
@@ -234,7 +227,7 @@ class SplitEditor:
     def _label_columns(self) -> None:
         """Name the two amount columns for this row's account, as its register does."""
         handle = self.account_handle
-        account = self.dialog.db.get_account(handle) if handle is not None else None
+        account = self.dialog.account(handle)
         up, down = ledger.register_headings(account.atype) if account is not None else ("In", "Out")
         self._labels = (up, down)
         for entry, label in ((self.increase, up), (self.decrease, down)):
@@ -285,7 +278,7 @@ class SplitEditor:
         text = self.shares.get_text().strip()
         if not text:
             return None
-        account = self.dialog.db.get_account(handle)
+        account = self.dialog.account(handle)
         assert account is not None and account.commodity
         if text == self._loaded_shares and self.quantity is not None:
             return Amount(self.quantity, account.commodity)
@@ -333,7 +326,7 @@ class TransactionDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         default_account: str | None = None,
         default_date: date | None = None,
         transaction: Transaction | None = None,
@@ -353,20 +346,35 @@ class TransactionDialog(BoundedWindow):
         self.saved = False
         self.set_default_size(640, 460)
 
+        # What the editor shows besides the transaction, through the book server (#358).
+        self.book = book_server(db)
+        stored = transaction.handle if transaction is not None and editing else None
+        try:
+            self.context = self.book.transaction_editor(stored)
+        except ApiError:
+            self.context = self.book.transaction_editor(None)
+        self._by_handle = {
+            record.account.handle: record.account for record in self.context.accounts
+        }
         referenced = {split.account for split in transaction.splits} if transaction else set()
-        self.accounts = sorted(
+        chosen = sorted(
             (
-                account
-                for account in db.iter_accounts()
-                if not account.is_root
-                and not account.placeholder
-                and (not account.hidden or hidden_accounts.shown() or account.handle in referenced)
+                record
+                for record in self.context.accounts
+                if not record.account.is_root
+                and not record.account.placeholder
+                and (
+                    not record.account.hidden
+                    or hidden_accounts.shown()
+                    or record.account.handle in referenced
+                )
             ),
-            key=db.full_name,
+            key=lambda record: record.full_name,
         )
+        self.accounts = [record.account for record in chosen]
         self.account_names = [
-            f"{db.full_name(account)} (hidden)" if account.hidden else db.full_name(account)
-            for account in self.accounts
+            f"{record.full_name} (hidden)" if record.account.hidden else record.full_name
+            for record in chosen
         ]
         self.splits: list[SplitEditor] = []
 
@@ -418,10 +426,9 @@ class TransactionDialog(BoundedWindow):
 
         self.escrow_treatment: Gtk.Label | None = None
         if transaction is not None:
-            accounts = {account.handle: account for account in db.iter_accounts()}
-            explanation = escrow.recognition(
-                ((split.account, split.value) for split in transaction.splits), accounts
-            ).explanations(accounts)
+            explanation = list(self.context.escrow_explanations) or escrow.recognition(
+                ((split.account, split.value) for split in transaction.splits), self._by_handle
+            ).explanations(self._by_handle)
             if explanation:
                 self.escrow_treatment = Gtk.Label(
                     label="\n".join(explanation),
@@ -476,11 +483,7 @@ class TransactionDialog(BoundedWindow):
         scroller.set_vexpand(True)
         box.append(scroller)
 
-        self.fsa_claims = [
-            claim
-            for claim in fsa_claims.iter_claims(db)
-            if not fsa_claims.claim_summary(db, claim).status.settled
-        ]
+        self.fsa_claims = list(self.context.open_claims)
         self.fsa_claim = None
         self.fsa_role = None
         if self.fsa_claims and not editing:
@@ -560,7 +563,8 @@ class TransactionDialog(BoundedWindow):
             note.add_css_class("dim")
             self.documents.append(note)
             return
-        for item in attachment_engine.statuses(self.db, self.transaction):
+        report = self.book.attachment_report(transaction=self.transaction.handle)
+        for item in report.attachments:
             row = Gtk.Box(spacing=6)
             label = Gtk.Label(
                 label=item.location + (" — missing" if item.missing else ""),
@@ -597,7 +601,7 @@ class TransactionDialog(BoundedWindow):
                 row.append(remove)
             self.documents.append(row)
             self.document_rows.append((item, row))
-        folder = attachment_engine.attachment_folder(self.db)
+        folder = report.folder
         controls = Gtk.Box(spacing=6)
         attach = Gtk.Button(label="Attach file…")
         attach.set_tooltip_text(
@@ -617,13 +621,15 @@ class TransactionDialog(BoundedWindow):
         self.documents.append(controls)
         self._count_more()
 
-    def _document_changed(self, result) -> bool:
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+    def _document_changed(self, change) -> bool:
+        try:
+            changed = change(book_server(self.db))
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return False
         # Later saves build on the stored transaction, including its documents.
-        self.transaction = result.value
+        self.transaction = changed
         self._show_documents()
         return True
 
@@ -631,26 +637,28 @@ class TransactionDialog(BoundedWindow):
         """Copy a file into the attachment folder (or link it in place) and link it."""
         if self.transaction is None:
             return False
-        copy = attachment_engine.attachment_folder(self.db) is not None
-        return self._document_changed(
-            attach_file(self.db, self.transaction.handle, path, copy=copy)
-        )
+        handle = self.transaction.handle
+        copy = book_server(self.db).attachment_report(transaction=handle).folder is not None
+        return self._document_changed(lambda book: book.attach_file(handle, str(path), copy))
 
     def link_location(self, location: str) -> bool:
         if self.transaction is None:
             return False
-        return self._document_changed(attach_location(self.db, self.transaction.handle, location))
+        handle = self.transaction.handle
+        return self._document_changed(lambda book: book.link_attachment(handle, location))
 
     def remove_document(self, location: str) -> bool:
         if self.transaction is None:
             return False
-        return self._document_changed(detach(self.db, self.transaction.handle, location))
+        handle = self.transaction.handle
+        return self._document_changed(lambda book: book.unlink_attachment(handle, location))
 
     def relink_document(self, location: str, path: Path) -> bool:
         if self.transaction is None:
             return False
-        new = attachment_engine.location_for(self.db, path)
-        return self._document_changed(relink(self.db, self.transaction.handle, location, new))
+        new = attachment_engine.location_in(self.context.folder, path)
+        handle = self.transaction.handle
+        return self._document_changed(lambda book: book.relink_attachment(handle, location, new))
 
     def open_document(self, item: attachment_engine.AttachmentStatus) -> str | None:
         """Open a document with the desktop's default application."""
@@ -755,15 +763,17 @@ class TransactionDialog(BoundedWindow):
             return None  # an existing transaction is never rewritten
         if any(not e.is_blank or e.memo.get_text().strip() for e in self.splits):
             return None  # never overwrite what the user typed
-        result = suggest_entry(
-            self.db,
-            SuggestEntry(
-                description=self.description_entry.get_text(),
-                account=self.default_account,
-                currency=transaction_currency(self.db),
-            ),
-        )
-        suggestion = result.value.suggestion if result.value is not None else None
+        try:
+            proposal = book_server(self.db).suggest_entry(
+                SuggestEntry(
+                    description=self.description_entry.get_text(),
+                    account=self.default_account,
+                    currency=book_server(self.db).transaction_currency(),
+                )
+            )
+        except ApiError:
+            return None
+        suggestion = proposal.suggestion
         if suggestion is None or len(suggestion.splits) < 2:
             return None
         handles = [account.handle for account in self.accounts]
@@ -803,9 +813,13 @@ class TransactionDialog(BoundedWindow):
         tags = [part for part in self.tags_entry.get_text().split(",") if part.strip()]
         self.pages.set_count(MORE, len(tags) + len(self.document_rows))
 
+    def account(self, handle: str | None):
+        """An account as the book server listed it, or None."""
+        return self._by_handle.get(handle) if handle is not None else None
+
     def holds_security(self, account: str | None) -> bool:
         """Whether ``account`` holds a security, so its splits carry shares."""
-        return account is not None and ledger.security_of(self.db, account) is not None
+        return account is not None and account in self.context.security_accounts
 
     def add_split(self, split: Split | None = None) -> SplitEditor:
         editor = SplitEditor(self, split)
@@ -922,9 +936,9 @@ class TransactionDialog(BoundedWindow):
         """Translate the form into the shared typed service contract."""
         when = parse_date_text(self.date_entry.get_text().strip())
         residual = self.residual()
-        currency = transaction_currency(
-            self.db, self.transaction.currency if self.transaction is not None else None
-        )
+        currency = (
+            self.transaction.currency if self.transaction is not None else None
+        ) or book_server(self.db).transaction_currency()
         notes_start, notes_end = self.notes_view.get_buffer().get_bounds()
         splits: list[TransactionSplitInput] = []
         for editor in self.splits:
@@ -971,10 +985,10 @@ class TransactionDialog(BoundedWindow):
 
     def build(self) -> Transaction:
         """Return the service-built preview used by editor interactions and tests."""
-        result = build_transaction(self.db, self._request())
-        if result.value is None:
-            raise ValueError(service_error_message(result.errors[0]))
-        return result.value
+        try:
+            return book_server(self.db).draft_transaction(self._request())
+        except ApiError as error:
+            raise ValueError(str(error)) from error
 
     def _on_save(self, _button) -> None:
         try:
@@ -982,9 +996,10 @@ class TransactionDialog(BoundedWindow):
         except ValueError as exc:
             self.status.set_text(str(exc))
             return
-        result = save_transaction(self.db, request)
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).save_transaction(request)
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return
         self.saved = True
@@ -993,9 +1008,10 @@ class TransactionDialog(BoundedWindow):
     def _on_delete(self, _button) -> None:
         if not self.editing or self.transaction is None:
             return
-        result = delete_transaction(self.db, DeleteTransaction(self.transaction.handle))
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).delete_transaction(self.transaction.handle)
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return
         self.close()

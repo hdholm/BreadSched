@@ -1,4 +1,4 @@
-"""Typed statement-reconciliation mutation contracts."""
+"""Typed statement-reconciliation contracts: the workflow's read and its writes."""
 
 from __future__ import annotations
 
@@ -13,7 +13,9 @@ from ..lib.amount import Amount
 from ..lib.money import Money
 from ..lib.reconciliation import Reconciliation
 from ..lib.transaction import ReconcileState
+from .claims import claim_link_proposals
 from .contracts import ServiceError, ServiceResult
+from .receivables import reimbursement_proposals
 from .transactions import (
     SavedTransaction,
     SaveTransaction,
@@ -124,6 +126,45 @@ def toggle_cleared(db: DbSQLite, request: ToggleCleared) -> ServiceResult[Reconc
     if db.get_transaction(request.transaction) is None:
         return ServiceResult.failure(ServiceError("transaction.not_found", ("transaction",)))
     return _result(lambda: reconciliation.toggle_cleared(db, request.transaction, request.split))
+
+
+@dataclass(frozen=True, slots=True)
+class ReconciliationView:
+    """One account's statement workflow: the open session and the history."""
+
+    account: str
+    account_name: str
+    #: The open session's calculated state, or None when none is open.
+    current: reconciliation.ReconciliationSummary | None
+    #: Every session for the account, newest first.
+    history: tuple[Reconciliation, ...]
+    #: Waiting proposals a deposit or an FSA statement line on this account may answer.
+    reimbursement_proposals: int
+    claim_link_proposals: int
+
+
+def reconciliation_view(db: DbSQLite, account: str) -> ServiceResult[ReconciliationView]:
+    found = db.get_account(account)
+    if found is None:
+        return ServiceResult.failure(ServiceError("reconciliation.account.not_found", ("account",)))
+    current = reconciliation.open_for_account(db, account)
+    return ServiceResult.success(
+        ReconciliationView(
+            account,
+            db.full_name(found),
+            reconciliation.summary(db, current) if current is not None else None,
+            tuple(reversed(list(db.iter_reconciliations(account)))),
+            len(reimbursement_proposals(db, account=account).value or ()),
+            len(claim_link_proposals(db, account=account).value or ()),
+        )
+    )
+
+
+def reconciled_balance(db: DbSQLite, account: str, through: date) -> ServiceResult[Money]:
+    """The account's reconciled balance on a statement date (#362)."""
+    if db.get_account(account) is None:
+        return ServiceResult.failure(ServiceError("reconciliation.account.not_found", ("account",)))
+    return ServiceResult.success(reconciliation.reconciled_balance(db, account, through))
 
 
 @dataclass(frozen=True, slots=True)

@@ -24,9 +24,12 @@ import weakref
 from collections.abc import Callable
 from datetime import date
 
+from ...api import ApiError
+from ...api.local import book_server
+from ...api.protocol import Change
 from ...gen.engine import ledger
 from ...gen.lib.account import Account, AccountClass, AccountType
-from ...presentation.investments import register_share_summary
+from ...presentation.investments import share_summary_text
 from ..gi_setup import GLib, Gtk
 from ..register_sheet import RegisterSheet
 from ..widgets.choice import bounded_dropdown
@@ -65,10 +68,9 @@ def column_headings(atype: AccountType) -> tuple[str, str]:
 class RegisterView(BaseView):
     """A ledger grid for one account at a time."""
 
-    # Transaction signals are connected separately (``set_db``): they name the
-    # transactions that changed, so the register reloads only those (#319).
-    WATCHES = ("database-changed", "account-update")
-    TRANSACTION_SIGNALS = ("transaction-add", "transaction-update", "transaction-delete")
+    # A change that names transactions reloads only those (#319), unless it also
+    # changed an account; any other change rereads the register.
+    WATCHES = ("database-changed",)
     #: Where the Double Line choice is remembered.
     SETTINGS_SECTION = "register"
 
@@ -87,7 +89,6 @@ class RegisterView(BaseView):
         self._pending_changes: set[str] = set()
         #: Set when this commit's transaction signals were handled, so the
         #: database-changed signal that follows them does not reload again.
-        self._handled_commit = False
         self._build()
 
     def _build(self) -> None:
@@ -193,7 +194,7 @@ class RegisterView(BaseView):
             self._updating = False
         if self.account_handle is None:
             return
-        account = self.db.get_account(self.account_handle)
+        account = self._account()
         if account is None:
             return
         self.reconcile_button.set_sensitive(
@@ -209,26 +210,76 @@ class RegisterView(BaseView):
         else:
             # A change made elsewhere: re-read, keeping the cursor and any typing.
             self.sheet.reload()
+        self._show_sheet()
+
+    def _show_sheet(self) -> None:
+        assert self.sheet is not None
         self._pending_changes.clear()
         self.sheet.set_double_line(self.double_line)
         self.sheet.set_filter(self.filter_entry.get_text())
         self.grid.set_sheet(self.sheet)
         self._show_balance()
 
+    def background_refresh(self):
+        """Every row, read through the book server off GTK's loop (#389).
+
+        A register a few saved transactions behind is brought up to date in place
+        instead (it rereads only those), which is quicker than reading it all.
+        """
+        db, handle = self.db, self.account_handle
+        if db is None or handle is None:
+            return None
+        sheet = self.sheet
+        if (
+            sheet is not None
+            and sheet.db is db
+            and sheet.account == handle
+            and not self._full_refresh_pending
+        ):
+            return None
+
+        def read(book):
+            return book.register_view(handle, None)
+
+        def show(view) -> None:
+            if self.db is not db or self.account_handle != handle:
+                return
+            self._updating = True
+            try:
+                self._populate_picker()
+            finally:
+                self._updating = False
+            account = view.account
+            self.reconcile_button.set_sensitive(
+                not account.placeholder
+                and account.account_class in {AccountClass.ASSET, AccountClass.LIABILITY}
+            )
+            current = self.sheet
+            if current is None or current.db is not db or current.account != handle:
+                self.sheet = RegisterSheet(db, handle, view=view)
+            else:
+                current.apply_view(view)
+            self._show_sheet()
+
+        return read, show
+
     # ------------------------------------------------------------- updates
+
+    def _on_book_change(self, change: Change) -> None:
+        if change.transactions and "account" not in change.kinds:
+            self._on_transactions(change.transactions)
+        else:
+            super()._on_book_change(change)
 
     def set_db(self, db) -> None:
         super().set_db(db)
         if db is None:
             # Nothing is left to focus once the book has closed.
             self.cancel_focus_entry()
-            return
-        for signal in self.TRANSACTION_SIGNALS:
-            self._handlers.append(db.connect(signal, self._on_transactions))
 
     def _on_transactions(self, handles) -> None:
         """Reload just the transactions a commit changed (#319)."""
-        self._handled_commit = True
+        self._changes += 1
         sheet = self.sheet
         if sheet is None or sheet.db is not self.db:
             return
@@ -242,13 +293,6 @@ class RegisterView(BaseView):
         sheet.reload(changed=handles)
         self.grid.set_sheet(sheet)
         self._show_balance()
-
-    def _on_change(self, *args) -> None:
-        if self._handled_commit:
-            # The transaction signals of this commit already updated the register.
-            self._handled_commit = False
-            return
-        super()._on_change(*args)
 
     def _on_map_refresh(self) -> None:
         sheet = self.sheet
@@ -289,11 +333,14 @@ class RegisterView(BaseView):
         if self.db is None:
             # The book has closed; this register is waiting to be dropped.
             return
-        summary = (
-            register_share_summary(self.db, self.sheet.account)
-            if self.sheet is not None and self.sheet.security is not None
-            else None
-        )
+        summary = None
+        if self.sheet is not None and self.sheet.security is not None:
+            # The holding and its quote evidence through the book server (#358).
+            holding = book_server(self.db).register_view(self.sheet.account, 1).holding
+            if holding is not None:
+                summary = share_summary_text(
+                    holding.security.mnemonic, holding.held, holding.valued, holding.evidence
+                )
         if summary is not None:
             # A security's footer is its shares and what they are worth (#323).
             self.balance_label.set_text(summary)
@@ -322,18 +369,32 @@ class RegisterView(BaseView):
         self.set_entry_status(sheet.message, error=sheet.error)
         self._show_balance()
 
+    def _account(self) -> Account | None:
+        """The register's account as the book server stores it, if it still exists."""
+        if self.db is None or self.account_handle is None:
+            return None
+        try:
+            return book_server(self.db).account(self.account_handle).account
+        except ApiError:
+            return None
+
     def _populate_picker(self) -> None:
         db = self.db
         if db is None:
             return
-        accounts = sorted(
-            (a for a in db.iter_accounts() if not a.is_root and not a.placeholder),
-            key=db.full_name,
+        records = sorted(
+            (
+                record
+                for record in book_server(db).accounts()
+                if not record.account.is_root and not record.account.placeholder
+            ),
+            key=lambda record: record.full_name,
         )
+        accounts = [record.account for record in records]
         self._pickable = accounts
         model = Gtk.StringList()
-        for account in accounts:
-            model.append(db.full_name(account))
+        for record in records:
+            model.append(record.full_name)
         self.account_picker.set_model(model)
         if self.account_handle is None and accounts:
             self.account_handle = accounts[0].handle
@@ -369,10 +430,16 @@ class RegisterView(BaseView):
         self.confirm_leave(switch)
 
     def focus_entry(self) -> None:
-        """Put keyboard focus in the cell under the cursor, once the grid is shown."""
-        # Only the latest request waits: an older one, from a tab shown before,
-        # must not take the keyboard back from wherever it went since.
+        """Put keyboard focus in the cell under the cursor, once the grid is shown.
+
+        One request at a time: a newer one replaces it, and it is dropped if the
+        register is hidden, its book has closed, or the keyboard has moved elsewhere
+        since it was made (Ctrl+F into the filter), rather than taking the keyboard
+        back later.
+        """
         self.cancel_focus_entry()
+        root = self.get_root()
+        asked_from = root.get_focus() if root is not None else None
         tries = [0]
 
         def focus() -> bool:
@@ -384,8 +451,16 @@ class RegisterView(BaseView):
                 tries[0] += 1
                 return GLib.SOURCE_CONTINUE
             self._focus_source = 0
+            now = root.get_focus() if root is not None else None
+            moved = now is not None and now is not asked_from and not now.is_ancestor(grid)
             # A register whose book closed, or never shown, has nothing to focus.
-            if ready and self.db is not None and self.sheet is not None:
+            if (
+                ready
+                and self.get_mapped()
+                and not moved
+                and self.db is not None
+                and self.sheet is not None
+            ):
                 grid.sync()
             return GLib.SOURCE_REMOVE
 
@@ -448,12 +523,17 @@ class RegisterView(BaseView):
             if handle is not None:
                 sheet.select_transaction(handle)
             self.grid.sync()
-        transaction = self.db.get_transaction(handle) if handle is not None else None
+        try:
+            transaction = book_server(self.db).find_transaction(handle) if handle else None
+        except ApiError:
+            transaction = None
         if transaction is None:
             return self._refuse_tracking(
                 "Put the cursor on a transaction to track as reimbursable."
             )
-        accounts = {account.handle: account for account in self.db.iter_accounts()}
+        accounts = {
+            record.account.handle: record.account for record in book_server(self.db).accounts()
+        }
 
         def costs(kind: Callable[[Account], bool]):
             return (
@@ -679,7 +759,7 @@ class RegisterView(BaseView):
     def _on_reconcile_clicked(self, *_args) -> None:
         if self.db is None or self.account_handle is None:
             return
-        account = self.db.get_account(self.account_handle)
+        account = self._account()
         if account is None:
             return
         from ..dialogs.reconciliation_dialog import ReconciliationDialog

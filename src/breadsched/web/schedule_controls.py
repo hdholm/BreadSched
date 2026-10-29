@@ -27,6 +27,7 @@ from ..gen.lib import (
     WeekendAdjust,
 )
 from ..gen.services import FixedSplitInput
+from ..gen.services.schedule_editing import ScenarioChangeView, ScheduleEditorView, editor_view
 from ..presentation import (
     FIXED_INTERVAL_UNITS,
     LEGACY_FREQUENCIES,
@@ -45,7 +46,13 @@ WEEKENDS = {
 
 
 def simple_schedule_parts(db: DbSQLite, scheduled) -> dict | None:
-    projection = schedule.schedule_edit_projection(db, scheduled)
+    """The simple editor's fields for ``scheduled``, or ``None`` when it cannot show it."""
+    return simple_parts(editor_view(db, scheduled))
+
+
+def simple_parts(view: ScheduleEditorView | ScenarioChangeView) -> dict | None:
+    """:func:`simple_schedule_parts` from a book server's editor view."""
+    projection, scheduled = view.projection, view.schedule
     if (
         projection.editability.mode is not schedule.ScheduleEditorMode.FIXED
         or projection.primary is None
@@ -56,8 +63,8 @@ def simple_schedule_parts(db: DbSQLite, scheduled) -> dict | None:
     funding_projection = projection.funding
     flow = scheduled.splits[primary_projection.index]
     funding = scheduled.splits[funding_projection.index]
-    flow_account = db.get_account(flow.account)
-    assert flow_account is not None
+    flow_class = view.classes.get(flow.account)
+    assert flow_class is not None
     additional = []
     for item in projection.additional:
         split = scheduled.splits[item.index]
@@ -86,7 +93,7 @@ def simple_schedule_parts(db: DbSQLite, scheduled) -> dict | None:
         ),
         "category_ledger_direction": (
             primary_projection.ledger_direction
-            if flow_account.account_class not in {AccountClass.INCOME, AccountClass.EXPENSE}
+            if flow_class not in {AccountClass.INCOME, AccountClass.EXPENSE}
             else None
         ),
         "planning_flow": (

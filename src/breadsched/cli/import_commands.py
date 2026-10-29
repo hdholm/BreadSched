@@ -3,77 +3,52 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
+from decimal import Decimal
 
-from ..gen.engine import (
-    inference,
-)
 from ..gen.services import (
     HeldImportDecision,
     ImportBook,
     ResolveHeldImports,
-    import_book,
-    pending_import_changes,
-    resolve_import_changes,
 )
-from ..gen.services.csv_import import CsvImportRequest, CsvMapping, import_csv, preview_csv_import
+from ..gen.services.account_inference import AccountSuggestion, ApplyAccountSuggestions
+from ..gen.services.csv_import import CsvImportRequest, CsvMapping
 from ..gen.services.gnucash_writeback import (
     ApplyWriteback,
-    apply_writeback,
-    preview_writeback,
-    set_writeback_keep_backups,
-    writeback_keep_backups,
-)
-from ..gen.services.receivables import (
-    reimbursement_proposals,
 )
 from ..presentation import (
     reimbursement_notice,
-    service_error_message,
 )
 from .common import (
     AddCommand,
     CommandError,
+    add_server_options,
+    book_api,
     emit,
-    find_transaction,
-    open_book,
-    resolve_account,
     table,
 )
 
 
 def cmd_import(args: argparse.Namespace) -> int:
-    db = open_book(args.book)
-    try:
-        imported = import_book(
-            db,
+    """Through the book server (#358), so it works while another process holds the book."""
+    with book_api(args, "w") as book:
+        result = book.import_book(
             ImportBook(
                 source=args.source,
                 format=args.format,
                 include_scheduled=not args.no_scheduled,
                 include_duplicates=args.include_duplicates,
-            ),
-        )
-        if not imported.ok:
-            raise CommandError(service_error_message(imported.errors[0]))
-        assert imported.value is not None
-        result = imported.value.result
+            )
+        ).result
         result.log_path = str(args.log_file) if args.log_file else None
-        proposal_count = len(reimbursement_proposals(db).value or ())
-    finally:
-        db.close()
-    suggestions = []
-    if not args.no_infer:
-        db = open_book(args.book)
-        try:
-            suggestions = inference.infer_all(db).suggestions
+        proposal_count = len(book.reimbursement_proposals())
+        suggestions: tuple[AccountSuggestion, ...] = ()
+        if not args.no_infer:
+            suggestions = book.account_suggestions()
             if args.infer_apply:
-                inference.apply_suggestions(
-                    db,
-                    [s for s in suggestions if s.confidence >= 0.6],
-                    message="Apply relationships inferred on import",
+                book.apply_account_suggestions(
+                    ApplyAccountSuggestions(message="Apply relationships inferred on import")
                 )
-        finally:
-            db.close()
 
     emit(
         {
@@ -109,16 +84,7 @@ def cmd_import(args: argparse.Namespace) -> int:
             "source_identity": result.source_identity,
             "log_file": result.log_path,
             "reimbursement_proposals": proposal_count,
-            "suggestions": [
-                {
-                    "account": s.account_name,
-                    "field": s.field,
-                    "value": s.value_label,
-                    "confidence": s.confidence,
-                    "reason": s.reason,
-                }
-                for s in suggestions
-            ],
+            "suggestions": [_suggestion_json(s) for s in suggestions],
         },
         args,
         f"Imported into {args.book}\n"
@@ -147,19 +113,23 @@ def _split_columns(values: list[str] | None) -> tuple[tuple[str, str], ...]:
     return tuple(pairs)
 
 
-def _splits_text(db, splits) -> str:
+def _splits_text(names: dict[str, str], splits) -> str:
     return "; ".join(
-        f"{db.full_name(account)} {value.format(parens_negative=True)}" for account, value in splits
+        f"{names.get(account, account)} {value.format(parens_negative=True)}"
+        for account, value in splits
     )
 
 
 def cmd_import_csv(args: argparse.Namespace) -> int:
-    """Preview or import a CSV statement into one account through a column mapping."""
-    db = open_book(args.book, "r" if args.preview else "w")
-    try:
+    """Preview or import a CSV statement into one account through a column mapping.
+
+    Through the book server (#358), so it works while another process holds the book.
+    """
+    with book_api(args, "r" if args.preview else "w") as book:
+        names = {record.account.handle: record.full_name for record in book.accounts()}
         request = CsvImportRequest(
             source=args.source,
-            account=resolve_account(db, args.account).handle,
+            account=book.find_account(args.account).handle,
             mapping=CsvMapping(
                 date=args.date,
                 amount=args.amount,
@@ -181,10 +151,7 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
             link_transfers=args.link_transfers,
         )
         if args.preview:
-            previewed = preview_csv_import(db, request)
-            if previewed.value is None:
-                raise CommandError(service_error_message(previewed.errors[0]))
-            preview = previewed.value
+            preview = book.preview_csv(request)
             rows = [
                 [
                     row.line,
@@ -192,7 +159,7 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                     row.amount.format(parens_negative=True) if row.amount is not None else "",
                     row.description,
                     row.status.replace("_", " "),
-                    row.reason or _splits_text(db, row.splits),
+                    row.reason or _splits_text(names, row.splits),
                 ]
                 for row in preview.rows
             ]
@@ -223,9 +190,9 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                             "status": row.status,
                             "reason": row.reason,
                             "existing": row.existing,
-                            "category": db.full_name(row.category) if row.category else None,
+                            "category": names.get(row.category) if row.category else None,
                             "splits": [
-                                {"category": db.full_name(account), "amount": value}
+                                {"category": names.get(account, account), "amount": value}
                                 for account, value in row.splits
                             ],
                         }
@@ -236,11 +203,9 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                 text,
             )
             return 0
-        imported = import_csv(db, request)
-        if imported.value is None:
-            raise CommandError(service_error_message(imported.errors[0]))
-        result = imported.value.result
-        preview = imported.value.preview
+        imported = book.import_csv(request)
+        result = imported.result
+        preview = imported.preview
         summary = {
             "transactions_new": result.transactions_new,
             "transactions_unchanged": result.transactions_unchanged,
@@ -250,7 +215,7 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
             "possible_transfers": preview.count("possible_transfer"),
             "skipped": result.skipped,
             "skipped_by_reason": result.reasons(),
-            "reimbursement_proposals": len(reimbursement_proposals(db).value or ()),
+            "reimbursement_proposals": len(book.reimbursement_proposals()),
         }
         emit(
             summary,
@@ -263,36 +228,25 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
             + _reimbursement_note(int(summary["reimbursement_proposals"])),
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_gnucash_writeback(args: argparse.Namespace) -> int:
     """Preview, or write chosen BreadSched changes back to the imported GnuCash book."""
     writing = bool(args.apply or args.all or args.keep_backups is not None)
-    db = open_book(args.book, "w" if writing else "r")
-    try:
+    with book_api(args, "w" if writing else "r") as book:
         if args.keep_backups is not None:
-            kept = set_writeback_keep_backups(db, args.keep_backups)
-            if kept.value is None:
-                raise CommandError(service_error_message(kept.errors[0]))
+            kept = book.set_writeback_keep_backups(args.keep_backups)
             if not (args.apply or args.all):
-                emit({"keep_backups": kept.value}, args, f"Keeping {kept.value} backup(s)")
+                emit({"keep_backups": kept}, args, f"Keeping {kept} backup(s)")
                 return 0
-        previewed = preview_writeback(db)
-        if previewed.value is None:
-            raise CommandError(service_error_message(previewed.errors[0]))
-        plan = previewed.value
+        plan = book.writeback_preview()
         if args.apply or args.all:
             chosen = (
                 [change.transaction for change in plan.changes]
                 if args.all
-                else [find_transaction(db, reference).handle for reference in args.apply]
+                else [book.find_transaction(reference).handle for reference in args.apply]
             )
-            applied = apply_writeback(db, ApplyWriteback(tuple(chosen)))
-            if applied.value is None:
-                raise CommandError(service_error_message(applied.errors[0]))
-            outcome = applied.value
+            outcome = book.apply_writeback(ApplyWriteback(tuple(chosen)))
             emit(
                 {
                     "written": [change.transaction for change in outcome.written],
@@ -306,7 +260,7 @@ def cmd_gnucash_writeback(args: argparse.Namespace) -> int:
         emit(
             {
                 "source": plan.source,
-                "keep_backups": writeback_keep_backups(db),
+                "keep_backups": book.writeback_keep_backups(),
                 "changes": [
                     {
                         "transaction": change.transaction,
@@ -346,15 +300,12 @@ def cmd_gnucash_writeback(args: argparse.Namespace) -> int:
             ),
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_import_review(args: argparse.Namespace) -> int:
     """List or decide GnuCash changes held back from reconciled transactions."""
-    db = open_book(args.book)
-    try:
-        pending = pending_import_changes(db)
+    with book_api(args, "w") as book:
+        pending = book.held_imports()
         decisions: dict[str, HeldImportDecision] = {}
         if args.keep_all:
             decisions.update((item.transaction, HeldImportDecision.KEEP_LOCAL) for item in pending)
@@ -365,13 +316,9 @@ def cmd_import_review(args: argparse.Namespace) -> int:
             (args.use_gnucash, HeldImportDecision.USE_SOURCE),
         ):
             for reference in references or ():
-                decisions[find_transaction(db, reference).handle] = decision
+                decisions[book.find_transaction(reference).handle] = decision
         if decisions:
-            resolved = resolve_import_changes(db, ResolveHeldImports(tuple(decisions.items())))
-            if not resolved.ok:
-                raise CommandError(service_error_message(resolved.errors[0]))
-            assert resolved.value is not None
-            outcome = resolved.value
+            outcome = book.resolve_held_imports(ResolveHeldImports(tuple(decisions.items())))
             emit(
                 {"kept": outcome.kept, "applied": outcome.applied, "deferred": outcome.deferred},
                 args,
@@ -410,11 +357,9 @@ def cmd_import_review(args: argparse.Namespace) -> int:
             else "No GnuCash changes are held for reconciled transactions.",
         )
         return 0
-    finally:
-        db.close()
 
 
-def _inference_note(suggestions: list, applied: bool) -> str:
+def _inference_note(suggestions: Sequence[AccountSuggestion], applied: bool) -> str:
     """Tell the user what the importer noticed, without acting on it uninvited."""
     if not suggestions:
         return ""
@@ -429,8 +374,7 @@ def _inference_note(suggestions: list, applied: bool) -> str:
         f"{len(suggestions)} relationship(s) could be inferred from this book:",
     ]
     lines += [
-        f"  - {s.account_name}: {s.field} = {s.value_label} ({s.confidence:.0%})"
-        for s in suggestions[:8]
+        f"  - {s.account_name}: {s.field} = {s.value} ({s.confidence:.0%})" for s in suggestions[:8]
     ]
     if len(suggestions) > 8:
         lines.append(f"  ... and {len(suggestions) - 8} more")
@@ -438,50 +382,42 @@ def _inference_note(suggestions: list, applied: bool) -> str:
     return "\n".join(lines)
 
 
+def _suggestion_json(suggestion: AccountSuggestion) -> dict:
+    return {
+        "account": suggestion.account_name,
+        "field": suggestion.field,
+        "value": suggestion.value,
+        "confidence": float(suggestion.confidence),
+        "reason": suggestion.reason,
+    }
+
+
 def cmd_infer(args: argparse.Namespace) -> int:
     """Suggest relationships an imported book does not state."""
-    db = open_book(args.book, "r" if not args.apply else "w")
-    try:
-        result = inference.infer_all(db)
+    with book_api(args, "w" if args.apply else "r") as book:
+        suggestions = book.account_suggestions()
         rows = [
-            [
-                s.account_name,
-                s.field,
-                str(s.value_label or s.value),
-                f"{s.confidence:.0%}",
-                s.reason,
-            ]
-            for s in result.suggestions
+            [s.account_name, s.field, s.value, f"{s.confidence:.0%}", s.reason] for s in suggestions
         ]
+        headings = ["account", "setting", "value", "confidence", "because"]
         if args.apply:
-            chosen = [s for s in result.suggestions if s.confidence >= args.min_confidence]
-            applied = inference.apply_suggestions(db, chosen)
+            applied = book.apply_account_suggestions(
+                ApplyAccountSuggestions(min_confidence=Decimal(str(args.min_confidence)))
+            )
             emit(
-                {"applied": applied, "considered": len(result.suggestions)},
+                {"applied": applied.applied, "considered": applied.considered},
                 args,
-                f"Applied {applied} of {len(result.suggestions)} suggestion(s)\n\n"
-                + table(rows, ["account", "setting", "value", "confidence", "because"]),
+                f"Applied {applied.applied} of {applied.considered} suggestion(s)\n\n"
+                + table(rows, headings),
             )
             return 0
-
         emit(
-            [
-                {
-                    "account": s.account_name,
-                    "field": s.field,
-                    "value": s.value_label,
-                    "confidence": s.confidence,
-                    "reason": s.reason,
-                }
-                for s in result.suggestions
-            ],
+            [_suggestion_json(s) for s in suggestions],
             args,
-            table(rows, ["account", "setting", "value", "confidence", "because"])
-            + ("\n\nNothing is changed until you pass --apply." if result.suggestions else ""),
+            table(rows, headings)
+            + ("\n\nNothing is changed until you pass --apply." if suggestions else ""),
         )
         return 0
-    finally:
-        db.close()
 
 
 def register(add: AddCommand) -> None:
@@ -507,6 +443,7 @@ def register(add: AddCommand) -> None:
         action="store_true",
         help="apply confident suggestions rather than only listing them",
     )
+    add_server_options(imp)
     imp.set_defaults(func=cmd_import)
 
     csv_cmd = add(
@@ -552,6 +489,7 @@ def register(add: AddCommand) -> None:
         help="complete each offered transfer instead of importing that row as new",
     )
     csv_cmd.add_argument("--preview", action="store_true", help="show rows; write nothing")
+    add_server_options(csv_cmd)
     csv_cmd.set_defaults(func=cmd_import_csv)
 
     held = add(
@@ -574,6 +512,7 @@ def register(add: AddCommand) -> None:
     held.add_argument(
         "--use-gnucash-all", action="store_true", help="apply every held GnuCash version"
     )
+    add_server_options(held)
     held.set_defaults(func=cmd_import_review)
 
     writeback = add(
@@ -590,9 +529,11 @@ def register(add: AddCommand) -> None:
     writeback.add_argument(
         "--keep-backups", type=int, metavar="N", help="how many write-back backups to keep"
     )
+    add_server_options(writeback)
     writeback.set_defaults(func=cmd_gnucash_writeback)
 
     infer = add("infer", "Suggest loan/asset links and credit-card settings")
     infer.add_argument("--apply", action="store_true", help="write the suggestions")
     infer.add_argument("--min-confidence", type=float, default=0.6)
+    add_server_options(infer)
     infer.set_defaults(func=cmd_infer)

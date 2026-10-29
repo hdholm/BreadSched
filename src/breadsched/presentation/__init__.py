@@ -39,6 +39,7 @@ from .investments import (
     price_text,
     register_share_summary,
     sale_text,
+    share_summary_text,
     trade_price_text,
 )
 from .messages import (
@@ -115,6 +116,7 @@ __all__ = [
     "holding_cost_text",
     "price_text",
     "register_share_summary",
+    "share_summary_text",
     "sale_text",
     "trade_price_text",
     "lot_move_text",

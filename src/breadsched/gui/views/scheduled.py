@@ -16,24 +16,22 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from ...gen.db.sqlite import DbSQLite
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.engine import schedule
 from ...gen.engine.schedule import AccountPaymentDefinition
 from ...gen.lib import ScheduledTransaction
 from ...gen.lib.money import Money
 from ...gen.services import (
-    DeleteSchedule,
     DueDecision,
     DuplicateSchedule,
     ResolveNext,
     ServiceError,
-    delete_schedule,
-    duplicate_schedule,
-    next_occurrence,
-    resolve_next,
 )
+from ...gen.services.schedule_editing import ScheduledPage
 from ...presentation import service_error_message
 from ..gi_setup import Gio, Gtk, Pango
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ._base import BaseView, Row, column, sorted_model, table_section, unwrap
@@ -54,17 +52,17 @@ def _representative_date(schedule_object: ScheduledTransaction) -> date:
 class ScheduleSplitRow:
     """One leg of a scheduled transaction, shown beneath its definition."""
 
-    __slots__ = ("split", "schedule", "db")
+    __slots__ = ("split", "schedule", "names")
 
-    def __init__(self, split, schedule_object, db) -> None:
+    def __init__(self, split, schedule_object, names: dict[str, str]) -> None:
         self.split = split
         self.schedule = schedule_object
-        self.db = db
+        #: Every account's full name, as the book server listed them.
+        self.names = names
 
     @property
     def account_name(self) -> str:
-        account = self.db.get_account(self.split.account)
-        return self.db.full_name(account) if account else "(unknown account)"
+        return self.names.get(self.split.account, "(unknown account)")
 
     def amount_text(self) -> str:
         if self.split.formula:
@@ -103,9 +101,11 @@ class ScheduledView(BaseView):
         super().__init__(manager)
         self._suggest_dialog: Gtk.Window | None = None
         self._active_selection = None
+        #: The definitions as last read through the book server (#358).
+        self._page: ScheduledPage | None = None
         self._build()
 
-    def set_db(self, db: DbSQLite | None) -> None:
+    def set_db(self, db: OpenBook | None) -> None:
         if self._suggest_dialog is not None and db is not self.db:
             self._suggest_dialog.close()
             self._suggest_dialog = None
@@ -261,8 +261,9 @@ class ScheduledView(BaseView):
     def refresh(self) -> None:
         if self.db is None:
             return
-        schedules = list(self.db.iter_scheduled())
-        account_payments = schedule.account_payment_definitions(self.db, schedules=schedules)
+        self._page = book_server(self.db).scheduled_page()
+        schedules = list(self._page.schedules)
+        account_payments = list(self._page.payments)
         commitments = [item for item in schedules if not item.placeholder]
         self._set_definitions_model(self.definitions_view, [*commitments, *account_payments], True)
         self._set_definitions_model(
@@ -317,8 +318,13 @@ class ScheduledView(BaseView):
             return None
         store = Gio.ListStore.new(Row)
         for split in payload.splits:
-            store.append(Row(ScheduleSplitRow(split, payload, self.db)))
+            store.append(Row(ScheduleSplitRow(split, payload, self._names())))
         return store
+
+    def _names(self) -> dict[str, str]:
+        if self._page is None and self.db is not None:
+            self._page = book_server(self.db).scheduled_page()
+        return dict(self._page.names) if self._page is not None else {}
 
     def _next_text(self, sched) -> str:
         if isinstance(sched, AccountPaymentDefinition):
@@ -332,7 +338,7 @@ class ScheduledView(BaseView):
             return "(no splits)"
         parts = []
         for split in sched.splits:
-            row = ScheduleSplitRow(split, sched, self.db)
+            row = ScheduleSplitRow(split, sched, self._names())
             parts.append(f"{row.account_name} {row.amount_text()}")
         return "  |  ".join(parts)
 
@@ -362,7 +368,7 @@ class ScheduledView(BaseView):
         """Name the date Enter Next and Skip Next act on, or why they cannot."""
         sched = self._selected_schedule()
         upcoming = (
-            next_occurrence(self.db, sched.handle)
+            book_server(self.db).next_occurrence(sched.handle)
             if sched is not None and self.db is not None
             else None
         )
@@ -385,13 +391,16 @@ class ScheduledView(BaseView):
         sched = self._selected_schedule()
         if sched is None or self.db is None:
             return False
-        upcoming = next_occurrence(self.db, sched.handle)
+        # Through the book server, as the command line and the browser do (#359).
+        book = book_server(self.db)
+        upcoming = book.next_occurrence(sched.handle)
         if upcoming is None:
             self.status.set_text(service_error_message(ServiceError("schedule.next.none")))
             return False
-        result = resolve_next(self.db, ResolveNext(sched.handle, decision, when=upcoming.when))
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            outcome = book.resolve_next(ResolveNext(sched.handle, decision, when=upcoming.when))
+        except ApiError as error:
+            self.status.set_text(str(error))
             return False
         self.refresh()
         when = upcoming.when.isoformat()
@@ -401,7 +410,7 @@ class ScheduledView(BaseView):
             self.status.set_text(f"Entered {sched.name} of {when}. Ctrl+Z removes it.")
             from ..dialogs.posted_dialog import PostedTransactionsDialog
 
-            dialog = PostedTransactionsDialog(self.get_root(), self.db, result.value.transactions)
+            dialog = PostedTransactionsDialog(self.get_root(), self.db, outcome.transactions)
             dialog.connect("close-request", self.refresh_on_close)
             dialog.present()
         return True
@@ -423,7 +432,10 @@ class ScheduledView(BaseView):
             return "No scheduled transaction is selected."
         if self.db is None:
             return "No book is open."
-        return schedule.schedule_editability(self.db, sched).reason
+        if self._page is None or sched.handle not in self._page.editability:
+            self._page = book_server(self.db).scheduled_page()
+        found = self._page.editability.get(sched.handle)
+        return found.reason if found is not None else ""
 
     def _on_edit_clicked(self, _button) -> None:
         if self.db is None:
@@ -432,8 +444,9 @@ class ScheduledView(BaseView):
         if selected is None:
             return
         if isinstance(selected, AccountPaymentDefinition):
-            account = self.db.get_account(selected.account)
-            if account is None:
+            try:
+                account = book_server(self.db).account(selected.account).account
+            except ApiError:
                 return
             from ..dialogs.account_dialog import AccountDialog
 
@@ -579,12 +592,11 @@ class ScheduleDuplicateDialog(BoundedWindow):
         self.status.set_text("" if valid else "Give the copied schedule a name.")
 
     def _confirm(self, _button) -> None:
-        result = duplicate_schedule(
-            self.db,
-            DuplicateSchedule(self.scheduled.handle, name=self.name_entry.get_text()),
-        )
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        request = DuplicateSchedule(self.scheduled.handle, name=self.name_entry.get_text())
+        try:
+            book_server(self.db).duplicate_schedule(request)
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return
         self.close()
@@ -628,9 +640,10 @@ class ScheduleDeleteDialog(BoundedWindow):
         box.append(buttons)
 
     def _confirm(self, _button) -> None:
-        result = delete_schedule(self.db, DeleteSchedule(self.scheduled.handle))
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).delete_schedule(self.scheduled.handle)
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return
         self.close()
@@ -713,9 +726,7 @@ class UpcomingView(BaseView):
         if self.db is None:
             return
         today = date.today()
-        occurrences = schedule.upcoming_occurrences(
-            self.db, as_of=today, horizon_days=self._horizon
-        )
+        occurrences = book_server(self.db).scheduled_page(self._horizon, today).upcoming
         store = Gio.ListStore.new(Row)
         for occurrence in occurrences:
             store.append(Row(occurrence))
@@ -725,7 +736,9 @@ class UpcomingView(BaseView):
 
         overdue = [o for o in occurrences if o.when <= today]
         # Enter- and remind-in-advance occurrences are reviewed too (#352).
-        reviewable = schedule.review_occurrences(self.db, as_of=today)
+        reviewable = [
+            item for review in book_server(self.db).due_review(today) for item in review.items
+        ]
         if overdue:
             self.status.set_text(
                 f"{len(overdue)} occurrence(s) overdue, oldest {overdue[0].when.isoformat()}"
@@ -737,7 +750,7 @@ class UpcomingView(BaseView):
                 f"{self._horizon} days"
             )
             self.status.remove_css_class("negative")
-        early = len(reviewable) - len([o for o, _stage in reviewable if o.when <= today])
+        early = len([item for item in reviewable if item.when > today])
         if early:
             self.status.set_text(f"{self.status.get_text()}; {early} to enter or remind in advance")
         self.post_button.set_sensitive(bool(reviewable))
@@ -761,8 +774,11 @@ class UpcomingView(BaseView):
         if occurrence is not None:
             if isinstance(occurrence.schedule, AccountPaymentDefinition):
                 db = self.db
-                account = db.get_account(occurrence.schedule.account) if db else None
-                if account is None:
+                if db is None:
+                    return
+                try:
+                    account = book_server(db).account(occurrence.schedule.account).account
+                except ApiError:
                     return
                 from ..dialogs.account_dialog import AccountDialog
 
@@ -783,10 +799,10 @@ class UpcomingView(BaseView):
             return
         from ..dialogs.due_dialog import DueDialog
 
-        due = [item for item, _stage in schedule.review_occurrences(self.db)]
-        if not due:
+        reviews = book_server(self.db).due_review()
+        if not reviews:
             self.status.set_text("Nothing is due")
             return
-        dialog = DueDialog(self.get_root(), self.db, due)
+        dialog = DueDialog(self.get_root(), self.db, reviews)
         dialog.connect("close-request", self.refresh_on_close)
         dialog.present()

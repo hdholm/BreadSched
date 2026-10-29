@@ -4,16 +4,17 @@ from __future__ import annotations
 
 from datetime import date
 
-from ...gen.db.sqlite import DbSQLite
-from ...gen.engine import valuation
-from ...gen.engine.currency import reporting_currency_handle
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.lib.money import Money
 from ...gen.services.quotes import QuoteRequest
+from ...gen.services.security_prices import SaveSecurityPrice
 from ...gen.utils.amount_input import parse_user_amount
 from ...gen.utils.settings import Settings
 from ...plugins.quotes import OnlineQuotes, alphavantage_key
 from ..background import BackgroundJob
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
@@ -28,7 +29,7 @@ class SecurityPriceDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         settings: Settings | None = None,
         fetcher_factory=None,
     ) -> None:
@@ -39,8 +40,10 @@ class SecurityPriceDialog(BoundedWindow):
             lambda key: OnlineQuotes(alphavantage_key=key or None)
         )
         self.job: BackgroundJob = BackgroundJob()
-        self.securities = [item for item in db.iter_commodities() if not item.is_currency]
-        self.currencies = [item for item in db.iter_commodities() if item.is_currency]
+        quotes = book_server(db).securities()
+        self.securities = [quote.security for quote in quotes]
+        self._latest = {quote.security.handle: quote.latest for quote in quotes}
+        self.currencies = list(book_server(db).currencies(book_order=True))
         self.set_default_size(520, 430)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -164,7 +167,7 @@ class SecurityPriceDialog(BoundedWindow):
         self.fullname_entry.set_text(security.fullname)
         self.namespace_entry.set_text(security.namespace)
         self.fraction_entry.set_text(str(security.fraction))
-        latest = valuation.latest_price(self.db, security)
+        latest = self._latest.get(security.handle)
         if latest is None:
             self.price_entry.set_text("")
             self.date_entry.set_text(date.today().isoformat())
@@ -185,23 +188,27 @@ class SecurityPriceDialog(BoundedWindow):
             quote_date = parse_date_text(self.date_entry.get_text().strip())
             value = Money(parse_user_amount(self.price_entry.get_text().strip()))
             fraction = int(self.fraction_entry.get_text().strip())
-            valuation.save_security_price(
-                self.db,
-                security_handle=security_handle,
-                currency_handle=(
-                    self.currencies[self.currency_picker.get_selected()].handle
-                    if self.currencies
-                    else None
-                ),
-                quote_date=quote_date,
-                value=value,
-                mnemonic=self.mnemonic_entry.get_text(),
-                fullname=self.fullname_entry.get_text(),
-                namespace=self.namespace_entry.get_text(),
-                fraction=fraction,
-            )
         except (ValueError, ArithmeticError) as exc:
             self._error(str(exc))
+            return
+        request = SaveSecurityPrice(
+            security=security_handle,
+            currency=(
+                self.currencies[self.currency_picker.get_selected()].handle
+                if self.currencies
+                else None
+            ),
+            quote_date=quote_date,
+            value=value,
+            mnemonic=self.mnemonic_entry.get_text(),
+            fullname=self.fullname_entry.get_text(),
+            namespace=self.namespace_entry.get_text(),
+            fraction=fraction,
+        )
+        try:
+            book_server(self.db).save_security_price(request)
+        except ApiError as error:
+            self._error(str(error))
             return
         self.close()
 
@@ -218,8 +225,7 @@ class SecurityPriceDialog(BoundedWindow):
         source = security.quote_source.strip()
         if not source:
             return
-        reporting = self.db.get_commodity(reporting_currency_handle(self.db))
-        currency = reporting.mnemonic if reporting is not None else "USD"
+        currency = book_server(self.db).reporting_currency() or "USD"
         fetcher = self.fetcher_factory(alphavantage_key(self.settings))
         request = QuoteRequest(security.handle, security.mnemonic, source)
         self.quote_button.set_sensitive(False)

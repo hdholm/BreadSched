@@ -23,6 +23,7 @@ from decimal import Decimal
 import pytest
 from gnucash_fixtures import create_book
 
+from breadsched.api.local import book_server
 from breadsched.cli.main import main as cli
 from breadsched.gen.db.sqlite import DbSQLite
 from breadsched.gen.lib import (
@@ -123,6 +124,8 @@ def client(book_path):
     class Client:
         base_url = base
         token = httpd.token
+        # The page the server opens on this computer is given the local token (#358).
+        local_token = httpd.local_token
         database = db
 
         def raw(self, path: str):
@@ -131,7 +134,8 @@ def client(book_path):
 
         def get(self, path: str):
             request = urllib.request.Request(
-                base + path, headers={"X-BreadSched-Token": self.token}
+                base + path,
+                headers={"X-BreadSched-Token": self.token, "X-BreadSched-Local": self.local_token},
             )
             with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
                 return response.status, json.loads(response.read())
@@ -143,6 +147,7 @@ def client(book_path):
                 headers={
                     "Content-Type": "application/json",
                     "X-BreadSched-Token": self.token,
+                    "X-BreadSched-Local": self.local_token,
                 },
                 method="POST",
             )
@@ -157,6 +162,7 @@ def client(book_path):
                 headers={
                     "Content-Type": "application/octet-stream",
                     "X-BreadSched-Token": self.token,
+                    "X-BreadSched-Local": self.local_token,
                 },
                 method="POST",
             )
@@ -266,6 +272,25 @@ class TestItServes:
         assert "body.include-plan-detail .plan-detail" in style
         assert "header { display: none !important; }" in style
         assert ".plan-table thead th { position: static; }" in style
+
+    def test_quick_entry_is_a_small_page_of_its_own(self, client):
+        """Phones get a page that loads only what entering a transaction needs."""
+        from breadsched.web.transport import QUICK_SCRIPTS
+
+        for path in ("/quick", "/quick.html"):
+            status, body, headers = client.raw(path)
+            assert status == 200 and headers.get_content_type() == "text/html"
+            page = body.decode("utf-8")
+            loaded = re.findall(r'<script src="/([\w-]+\.js)"></script>', page)
+            assert tuple(loaded) == QUICK_SCRIPTS == ("core.js", "quick.js")
+            assert 'name="viewport"' in page and 'body class="quick"' in page
+        status, script, headers = client.raw("/quick.js")
+        assert status == 200 and headers.get_content_type() == "application/javascript"
+        script_text = script.decode("utf-8")
+        assert 'post("/api/transaction"' in script_text
+        assert "/api/entry/suggest" in script_text
+        _status, body, _headers = client.raw("/")
+        assert 'id="quick-entry"' in body.decode("utf-8")
 
     def test_the_page_loads_every_area_script_in_order(self, client):
         """Classic scripts share one scope; start-up runs only after all are defined."""
@@ -1740,7 +1765,9 @@ class TestItServes:
         from breadsched.web.projection_resource import projection_draft
 
         expected = projection_report(
-            client.database, projection_draft(client.database, years=2), base=True
+            book_server(client.database),
+            projection_draft(book_server(client.database), years=2),
+            base=True,
         )
         status, actual = client.get("/api/projection?years=2")
         assert status == 200
@@ -1757,10 +1784,14 @@ class TestItServes:
         from breadsched.web.projection_resource import projection_draft
 
         _status, clone = client.post("/api/scenario/duplicate", {"handle": None})
-        primary = projection_draft(client.database, years=1)
-        comparison = projection_draft(client.database, clone["handle"], years=1)
+        primary = projection_draft(book_server(client.database), years=1)
+        comparison = projection_draft(book_server(client.database), clone["handle"], years=1)
         expected = projection_comparison_report(
-            client.database, primary, comparison, primary_base=True, comparison_base=False
+            book_server(client.database),
+            primary,
+            comparison,
+            primary_base=True,
+            comparison_base=False,
         )
         status, actual = client.post(
             "/api/projection/compare",
@@ -1822,9 +1853,9 @@ class TestItServes:
     def test_month_explanation_resource_matches_route_and_leaves_book_unchanged(self, client):
         from breadsched.web.projection_resource import projection_draft
 
-        scenario = projection_draft(client.database, years=2)
+        scenario = projection_draft(book_server(client.database), years=2)
         before = scenario.effective_assumptions().serialize()
-        expected = projection_month_report(client.database, scenario, 5)
+        expected = projection_month_report(book_server(client.database), scenario, 5)
         status, actual = client.post(
             "/api/projection/explain",
             {"handle": None, "years": 2, "month_index": 5},
@@ -1834,7 +1865,10 @@ class TestItServes:
         assert actual["index"] == 5
         assert actual["cash"]["closing"] is not None
         assert (
-            projection_draft(client.database, years=2).effective_assumptions().serialize() == before
+            projection_draft(book_server(client.database), years=2)
+            .effective_assumptions()
+            .serialize()
+            == before
         )
 
     def test_projection_draft_calculation_does_not_persist_saved_changes(self, client):
@@ -2802,6 +2836,22 @@ class TestWriting:
         assert security["price"] == "125.25"
         assert security["price_date"] == "2026-03-01"
 
+    def test_the_entry_form_refuses_an_unknown_account_and_writes_nothing(self, client):
+        before = sorted(txn.handle for txn in client.database.iter_transactions())
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/transaction",
+                {
+                    "date": "2026-02-01",
+                    "from": "Assets:Nowhere",
+                    "to": "Expenses:Rent",
+                    "amount": "5",
+                },
+            )
+        assert caught.value.code == 400
+        assert json.loads(caught.value.read())["code"] == "transaction.account.not_found"
+        assert sorted(txn.handle for txn in client.database.iter_transactions()) == before
+
     def test_a_transaction_can_be_posted(self, client):
         status, payload = client.post(
             "/api/transaction",
@@ -2986,6 +3036,21 @@ class TestImportApi:
         with pytest.raises(urllib.error.HTTPError) as caught:
             client.post("/api/import", {"path": defaults["path"], "include_duplicates": "yes"})
         assert caught.value.code == 400
+
+    def test_a_page_without_the_local_token_names_no_file_on_the_server(self, client, tmp_path):
+        """#358: a page reached through a proxy sends a file; it cannot import one by a
+        path on the server, which the page the server opened itself may."""
+        statement = tmp_path / "statement.qif"
+        statement.write_bytes(b"!Type:Bank\nD01/02/2026\nT-3.00\nPBus\n^\n")
+        before = len(list(client.database.iter_transactions()))
+        client.local_token = ""
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/import", {"path": str(statement)})
+        assert caught.value.code == 403
+        assert json.loads(caught.value.read())["code"] == "file.local_only"
+        assert len(list(client.database.iter_transactions())) == before
+        assert client.upload("statement.qif", statement.read_bytes())[0] == 200
+        assert len(list(client.database.iter_transactions())) == before + 1
 
     def test_browser_upload_rejects_invalid_filename_and_restores_prior_source(self, client):
         content = b"!Type:Bank\nD01/01/2026\nT1.00\nPExample\n^\n"
@@ -3210,7 +3275,8 @@ class TestDueReview:
             outcome = call(
                 {"decisions": [{"schedule": rent["schedule"], "date": second, "decision": "post"}]}
             )
-            assert outcome == {"posted": 1, "skipped": 0, "deferred": 0}
+            assert (outcome["posted"], outcome["skipped"], outcome["deferred"]) == (1, 0, 0)
+            assert len(outcome["transactions"]) == 1
             assert db.summary()["txn"] == before + 1
             remaining = next(item for item in call()["schedules"] if item["name"] == "Sample rent")
             assert second not in [item["date"] for item in remaining["items"]]
@@ -3245,7 +3311,12 @@ class TestDueReview:
 
         item = definition()
         assert (item["advance_days"], item["remind_days"]) == (0, 7)
-        assert item["next"] == {"date": first.isoformat(), "amount": "40.00"}
+        assert item["next"] == {
+            "schedule": handle,
+            "name": "Early bill",
+            "date": first.isoformat(),
+            "amount": "40.00",
+        }
         _status, review = client.get("/api/due-review")
         bill = next(row for row in review["schedules"] if row["schedule"] == handle)
         assert [(row["date"], row["stage"]) for row in bill["items"]] == [
@@ -3290,7 +3361,8 @@ class TestDueReview:
             "/api/scheduled/next",
             {"schedule": handle, "decision": "skip", "date": first.isoformat()},
         )
-        assert status == 200 and skipped == {"posted": 0, "skipped": 1, "transactions": []}
+        assert status == 200
+        assert skipped == {"posted": 0, "skipped": 1, "deferred": 0, "transactions": []}
         second = definition()["next"]["date"]
         assert second > first.isoformat()
         status, entered = client.post(
@@ -3309,6 +3381,19 @@ class TestDueReview:
 
 
 class TestSafety:
+    def test_pages_carry_the_application_icon(self, client):
+        """A browser tab and an iPad home screen show BreadSched's icon."""
+        for page in ("/", "/quick"):
+            _status, body, _headers = client.raw(page)
+            html = body.decode("utf-8")
+            assert '<link rel="icon" type="image/png" href="/favicon.png">' in html
+            assert '<link rel="apple-touch-icon" href="/apple-touch-icon.png">' in html
+        for icon in ("/favicon.png", "/apple-touch-icon.png"):
+            status, body, headers = client.raw(icon)
+            assert status == 200
+            assert headers.get_content_type() == "image/png"
+            assert body.startswith(b"\x89PNG\r\n\x1a\n")
+
     def test_only_named_static_assets_are_served(self, client, tmp_path, monkeypatch):
         from breadsched.web import transport
 
@@ -3618,8 +3703,9 @@ class TestFindApi:
         [
             ("amount=lots", 400, "query.amount.invalid"),
             ("group_by=week", 400, "query.invalid"),
-            ("start=2026-05-01&end=2026-01-01", 400, "request.invalid"),
-            ("account=no-such-account", 404, "resource.not_found"),
+            # The book server's stable codes (#358).
+            ("start=2026-05-01&end=2026-01-01", 400, "find.dates.order"),
+            ("account=no-such-account", 400, "find.account.missing"),
             ("colour=red", 400, "query.unknown"),
         ],
     )
@@ -3802,7 +3888,7 @@ class TestDashboardApi:
     def test_resource_matches_route_and_query_does_not_save_horizons(self, client):
         _status, original = client.get("/api/dashboard")
         _status, requested = client.get("/api/dashboard?liquidity_days=45&emergency_months=9")
-        expected = dashboard_report(client.database, 45, 9)
+        expected = dashboard_report(book_server(client.database), 45, 9)
         assert requested == json.loads(json.dumps(expected, default=str))
         assert requested["config"]["liquidity_days"] == 45
         assert requested["config"]["emergency_months"] == 9
@@ -4403,9 +4489,12 @@ class TestScenarioManagementApi:
         client.post("/api/scenario/duplicate", {"handle": None})
 
         _status, listing = client.get("/api/scenarios")
+        from breadsched.gen.services.assumptions import base_assumptions
+        from breadsched.web.context import Api
         from breadsched.web.scenario_resource import management_base_scenario
 
-        expected = scenarios_report(client.database, management_base_scenario(client.database))
+        base = management_base_scenario(base_assumptions(client.database))
+        expected = scenarios_report(Api(client.database), base)
         assert listing == json.loads(json.dumps(expected, default=str))
         assert listing["scenarios"][1]["assumption_sources"]["income_growth"] == "Base"
         names = [item["name"].casefold() for item in listing["projection_accounts"]]
@@ -7127,6 +7216,8 @@ class TestTransactionTagsAndDocumentRoutes:
             return json.loads(response.read())
 
     def test_tags_and_documents_round_trip_through_the_register(self, client, book_path):
+        # A page reached through a proxy: it holds no local token (#358).
+        client.local_token = ""
         transaction = next(iter(client.database.iter_transactions()))
         account = transaction.splits[0].account
         _status, saved = client.post(
@@ -7175,6 +7266,7 @@ class TestTransactionTagsAndDocumentRoutes:
         assert [item["location"] for item in removed["documents"]] == ["2026/receipt.pdf"]
 
     def test_rejected_requests_keep_the_stored_transaction(self, client, book_path):
+        client.local_token = ""  # a page reached through a proxy (#358)
         transaction = next(iter(client.database.iter_transactions()))
         before = client.database.get_transaction(transaction.handle).serialize()
         for path, payload, code in (

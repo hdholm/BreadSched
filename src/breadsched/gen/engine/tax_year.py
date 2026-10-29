@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import calendar
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
@@ -47,6 +47,7 @@ __all__ = [
     "TaxYearReport",
     "TermSale",
     "TermTotal",
+    "currency_handles",
     "currency_labels",
     "gnucash_tax_related",
     "holding_term",
@@ -432,10 +433,15 @@ def tax_years(db: DbSQLite) -> tuple[int, ...]:
     return tuple(sorted(years, reverse=True))
 
 
-def currency_labels(db: DbSQLite, report: TaxYearReport) -> dict[str | None, str]:
-    """The mnemonic of each commodity the report uses ("" when none is set)."""
+def currency_handles(report: TaxYearReport) -> set[str]:
+    """Every commodity the report uses."""
+    found = report.currencies() | {currency for currency, _total in report.income_totals}
+    return {handle for handle in found if handle}
+
+
+def currency_labels(report: TaxYearReport, mnemonics: Mapping[str, str]) -> dict[str | None, str]:
+    """The mnemonic of each commodity the report uses (its handle, or "", when unnamed)."""
     labels: dict[str | None, str] = {}
     for handle in report.currencies() | {currency for currency, _total in report.income_totals}:
-        commodity = db.get_commodity(handle) if handle else None
-        labels[handle] = commodity.mnemonic if commodity is not None else (handle or "")
+        labels[handle] = mnemonics.get(handle, handle) if handle else ""
     return labels

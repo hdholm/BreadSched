@@ -12,16 +12,15 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
-from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.currency import reporting_fraction
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.engine.loans import LoanTerms, schedule_preview
 from ...gen.lib import Money
-from ...gen.lib.account import AccountClass
-from ...gen.services import SaveLoan, save_loan
+from ...gen.services import SaveLoan
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import service_error_message
 from .. import hidden_accounts
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
@@ -33,20 +32,17 @@ __all__ = ["LoanDialog"]
 class LoanDialog(BoundedWindow):
     """Enter a loan's terms and create its scheduled payment."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
         super().__init__(title="Set up a loan", transient_for=parent, modal=True)
         self.db = db
         self.set_default_size(620, 620)
 
-        self._liabilities = self._accounts_of(AccountClass.LIABILITY)
-        self._expenses = self._accounts_of(AccountClass.EXPENSE)
-        self._funding = [
-            a
-            for a in db.iter_accounts()
-            if a.atype.is_cash_like
-            and not a.placeholder
-            and (not a.hidden or hidden_accounts.shown())
-        ]
+        # The accounts a loan may use and the amount precision, through the book
+        # server (#358).
+        self.choices = book_server(db).loan_choices(hidden_accounts.shown())
+        self._liabilities = list(self.choices.liabilities)
+        self._expenses = list(self.choices.expenses)
+        self._funding = list(self.choices.payment_accounts)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         for side in ("top", "bottom", "start", "end"):
@@ -145,18 +141,8 @@ class LoanDialog(BoundedWindow):
 
     # ------------------------------------------------------------------ inputs
 
-    def _accounts_of(self, account_class: AccountClass) -> list:
-        return [
-            a
-            for a in self.db.iter_accounts()
-            if a.account_class is account_class
-            and not a.placeholder
-            and not a.is_root
-            and (not a.hidden or hidden_accounts.shown())
-        ]
-
     def _picker(self, accounts: list) -> Gtk.DropDown:
-        picker = bounded_dropdown([self.db.full_name(a) for a in accounts] or ["(none available)"])
+        picker = bounded_dropdown([item.name for item in accounts] or ["(none available)"])
         picker.connect("notify::selected", self._recalculate)
         return picker
 
@@ -183,7 +169,7 @@ class LoanDialog(BoundedWindow):
             liability=self._liabilities[self.liability_picker.get_selected()].handle,
             interest_account=self._expenses[self.interest_picker.get_selected()].handle,
             payment_account=self._funding[self.funding_picker.get_selected()].handle,
-            fraction=reporting_fraction(self.db),
+            fraction=self.choices.fraction,
         )
 
     # ----------------------------------------------------------------- preview
@@ -236,11 +222,10 @@ class LoanDialog(BoundedWindow):
         terms = self.terms()
         if terms is None:
             return
-        result = save_loan(
-            self.db,
-            SaveLoan(terms, opening_balance=self.opening_check.get_active()),
-        )
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        request = SaveLoan(terms, opening_balance=self.opening_check.get_active())
+        try:
+            book_server(self.db).save_loan(request)
+        except ApiError as error:
+            self.status.set_text(str(error))
             return
         self.close()

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from ...gen.db.sqlite import DbSQLite
-from ...gen.engine import estimates
+from ...api import ApiError
+from ...api.local import book_server
+from ...gen.services.historical_estimates import AcceptHistoricalEstimate
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -15,7 +17,7 @@ __all__ = ["HistoricalEstimatesDialog"]
 class HistoricalEstimatesDialog(BoundedWindow):
     """Offer historical category estimates without applying them silently."""
 
-    def __init__(self, parent: Gtk.Window, db: DbSQLite) -> None:
+    def __init__(self, parent: Gtk.Window, db: OpenBook) -> None:
         super().__init__(title="Suggest estimates from history", transient_for=parent)
         self.db = db
         self.set_default_size(760, 520)
@@ -36,7 +38,7 @@ class HistoricalEstimatesDialog(BoundedWindow):
         self.months = Gtk.SpinButton(adjustment=adjustment, numeric=True)
         controls.append(self.months)
 
-        self.scenarios = list(db.iter_scenarios())
+        self.scenarios = book_server(db).scenarios()
         self.target = bounded_dropdown(["Base", *[scenario.name for scenario in self.scenarios]])
         controls.append(Gtk.Label(label="Add to", xalign=0))
         controls.append(self.target)
@@ -83,19 +85,22 @@ class HistoricalEstimatesDialog(BoundedWindow):
 
     def _reload(self) -> None:
         self._clear_rows()
-        proposals = estimates.propose_historical_estimates(
-            self.db,
-            months=self.months.get_value_as_int(),
-            scenario_handle=self._scenario_handle(),
-        )
+        try:
+            found = book_server(self.db).historical_estimates(
+                self.months.get_value_as_int(), scenario=self._scenario_handle()
+            )
+        except ApiError as error:
+            self.status.set_text(str(error))
+            return
+        proposals = found.proposals
         if not proposals:
             self.status.set_text("No categories have enough completed history yet.")
             return
         self.status.set_text(f"{len(proposals)} proposal(s)")
-        for proposal in proposals:
+        for proposal, draft in zip(proposals, found.drafts, strict=True):
             row = Gtk.Box(spacing=10)
             add = Gtk.Button(label="Review…")
-            add.connect("clicked", self._on_add, proposal)
+            add.connect("clicked", self._on_add, proposal, draft.schedule)
             row.append(add)
             label = Gtk.Label(
                 label=(
@@ -117,21 +122,30 @@ class HistoricalEstimatesDialog(BoundedWindow):
     def _on_target_changed(self, *_args) -> None:
         self._reload()
 
-    def _on_add(self, button, proposal) -> None:
+    def _on_add(self, button, proposal, base_draft) -> None:
         try:
             scenario_handle = self._scenario_handle()
             if scenario_handle is None:
                 from .schedule_dialog import ScheduleDialog
 
-                base_draft = estimates.draft_historical_estimate(self.db, proposal)
                 dialog = ScheduleDialog(self, self.db, source=base_draft, creating=True)
             else:
                 from .scenario_schedule_dialog import ScenarioScheduleDialog
 
-                scenario = self.db.get_scenario(scenario_handle)
-                if scenario is None:
-                    raise ValueError("saved scenario no longer exists")
-                scenario_draft = estimates.draft_scenario_estimate(self.db, proposal)
+                try:
+                    scenario = book_server(self.db).find_scenario(scenario_handle)
+                except ApiError as error:
+                    raise ValueError("saved scenario no longer exists") from error
+                try:
+                    scenario_draft = book_server(self.db).draft_scenario_estimate(
+                        AcceptHistoricalEstimate(
+                            key=proposal.key,
+                            months=self.months.get_value_as_int(),
+                            scenario=scenario_handle,
+                        )
+                    )
+                except ApiError as error:
+                    raise ValueError(str(error)) from error
                 dialog = ScenarioScheduleDialog(self, self.db, scenario, current=scenario_draft)
         except ValueError as exc:
             self.status.set_text(str(exc))

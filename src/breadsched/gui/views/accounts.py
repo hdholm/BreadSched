@@ -11,9 +11,10 @@ would be technically correct and useless.
 
 from __future__ import annotations
 
-from ...gen.engine import valuation  # noqa: E402
-from ...gen.lib.account import Account, AccountClass  # noqa: E402
-from .. import hidden_accounts
+from ...api.local import book_server  # noqa: E402
+from ...gen.lib.account import Account  # noqa: E402
+from ...gen.services import BalanceSummary, ChartLine  # noqa: E402
+from .. import hidden_accounts  # noqa: E402
 from ..gi_setup import Gio, Gtk, Pango
 from ._base import (
     BaseView,
@@ -51,6 +52,10 @@ class AccountTreeView(BaseView):
         super().__init__(manager)
         self._show_hidden = False
         self._show_zero = True
+        #: The chart as last read through the book server, by handle, and each
+        #: account's children in the server's order (#358).
+        self._lines: dict[str, ChartLine] = {}
+        self._children: dict[str | None, list[Account]] = {}
         self._build()
 
     def _build(self) -> None:
@@ -135,43 +140,61 @@ class AccountTreeView(BaseView):
         return col
 
     def _format_balance(self, account) -> str:
-        if self.db is None:
+        line = self._lines.get(account.handle)
+        if line is None:
             return ""
-        result = valuation.aggregate_value(
-            self.db, accounts=[account, *self.db.descendants(account.handle)]
-        )
-        if result.amount is None:
-            return (
-                "Missing reporting-currency quote" if result.missing_quotes else "Mixed currencies"
-            )
-        return result.amount.format(parens_negative=True)
+        if line.balance is None:
+            return "Missing reporting-currency quote" if line.missing_quotes else "Mixed currencies"
+        return line.balance.format(parens_negative=True)
 
     def _quote_evidence(self, account) -> str:
-        if self.db is None:
-            return ""
         # The quote date already says how current it is (#151).
-        return valuation.quote_evidence(self.db, valuation.account_value(self.db, account))
+        line = self._lines.get(account.handle)
+        return line.quote_evidence if line is not None else ""
 
     # ------------------------------------------------------------------ model
 
     def refresh(self) -> None:
         if self.db is None:
             return
-        root = self.db.root_account()
+        book = book_server(self.db)
+        self._show_chart(book.chart(include_hidden=True), book.balance_summary())
+
+    def background_refresh(self):
+        """The chart is valued through the book server off GTK's loop (#389)."""
+        if self.db is None:
+            return None
+
+        def read(book):
+            return book.chart(include_hidden=True), book.balance_summary()
+
+        return read, lambda answer: self._show_chart(*answer)
+
+    def _show_chart(self, lines: list[ChartLine], summary: BalanceSummary) -> None:
+        self._lines = {line.record.account.handle: line for line in lines}
+        children: dict[str | None, list[Account]] = {}
+        top = {line.record.account.handle for line in lines if line.depth == 0}
+        for line in lines:
+            account = line.record.account
+            parent = None if account.handle in top else account.parent
+            children.setdefault(parent, []).append(account)
+        self._children = children
+        self._lay_out()
+        self._refresh_summary(summary)
+
+    def _lay_out(self) -> None:
+        """The tree from the chart already read, as the view's filters choose."""
         model = Gtk.TreeListModel.new(
-            self._children_store(root.handle if root else None),
+            self._children_store(None),
             False,  # passthrough: rows are our Row objects, not raw items
             True,  # autoexpand the first level
             self._create_child_model,
         )
         self.column_view.set_model(Gtk.SingleSelection(model=sorted_model(self.column_view, model)))
-        self._refresh_summary()
 
     def _children_store(self, parent: str | None) -> Gio.ListStore:
         store = Gio.ListStore.new(Row)
-        if self.db is None:
-            return store
-        for account in self.db.child_accounts(parent):
+        for account in self._children.get(parent, ()):
             if account.hidden and not self._show_hidden:
                 continue
             if not self._show_zero and not self._has_value(account):
@@ -180,56 +203,29 @@ class AccountTreeView(BaseView):
         return store
 
     def _has_value(self, account: Account) -> bool:
-        if self.db is None:
-            return False
-        result = valuation.aggregate_value(
-            self.db, accounts=[account, *self.db.descendants(account.handle)]
-        )
-        has_value = result.amount is None or bool(result.amount)
-        return has_value or bool(self.db.child_accounts(account.handle))
+        line = self._lines.get(account.handle)
+        has_value = line is None or line.balance is None or bool(line.balance)
+        return has_value or bool(self._children.get(account.handle))
 
     def _create_child_model(self, row: Row):
         """Return a child model, or ``None`` for a leaf so no expander is drawn."""
-        if self.db is None:
-            return None
         account = row.payload
-        if not isinstance(account, Account):
-            return None
-        children = self.db.child_accounts(account.handle)
-        if not children:
+        if not isinstance(account, Account) or not self._children.get(account.handle):
             return None
         return self._children_store(account.handle)
 
     # ---------------------------------------------------------------- summary
 
-    def _refresh_summary(self) -> None:
+    def _refresh_summary(self, summary: BalanceSummary) -> None:
         child = self.summary.get_first_child()
         while child is not None:
             self.summary.remove(child)
             child = self.summary.get_first_child()
-
-        if self.db is None:
-            return
-        accounts = list(self.db.iter_accounts())
-        cash = valuation.aggregate_value(
-            self.db, accounts=[a for a in accounts if a.atype.is_cash_like and not a.placeholder]
-        )
-        assets = valuation.aggregate_value(
-            self.db, accounts=[a for a in accounts if a.account_class == AccountClass.ASSET]
-        )
-        liabilities = valuation.aggregate_value(
-            self.db, accounts=[a for a in accounts if a.account_class == AccountClass.LIABILITY]
-        )
-        net_worth_result = valuation.aggregate_value(self.db, accounts=accounts, net_worth=True)
-        net_worth = net_worth_result.amount.value if net_worth_result.amount is not None else None
         cards = [
-            ("Cash on hand", cash.amount.value if cash.amount is not None else None),
-            ("Assets", assets.amount.value if assets.amount is not None else None),
-            (
-                "Liabilities",
-                liabilities.amount.value if liabilities.amount is not None else None,
-            ),
-            ("Net worth", net_worth),
+            ("Cash on hand", summary.cash),
+            ("Assets", summary.assets),
+            ("Liabilities", summary.liabilities),
+            ("Net worth", summary.net_worth),
         ]
         for label, amount in cards:
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
@@ -257,7 +253,14 @@ class AccountTreeView(BaseView):
             return
         from ..dialogs.account_dialog import AccountDialog
 
-        root = self.db.root_account()
+        root = next(
+            (
+                record.account
+                for record in book_server(self.db).accounts()
+                if record.account.is_root
+            ),
+            None,
+        )
         dialog = AccountDialog(
             self.get_root(),
             self.db,
@@ -355,7 +358,7 @@ class AccountTreeView(BaseView):
 
     def set_hide_empty(self, hide: bool) -> None:
         self._show_zero = not hide
-        self.refresh()
+        self._lay_out()
 
     def set_show_hidden(self, show: bool) -> None:
         """Show hidden accounts here and make them usable everywhere (registers,
@@ -366,4 +369,4 @@ class AccountTreeView(BaseView):
         refresh = getattr(root, "refresh_views", None)
         if callable(refresh):
             refresh()
-        self.refresh()
+        self._lay_out()

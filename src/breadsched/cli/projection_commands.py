@@ -6,7 +6,7 @@ import argparse
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
-from ..gen.db.sqlite import DbSQLite
+from ..api.protocol import BookApi
 from ..gen.engine import (
     activity,
     projection,
@@ -22,30 +22,23 @@ from ..gen.lib import (
     Scenario,
 )
 from ..gen.services import (
-    DeleteScenario,
     SaveDrawdown,
     SaveScenario,
     SaveScenarioAssumptions,
-    delete_scenario,
-    remove_drawdown,
-    save_drawdown,
-    save_scenario,
-    save_scenario_assumptions,
 )
 from ..presentation import (
     goal_milestone_text,
     projection_notes,
     reimbursement_outlook_text,
     runway_comparison_text,
-    service_error_message,
 )
 from .common import (
     AddCommand,
     CommandError,
+    add_server_options,
+    book_api,
     emit,
-    open_book,
     parse_date,
-    resolve_account,
     table,
 )
 
@@ -75,18 +68,16 @@ def cmd_net_worth(args: argparse.Namespace) -> int:
     """Show market-valued net worth at each period end through the as-of date."""
     from dataclasses import asdict
 
-    from ..gen.services import query_net_worth_history
+    from ..gen.engine.activity import ReportingPeriod
 
-    db = open_book(args.book, "r")
-    try:
-        start = parse_date(args.start)
-        end = parse_date(args.end)
+    start = parse_date(args.start)
+    end = parse_date(args.end)
+    with book_api(args, "r") as book:
         if start is None or end is None:
             raise CommandError("net-worth requires --start and --end")
-        result = query_net_worth_history(db, start, end, args.period, parse_date(args.as_of))
-        if result.value is None:
-            raise CommandError(service_error_message(result.errors[0]))
-        history = result.value
+        history = book.net_worth_history(
+            start, end, ReportingPeriod(args.period), parse_date(args.as_of)
+        )
 
         def money(value: Money | None) -> str:
             return "—" if value is None else value.format(parens_negative=True)
@@ -122,27 +113,20 @@ def cmd_net_worth(args: argparse.Namespace) -> int:
                 text += f"\n{point.label} withheld: " + "; ".join(point.completeness.detail())
         emit(asdict(history), args, text)
         return 0
-    finally:
-        db.close()
 
 
 def cmd_net_worth_change(args: argparse.Namespace) -> int:
     """List the postings behind a net worth change and the market movement beside them."""
     from dataclasses import asdict
 
-    from ..gen.services import query_net_worth_change
     from ..plugins.export.csv_export import export_net_worth_change
 
-    db = open_book(args.book, "r")
-    try:
-        start = parse_date(args.start)
-        end = parse_date(args.end)
+    start = parse_date(args.start)
+    end = parse_date(args.end)
+    with book_api(args, "r") as book:
         if start is None or end is None:
             raise CommandError("net-worth-change requires --start and --end")
-        result = query_net_worth_change(db, start, end, parse_date(args.as_of))
-        if result.value is None:
-            raise CommandError(service_error_message(result.errors[0]))
-        change = result.value
+        change = book.net_worth_change(start, end, parse_date(args.as_of))
         if args.csv:
             export_net_worth_change(change, args.csv)
 
@@ -180,15 +164,12 @@ def cmd_net_worth_change(args: argparse.Namespace) -> int:
             text += "\n" + "\n".join(change.completeness.detail())
         emit(asdict(change), args, text)
         return 0
-    finally:
-        db.close()
 
 
 def cmd_project(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r")
-    try:
-        scenario = _scenario_for(db, args)
-        result = projection.project(db, scenario)
+    with book_api(args, "r") as book:
+        scenario = _scenario_for(book, args)
+        result = book.project(scenario)
 
         if args.csv:
             from ..plugins.export.csv_export import export_projection
@@ -290,8 +271,6 @@ def cmd_project(args: argparse.Namespace) -> int:
             if args.csv:
                 print(f"  Wrote {args.csv}")
         return 0
-    finally:
-        db.close()
 
 
 def _projection_bridges(result, which: str):
@@ -324,12 +303,10 @@ def _bridge_text(period: str, bridges) -> str:
     return "\n".join(lines)
 
 
-def _scenario_for(db: DbSQLite, args: argparse.Namespace) -> Scenario:
+def _scenario_for(book: BookApi, args: argparse.Namespace) -> Scenario:
     """Load a saved scenario, or build a throwaway one from the flags."""
     if args.scenario:
-        scenario = db.get_scenario_by_name(args.scenario)
-        if scenario is None:
-            raise CommandError(f"no scenario named {args.scenario!r}")
+        scenario = _named_scenario(book, args.scenario)
         if args.years:
             scenario.years = args.years
         return scenario
@@ -347,54 +324,57 @@ def _scenario_for(db: DbSQLite, args: argparse.Namespace) -> Scenario:
     )
 
 
+def _named_scenario(book: BookApi, name: str) -> Scenario:
+    found = next((item for item in book.scenarios() if item.name == name), None)
+    if found is None:
+        raise CommandError(f"no scenario named {name!r}")
+    return found
+
+
 def cmd_scenario(args: argparse.Namespace) -> int:
     if args.action == "list":
-        db = open_book(args.book, "r")
-        try:
-            scenarios = list(db.iter_scenarios())
-            effective = {s.handle: s.effective_assumptions() for s in scenarios}
-            names: dict[str | None, str] = {
-                None: "Base",
-                **{s.handle: s.name for s in scenarios},
-            }
-            emit(
+        with book_api(args, "r") as book:
+            scenarios = book.scenarios()
+        effective = {s.handle: s.effective_assumptions() for s in scenarios}
+        names: dict[str | None, str] = {
+            None: "Base",
+            **{s.handle: s.name for s in scenarios},
+        }
+        emit(
+            [
+                {
+                    "name": s.name,
+                    "parent": names.get(s.parent_handle, "Base"),
+                    "years": s.years,
+                    "income_growth": effective[s.handle].income_growth,
+                    "expense_inflation": effective[s.handle].expense_inflation,
+                    "investment_return": effective[s.handle].investment_return,
+                    "assumption_sources": s.assumption_sources(),
+                }
+                for s in scenarios
+            ],
+            args,
+            table(
                 [
-                    {
-                        "name": s.name,
-                        "parent": names.get(s.parent_handle, "Base"),
-                        "years": s.years,
-                        "income_growth": effective[s.handle].income_growth,
-                        "expense_inflation": effective[s.handle].expense_inflation,
-                        "investment_return": effective[s.handle].investment_return,
-                        "assumption_sources": s.assumption_sources(),
-                    }
+                    [
+                        s.name,
+                        names.get(s.parent_handle, "Base"),
+                        str(s.years),
+                        f"{effective[s.handle].income_growth:.1%}",
+                        f"{effective[s.handle].expense_inflation:.1%}",
+                        f"{effective[s.handle].investment_return:.1%}",
+                    ]
                     for s in scenarios
                 ],
-                args,
-                table(
-                    [
-                        [
-                            s.name,
-                            names.get(s.parent_handle, "Base"),
-                            str(s.years),
-                            f"{effective[s.handle].income_growth:.1%}",
-                            f"{effective[s.handle].expense_inflation:.1%}",
-                            f"{effective[s.handle].investment_return:.1%}",
-                        ]
-                        for s in scenarios
-                    ],
-                    ["name", "parent", "years", "income", "inflation", "return"],
-                    right={2, 3, 4, 5},
-                ),
-            )
-            return 0
-        finally:
-            db.close()
+                ["name", "parent", "years", "income", "inflation", "return"],
+                right={2, 3, 4, 5},
+            ),
+        )
+        return 0
 
-    db = open_book(args.book)
-    try:
+    with book_api(args, "w") as book:
         if args.action == "save":
-            existing = db.get_scenario_by_name(args.name)
+            existing = next((item for item in book.scenarios() if item.name == args.name), None)
             scenario = existing or Scenario(name=args.name)
             scenario.years = args.years or scenario.years
             scenario.start = parse_date(args.start) or scenario.start
@@ -414,61 +394,45 @@ def cmd_scenario(args: argparse.Namespace) -> int:
                     "liability_interest",
                 }
             )
-            result = save_scenario_assumptions(
-                db,
+            saved = book.save_scenario_assumptions(
                 SaveScenarioAssumptions(
                     scenario,
                     existing_handle=existing.handle if existing is not None else None,
                 ),
             )
-            if not result.ok:
-                raise CommandError(service_error_message(result.errors[0]))
             emit(
-                {"name": scenario.name, "handle": scenario.handle},
+                {"name": saved.name, "handle": saved.handle},
                 args,
-                f"Saved scenario {scenario.name!r}",
+                f"Saved scenario {saved.name!r}",
             )
         elif args.action == "reparent":
-            reparented = db.get_scenario_by_name(args.name)
-            if reparented is None:
-                raise CommandError(f"no scenario named {args.name!r}")
+            reparented = _named_scenario(book, args.name)
             parent_name = str(args.parent or "").strip()
             if not parent_name or parent_name.casefold() == "base":
                 reparented.parent_handle = None
                 resolved_parent = "Base"
             else:
-                parent = db.get_scenario_by_name(parent_name)
-                if parent is None:
-                    raise CommandError(f"no scenario named {parent_name!r}")
+                parent = _named_scenario(book, parent_name)
                 reparented.parent_handle = parent.handle
                 resolved_parent = parent.name
             reparented.inherits_base_assumptions = True
-            result = save_scenario(db, SaveScenario(reparented, existing_handle=reparented.handle))
-            if not result.ok:
-                raise CommandError(service_error_message(result.errors[0]))
+            book.save_scenario(SaveScenario(reparented, existing_handle=reparented.handle))
             emit(
                 {"name": reparented.name, "parent": resolved_parent},
                 args,
                 f"Scenario {reparented.name!r} now inherits from {resolved_parent!r}",
             )
         elif args.action == "delete":
-            to_delete = db.get_scenario_by_name(args.name)
-            if to_delete is None:
-                raise CommandError(f"no scenario named {args.name!r}")
-            result = delete_scenario(db, DeleteScenario(to_delete.handle))
-            if not result.ok:
-                raise CommandError(service_error_message(result.errors[0]))
+            book.delete_scenario(_named_scenario(book, args.name).handle)
             emit({"deleted": args.name}, args, f"Deleted scenario {args.name!r}")
         return 0
-    finally:
-        db.close()
 
 
-def _drawdown_json(db: DbSQLite, drawdown: Drawdown) -> dict[str, object]:
+def _drawdown_json(names: dict[str, str], drawdown: Drawdown) -> dict[str, object]:
     return {
         "handle": drawdown.handle,
-        "account": db.full_name(drawdown.account),
-        "into": db.full_name(drawdown.into),
+        "account": names.get(drawdown.account, drawdown.account),
+        "into": names.get(drawdown.into, drawdown.into),
         "start": drawdown.start,
         "end": drawdown.end,
         "annual_amount": drawdown.annual_amount,
@@ -487,13 +451,11 @@ def _drawdown_rate(text: str | None) -> Decimal | None:
 
 
 def cmd_drawdown(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r" if args.action == "list" else "w")
-    try:
-        scenario = db.get_scenario_by_name(args.scenario)
-        if scenario is None:
-            raise CommandError(f"no scenario named {args.scenario!r}")
+    with book_api(args, "r" if args.action == "list" else "w") as book:
+        scenario = _named_scenario(book, args.scenario)
+        names = {record.account.handle: record.full_name for record in book.accounts()}
         if args.action == "list":
-            rows = [_drawdown_json(db, item) for item in scenario.drawdowns]
+            rows = [_drawdown_json(names, item) for item in scenario.drawdowns]
             emit(
                 rows,
                 args,
@@ -526,9 +488,7 @@ def cmd_drawdown(args: argparse.Namespace) -> int:
             ]
             if len(matches) != 1:
                 raise CommandError(f"no single drawdown matches {args.handle!r}")
-            removed = remove_drawdown(db, scenario.handle, matches[0])
-            if not removed.ok:
-                raise CommandError(service_error_message(removed.errors[0]))
+            book.remove_drawdown(scenario.handle, matches[0])
             emit({"removed": matches[0]}, args, f"Removed drawdown {matches[0][:8]}")
             return 0
         if not (args.account and args.into and args.start):
@@ -543,12 +503,11 @@ def cmd_drawdown(args: argparse.Namespace) -> int:
             handle = matches[0]
         start = parse_date(args.start)
         assert start is not None
-        result = save_drawdown(
-            db,
+        saved = book.save_drawdown(
             SaveDrawdown(
                 scenario.handle,
-                resolve_account(db, args.account).handle,
-                resolve_account(db, args.into).handle,
+                book.find_account(args.account).handle,
+                book.find_account(args.into).handle,
                 start,
                 annual_amount=Money(args.annual_amount) if args.annual_amount else None,
                 annual_rate=_drawdown_rate(args.annual_rate),
@@ -557,29 +516,20 @@ def cmd_drawdown(args: argparse.Namespace) -> int:
                 handle=handle,
             ),
         )
-        if not result.ok or result.value is None:
-            raise CommandError(service_error_message(result.errors[0]))
         emit(
-            _drawdown_json(db, result.value),
+            _drawdown_json(names, saved),
             args,
-            f"Saved drawdown {result.value.handle[:8]} in {scenario.name!r}",
+            f"Saved drawdown {saved.handle[:8]} in {scenario.name!r}",
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_compare(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r")
-    try:
-        left_scenario = db.get_scenario_by_name(args.base)
-        right_scenario = db.get_scenario_by_name(args.other)
-        if left_scenario is None:
-            raise CommandError(f"no scenario named {args.base!r}")
-        if right_scenario is None:
-            raise CommandError(f"no scenario named {args.other!r}")
-        left = projection.project(db, left_scenario)
-        right = projection.project(db, right_scenario)
+    with book_api(args, "r") as book:
+        left_scenario = _named_scenario(book, args.base)
+        right_scenario = _named_scenario(book, args.other)
+        left = book.project(left_scenario)
+        right = book.project(right_scenario)
         rows = projection.compare(left, right)
         yearly = [row for row in rows if (row["index"] + 1) % 12 == 0]
         emit(
@@ -609,20 +559,13 @@ def cmd_compare(args: argparse.Namespace) -> int:
                 )
             )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_dashboard(args: argparse.Namespace) -> int:
     """The overview: what is owned, what is owed, and what must stay liquid."""
-    db = open_book(args.book, "r")
-    try:
-        config = dashboard_engine.DashboardConfig.load(db)
-        if args.liquidity_days:
-            config.liquidity_days = args.liquidity_days
-        if args.emergency_months:
-            config.emergency_months = args.emergency_months
-        board = dashboard_engine.build(db, config, as_of=parse_date(args.as_of))
+    with book_api(args, "r") as book:
+        board = book.dashboard(parse_date(args.as_of), args.liquidity_days, args.emergency_months)
+        config = board.config
         summary = board.summary()
         report = board.report_summary()
 
@@ -724,12 +667,17 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                             "expected": item.receivable.expected_cash_date,
                             "remaining": item.remaining,
                             "status": item.status.value,
-                            "attention": dashboard_engine.reimbursable_overdue(item, board.as_of),
+                            # Disputed or past its expected date (``reimbursable_overdue``).
+                            "attention": item.status.value == "disputed"
+                            or (
+                                item.receivable.expected_cash_date is not None
+                                and item.receivable.expected_cash_date < board.as_of
+                            ),
                         }
                         for item in board.reimbursables
                     ],
                     # Which sections Configure Dashboard shows; the text output follows it.
-                    "sections": {name: config.shows(name) for name in dashboard_engine.SECTIONS},
+                    "sections": dict(config.sections),
                 },
                 args,
             )
@@ -943,8 +891,6 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
             if len(board.reimbursables) > args.limit:
                 print(f"... and {len(board.reimbursables) - args.limit} more")
         return 0
-    finally:
-        db.close()
 
 
 def assumption_flags(sub: argparse.ArgumentParser) -> None:
@@ -974,6 +920,7 @@ def register(add: AddCommand) -> None:
         help="show how opening balances, planned events, and interest and performance "
         "reach each closing balance (the whole projection, or one month)",
     )
+    add_server_options(project_cmd)
     project_cmd.set_defaults(func=cmd_project)
 
     scenario = add("scenario", "Save, list, reparent or delete projection scenarios")
@@ -983,6 +930,7 @@ def register(add: AddCommand) -> None:
     scenario.add_argument("--years", type=int)
     scenario.add_argument("--start")
     assumption_flags(scenario)
+    add_server_options(scenario)
     scenario.set_defaults(func=cmd_scenario)
 
     drawdown = add("drawdown", "List, save or remove a scenario's retirement drawdowns")
@@ -998,11 +946,13 @@ def register(add: AddCommand) -> None:
         "--level", action="store_true", help="do not grow a fixed amount with inflation"
     )
     drawdown.add_argument("--handle", help="drawdown to replace or remove (prefix)")
+    add_server_options(drawdown)
     drawdown.set_defaults(func=cmd_drawdown)
 
     compare = add("compare", "Compare two saved scenarios year by year")
     compare.add_argument("base")
     compare.add_argument("other")
+    add_server_options(compare)
     compare.set_defaults(func=cmd_compare)
 
     net_worth_cmd = add(
@@ -1021,6 +971,7 @@ def register(add: AddCommand) -> None:
         "--as-of",
         help="last date to value; later periods are omitted (default today)",
     )
+    add_server_options(net_worth_cmd)
     net_worth_cmd.set_defaults(func=cmd_net_worth)
 
     net_worth_change_cmd = add(
@@ -1035,6 +986,7 @@ def register(add: AddCommand) -> None:
     net_worth_change_cmd.add_argument(
         "--csv", metavar="PATH", help="also write the postings and totals as CSV"
     )
+    add_server_options(net_worth_change_cmd)
     net_worth_change_cmd.set_defaults(func=cmd_net_worth_change)
 
     dash = add("dashboard", "Overview of balances, bills and liquidity")
@@ -1046,4 +998,5 @@ def register(add: AddCommand) -> None:
         "--emergency-months", type=int, help="months of outgoings the emergency fund should cover"
     )
     dash.add_argument("--limit", type=int, default=40, help="bills and income rows to list")
+    add_server_options(dash)
     dash.set_defaults(func=cmd_dashboard)

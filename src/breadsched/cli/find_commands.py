@@ -5,16 +5,10 @@ from __future__ import annotations
 import argparse
 from decimal import InvalidOperation
 
-from ..gen.engine.transaction_query import (
-    DIRECTIONS,
-    GROUPINGS,
-    SORTS,
-    QueryResult,
-    TransactionQuery,
-    run_query,
-)
+from ..gen.engine.transaction_query import DIRECTIONS, GROUPINGS, SORTS, TransactionQuery
 from ..gen.lib import Money
-from .common import AddCommand, CommandError, emit, open_book, parse_date, resolve_account, table
+from ..gen.services.transaction_search import FindResult
+from .common import AddCommand, CommandError, add_server_options, book_api, emit, parse_date, table
 
 __all__ = ["cmd_find", "register", "result_json"]
 
@@ -38,23 +32,23 @@ def _totals_text(totals: dict[str, Money]) -> str:
     )
 
 
-def result_json(result: QueryResult) -> dict[str, object]:
+def result_json(result: FindResult) -> dict[str, object]:
     """The rows, groups, and totals as ``--json`` (and the browser) read them."""
 
     def row(item) -> dict[str, object]:
         return {
-            "transaction": item.transaction.handle,
-            "split": item.split.handle,
-            "date": item.transaction.post_date,
-            "num": item.transaction.num,
-            "description": item.transaction.description,
-            "account": item.split.account,
+            "transaction": item.transaction,
+            "split": item.split,
+            "date": item.date,
+            "num": item.num,
+            "description": item.description,
+            "account": item.account,
             "account_name": item.account_name,
-            "memo": item.split.memo,
-            "amount": item.value,
+            "memo": item.memo,
+            "amount": item.amount,
             "currency": item.currency,
-            "reconcile": item.split.reconcile.value,
-            "tags": list(item.transaction.tags),
+            "reconcile": item.reconcile,
+            "tags": list(item.tags),
         }
 
     return {
@@ -63,17 +57,16 @@ def result_json(result: QueryResult) -> dict[str, object]:
             for group in result.groups
         ],
         "totals": result.totals,
-        "splits": len(result.rows),
+        "splits": result.splits,
         "transactions": result.transactions,
     }
 
 
 def cmd_find(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r")
-    try:
+    with book_api(args, "r") as book:
         query = TransactionQuery(
             text=args.text or "",
-            accounts=tuple(resolve_account(db, name).handle for name in args.account or ()),
+            accounts=tuple(book.find_account(name).handle for name in args.account or ()),
             subaccounts=not args.no_subaccounts,
             start=parse_date(args.start),
             end=parse_date(args.end),
@@ -87,42 +80,37 @@ def cmd_find(args: argparse.Namespace) -> int:
             descending=args.descending,
             group_by=args.group_by,
         )
-        try:
-            result = run_query(db, query)
-        except ValueError as exc:
-            raise CommandError(str(exc)) from None
-        if args.json:
-            emit(result_json(result), args)
-            return 0
-        grouped = query.group_by != "none"
-        for group in result.groups:
-            if grouped:
-                print(f"{group.key}")
-            print(
-                table(
-                    [
-                        [
-                            item.transaction.post_date.isoformat(),
-                            item.transaction.num[:8],
-                            item.transaction.description[:36],
-                            item.account_name[:36],
-                            item.value.format(parens_negative=True),
-                        ]
-                        for item in group.rows
-                    ],
-                    ["date", "num", "description", "account", "amount"],
-                    right={4},
-                )
-            )
-            if grouped:
-                print(f"  subtotal: {_totals_text(group.totals)}\n")
-        print(
-            f"{len(result.rows)} split(s) in {result.transactions} transaction(s); "
-            f"total {_totals_text(result.totals)}"
-        )
+        result = book.find(query)
+    if args.json:
+        emit(result_json(result), args)
         return 0
-    finally:
-        db.close()
+    grouped = query.group_by != "none"
+    for group in result.groups:
+        if grouped:
+            print(f"{group.key}")
+        print(
+            table(
+                [
+                    [
+                        item.date.isoformat(),
+                        item.num[:8],
+                        item.description[:36],
+                        item.account_name[:36],
+                        item.amount.format(parens_negative=True),
+                    ]
+                    for item in group.rows
+                ],
+                ["date", "num", "description", "account", "amount"],
+                right={4},
+            )
+        )
+        if grouped:
+            print(f"  subtotal: {_totals_text(group.totals)}\n")
+    print(
+        f"{result.splits} split(s) in {result.transactions} transaction(s); "
+        f"total {_totals_text(result.totals)}"
+    )
+    return 0
 
 
 def register(add: AddCommand) -> None:
@@ -150,4 +138,5 @@ def register(add: AddCommand) -> None:
     find.add_argument("--sort", choices=SORTS, default="date")
     find.add_argument("--descending", action="store_true")
     find.add_argument("--group-by", choices=GROUPINGS, default="none", help="subtotal groups")
+    add_server_options(find)
     find.set_defaults(func=cmd_find)

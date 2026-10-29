@@ -6,11 +6,12 @@ from calendar import monthrange
 from datetime import date
 from typing import TYPE_CHECKING
 
-from ..gen.db.sqlite import DbSQLite
+from ..api.contract import ApiError
+from ..api.protocol import BookApi
 from ..gen.engine.activity import PlanMeasure, PlanSettings, ReportingPeriod
 from ..gen.engine.completeness import combine
 from ..gen.lib import AccountClass, Money
-from ..gen.services import PlanQuery, query_plan
+from ..gen.services import PlanQuery
 from ..presentation import PLAN_REIMBURSABLE_HEADING, plan_goal_text, plan_reimbursable_text
 from .controls import ResourceError
 
@@ -19,7 +20,7 @@ if TYPE_CHECKING:
 
 
 def plan_report(
-    db: DbSQLite,
+    book: BookApi,
     start_month: str | None = None,
     through_month: str | None = None,
     period: str | None = None,
@@ -46,20 +47,19 @@ def plan_report(
         if through is not None
         else None
     )
-    service_result = query_plan(
-        db,
-        PlanQuery(
-            start=start,
-            end=end,
-            period=ReportingPeriod(period) if period is not None else None,
-            measure=PlanMeasure(measure) if measure is not None else None,
-            scenario=scenario_handle,
-            compare=compare_handle,
-            use_saved=use_saved,
-        ),
-    )
-    if service_result.value is None:
-        error = service_result.errors[0]
+    try:
+        plan = book.plan(
+            PlanQuery(
+                start=start,
+                end=end,
+                period=ReportingPeriod(period) if period is not None else None,
+                measure=PlanMeasure(measure) if measure is not None else None,
+                scenario=scenario_handle,
+                compare=compare_handle,
+                use_saved=use_saved,
+            )
+        )
+    except ApiError as error:
         messages = {
             "plan.scenario.not_found": "Scenario was not found.",
             "plan.comparison.not_found": "Comparison scenario was not found.",
@@ -74,8 +74,7 @@ def plan_report(
             error.code,
             error.fields,
             messages.get(error.code, error.code),
-        )
-    plan = service_result.value
+        ) from None
     start = plan.start
     end = plan.end
     minimum = plan.minimum
@@ -442,7 +441,7 @@ def plan_report(
 def plan_settings_save(api: Api, payload: dict) -> dict:
     """Validate and persist the shared per-book Plan presentation."""
     result = plan_report(
-        api.db,
+        api.book,
         str(payload.get("from", "")) or None,
         str(payload.get("through", "")) or None,
         str(payload.get("period", "")) or None,
@@ -453,12 +452,14 @@ def plan_settings_save(api: Api, payload: dict) -> dict:
     controls = result["controls"]
     start = date.fromisoformat(f"{controls['from']}-01")
     through = date.fromisoformat(f"{controls['through']}-01")
-    PlanSettings(
-        start=start,
-        end=date(through.year, through.month, monthrange(through.year, through.month)[1]),
-        period=ReportingPeriod(str(controls["period"])),
-        measure=PlanMeasure(str(controls["measure"])),
-        scenario=controls["scenario"],
-        compare=(str(payload.get("compare")) if payload.get("compare") else None),
-    ).save(api.db)
+    api.book.save_plan_settings(
+        PlanSettings(
+            start=start,
+            end=date(through.year, through.month, monthrange(through.year, through.month)[1]),
+            period=ReportingPeriod(str(controls["period"])),
+            measure=PlanMeasure(str(controls["measure"])),
+            scenario=controls["scenario"],
+            compare=(str(payload.get("compare")) if payload.get("compare") else None),
+        )
+    )
     return controls

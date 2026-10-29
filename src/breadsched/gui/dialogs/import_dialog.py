@@ -15,15 +15,11 @@ from __future__ import annotations
 
 from pathlib import Path  # noqa: E402
 
-from ...gen.db.sqlite import DbSQLite  # noqa: E402
-from ...gen.plug import (  # noqa: E402
-    IMPORTER,
-    PluginManager,
-    remembered_import_source,
-)
-from ...gen.services import ImportBook, import_book  # noqa: E402
-from ...gen.services.claims import claim_link_proposals
-from ...gen.services.receivables import reimbursement_proposals
+from ...api import ApiError
+from ...api.local import book_server
+from ...gen.db.sqlite import DbSQLite
+from ...gen.plug import IMPORTER, PluginManager  # noqa: E402
+from ...gen.services import ImportBook  # noqa: E402
 from ...gen.utils import logs  # noqa: E402
 from ...gen.utils.cancellation import OperationCancelled  # noqa: E402
 from ...gen.utils.user_paths import companion_path
@@ -31,10 +27,10 @@ from ...plugins.importer.gnucash_common import ImportResult  # noqa: E402
 from ...presentation import (  # noqa: E402
     claim_link_notice,
     reimbursement_notice,
-    service_error_message,
 )
 from ..background import BackgroundJob  # noqa: E402
 from ..gi_setup import Gio, GLib, Gtk, Pango
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -50,7 +46,7 @@ WARNING_LIMIT = 50
 class ImportDialog(BoundedWindow):
     """Choose a GnuCash file, check what it is, then import it."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
         super().__init__(title="Import financial data", transient_for=parent, modal=True)
         self.db = db
         self.path: str | None = None
@@ -168,7 +164,7 @@ class ImportDialog(BoundedWindow):
         buttons.append(self.import_button)
         box.append(buttons)
 
-        remembered = remembered_import_source(self.db)
+        remembered = book_server(self.db).import_source()
         if remembered is not None and Path(remembered).is_file():
             self.set_source(remembered)
 
@@ -176,7 +172,7 @@ class ImportDialog(BoundedWindow):
 
     def _on_choose(self, _button) -> None:
         dialog = Gtk.FileDialog(title="Choose a financial-data file")
-        remembered = remembered_import_source(self.db)
+        remembered = book_server(self.db).import_source()
         if remembered is not None:
             previous = Path(remembered)
             if previous.is_file():
@@ -288,23 +284,26 @@ class ImportDialog(BoundedWindow):
 
         def work(_cancel, report) -> ImportResult:
             try:
-                outcome = import_book(
-                    self.db,
-                    ImportBook(
-                        source=path,
-                        format=plugin.id,
-                        include_scheduled=include_scheduled,
-                        include_duplicates=include_duplicates,
-                        number_format=number_format,
-                        date_format=date_format,
-                        notify=False,
-                        progress=lambda stage, done, total: report((stage, done, total)),
-                    ),
+                # Through the book server, in process, so the request's progress
+                # reaches this window (#358).
+                return (
+                    book_server(self.db)
+                    .import_book(
+                        ImportBook(
+                            source=path,
+                            format=plugin.id,
+                            include_scheduled=include_scheduled,
+                            include_duplicates=include_duplicates,
+                            number_format=number_format,
+                            date_format=date_format,
+                            notify=False,
+                            progress=lambda stage, done, total: report((stage, done, total)),
+                        ),
+                    )
+                    .result
                 )
-                if not outcome.ok:
-                    raise ValueError(service_error_message(outcome.errors[0]))
-                assert outcome.value is not None
-                return outcome.value.result
+            except ApiError as error:
+                raise ValueError(str(error)) from None
             finally:
                 logs.configure(verbosity=0)
 
@@ -319,9 +318,11 @@ class ImportDialog(BoundedWindow):
     def _import_succeeded(self, path: str, result: ImportResult, log_path: Path | None) -> None:
         # The worker suppressed synchronous database callbacks: GTK must only be
         # notified after commit, here on its own main thread.
-        self.db.emit("database-changed", (self.db,))
-        self.db.emit("undo-available", (bool(self.db.undo_stack),))
-        self.db.emit("redo-available", (False,))
+        if isinstance(self.db, DbSQLite):
+            self.db.emit("database-changed", (self.db,))
+            self.db.emit("undo-available", (bool(self.db.undo_stack),))
+            self.db.emit("redo-available", (False,))
+        # A book another process holds tells the views itself, by its change stream.
         result.log_path = str(log_path) if log_path else None
         self.progress.set_fraction(1.0)
         self.progress.set_text("Finished")
@@ -331,11 +332,11 @@ class ImportDialog(BoundedWindow):
         text = (
             result.detail(limit=WARNING_LIMIT) + "\n\nThis import is a single undo step (Ctrl+Z)."
         )
-        notice = reimbursement_notice(len(reimbursement_proposals(self.db).value or ()))
+        notice = reimbursement_notice(len(book_server(self.db).reimbursement_proposals()))
         if notice:
             # Imported deposits may be money back on a reimbursable expense.
             text += f"\n\n{notice}"
-        if claim_notice := claim_link_notice(len(claim_link_proposals(self.db).value or ())):
+        if claim_notice := claim_link_notice(len(book_server(self.db).claim_link_proposals())):
             # An imported FSA statement line may belong on a claim.
             text += f"\n\n{claim_notice}"
         self.result_view.set_text(text)
@@ -346,10 +347,9 @@ class ImportDialog(BoundedWindow):
 
     def present_held_review(self) -> Gtk.Window | None:
         """Offer the batched review of GnuCash changes to reconciled transactions."""
-        from ...gen.services import pending_import_changes
         from .import_review_dialog import ImportReviewDialog
 
-        changes = pending_import_changes(self.db)
+        changes = list(book_server(self.db).held_imports())
         if not changes:
             return None
         dialog = ImportReviewDialog(self, self.db, changes)

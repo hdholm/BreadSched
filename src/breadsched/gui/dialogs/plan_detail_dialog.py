@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.plan_detail import (
     CategoryPeriodDetail,
     MortgagePaymentPeriodDetail,
@@ -12,6 +11,7 @@ from ...gen.engine.plan_detail import (
 )
 from ...presentation import plan_detail_cost_text
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.help import help_row
 
@@ -31,7 +31,7 @@ class PlanDetailDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         detail: CategoryPeriodDetail | PlanningFlowPeriodDetail | MortgagePaymentPeriodDetail,
         *,
         period_label: str,

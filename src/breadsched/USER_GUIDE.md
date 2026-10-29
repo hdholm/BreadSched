@@ -144,6 +144,26 @@ Scenarios answer "what if" without changing the book
 A child scenario inherits everything from its parent, so later changes to Base
 carry into it unless it overrides them.
 
+### Share a book with your household
+
+One book can be used from several places at once. While `breadsched serve` holds it
+(or the desktop shares the book it has open, **Preferences → Sharing**), the desktop
+application, commands, and browsers on this computer all use it through that server,
+and each sees the others' changes as they are saved. To reach it from a phone or
+tablet, put a TLS reverse proxy in front of the server; the phone-sized **Quick
+entry** page enters one transaction at a time
+([command line](guide/cli.md#share-a-book-with-a-running-server),
+[browser](guide/web.md#quick-entry-from-a-phone)).
+
+Used alone, nothing changes: there is no sign-in and no password. To let someone
+else in, give them a user and a role in the book: an *owner*, an *editor* who reads
+and changes it, a *viewer* who only reads, or an *entry* user who only adds
+transactions. They sign in with their own password, and optionally a code from an
+authenticator app. The Plan's controls and the Dashboard's arrangement are each
+person's own; the book holds everything else
+([command line](guide/cli.md#users-and-devices),
+[desktop](guide/desktop.md#preferences)).
+
 ## Understand the model
 
 ### Ledger and exact amounts
@@ -483,6 +503,10 @@ not change the running balance. A transaction cannot be saved unless its exact s
 balance. While split lines do not balance, the empty last line (or, in the desktop
 transaction editor, a new split row) holds the amount left, waiting for its
 account, as in GnuCash.
+
+For entering one purchase or payment quickly, as on a phone, the browser interface
+also has a small **Quick entry** page apart from the full interface
+([browser](guide/web.md#quick-entry-from-a-phone)).
 
 Both the desktop and browser registers end in a blank row for typing a new entry
 (the desktop register opens there, scrolled to the newest entries),
@@ -841,8 +865,10 @@ you turn it on.
 bills cash must cover, and how many months of outgoings the emergency fund should
 last), which sections show (account groups, pending bills, expected income, pending
 reimbursables, and savings goals), the groups and their accounts, and each table's
-columns. The horizons, sections, and groups belong to the book, so everyone who opens
-it sees the same Dashboard; the columns are each person's own choice. The command
+columns. All of it is each person's own: when a book is shared with other people,
+each arranges the Dashboard as it makes sense to them, starting from the book's
+arrangement, and an account's **Dashboard group** set while editing the account is
+your own too. The columns are kept in each browser. The command
 line's `breadsched dashboard` and the printed Dashboard show the sections chosen
 there.
 
@@ -898,8 +924,9 @@ carry the same totals as the screen.
 ## Plan
 
 Choose From, Through, Group by, Show, scenario, and comparison values, then apply
-them. These controls are saved with the book and shared between the desktop
-application and the browser. To compare assumptions, select a different saved
+them. These controls are your own for this book, shared between the desktop
+application and the browser on the computer that keeps the book; anyone else the
+book is shared with keeps their own. To compare assumptions, select a different saved
 scenario or Base as the comparison and apply the controls. The comparison shows
 amounts for both cases and differences for matching categories, cash-bridge entries,
 mortgage requirements, and planning flows; the original scenarios and recorded

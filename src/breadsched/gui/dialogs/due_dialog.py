@@ -23,20 +23,21 @@ one of its dates at once, while each date keeps its own answer. Those dates are
 listed under an expander and built only when it is opened (#389): a book with
 hundreds of missed dates opened slowly when each had its own drop-down at once.
 
-Apply goes through the shared due-review service. It rechecks every chosen date
-against the book, so a date posted or skipped elsewhere since this window opened
-is refused rather than posted twice, and the whole batch is one undo step. What it
-posted then opens in ``PostedTransactionsDialog`` to check, edit, or delete (#328).
+The rows come from the book server's due review (``book.due_review``, #359), each
+marked with why it is listed, and Apply goes through the same server
+(``book.resolve_due``). It rechecks every chosen date against the book, so a date
+posted or skipped elsewhere since this window opened is refused rather than posted
+twice, and the whole batch is one undo step. What it posted then opens in
+``PostedTransactionsDialog`` to check, edit, or delete (#328).
 """
 
 from __future__ import annotations
 
-from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.schedule import ReviewStage, review_stage
-from ...gen.lib.money import Money
-from ...gen.services import DueDecision, ResolveDue, resolve_due
-from ...presentation import service_error_message
+from ...api import ApiError
+from ...api.local import book_server
+from ...gen.services import DueDecision, DueItem, DueScheduleReview, ResolveDue
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -74,27 +75,29 @@ POST, LATER, NEVER = 0, 1, 2
 _CHOICES = ["Post now", "Remind me later", "Never (mark as done)"]
 _DECISIONS = {POST: DueDecision.POST, LATER: DueDecision.DEFER, NEVER: DueDecision.SKIP}
 _GROUP_CHOICES = ["Choose each date", "Post all", "Remind me later for all", "Never, all"]
-#: How a row says why it is listed, beside its date (#352).
-_STAGE_NOTES = {
-    ReviewStage.OVERDUE: "overdue",
-    ReviewStage.ADVANCE: "in advance",
-    ReviewStage.REMINDER: "reminder",
-}
+#: How a row says why it is listed, beside its date (#352); a date due today says
+#: nothing more.
+_STAGE_NOTES = {"overdue": "overdue", "advance": "in advance", "reminder": "reminder"}
 
 
 class DueDialog(BoundedWindow):
     """One row per due occurrence, each with its own decision."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite, occurrences) -> None:
+    def __init__(
+        self, parent: Gtk.Window | None, db: OpenBook, reviews: list[DueScheduleReview]
+    ) -> None:
         super().__init__(title="Scheduled transactions due", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
         self.db = db
-        groups: dict[str, list] = {}
-        for occurrence in occurrences:
-            groups.setdefault(occurrence.schedule.handle, []).append(occurrence)
-        ordered = sorted(groups.values(), key=lambda items: min(o.when for o in items))
-        self.occurrences = [o for items in ordered for o in sorted(items, key=lambda o: o.when)]
-        #: One answer per date, in ``occurrences`` order.
+        self.book = book_server(db)
+        ordered = sorted(
+            (review for review in reviews if review.items),
+            key=lambda review: min(item.when for item in review.items),
+        )
+        #: Every listed date, in the order of :attr:`choosers`.
+        self.items: list[DueItem] = [
+            item for review in ordered for item in sorted(review.items, key=lambda i: i.when)
+        ]
         self.choosers: list[_Choice] = []
         #: Per-schedule "set every date" choosers, keyed by schedule handle.
         self.group_choosers: dict[str, Gtk.DropDown] = {}
@@ -109,7 +112,7 @@ class DueDialog(BoundedWindow):
         box.append(
             Gtk.Label(
                 label=(
-                    f"{len(self.occurrences)} scheduled transaction(s) are due, or are "
+                    f"{len(self.items)} scheduled transaction(s) are due, or are "
                     "entered or reminded in advance. Choose what to do with each."
                 ),
                 xalign=0,
@@ -138,12 +141,10 @@ class DueDialog(BoundedWindow):
         index = 0
         #: Per-schedule expanders of dates, keyed by schedule handle.
         self.expanders: dict[str, Gtk.Expander] = {}
-        for items in ordered:
-            items = sorted(items, key=lambda o: o.when)
-            first = items[0]
-            total = sum((o.amount for o in items), Money(0))
+        for review in ordered:
+            items = sorted(review.items, key=lambda item: item.when)
             heading = Gtk.Label(
-                label=f"{first.name}: {len(items)} to review, {total.format()}",
+                label=f"{review.name}: {len(items)} to review, {review.total.format()}",
                 xalign=0,
             )
             heading.add_css_class("summary-label")
@@ -160,7 +161,7 @@ class DueDialog(BoundedWindow):
                         chooser, start, count
                     ),
                 )
-                self.group_choosers[first.schedule.handle] = group
+                self.group_choosers[review.schedule] = group
                 grid.attach(group, 3, row, 1, 1)
                 row += 1
                 # The dates themselves only when asked for (#389).
@@ -170,16 +171,16 @@ class DueDialog(BoundedWindow):
                 expander.set_child(dates)
                 expander.connect(
                     "notify::expanded",
-                    lambda widget, _pspec, items=items, choices=choices, dates=dates: (
-                        self._fill_dates(dates, items, choices) if widget.get_expanded() else None
+                    lambda widget, _pspec, fill=(dates, review, items, choices): (
+                        self._fill_dates(*fill) if widget.get_expanded() else None
                     ),
                 )
-                self.expanders[first.schedule.handle] = expander
+                self.expanders[review.schedule] = expander
                 grid.attach(expander, 0, row, 4, 1)
                 row += 1
             else:
                 row += 1
-                self._date_row(grid, row, items[0], choices[0])
+                self._date_row(grid, row, review, items[0], choices[0])
                 row += 1
             index += len(items)
 
@@ -201,17 +202,19 @@ class DueDialog(BoundedWindow):
         buttons.append(apply_button)
         box.append(buttons)
 
-    def _date_row(self, grid: Gtk.Grid, row: int, occurrence, choice: _Choice) -> None:
-        due = Gtk.Label(label=occurrence.when.isoformat(), xalign=0)
-        stage = review_stage(occurrence.schedule, occurrence.when, _today())
-        if stage is ReviewStage.OVERDUE:
+    def _date_row(
+        self, grid: Gtk.Grid, row: int, review: DueScheduleReview, item: DueItem, choice: _Choice
+    ) -> None:
+        due = Gtk.Label(label=item.when.isoformat(), xalign=0)
+        if item.stage == "overdue":
             due.add_css_class("negative")
-        if stage is not ReviewStage.DUE:
-            due.set_text(f"{occurrence.when.isoformat()}  ({_STAGE_NOTES[stage]})")
+        note = _STAGE_NOTES.get(item.stage)
+        if note:
+            due.set_text(f"{item.when.isoformat()}  ({note})")
         due.set_margin_start(18)
         grid.attach(due, 0, row, 1, 1)
-        grid.attach(Gtk.Label(label=occurrence.name, xalign=0), 1, row, 1, 1)
-        amount = Gtk.Label(label=occurrence.amount.format(), xalign=1)
+        grid.attach(Gtk.Label(label=review.name, xalign=0), 1, row, 1, 1)
+        amount = Gtk.Label(label=item.amount.format(), xalign=1)
         amount.add_css_class("numeric")
         grid.attach(amount, 2, row, 1, 1)
         # Undecided by default: the safe answer to an unread question is to ask
@@ -220,11 +223,13 @@ class DueDialog(BoundedWindow):
         choice.bind(chooser)
         grid.attach(chooser, 3, row, 1, 1)
 
-    def _fill_dates(self, grid: Gtk.Grid, items: list, choices: list[_Choice]) -> None:
+    def _fill_dates(
+        self, grid: Gtk.Grid, review: DueScheduleReview, items: list, choices: list[_Choice]
+    ) -> None:
         if grid.get_first_child() is not None:
             return
-        for row, (occurrence, choice) in enumerate(zip(items, choices, strict=True)):
-            self._date_row(grid, row, occurrence, choice)
+        for row, (item, choice) in enumerate(zip(items, choices, strict=True)):
+            self._date_row(grid, row, review, item, choice)
 
     # ------------------------------------------------------------------ choices
 
@@ -240,10 +245,10 @@ class DueDialog(BoundedWindow):
         for chooser in self.choosers[start : start + count]:
             chooser.set_selected(choice)
 
-    def selection(self, choice: int) -> list:
+    def selection(self, choice: int) -> list[DueItem]:
         return [
-            occurrence
-            for occurrence, chooser in zip(self.occurrences, self.choosers, strict=False)
+            item
+            for item, chooser in zip(self.items, self.choosers, strict=False)
             if chooser.get_selected() == choice
         ]
 
@@ -253,21 +258,21 @@ class DueDialog(BoundedWindow):
         The handles of the transactions posted are kept in ``posted_transactions``.
         """
         decisions = tuple(
-            (occurrence.schedule.handle, occurrence.when, _DECISIONS[chooser.get_selected()])
-            for occurrence, chooser in zip(self.occurrences, self.choosers, strict=True)
+            (item.schedule, item.when, _DECISIONS[chooser.get_selected()])
+            for item, chooser in zip(self.items, self.choosers, strict=True)
             if chooser.get_selected() != LATER
         )
         self.posted_transactions: tuple[str, ...] = ()
         if not decisions:
             return 0, 0
-        result = resolve_due(self.db, ResolveDue(decisions, as_of=_today()))
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            outcome = self.book.resolve_due(ResolveDue(decisions, as_of=_today()))
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return None
-        assert result.value is not None
-        self.posted_transactions = result.value.transactions
-        return result.value.posted, result.value.skipped
+        self.posted_transactions = outcome.transactions
+        return outcome.posted, outcome.skipped
 
     def _on_apply(self, _button) -> None:
         outcome = self.apply()

@@ -11,8 +11,8 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING
 
-from ..gen.db.sqlite import DbSQLite
-from ..gen.engine import estimates, schedule
+from ..api.views import due_review_json, next_occurrence_json, posted_due_json, resolution_json
+from ..gen.engine import schedule
 from ..gen.lib import (
     InvestmentActivityKind,
     PlanningFlowKind,
@@ -20,24 +20,18 @@ from ..gen.lib import (
     scheduled_occurrence_preview,
 )
 from ..gen.services import (
-    DeleteSchedule,
     DueDecision,
     DuplicateSchedule,
     FixedScheduleInput,
     FormulaScheduleInput,
+    PostDue,
     ResolveDue,
     ResolveNext,
     SaveFixedSchedule,
-    delete_schedule,
-    duplicate_schedule,
-    next_occurrence,
-    pending_due_review,
-    resolve_due,
-    resolve_next,
-    save_fixed_schedule,
-    save_formula_schedule,
 )
-from .controls import input_amount, service_error
+from ..gen.services.historical_estimates import AcceptHistoricalEstimate
+from ..gen.services.schedule_editing import ScheduleEditorView
+from .controls import input_amount
 from .schedule_controls import (
     frequency_key,
     parse_additional_splits,
@@ -47,7 +41,7 @@ from .schedule_controls import (
     parse_skipped,
     parse_split_amount_changes,
     schedule_recurrence,
-    simple_schedule_parts,
+    simple_parts,
     weekend_key,
 )
 
@@ -56,20 +50,12 @@ if TYPE_CHECKING:
 
 
 def scheduled(api: Api, days: int = 60) -> dict:
-    occurrences = schedule.upcoming_occurrences(api.db, horizon_days=days)
-    accounts = sorted(
-        (
-            account
-            for account in api.db.iter_accounts()
-            if not account.is_root and not account.placeholder
-        ),
-        key=api.db.full_name,
-    )
+    """The Schedules page, from one book-server read (#358)."""
+    view = api.book.schedules_view(days)
     definitions = []
-    saved_schedules = list(api.db.iter_scheduled())
-    for item in saved_schedules:
-        projection = schedule.schedule_edit_projection(api.db, item)
-        simple = simple_schedule_parts(api.db, item)
+    for editor in view.definitions:
+        item, projection = editor.schedule, editor.projection
+        simple = simple_parts(editor)
         frequency = frequency_key(item.recurrence)
         editability = projection.editability
         definitions.append(
@@ -87,7 +73,7 @@ def scheduled(api: Api, days: int = 60) -> dict:
                 "auto": item.auto_create,
                 "advance_days": item.advance_days,
                 "remind_days": item.remind_days,
-                "next": _next_json(api.db, item.handle),
+                "next": next_occurrence_json(view.next.get(item.handle)),
                 "growth_policy": item.growth_policy.value,
                 "simple": simple is not None and frequency is not None,
                 "editable": editability.editable,
@@ -107,11 +93,8 @@ def scheduled(api: Api, days: int = 60) -> dict:
                     {
                         "index": index,
                         "account": item.splits[index].account,
-                        "account_name": (
-                            api.db.full_name(account)
-                            if (account := api.db.get_account(item.splits[index].account))
-                            is not None
-                            else item.splits[index].account
+                        "account_name": view.names.get(
+                            item.splits[index].account, item.splits[index].account
                         ),
                         "formula": item.splits[index].formula,
                     }
@@ -150,19 +133,17 @@ def scheduled(api: Api, days: int = 60) -> dict:
                 "estimate_evidence": item.estimate_evidence,
             }
         )
-    for payment_definition in schedule.account_payment_definitions(
-        api.db, schedules=saved_schedules
-    ):
+    for payment in view.payments:
         definitions.append(
             {
-                "handle": payment_definition.handle,
+                "handle": payment.handle,
                 "account_linked": True,
-                "linked_account": payment_definition.account,
-                "name": payment_definition.name,
-                "frequency": payment_definition.recurrence.describe(),
+                "linked_account": payment.account,
+                "name": payment.name,
+                "frequency": payment.frequency,
                 "frequency_key": "months",
                 "interval": 1,
-                "amount": payment_definition.amount_due,
+                "amount": payment.amount_due,
                 "enabled": True,
                 "placeholder": False,
                 "auto": False,
@@ -174,14 +155,14 @@ def scheduled(api: Api, days: int = 60) -> dict:
                 "unsupported_reason": "",
                 "source_recurrence": None,
                 "category": None,
-                "funding": payment_definition.payment_account,
+                "funding": payment.payment_account,
                 "planning_flow": None,
                 "investment_activity": None,
                 "category_memo": "",
                 "funding_memo": "",
                 "additional_splits": [],
-                "account_handles": [split.account for split in payment_definition.splits],
-                "start": payment_definition.next_due.isoformat(),
+                "account_handles": list(payment.split_accounts),
+                "start": payment.next_due.isoformat(),
                 "end": None,
                 "count": None,
                 "weekend": "none",
@@ -196,37 +177,36 @@ def scheduled(api: Api, days: int = 60) -> dict:
         "accounts": [
             {
                 "handle": account.handle,
-                "name": api.db.full_name(account),
+                "name": account.name,
                 "class": account.account_class.value,
                 "hidden": account.hidden,
                 # Investment activity applies only to these (#383).
-                "investment": account.atype.is_investment,
+                "investment": account.investment,
             }
-            for account in accounts
+            for account in view.accounts
         ],
         "upcoming": [
             {
                 "date": occurrence.when,
                 "name": occurrence.name,
                 "amount": occurrence.amount,
-                "schedule": occurrence.schedule.handle,
-                "account_linked": isinstance(
-                    occurrence.schedule, schedule.AccountPaymentDefinition
-                ),
-                "linked_account": getattr(occurrence.schedule, "account", None),
+                "schedule": occurrence.schedule,
+                "account_linked": occurrence.account_linked,
+                "linked_account": occurrence.linked_account,
             }
-            for occurrence in occurrences
+            for occurrence in view.upcoming
         ],
     }
 
 
 def scheduled_draft(api: Api, payload: dict) -> dict:
     """Represent an actual as a reviewable, unsaved fixed-schedule draft."""
-    transaction = api.db.get_transaction(str(payload.get("transaction") or ""))
-    if transaction is None:
-        raise KeyError(str(payload.get("transaction") or ""))
-    draft = schedule.from_transaction(transaction)
-    simple = simple_schedule_parts(api.db, draft)
+    reference = str(payload.get("transaction") or "")
+    if not reference:
+        raise KeyError(reference)
+    editor = api.book.schedule_draft(reference)
+    draft = editor.schedule
+    simple = simple_parts(editor)
     if simple is None:
         raise ValueError("this transaction's split structure needs the desktop schedule editor")
     return {
@@ -293,12 +273,12 @@ def scheduled_occurrence_options(api: Api, payload: dict) -> dict:
 def scheduled_save(api: Api, payload: dict) -> dict:
     """Create or update a fixed-split baseline schedule."""
     handle = str(payload.get("handle") or "").strip()
-    existing = api.db.get_scheduled(handle) if handle else None
-    if handle and existing is None:
-        raise KeyError(handle)
-    existing_parts = simple_schedule_parts(api.db, existing) if existing is not None else None
+    editor = api.book.schedule_editor(handle) if handle else None
+    existing = editor.schedule if editor is not None else None
+    existing_parts = simple_parts(editor) if editor is not None else None
     if existing is not None:
-        editability = schedule.schedule_editability(api.db, existing)
+        assert editor is not None
+        editability = editor.projection.editability
         if not editability.editable:
             raise ValueError(editability.reason)
         if (
@@ -418,8 +398,7 @@ def scheduled_save(api: Api, payload: dict) -> dict:
             raise ValueError("active status must be true or false")
         enabled = payload["enabled"]
 
-    result = save_fixed_schedule(
-        api.db,
+    saved = api.book.save_fixed_schedule(
         SaveFixedSchedule(
             definition=FixedScheduleInput(
                 name=name,
@@ -452,17 +431,15 @@ def scheduled_save(api: Api, payload: dict) -> dict:
             existing_handle=existing.handle if existing is not None else None,
         ),
     )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return {"handle": result.value.handle, "name": result.value.name}
+    return {"handle": saved.handle, "name": saved.name}
 
 
 def scheduled_formula_save(api: Api, payload: dict) -> dict:
     """Update formula inputs and ordinary metadata without exposing owned mechanics."""
     handle = str(payload.get("handle") or "").strip()
-    existing = api.db.get_scheduled(handle)
-    if existing is None:
+    if not handle:
         raise KeyError(handle)
+    existing = api.book.find_schedule(handle)
     raw_formulas = payload.get("formulas")
     if not isinstance(raw_formulas, list):
         raise ValueError("formula expressions must be a list")
@@ -511,8 +488,7 @@ def scheduled_formula_save(api: Api, payload: dict) -> dict:
             raise ValueError("automatic posting status must be true or false")
         auto_create = payload["auto"]
 
-    result = save_formula_schedule(
-        api.db,
+    saved = api.book.save_formula_schedule(
         FormulaScheduleInput(
             existing_handle=existing.handle,
             name=name,
@@ -528,35 +504,21 @@ def scheduled_formula_save(api: Api, payload: dict) -> dict:
             remind_days=_days(payload, "remind_days"),
         ),
     )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return {"handle": result.value.handle, "name": result.value.name}
+    return {"handle": saved.handle, "name": saved.name}
 
 
 def scheduled_delete(api: Api, payload: dict) -> dict:
     """Remove one definition while retaining its posted ledger history."""
     handle = str(payload.get("handle") or "").strip()
-    result = delete_schedule(api.db, DeleteSchedule(handle))
-    if not result.ok:
-        raise service_error(result.errors[0])
-    deleted = result.value
-    assert deleted is not None
+    deleted = api.book.delete_schedule(handle)
     return {"handle": deleted.handle, "name": deleted.name}
 
 
 def scheduled_duplicate(api: Api, payload: dict) -> dict:
     """Save an independent exact copy, including editor-protected fields."""
-    result = duplicate_schedule(
-        api.db,
-        DuplicateSchedule(
-            str(payload.get("handle") or ""),
-            name=str(payload.get("name") or ""),
-        ),
+    copied = api.book.duplicate_schedule(
+        DuplicateSchedule(str(payload.get("handle") or ""), name=str(payload.get("name") or ""))
     )
-    if not result.ok:
-        raise service_error(result.errors[0])
-    copied = result.value
-    assert copied is not None
     return {"handle": copied.handle, "name": copied.name}
 
 
@@ -567,12 +529,7 @@ def historical_estimates(
     scenario_handle: str | None = None,
 ) -> dict:
     """Return reviewable category estimates inferred from closed history."""
-    proposals = estimates.propose_historical_estimates(
-        api.db,
-        months=months,
-        min_active_months=min_active_months,
-        scenario_handle=scenario_handle,
-    )
+    found = api.book.historical_estimates(months, min_active_months, scenario_handle)
     return {
         "months": months,
         "proposals": [
@@ -602,7 +559,7 @@ def historical_estimates(
                 "variability": item.variability,
                 "reason": item.reason,
                 "evidence": item.evidence.serialize(),
-                "draft": historical_estimate_draft(api.db, item),
+                "draft": historical_estimate_draft(draft),
                 "planning_flow": (
                     item.planning_flow.value if item.planning_flow is not None else None
                 ),
@@ -610,22 +567,16 @@ def historical_estimates(
                     item.investment_activity.value if item.investment_activity is not None else None
                 ),
             }
-            for item in proposals
+            for item, draft in zip(found.proposals, found.drafts, strict=True)
         ],
-        "targets": [
-            {"handle": None, "name": "Base"},
-            *[
-                {"handle": scenario.handle, "name": scenario.name}
-                for scenario in api.db.iter_scenarios()
-            ],
-        ],
+        "targets": [{"handle": target.handle, "name": target.name} for target in found.targets],
     }
 
 
-def historical_estimate_draft(db: DbSQLite, proposal: estimates.HistoricalEstimateProposal) -> dict:
+def historical_estimate_draft(view: ScheduleEditorView) -> dict:
     """Translate the engine-owned draft once for every interactive client."""
-    draft = estimates.draft_historical_estimate(db, proposal)
-    parts = simple_schedule_parts(db, draft)
+    draft = view.schedule
+    parts = simple_parts(view)
     if parts is None:
         raise ValueError("historical estimate draft is not safely editable")
     frequency = frequency_key(draft.recurrence)
@@ -673,48 +624,21 @@ def historical_estimate_accept(api: Api, payload: dict) -> dict:
     proposal_key = str(payload.get("key") or "")
     category = str(payload.get("category") or "")
     scenario = str(payload.get("scenario") or "").strip() or None
-    proposals = estimates.propose_historical_estimates(
-        api.db,
-        months=months,
-        min_active_months=minimum,
-        scenario_handle=scenario,
+    accepted = api.book.accept_historical_estimate(
+        AcceptHistoricalEstimate(
+            key=proposal_key,
+            category=category,
+            months=months,
+            min_active_months=minimum,
+            scenario=scenario,
+        )
     )
-    proposal = next(
-        (
-            item
-            for item in proposals
-            if item.key == proposal_key or (not proposal_key and item.category == category)
-        ),
-        None,
-    )
-    if proposal is None:
-        raise ValueError("historical estimate proposal is no longer available")
-    handle = estimates.accept_historical_estimate(api.db, proposal, scenario_handle=scenario)
-    return {"handle": handle, "category": proposal.category_name}
+    return {"handle": accepted.handle, "category": accepted.category_name}
 
 
 def due_review(api: Api) -> dict:
-    """Due and missed scheduled occurrences, grouped by schedule."""
-    return {
-        "schedules": [
-            {
-                "schedule": review.schedule,
-                "name": review.name,
-                "frequency": review.frequency,
-                "total": str(review.total.to_decimal()),
-                "items": [
-                    {
-                        "date": item.when.isoformat(),
-                        "amount": str(item.amount.to_decimal()),
-                        "overdue": item.overdue,
-                        "stage": item.stage,
-                    }
-                    for item in review.items
-                ],
-            }
-            for review in pending_due_review(api.db)
-        ]
-    }
+    """Due, missed, and early scheduled occurrences, grouped by schedule."""
+    return due_review_json(api.book.due_review())
 
 
 def due_review_resolve(api: Api, payload: dict) -> dict:
@@ -732,24 +656,12 @@ def due_review_resolve(api: Api, payload: dict) -> dict:
                 DueDecision(str(item.get("decision"))),
             )
         )
-    result = resolve_due(api.db, ResolveDue(tuple(decisions)))
-    if not result.ok:
-        raise service_error(result.errors[0])
-    outcome = result.value
-    assert outcome is not None
-    return {
-        "posted": outcome.posted,
-        "skipped": outcome.skipped,
-        "deferred": outcome.deferred,
-    }
+    return resolution_json(api.book.resolve_due(ResolveDue(tuple(decisions))))
 
 
 def post_scheduled(api: Api) -> dict:
-    posted = schedule.post_due(api.db, only_auto=False)
-    return {
-        "posted": len(posted),
-        "transactions": [{"date": t.post_date, "description": t.description} for t in posted],
-    }
+    """Post every due occurrence, automatic or not, without a review."""
+    return posted_due_json(api.book.post_due(PostDue(only_automatic=False)))
 
 
 def _days(payload: dict, key: str) -> int | None:
@@ -765,13 +677,6 @@ def _days(payload: dict, key: str) -> int | None:
         raise ValueError(f"{key} must be a whole number of days") from None
 
 
-def _next_json(db: DbSQLite, handle: str) -> dict | None:
-    upcoming = next_occurrence(db, handle)
-    if upcoming is None:
-        return None
-    return {"date": upcoming.when.isoformat(), "amount": str(upcoming.amount.to_decimal())}
-
-
 def scheduled_next(api: Api, payload: dict) -> dict:
     """Enter or skip a schedule's next occurrence before it is due (#351)."""
     raw_decision = str(payload.get("decision", ""))
@@ -779,14 +684,5 @@ def scheduled_next(api: Api, payload: dict) -> dict:
         raise ValueError("decision must be post or skip")
     raw_date = payload.get("date")
     when = date.fromisoformat(str(raw_date)) if raw_date else None
-    result = resolve_next(
-        api.db,
-        ResolveNext(str(payload.get("schedule", "")), DueDecision(raw_decision), when=when),
-    )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return {
-        "posted": result.value.posted,
-        "skipped": result.value.skipped,
-        "transactions": list(result.value.transactions),
-    }
+    request = ResolveNext(str(payload.get("schedule", "")), DueDecision(raw_decision), when=when)
+    return resolution_json(api.book.resolve_next(request))

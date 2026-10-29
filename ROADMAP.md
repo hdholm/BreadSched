@@ -38,6 +38,15 @@ The rest of this file is unscheduled and comes after the first Beta.
 
 ### Architecture
 
+- **Book server follow-ups.** The book server (decisions
+  [0003](docs/design/decisions/0003-book-server.md) and
+  [0004](docs/design/decisions/0004-users-and-access.md)) is on `main` since
+  0.2.0a308. Still to come: long operations (imports, quote fetches, projections)
+  as jobs with progress and cancellation once a client is another process (a
+  projection over a host shows its result without progress), and Expense Explorer
+  reusing its own result for a cell's detail over a host rather than asking the host
+  again.
+
 - Split oversized modules/functions where ownership is clear. Split large GUI test
   modules only when the resulting fixture ownership and runtime isolation improve;
   do not optimize for a line-count threshold alone.
@@ -120,10 +129,6 @@ The rest of this file is unscheduled and comes after the first Beta.
 
 ### Storage, integrity, and recovery
 
-- Write transaction JSON compactly, omitting fields at their default values (as
-  `Split.importer_added` already is), to recover most of the 43% size difference
-  that [decision 0001](docs/design/decisions/0001-transaction-storage.md) measured
-  without its load-time cost. Re-run `scripts/storage_benchmark.py` to confirm.
 - Longer term, separate planning resolutions/classifications from imported ledger
   records where doing so materially simplifies synchronization and ownership.
 

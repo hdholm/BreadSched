@@ -493,3 +493,48 @@ def test_unreconciled_source_deletions_are_still_mirrored(db, gnucash_sqlite_pat
     result = gnucash_sqlite.import_book(db, source.path)
     assert (result.transactions_removed, result.transactions_held) == (1, 0)
     assert db.get_transaction(rent.handle) is None
+
+
+@pytest.mark.parametrize("remote", [False, True], ids=["in-process", "http"])
+def test_held_changes_through_the_book_server_alike(db, reconciled, remote):
+    """The book server (#354): the same review in process and over HTTP."""
+    import threading
+
+    from breadsched.api import ApiError, LocalBookServer
+    from breadsched.api.http_client import HttpBookClient
+    from breadsched.web.server import serve
+
+    source, _statement = reconciled
+    rent = _transaction(db, "Rent")
+    _set_source(
+        source.path, "UPDATE transactions SET description=? WHERE guid=?", "Rent paid", rent.handle
+    )
+    gnucash_sqlite.import_book(db, source.path)
+    httpd = None
+    if remote:
+        httpd = serve(db, host="127.0.0.1", port=0)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        api = HttpBookClient(f"http://127.0.0.1:{httpd.server_port}", httpd.token)
+    else:
+        api = LocalBookServer(db)
+    try:
+        [held] = api.held_imports()
+        assert (held.transaction, held.description) == (rent.handle, "Rent")
+        assert held.changes and held.can_use_source == (not held.blocked_by)
+        snapshot = _snapshot(db)
+        with pytest.raises(ApiError) as refused:
+            api.resolve_held_imports(
+                ResolveHeldImports((("missing", HeldImportDecision.KEEP_LOCAL),))
+            )
+        assert refused.value.status in (400, 404)
+        assert _snapshot(db) == snapshot
+        outcome = api.resolve_held_imports(
+            ResolveHeldImports(((rent.handle, HeldImportDecision.KEEP_LOCAL),))
+        )
+        assert (outcome.kept, outcome.applied) == (1, 0)
+        assert api.held_imports() == ()
+        assert db.get_transaction(rent.handle).description == "Rent"
+    finally:
+        if httpd is not None:
+            httpd.shutdown()
+            httpd.server_close()

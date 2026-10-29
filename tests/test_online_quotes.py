@@ -507,3 +507,48 @@ class TestFinanceQuoteMethods:
         assert quote_source_warning("usa", missing) == (
             "“usa” needs Finance::Quote. Finance::Quote is not installed."
         )
+
+
+@pytest.mark.parametrize("remote", [False, True], ids=["in-process", "http"])
+def test_quotes_through_the_book_server_alike(db, commodities, remote):
+    """The book server (#354): the caller fetches; the server only stores."""
+    import threading
+
+    from breadsched.api import ApiError, LocalBookServer
+    from breadsched.api.http_client import HttpBookClient
+    from breadsched.gen.services.quotes import StoreQuotes
+    from breadsched.web.server import serve
+
+    httpd = None
+    if remote:
+        httpd = serve(db, host="127.0.0.1", port=0)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        api = HttpBookClient(f"http://127.0.0.1:{httpd.server_port}", httpd.token)
+    else:
+        api = LocalBookServer(db)
+    try:
+        plan = api.quote_plan()
+        assert plan.currency == "USD"
+        assert [item.symbol for item in plan.requests] == ["GBP", "G"]
+        usd = next(item for item in plan.commodities if item.mnemonic == "USD")
+        assert usd.reporting and usd.currency
+        fetched = (FetchedQuote("G", "tsp", Decimal("18.4521"), "USD", DAY, "tsp.gov"),)
+        preview = api.store_quotes(StoreQuotes(fetched, dry_run=True))
+        assert preview.dry_run and list(db.iter_prices(commodities["g"].handle)) == []
+        update = api.store_quotes(StoreQuotes(fetched))
+        assert [(item.symbol, item.changed) for item in update.stored] == [("G", True)]
+        assert [item.symbol for item in update.failures] == ["GBP"]
+        [price] = db.iter_prices(commodities["g"].handle)
+        assert price.value == Money("18.4521")
+
+        assert api.set_quote_source(SetQuoteSource(commodities["fund"].handle, "vanguard")) == (
+            "vanguard"
+        )
+        with pytest.raises(ApiError) as refused:
+            api.set_quote_source(SetQuoteSource(commodities["usd"].handle, "tsp"))
+        assert refused.value.code == "quotes.source.currency"
+        assert db.get_commodity(commodities["usd"].handle).quote_source == ""
+    finally:
+        if httpd is not None:
+            httpd.shutdown()
+            httpd.server_close()

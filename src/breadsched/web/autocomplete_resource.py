@@ -2,15 +2,15 @@
 
 The adapter only translates query fields into the shared service's request and
 its result into JSON. Matching and every eligibility rule stay in
-``gen/services/autocomplete``; a proposal never writes to the book.
+``gen/services/autocomplete``, reached through the book server (``suggest_entry``);
+a proposal never writes to the book.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..gen.services.autocomplete import SuggestEntry, suggest_entry
-from .controls import service_error
+from ..gen.services.autocomplete import SuggestEntry
 
 if TYPE_CHECKING:
     from .context import Api
@@ -23,13 +23,10 @@ def entry_suggestion(api: Api, query: QueryParams) -> dict[str, object]:
         account=query.text("account") or None,
     )
     query.finish()
-    result = suggest_entry(api.db, request)
-    if result.value is None:
-        raise service_error(result.errors[0])
-    suggestion = result.value.suggestion
+    proposal = api.book.suggest_entry(request)
+    suggestion = proposal.suggestion
     if suggestion is None:
         return {"suggestion": None}
-    db = api.db
     return {
         "suggestion": {
             "source": suggestion.source,
@@ -37,7 +34,7 @@ def entry_suggestion(api: Api, query: QueryParams) -> dict[str, object]:
             "description": suggestion.description,
             "transfer": suggestion.transfer_account,
             "transfer_name": (
-                db.full_name(suggestion.transfer_account) if suggestion.transfer_account else None
+                proposal.name(suggestion.transfer_account) if suggestion.transfer_account else None
             ),
             "amount": str(suggestion.amount.to_decimal())
             if suggestion.amount is not None
@@ -45,7 +42,7 @@ def entry_suggestion(api: Api, query: QueryParams) -> dict[str, object]:
             "splits": [
                 {
                     "account": split.account,
-                    "account_name": db.full_name(split.account),
+                    "account_name": proposal.name(split.account),
                     "value": str(split.value.to_decimal()),
                     "memo": split.memo,
                 }

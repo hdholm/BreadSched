@@ -1,9 +1,11 @@
 """HTTP input and output for GnuCash write-back (#174).
 
-This adapter only parses JSON into the shared write-back service's requests and
-translates its results. The preview, every refusal, the backup, the atomic write,
-the read-back, and the round-trip proof all stay in
-``gen/services/gnucash_writeback``, so a rejected request never changes either book.
+This adapter only parses JSON into the shared write-back service's requests, sent
+through the book server (``writeback_preview``, ``apply_writeback``,
+``set_writeback_keep_backups``), and translates its results. The preview, every
+refusal, the backup, the atomic write, the read-back, and the round-trip proof all
+stay in ``gen/services/gnucash_writeback``, so a rejected request never changes
+either book.
 """
 
 from __future__ import annotations
@@ -11,14 +13,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from ..gen.services.gnucash_writeback import (
-    ApplyWriteback,
-    apply_writeback,
-    preview_writeback,
-    set_writeback_keep_backups,
-    writeback_keep_backups,
-)
-from .controls import service_error
+from ..api import ApiError
+from ..gen.services.gnucash_writeback import ApplyWriteback
 
 if TYPE_CHECKING:
     from .context import Api
@@ -28,19 +24,16 @@ if TYPE_CHECKING:
 def gnucash_writeback(api: Api, query: QueryParams) -> dict[str, object]:
     """The preview: what each transaction's write changes, and what cannot be written."""
     query.finish()
-    keep = writeback_keep_backups(api.db)
-    previewed = preview_writeback(api.db)
-    if previewed.value is None:
-        error = previewed.errors[0]
-        from ..presentation import service_error_message
-
+    keep = api.book.writeback_keep_backups()
+    try:
+        plan = api.book.writeback_preview()
+    except ApiError as error:
         return {
             "available": False,
             "code": error.code,
-            "message": service_error_message(error),
+            "message": str(error),
             "keep_backups": keep,
         }
-    plan = previewed.value
     return {
         "available": True,
         "source": plan.source,
@@ -71,20 +64,12 @@ def gnucash_writeback_apply(api: Api, payload: Mapping[str, Any]) -> dict[str, o
     raw = payload.get("transactions")
     if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
         raise ValueError("transactions must be a list of transaction handles")
-    result = apply_writeback(api.db, ApplyWriteback(tuple(raw)))
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return {
-        "written": [change.transaction for change in result.value.written],
-        "backup": result.value.backup,
-    }
+    applied = api.book.apply_writeback(ApplyWriteback(tuple(raw)))
+    return {"written": [change.transaction for change in applied.written], "backup": applied.backup}
 
 
 def gnucash_writeback_settings(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     keep = payload.get("keep_backups")
     if isinstance(keep, bool) or not isinstance(keep, int):
         raise ValueError("keep_backups must be a whole number")
-    result = set_writeback_keep_backups(api.db, keep)
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return {"keep_backups": result.value}
+    return {"keep_backups": api.book.set_writeback_keep_backups(keep)}

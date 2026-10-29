@@ -7,6 +7,7 @@ const RENDERERS = {
   Rules: showRules, "Reimbursable Expenses": showReimbursables, "Savings Goals": showGoals,
   Verify: showVerify,
   Guide: showGuide,
+  Account: showAccount,
 };
 
 // Views whose workflow has a section in the browser guide get a Help button.
@@ -23,11 +24,16 @@ function switchTo(name) { current = name; render(); }
 function openInNewTab(view, extra = {}) {
   const url = new URL(window.location.href);
   url.search = new URLSearchParams({ view, ...extra }).toString();
-  url.hash = new URLSearchParams({ token: apiToken }).toString();
+  url.hash = tokenFragment();
   window.open(url.toString(), "_blank", "noopener");
 }
 
+// Each render is numbered: a view chosen while another is still loading wins, and the
+// slower, older one is dropped rather than drawn over it.
+let renderGeneration = 0;
+
 async function render() {
+  const generation = ++renderGeneration;
   const nav = document.getElementById("nav");
   nav.replaceChildren(...VIEWS.map((name) => el("button", {
     class: name === current ? "active" : null, onclick: () => switchTo(name),
@@ -38,18 +44,29 @@ async function render() {
   view.replaceChildren(el("p", { class: "note" }, "Loading…"));
   try {
     const content = await RENDERERS[current]();
+    if (generation !== renderGeneration) return;
     const help = VIEW_HELP[current];
     view.replaceChildren(...(help
       ? [el("div", { class: "toolbar view-help" }, helpButton(help)), content] : [content]));
   } catch (error) {
+    if (generation !== renderGeneration) return;
     view.replaceChildren(el("p", { class: "note neg" }, `Could not load: ${error.message}`));
   }
 }
 
-get("/api/summary").then((s) => {
-  document.getElementById("book").textContent = s.book || "";
-}).catch(() => {});
 document.getElementById("print-view").addEventListener("click", () => window.print());
-render();
-// Like the desktop, offer held GnuCash changes once when the book opens.
-openImportReviewDialog().catch(() => {});
+ready().then(({ choices }) => {
+  // Quick entry is its own page; it needs the token, and the book, too.
+  document.getElementById("quick-entry").href = `/quick#${tokenFragment()}`;
+  const switcher = document.getElementById("other-books");
+  if (choices > 1) {
+    switcher.hidden = false;
+    switcher.addEventListener("click", otherBooks);
+  }
+  get("/api/summary").then((s) => {
+    document.getElementById("book").textContent = s.book || "";
+  }).catch(() => {});
+  render();
+  // Like the desktop, offer held GnuCash changes once when the book opens.
+  openImportReviewDialog().catch(() => {});
+});

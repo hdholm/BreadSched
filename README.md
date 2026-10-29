@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="src/breadsched/gui/resources/breadsched-logo.png" alt="BreadSched" width="320">
+</p>
+
 # BreadSched Household Financial Manager
 
 BreadSched is a household finance application for tracking income and expenses,
@@ -6,7 +10,10 @@ under saved assumptions and alternate scenarios.
 
 GTK4 is the primary/reference interface and Linux is the primary native desktop
 target. There is a web interface that uses the same data, planning rules, and
-financial engines.
+financial engines. Every interface reaches a book through one book server, so a
+book held by `breadsched serve` (or shared from the desktop) can be used at once by
+the desktop, the command line, and browsers, including a phone or tablet through a
+TLS reverse proxy, by family members each signed in with their own role.
 
 BreadSched is intended over time to cover the household-finance workflows for
 which a user might otherwise rely on GnuCash, KMyMoney, HomeBank, ActualBudget,
@@ -76,6 +83,7 @@ breadsched --help                    # command line
 breadsched sample sample.breadsched  # separate synthetic learning book
 breadsched-gtk household.breadsched  # GTK4 desktop interface
 breadsched web household.breadsched  # loopback browser interface
+breadsched serve household.breadsched # share a book with other interfaces
 ```
 
 With no book argument, `breadsched-gtk` opens the start workflow for creating,

@@ -474,7 +474,7 @@ def test_moves_are_worded_for_every_interface(db, book, tmp_path, capsys):
 
 def test_holdings_chart_draws_each_holdings_own_cost_market_and_gain(db, book):
     from breadsched.gen.engine.chart_model import BARS
-    from breadsched.gen.engine.cost_basis import holdings_charts
+    from breadsched.gen.services.investment_reports import holdings_view
     from breadsched.web.context import Api
     from breadsched.web.holdings_resource import holdings
     from breadsched.web.resources import QueryParams
@@ -486,7 +486,7 @@ def test_holdings_chart_draws_each_holdings_own_cost_market_and_gain(db, book):
     _trade(db, other, usd, book.checking, date(2025, 2, 1), "2", "260")
 
     found = holdings_cost_basis(db, as_of=date(2025, 12, 31))
-    [chart] = holdings_charts(db, found)
+    [chart] = holdings_view(db, date(2025, 12, 31)).charts
     assert (chart.kind, chart.currency) == (BARS, "USD")
     assert [series.name for series in chart.series] == ["Cost", "Market value", "Unrealized gain"]
     assert [series.slot for series in chart.series] == [1, 2, 3]
@@ -503,4 +503,4 @@ def test_holdings_chart_draws_each_holdings_own_cost_market_and_gain(db, book):
 def test_no_holdings_means_no_holdings_chart(db, book):
     from breadsched.gen.engine.cost_basis import holdings_charts
 
-    assert holdings_charts(db, []) == ()
+    assert holdings_charts([], {}, {}) == ()

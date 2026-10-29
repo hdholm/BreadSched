@@ -1701,9 +1701,12 @@ def test_configure_dashboard_sets_sections_groups_and_columns(page, served):
     assert "Frequency" not in headers and "Item" in headers
     assert page.locator("text=Needed in 45 days").count() == 1
 
+    from user_fixtures import own_preference
+
     from breadsched.gen.engine.dashboard import DashboardConfig
 
-    stored = DashboardConfig.load(db)
+    # The page is the computer account's, so its own Dashboard (decision 0004).
+    stored = DashboardConfig.load(db, own_preference(db, "dashboard"))
     assert stored.liquidity_days == 45
     assert stored.shows("bills") is False and stored.shows("reimbursables") is True
     [group] = [item for item in stored.groups if item.name == "Browser group"]
@@ -1786,3 +1789,280 @@ def test_find_searches_every_register_with_subtotals(page, served):
     assert "Subtotal: " in text and "Total: " in text
     first_account = page.locator(".find-results tbody button").first.inner_text()
     assert first_account.startswith("Expenses:")
+
+
+@pytest.fixture
+def phone(served):
+    """The quick entry page on a phone-sized screen, touch and all."""
+    _db, httpd = served
+    with sync_api.sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch(executable_path=_chromium())
+        except Exception as exc:  # noqa: BLE001 - no usable browser here
+            pytest.skip(f"Chromium is not available: {exc}")
+        view = browser.new_page(
+            viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True
+        )
+        errors: list[str] = []
+        view.on("pageerror", lambda error: errors.append(str(error)))
+        view.goto(f"http://127.0.0.1:{httpd.server_port}/quick#token={httpd.token}")
+        yield view
+        browser.close()
+        assert errors == []
+
+
+def test_quick_entry_saves_from_a_phone(phone, served):
+    """A transaction can be entered on a small screen, apart from the full interface."""
+    db, _httpd = served
+    phone.locator("#quick-account option").nth(1).wait_for(state="attached")
+    # One column that fits the screen: nothing scrolls sideways.
+    assert phone.evaluate("document.documentElement.scrollWidth") <= 390
+    # The amount is ready to type, with the phone's number keyboard.
+    assert phone.evaluate("document.activeElement.id") == "quick-amount"
+    assert phone.locator("#quick-amount").get_attribute("inputmode") == "decimal"
+    expense = next(
+        account
+        for account in db.iter_accounts()
+        if account.account_class.value == "expense" and not account.placeholder
+    )
+    fund = phone.locator("#quick-account option").nth(1).get_attribute("value")
+    before = {item.handle for item in db.iter_transactions()}
+    phone.locator("#quick-amount").fill("12.34")
+    phone.locator("#quick-description").fill("Corner bakery")
+    phone.locator("#quick-account").select_option(fund)
+    phone.locator("#quick-category").select_option(expense.handle)
+    phone.get_by_role("button", name="Save").tap()
+    phone.locator(".quick-recent li").first.wait_for()
+    [made] = [item for item in db.iter_transactions() if item.handle not in before]
+    assert made.description == "Corner bakery"
+    assert made.split_for(expense.handle).value.to_decimal() == Decimal("12.34")
+    assert made.split_for(fund).value.to_decimal() == Decimal("-12.34")
+    # The form is ready for the next one; the account money came from is kept.
+    assert phone.locator("#quick-amount").input_value() == ""
+    assert phone.locator("#quick-account").input_value() == fund
+    # Received money goes into the account instead.
+    phone.get_by_role("button", name="Received").tap()
+    assert phone.locator("label[for=quick-account]").inner_text() == "Paid into"
+    # A missing category is refused before anything is sent.
+    phone.locator("#quick-amount").fill("5")
+    phone.get_by_role("button", name="Save").tap()
+    phone.wait_for_selector("text=Enter an amount, an account, and a category.")
+    assert len(list(db.iter_transactions())) == len(before) + 1
+    # The full interface is a link away, keeping the token.
+    assert "token=" in phone.locator("#full-view").get_attribute("href")
+
+
+def test_a_device_without_a_token_signs_in_and_chooses_its_password(served):
+    """Decision 0004: a phone opening the page has no token; it signs in, changes a
+    temporary password, and then keeps a session cookie across reloads."""
+    from breadsched.api.local import book_server
+    from breadsched.api.users import UserDirectory
+
+    db, httpd = served
+    directory = UserDirectory()
+    directory.add_user("alice", "temporary-pass", display_name="Alice")
+    directory.grant(book_server(db).book_id() or "", "alice", "editor")
+    with sync_api.sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch(executable_path=_chromium())
+        except Exception as exc:  # noqa: BLE001 - no usable browser here
+            pytest.skip(f"Chromium is not available: {exc}")
+        view = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
+        errors: list[str] = []
+        view.on("pageerror", lambda error: errors.append(str(error)))
+        view.goto(f"http://127.0.0.1:{httpd.server_port}/quick")
+        view.wait_for_selector("text=Sign in to BreadSched")
+        view.fill("input[name=name]", "alice")
+        view.fill("input[name=password]", "wrong-password")
+        view.click("button:has-text('Sign in')")
+        view.wait_for_selector("text=That name and password do not match")
+        view.fill("input[name=password]", "temporary-pass")
+        view.click("button:has-text('Sign in')")
+        view.wait_for_selector("text=Choose your password")
+        view.fill("input[name=current]", "temporary-pass")
+        view.fill("input[name=new]", "alices-own-password")
+        view.click("button:has-text('Change password')")
+        view.locator("#quick-amount").wait_for()
+        # The session cookie keeps the phone signed in, and script cannot read it.
+        assert view.evaluate("document.cookie") == ""
+        view.reload()
+        view.locator("#quick-amount").wait_for()
+        assert errors == []
+        browser.close()
+
+
+def test_an_entry_user_adds_transactions_from_a_phone_and_nothing_else(served):
+    """Decision 0004's entry role: quick entry works; the full view's book is refused."""
+    from breadsched.api.users import UserDirectory
+
+    db, httpd = served
+    directory = UserDirectory()
+    directory.add_user("kid", "temporary-pass")
+    directory.set_password("kid", "kids-own-password", current="temporary-pass")
+    from breadsched.api.local import book_server
+
+    directory.grant(book_server(db).book_id() or "", "kid", "entry")
+    base = f"http://127.0.0.1:{httpd.server_port}"
+    with sync_api.sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch(executable_path=_chromium())
+        except Exception as exc:  # noqa: BLE001 - no usable browser here
+            pytest.skip(f"Chromium is not available: {exc}")
+        view = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
+        view.goto(f"{base}/quick")
+        view.fill("input[name=name]", "kid")
+        view.fill("input[name=password]", "kids-own-password")
+        view.click("button:has-text('Sign in')")
+        view.locator("#quick-account option").nth(1).wait_for(state="attached")
+        expense = next(
+            account
+            for account in db.iter_accounts()
+            if account.account_class.value == "expense" and not account.placeholder
+        )
+        before = {item.handle for item in db.iter_transactions()}
+        view.locator("#quick-amount").fill("3.50")
+        view.locator("#quick-description").fill("Ice cream")
+        view.locator("#quick-account").select_option(index=1)
+        view.locator("#quick-category").select_option(expense.handle)
+        view.get_by_role("button", name="Save").click()
+        view.locator(".quick-recent li").first.wait_for()
+        [made] = [item for item in db.iter_transactions() if item.handle not in before]
+        assert made.description == "Ice cream"
+        # The full view reads the book, which an entry user may not.
+        status = view.evaluate("async () => (await fetch('/api/v1/chart')).status")
+        assert status == 403
+        browser.close()
+
+
+def test_a_person_chooses_among_the_books_a_host_shares_with_them(tmp_path):
+    """Decision 0004: one host serves several books; each person chooses among those
+    shared with them, the page remembers the choice, and one shared book needs none."""
+    from breadsched.api.users import UserDirectory
+
+    books = []
+    for name in ("Home", "Rental"):
+        path = tmp_path / f"{name}.breadsched"
+        create_sample_book(path, as_of=date.today())
+        db = DbSQLite()
+        db.load(str(path))
+        books.append(db)
+    httpd = serve(books, host="127.0.0.1", port=0)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    home_id, rental_id = (db.get_metadata("book.id") for db in books)
+    directory = UserDirectory()
+    for name in ("vera", "kid"):
+        directory.add_user(name, "temporary-pass")
+        directory.set_password(name, f"{name}-own-password", current="temporary-pass")
+    directory.grant(home_id, "vera", "editor")
+    directory.grant(rental_id, "vera", "viewer")
+    directory.grant(home_id, "kid", "entry")
+    base = f"http://127.0.0.1:{httpd.server_port}"
+    try:
+        with sync_api.sync_playwright() as playwright:
+            try:
+                browser = playwright.chromium.launch(executable_path=_chromium())
+            except Exception as exc:  # noqa: BLE001 - no usable browser here
+                pytest.skip(f"Chromium is not available: {exc}")
+            view = browser.new_page()
+            errors: list[str] = []
+            view.on("pageerror", lambda error: errors.append(str(error)))
+            view.goto(base + "/")
+            view.fill("input[name=name]", "vera")
+            view.fill("input[name=password]", "vera-own-password")
+            view.click("button:has-text('Sign in')")
+            view.wait_for_selector("text=Choose a book")
+            choices = view.locator(".book-choice li").all_inner_texts()
+            assert [" ".join(choice.split()) for choice in choices] == [
+                "Home Editor",
+                "Rental Viewer",
+            ]
+            view.get_by_role("button", name="Rental").click()
+            view.locator("#book", has_text="Rental").wait_for()
+            assert f"book={rental_id}" in view.url
+            assert f"book={rental_id}" in view.locator("#quick-entry").get_attribute("href")
+            # A reload keeps the book; Other books goes back to the choice.
+            view.reload()
+            view.locator("#book", has_text="Rental").wait_for()
+            assert view.locator(".book-choice").count() == 0
+            view.get_by_role("button", name="Other books").click()
+            view.wait_for_selector("text=Choose a book")
+            view.get_by_role("button", name="Home").click()
+            view.locator("#book", has_text="Home").wait_for()
+            assert errors == []
+            # Someone given one book goes straight to it.
+            phone = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
+            phone.goto(base + "/quick")
+            phone.fill("input[name=name]", "kid")
+            phone.fill("input[name=password]", "kid-own-password")
+            phone.click("button:has-text('Sign in')")
+            phone.locator("#quick-account option").nth(1).wait_for(state="attached")
+            assert phone.locator(".book-choice").count() == 0
+            browser.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        for db in books:
+            db.close()
+
+
+def test_a_person_turns_on_two_step_sign_in_and_signs_in_with_a_code(served):
+    """Decision 0004, phase 5: from the Account view a person sets up two-step sign-in
+    with their authenticator app, sees their recovery codes once, signs out, and then
+    signs in with password and code."""
+    import time as clock
+
+    from breadsched.api import users
+    from breadsched.api.local import book_server
+    from breadsched.api.users import UserDirectory
+
+    db, httpd = served
+    directory = UserDirectory()
+    directory.add_user("alice", "temporary-pass", display_name="Alice")
+    directory.set_password("alice", "alices-own-password", current="temporary-pass")
+    directory.grant(book_server(db).book_id() or "", "alice", "viewer")
+
+    def code(secret, ahead=0):
+        return users.totp_code(secret, int(clock.time()) // users.TOTP_STEP + ahead)
+
+    with sync_api.sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch(executable_path=_chromium())
+        except Exception as exc:  # noqa: BLE001 - no usable browser here
+            pytest.skip(f"Chromium is not available: {exc}")
+        view = browser.new_page()
+        errors: list[str] = []
+        view.on("pageerror", lambda error: errors.append(str(error)))
+        view.goto(f"http://127.0.0.1:{httpd.server_port}/")
+        view.fill("input[name=name]", "alice")
+        view.fill("input[name=password]", "alices-own-password")
+        view.click("button:has-text('Sign in')")
+        view.locator("#nav").get_by_role("button", name="Account", exact=True).click()
+        view.wait_for_selector("text=Signed in as Alice (alice).")
+        view.get_by_role("button", name="Turn on two-step sign-in").click()
+        secret = view.locator(".two-step-secret").inner_text()
+        assert (
+            view.get_by_role("link", name="Open in authenticator app")
+            .get_attribute("href")
+            .startswith("otpauth://totp/BreadSched:alice?secret=" + secret)
+        )
+        view.fill("input[name=code]", code(secret))
+        view.get_by_role("button", name="Turn on", exact=True).click()
+        view.wait_for_selector("text=Your recovery codes")
+        assert view.locator(".recovery-codes li").count() == 10
+        assert view.locator("text=Two-step sign-in is on").count() == 1
+
+        view.get_by_role("button", name="Sign out").click()
+        view.wait_for_selector("text=Sign in to BreadSched")
+        view.fill("input[name=name]", "alice")
+        view.fill("input[name=password]", "alices-own-password")
+        view.click("button:has-text('Sign in')")
+        view.wait_for_selector("text=Enter your code")
+        view.fill("input[name=code]", "123")
+        view.click("button:has-text('Sign in')")
+        view.wait_for_selector("text=That code is not right")
+        # The code used to turn it on cannot be used again; the next one can.
+        view.fill("input[name=code]", code(secret, 1))
+        view.click("button:has-text('Sign in')")
+        view.locator("#nav").get_by_role("button", name="Account", exact=True).wait_for()
+        assert errors == []
+        browser.close()

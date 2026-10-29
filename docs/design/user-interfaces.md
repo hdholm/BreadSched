@@ -97,9 +97,44 @@ which searches every register through `engine.transaction_query` (see valuation 
 reporting) and opens a found split's register when a row is activated. Closing a register with unsaved typing asks first; opening another book
 closes every tab, because tabs name the old book's accounts. Each book's tabs are
 remembered in `views.ini` (section `open-tabs`, keyed by a digest of the book path)
-and restored after the Dashboard opens, skipping deleted accounts and scenarios. The
+and restored, skipping deleted accounts and scenarios. Restoring draws only the chosen
+tab (#389): a view the window holds but does not show is attached to the book without
+being drawn (`BaseView.set_db` asks `ViewManager.defers_refresh`), and a register is
+created with its account set so it reads that account once. Twelve remembered tabs on
+a 12-year book took 31 s to open; they now take as long as one.
+
+Slow views are calculated off GTK's loop. `gui.background.
+SnapshotReader` is one worker thread per open book that runs book-server reads against
+a read-only snapshot (`DbSQLite.load(path, "r")`, an in-memory copy, so a long read
+neither blocks a save nor sees part of one), reusing the snapshot until the book's
+revision changes. A view that can split its refresh into a read and a draw overrides
+`BaseView.background_refresh` (the Plan does, through `book.plan`); its redraw after a
+change, or when shown out of date, then keeps the old figures under an **Updating…**
+label and draws the new ones when they arrive, rereading if the book changed meanwhile.
+`ViewManager._prefill` redraws hidden tabs of such views (`BACKGROUND_VIEWS`) shortly
+after the book opens and after each change, so switching to them is immediate.
+Registers read the same way: a full read is `book.register_view(account, None)` (every
+row, with headings, the security held, and which accounts hold securities), which
+`RegisterSheet.apply_view` lays out, so restored and hidden register tabs are filled
+in the background and switching to one is immediate. A register a few saved
+transactions behind still rereads only those in place (#319). Account names come from
+`book.accounts()`. Accounts reads one `book.chart(include_hidden=True)` (each account's
+value and quote evidence) and `book.balance_summary()` (cash, assets, liabilities, and
+net worth), off GTK's loop as well; its filters re-lay the tree from the chart already
+read. The other views still draw when shown; moving them onto the book
+server brings them to the same path. An in-memory book has no snapshot and draws in
+place. The
 browser has no tab bar: `openInNewTab` opens a browser tab with the view and account
 or scenario in its query string.
+
+The browser's **Quick entry** page (`/quick`) is the small-screen
+entry point: a separate `quick.html` that loads only `core.js` and `quick.js`
+(`web.transport.QUICK_SCRIPTS`), one column at most 480 px wide with 44 px touch
+targets and 16 px fields (so iOS does not zoom), a decimal keyboard for the amount,
+and Spent/Received choosing which account is debited. It saves through
+`/api/transaction` and suggests from `/api/entry/suggest`, so it adds no write path;
+the account used last is kept in `localStorage`. The token travels in the URL's
+fragment as on the full page, and **Full view** and **Quick entry** link the two.
 
 ## Tables, dialogs, and bounded sizes
 
@@ -178,6 +213,9 @@ schema upgrade first shows a busy page naming the book and its schema
 presented window, then migrates. A remembered book that needs no upgrade opens the
 same way behind an **Opening** page (`presentation.book_opening_progress`), so a
 large book's start-up is visibly under way and the start screen never flashes (#389).
+That page is the start-up splash: it leads with the BreadSched logo, as the start
+screen (no book) and the About dialog do (`gui/widgets/brand.py`, which draws the
+packaged logo at a fixed width and adds the packaged icons to GTK's search path).
 The due review builds the rows of a schedule with several dates only when its
 expander opens (`DueDialog._fill_dates`, answers held by `_Choice` until then), and
 balances and "already posted" are answered in SQL (`DbSQLite.split_totals`, summed

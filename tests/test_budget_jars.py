@@ -294,13 +294,15 @@ def test_the_user_guide_worked_example(db, book):
 
 
 def test_the_layout_prints_totals_and_each_account(db, book):
-    from breadsched.gen.engine.budget_jars import currency_labels
+    from breadsched.gen.services.budget_jars import jars_view
     from breadsched.plugins.export.report_layout import budget_jars_layout
 
     _pay(db, book)
     _groceries(db, book)
-    report = budget_jars(db, date(2026, 6, 1), date(2026, 7, 31), today=TODAY)
-    document = budget_jars_layout(report, currency_labels(db, report))
+    view = jars_view(db, date(2026, 6, 1), date(2026, 7, 31), today=TODAY).value
+    report = view.report
+    assert report == budget_jars(db, date(2026, 6, 1), date(2026, 7, 31), today=TODAY)
+    document = budget_jars_layout(report, view.labels())
     assert (document.title, document.kind) == ("Budget jars", "budget-jars")
     assert document.subtitle == "2026-06-01 to 2026-07-31 by month"
     text = document.text()
@@ -377,14 +379,15 @@ def test_the_command_line_lists_jars(tmp_path, capsys):
 
 
 def test_jar_charts_pair_planned_with_actual_and_level_with_target(db, book):
-    from breadsched.gen.engine.budget_jars import currency_labels, jar_charts
     from breadsched.gen.engine.chart_model import BARS
+    from breadsched.gen.services.budget_jars import jars_view
 
     _pay(db, book)
     groceries = _groceries(db, book)
     _actual(db, book, groceries, date(2026, 6, 20), date(2026, 6, 21), "550")
-    report = budget_jars(db, date(2026, 6, 1), date(2026, 7, 31), today=TODAY)
-    draws, levels = jar_charts(report, currency_labels(db, report))
+    view = jars_view(db, date(2026, 6, 1), date(2026, 7, 31), today=TODAY).value
+    report = view.report
+    draws, levels = view.charts()
     assert (draws.kind, draws.categories) == (BARS, tuple(label for *_x, label in report.labels))
     planned, actual = draws.series
     assert (planned.name, planned.slot, actual.name, actual.slot) == ("Planned", 1, "Actual", 2)
@@ -432,14 +435,16 @@ def test_chart_geometry_scales_from_zero_with_capped_columns():
 
 
 def test_charts_print_beside_their_tables(db, book):
-    from breadsched.gen.engine.budget_jars import currency_labels
+    from breadsched.gen.services.budget_jars import jars_view
     from breadsched.plugins.export.html_report import model_chart_svg
     from breadsched.plugins.export.report_layout import ModelChart, Table, budget_jars_layout
 
     _pay(db, book)
     _groceries(db, book)
-    report = budget_jars(db, date(2026, 6, 1), date(2026, 7, 31), today=TODAY)
-    document = budget_jars_layout(report, currency_labels(db, report))
+    view = jars_view(db, date(2026, 6, 1), date(2026, 7, 31), today=TODAY).value
+    report = view.report
+    assert report == budget_jars(db, date(2026, 6, 1), date(2026, 7, 31), today=TODAY)
+    document = budget_jars_layout(report, view.labels())
     blocks = document.sections[0].blocks
     charts = [index for index, block in enumerate(blocks) if isinstance(block, ModelChart)]
     assert len(charts) == 2

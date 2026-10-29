@@ -38,6 +38,7 @@ from .backups import backup_connection, migration_backup_path, restore_backup, s
 from .base import DbError, DbReadonlyError, DbTxn
 from .book_lock import BookWriterLock
 from .change_verification import ChangeVerification
+from .compact import expand_transaction, minimize_transaction
 from .migrations import MIGRATIONS, MIN_SUPPORTED_SCHEMA_VERSION
 from .storage_verification import derived_column_issues, split_index_issues
 from .verification import BookIssue, BookVerification, verify_domain
@@ -141,6 +142,9 @@ CREATE TABLE IF NOT EXISTS schema_migration (
 );
 """
 
+#: Metadata key of the book's change counter (see :meth:`DbSQLite.revision`).
+REVISION_KEY = "book_revision"
+
 #: table -> (object class, signal stem)
 _TABLES: dict[str, tuple[type, str]] = {
     "commodity": (Commodity, "commodity"),
@@ -196,6 +200,15 @@ class DbSQLite(ChangeVerification):
         self.migration_backup: str | None = None
 
     # ------------------------------------------------------------- life cycle
+
+    @property
+    def writer_lock_token(self) -> str | None:
+        """The random token of the writer lock this book holds, if it holds one.
+
+        It identifies the lock's holder without relying on the host name, which can
+        change while a process runs (#358).
+        """
+        return self._book_lock.token if self._book_lock is not None else None
 
     def _release_book_lock(self) -> None:
         lock, self._book_lock = self._book_lock, None
@@ -547,7 +560,10 @@ class DbSQLite(ChangeVerification):
                 self._accounts.pop(handle, None)
             return
 
-        blob = json.dumps(data, separators=(",", ":"))
+        # Transactions are stored minimized (decision 0001, #354); every reader
+        # restores the defaults, and _read hands back the full form.
+        stored = minimize_transaction(data) if table == "txn" else data
+        blob = json.dumps(stored, separators=(",", ":"))
         if table == "account":
             conn.execute(
                 "INSERT OR REPLACE INTO account(handle,parent,name,atype,blob) VALUES (?,?,?,?,?)",
@@ -638,7 +654,10 @@ class DbSQLite(ChangeVerification):
             .execute(f"SELECT blob FROM {table} WHERE handle=?", (handle,))
             .fetchone()
         )
-        return json.loads(row["blob"]) if row else None
+        if not row:
+            return None
+        data = json.loads(row["blob"])
+        return expand_transaction(data) if table == "txn" else data
 
     def _write(self, obj: Any, txn: DbTxn, table: str) -> str:
         if self._active_txn is not txn:
@@ -702,6 +721,8 @@ class DbSQLite(ChangeVerification):
                 raise DbError(
                     f"transaction would leave an invalid book: {first.code}: {first.message}"
                 )
+            if txn.records:
+                self._advance_revision()
             conn.commit()
             self._active_txn = None
             if txn.records:
@@ -787,12 +808,12 @@ class DbSQLite(ChangeVerification):
                     raise DbError(
                         f"undo/redo would leave an invalid book: {first.code}: {first.message}"
                     )
+                self._advance_revision()
                 conn.commit()
             except Exception:
                 conn.rollback()
                 self._reload_account_cache()
                 raise
-        self._emit_for(txn, reverse=reverse)
 
     def undo(self) -> bool:
         if not self.undo_stack:
@@ -801,6 +822,8 @@ class DbSQLite(ChangeVerification):
         self._replay(txn, reverse=True)
         self.undo_stack.pop()
         self.redo_stack.append(txn)
+        # Announced once the stacks have moved, so a listener sees what is left.
+        self._emit_for(txn, reverse=True)
         self.emit("undo-available", (bool(self.undo_stack),))
         self.emit("redo-available", (True,))
         return True
@@ -812,6 +835,7 @@ class DbSQLite(ChangeVerification):
         self._replay(txn, reverse=False)
         self.redo_stack.pop()
         self.undo_stack.append(txn)
+        self._emit_for(txn, reverse=False)
         self.emit("undo-available", (True,))
         self.emit("redo-available", (bool(self.redo_stack),))
         return True
@@ -821,6 +845,10 @@ class DbSQLite(ChangeVerification):
 
     def redo_message(self) -> str | None:
         return self.redo_stack[-1].message if self.redo_stack else None
+
+    def undo_author(self) -> str | None:
+        """Who made the step :meth:`undo` would undo, when someone was named."""
+        return self.undo_stack[-1].author if self.undo_stack else None
 
     # ---------------------------------------------------------------- accounts
 
@@ -973,6 +1001,11 @@ class DbSQLite(ChangeVerification):
             params.append(end.isoformat())
         sql += " ORDER BY s.post_date, s.handle"
         return list(self._require().execute(sql, params))
+
+    def first_transaction_date(self) -> date | None:
+        """The earliest transaction's date, or None in a book with none."""
+        row = self._require().execute("SELECT MIN(post_date) FROM txn").fetchone()
+        return date.fromisoformat(row[0]) if row is not None and row[0] else None
 
     def has_scheduled_posting(self, schedule: str, when: date) -> bool:
         """Whether a transaction dated ``when`` was posted from ``schedule``."""
@@ -1292,6 +1325,20 @@ class DbSQLite(ChangeVerification):
                 yield obj
 
     # ---------------------------------------------------------------- metadata
+
+    def revision(self) -> int:
+        """How many recorded changes the book has committed, across every process.
+
+        Each committed database transaction that changed a record, and each undo or
+        redo, raises it by one in the same SQL transaction; it is kept outside the
+        undo records so undoing a change still moves it forward (#357). Metadata
+        written outside a database transaction (presentation settings) does not
+        count.
+        """
+        return int(self.get_metadata(REVISION_KEY, 0) or 0)
+
+    def _advance_revision(self) -> None:
+        self._set_metadata_uncommitted(REVISION_KEY, self.revision() + 1)
 
     def get_metadata(self, key: str, default: Any = None) -> Any:
         conn = self._conn

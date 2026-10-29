@@ -1,6 +1,6 @@
 // Page state, DOM and number helpers, and the authenticated JSON API calls.
 
-const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Find", "Scheduled", "Payroll", "Plan", "Review", "Projection", "Enter", "Import", "Rules", "Reimbursable Expenses", "Savings Goals", "Verify", "Guide"];
+const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Find", "Scheduled", "Payroll", "Plan", "Review", "Projection", "Enter", "Import", "Rules", "Reimbursable Expenses", "Savings Goals", "Verify", "Guide", "Account"];
 const launchParams = new URLSearchParams(window.location.search);
 let current = VIEWS.includes(launchParams.get("view")) ? launchParams.get("view") : "Dashboard";
 let state = {
@@ -76,8 +76,27 @@ const completenessDetails = (coverage, what) => {
 
 const params = new URLSearchParams(window.location.hash.slice(1));
 const apiToken = params.get("token") || "";
-if (params.has("token")) history.replaceState(null, "", window.location.pathname + window.location.search);
-const apiHeaders = () => ({ "X-BreadSched-Token": apiToken });
+// Only the page the server opens on its own computer is given the local token,
+// which lets it name files there; a page reached through a proxy sends files instead.
+const localToken = params.get("local") || "";
+// The book this page uses, on a host that serves several (decision 0004). Unlike the
+// tokens it is no secret, so it stays in the address and a reload keeps it.
+let bookId = params.get("book") || "";
+const keepBookInAddress = () => history.replaceState(null, "",
+  window.location.pathname + window.location.search
+  + (bookId ? `#${new URLSearchParams({ book: bookId })}` : ""));
+if (params.has("token")) keepBookInAddress();
+const apiHeaders = () => ({
+  "X-BreadSched-Token": apiToken,
+  ...(localToken ? { "X-BreadSched-Local": localToken } : {}),
+  ...(bookId ? { "X-BreadSched-Book": bookId } : {}),
+});
+// The fragment that carries this page's tokens, and its book, to another of its pages.
+const tokenFragment = (withBook = true) => new URLSearchParams({
+  token: apiToken,
+  ...(localToken ? { local: localToken } : {}),
+  ...(withBook && bookId ? { book: bookId } : {}),
+}).toString();
 const browserNumberFormat = (() => {
   const decimal = new Intl.NumberFormat().formatToParts(1.1)
     .find((part) => part.type === "decimal")?.value;
@@ -96,8 +115,118 @@ async function post(path, body) {
     body: JSON.stringify({ number_format: browserNumberFormat, ...(body || {}) }),
   });
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || response.statusText);
+  if (!response.ok) {
+    const error = new Error(payload.error || response.statusText);
+    error.code = payload.code;
+    throw error;
+  }
   return payload;
+}
+
+// Who is signed in (decision 0004). A page opened by BreadSched on its own computer
+// carries a token; any other signs in once and keeps a session cookie, which script
+// cannot read. A temporary password is changed before anything else.
+async function signedIn() {
+  for (;;) {
+    const response = await fetch("/api/v1/me", { headers: apiHeaders() });
+    if (response.ok) {
+      const me = await response.json();
+      if (!me.must_change) return me;
+      await accountForm("Choose your password", "Change password", [
+        ["current", "Temporary password", "current-password"],
+        ["new", "New password (10 characters or more)", "new-password"],
+      ], (values) => post("/api/v1/me/password", values));
+      continue;
+    }
+    let entered = null;
+    await accountForm("Sign in to BreadSched", "Sign in", [
+      ["name", "User name", "username"],
+      ["password", "Password", "current-password"],
+    ], async (values) => {
+      try {
+        await post("/api/v1/session", { ...values, device: navigator.platform || "Browser" });
+      } catch (error) {
+        // With two-step sign-in on, the right password is followed by the app's code.
+        if (error.code !== "signin.code_required") throw error;
+        entered = values;
+      }
+    });
+    if (entered) {
+      await accountForm("Enter your code", "Sign in", [
+        ["code", "Code from your authenticator app, or a recovery code", "one-time-code"],
+      ], (values) => post("/api/v1/session", {
+        ...entered, ...values, device: navigator.platform || "Browser",
+      }));
+    }
+  }
+}
+
+// Signed in, and with a book: the only one this person may use here, the one the
+// address names, or the one they choose (decision 0004). Answers that book, and how
+// many there were to choose from.
+async function ready() {
+  await signedIn();
+  const { books } = await get("/api/v1/books");
+  let chosen = books.find((book) => book.id === bookId);
+  if (!chosen && books.length === 1) [chosen] = books;
+  if (!chosen && !books.length) {
+    document.getElementById("view").replaceChildren(el("p", { class: "note" },
+      "No book here has been shared with you yet. Ask its owner to share it."));
+    return new Promise(() => {});
+  }
+  if (!chosen) chosen = await chooseBook(books);
+  bookId = chosen.id;
+  keepBookInAddress();
+  return { book: chosen, choices: books.length };
+}
+
+const ROLE_NAMES = { owner: "Owner", editor: "Editor", viewer: "Viewer", entry: "Entry only" };
+
+function chooseBook(books) {
+  return new Promise((resolve) => {
+    document.getElementById("view").replaceChildren(el("section", { class: "book-choice" },
+      el("h2", {}, "Choose a book"),
+      el("ul", {}, ...books.map((book) => el("li", {},
+        el("button", { type: "button", class: "action", onclick: () => resolve(book) },
+          book.name),
+        el("span", { class: "note" }, ` ${ROLE_NAMES[book.role] || book.role}`))))));
+  });
+}
+
+// Back to the choice of book: the page reloads with its tokens but no book.
+function otherBooks() {
+  window.location.hash = tokenFragment(false);
+  window.location.reload();
+}
+
+function accountForm(title, action, fields, submit) {
+  return new Promise((resolve) => {
+    const inputs = fields.map(([name, label, autocomplete]) => [label, el("input", {
+      name, autocomplete, required: "required",
+      type: name === "name" || name === "code" ? "text" : "password",
+      autocapitalize: "none",
+    })]);
+    const problem = el("p", { class: "note neg", role: "alert" });
+    const button = el("button", { type: "submit", class: "action" }, action);
+    const form = el("form", { class: "account-form" },
+      el("h2", {}, title),
+      ...inputs.map(([label, input]) => el("label", {}, label, input)),
+      problem, button);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      button.disabled = true;
+      problem.textContent = "";
+      try {
+        await submit(Object.fromEntries(inputs.map(([, input]) => [input.name, input.value])));
+        resolve();
+      } catch (error) {
+        problem.textContent = error.message;
+        button.disabled = false;
+      }
+    });
+    document.getElementById("view").replaceChildren(form);
+    inputs[0][1].focus();
+  });
 }
 
 // Contextual help: open this workflow's section of the browser guide in another

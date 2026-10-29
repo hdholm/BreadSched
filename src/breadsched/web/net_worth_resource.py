@@ -10,11 +10,10 @@ from calendar import monthrange
 from datetime import date
 from typing import TYPE_CHECKING
 
-from ..gen.engine.currency import reporting_currency_label
+from ..gen.engine.activity import ReportingPeriod
 from ..gen.lib.recurrence import add_months
-from ..gen.services import net_worth_charts, query_net_worth_change, query_net_worth_history
+from ..gen.services import net_worth_charts
 from ..plugins.export.csv_export import net_worth_change_csv
-from .controls import service_error
 
 if TYPE_CHECKING:
     from .context import Api
@@ -46,10 +45,7 @@ def net_worth_change(api: Api, query: QueryParams) -> dict[str, object]:
     start = _day(query.text("from", required=True), "from")
     through = _day(query.text("through", required=True), "through")
     query.finish()
-    result = query_net_worth_change(api.db, start, through, date.today())
-    if result.value is None:
-        raise service_error(result.errors[0])
-    change = result.value
+    change = api.book.net_worth_change(start, through, date.today())
     return {
         "start": change.start,
         "end": change.end,
@@ -89,11 +85,12 @@ def net_worth_history(api: Api, query: QueryParams) -> dict[str, object]:
     through = through or today.replace(day=1)
     start = start or add_months(through, -11, day=1)
     end = date(through.year, through.month, monthrange(through.year, through.month)[1])
-    result = query_net_worth_history(api.db, start, end, period, today)
-    if result.value is None:
-        raise service_error(result.errors[0])
-    history = result.value
-    currency = reporting_currency_label(api.db)
+    if period not in {item.value for item in ReportingPeriod}:
+        from .resources import QueryError  # resources imports this module
+
+        raise QueryError("query.invalid", ("period",))
+    history = api.book.net_worth_history(start, end, ReportingPeriod(period), today)
+    currency = api.book.reporting_currency()
     return {
         "currency": currency,
         "charts": [chart.as_dict() for chart in net_worth_charts(history, currency)],

@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from ...gen.db.sqlite import DbSQLite
+from ...api.local import book_server
 from ...gen.engine.cost_basis import shares_text
-from ...gen.engine.realized_gains import RealizedGainsReport, currency_labels, realized_gains
+from ...gen.engine.realized_gains import RealizedGainsReport
+from ...gen.services.investment_reports import RealizedGainsView
 from ...plugins.export.report_layout import realized_gains_layout
 from ...presentation import lot_text
 from .. import printing
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -26,13 +28,14 @@ def _cell(text: str, *, numeric: bool = False) -> Gtk.Label:
 class RealizedGainsDialog(BoundedWindow):
     """Totals by year and currency, then each sale with its lots and how they were chosen."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
         super().__init__(title="Realized Gains", transient_for=parent)
         self.db = db
         self.set_default_size(900, 600)
-        self.years = sorted({sale.sold.year for sale in realized_gains(db).sales}, reverse=True)
+        self.view: RealizedGainsView = book_server(db).realized_gains()
+        self.years = sorted(self.view.available_years, reverse=True)
         self.year: int | None = None
-        self.report: RealizedGainsReport = realized_gains(db)
+        self.report: RealizedGainsReport = self.view.report
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         for side in ("top", "bottom", "start", "end"):
@@ -67,13 +70,14 @@ class RealizedGainsDialog(BoundedWindow):
 
     def refresh(self) -> None:
         """Recompute the report for the chosen year and redraw it."""
-        self.report = realized_gains(self.db, year=self.year)
+        self.view = book_server(self.db).realized_gains(self.year)
+        self.report = self.view.report
         child = self.body.get_first_child()
         while child is not None:
             following = child.get_next_sibling()
             self.body.remove(child)
             child = following
-        labels = currency_labels(self.db, self.report)
+        labels = self.view.labels()
         totals = Gtk.Grid(column_spacing=16, row_spacing=4)
         for column, heading in enumerate(("Year", "Currency", "Sales", "Proceeds", "Cost", "Gain")):
             label = _cell(heading, numeric=column > 1)
@@ -136,9 +140,7 @@ class RealizedGainsDialog(BoundedWindow):
         return dialog
 
     def layout(self):
-        return realized_gains_layout(
-            self.report, currency_labels(self.db, self.report), year=self.year
-        )
+        return realized_gains_layout(self.report, self.view.labels(), year=self.year)
 
     def print_report(self) -> None:
         printing.print_document(self, self.layout())

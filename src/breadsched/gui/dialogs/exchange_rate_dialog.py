@@ -10,13 +10,14 @@ from __future__ import annotations
 
 from datetime import date
 
-from ...gen.db.sqlite import DbSQLite
-from ...gen.engine import valuation
-from ...gen.engine.currency import reporting_currency_handle
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.lib.commodity import CommodityPrice
 from ...gen.lib.money import Money
+from ...gen.services.exchange_rates import SaveExchangeRate
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
@@ -28,14 +29,11 @@ __all__ = ["ExchangeRateDialog"]
 class ExchangeRateDialog(BoundedWindow):
     """Choose two currencies, a date, and an exact rate."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
         super().__init__(title="Exchange rate", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
         self.db = db
-        self.currencies = sorted(
-            (item for item in db.iter_commodities() if item.is_currency),
-            key=lambda item: item.mnemonic,
-        )
+        self.currencies = list(book_server(db).currencies())
         self.saved: CommodityPrice | None = None
         self.set_default_size(520, 320)
 
@@ -68,9 +66,9 @@ class ExchangeRateDialog(BoundedWindow):
         self.target_picker = bounded_dropdown(labels)
         grid.attach(Gtk.Label(label="To currency", xalign=0), 0, 1, 1, 1)
         grid.attach(self.target_picker, 1, 1, 1, 1)
-        reporting = reporting_currency_handle(db)
+        reporting = book_server(db).reporting_currency()
         target_index = next(
-            (i for i, item in enumerate(self.currencies) if item.handle == reporting), 0
+            (i for i, item in enumerate(self.currencies) if item.mnemonic == reporting), 0
         )
         self.target_picker.set_selected(target_index)
         self.source_picker.set_selected(
@@ -124,7 +122,7 @@ class ExchangeRateDialog(BoundedWindow):
         if source is None or target is None or source.handle == target.handle:
             self.current.set_text("")
             return
-        latest = valuation.latest_price(self.db, source, currency=target)
+        latest = book_server(self.db).latest_exchange_rate(source.handle, target.handle)
         if latest is None:
             self.current.set_text(f"No {source.mnemonic}→{target.mnemonic} quote is recorded yet.")
             return
@@ -149,16 +147,11 @@ class ExchangeRateDialog(BoundedWindow):
         except (ValueError, ArithmeticError):
             self._error("Enter the rate as a number, for example 1.25.")
             return None
+        request = SaveExchangeRate(source.handle, target.handle, quote_date, value)
         try:
-            self.saved = valuation.save_currency_quote(
-                self.db,
-                source_handle=source.handle,
-                target_handle=target.handle,
-                quote_date=quote_date,
-                value=value,
-            )
-        except ValueError as exc:
-            self._error(str(exc).capitalize() + ".")
+            self.saved = book_server(self.db).save_exchange_rate(request)
+        except ApiError as error:
+            self._error(f"{error}.")
             return None
         return self.saved
 

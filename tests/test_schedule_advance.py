@@ -265,11 +265,11 @@ def test_cli_sets_advance_days_and_resolves_the_next_occurrence(tmp_path, capsys
     capsys.readouterr()
 
     assert main(["due-review", book_path, *as_of, "--json"]) == 0
-    [listed] = json.loads(capsys.readouterr().out)
+    [listed] = json.loads(capsys.readouterr().out)["schedules"]
     assert [item["stage"] for item in listed["items"]] == ["reminder"]
     # Bulk decisions leave reminders for later.
     assert main(["due-review", book_path, *as_of, "--post-all", "--json"]) == 0
-    [still] = json.loads(capsys.readouterr().out)
+    [still] = json.loads(capsys.readouterr().out)["schedules"]
     assert [item["date"] for item in still["items"]] == [FIRST.isoformat()]
 
     assert main(["scheduled-next", book_path, "Rent", *as_of, "--json"]) == 0

@@ -1,8 +1,9 @@
 """HTTP input and output for reimbursable expenses (receivables).
 
-This adapter only parses JSON into the shared receivables service's requests and
+This adapter only parses JSON into the book server's receivable requests and
 translates its results. Validation, status arithmetic, and every write stay in
-``gen/services/receivables``, so a rejected request never changes the book. The
+``gen/services/receivables``, behind the book server (``Api.book``), so a rejected
+request never changes the book. The
 service, not this adapter, keeps the Receivable-account reclassifications (#170).
 """
 
@@ -12,33 +13,15 @@ from collections.abc import Mapping
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
-from ..gen.services.receivables import (
-    RecordWriteOff,
-    SaveReceivable,
-    accept_reimbursements,
-    attach_expense_split,
-    attach_reimbursement_split,
-    clear_dispute,
-    delete_receivable,
-    detach_split,
-    list_receivables,
-    mark_disputed,
-    receivable_accounts,
-    receivable_candidates,
-    record_write_off,
-    reimbursement_proposals,
-    save_receivable,
-    shared_costs,
-    unoffered_receivable_accounts,
-    write_off_accounts,
-)
-from ..gen.services.scenarios import SetReimbursementOverride, set_reimbursement_override
+from ..api.contract import ApiError
+from ..gen.services.receivables import RecordWriteOff, SaveReceivable
+from ..gen.services.scenarios import SetReimbursementOverride
 from ..presentation import (
     receivable_account_note,
     reimbursement_override_text,
     shared_cost_text,
 )
-from .controls import input_money, service_error
+from .controls import input_money
 
 if TYPE_CHECKING:
     from ..gen.engine.fsa_claims import SharedCost
@@ -63,13 +46,6 @@ def shared_cost_json(shared: SharedCost) -> dict[str, object]:
     }
 
 
-def _shared(api: Api, handle: str) -> list[dict[str, object]]:
-    result = shared_costs(api.db, handle)
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return [shared_cost_json(item) for item in result.value]
-
-
 def _text(payload: Mapping[str, Any], key: str, *, optional: bool = False) -> str | None:
     value = payload.get(key)
     if value is None and optional:
@@ -89,41 +65,28 @@ def _date(payload: Mapping[str, Any], key: str, *, optional: bool = False) -> da
         raise ValueError(f"{key} must be YYYY-MM-DD") from None
 
 
-def _result(api: Api, result) -> Any:
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return result.value
+def _linked(links) -> list[dict[str, object]]:
+    return [
+        {
+            "transaction": link.transaction,
+            "split": link.split,
+            "date": link.when,
+            "description": link.description,
+            "account": link.account_name,
+            "value": link.value,
+        }
+        for link in links
+    ]
 
 
-def _linked(api: Api, links) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
-    for link in links:
-        transaction = api.db.get_transaction(link.transaction)
-        split = (
-            next((item for item in transaction.splits if item.handle == link.split), None)
-            if transaction is not None
-            else None
-        )
-        rows.append(
-            {
-                "transaction": link.transaction,
-                "split": link.split,
-                "date": transaction.post_date if transaction is not None else None,
-                "description": transaction.description if transaction is not None else None,
-                "account": api.db.full_name(split.account) if split is not None else None,
-                "value": split.value if split is not None else None,
-            }
-        )
-    return rows
-
-
-def _candidate(api: Api, item) -> dict[str, object]:
+def _candidate(line) -> dict[str, object]:
+    item = line.candidate
     return {
         "transaction": item.transaction,
         "split": item.split,
         "date": item.when,
         "description": item.description,
-        "account": api.db.full_name(item.account),
+        "account": line.account_name,
         "account_handle": item.account,
         "value": item.value,
     }
@@ -132,85 +95,69 @@ def _candidate(api: Api, item) -> dict[str, object]:
 def receivables(api: Api, query: QueryParams) -> dict[str, object]:
     """Every receivable's recomputed standing and links, plus linkable splits."""
     query.finish()
-    summaries = _result(api, list_receivables(api.db, as_of=date.today()))
-    costs, credits = _result(api, receivable_candidates(api.db))
-    proposals = _result(api, reimbursement_proposals(api.db, as_of=date.today()))
-    scenarios = sorted(api.db.iter_scenarios(), key=lambda item: item.name.casefold())
+    view = api.book.receivables_view(date.today())
     return {
         "proposals": [
             {
-                "receivable": item.receivable,
-                "payer": item.payer,
-                "transaction": item.transaction,
-                "split": item.split,
-                "date": item.when,
-                "description": item.description,
-                "account": api.db.full_name(item.account),
-                "amount": item.amount,
-                "remaining_after": item.remaining_after,
-                "reason": item.reason,
+                "receivable": line.proposal.receivable,
+                "payer": line.proposal.payer,
+                "transaction": line.proposal.transaction,
+                "split": line.proposal.split,
+                "date": line.proposal.when,
+                "description": line.proposal.description,
+                "account": line.account_name,
+                "amount": line.proposal.amount,
+                "remaining_after": line.proposal.remaining_after,
+                "reason": line.proposal.reason,
             }
-            for item in proposals
+            for line in view.proposals
         ],
         "receivables": [
             {
-                "handle": item.receivable.handle,
-                "payer": item.receivable.payer,
-                "description": item.receivable.description,
-                "incurred_date": item.receivable.incurred_date,
-                "expected_amount": item.receivable.expected_amount,
-                "expected_cash_date": item.receivable.expected_cash_date,
-                "disputed_on": item.receivable.disputed_on,
-                "dispute_note": item.receivable.dispute_note,
-                "expense_total": item.expense_total,
-                "reimbursed": item.reimbursed,
-                "written_off": item.written_off,
-                "remaining": item.remaining,
-                "age_days": item.age_days,
-                "status": item.status.value,
-                "status_label": item.status.label,
-                "owed": item.owed,
-                "direct": item.direct,
-                "account": item.receivable.account,
-                "account_name": (
-                    api.db.full_name(item.receivable.account) if item.receivable.account else None
-                ),
-                "fsa_claims": list(item.fsa_claims),
-                "shared_costs": _shared(api, item.receivable.handle),
-                "expenses": _linked(api, item.receivable.expenses),
-                "reimbursements": _linked(api, item.receivable.reimbursements),
+                "handle": line.summary.receivable.handle,
+                "payer": line.summary.receivable.payer,
+                "description": line.summary.receivable.description,
+                "incurred_date": line.summary.receivable.incurred_date,
+                "expected_amount": line.summary.receivable.expected_amount,
+                "expected_cash_date": line.summary.receivable.expected_cash_date,
+                "disputed_on": line.summary.receivable.disputed_on,
+                "dispute_note": line.summary.receivable.dispute_note,
+                "expense_total": line.summary.expense_total,
+                "reimbursed": line.summary.reimbursed,
+                "written_off": line.summary.written_off,
+                "remaining": line.summary.remaining,
+                "age_days": line.summary.age_days,
+                "status": line.summary.status.value,
+                "status_label": line.summary.status.label,
+                "owed": line.summary.owed,
+                "direct": line.summary.direct,
+                "account": line.summary.receivable.account,
+                "account_name": line.account_name,
+                "fsa_claims": list(line.summary.fsa_claims),
+                "shared_costs": [shared_cost_json(item) for item in line.shared_costs],
+                "expenses": _linked(line.expenses),
+                "reimbursements": _linked(line.reimbursements),
                 "scenario_changes": [
                     {
-                        "scenario": scenario.handle,
-                        "amount": scenario.reimbursement_overrides[item.receivable.handle].amount,
-                        "on": scenario.reimbursement_overrides[item.receivable.handle].on,
-                        "text": reimbursement_override_text(
-                            scenario.name,
-                            scenario.reimbursement_overrides[item.receivable.handle],
-                        ),
+                        "scenario": change.scenario,
+                        "amount": change.override.amount,
+                        "on": change.override.on,
+                        "text": reimbursement_override_text(change.scenario_name, change.override),
                     }
-                    for scenario in scenarios
-                    if item.receivable.handle in scenario.reimbursement_overrides
+                    for change in line.scenario_changes
                 ],
             }
-            for item in summaries
+            for line in view.receivables
         ],
-        "scenarios": [{"handle": item.handle, "name": item.name} for item in scenarios],
-        "costs": [_candidate(api, item) for item in costs],
-        "credits": [_candidate(api, item) for item in credits],
-        "accounts": [
-            {"handle": account.handle, "name": api.db.full_name(account) or account.name}
-            for account in receivable_accounts(api.db)
-        ],
+        "scenarios": [{"handle": handle, "name": name} for handle, name in view.scenarios],
+        "costs": [_candidate(line) for line in view.costs],
+        "credits": [_candidate(line) for line in view.credits],
+        "accounts": [{"handle": handle, "name": name} for handle, name in view.accounts],
         "write_off_accounts": [
-            {"handle": account.handle, "name": api.db.full_name(account) or account.name}
-            for account in write_off_accounts(api.db)
+            {"handle": handle, "name": name} for handle, name in view.write_off_accounts
         ],
         "account_note": receivable_account_note(
-            [
-                api.db.full_name(account) or account.name
-                for account in unoffered_receivable_accounts(api.db)
-            ]
+            [name for _handle, name in view.unoffered_accounts]
         ),
     }
 
@@ -228,17 +175,20 @@ def receivable_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         handle=_text(payload, "handle", optional=True) or None,
         account=_text(payload, "account", optional=True) or None,
     )
-    saved = _result(api, save_receivable(api.db, request))
+    saved = api.book.save_receivable(request)
     response: dict[str, object] = {"handle": saved.handle, "payer": saved.payer}
     expense = payload.get("link_expense")
     if request.handle is None and isinstance(expense, dict):
-        linked = attach_expense_split(
-            api.db,
-            saved.handle,
-            _text(expense, "transaction") or "",
-            _text(expense, "split") or "",
-        )
-        response["linked"] = linked.value is not None
+        try:
+            api.book.link_receivable_split(
+                saved.handle,
+                _text(expense, "transaction") or "",
+                _text(expense, "split") or "",
+                "expense",
+            )
+            response["linked"] = True
+        except ApiError:
+            response["linked"] = False
     return response
 
 
@@ -246,28 +196,20 @@ def receivable_link(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     role = _text(payload, "role")
     if role not in {"expense", "reimbursement"}:
         raise ValueError("role must be expense or reimbursement")
-    attach = attach_expense_split if role == "expense" else attach_reimbursement_split
-    saved = _result(
-        api,
-        attach(
-            api.db,
-            _text(payload, "receivable") or "",
-            _text(payload, "transaction") or "",
-            _text(payload, "split") or "",
-        ),
+    saved = api.book.link_receivable_split(
+        _text(payload, "receivable") or "",
+        _text(payload, "transaction") or "",
+        _text(payload, "split") or "",
+        role,
     )
     return {"handle": saved.handle}
 
 
 def receivable_unlink(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    saved = _result(
-        api,
-        detach_split(
-            api.db,
-            _text(payload, "receivable") or "",
-            _text(payload, "transaction") or "",
-            _text(payload, "split") or "",
-        ),
+    saved = api.book.detach_receivable_split(
+        _text(payload, "receivable") or "",
+        _text(payload, "transaction") or "",
+        _text(payload, "split") or "",
     )
     return {"handle": saved.handle}
 
@@ -275,16 +217,12 @@ def receivable_unlink(api: Api, payload: Mapping[str, Any]) -> dict[str, object]
 def receivable_dispute(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     handle = _text(payload, "handle") or ""
     if payload.get("clear") is True:
-        saved = _result(api, clear_dispute(api.db, handle))
+        saved = api.book.clear_dispute(handle)
     else:
-        saved = _result(
-            api,
-            mark_disputed(
-                api.db,
-                handle,
-                _date(payload, "disputed_on") or date.today(),
-                _text(payload, "note", optional=True) or "",
-            ),
+        saved = api.book.mark_disputed(
+            handle,
+            _date(payload, "disputed_on") or date.today(),
+            _text(payload, "note", optional=True) or "",
         )
     return {"handle": saved.handle}
 
@@ -292,19 +230,16 @@ def receivable_dispute(api: Api, payload: Mapping[str, Any]) -> dict[str, object
 def receivable_scenario(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """Change what one scenario expects back for a receivable; blank fields clear it."""
     raw_amount = (_text(payload, "amount", optional=True) or "").strip()
-    scenario = _result(
-        api,
-        set_reimbursement_override(
-            api.db,
-            SetReimbursementOverride(
-                _text(payload, "scenario") or "",
-                _text(payload, "receivable") or "",
-                input_money(dict(payload), raw_amount) if raw_amount else None,
-                _date(payload, "on", optional=True),
-            ),
-        ),
+    receivable = _text(payload, "receivable") or ""
+    scenario = api.book.set_reimbursement_override(
+        SetReimbursementOverride(
+            _text(payload, "scenario") or "",
+            receivable,
+            input_money(dict(payload), raw_amount) if raw_amount else None,
+            _date(payload, "on", optional=True),
+        )
     )
-    override = scenario.reimbursement_overrides.get(_text(payload, "receivable"))
+    override = scenario.reimbursement_overrides.get(receivable)
     return {
         "scenario": scenario.handle,
         "text": (
@@ -319,18 +254,14 @@ def receivable_write_off(api: Api, payload: Mapping[str, Any]) -> dict[str, obje
     raw_amount = payload.get("amount")
     if not isinstance(raw_amount, str):
         raise ValueError("amount must be text")
-    saved = _result(
-        api,
-        record_write_off(
-            api.db,
-            RecordWriteOff(
-                _text(payload, "receivable") or "",
-                input_money(dict(payload), raw_amount),
-                _date(payload, "written_off_on") or date.today(),
-                _text(payload, "reason", optional=True) or "",
-                _text(payload, "account", optional=True) or None,
-            ),
-        ),
+    saved = api.book.record_write_off(
+        RecordWriteOff(
+            _text(payload, "receivable") or "",
+            input_money(dict(payload), raw_amount),
+            _date(payload, "written_off_on") or date.today(),
+            _text(payload, "reason", optional=True) or "",
+            _text(payload, "account", optional=True) or None,
+        )
     )
     return {"handle": saved.handle}
 
@@ -343,11 +274,9 @@ def receivable_accept(api: Api, payload: Mapping[str, Any]) -> dict[str, object]
         for item in raw
     ):
         raise ValueError("links must be a list of [receivable, transaction, split]")
-    accepted = _result(
-        api, accept_reimbursements(api.db, tuple((item[0], item[1], item[2]) for item in raw))
-    )
+    accepted = api.book.accept_reimbursements(tuple((item[0], item[1], item[2]) for item in raw))
     return {"linked": accepted.linked, "unchanged": accepted.unchanged}
 
 
 def receivable_delete(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    return {"handle": _result(api, delete_receivable(api.db, _text(payload, "handle") or ""))}
+    return {"handle": api.book.delete_receivable(_text(payload, "handle") or "")}

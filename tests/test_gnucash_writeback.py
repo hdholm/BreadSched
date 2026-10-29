@@ -391,6 +391,57 @@ def test_a_round_trip_mismatch_restores_the_book(linked, monkeypatch):
     assert open(gnc.path, "rb").read() == before
 
 
+@pytest.mark.parametrize("over", ["in-process", "http"])
+def test_write_back_through_the_book_server(linked, over):
+    """The book server previews, writes, and keeps backups as the service does (#358)."""
+    import threading
+
+    from breadsched.api import ApiError, LocalBookServer
+    from breadsched.api.http_client import HttpBookClient
+    from breadsched.web.server import serve
+
+    db, gnc = linked
+    httpd = None
+    if over == "http":
+        httpd = serve(db, host="127.0.0.1", port=0)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        api = HttpBookClient(f"http://127.0.0.1:{httpd.server_port}", httpd.token)
+    else:
+        api = LocalBookServer(db)
+    try:
+        assert api.writeback_preview().changes == ()
+        assert api.set_writeback_keep_backups(3) == 3
+        assert api.writeback_keep_backups() == 3
+        with pytest.raises(ApiError) as refused:
+            api.set_writeback_keep_backups(0)
+        assert refused.value.code == "writeback.keep_backups.invalid"
+        assert api.writeback_keep_backups() == 3
+
+        rent = _rent(db)
+        rent.description = "Rent (served)"
+        with db.transaction("Local edit") as txn:
+            db.commit_transaction(rent, txn)
+        [change] = api.writeback_preview().changes
+        assert (change.transaction, change.kinds, change.operation) == (
+            rent.handle,
+            ("edit",),
+            None,
+        )
+        with pytest.raises(ApiError) as refused:
+            api.apply_writeback(ApplyWriteback(()))
+        assert refused.value.code == "writeback.selection.invalid"
+        applied = api.apply_writeback(ApplyWriteback((rent.handle,)))
+        assert [item.transaction for item in applied.written] == [rent.handle]
+        assert _gnc(gnc.path, "SELECT description FROM transactions WHERE guid=?", rent.handle) == [
+            ("Rent (served)",)
+        ]
+        assert api.writeback_preview().changes == ()
+    finally:
+        if httpd is not None:
+            httpd.shutdown()
+            httpd.server_close()
+
+
 def test_a_note_is_written_to_gnucash_even_on_a_reconciled_transaction(linked):
     """A note is not ledger data, so a GnuCash-reconciled transaction still takes it (#385)."""
     db, gnc = linked

@@ -4,15 +4,11 @@ from __future__ import annotations
 
 import argparse
 from datetime import date
-from typing import Any
 
-from ..gen.db.sqlite import DbSQLite
-from ..gen.engine import category_report
+from ..api.protocol import BookApi
 from ..gen.lib import (
-    FsaClaim,
     FsaClaimEvent,
     Money,
-    Receivable,
     Split,
     Transaction,
 )
@@ -20,55 +16,25 @@ from ..gen.services import (
     CloseClaim,
     ReopenClaim,
     SetReimbursementOverride,
-    close_claim,
-    reopen_claim,
-    set_reimbursement_override,
 )
 from ..gen.services.receivables import (
     RecordWriteOff,
     SaveReceivable,
-    accept_reimbursements,
-    attach_expense_split,
-    attach_reimbursement_split,
-    clear_dispute,
-    delete_receivable,
-    detach_split,
-    list_receivables,
-    mark_disputed,
-    record_write_off,
-    reimbursement_proposals,
-    save_receivable,
-    shared_costs,
 )
 from ..presentation import (
     goal_status_text,
     plan_reimbursable_text,
-    service_error_message,
     shared_cost_text,
 )
 from .common import (
     AddCommand,
     CommandError,
+    add_server_options,
+    book_api,
     emit,
-    find_transaction,
-    open_book,
     parse_date,
-    resolve_account,
     table,
 )
-
-
-def _find_receivable(db: DbSQLite, reference: str) -> Receivable:
-    """Locate a receivable by handle, or by a unique prefix of one."""
-    exact = db.get_receivable(reference)
-    if exact is not None:
-        return exact
-    matches = [item for item in db.iter_receivables() if item.handle.startswith(reference)]
-    if not matches:
-        raise CommandError(f"no receivable matches {reference!r}")
-    if len(matches) > 1:
-        raise CommandError(f"{reference!r} matches {len(matches)} receivables; use more characters")
-    return matches[0]
 
 
 def _receivable_split(transaction: Transaction, index: int) -> Split:
@@ -77,62 +43,26 @@ def _receivable_split(transaction: Transaction, index: int) -> Split:
     return transaction.splits[index - 1]
 
 
-def _resolve_goal(db: DbSQLite, reference: str) -> str:
-    """A savings goal by exact handle, unique handle prefix, or exact name."""
-    goals = list(db.iter_savings_goals())
-    matches = [goal for goal in goals if goal.handle == reference]
-    matches = matches or [goal for goal in goals if goal.handle.startswith(reference)]
-    matches = matches or [goal for goal in goals if goal.name.casefold() == reference.casefold()]
-    if len(matches) != 1:
-        raise CommandError(
-            f"no savings goal matches {reference!r}"
-            if not matches
-            else f"{reference!r} matches several savings goals"
-        )
-    return matches[0].handle
-
-
 def cmd_goals(args: argparse.Namespace) -> int:
     """List savings goals and what each has set aside, or add, fund, or close one."""
-    from ..gen.services import (
-        AllocateToGoal,
-        SaveSavingsGoal,
-        allocate_to_goal,
-        close_savings_goal,
-        delete_savings_goal,
-        query_savings_goals,
-        reopen_savings_goal,
-        save_savings_goal,
-        set_goal_override,
-    )
-    from ..gen.services.savings_goals import SetGoalOverride
+    from ..gen.services.savings_goals import AllocateToGoal, SaveSavingsGoal, SetGoalOverride
 
     writes = (args.add, args.allocate, args.close, args.reopen, args.delete, args.override)
-    db = open_book(args.book, "w" if any(writes) else "r")
-    try:
-        on = parse_date(args.on) or date.today()
-
-        def check(result: Any) -> Any:
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
-            return result.value
-
+    on = parse_date(args.on) or date.today()
+    with book_api(args, "w" if any(writes) else "r") as book:
         if args.add:
             if not (args.account and args.target and args.by):
                 raise CommandError("--account, --target, and --by are required with --add")
             by = parse_date(args.by)
             assert by is not None
-            goal = check(
-                save_savings_goal(
-                    db,
-                    SaveSavingsGoal(
-                        name=args.add,
-                        account=resolve_account(db, args.account).handle,
-                        target_amount=Money(args.target),
-                        target_date=by,
-                        start_date=parse_date(args.start) or date.today(),
-                        description=args.description or "",
-                    ),
+            goal = book.save_savings_goal(
+                SaveSavingsGoal(
+                    name=args.add,
+                    account=book.find_account(args.account).handle,
+                    target_amount=Money(args.target),
+                    target_date=by,
+                    start_date=parse_date(args.start) or date.today(),
+                    description=args.description or "",
                 )
             )
             emit({"handle": goal.handle}, args, f"Added savings goal {goal.name} ({goal.handle})")
@@ -140,24 +70,21 @@ def cmd_goals(args: argparse.Namespace) -> int:
         if args.override:
             if not args.scenario:
                 raise CommandError("--scenario is required with --override")
-            scenario = db.get_scenario_by_name(args.scenario)
+            view = book.savings_goals(on)
+            scenario = next((item for item in view.scenarios if item.name == args.scenario), None)
             if scenario is None:
                 raise CommandError(f"no scenario named {args.scenario!r}")
-            handle = _resolve_goal(db, args.override)
-            changed = check(
-                set_goal_override(
-                    db,
-                    SetGoalOverride(
-                        scenario.handle,
-                        handle,
-                        target_amount=Money(args.target) if args.target else None,
-                        target_date=parse_date(args.by),
-                        excluded=args.leave_out,
-                        purchase_on=parse_date(args.buy_on),
-                        purchase_account=(
-                            resolve_account(db, args.buy_into).handle if args.buy_into else None
-                        ),
-                    ),
+            handle = book.find_savings_goal(args.override).handle
+            buy_into = book.find_account(args.buy_into) if args.buy_into else None
+            changed = book.set_goal_override(
+                SetGoalOverride(
+                    scenario.handle,
+                    handle,
+                    target_amount=Money(args.target) if args.target else None,
+                    target_date=parse_date(args.by),
+                    excluded=args.leave_out,
+                    purchase_on=parse_date(args.buy_on),
+                    purchase_account=buy_into.handle if buy_into else None,
                 )
             )
             override = changed.goal_overrides.get(handle)
@@ -171,7 +98,7 @@ def cmd_goals(args: argparse.Namespace) -> int:
                     f"by {override.target_date.isoformat()}" if override.target_date else "",
                     (
                         f"bought on {override.purchase_on.isoformat()} into "
-                        f"{db.full_name(override.purchase_account)}"
+                        f"{buy_into.full_name if buy_into else override.purchase_account}"
                         if override.purchase_on and override.purchase_account
                         else ""
                     ),
@@ -190,97 +117,78 @@ def cmd_goals(args: argparse.Namespace) -> int:
         if args.allocate:
             if not args.amount:
                 raise CommandError("--amount is required with --allocate")
-            goal = check(
-                allocate_to_goal(
-                    db,
-                    AllocateToGoal(
-                        _resolve_goal(db, args.allocate), Money(args.amount), on, args.memo or ""
-                    ),
-                )
+            target = book.find_savings_goal(args.allocate).handle
+            goal = book.allocate_to_goal(
+                AllocateToGoal(target, Money(args.amount), on, args.memo or "")
             )
             emit({"handle": goal.handle}, args, f"Allocated {args.amount} to {goal.name}")
             return 0
         if args.close:
-            goal = check(close_savings_goal(db, _resolve_goal(db, args.close), on))
+            goal = book.close_savings_goal(book.find_savings_goal(args.close).handle, on)
             emit({"handle": goal.handle}, args, f"Closed savings goal {goal.name}")
             return 0
         if args.reopen:
-            goal = check(reopen_savings_goal(db, _resolve_goal(db, args.reopen)))
+            goal = book.reopen_savings_goal(book.find_savings_goal(args.reopen).handle)
             emit({"handle": goal.handle}, args, f"Reopened savings goal {goal.name}")
             return 0
         if args.delete:
-            check(delete_savings_goal(db, _resolve_goal(db, args.delete)))
+            book.delete_savings_goal(book.find_savings_goal(args.delete).handle)
             emit({"deleted": True}, args, "Deleted savings goal")
             return 0
-        report = check(
-            query_savings_goals(db, parse_date(args.as_of) or date.today(), include_closed=args.all)
-        )
-        rows = [
-            [
-                item.goal.name,
-                item.account_name,
-                item.goal.target_date.isoformat(),
-                item.target.format(),
-                item.set_aside.format(),
-                item.remaining.format(),
-                goal_status_text(item),
-            ]
-            for item in report.goals
+        report = book.savings_goals(
+            parse_date(args.as_of) or date.today(), include_closed=args.all
+        ).report
+    rows = [
+        [
+            item.goal.name,
+            item.account_name,
+            item.goal.target_date.isoformat(),
+            item.target.format(),
+            item.set_aside.format(),
+            item.remaining.format(),
+            goal_status_text(item),
         ]
-        text = (
-            table(
-                rows,
-                ["goal", "account", "by", "target", "set aside", "remaining", "status"],
-                right={3, 4, 5},
-            )
-            + f"\nSet aside for goals: {report.set_aside.format()}; "
-            f"held from spendable cash: {report.held.format()}"
-            if rows
-            else "No savings goals."
+        for item in report.goals
+    ]
+    text = (
+        table(
+            rows,
+            ["goal", "account", "by", "target", "set aside", "remaining", "status"],
+            right={3, 4, 5},
         )
-        emit(
-            {
-                "as_of": report.as_of,
-                "set_aside": report.set_aside,
-                "held": report.held,
-                "goals": [
-                    {
-                        "handle": item.goal.handle,
-                        "name": item.goal.name,
-                        "account": item.goal.account,
-                        "account_name": item.account_name,
-                        "start_date": item.goal.start_date,
-                        "target_date": item.goal.target_date,
-                        "target": item.target,
-                        "allocated": item.allocated,
-                        "from_income": item.from_income,
-                        "set_aside": item.set_aside,
-                        "remaining": item.remaining,
-                        "status": item.status,
-                        "basis": item.basis,
-                    }
-                    for item in report.goals
-                ],
-            },
-            args,
-            text,
-        )
-        return 0
-    finally:
-        db.close()
-
-
-def _find_claim(db: DbSQLite, reference: str) -> FsaClaim:
-    """Locate an FSA claim by handle, or by a unique prefix of one."""
-    exact = db.get_fsa_claim(reference)
-    if exact is not None:
-        return exact
-    matches = [item for item in db.iter_fsa_claims() if item.handle.startswith(reference)]
-    if not matches:
-        raise CommandError(f"no FSA claim matches {reference!r}")
-    if len(matches) > 1:
-        raise CommandError(f"{reference!r} matches {len(matches)} claims; use more characters")
-    return matches[0]
+        + f"\nSet aside for goals: {report.set_aside.format()}; "
+        f"held from spendable cash: {report.held.format()}"
+        if rows
+        else "No savings goals."
+    )
+    emit(
+        {
+            "as_of": report.as_of,
+            "set_aside": report.set_aside,
+            "held": report.held,
+            "goals": [
+                {
+                    "handle": item.goal.handle,
+                    "name": item.goal.name,
+                    "account": item.goal.account,
+                    "account_name": item.account_name,
+                    "start_date": item.goal.start_date,
+                    "target_date": item.goal.target_date,
+                    "target": item.target,
+                    "allocated": item.allocated,
+                    "from_income": item.from_income,
+                    "set_aside": item.set_aside,
+                    "remaining": item.remaining,
+                    "status": item.status,
+                    "basis": item.basis,
+                }
+                for item in report.goals
+            ],
+        },
+        args,
+        text,
+    )
+    return 0
 
 
 def _claim_event_text(event: FsaClaimEvent) -> str:
@@ -294,13 +202,12 @@ def _claim_event_text(event: FsaClaimEvent) -> str:
     return f"{event.on.isoformat()} {text}" + (f": {event.note}" if event.note else "")
 
 
-def _claim_link_proposals(db, args: argparse.Namespace) -> int:
+def _claim_link_proposals(book: BookApi, args: argparse.Namespace) -> int:
     """FSA statement lines that clearly belong on one claim; link them all if asked."""
-    from ..gen.services import accept_claim_links, claim_link_proposals
     from ..presentation import claim_role_label
 
-    account = resolve_account(db, args.account).handle if args.account else None
-    proposals = claim_link_proposals(db, account=account).value or ()
+    account = book.find_account(args.account).handle if args.account else None
+    proposals = book.claim_link_proposals(account)
     payload: dict[str, object] = {
         "proposals": [
             {
@@ -319,8 +226,7 @@ def _claim_link_proposals(db, args: argparse.Namespace) -> int:
     }
     if args.link_proposals:
         chosen = tuple((item.claim, item.transaction, item.split) for item in proposals)
-        accepted = accept_claim_links(db, chosen).value
-        assert accepted is not None
+        accepted = book.accept_claim_links(chosen)
         payload["linked"] = accepted.linked
         payload["unchanged"] = accepted.unchanged
         noun = "link" if accepted.linked == 1 else "links"
@@ -351,18 +257,18 @@ def _claim_link_proposals(db, args: argparse.Namespace) -> int:
     return 0
 
 
-def _fsa_years(db, args: argparse.Namespace) -> int:
+def _fsa_years(book: BookApi, args: argparse.Namespace) -> int:
     """Open and recently closed FSA benefit years, with how each was used."""
-    from ..gen.engine import fsa
     from ..presentation import fsa_account_text, fsa_usage_text
 
-    statuses = fsa.dashboard_statuses(db, as_of=parse_date(args.as_of) or date.today())
+    view = book.benefit_years(parse_date(args.as_of) or date.today())
+    statuses = list(view.years)
     if args.account:
-        handle = resolve_account(db, args.account).handle
+        handle = book.find_account(args.account).handle
         statuses = [status for status in statuses if status.account.handle == handle]
     payload = [
         {
-            "account": db.full_name(status.account),
+            "account": view.name(status.account.handle),
             "dependent_care": status.dependent_care,
             "start": status.year.start,
             "through": status.year.through,
@@ -386,7 +292,7 @@ def _fsa_years(db, args: argparse.Namespace) -> int:
         return 0
     rows = [
         [
-            fsa_account_text(db.full_name(status.account), status.dependent_care),
+            fsa_account_text(view.name(status.account.handle), status.dependent_care),
             status.label,
             status.phase,
             status.year.election.format(),
@@ -420,23 +326,20 @@ def _fsa_years(db, args: argparse.Namespace) -> int:
 
 def cmd_claims(args: argparse.Namespace) -> int:
     """FSA claims grouped by status, account, funding year, or provider."""
-    from ..gen.engine.fsa_claim_report import claim_report
     from ..gen.engine.fsa_claims import FsaClaimStatus
+    from ..gen.services.claims import ClaimReportQuery
 
     changing = bool(args.close or args.reopen)
     if args.close and args.reopen:
         raise CommandError("use --close or --reopen, not both")
-    db = open_book(args.book, "w" if changing or args.link_proposals else "r")
-    try:
+    with book_api(args, "w" if changing or args.link_proposals else "r") as book:
         if changing:
-            claim = _find_claim(db, args.close or args.reopen)
+            claim = book.find_fsa_claim(args.close or args.reopen)
             on = parse_date(args.on) or date.today()
             if args.close:
-                result = close_claim(db, CloseClaim(claim.handle, on, args.reason or ""))
+                book.close_fsa_claim(CloseClaim(claim.handle, on, args.reason or ""))
             else:
-                result = reopen_claim(db, ReopenClaim(claim.handle, on, args.note or ""))
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
+                book.reopen_fsa_claim(ReopenClaim(claim.handle, on, args.note or ""))
             name = claim.provider or claim.description or "FSA claim"
             emit(
                 {"handle": claim.handle},
@@ -446,11 +349,11 @@ def cmd_claims(args: argparse.Namespace) -> int:
             )
             return 0
         if args.years:
-            return _fsa_years(db, args)
+            return _fsa_years(book, args)
         if args.proposals or args.link_proposals:
-            return _claim_link_proposals(db, args)
+            return _claim_link_proposals(book, args)
         if args.history:
-            claim = _find_claim(db, args.history)
+            claim = book.find_fsa_claim(args.history)
             emit(
                 {"handle": claim.handle, "events": [event.serialize() for event in claim.events]},
                 args,
@@ -465,15 +368,16 @@ def cmd_claims(args: argparse.Namespace) -> int:
             except ValueError as exc:
                 choices = ", ".join(item.value for item in FsaClaimStatus)
                 raise CommandError(f"--status must be one of {choices}") from exc
-        report = claim_report(
-            db,
-            as_of=parse_date(args.as_of) or date.today(),
-            by=args.by,
-            account=resolve_account(db, args.account).handle if args.account else None,
-            funding_year=parse_date(args.year),
-            provider=args.provider,
-            status=status,
-            attention_only=args.attention,
+        report = book.fsa_claim_report(
+            ClaimReportQuery(
+                as_of=parse_date(args.as_of) or date.today(),
+                by=args.by,
+                account=book.find_account(args.account).handle if args.account else None,
+                funding_year=parse_date(args.year),
+                provider=args.provider,
+                status=status,
+                attention_only=args.attention,
+            )
         )
 
         def money(value: Money) -> str:
@@ -554,17 +458,14 @@ def cmd_claims(args: argparse.Namespace) -> int:
             text += "\n\nNeeds attention:\n" + "\n".join(f"  {entry}" for entry in attention)
         emit(payload, args, text)
         return 0
-    finally:
-        db.close()
 
 
-def _receivable_costs(db: DbSQLite, args: argparse.Namespace) -> int:
+def _receivable_costs(book: BookApi, args: argparse.Namespace) -> int:
     """Each expense category's gross and net cost in a date range, as Plan shows it."""
     start, end = (parse_date(value) for value in args.costs)
     if start is None or end is None or end < start:
         raise CommandError("--costs needs a start date and an end date on or after it")
-    report = category_report.build_category_report(db, start, end)
-    rows = report.reimbursable_categories
+    rows = book.reimbursable_costs(start, end)
     payload = [
         {
             "account": row.account,
@@ -584,36 +485,36 @@ def _receivable_costs(db: DbSQLite, args: argparse.Namespace) -> int:
     return 0
 
 
-def _scenario_expectation(db: DbSQLite, args: argparse.Namespace) -> int:
+def _scenario_expectation(book: BookApi, args: argparse.Namespace) -> int:
     """Change, in one scenario, what a payer is expected to reimburse and when."""
     if not args.scenario:
         raise CommandError("--scenario NAME is required with --expect")
-    scenario = db.get_scenario_by_name(args.scenario)
+    scenario = next(
+        (handle for handle, name in book.receivables_view().scenarios if name == args.scenario),
+        None,
+    )
     if scenario is None:
         raise CommandError(f"no scenario named {args.scenario!r}")
-    receivable = _find_receivable(db, args.expect)
-    result = set_reimbursement_override(
-        db,
+    receivable = book.find_receivable(args.expect)
+    changed = book.set_reimbursement_override(
         SetReimbursementOverride(
-            scenario.handle,
+            scenario,
             receivable.handle,
             amount=Money(args.amount) if args.amount else None,
             on=date.fromisoformat(args.on) if args.on else None,
         ),
     )
-    if not result.ok or result.value is None:
-        raise CommandError(service_error_message(result.errors[0]))
-    overrides = result.value.reimbursement_overrides
+    overrides = changed.reimbursement_overrides
     change = overrides.get(receivable.handle)
     emit(
         {
-            "scenario": result.value.name,
+            "scenario": changed.name,
             "reimbursement_overrides": {
                 handle: {"amount": item.amount, "on": item.on} for handle, item in overrides.items()
             },
         },
         args,
-        f"{result.value.name}: {receivable.payer} "
+        f"{changed.name}: {receivable.payer} "
         + (
             "reimbursement expected as the receivable says"
             if change is None
@@ -644,19 +545,17 @@ def cmd_receivables(args: argparse.Namespace) -> int:
         or args.accept_proposals
         or args.expect
     )
-    db = open_book(args.book, "r" if read_only else "w")
-    try:
+    with book_api(args, "r" if read_only else "w") as book:
         if args.costs:
-            return _receivable_costs(db, args)
+            return _receivable_costs(book, args)
         if args.expect:
-            return _scenario_expectation(db, args)
+            return _scenario_expectation(book, args)
         if args.proposals or args.accept_proposals:
-            proposals = reimbursement_proposals(db).value or ()
+            proposals = book.reimbursement_proposals()
             if args.accept_proposals:
-                accepted = accept_reimbursements(
-                    db, tuple((p.receivable, p.transaction, p.split) for p in proposals)
-                ).value
-                assert accepted is not None
+                accepted = book.accept_reimbursements(
+                    tuple((p.receivable, p.transaction, p.split) for p in proposals)
+                )
                 emit(
                     {"linked": accepted.linked, "unchanged": accepted.unchanged},
                     args,
@@ -702,8 +601,7 @@ def cmd_receivables(args: argparse.Namespace) -> int:
         if args.add:
             if not args.incurred:
                 raise CommandError("--incurred DATE is required with --add")
-            saved = save_receivable(
-                db,
+            receivable = book.save_receivable(
                 SaveReceivable(
                     incurred_date=date.fromisoformat(args.incurred),
                     payer=args.add,
@@ -714,12 +612,9 @@ def cmd_receivables(args: argparse.Namespace) -> int:
                         if args.expected_cash_date
                         else None
                     ),
-                    account=resolve_account(db, args.account).handle if args.account else None,
+                    account=book.find_account(args.account).handle if args.account else None,
                 ),
             )
-            if saved.value is None:
-                raise CommandError(service_error_message(saved.errors[0]))
-            receivable = saved.value
             emit(
                 {"handle": receivable.handle, "payer": receivable.payer},
                 args,
@@ -727,15 +622,13 @@ def cmd_receivables(args: argparse.Namespace) -> int:
             )
             return 0
         if args.attach_expense or args.attach_reimbursement:
-            receivable = _find_receivable(db, args.attach_expense or args.attach_reimbursement)
+            receivable = book.find_receivable(args.attach_expense or args.attach_reimbursement)
             if not args.transaction or not args.split_index:
                 raise CommandError("--transaction and --split-index are required")
-            transaction = find_transaction(db, args.transaction)
+            transaction = book.find_transaction(args.transaction)
             split = _receivable_split(transaction, args.split_index)
-            linker = attach_expense_split if args.attach_expense else attach_reimbursement_split
-            result = linker(db, receivable.handle, transaction.handle, split.handle)
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
+            role = "expense" if args.attach_expense else "reimbursement"
+            book.link_receivable_split(receivable.handle, transaction.handle, split.handle, role)
             emit(
                 {"handle": receivable.handle},
                 args,
@@ -744,50 +637,39 @@ def cmd_receivables(args: argparse.Namespace) -> int:
             )
             return 0
         if args.detach:
-            receivable = _find_receivable(db, args.detach)
+            receivable = book.find_receivable(args.detach)
             if not args.transaction or not args.split_index:
                 raise CommandError("--transaction and --split-index are required")
-            transaction = find_transaction(db, args.transaction)
+            transaction = book.find_transaction(args.transaction)
             split = _receivable_split(transaction, args.split_index)
-            result = detach_split(db, receivable.handle, transaction.handle, split.handle)
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
+            book.detach_receivable_split(receivable.handle, transaction.handle, split.handle)
             emit({"handle": receivable.handle}, args, "Unlinked split from receivable")
             return 0
         if args.dispute:
-            receivable = _find_receivable(db, args.dispute)
+            receivable = book.find_receivable(args.dispute)
             if not args.on:
                 raise CommandError("--on DATE is required with --dispute")
-            result = mark_disputed(
-                db, receivable.handle, date.fromisoformat(args.on), args.note or ""
-            )
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
+            book.mark_disputed(receivable.handle, date.fromisoformat(args.on), args.note or "")
             emit({"handle": receivable.handle}, args, f"Disputed receivable for {receivable.payer}")
             return 0
         if args.clear_dispute:
-            receivable = _find_receivable(db, args.clear_dispute)
-            result = clear_dispute(db, receivable.handle)
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
+            receivable = book.find_receivable(args.clear_dispute)
+            book.clear_dispute(receivable.handle)
             emit({"handle": receivable.handle}, args, "Cleared the dispute")
             return 0
         if args.write_off:
-            receivable = _find_receivable(db, args.write_off)
+            receivable = book.find_receivable(args.write_off)
             if not args.amount or not args.on:
                 raise CommandError("--amount and --on DATE are required with --write-off")
-            result = record_write_off(
-                db,
+            book.record_write_off(
                 RecordWriteOff(
                     receivable=receivable.handle,
                     amount=Money(args.amount),
                     written_off_on=date.fromisoformat(args.on),
                     reason=args.reason or "",
-                    account=resolve_account(db, args.into).handle if args.into else None,
+                    account=book.find_account(args.into).handle if args.into else None,
                 ),
             )
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
             emit(
                 {"handle": receivable.handle},
                 args,
@@ -795,19 +677,14 @@ def cmd_receivables(args: argparse.Namespace) -> int:
             )
             return 0
         if args.delete:
-            receivable = _find_receivable(db, args.delete)
-            deleted = delete_receivable(db, receivable.handle)
-            if deleted.value is None:
-                raise CommandError(service_error_message(deleted.errors[0]))
-            emit({"deleted": deleted.value}, args, f"Deleted receivable for {receivable.payer}")
+            receivable = book.find_receivable(args.delete)
+            deleted = book.delete_receivable(receivable.handle)
+            emit({"deleted": deleted}, args, f"Deleted receivable for {receivable.payer}")
             return 0
-        summaries = list_receivables(db).value or ()
-        shared: dict[str, tuple] = {}
-        for item in summaries:
-            found = shared_costs(db, item.receivable.handle)
-            if found.value is None:
-                raise CommandError(service_error_message(found.errors[0]))
-            shared[item.receivable.handle] = found.value
+        view = book.receivables_view()
+        summaries = [line.summary for line in view.receivables]
+        shared = {line.summary.receivable.handle: line.shared_costs for line in view.receivables}
+        names = {line.summary.receivable.handle: line.account_name for line in view.receivables}
         emit(
             [
                 {
@@ -822,9 +699,7 @@ def cmd_receivables(args: argparse.Namespace) -> int:
                     "remaining": item.remaining.format(),
                     "age_days": item.age_days,
                     "status": item.status.value,
-                    "account": (
-                        db.full_name(item.receivable.account) if item.receivable.account else None
-                    ),
+                    "account": names[item.receivable.handle],
                     "fsa_claims": list(item.fsa_claims),
                     "shared_costs": [
                         {
@@ -874,8 +749,6 @@ def cmd_receivables(args: argparse.Namespace) -> int:
             else "No receivables yet. Add one with --add PAYER --incurred DATE.",
         )
         return 0
-    finally:
-        db.close()
 
 
 def register(add: AddCommand) -> None:
@@ -934,6 +807,7 @@ def register(add: AddCommand) -> None:
     claims_cmd.add_argument(
         "--history", metavar="CLAIM", help="list a claim's EOB changes, closings, and reopenings"
     )
+    add_server_options(claims_cmd)
     claims_cmd.set_defaults(func=cmd_claims)
 
     receivables_cmd = add(
@@ -1019,6 +893,7 @@ def register(add: AddCommand) -> None:
         "neither, the scenario expects what the receivable says",
     )
     receivables_cmd.add_argument("--scenario", metavar="NAME", help="saved scenario for --expect")
+    add_server_options(receivables_cmd)
     receivables_cmd.set_defaults(func=cmd_receivables)
 
     goals_cmd = add(
@@ -1063,4 +938,5 @@ def register(add: AddCommand) -> None:
         metavar="ACCOUNT",
         help="with --buy-on: the expense or asset account the purchase goes to",
     )
+    add_server_options(goals_cmd)
     goals_cmd.set_defaults(func=cmd_goals)

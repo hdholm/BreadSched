@@ -8,32 +8,24 @@ error with presentation-owned wording.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Literal, cast
 
+from ..api.contract import ApiError
 from ..gen.engine.entry_input import parse_amount_text
 from ..gen.lib import Money
 from ..gen.services import ServiceError
 from ..gen.utils.amount_input import NumberFormat, parse_user_amount
-from ..presentation import service_error_message
 
 __all__ = ["ResourceError", "input_amount", "input_money", "service_error"]
 
 
-@dataclass(frozen=True, slots=True)
-class ResourceError(Exception):
-    """A resource-adapter failure with a stable HTTP representation."""
-
-    status: int
-    code: str
-    fields: tuple[str, ...] = ()
-    message: str | None = None
+#: A resource-adapter failure is the book API's own error envelope (#355).
+ResourceError = ApiError
 
 
 def service_error(error: ServiceError) -> ResourceError:
     """A service failure as a resource error: 404 for a missing object, else 400."""
-    status = 404 if error.code.endswith(".not_found") else 400
-    return ResourceError(status, error.code, error.fields, service_error_message(error))
+    return ApiError.from_service(error)
 
 
 def input_money(payload: dict, raw: object) -> Money:

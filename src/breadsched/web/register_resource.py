@@ -13,7 +13,7 @@ from datetime import date
 from fractions import Fraction
 from typing import TYPE_CHECKING, Any
 
-from ..gen.engine import ledger
+from ..api import ApiError
 from ..gen.engine.cost_basis import shares_text
 from ..gen.engine.entry_input import trade_price
 from ..gen.lib.amount import Amount
@@ -23,12 +23,10 @@ from ..gen.services import (
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
-    save_transaction,
-    transaction_currency,
 )
-from ..presentation.investments import register_share_summary, trade_price_text
+from ..presentation.investments import share_summary_text, trade_price_text
 from .attachment_resource import document_json
-from .controls import ResourceError, input_money, service_error
+from .controls import ResourceError, input_money
 
 if TYPE_CHECKING:
     from .context import Api
@@ -44,26 +42,21 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
     # The same filter as the desktop register: anything a transaction holds (#382).
     needle = query.text("filter") or ""
     query.finish()
-    account = api.db.get_account(handle)
-    if account is None:
-        raise KeyError(handle)
-    rows = [
-        row
-        for row in ledger.register(api.db, handle)
-        if ledger.transaction_matches(api.db, row.transaction, needle)
-    ][-limit:]
-    debit_label, credit_label = ledger.register_headings(account.atype)
-    security = ledger.security_of(api.db, account)
-    holds_shares: dict[str, bool] = {}
+    try:
+        view = api.book.register_view(handle, limit, needle)
+    except ApiError as exc:
+        if exc.status == 404:
+            raise KeyError(handle) from None
+        raise
+    holding = view.holding
+    shares_held = set(view.security_accounts)
 
     def shares_of(split) -> str | None:
         # Shares as exact decimal text, for a split in an account holding a security.
-        if split.account not in holds_shares:
-            holds_shares[split.account] = ledger.security_of(api.db, split.account) is not None
-        return shares_text(split.quantity) if holds_shares[split.account] else None
+        return shares_text(split.quantity) if split.account in shares_held else None
 
-    def trade(row: ledger.RegisterRow) -> dict[str, object]:
-        if security is None:
+    def trade(row) -> dict[str, object]:
+        if holding is None:
             return {}
         price = trade_price(
             Fraction(row.split.value.numerator, row.split.value.denominator),
@@ -77,26 +70,28 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
         }
 
     return {
-        "account": api.db.full_name(account),
-        "type": account.atype.value,
-        "debit_label": debit_label,
-        "credit_label": credit_label,
+        "account": view.full_name,
+        "type": view.account.atype.value,
+        "debit_label": view.debit_label,
+        "credit_label": view.credit_label,
         # An account holding a security shows shares, price, and shares held (#323).
         "security": (
             None
-            if security is None
+            if holding is None
             else {
-                "mnemonic": security.mnemonic,
-                "share_fraction": ledger.share_fraction(api.db, account),
+                "mnemonic": holding.security.mnemonic,
+                "share_fraction": holding.share_fraction,
             }
         ),
-        "summary": register_share_summary(api.db, account),
-        # Accounts whose splits take shares, for the split lines' Shares cells.
-        "security_accounts": sorted(
-            item.handle
-            for item in api.db.iter_accounts()
-            if ledger.security_of(api.db, item) is not None
+        "summary": (
+            None
+            if holding is None
+            else share_summary_text(
+                holding.security.mnemonic, holding.held, holding.valued, holding.evidence
+            )
         ),
+        # Accounts whose splits take shares, for the split lines' Shares cells.
+        "security_accounts": list(view.security_accounts),
         "rows": [
             {
                 "handle": row.transaction.handle,
@@ -105,8 +100,8 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
                 "description": row.description,
                 "notes": row.transaction.notes,
                 "tags": list(row.transaction.tags),
-                "documents": document_json(api.db, row.transaction),
-                "transfer": row.transfer_label(api.db),
+                "documents": document_json(view.documents_of(row.transaction.handle)),
+                "transfer": view.transfer(row),
                 "amount": row.amount,
                 "balance": row.running,
                 **trade(row),
@@ -120,7 +115,7 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
                     {
                         "handle": split.handle,
                         "account": split.account,
-                        "account_name": api.db.full_name(split.account),
+                        "account_name": view.name(split.account),
                         "value": split.value,
                         "memo": split.memo,
                         # Exact shares for a split in a security account, else None.
@@ -129,7 +124,7 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
                     for split in row.transaction.splits
                 ],
             }
-            for row in rows
+            for row in view.rows
         ],
     }
 
@@ -137,10 +132,11 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
 def transaction_add(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """Post a two-split transaction from the simple entry form."""
 
-    debit = api.db.get_account_by_name(payload["to"])
-    credit = api.db.get_account_by_name(payload["from"])
-    if debit is None or credit is None:
-        raise ResourceError(400, "transaction.account.not_found", ("from", "to"))
+    try:
+        debit = api.book.find_account(str(payload["to"]))
+        credit = api.book.find_account(str(payload["from"]))
+    except ApiError:
+        raise ResourceError(400, "transaction.account.not_found", ("from", "to")) from None
     when = date.fromisoformat(payload.get("date") or date.today().isoformat())
     amount = input_money(dict(payload), payload["amount"])
     if amount <= 0:
@@ -165,9 +161,8 @@ def transaction_add(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         if claim_handle and claim_role
         else None
     )
-    currency = transaction_currency(api.db)
-    result = save_transaction(
-        api.db,
+    currency = api.book.transaction_currency()
+    saved = api.book.save_transaction(
         SaveTransaction(
             TransactionInput(
                 post_date=when,
@@ -183,6 +178,4 @@ def transaction_add(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
             claim_attachment=attachment,
         ),
     )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return {"handle": result.value.handle, "date": when, "amount": amount}
+    return {"handle": saved.handle, "date": when, "amount": amount}

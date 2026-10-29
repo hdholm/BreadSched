@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
@@ -52,13 +53,18 @@ class FsaClaimSuggestion:
 
 def claim_year_window(db: DbSQLite, service_date: date) -> tuple[date, date] | None:
     """Return the combined FSA plan-year/run-out window containing a service date."""
-    matches: list[FsaFundingYear] = []
-    for account in db.iter_accounts():
-        if account.atype is not AccountType.FSA:
-            continue
-        matches.extend(
-            year for year in account.fsa.years if year.start <= service_date <= year.service_through
-        )
+    years = [
+        year
+        for account in db.iter_accounts()
+        if account.atype is AccountType.FSA
+        for year in account.fsa.years
+    ]
+    return year_window(years, service_date)
+
+
+def year_window(years: Iterable[FsaFundingYear], service_date: date) -> tuple[date, date] | None:
+    """:func:`claim_year_window` over FSA funding years already read (a book server's)."""
+    matches = [year for year in years if year.start <= service_date <= year.service_through]
     if not matches:
         return None
     return (

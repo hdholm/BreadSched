@@ -3,7 +3,8 @@
 This adapter only parses JSON into the shared payroll service's requests and
 translates its results. Paycheck arithmetic stays in ``gen/engine/payroll`` and
 validation and every write in ``gen/services/payroll``, so a rejected request never
-changes the book.
+changes the book. Every read and write goes through the book server, ``api.book``
+(#354).
 """
 
 from __future__ import annotations
@@ -12,29 +13,10 @@ from collections.abc import Mapping
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
-from ..gen.engine.payroll import (
-    PayrollError,
-    PayrollLine,
-    PayrollTemplate,
-    leg_kind,
-    parse_percent,
-)
-from ..gen.lib.account import AccountClass
+from ..gen.engine.payroll import PayrollError, PayrollLine, PayrollTemplate, parse_percent
 from ..gen.lib.recurrence import PeriodType, Recurrence
 from ..gen.services.contracts import ServiceError
-from ..gen.services.payroll import (
-    CreatePaycheck,
-    PayChange,
-    SavePayrollTemplate,
-    apply_pay_change,
-    create_paycheck_schedule,
-    delete_payroll_template,
-    list_payroll_templates,
-    paychecks,
-    preview_pay_change,
-    save_payroll_template,
-    template_from_schedule,
-)
+from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from .controls import input_money, service_error
 
 if TYPE_CHECKING:
@@ -66,31 +48,28 @@ def _date(payload: Mapping[str, Any], key: str) -> date:
         raise ValueError(f"{key} must be YYYY-MM-DD") from None
 
 
-def _result(api: Api, result) -> Any:
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return result.value
-
-
-def template_json(api: Api, template: PayrollTemplate) -> dict[str, object]:
-    db = api.db
+def template_json(view: PayrollView, template: PayrollTemplate) -> dict[str, object]:
     return {
         "name": template.name,
         "income_account": template.income_account,
-        "income_name": db.full_name(template.income_account),
+        "income_name": view.name(template.income_account),
         "deposit_account": template.deposit_account,
-        "deposit_name": db.full_name(template.deposit_account),
+        "deposit_name": view.name(template.deposit_account),
         "gross": template.gross,
         "lines": [
             {
                 "account": line.account,
-                "name": db.full_name(line.account),
+                "name": view.name(line.account),
                 "amount": line.amount,
                 "percent": str(line.percent) if line.percent is not None else None,
             }
             for line in template.lines
         ],
     }
+
+
+def _choices(items) -> list[dict[str, str]]:
+    return [{"handle": item.handle, "name": item.name} for item in items]
 
 
 def payroll(api: Api, query: QueryParams) -> dict[str, object]:
@@ -101,27 +80,13 @@ def payroll(api: Api, query: QueryParams) -> dict[str, object]:
         as_of = date.fromisoformat(raw) if raw else None
     except ValueError:
         raise ValueError("as_of must be YYYY-MM-DD") from None
-    db = api.db
-    accounts = [
-        account for account in db.iter_accounts() if not account.placeholder and not account.is_root
-    ]
-
-    def choices(wanted) -> list[dict[str, str]]:
-        return sorted(
-            (
-                {"handle": account.handle, "name": db.full_name(account) or account.name}
-                for account in accounts
-                if wanted(account)
-            ),
-            key=lambda item: item["name"].casefold(),
-        )
-
+    view = api.book.payroll(as_of)
     return {
-        "paychecks": [item.as_dict() for item in paychecks(db, as_of)],
-        "templates": [template_json(api, item) for item in list_payroll_templates(db)],
-        "income_accounts": choices(lambda a: a.account_class is AccountClass.INCOME),
-        "deposit_accounts": choices(lambda a: a.is_spendable_cash),
-        "line_accounts": choices(lambda a: leg_kind(a, db.full_name(a) or "") is not None),
+        "paychecks": [item.as_dict() for item in view.paychecks],
+        "templates": [template_json(view, item) for item in view.templates],
+        "income_accounts": _choices(view.income_accounts),
+        "deposit_accounts": _choices(view.deposit_accounts),
+        "line_accounts": _choices(view.line_accounts),
         "periods": list(PAY_PERIODS),
     }
 
@@ -158,24 +123,21 @@ def _template(api: Api, payload: Mapping[str, Any]) -> PayrollTemplate:
 def payroll_template_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     template = _template(api, payload)
     existing = _text(payload, "existing_name", optional=True)
-    saved = _result(api, save_payroll_template(api.db, SavePayrollTemplate(template, existing)))
-    return template_json(api, saved)
+    saved = api.book.save_payroll_template(SavePayrollTemplate(template, existing))
+    return template_json(api.book.payroll(), saved)
 
 
 def payroll_template_delete(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    removed = _result(api, delete_payroll_template(api.db, _text(payload, "name") or ""))
+    removed = api.book.delete_payroll_template(_text(payload, "name") or "")
     return {"deleted": removed.name}
 
 
 def payroll_template_from_schedule(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """A template describing a paycheck; nothing is saved."""
-    template = _result(
-        api,
-        template_from_schedule(
-            api.db, _text(payload, "schedule") or "", _text(payload, "name") or ""
-        ),
+    template = api.book.template_from_schedule(
+        _text(payload, "schedule") or "", _text(payload, "name") or ""
     )
-    return template_json(api, template)
+    return template_json(api.book.payroll(), template)
 
 
 def payroll_create(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
@@ -190,19 +152,13 @@ def payroll_create(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         else Recurrence(period, interval=interval, start=start)
     )
     raw_gross = payload.get("gross")
-    saved = _result(
-        api,
-        create_paycheck_schedule(
-            api.db,
-            CreatePaycheck(
-                template=_text(payload, "template") or "",
-                name=_text(payload, "name") or "",
-                recurrence=recurrence,
-                gross=(
-                    input_money(dict(payload), raw_gross) if raw_gross not in (None, "") else None
-                ),
-            ),
-        ),
+    saved = api.book.create_paycheck(
+        CreatePaycheck(
+            template=_text(payload, "template") or "",
+            name=_text(payload, "name") or "",
+            recurrence=recurrence,
+            gross=input_money(dict(payload), raw_gross) if raw_gross not in (None, "") else None,
+        )
     )
     return {"handle": saved.handle, "name": saved.name}
 
@@ -229,8 +185,8 @@ def _change(api: Api, payload: Mapping[str, Any]) -> PayChange:
 
 
 def payroll_change_preview(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    return _result(api, preview_pay_change(api.db, _change(api, payload))).as_dict()
+    return api.book.preview_pay_change(_change(api, payload)).as_dict()
 
 
 def payroll_change(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    return _result(api, apply_pay_change(api.db, _change(api, payload))).as_dict()
+    return api.book.apply_pay_change(_change(api, payload)).as_dict()

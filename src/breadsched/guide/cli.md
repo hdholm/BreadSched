@@ -170,7 +170,13 @@ every source failed. See
 ```bash
 breadsched estimate household.breadsched suggest --json
 breadsched scheduled household.breadsched
+breadsched scheduled household.breadsched --post --all --json
 ```
+
+`scheduled --post` posts what is due without a review: automatic schedules, or
+every schedule with `--all` (never plan-only estimates). With `--json` it answers
+as the browser does, with `posted` and each `transaction`'s schedule, date, and
+description.
 
 ### Paychecks and pay changes
 
@@ -212,8 +218,10 @@ breadsched due-review household.breadsched --post-all
 
 `--post` and `--skip` take a schedule id prefix or exact name, optionally with
 `@YYYY-MM-DD` for one date; `--post-all` and `--skip-all` decide everything due or
-entered in advance, but leave reminders. With `--json`, each date's `stage` is
-`overdue`, `due`, `advance`, or `reminder`. See
+entered in advance, but leave reminders. With `--json`, the output is what the browser's
+due review returns (`schedules`, each date with its `stage`: `overdue`, `due`,
+`advance`, or `reminder`), and a decision reports `posted`, `skipped`, `deferred`,
+and the new `transactions`. See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
 ### Enter or skip the next occurrence
@@ -230,6 +238,91 @@ breadsched scheduled-advance household.breadsched Rent --enter-days 3 --remind-d
 or with `--enter-days` and `--remind-days` sets, how many days ahead its
 occurrences are entered or reminded (0 to 999). See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
+
+### Share a book with a running server
+
+```bash
+breadsched serve household.breadsched --port 8765
+breadsched due-review household.breadsched
+breadsched scheduled-next household.breadsched Rent --enter
+```
+
+While `breadsched serve` (or `breadsched web` without `--read-only`) holds a book,
+every command for that book works through that server instead of stopping
+because the book is already open for writing. Only `migrate` and `restore` need the
+file to themselves; `backup`, `verify`, and `export` read it beside the server. The
+server records its address in a
+file only you can read, in your runtime folder, and removes it when it stops; your
+commands prove they are yours with a private token BreadSched keeps in your settings
+folder.
+`--server URL` names a server explicitly; its token comes from `--token-file PATH` or
+the `BREADSCHED_SERVER_TOKEN` environment variable.
+
+One server can hold several books on one address: `breadsched serve home.breadsched
+rental.breadsched` prints each book's id. While it runs, `breadsched serve
+cabin.breadsched` adds that book to the same server rather than starting another,
+until you press Ctrl+C there. Commands on this computer still find each
+book by its file. A `--server` command for a server holding several books names one
+with `--book-id ID`; a browser asks which of the books shared with you to open. The desktop application can share the book it has open the same way
+(**Edit → Preferences… → Sharing**). The other way round, opening a book in the desktop
+application while `breadsched serve` holds it uses it through that server, as you.
+
+To reach the book from another device, put a TLS reverse proxy such as nginx in
+front of the server on the same machine; the server itself only listens on this
+machine. `--trusted-origin https://books.example.lan` lets pages from the proxy's
+address use the book, and `--token-file PATH` keeps the token in a private file
+instead of printing it. Another machine's commands then use
+`--server https://books.example.lan` with `--token-file` (a plain `http://` address
+is refused for anything but this machine, since the token would cross the network
+unencrypted), and `--ca-file`,
+`--client-cert`, and `--client-key` when the proxy uses its own certificate
+authority or asks for a client certificate. See the design notes (decision 0003)
+for a complete nginx configuration and the checks the proxy must keep.
+
+A command on another machine sends the files it names: `import`, `import-csv`, and
+`attachments --add` upload the file, and the server imports or links its own copy
+(an import file is kept beside the book in `<book>.uploads`). Only commands on the
+server's own computer, which read its record, may name files there, change the
+attachment folder, or link a document outside it.
+
+### Users and devices
+
+Used alone on one computer, BreadSched needs no user name or password. The people who
+may use this computer's books, and the devices they use, are managed with:
+
+```bash
+breadsched users list
+breadsched users add alice --display-name "Alice"   # asks for a temporary password
+breadsched users reset-password alice
+breadsched users remove alice
+breadsched password                                 # your own, to sign in elsewhere
+breadsched two-step on --setup-file ~/two-step.txt  # also ask for an authenticator code
+breadsched two-step off
+breadsched users reset-two-step alice               # for a lost phone
+breadsched token create "Backup script"             # shown once; keep it in a private file
+breadsched token list
+breadsched token revoke TOKEN-ID
+breadsched share household.breadsched                     # who may use this book
+breadsched share household.breadsched alice --role viewer # owner, editor, viewer, entry
+breadsched share household.breadsched alice --remove
+```
+
+`two-step on` writes a secret (and an `otpauth://` link) for an authenticator app
+to the new file `--setup-file` names, readable only by you, asks for the code the app
+shows, and adds ten recovery codes to that file, each good for one sign-in without
+the app. Neither is printed; keep the codes somewhere safe and delete the file. From then on signing in from another device asks for a code after
+the password. Anyone can turn theirs on from the browser's **Account** view too.
+
+Your computer account owns every book it serves. Anyone else may use a book only in
+the role it gives them: an *editor* reads and changes it (and may undo anyone's
+change), a *viewer* only reads, an *entry* user only adds transactions (quick entry
+from a phone, say) and sees nothing but the accounts to choose from, and another
+*owner* may also change where documents are kept and write back to GnuCash.
+
+A new user, or one whose password was reset, chooses their own password the first
+time they sign in. Passwords are typed (or read with `--password-stdin`), never given
+as arguments. Your computer account is the administrator and can always reset a
+password, its own included, from this computer.
 
 ## Import files
 

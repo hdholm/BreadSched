@@ -17,7 +17,8 @@ from dataclasses import replace
 from datetime import date
 from decimal import InvalidOperation
 
-from ...gen.db.sqlite import DbSQLite
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.lib import (
     Account,
     AccountClass,
@@ -28,15 +29,12 @@ from ...gen.lib import (
 from ...gen.lib.account import GnuCashAccountField
 from ...gen.services import (
     COST_BASIS_METHODS,
-    DeleteAccount,
     SaveAccount,
-    delete_account,
-    save_account,
 )
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import service_error_message
 from .. import hidden_accounts
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
@@ -58,7 +56,7 @@ class AccountDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         account: Account | None = None,
         default_parent: str | None = None,
     ) -> None:
@@ -161,7 +159,7 @@ class AccountDialog(BoundedWindow):
         row += 1
 
         self.parent_picker = bounded_dropdown(
-            [db.full_name(a) or a.name for a in self.parents] or ["(none)"]
+            [self._full_names.get(a.handle) or a.name for a in self.parents] or ["(none)"]
         )
         chosen = account.parent if account is not None else default_parent
         for index, candidate in enumerate(self.parents):
@@ -321,7 +319,15 @@ class AccountDialog(BoundedWindow):
         self._validate()
 
     def _load_choices(self, account: Account | None) -> None:
-        all_accounts = list(self.db.iter_accounts())
+        # Accounts and commodities through the book server (#358).
+        book = book_server(self.db)
+        records = book.accounts()
+        self._full_names = {record.account.handle: record.full_name for record in records}
+        all_accounts = [record.account for record in records]
+
+        def by_name(item: Account) -> str:
+            return self._full_names.get(item.handle, item.name)
+
         blocked_parents: set[str] = set()
         if account is not None:
             blocked_parents.add(account.handle)
@@ -336,32 +342,31 @@ class AccountDialog(BoundedWindow):
                         blocked_parents.add(candidate.handle)
                         changed = True
         self.parents = [a for a in all_accounts if a.handle not in blocked_parents]
-        self.parents.sort(key=self.db.full_name)
-        self.commodities = list(self.db.iter_commodities())
-        self.commodities.sort(key=lambda item: (item.namespace, item.mnemonic))
+        self.parents.sort(key=by_name)
+        self.commodities = list(book.commodities())
         self.commodity_handles: list[str | None] = [None] + [
             commodity.handle for commodity in self.commodities
         ]
         self.assets = [
             a
-            for a in self.db.iter_accounts()
+            for a in all_accounts
             if a.account_class is AccountClass.ASSET and not a.is_root and not a.atype.is_cash_like
         ]
-        self.assets.sort(key=self.db.full_name)
+        self.assets.sort(key=by_name)
         current_payment = account.card.payment_account if account is not None else None
         self.payment_accounts = [
             a
-            for a in self.db.iter_accounts()
+            for a in all_accounts
             if a.atype.is_cash_like
             and not a.placeholder
             and (not a.hidden or hidden_accounts.shown() or a.handle == current_payment)
         ]
-        self.payment_accounts.sort(key=self.db.full_name)
+        self.payment_accounts.sort(key=by_name)
 
     def _build_loan_controls(self, box: Gtk.Box, account: Account | None) -> None:
         self.loan_box = Gtk.Box(spacing=8)
         self.asset_picker = bounded_dropdown(
-            ["(none)"] + [self.db.full_name(a) for a in self.assets]
+            ["(none)"] + [self._full_names.get(a.handle, a.name) for a in self.assets]
         )
         if account is not None and account.liability.linked_asset:
             for index, asset in enumerate(self.assets, start=1):
@@ -398,7 +403,7 @@ class AccountDialog(BoundedWindow):
 
         self.card_payment_picker = bounded_dropdown(
             ["(choose when recording payment)"]
-            + [self.db.full_name(item) for item in self.payment_accounts]
+            + [self._full_names.get(item.handle, item.name) for item in self.payment_accounts]
         )
         if account is not None and account.card.payment_account:
             for index, payment_account in enumerate(self.payment_accounts, start=1):
@@ -414,7 +419,7 @@ class AccountDialog(BoundedWindow):
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
         if account is not None:
             delete = delete_button(
-                f"the account {self.db.full_name(account)}",
+                f"the account {self._full_names.get(account.handle, account.name)}",
                 lambda: self._on_delete(None),
             )
             buttons.append(delete)
@@ -696,18 +701,18 @@ class AccountDialog(BoundedWindow):
             self.status.set_text("Enter a valid opening balance.")
             self.status.add_css_class("negative")
             return
-        result = save_account(
-            self.db,
-            SaveAccount(
-                account,
-                existing_handle=account.handle if self.editing else None,
-                opening_balance=opening_value if not self.editing else None,
-                opening_date=date.today(),
-                source=self.account,
-            ),
-        )
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).save_account(
+                SaveAccount(
+                    account,
+                    existing_handle=account.handle if self.editing else None,
+                    opening_balance=opening_value if not self.editing else None,
+                    opening_date=date.today(),
+                    source=self.account,
+                ),
+            )
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return
         self.close()
@@ -715,9 +720,10 @@ class AccountDialog(BoundedWindow):
     def _on_delete(self, _button) -> None:
         if not self.editing or self.account is None:
             return
-        result = delete_account(self.db, DeleteAccount(self.account.handle))
-        if not result.ok:
-            self.status.set_text(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).delete_account(self.account.handle)
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return
         self.close()

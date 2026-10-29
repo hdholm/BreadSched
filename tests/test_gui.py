@@ -15,6 +15,7 @@ from __future__ import annotations
 import gc
 import importlib
 import itertools
+import json
 import os
 import re
 import shutil
@@ -310,6 +311,13 @@ class TestDialogsStayInFront:
         # Never the empty-book chooser: the "Opening…" page, then the book.
         assert window.stack.get_visible_child_name() == "busy"
         assert window.busy_label.get_text() == "Opening gui.breadsched…"
+        # The page is the start-up splash: it shows the logo.
+        from breadsched.gui.widgets.brand import LogoPicture
+
+        busy = window.stack.get_child_by_name("busy")
+        assert any(
+            isinstance(item, LogoPicture) and item.size == (320, 272) for item in _descendants(busy)
+        )
         assert _spin(lambda: app.db is not None)
         assert _spin(lambda: window.stack.get_visible_child_name() != "busy")
         assert window.stack.get_visible_child_name() != "empty"
@@ -343,6 +351,35 @@ class TestDialogsStayInFront:
         assert _spin(lambda: bool(reported))
         assert reported == ["Could not open the book: disk full"]
         assert window.stack.get_visible_child_name() == "empty"
+
+
+class TestBranding:
+    """The application icon and the BreadSched logo come from the package itself."""
+
+    def test_the_packaged_icon_is_found_without_an_installed_one(self, app):
+        from breadsched import APP_ID
+        from breadsched.gui.gi_setup import Gdk, Gtk
+
+        theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+        assert theme.has_icon(APP_ID)
+        assert Gtk.Window.get_default_icon_name() == APP_ID
+
+    def test_the_about_dialog_and_start_screen_show_the_logo(self, app, window, monkeypatch):
+        from breadsched.gui.gi_setup import Gtk
+        from breadsched.gui.widgets.brand import LogoPicture
+
+        shown = []
+        monkeypatch.setattr(Gtk.AboutDialog, "present", lambda dialog: shown.append(dialog))
+        app.on_about()
+        [about] = shown
+        logo = about.get_logo()
+        assert logo is not None and (logo.get_width(), logo.get_height()) == (640, 545)
+        # With no book, the start screen leads with the logo in place of a title.
+        empty = window.stack.get_child_by_name("empty")
+        assert any(
+            isinstance(item, LogoPicture) and item.size == (240, 204)
+            for item in _descendants(empty)
+        )
 
 
 class TestStartupDialogsTakeTurns:
@@ -1483,7 +1520,8 @@ class TestLiveUpdates:
         # A setting change redraws the shown view now and the others when shown.
         accounts = window._views["accounts"]
         drawn = []
-        monkeypatch.setattr(accounts, "refresh", lambda: drawn.append(1))
+        # Accounts is drawn from a background read (#389): count its drawing.
+        monkeypatch.setattr(accounts, "_show_chart", lambda *_a: drawn.append(1))
         assert _spin(lambda: not accounts.get_mapped())
         window.refresh_views()
         assert repaints == [1, 1, 1] and drawn == []
@@ -1533,7 +1571,8 @@ class TestLiveUpdates:
         assert _spin(accounts.get_mapped)
         _spin(lambda: False, 0.2)
         repaints = []
-        monkeypatch.setattr(accounts, "refresh", lambda: repaints.append(1))
+        # Accounts is drawn from a background read (#389): count its drawing.
+        monkeypatch.setattr(accounts, "_show_chart", lambda *_a: repaints.append(1))
         for number in range(3):
             fund = Commodity(namespace="FUND", mnemonic=f"F{number}", fullname="Fund")
             with app.db.transaction(f"Fund {number}") as txn:
@@ -1594,6 +1633,23 @@ class TestLiveUpdates:
             app.db.add_transaction(
                 Transaction.simple(date(2026, 4, 1), "x", other, handle, Money("1")), txn
             )
+        assert app.actions["undo"].get_enabled() is True
+        assert window.tool_buttons["app.undo"].get_tooltip_text() == "Undo: Something"
+        # A step someone else made through the shared book says whose it is (0004).
+        from breadsched.gen.db.base import authored_by
+
+        with authored_by("Eddie"), app.db.transaction("Their change") as txn:
+            app.db.add_transaction(
+                Transaction.simple(date(2026, 4, 2), "y", other, handle, Money("2")), txn
+            )
+        assert window.tool_buttons["app.undo"].get_tooltip_text() == "Undo: Their change (Eddie)"
+        # The window follows the book server's change notices for undo and redo too.
+        while app.db.undo_stack:
+            app.db.undo()
+        assert app.actions["undo"].get_enabled() is False
+        assert window.tool_buttons["app.undo"].get_tooltip_text() == "Nothing to undo"
+        assert app.actions["redo"].get_enabled() is True
+        app.db.redo()
         assert app.actions["undo"].get_enabled() is True
 
 
@@ -1728,6 +1784,7 @@ class TestProjectionView:
         assert "events" in view.explain_button.get_tooltip_text()
 
     def test_projection_explanation_shows_each_stock_reconciling(self, app, window, populated_book):
+        from breadsched.api.local import book_server
         from breadsched.gui.dialogs.projection_detail_dialog import (
             ProjectionDetailDialog,
             _children,
@@ -1736,7 +1793,7 @@ class TestProjectionView:
         app.open_book(populated_book)
         window.show_category("projection")
         view = _projection(window)
-        dialog = ProjectionDetailDialog(window, app.db, view._result)
+        dialog = ProjectionDetailDialog(window, book_server(app.db), view._result)
         try:
 
             def texts(widget):
@@ -2791,7 +2848,9 @@ class TestColumnBehaviour:
         db = app.db
         usd = db.get_commodity_by_mnemonic("USD")
         euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
-        cash = Account(name="Euro cash", atype=AccountType.BANK, commodity=euro.handle)
+        # In the tree, where the Accounts view shows it.
+        root = db.root_account().handle
+        cash = Account(name="Euro cash", atype=AccountType.BANK, commodity=euro.handle, parent=root)
         opening = next(a for a in db.iter_accounts() if a.atype is AccountType.EQUITY)
         entry = Transaction(post_date=date(2026, 1, 2), description="Euro opening")
         entry.currency = euro.handle
@@ -2811,12 +2870,15 @@ class TestColumnBehaviour:
                 txn,
             )
         window.show_category("accounts")
+        assert window.wait_for_background()
         evidence = window._views["accounts"]._quote_evidence(db.get_account(cash.handle))
         assert evidence == "2026-01-03 · bank"
 
         # A security quoted only in euros names both quotes it was valued with.
         fund = Commodity(namespace="FUND", mnemonic="EUFND", fullname="Euro fund")
-        holding = Account(name="Euro fund", atype=AccountType.INVESTMENT, commodity=fund.handle)
+        holding = Account(
+            name="Euro fund", atype=AccountType.INVESTMENT, commodity=fund.handle, parent=root
+        )
         dollars = next(
             item
             for item in db.iter_accounts()
@@ -2842,8 +2904,11 @@ class TestColumnBehaviour:
                 ),
                 txn,
             )
-        evidence = window._views["accounts"]._quote_evidence(db.get_account(holding.handle))
-        assert evidence == "2026-01-04 · ofx; EUR→USD 2026-01-03 · bank"
+        view = window._views["accounts"]
+        expected = "2026-01-04 · ofx; EUR→USD 2026-01-03 · bank"
+        # Shown again, it redraws from a background read after the change (#389).
+        window.show_category("accounts")
+        assert _spin(lambda: view._quote_evidence(db.get_account(holding.handle)) == expected)
 
     def test_amounts_sort_as_numbers_not_text(self):
         from breadsched.gui.views._base import _numeric
@@ -4481,7 +4546,11 @@ class TestDerivedPlanView:
         assert quarterly.activity.actual_cash_change == monthly_actual
         assert len(quarterly.activity.periods) < len(monthly.activity.periods)
 
-    def test_applied_controls_are_persisted_with_the_book(self, app, window, populated_book):
+    def test_applied_controls_are_kept_as_this_persons_own(self, app, window, populated_book):
+        """Decision 0004: the Plan view is the computer account's own, for this book;
+        the book itself keeps none."""
+        from breadsched.api.users import UserDirectory
+
         app.open_book(populated_book)
         window.show_category("plan")
         view = window._views["plan"]
@@ -4490,7 +4559,10 @@ class TestDerivedPlanView:
         view.measure.set_selected(2)
         view.apply_button.emit("clicked")
 
-        stored = app.db.get_metadata("plan.view")
+        assert app.db.get_metadata("plan.view") is None
+        directory = UserDirectory()
+        book_id = app.db.get_metadata("book.id")
+        stored = directory.preference(directory.host_user(), book_id, "plan.view")
         assert stored["start"] == view._start_date.isoformat()
         assert stored["end"] == view._end_date.isoformat()
         assert stored["period"] == "quarter"
@@ -5577,12 +5649,12 @@ class TestDueReview:
 
     def test_rows_say_when_they_are_entered_or_reminded_in_advance(self, upcoming_book, window):
         # #352: the review lists occurrences within each schedule's days ahead.
-        from breadsched.gen.engine import schedule as engine
+        from breadsched.api.local import book_server
         from breadsched.gui.dialogs.due_dialog import LATER, DueDialog
 
-        reviewed = engine.review_occurrences(upcoming_book.db)
-        assert [stage.value for _item, stage in reviewed] == ["reminder"]
-        dialog = DueDialog(window, upcoming_book.db, [item for item, _ in reviewed])
+        reviews = book_server(upcoming_book.db).due_review()
+        assert [item.stage for review in reviews for item in review.items] == ["reminder"]
+        dialog = DueDialog(window, upcoming_book.db, reviews)
         try:
             labels = [w.get_text() for w in _descendants(dialog) if isinstance(w, Gtk.Label)]
             assert any(text.endswith("(reminder)") for text in labels)
@@ -5591,11 +5663,15 @@ class TestDueReview:
             dialog.destroy()
 
     def _dialog(self, app, window, limit=4):
-        from breadsched.gen.engine import schedule as engine
+        """The review of the first ``limit`` due dates, from the book server (#359)."""
+        from dataclasses import replace
+
+        from breadsched.api.local import book_server
         from breadsched.gui.dialogs.due_dialog import DueDialog
 
-        due = engine.due_occurrences(app.db, horizon_days=0)[:limit]
-        return DueDialog(window, app.db, due), due
+        [review] = book_server(app.db).due_review()
+        shown = replace(review, items=review.items[:limit])
+        return DueDialog(window, app.db, [shown]), list(shown.items)
 
     def test_a_long_due_list_shows_a_permanent_scrollbar(self, due_book, window):
         # #318: overlay scrollbars only appeared while scrolling, so a long due
@@ -5816,7 +5892,10 @@ class TestDueReview:
         dialog, due = self._dialog(due_book, window)
         dialog.choosers[0].set_selected(POST)
         # The same date is posted from another window after this one opened.
-        engine.post_occurrences(due_book.db, [due[0]])
+        [occurrence] = [
+            o for o in engine.due_occurrences(due_book.db, horizon_days=0) if o.when == due[0].when
+        ]
+        engine.post_occurrences(due_book.db, [occurrence])
 
         assert dialog.apply() is None
         assert "no longer due" in dialog.status.get_text()
@@ -5896,7 +5975,9 @@ class TestResolutionView:
         app.open_book(populated_book)
         window.show_category("resolution")
         view = window._views["resolution"]
-        assert view._unresolved_transactions() == []
+        from breadsched.api.local import book_server
+
+        assert book_server(app.db).review_queue() == ()
         assert view.actual_summary.get_text() == "No unresolved actual transactions."
 
     def _add_matching_actual(self, populated_book):
@@ -5942,7 +6023,9 @@ class TestResolutionView:
         resolved = app.db.get_transaction(actual_handle)
         assert resolved.planning_resolution is PlanningResolution.MATCHED
         assert resolved.planned_occurrence == occurrence_key
-        assert all(txn.handle != actual_handle for txn in view._unresolved_transactions())
+        from breadsched.api.local import book_server
+
+        assert all(txn.handle != actual_handle for txn in book_server(app.db).review_queue())
 
     def test_candidates_and_actions_are_explained(self, app, window, populated_book):
         from breadsched.presentation import REVIEW_ACTION_HELP
@@ -6253,7 +6336,9 @@ class TestDashboardView:
         assert dialog.emergency_spin.get_value() == view.config.emergency_months
         dialog.destroy()
 
-    def test_changing_a_horizon_is_saved_on_the_book_and_changes_the_verdict(self, view, app):
+    def test_changing_a_horizon_is_kept_as_ones_own_and_changes_the_verdict(self, view, app):
+        from user_fixtures import own_preference
+
         from breadsched.gen.engine.dashboard import DashboardConfig
 
         before = view.board.emergency_fund
@@ -6262,8 +6347,11 @@ class TestDashboardView:
         dialog.liquidity_spin.set_value(45)
         assert dialog.save() is True
         dialog.destroy()
-        stored = DashboardConfig.load(app.db)
+        # The computer account's own Dashboard (decision 0004); the book keeps its own.
+        stored = DashboardConfig.load(app.db, own_preference(app.db, "dashboard"))
         assert (stored.emergency_months, stored.liquidity_days) == (12, 45)
+        book = DashboardConfig.load(app.db)
+        assert (book.emergency_months, book.liquidity_days) != (12, 45)
         view.refresh()
         assert view.board.emergency_fund > before
 
@@ -6303,6 +6391,8 @@ class TestDashboardView:
         dialog.destroy()
 
     def test_the_group_dialog_builds_and_saves(self, view, app):
+        from user_fixtures import own_preference
+
         from breadsched.gen.engine.dashboard import DashboardConfig
         from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
 
@@ -6317,12 +6407,14 @@ class TestDashboardView:
         assert row["picker"].get_selected() == 0
         dialog._on_save(None)
 
-        saved = DashboardConfig.load(app.db)
+        # Kept as the computer account's own arrangement, members and all (decision
+        # 0004): the book's accounts and configuration are left as they were.
+        saved = DashboardConfig.load(app.db, own_preference(app.db, "dashboard"))
         assert any(g.name == "Property" and g.kind == "property" for g in saved.groups)
-        # Membership is stored on the account, not in the configuration (#337).
         member = dialog.accounts[0]
-        assert app.db.get_account(member.handle).group == "Property"
-        assert "accounts" not in str(app.db.get_metadata("dashboard"))
+        assert any(g.name == "Property" and member.handle in g.accounts for g in saved.groups)
+        assert app.db.get_account(member.handle).group != "Property"
+        assert "Property" not in str(app.db.get_metadata("dashboard"))
 
     def test_the_group_dialog_refuses_an_account_in_two_groups(self, view, app):
         from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
@@ -6731,9 +6823,14 @@ class TestAccountEditor:
     def test_an_edit_is_stored(self, accounts_view, app):
         account = app.db.get_account_by_name("Assets:Checking Account")
         dialog = self._dialog(accounts_view, account)
+        book_group = account.group
         dialog.group_entry.set_text("Cash")
         dialog._on_save(None)
-        assert app.db.get_account(account.handle).group == "Cash"
+        # The Dashboard group is the computer account's own (decision 0004).
+        from breadsched.api.local import book_server
+
+        assert book_server(app.db).account(account.handle).account.group == "Cash"
+        assert app.db.get_account(account.handle).group == book_group
 
     def test_imported_account_parent_hidden_and_commodity_round_trip(self, accounts_view, app):
         from breadsched.gen.lib import (
@@ -8206,9 +8303,7 @@ class TestChromeCleanup:
         view = window._views["register"]
         assert view.sheet.rows[-1].kind == "blank"
         tooltips = [
-            widget.get_tooltip_text()
-            for widget in _descendants(view.get_first_child())
-            if widget.get_tooltip_text()
+            widget.get_tooltip_text() for widget in _descendants(view) if widget.get_tooltip_text()
         ]
         assert any("full editor" in text for text in tooltips)
 
@@ -9888,6 +9983,179 @@ class TestViewSpecificChrome:
         assert self._sections(app)[0][0] == "Plan"
 
 
+class TestBackgroundRedraw:
+    """#389: slow views are calculated from a snapshot while the window stays usable."""
+
+    def test_a_hidden_plan_tab_is_drawn_in_the_background(self, app, window, populated_book):
+        from breadsched.gen.lib import Transaction
+
+        app.open_book(populated_book)
+        window.show_category("plan")
+        window.show_category("accounts")
+        assert window.snapshot_reader is not None
+        plan = window._views["plan"]
+        drawn: list[str] = []
+        original_refresh = type(plan).refresh
+        plan.refresh = lambda: (drawn.append("in place"), original_refresh(plan))[-1]
+        # A change while Plan is hidden is read again in the background soon after.
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        with app.db.transaction("Rent") as txn:
+            app.db.add_transaction(
+                Transaction.simple(date.today(), "Rent", rent.handle, checking.handle, "9"), txn
+            )
+        assert _spin(lambda: window._prefill_source is None and not window.snapshot_reader.busy)
+        assert window.wait_for_background()
+        assert plan.is_current()
+        # Switching to it shows it at once: nothing is calculated then.
+        window.show_category("plan")
+        assert drawn == []
+        assert not plan.updating_label.get_visible()
+
+    def test_the_shown_plan_keeps_its_report_while_it_updates(self, app, window, populated_book):
+        from breadsched.gen.lib import Transaction
+
+        app.open_book(populated_book)
+        window.present()
+        assert _spin(window.get_mapped)
+        window.show_category("plan")
+        plan = window._views["plan"]
+        assert _spin(plan.get_mapped)
+        before = plan._report
+        assert before is not None
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        with app.db.transaction("Rent") as txn:
+            app.db.add_transaction(
+                Transaction.simple(date.today(), "Rent", rent.handle, checking.handle, "9"), txn
+            )
+        assert _spin(lambda: plan.refreshing_in_background)
+        # The old report stays on screen, marked as updating, until the new one is in.
+        assert plan._report is before and plan.updating_label.get_visible()
+        assert window.wait_for_background()
+        assert plan._report is not before and not plan.updating_label.get_visible()
+        assert plan.is_current()
+
+    def test_restored_registers_are_read_in_the_background(
+        self, app, window, populated_book, tmp_path, monkeypatch
+    ):
+        """Hidden register tabs are filled off GTK's loop; switching reads nothing."""
+        from breadsched.gui import register_sheet
+
+        app.open_book(populated_book)
+        checking = app.db.get_account_by_name("Assets:Checking Account").handle
+        card = app.db.get_account_by_name("Credit Card").handle
+        window.open_register(checking)
+        window.open_register(card)
+        window.show_category("accounts")
+        other = tmp_path / "other.breadsched"
+        shutil.copyfile(populated_book, other)
+        app.open_book(str(other))
+        app.open_book(populated_book)
+        registers = [tab for tab in window._tabs if tab.key == "register"]
+        assert [tab.view.sheet for tab in registers] == [None, None]
+        assert window.wait_for_background()
+        assert all(tab.view.sheet is not None and tab.view.is_current() for tab in registers)
+        # Drawn from the server's view, the same rows a direct read gives.
+        sheet = registers[0].view.sheet
+        direct = register_sheet.RegisterSheet(app.db, checking)
+        assert [row.transaction.handle for row in sheet.ledger_rows] == [
+            row.transaction.handle for row in direct.ledger_rows
+        ]
+        assert [row.running for row in sheet.ledger_rows] == [
+            row.running for row in direct.ledger_rows
+        ]
+        assert sheet.account_names == direct.account_names
+        built: list[str] = []
+        original = register_sheet.RegisterSheet.__init__
+
+        def counting(sheet, db, account, *args, **kwargs):
+            built.append(account)
+            original(sheet, db, account, *args, **kwargs)
+
+        monkeypatch.setattr(register_sheet.RegisterSheet, "__init__", counting)
+        window._on_tab_clicked(registers[1])
+        assert built == []
+        assert window._views["register"].sheet.account == card
+
+    def test_the_accounts_view_is_valued_through_the_server_in_the_background(
+        self, app, window, populated_book
+    ):
+        """#389, #358: Accounts reads one chart; hidden, it is read off GTK's loop."""
+        from breadsched.api.local import book_server
+        from breadsched.gen.lib import Transaction
+
+        app.open_book(populated_book)
+        window.show_category("accounts")
+        view = window._views["accounts"]
+        chart = book_server(app.db).chart(include_hidden=True)
+        assert set(view._lines) == {line.record.account.handle for line in chart}
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        line = view._lines[checking.handle]
+        assert view._format_balance(checking) == line.balance.format(parens_negative=True)
+        cards = []
+        child = view.summary.get_first_child()
+        while child is not None:
+            cards.append(child.get_first_child().get_label())
+            child = child.get_next_sibling()
+        assert cards == ["Cash on hand", "Assets", "Liabilities", "Net worth"]
+        # Hidden, a change is read again in the background, not when shown.
+        window.show_category("dashboard")
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        with app.db.transaction("Rent") as txn:
+            app.db.add_transaction(
+                Transaction.simple(date.today(), "Rent", rent.handle, checking.handle, "9"), txn
+            )
+        assert _spin(lambda: window._prefill_source is None)
+        assert window.wait_for_background()
+        assert view.is_current()
+        assert view._lines[checking.handle].balance == line.balance - 9
+
+    def test_the_snapshot_reader_reads_each_revision_once_and_reports_failures(
+        self, populated_book
+    ):
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.gui.background import SnapshotReader
+
+        db = DbSQLite()
+        db.load(populated_book)
+        reader = SnapshotReader(db.path)
+        answers: list[object] = []
+        books: list[int] = []
+
+        def read(book):
+            books.append(id(book))
+            return book.find_account("Assets:Checking Account").name
+
+        def answer(result, error):
+            answers.append(error if error is not None else result)
+
+        try:
+            reader.submit(db.revision(), read, answer)
+            reader.submit(db.revision(), read, answer)
+            assert reader.wait()
+            assert answers == ["Checking Account", "Checking Account"]
+            assert books[0] == books[1]  # one snapshot served both
+            with db.transaction("Rename") as txn:
+                account = db.get_account_by_name("Assets:Checking Account")
+                account.name = "Everyday"
+                db.commit_account(account, txn)
+            reader.submit(
+                db.revision(), lambda book: book.find_account("Assets:Everyday").name, answer
+            )
+
+            def broken(_book):
+                raise RuntimeError("no such report")
+
+            reader.submit(db.revision(), broken, answer)
+            assert reader.wait()
+            assert answers[2] == "Everyday"
+            assert isinstance(answers[3], RuntimeError)
+        finally:
+            reader.close()
+            db.close()
+
+
 class TestTabs:
     """#183: opened views and each open register account are tabs below the toolbar."""
 
@@ -10169,6 +10437,59 @@ class TestTabs:
         app.open_book(str(other))
         app.open_book(populated_book)
         assert window.tabs == expected
+
+    def test_reopened_tabs_are_drawn_when_chosen_not_all_at_once(
+        self, app, window, populated_book, tmp_path, monkeypatch
+    ):
+        """#389: opening a book drew every remembered tab; now only the chosen one.
+
+        Each register also reads its account once, not first the picker's first
+        account and then its own.
+        """
+        from breadsched.gui import register_sheet
+
+        app.open_book(populated_book)
+        checking, card = self._accounts(app)
+        window.show_category("accounts")
+        window.open_register(checking)
+        window.open_register(card)
+        window.show_category("scheduled")
+        expected = list(window.tabs)
+        other = tmp_path / "other.breadsched"
+        shutil.copyfile(populated_book, other)
+        app.open_book(str(other))
+
+        loads: list[str] = []
+        original = register_sheet.RegisterSheet.__init__
+
+        def counting(sheet, db, account, *args, **kwargs):
+            loads.append(account)
+            original(sheet, db, account, *args, **kwargs)
+
+        monkeypatch.setattr(register_sheet.RegisterSheet, "__init__", counting)
+        app.open_book(populated_book)
+        assert window.tabs == expected
+        # Scheduled was chosen; the registers wait, unread, until chosen.
+        assert window._current_tab().key == "scheduled"
+        assert loads == []
+        registers = [tab.view for tab in window._tabs if tab.key == "register"]
+        assert [view.sheet for view in registers] == [None, None]
+        assert [view.account_handle for view in registers] == [checking, card]
+        assert not window._views["accounts"].is_current()
+        window._on_tab_clicked(window._tabs[[t.view for t in window._tabs].index(registers[1])])
+        assert loads == [card]
+        assert registers[1].sheet is not None and registers[1].sheet.account == card
+        # Opening a register from the chart reads it once too.
+        loads.clear()
+        savings = next(
+            account.handle
+            for account in app.db.iter_accounts()
+            if not account.placeholder
+            and not account.is_root
+            and account.handle not in (checking, card)
+        )
+        window.open_register(savings)
+        assert loads == [savings]
 
     def test_remembered_tabs_survive_a_damaged_entry(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -10778,6 +11099,136 @@ class TestPreferences:
         # The View menu's Double Line check follows the saved preference.
         assert window.lookup_action("double-line").get_state().get_boolean() is True
 
+    def test_users_are_out_of_the_way_until_wanted(self, app, window):
+        """Decision 0004: alone, Preferences says "Only you"; Users and devices manages
+        your password, other people, and your devices."""
+        from breadsched.api.users import UserDirectory
+        from breadsched.gui.dialogs.users_dialog import UsersDialog
+
+        dialog = app.on_preferences()
+        assert dialog.users_summary.get_text() == "Only you"
+        users = dialog._on_users(None)
+        assert isinstance(users, UsersDialog) and _spin(users.get_mapped)
+        assert "Only you use this computer's books" in _texts(users.content)
+        directory = UserDirectory()
+
+        # Add a person with a temporary password.
+        users._ask_add()
+        users.form.fill(name="alice", display_name="Alice", password="short")
+        users.form.submit_button.emit("clicked")
+        assert "at least 10" in users.status.get_text()
+        users.form.fill(password="temporary-pass")
+        users.form.submit_button.emit("clicked")
+        alice = directory.user("alice")
+        assert alice.must_change and alice.display_name == "Alice"
+        assert "Alice (alice, chooses a password at next sign-in)" in _texts(users.content)
+
+        # Your own password: the two entries must agree.
+        users._ask_own_password()
+        users.form.fill(new="host-password", again="different")
+        users.form.submit_button.emit("clicked")
+        assert users.status.get_text() == "The two new passwords differ"
+        users.form.fill(again="host-password")
+        users.form.submit_button.emit("clicked")
+        assert directory.host_user().can_sign_in
+
+        # A token for a script is shown once, then listed and revocable.
+        users._ask_token()
+        users.form.fill(name="Backup script")
+        users.form.submit_button.emit("clicked")
+        shown = next(w for w in _descendants(users.content) if w.get_name() == "new-token")
+        assert directory.authenticate(shown.get_text()) is not None
+        [token] = [t for t in directory.tokens(directory.host_user()) if t.name == "Backup script"]
+        users._revoke(token.id)
+        assert directory.authenticate(shown.get_text()) is None
+
+        # Reset and remove the other person; the summary follows on close.
+        users._ask_reset(alice)
+        users.form.fill(password="another-temporary")
+        users.form.submit_button.emit("clicked")
+        users.close()
+        assert _spin(lambda: dialog.users_summary.get_text() == "You and 1 other person")
+        users = dialog._on_users(None)
+        users._remove(directory.user("alice"))
+        assert [u.name for u in directory.users() if not u.host_account] == []
+        users.close()
+        dialog.close()
+
+    def test_the_open_book_is_shared_from_users_and_devices(self, app, window, populated_book):
+        """Decision 0004: with a book open, Users and devices says who may use it and in
+        which role, and gives, changes, and takes away access."""
+        from breadsched.api.local import book_server
+        from breadsched.api.users import UserDirectory
+
+        directory = UserDirectory()
+        directory.add_user("alice", "temporary-pass", display_name="Alice")
+        app.open_book(populated_book)
+        book_id = book_server(app.db).book_id()
+        dialog = app.on_preferences()
+        users = dialog._on_users(None)
+        texts = _texts(users.content)
+        assert "Who may use gui.breadsched" in texts
+        assert "owner (this computer's account)" in texts
+        users._ask_grant([directory.user("alice")])
+        people, roles, give = users.grant_form
+        roles.set_selected(3)  # entry
+        give.emit("clicked")
+        assert directory.role(book_id, directory.user("alice")) == "entry"
+        assert "Alice now has the entry role" in users.status.get_text()
+        users._set_role(directory.user("alice"), "viewer")
+        assert directory.role(book_id, directory.user("alice")) == "viewer"
+        users._take_away(directory.user("alice"))
+        assert directory.grants(book_id) == ()
+        users.close()
+        dialog.close()
+
+    def test_two_step_sign_in_is_turned_on_and_off_from_users_and_devices(self, app, window):
+        """Decision 0004, phase 5: the secret for an authenticator app, its first code,
+        the recovery codes shown once; and an administrator's reset for a lost phone."""
+        import time
+
+        from breadsched.api import users as users_module
+        from breadsched.api.users import UserDirectory
+
+        directory = UserDirectory()
+        dialog = app.on_preferences()
+        users = dialog._on_users(None)
+        assert "Two-step sign-in is off" in _texts(users.content)
+        users._start_two_step()
+        secret = next(
+            w for w in _descendants(users.content) if w.get_name() == "two-step-secret"
+        ).get_text()
+        users.form.fill(code="000000")
+        users.form.submit_button.emit("clicked")
+        step = int(time.time()) // users_module.TOTP_STEP
+        if users_module.totp_code(secret, step) != "000000":
+            assert "does not match" in users.status.get_text()
+        users.form.fill(code=users_module.totp_code(secret, step))
+        users.form.submit_button.emit("clicked")
+        shown = next(w for w in _descendants(users.content) if w.get_name() == "recovery-codes")
+        assert len(shown.get_text().splitlines()) == 10
+        assert directory.two_step_on(directory.host_user())
+        assert "Two-step sign-in is on" in _texts(users.content)
+        # The computer account has no password here, so it turns off at once.
+        users._ask_two_step_off()
+        assert not directory.two_step_on(directory.host_user())
+
+        # Another person's, reset for a lost phone.
+        directory.add_user("alice", "temporary-pass", display_name="Alice")
+        directory.start_two_step(directory.user("alice"))
+        alice_secret = directory.start_two_step(directory.user("alice")).secret
+        directory.confirm_two_step(
+            directory.user("alice"), users_module.totp_code(alice_secret, step)
+        )
+        users.refresh()
+        assert "Alice (alice, chooses a password at next sign-in, two-step sign-in)" in (
+            _texts(users.content)
+        )
+        users._reset_two_step(directory.user("alice"))
+        assert not directory.two_step_on(directory.user("alice"))
+        users.close()
+        dialog.close()
+
     def test_forget_and_cancel(self, app, window, populated_book):
         app.open_book(populated_book)
         stored = app.settings.get("general", "last_book_path")
@@ -11144,6 +11595,105 @@ class TestSearchableChoices:
         assert picker.get_enable_search() is True
 
 
+class TestBookSharing:
+    """#359: commands use the book open in GTK through this window."""
+
+    @pytest.fixture
+    def shared(self, app, window, tmp_path, monkeypatch):
+        from breadsched.gen.sample_book import create_sample_book
+
+        monkeypatch.setattr(
+            "breadsched.api.discovery.runtime_directory", lambda: tmp_path / "runtime"
+        )
+        path = tmp_path / "shared.breadsched"
+        create_sample_book(path, as_of=date(2026, 3, 15))
+        app.settings.set("general", "share_book", True)
+        app.open_book(str(path))
+        yield path
+        app.stop_sharing()
+
+    def _run(self, command: list[str]) -> int:
+        """Run a command on another thread while GTK's main loop serves the book."""
+        from breadsched.cli.main import main
+
+        result: list[int] = []
+        thread = threading.Thread(target=lambda: result.append(main(command)), daemon=True)
+        thread.start()
+        assert _spin(lambda: not thread.is_alive(), 20)
+        return result[0]
+
+    def test_a_command_writes_through_the_window_holding_the_book(self, app, shared, capsys):
+        from breadsched.api.discovery import find_server
+
+        record = find_server(str(shared))
+        assert record is not None and record.url == app.shared_book.url
+        changed: list[object] = []
+        app.db.connect("database-changed", changed.append)
+        start = app.db.revision()
+
+        command = ["scheduled-next", str(shared), "Sample rent", "--as-of", "2026-09-27"]
+        assert self._run([*command, "--skip", "--json"]) == 0
+        assert json.loads(capsys.readouterr().out)["skipped"] == 1
+
+        rent = next(item for item in app.db.iter_scheduled() if item.name == "Sample rent")
+        assert date(2026, 4, 6) in rent.skipped
+        assert app.db.revision() == start + 1
+        # The change reached GTK's own book on its main loop, as an edit here does.
+        assert changed
+        assert app.db.undo() is True
+        assert date(2026, 4, 6) not in app.db.get_scheduled(rent.handle).skipped
+
+    def test_reads_and_refusals_come_back_through_the_window(self, app, shared, capsys):
+        assert self._run(["due-review", str(shared), "--as-of", "2026-09-27", "--json"]) == 0
+        listed = json.loads(capsys.readouterr().out)["schedules"]
+        assert "Sample rent" in [item["name"] for item in listed]
+        before = app.db.revision()
+        assert (
+            self._run(["scheduled-advance", str(shared), "Sample rent", "--enter-days", "1000"])
+            == 2
+        )
+        assert "0 to 999" in capsys.readouterr().err
+        assert app.db.revision() == before
+
+    def test_turning_sharing_off_withdraws_the_book(self, app, shared, capsys):
+        from breadsched.api.discovery import find_server
+
+        app.settings.set("general", "share_book", False)
+        app.preferences_changed()
+        assert app.shared_book is None and find_server(str(shared)) is None
+        command = ["scheduled-next", str(shared), "Sample rent", "--as-of", "2026-09-27", "--skip"]
+        assert self._run(command) == 2
+        assert "already open for writing" in capsys.readouterr().err
+
+    def test_opening_another_book_stops_sharing_the_first(self, app, shared, tmp_path):
+        from breadsched.api.discovery import find_server
+        from breadsched.cli.main import main as cli
+
+        other = tmp_path / "other.breadsched"
+        cli(["init", str(other)])
+        app.open_book(str(other))
+        assert find_server(str(shared)) is None
+        assert find_server(str(other)) is not None
+
+    def test_sharing_is_off_by_default_and_saved_from_preferences(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.book_sharing import SETTING
+
+        app.open_book(populated_book)
+        assert app.shared_book is None
+        dialog = app.on_preferences()
+        assert dialog.share_book.get_active() is False
+        dialog.share_book.set_active(True)
+        try:
+            assert dialog.save() is True
+            assert app.settings.get_bool(*SETTING) is True
+            assert app.shared_book is not None
+        finally:
+            dialog.destroy()
+            app.stop_sharing()
+
+
 def _add_brokerage(db) -> None:
     """An investment account entries can use (the fixture's are placeholders)."""
     from breadsched.gen.lib import Account, AccountType
@@ -11172,11 +11722,9 @@ class TestFindTransactions:
         dialog.group_by.set_selected(1)  # account
         result = dialog.find()
         assert result is not None and result.rows
-        assert all(abs(row.value) == size for row in result.rows)
+        assert all(abs(row.amount) == size for row in result.rows)
         expected = run_query(app.db, TransactionQuery(amount=size, group_by="account"))
-        assert [row.split.handle for row in result.rows] == [
-            row.split.handle for row in expected.rows
-        ]
+        assert [row.split for row in result.rows] == [row.split.handle for row in expected.rows]
         kinds = [line.kind for line in dialog.lines]
         assert kinds.count("subtotal") == len(result.groups) and kinds[-1] == "total"
         assert dialog.results.get_model().get_n_items() == len(dialog.lines)
@@ -11195,7 +11743,7 @@ class TestFindTransactions:
         dialog.start_entry.set_text("2026-05-01")
         dialog.end_entry.set_text("2026-01-01")
         assert dialog.find() is None
-        assert "start date is after the end date" in dialog.status.get_text()
+        assert "The first date is after the last" in dialog.status.get_text()
         dialog.destroy()
 
     def test_the_edit_menu_offers_it(self, app):
@@ -11217,3 +11765,93 @@ class TestFindTransactions:
                         if child is not None:
                             stack.append(child)
         assert "Find _Transactions…" in labels
+
+
+class TestABookTheHostHolds:
+    """Decision 0004: a book the computer account's host already holds opens in GTK
+    through that host, as the account's own user, and works as if opened here."""
+
+    @pytest.fixture
+    def held(self, populated_book):
+        import threading
+
+        from breadsched.api.discovery import publish_server, withdraw_server
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.web.server import serve
+
+        db = DbSQLite()
+        db.load(str(populated_book))
+        httpd = serve(db, host="127.0.0.1", port=0)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        url = f"http://127.0.0.1:{httpd.server_port}"
+        record = publish_server(
+            str(populated_book), url, db.writer_lock_token, book_id=httpd.books[db.path]
+        )
+        yield db
+        withdraw_server(record)
+        httpd.shutdown()
+        httpd.server_close()
+        db.close()
+
+    def test_gtk_uses_the_hosts_book_and_follows_its_changes(
+        self, app, window, populated_book, held
+    ):
+        from breadsched.api.local import book_server
+        from breadsched.gen.lib import Transaction
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+        from breadsched.gui.remote_book import RemoteBook
+
+        app.open_book(str(populated_book))
+        assert isinstance(app.db, RemoteBook)
+        before = len(list(held.iter_transactions()))
+
+        # An entry made in GTK is saved by the host.
+        dialog = TransactionDialog(window, app.db)
+        dialog.description_entry.set_text("Entered in GTK")
+        dialog.splits[0].set_amount_text("12.00")
+        dialog._on_save(None)
+        assert any(t.description == "Entered in GTK" for t in held.iter_transactions())
+        assert len(list(held.iter_transactions())) == before + 1
+
+        # A change made elsewhere reaches GTK by the host's change stream, and the open
+        # register shows it.
+        checking = held.get_account_by_name("Assets:Checking Account")
+        rent = held.get_account_by_name("Expenses:Rent")
+        window.open_register(checking.handle)
+        view = window._views["register"]
+        heard = []
+        app.db.book_api.subscribe(heard.append)
+        with held.transaction("Elsewhere") as txn:
+            held.add_transaction(
+                Transaction.simple(
+                    date.today(), "Entered elsewhere", rent.handle, checking.handle, "3"
+                ),
+                txn,
+            )
+        assert _spin(lambda: any(change.revision == held.revision() for change in heard), 20)
+        view.refresh()
+        assert _spin(
+            lambda: any(
+                row.transaction.description == "Entered elsewhere" for row in view.sheet.ledger_rows
+            ),
+            20,
+        )
+        # Undo is the host's, and names who made the step.
+        assert app.actions["undo"].get_enabled() is True
+        app.on_undo()
+        assert _spin(
+            lambda: not any(t.description == "Entered elsewhere" for t in held.iter_transactions()),
+            20,
+        )
+        assert book_server(app.db).revision == held.revision()
+
+    def test_the_views_open_on_the_hosts_book(self, app, window, populated_book, held):
+        from breadsched.gui.remote_book import RemoteBook
+
+        app.open_book(str(populated_book))
+        assert isinstance(app.db, RemoteBook)
+        for category in ("dashboard", "accounts", "scheduled", "plan", "projection"):
+            window.show_category(category)
+            view = window._views[category]
+            assert _spin(lambda v=view: not getattr(v, "_background_running", False), 30)
+        window.snapshot_reader.wait(30)

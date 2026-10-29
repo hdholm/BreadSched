@@ -19,16 +19,14 @@ from datetime import date
 from decimal import Decimal
 from time import monotonic
 
-from ...gen.db.sqlite import DbSQLite
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.engine import projection
 from ...gen.engine.completeness import combine
-from ...gen.engine.currency import reporting_currency_label
-from ...gen.engine.projection import projected_account_names
 from ...gen.engine.projection_result import projection_balances_chart, projection_chart
 from ...gen.lib import Assumptions, Scenario  # noqa: E402
 from ...gen.services import (
     SaveScenarioAssumptions,
-    save_scenario_assumptions,
 )
 from ...gen.utils.cancellation import OperationCancelled
 from ...gen.utils.logs import get_logger  # noqa: E402
@@ -42,6 +40,7 @@ from ..planning_context import (
     select_scenario,
     selected_scenario_handle,
 )
+from ..remote_book import OpenBook, worker_book
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.model_chart import ModelChartView  # noqa: E402
@@ -228,7 +227,7 @@ class ProjectionView(BaseView):
 
     # ------------------------------------------------------------------- model
 
-    def set_db(self, db: DbSQLite | None) -> None:
+    def set_db(self, db: OpenBook | None) -> None:
         """Attach a book and invalidate, but do not project while hidden."""
         self._cancel_projection(invalidate=True, wait=True)
         self._projection_dirty = True
@@ -241,6 +240,12 @@ class ProjectionView(BaseView):
             self._baseline = baseline_scenario(self.manager, db)
             if self._scenario_handle is None:
                 self.scenario = self._baseline
+            else:
+                # A restored scenario tab is titled before it is first drawn (#389).
+                try:
+                    self._scenario_name = book_server(db).find_scenario(self._scenario_handle).name
+                except ApiError:
+                    pass
 
     def _is_visible(self) -> bool:
         """Return whether this is the category currently shown by the manager."""
@@ -273,7 +278,7 @@ class ProjectionView(BaseView):
     def _populate_scenarios(self) -> None:
         if self.db is None:
             return
-        self._scenarios = list(self.db.iter_scenarios())
+        self._scenarios = book_server(self.db).scenarios()
         model = Gtk.StringList()
         model.append("Base scenario")
         selected = 0
@@ -385,7 +390,6 @@ class ProjectionView(BaseView):
         self._cancel_projection()
         self._job_generation += 1
         generation = self._job_generation
-        path = self.db.path
         source_db = self.db
         snapshot = scenario.clone()
         self._progress_started = monotonic()
@@ -393,23 +397,15 @@ class ProjectionView(BaseView):
         self._show_projection_notes(["Calculating projection…"])
 
         def work(cancel, report) -> projection.Projection:
-            worker_db = source_db
-            owns_worker = False
-            if path is not None and path != ":memory:":
-                worker_db = DbSQLite()
-                worker_db.load(path, "r")
-                owns_worker = True
-
             def progress_callback(update: projection.ProjectionProgress) -> None:
                 if cancel.is_set():
                     raise OperationCancelled()
                 report(update)
 
-            try:
-                return projection.project(worker_db, snapshot, progress=progress_callback)
-            finally:
-                if owns_worker:
-                    worker_db.close()
+            # A snapshot of the file, or the host's book (#358); a host reports no
+            # progress, only the finished projection.
+            with worker_book(source_db) as book:
+                return book.project(snapshot, progress=progress_callback)
 
         self._job = BackgroundJob()
         self._job.start(
@@ -513,12 +509,22 @@ class ProjectionView(BaseView):
         return self._job is None or self._job.wait(timeout)
 
     def _account_names(self, result: projection.Projection) -> dict[str, str]:
-        return projected_account_names(self.db, result) if self.db is not None else {}
+        if self.db is None:
+            return {}
+        names = {
+            record.account.handle: record.full_name for record in book_server(self.db).accounts()
+        }
+        projected = {
+            handle
+            for row in result.rows
+            for handle in (*row.ledger.closing_holdings, *row.ledger.closing_liabilities)
+        }
+        return {handle: names.get(handle, handle) for handle in projected}
 
     def _currency_label(self) -> str:
         if self.db is None:
             return ""
-        return reporting_currency_label(self.db)
+        return book_server(self.db).reporting_currency()
 
     def _render(self, result: projection.Projection) -> None:
         self._result = result
@@ -646,8 +652,9 @@ class ProjectionView(BaseView):
         index = picker.get_selected()
         chosen = self._scenarios[index - 1] if index > 0 else None
         if chosen is not None:
-            chosen = self.db.get_scenario(chosen.handle)
-            if chosen is None:
+            try:
+                chosen = book_server(self.db).find_scenario(chosen.handle)
+            except ApiError:
                 self.schedule_refresh()
                 return
         self._scenario_handle = chosen.handle if chosen is not None else None
@@ -670,7 +677,7 @@ class ProjectionView(BaseView):
             return
         from ..dialogs.projection_detail_dialog import ProjectionDetailDialog
 
-        ProjectionDetailDialog(self.get_root(), self.db, self._result).present()
+        ProjectionDetailDialog(self.get_root(), book_server(self.db), self._result).present()
 
     def _on_compare_clicked(self, _button) -> None:
         if self.db is None or not getattr(self, "_scenarios", []):
@@ -710,10 +717,13 @@ class ProjectionView(BaseView):
             return
         scenario = self._collect()
         if self._scenario_handle is not None:
-            save_scenario_assumptions(
-                self.db,
-                SaveScenarioAssumptions(scenario, existing_handle=self._scenario_handle),
-            )
+            try:
+                book_server(self.db).save_scenario_assumptions(
+                    SaveScenarioAssumptions(scenario, existing_handle=self._scenario_handle)
+                )
+            except ApiError:
+                # The controls constrain the values; a vanished scenario refreshes.
+                pass
             return
 
         from ..dialogs.scenario_dialog import SaveScenarioDialog

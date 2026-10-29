@@ -1,23 +1,18 @@
 """``GET /api/find``: transactions across the book, sorted, grouped, totalled (#382).
 
 Query fields are parsed by ``QueryParams``; the search, groups, and totals are the
-shared ``engine.transaction_query`` the desktop's Find Transactions window and the
-command line's ``find`` use. A query that cannot run is a 400 naming the problem.
+book server's ``find`` (``services.transaction_search``), which the desktop's Find
+Transactions window and the command line's ``find`` also use. A query that cannot
+run is a 400 with the service's code naming the problem.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..gen.engine.transaction_query import (
-    DIRECTIONS,
-    GROUPINGS,
-    SORTS,
-    QueryResult,
-    TransactionQuery,
-    run_query,
-)
+from ..gen.engine.transaction_query import DIRECTIONS, GROUPINGS, SORTS, TransactionQuery
 from ..gen.lib import Money
+from ..gen.services.transaction_search import FindResult
 
 if TYPE_CHECKING:
     from .context import Api
@@ -30,21 +25,21 @@ def _amount(value: Money) -> str:
     return str(value.to_decimal())
 
 
-def find_json(result: QueryResult) -> dict[str, object]:
+def find_json(result: FindResult) -> dict[str, object]:
     def row(item) -> dict[str, object]:
         return {
-            "transaction": item.transaction.handle,
-            "split": item.split.handle,
-            "date": item.transaction.post_date.isoformat(),
-            "num": item.transaction.num,
-            "description": item.transaction.description,
-            "account": item.split.account,
+            "transaction": item.transaction,
+            "split": item.split,
+            "date": item.date.isoformat(),
+            "num": item.num,
+            "description": item.description,
+            "account": item.account,
             "account_name": item.account_name,
-            "memo": item.split.memo,
-            "amount": _amount(item.value),
+            "memo": item.memo,
+            "amount": _amount(item.amount),
             "currency": item.currency,
-            "reconcile": item.split.reconcile.value,
-            "tags": list(item.transaction.tags),
+            "reconcile": item.reconcile,
+            "tags": list(item.tags),
         }
 
     return {
@@ -57,17 +52,16 @@ def find_json(result: QueryResult) -> dict[str, object]:
             for group in result.groups
         ],
         "totals": {code: _amount(total) for code, total in result.totals.items()},
-        "splits": len(result.rows),
+        "splits": result.splits,
         "transactions": result.transactions,
         "options": {"sorts": list(SORTS), "groupings": list(GROUPINGS)},
     }
 
 
 def find(api: Api, query: QueryParams) -> dict[str, object]:
-    accounts = query.texts("account")
     request = TransactionQuery(
         text=query.text("text") or "",
-        accounts=accounts,
+        accounts=query.texts("account"),
         subaccounts=not query.flag("no_subaccounts"),
         start=query.iso_date("start"),
         end=query.iso_date("end"),
@@ -82,7 +76,4 @@ def find(api: Api, query: QueryParams) -> dict[str, object]:
         group_by=query.choice("group_by", GROUPINGS, "none"),
     )
     query.finish()
-    for handle in accounts:
-        if api.db.get_account(handle) is None:
-            raise KeyError(handle)
-    return find_json(run_query(api.db, request))
+    return find_json(api.book.find(request))

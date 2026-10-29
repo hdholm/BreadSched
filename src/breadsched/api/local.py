@@ -1,0 +1,1405 @@
+"""The in-process book server (#356).
+
+:class:`LocalBookServer` wraps one open :class:`~breadsched.gen.db.sqlite.DbSQLite`
+and implements :class:`~breadsched.api.protocol.BookApi` over the shared services.
+It observes the book's own storage signals, so a change made through it, by undo or
+redo, or by any other code holding the same book in this process, raises the
+revision and reaches every subscriber.
+
+The revision is the book's own change counter (:meth:`DbSQLite.revision`), stored
+with the book, so every process that opens it agrees on it (#357).
+"""
+
+from __future__ import annotations
+
+import copy
+import sqlite3
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import replace
+from datetime import date
+from pathlib import Path
+from typing import Literal, Protocol, cast
+
+from ..gen.db.base import current_author
+from ..gen.db.sqlite import DbSQLite
+from ..gen.db.verification import BookVerification
+from ..gen.engine import projection as projection_engine
+from ..gen.engine.activity import PlanSettings, ReportingPeriod
+from ..gen.engine.category_report import CategoryActivity
+from ..gen.engine.currency import reporting_currency_label
+from ..gen.engine.dashboard import Dashboard, DashboardConfig
+from ..gen.engine.entry_input import TradeFill
+from ..gen.engine.fsa_claim_proposals import FsaClaimProposal
+from ..gen.engine.fsa_claim_report import ClaimReport
+from ..gen.engine.loans import LoanTerms
+from ..gen.engine.payroll import PayChangePlan, PaycheckBreakdown, PayrollTemplate
+from ..gen.engine.planning import MatchCandidate, PlannedEvent
+from ..gen.engine.projection import Projection, ProjectionMonthDetail, ProjectionProgress
+from ..gen.engine.receivables import ReimbursementProposal
+from ..gen.engine.reconciliation import ReconciliationSummary
+from ..gen.engine.schedule import Occurrence
+from ..gen.engine.transaction_query import TransactionQuery
+from ..gen.lib import Scenario, ScheduledTransaction, Transaction
+from ..gen.lib.commodity import Commodity, CommodityPrice
+from ..gen.lib.fsa_claim import FsaClaim
+from ..gen.lib.money import Money
+from ..gen.lib.receivable import Receivable
+from ..gen.lib.reconciliation import Reconciliation
+from ..gen.lib.savings_goal import SavingsGoal
+from ..gen.lib.scenario import AssumptionPeriod, Assumptions, Drawdown, ScenarioSchedule
+from ..gen.lib.transaction import ReconcileState
+from ..gen.plug import remembered_import_source
+from ..gen.services import (
+    AccountBalance,
+    AccountRecord,
+    AccountRef,
+    AdvanceDays,
+    BalanceQuery,
+    BalanceSummary,
+    ChartLine,
+    DeleteAccount,
+    DeleteSchedule,
+    DeleteTransaction,
+    DueResolution,
+    DueScheduleReview,
+    DuplicateSchedule,
+    FormulaScheduleInput,
+    NextOccurrence,
+    OutlineLine,
+    PostDue,
+    PostedDue,
+    RegisterPage,
+    RegisterQuery,
+    ResolveDue,
+    ResolveNext,
+    SaveAccount,
+    SavedAccount,
+    SavedSchedule,
+    SavedTransaction,
+    SaveFixedSchedule,
+    SaveTransaction,
+    ServiceError,
+    SetAdvanceDays,
+    TagCount,
+    TransactionInput,
+    account_balance,
+    account_inference,
+    account_outline,
+    account_record,
+    account_records,
+    balance_summary,
+    book_info,
+    categorization,
+    chart_of_accounts,
+    dashboard_config,
+    delete_account,
+    delete_schedule,
+    delete_transaction,
+    duplicate_schedule,
+    editable_transaction,
+    entry_input,
+    exchange_rates,
+    find_account,
+    find_schedule,
+    find_transaction,
+    import_review,
+    ledger_reads,
+    next_occurrence,
+    pending_due_review,
+    plan_cells,
+    post_due,
+    reconciliations,
+    register_page,
+    resolve_due,
+    resolve_next,
+    save_account,
+    save_fixed_schedule,
+    save_formula_schedule,
+    save_transaction,
+    savings_goals,
+    schedule_editing,
+    security_prices,
+    set_advance_days,
+    set_tags,
+    tag_counts,
+    transaction_currency,
+    transaction_editing,
+    transaction_search,
+    transactions_with_tag,
+)
+from ..gen.services import activity as activity_service
+from ..gen.services import advance_days as stored_advance_days
+from ..gen.services import assumptions as assumption_service
+from ..gen.services import attachments as attachment_service
+from ..gen.services import budget_jars as jars_service
+from ..gen.services import claims as claim_service
+from ..gen.services import csv_import as csv_service
+from ..gen.services import expense_explorer as expense_service
+from ..gen.services import gnucash_writeback as writeback_service
+from ..gen.services import historical_estimates as estimate_service
+from ..gen.services import imports as import_service
+from ..gen.services import investment_reports as investment_report_service
+from ..gen.services import loans as loan_service
+from ..gen.services import lots as lot_service
+from ..gen.services import net_worth as net_worth_service
+from ..gen.services import payroll as payroll_service
+from ..gen.services import plan as plan_service
+from ..gen.services import quotes as quote_service
+from ..gen.services import receivables as receivable_service
+from ..gen.services import register_view as register_view_service
+from ..gen.services import review as review_service
+from ..gen.services import scenarios as scenario_service
+from ..gen.services import schedules as schedule_service
+from ..gen.services import schedules as schedule_services
+from ..gen.services import tax as tax_service
+from ..gen.services import transactions as transaction_services
+from ..gen.services import uploads as upload_service
+from ..gen.services.account_inference import (
+    AccountSuggestion,
+    AppliedSuggestions,
+    ApplyAccountSuggestions,
+)
+from ..gen.services.activity import ActivityView
+from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
+from ..gen.services.attachments import AttachmentReport
+from ..gen.services.autocomplete import EntryProposal, SuggestEntry, suggest_entry
+from ..gen.services.book_info import BookCounts, BookSummary
+from ..gen.services.budget_jars import JarsView
+from ..gen.services.categorization import (
+    AddRule,
+    AppliedCategories,
+    CategorizationRules,
+    CategoryRule,
+)
+from ..gen.services.claims import (
+    AcceptedClaimLinks,
+    ClaimReportQuery,
+    CloseClaim,
+    DeleteClaim,
+    FsaClaimsView,
+    FsaYearsView,
+    ReopenClaim,
+    SaveClaim,
+    SavedClaim,
+)
+from ..gen.services.dashboard_config import DashboardSettings, SaveDashboardConfig
+from ..gen.services.entry_input import EntryAccount, EntryAmount, ReadEntryTrade
+from ..gen.services.exchange_rates import CurrencyChoice, SaveExchangeRate
+from ..gen.services.expense_explorer import ExpenseExplorer
+from ..gen.services.gnucash_writeback import ApplyWriteback, WritebackApplied, WritebackPlan
+from ..gen.services.historical_estimates import (
+    AcceptedEstimate,
+    AcceptHistoricalEstimate,
+    HistoricalEstimatesView,
+)
+from ..gen.services.import_review import (
+    HeldImportChange,
+    HeldImportResolution,
+    ResolveHeldImports,
+)
+from ..gen.services.investment_reports import HoldingsView, RealizedGainsView, TaxYearView
+from ..gen.services.loans import LoanChoices, LoanPreview, SavedLoan, SaveLoan
+from ..gen.services.lots import SaleLots, SetSaleLots
+from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
+from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
+from ..gen.services.plan import PlanBounds, PlanQuery, PlanQueryResult
+from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
+from ..gen.services.receivables import (
+    AcceptedReimbursements,
+    CandidateLine,
+    ReceivablesView,
+    RecordWriteOff,
+    SaveReceivable,
+)
+from ..gen.services.reconciliations import (
+    AddStatementEntry,
+    ReconciliationView,
+    StartReconciliation,
+    ToggleCleared,
+    UpdateReconciliation,
+)
+from ..gen.services.register_view import RegisterChanges, RegisterView
+from ..gen.services.review import (
+    PendingActual,
+    ReviewClaimAttachment,
+    ReviewDetail,
+    ReviewMutation,
+    ReviewOccurrence,
+    ReviewTransaction,
+)
+from ..gen.services.savings_goals import (
+    AllocateToGoal,
+    SaveSavingsGoal,
+    SavingsGoalsView,
+    SetGoalOverride,
+)
+from ..gen.services.scenarios import (
+    DuplicateScenario,
+    SaveDrawdown,
+    SavedScenario,
+    SaveScenario,
+    SetReimbursementOverride,
+    SuppressScenarioSchedule,
+)
+from ..gen.services.security_prices import SavedSecurityPrice, SaveSecurityPrice, SecurityQuote
+from ..gen.services.tax import SetTaxMarks, TaxMarks
+from ..presentation import service_error_message
+from .contract import ApiError, unwrap
+from .protocol import BookApi, Change, Listener
+from .users import User, UserDirectory, acting_user
+
+__all__ = [
+    "LocalBookServer",
+    "HeldElsewhere",
+    "book_server",
+    "local_caller",
+    "lookup_schedule",
+    "open_book_server",
+]
+
+#: Storage signal stems whose add, update, and delete signals name a change's kinds.
+_STEMS = (
+    "account",
+    "transaction",
+    "scheduled",
+    "scenario",
+    "commodity",
+    "price",
+    "fsa-claim",
+    "reconciliation",
+    "receivable",
+    "savings-goal",
+)
+
+
+#: Set while a request from a program on this computer is served (``local_caller``).
+_LOCAL_CALLER: ContextVar[bool] = ContextVar("breadsched_local_caller", default=False)
+
+
+@contextmanager
+def local_caller(local: bool = True) -> Iterator[None]:
+    """Serve the calls inside the block (in this thread) as from a program on this
+    computer, one holding the server's local token, which may name its files (#358)."""
+    token = _LOCAL_CALLER.set(local)
+    try:
+        yield
+    finally:
+        _LOCAL_CALLER.reset(token)
+
+
+class LocalBookServer:
+    """A book server in this process, over one open book."""
+
+    def __init__(self, db: DbSQLite, *, confine_documents: bool = False) -> None:
+        self.db = db
+        #: Served to other processes: unless a request comes from a program on this
+        #: computer (``local_caller``), a document may be linked only by web address
+        #: or inside the attachment folder, as the browser may (``contained_location``),
+        #: and a file read only from the uploads folder (#358).
+        self._confine_documents = confine_documents
+        self._pending: set[str] = set()
+        self._transactions: set[str] = set()
+        self._listeners: list[Listener] = []
+        known = db._known_signals()
+        self._connections: list[int] = []
+        for stem in _STEMS:
+            for action in ("add", "update", "delete"):
+                signal = f"{stem}-{action}"
+                if signal in known:
+                    self._connections.append(
+                        db.connect(signal, lambda _handles, kind=stem: self._pending.add(kind))
+                    )
+        for action in ("add", "update", "delete"):
+            self._connections.append(
+                db.connect(
+                    f"transaction-{action}", lambda handles: self._transactions.update(handles)
+                )
+            )
+        self._connections.append(db.connect("database-changed", self._on_changed))
+
+    # ------------------------------------------------------------- changes
+
+    @property
+    def revision(self) -> int:
+        return self.db.revision()
+
+    def subscribe(self, listener: Listener) -> Callable[[], None]:
+        self._listeners.append(listener)
+
+        def stop() -> None:
+            if listener in self._listeners:
+                self._listeners.remove(listener)
+
+        return stop
+
+    def _on_changed(self, _db: DbSQLite) -> None:
+        change = Change(
+            self.db.revision(),
+            frozenset(self._pending),
+            self.db.undo_message(),
+            frozenset(self._transactions),
+            bool(self.db.undo_stack),
+            bool(self.db.redo_stack),
+            current_author(),
+            self.db.undo_author(),
+        )
+        self._pending.clear()
+        self._transactions.clear()
+        for listener in list(self._listeners):
+            listener(change)
+
+    def close(self) -> None:
+        """Stop observing the book (the book itself stays open)."""
+        for handle in self._connections:
+            self.db.disconnect(handle)
+        self._connections.clear()
+        self._listeners.clear()
+
+    def undo(self) -> bool:
+        return self.db.undo()
+
+    def redo(self) -> bool:
+        return self.db.redo()
+
+    # ------------------------------------------------- scheduled transactions
+
+    def find_schedule(self, reference: str) -> ScheduledTransaction:
+        return lookup_schedule(self.db, reference)
+
+    def due_review(self, as_of: date | None = None) -> list[DueScheduleReview]:
+        return pending_due_review(self.db, as_of)
+
+    def due_occurrences(
+        self, as_of: date | None = None, days: int | None = None
+    ) -> tuple[Occurrence, ...]:
+        return unwrap(schedule_service.due_listing(self.db, as_of, days))
+
+    def resolve_due(self, request: ResolveDue) -> DueResolution:
+        return unwrap(resolve_due(self.db, request))
+
+    def next_occurrence(self, schedule: str, as_of: date | None = None) -> NextOccurrence | None:
+        return next_occurrence(self.db, schedule, as_of=as_of)
+
+    def resolve_next(self, request: ResolveNext) -> DueResolution:
+        return unwrap(resolve_next(self.db, request))
+
+    def advance_days(self, schedule: str) -> AdvanceDays:
+        found = stored_advance_days(self.db, schedule)
+        if found is None:
+            raise ApiError.from_service(ServiceError("schedule.not_found", ("schedule",)))
+        return found
+
+    def set_advance_days(self, request: SetAdvanceDays) -> AdvanceDays:
+        return unwrap(set_advance_days(self.db, request))
+
+    def delete_schedule(self, schedule: str) -> SavedSchedule:
+        return unwrap(delete_schedule(self.db, DeleteSchedule(schedule)))
+
+    def duplicate_schedule(self, request: DuplicateSchedule) -> SavedSchedule:
+        return unwrap(duplicate_schedule(self.db, request))
+
+    def post_due(self, request: PostDue) -> PostedDue:
+        return unwrap(post_due(self.db, request))
+
+    def save_fixed_schedule(self, request: SaveFixedSchedule) -> SavedSchedule:
+        return unwrap(save_fixed_schedule(self.db, request))
+
+    def save_formula_schedule(self, request: FormulaScheduleInput) -> SavedSchedule:
+        return unwrap(save_formula_schedule(self.db, request))
+
+    def draft_fixed_schedule(self, request: SaveFixedSchedule) -> ScheduledTransaction:
+        return unwrap(schedule_services.build_fixed_schedule(self.db, request))
+
+    def draft_formula_schedule(self, request: FormulaScheduleInput) -> ScheduledTransaction:
+        return unwrap(schedule_services.build_formula_schedule(self.db, request))
+
+    def scenario_events(self, scenario: str) -> schedule_editing.ScenarioEventsView:
+        return unwrap(schedule_editing.scenario_events(self.db, scenario))
+
+    def save_fixed_scenario_schedule(
+        self, request: schedule_services.SaveFixedScenarioSchedule
+    ) -> schedule_services.SavedScenarioSchedule:
+        return unwrap(schedule_services.save_fixed_scenario_schedule(self.db, request))
+
+    def save_formula_scenario_schedule(
+        self, request: schedule_services.FormulaScenarioScheduleInput
+    ) -> schedule_services.SavedScenarioSchedule:
+        return unwrap(schedule_services.save_formula_scenario_schedule(self.db, request))
+
+    def draft_fixed_scenario_schedule(
+        self, request: schedule_services.SaveFixedScenarioSchedule
+    ) -> ScenarioSchedule:
+        return unwrap(schedule_services.build_fixed_scenario_schedule(self.db, request))
+
+    def draft_formula_scenario_schedule(
+        self, request: schedule_services.FormulaScenarioScheduleInput
+    ) -> ScenarioSchedule:
+        return unwrap(schedule_services.build_formula_scenario_schedule(self.db, request))
+
+    # ------------------------------------------------------------ transactions
+
+    def save_transaction(self, request: SaveTransaction) -> SavedTransaction:
+        return unwrap(save_transaction(self.db, request))
+
+    def draft_transaction(self, request: SaveTransaction) -> Transaction:
+        return unwrap(transaction_services.build_transaction(self.db, request))
+
+    def delete_transaction(self, transaction: str) -> SavedTransaction:
+        return unwrap(delete_transaction(self.db, DeleteTransaction(transaction)))
+
+    # ------------------------------------------------------------ entry input
+
+    def suggest_entry(self, request: SuggestEntry) -> EntryProposal:
+        return unwrap(suggest_entry(self.db, request))
+
+    def entry_amount(
+        self, text: str, currency: str | None = None, number_format: str = "auto"
+    ) -> EntryAmount:
+        return unwrap(
+            entry_input.read_entry_amount(
+                self.db, text, currency=currency, number_format=_number_format(number_format)
+            )
+        )
+
+    def entry_trade(self, request: ReadEntryTrade) -> TradeFill:
+        return unwrap(
+            entry_input.read_entry_trade(
+                self.db,
+                request.account,
+                shares=request.shares,
+                price=request.price,
+                amount=request.amount,
+                changed=request.changed,
+                currency=request.currency,
+                number_format=request.number_format,
+            )
+        )
+
+    def entry_accounts(
+        self, text: str, exclude: str | None = None, limit: int = 20
+    ) -> tuple[EntryAccount, ...]:
+        return unwrap(
+            entry_input.complete_entry_account(self.db, text, exclude=exclude, limit=limit)
+        )
+
+    def next_num(self, account: str, text: str = "", step: int = 1) -> str:
+        return unwrap(entry_input.next_entry_num(self.db, account, text, step))
+
+    # -------------------------------------------------------------------- book
+
+    def book_id(self) -> str | None:
+        return book_info.book_id(self.db)
+
+    def book_counts(self) -> BookCounts:
+        return book_info.book_counts(self.db)
+
+    def book_summary(self) -> BookSummary:
+        return book_info.book_summary(self.db)
+
+    def verify_book(self) -> BookVerification:
+        return book_info.verify_book(self.db)
+
+    # ------------------------------------------------------------ ledger reads
+
+    def transaction_currency(self) -> str:
+        return transaction_currency(self.db)
+
+    def find_account(self, reference: str) -> AccountRef:
+        return _named(find_account(self.db, reference), reference, "account")
+
+    def find_transaction(self, reference: str) -> Transaction:
+        return _named(find_transaction(self.db, reference), reference, "transaction")
+
+    def transaction_editor(
+        self, transaction: str | None = None
+    ) -> transaction_editing.TransactionEditorView:
+        return unwrap(transaction_editing.transaction_editor(self.db, transaction))
+
+    def editable_transaction(self, transaction: str) -> TransactionInput:
+        return unwrap(editable_transaction(self.db, transaction))
+
+    def register(self, query: RegisterQuery) -> RegisterPage:
+        return unwrap(register_page(self.db, query))
+
+    def register_view(
+        self, account: str, limit: int | None = 250, filter_text: str = ""
+    ) -> RegisterView:
+        return unwrap(register_view_service.register_view(self.db, account, limit, filter_text))
+
+    def register_changes(self, account: str, changed: Sequence[str]) -> RegisterChanges:
+        return unwrap(register_view_service.register_changes(self.db, account, changed))
+
+    def account_balance(self, query: BalanceQuery) -> AccountBalance:
+        return unwrap(account_balance(self.db, query))
+
+    def balance_summary(self, as_of: date | None = None) -> BalanceSummary:
+        return balance_summary(self.db, as_of)
+
+    # ---------------------------------------------------------------- accounts
+
+    def accounts(self) -> list[AccountRecord]:
+        return self._regrouped(account_records(self.db))
+
+    def commodities(self) -> tuple[Commodity, ...]:
+        return ledger_reads.commodities(self.db)
+
+    def account(self, account: str) -> AccountRecord:
+        return self._regrouped([unwrap(account_record(self.db, account))])[0]
+
+    def account_outline(self, include_hidden: bool = False) -> tuple[OutlineLine, ...]:
+        return account_outline(self.db, include_hidden)
+
+    def chart(self, as_of: date | None = None, include_hidden: bool = False) -> list[ChartLine]:
+        return list(chart_of_accounts(self.db, as_of, include_hidden))
+
+    def save_account(self, request: SaveAccount) -> SavedAccount:
+        """Save the account; its Dashboard group is the caller's own arrangement
+        (decision 0004), so the book keeps the group it had and the caller's
+        arrangement takes the one asked for."""
+        keep = self._keeper(DashboardConfig.KEY)
+        if keep is None:
+            return unwrap(save_account(self.db, request))
+        config = DashboardConfig.load(self.db, self._own_dashboard())
+        existing = self.db.get_account(request.existing_handle) if request.existing_handle else None
+        wanted = request.account.group.strip()
+        current = config.group_of(existing.handle) if existing is not None else ""
+        account = copy.deepcopy(request.account)
+        account.group = existing.group if existing is not None else ""
+        saved = unwrap(save_account(self.db, replace(request, account=account)))
+        stored = self.db.get_account(saved.handle)
+        if wanted != current and stored is not None:
+            config.place(stored, wanted)
+            keep(config.serialize_personal())
+        return saved
+
+    def delete_account(self, account: str) -> SavedAccount:
+        return unwrap(delete_account(self.db, DeleteAccount(account)))
+
+    # -------------------------------------------------------------------- tags
+
+    def tag_counts(self) -> list[TagCount]:
+        return tag_counts(self.db)
+
+    def transactions_with_tag(self, tag: str) -> list[Transaction]:
+        return transactions_with_tag(self.db, tag)
+
+    def set_tags(self, transaction: str, tags: list[str]) -> Transaction:
+        return unwrap(set_tags(self.db, transaction, tags))
+
+    # ---------------------------------------------------------------- scenarios
+
+    def scenarios(self) -> list[Scenario]:
+        return list(self.db.iter_scenarios())
+
+    def find_scenario(self, reference: str) -> Scenario:
+        found = self.db.get_scenario(reference) or self.db.get_scenario_by_name(reference)
+        if found is None:
+            raise ApiError(
+                404, "scenario.not_found", ("scenario",), f"no scenario matches {reference!r}"
+            )
+        return found
+
+    def save_scenario(self, request: SaveScenario) -> SavedScenario:
+        return unwrap(scenario_service.save_scenario(self.db, request))
+
+    def save_scenario_assumptions(self, request: SaveScenarioAssumptions) -> SavedScenario:
+        return unwrap(assumption_service.save_scenario_assumptions(self.db, request))
+
+    def duplicate_scenario(self, request: DuplicateScenario) -> SavedScenario:
+        return unwrap(scenario_service.duplicate_scenario(self.db, request))
+
+    def delete_scenario(self, scenario: str) -> SavedScenario:
+        request = scenario_service.DeleteScenario(scenario)
+        return unwrap(scenario_service.delete_scenario(self.db, request))
+
+    def suppress_scenario_schedule(self, request: SuppressScenarioSchedule) -> SavedScenario:
+        return unwrap(scenario_service.suppress_scenario_schedule(self.db, request))
+
+    def drawdown_accounts(self) -> tuple[list[str], list[str]]:
+        return scenario_service.drawdown_accounts(self.db)
+
+    def save_drawdown(self, request: SaveDrawdown) -> Drawdown:
+        return unwrap(scenario_service.save_drawdown(self.db, request))
+
+    def remove_drawdown(self, scenario: str, drawdown: str) -> Drawdown:
+        return unwrap(scenario_service.remove_drawdown(self.db, scenario, drawdown))
+
+    def base_assumptions(self) -> Assumptions:
+        return assumption_service.base_assumptions(self.db)
+
+    def save_base_assumptions(self, request: SaveBaseAssumptions) -> Assumptions:
+        with self._changing("base-assumptions"):
+            return unwrap(assumption_service.save_base_assumptions(self.db, request))
+
+    def save_assumption_period(
+        self, scenario: str, period: AssumptionPeriod, index: int | None = None
+    ) -> SavedScenario:
+        request = assumption_service.SaveAssumptionPeriod(scenario, period, index)
+        return unwrap(assumption_service.save_assumption_period(self.db, request))
+
+    def delete_assumption_period(self, scenario: str, index: int) -> SavedScenario:
+        request = assumption_service.DeleteAssumptionPeriod(scenario, index)
+        return unwrap(assumption_service.delete_assumption_period(self.db, request))
+
+    # ------------------------------------------------------------------ payroll
+
+    def payroll(self, as_of: date | None = None) -> PayrollView:
+        return payroll_service.payroll_view(self.db, as_of)
+
+    def paycheck(self, schedule: str, as_of: date | None = None) -> PaycheckBreakdown:
+        return unwrap(payroll_service.paycheck(self.db, schedule, as_of))
+
+    def template_from_schedule(
+        self, schedule: str, name: str, as_of: date | None = None
+    ) -> PayrollTemplate:
+        found = payroll_service.template_from_schedule(self.db, schedule, name, when=as_of)
+        return unwrap(found)
+
+    def save_payroll_template(self, request: SavePayrollTemplate) -> PayrollTemplate:
+        with self._changing("payroll-template"):
+            return unwrap(payroll_service.save_payroll_template(self.db, request))
+
+    def delete_payroll_template(self, name: str) -> PayrollTemplate:
+        with self._changing("payroll-template"):
+            return unwrap(payroll_service.delete_payroll_template(self.db, name))
+
+    def create_paycheck(self, request: CreatePaycheck) -> SavedSchedule:
+        return unwrap(payroll_service.create_paycheck_schedule(self.db, request))
+
+    def preview_pay_change(self, request: PayChange) -> PayChangePlan:
+        return unwrap(payroll_service.preview_pay_change(self.db, request))
+
+    def apply_pay_change(self, request: PayChange) -> PayChangePlan:
+        return unwrap(payroll_service.apply_pay_change(self.db, request))
+
+    # --------------------------------------------------------------- FSA claims
+
+    def fsa_claims(self, as_of: date | None = None) -> FsaClaimsView:
+        return claim_service.fsa_claims_view(self.db, as_of)
+
+    def fsa_claim_standing(self, claim: str) -> claim_service.ClaimStanding:
+        return unwrap(claim_service.claim_standing(self.db, claim))
+
+    def find_fsa_claim(self, reference: str) -> FsaClaim:
+        return _named(claim_service.find_claim(self.db, reference), reference, "FSA claim")
+
+    def save_fsa_claim(self, request: SaveClaim) -> SavedClaim:
+        return unwrap(claim_service.save_claim(self.db, request))
+
+    def delete_fsa_claim(self, claim: str) -> SavedClaim:
+        return unwrap(claim_service.delete_claim(self.db, DeleteClaim(claim)))
+
+    def close_fsa_claim(self, request: CloseClaim) -> SavedClaim:
+        return unwrap(claim_service.close_claim(self.db, request))
+
+    def reopen_fsa_claim(self, request: ReopenClaim) -> SavedClaim:
+        return unwrap(claim_service.reopen_claim(self.db, request))
+
+    def fsa_claim_report(self, query: ClaimReportQuery) -> ClaimReport:
+        return unwrap(claim_service.fsa_claim_report(self.db, query))
+
+    def benefit_years(self, as_of: date | None = None) -> FsaYearsView:
+        return claim_service.fsa_years_view(self.db, as_of)
+
+    def claim_link_proposals(self, account: str | None = None) -> tuple[FsaClaimProposal, ...]:
+        return unwrap(claim_service.claim_link_proposals(self.db, account=account))
+
+    def accept_claim_links(self, chosen: tuple[tuple[str, str, str], ...]) -> AcceptedClaimLinks:
+        return unwrap(claim_service.accept_claim_links(self.db, chosen))
+
+    # ------------------------------------------------------------- plan review
+
+    def review_queue(self) -> tuple[PendingActual, ...]:
+        return review_service.review_queue(self.db)
+
+    def review_detail(self, transaction: str) -> ReviewDetail:
+        return unwrap(review_service.review_detail(self.db, transaction))
+
+    def match_review(self, request: ReviewOccurrence) -> ReviewMutation:
+        return unwrap(review_service.match_review(self.db, request))
+
+    def reject_review(self, request: ReviewOccurrence) -> ReviewMutation:
+        return unwrap(review_service.reject_review(self.db, request))
+
+    def skip_review(self, request: ReviewOccurrence) -> ReviewMutation:
+        return unwrap(review_service.skip_review(self.db, request))
+
+    def mark_review_unexpected(self, transaction: str) -> ReviewMutation:
+        request = ReviewTransaction(transaction)
+        return unwrap(review_service.mark_review_unexpected(self.db, request))
+
+    def attach_review_claim(self, request: ReviewClaimAttachment) -> ReviewMutation:
+        return unwrap(review_service.attach_review_claim(self.db, request))
+
+    def plan_occurrence(self, key: str) -> PlannedEvent:
+        return unwrap(review_service.plan_occurrence(self.db, key))
+
+    def unresolved_occurrences(self, start: date, end: date) -> tuple[PlannedEvent, ...]:
+        return unwrap(review_service.unresolved_occurrences(self.db, start, end))
+
+    def match_candidates(
+        self, transaction: str, window_days: int = 7
+    ) -> tuple[MatchCandidate, ...]:
+        return unwrap(review_service.match_candidates(self.db, transaction, window_days))
+
+    # ------------------------------------------------------------ import review
+
+    def held_imports(self) -> tuple[HeldImportChange, ...]:
+        return tuple(import_review.pending_import_changes(self.db))
+
+    def account_suggestions(self) -> tuple[AccountSuggestion, ...]:
+        return account_inference.account_suggestions(self.db)
+
+    def apply_account_suggestions(self, request: ApplyAccountSuggestions) -> AppliedSuggestions:
+        return unwrap(account_inference.apply_account_suggestions(self.db, request))
+
+    def resolve_held_imports(self, request: ResolveHeldImports) -> HeldImportResolution:
+        return unwrap(import_review.resolve_import_changes(self.db, request))
+
+    # ------------------------------------------------------------ lots and tax
+
+    def sale_lots(self, transaction: str, split: str) -> SaleLots:
+        return unwrap(lot_service.sale_lots(self.db, transaction, split))
+
+    def set_sale_lots(self, request: SetSaleLots) -> SaleLots:
+        return unwrap(lot_service.set_sale_lots(self.db, request))
+
+    def tax_marks(self) -> TaxMarks:
+        return tax_service.tax_marks(self.db)
+
+    def set_tax_marks(self, request: SetTaxMarks) -> TaxMarks:
+        return unwrap(tax_service.set_tax_marks(self.db, request))
+
+    # ------------------------------------------------------------------ quotes
+
+    def quote_plan(self) -> QuotePlan:
+        return quote_service.quote_plan(self.db)
+
+    def store_quotes(self, request: StoreQuotes) -> QuoteUpdate:
+        return unwrap(quote_service.store_quotes(self.db, request))
+
+    def set_quote_source(self, request: SetQuoteSource) -> str:
+        return unwrap(quote_service.set_quote_source(self.db, request))
+
+    # ------------------------------------------------------------------- loans
+
+    def loan_choices(self, include_hidden: bool = False) -> LoanChoices:
+        return loan_service.loan_choices(self.db, include_hidden)
+
+    def preview_loan(self, terms: LoanTerms) -> LoanPreview:
+        return unwrap(loan_service.preview_loan(self.db, terms))
+
+    def save_loan(self, request: SaveLoan) -> SavedLoan:
+        return unwrap(loan_service.save_loan(self.db, request))
+
+    # ---------------------------------------------------------- exchange rates
+
+    def currencies(self, book_order: bool = False) -> tuple[CurrencyChoice, ...]:
+        return exchange_rates.currencies(self.db, book_order)
+
+    def find_currency(self, reference: str) -> CurrencyChoice:
+        found = exchange_rates.find_currency(self.db, reference)
+        if found.errors and found.errors[0].code == "currency.not_currency":
+            return unwrap(found)
+        return _named(found, reference, "currency")
+
+    def latest_exchange_rate(self, source: str, target: str) -> CommodityPrice | None:
+        return exchange_rates.latest_exchange_rate(self.db, source, target)
+
+    def save_exchange_rate(self, request: SaveExchangeRate) -> CommodityPrice:
+        return unwrap(exchange_rates.save_exchange_rate(self.db, request))
+
+    def securities(self) -> tuple[SecurityQuote, ...]:
+        return security_prices.securities(self.db)
+
+    def save_security_price(self, request: SaveSecurityPrice) -> SavedSecurityPrice:
+        return unwrap(security_prices.save_security_price(self.db, request))
+
+    # ------------------------------------------------------ GnuCash write-back
+
+    def writeback_preview(self) -> WritebackPlan:
+        return unwrap(writeback_service.writeback_preview(self.db))
+
+    def writeback_keep_backups(self) -> int:
+        return writeback_service.writeback_keep_backups(self.db)
+
+    def set_writeback_keep_backups(self, keep: int) -> int:
+        with self._changing("writeback-config"):
+            return unwrap(writeback_service.set_writeback_keep_backups(self.db, keep))
+
+    def apply_writeback(self, request: ApplyWriteback) -> WritebackApplied:
+        return unwrap(writeback_service.apply_writeback(self.db, request))
+
+    # ------------------------------------------------------- dashboard settings
+
+    def dashboard(
+        self,
+        as_of: date | None = None,
+        liquidity_days: int | None = None,
+        emergency_months: int | None = None,
+    ) -> Dashboard:
+        found = dashboard_config.dashboard_board(
+            self.db, as_of, liquidity_days, emergency_months, self._own_dashboard()
+        )
+        return unwrap(found)
+
+    def dashboard_settings(self) -> DashboardSettings:
+        return dashboard_config.dashboard_settings(self.db, self._own_dashboard())
+
+    def default_dashboard_settings(self) -> DashboardSettings:
+        return dashboard_config.default_dashboard_settings(self.db)
+
+    def save_dashboard_settings(self, request: SaveDashboardConfig) -> DashboardSettings:
+        """The caller's own Dashboard (decision 0004), its groups' members with it; the
+        book's only for a book without an id."""
+        keep = self._keeper(DashboardConfig.KEY)
+        if keep is not None:
+            saved = unwrap(
+                dashboard_config.save_dashboard_config(
+                    self.db, request, self._own_dashboard(), keep
+                )
+            )
+            return dashboard_config.settings_of(saved)
+        with self._changing("dashboard-config"):
+            saved = unwrap(dashboard_config.save_dashboard_config(self.db, request))
+        return dashboard_config.settings_of(saved)
+
+    def _own_dashboard(self) -> object:
+        return self._preference(DashboardConfig.KEY)
+
+    def _regrouped(self, records: Sequence[AccountRecord]) -> list[AccountRecord]:
+        """``records`` with each account's Dashboard group the caller's own, where
+        they have arranged their own (decision 0004)."""
+        stored = self._own_dashboard()
+        if not isinstance(stored, dict):
+            return list(records)
+        config = DashboardConfig.load(self.db, stored)
+        regrouped = []
+        for record in records:
+            group = config.group_of(record.account.handle)
+            if group != record.account.group:
+                account = copy.deepcopy(record.account)
+                account.group = group
+                record = replace(record, account=account)
+            regrouped.append(record)
+        return regrouped
+
+    def explain_plan_cell(self, query: plan_cells.PlanCellQuery) -> plan_cells.PlanCellDetail:
+        return unwrap(plan_cells.explain_plan_cell(self.db, query))
+
+    # ---------------------------------------------------------------- imports
+
+    def inspect_csv(self, request: csv_service.InspectCsv) -> csv_service.CsvInspection:
+        self._readable(request.source)
+        return unwrap(csv_service.inspect_csv(request))
+
+    def preview_csv(self, request: csv_service.CsvImportRequest) -> csv_service.CsvPreview:
+        self._readable(request.source)
+        return unwrap(csv_service.preview_csv_import(self.db, request))
+
+    def import_csv(self, request: csv_service.CsvImportRequest) -> csv_service.CsvImported:
+        self._readable(request.source)
+        return unwrap(csv_service.import_csv(self.db, request))
+
+    def import_book(self, request: import_service.ImportBook) -> import_service.ImportedBook:
+        self._readable(request.source)
+        return unwrap(import_service.import_book(self.db, request))
+
+    def upload_import_file(self, filename: str, content: bytes) -> str:
+        return str(unwrap(upload_service.store_import_upload(self.db, filename, content)).path)
+
+    def import_source(self) -> str | None:
+        return remembered_import_source(self.db)
+
+    # ------------------------------------------------------------------- find
+
+    def find(self, query: TransactionQuery) -> transaction_search.FindResult:
+        return unwrap(transaction_search.find_transactions(self.db, query))
+
+    # ------------------------------------------------------------- attachments
+
+    def attachment_report(
+        self, missing_only: bool = False, transaction: str | None = None
+    ) -> AttachmentReport:
+        return attachment_service.attachment_report(
+            self.db, missing_only=missing_only, transaction=transaction
+        )
+
+    def link_attachment(self, transaction: str, location: str) -> Transaction:
+        location = self._document_location(location)
+        return unwrap(attachment_service.attach_location(self.db, transaction, location))
+
+    def attach_file(self, transaction: str, path: str, copy: bool = True) -> Transaction:
+        self._readable(path)
+        return unwrap(attachment_service.attach_file(self.db, transaction, Path(path), copy=copy))
+
+    def attach_content(self, transaction: str, filename: str, content: bytes) -> Transaction:
+        return unwrap(upload_service.attach_content(self.db, transaction, filename, content))
+
+    def unlink_attachment(self, transaction: str, location: str) -> Transaction:
+        return unwrap(attachment_service.detach(self.db, transaction, location))
+
+    def relink_attachment(self, transaction: str, location: str, new: str) -> Transaction:
+        new = self._document_location(new)
+        return unwrap(attachment_service.relink(self.db, transaction, location, new))
+
+    @property
+    def _confined(self) -> bool:
+        return self._confine_documents and not _LOCAL_CALLER.get()
+
+    def _readable(self, path: str) -> None:
+        """Refuse a remote caller a file outside the uploads folder."""
+        if self._confined and not upload_service.in_uploads(self.db, path):
+            raise ApiError.from_service(ServiceError("file.local_only", ("source",)))
+
+    def _local_only(self) -> None:
+        if self._confined:
+            raise ApiError.from_service(ServiceError("attachment.folder.local_only", ("folder",)))
+
+    def _document_location(self, location: str) -> str:
+        if not self._confined:
+            return location
+        confined = attachment_service.contained_location(self.db, location)
+        if isinstance(confined, ServiceError):
+            raise ApiError.from_service(confined)
+        return confined
+
+    def set_attachment_folder(self, folder: str) -> str:
+        self._local_only()
+        with self._changing("attachment-folder"):
+            return str(unwrap(attachment_service.set_attachment_folder(self.db, folder)))
+
+    def set_source_link_folder(self, folder: str) -> str:
+        self._local_only()
+        with self._changing("attachment-folder"):
+            return str(unwrap(attachment_service.set_source_link_folder(self.db, folder)))
+
+    # ------------------------------------------------------- plan and spending
+
+    def reporting_currency(self) -> str:
+        return reporting_currency_label(self.db)
+
+    def plan_settings(self, default_start: date, default_end: date) -> PlanSettings:
+        return plan_service.plan_settings(
+            self.db, default_start, default_end, self._preference(PlanSettings.KEY)
+        )
+
+    def save_plan_settings(self, settings: PlanSettings) -> PlanSettings:
+        """The caller's own Plan view (decision 0004); the book's only for a book
+        without an id, which no one else can be given."""
+        keep = self._keeper(PlanSettings.KEY)
+        if keep is not None:
+            return unwrap(plan_service.save_plan_settings(self.db, settings, keep))
+        with self._changing("plan-settings"):
+            return unwrap(plan_service.save_plan_settings(self.db, settings))
+
+    def plan_bounds(self, today: date | None = None) -> PlanBounds:
+        return plan_service.plan_bounds(self.db, today)
+
+    def plan(self, query: PlanQuery) -> PlanQueryResult:
+        return unwrap(plan_service.query_plan(self.db, query, self._preference(PlanSettings.KEY)))
+
+    def expense_explorer(
+        self,
+        query: PlanQuery,
+        account: str | None = None,
+        period_index: int | None = None,
+        rollover: bool = False,
+    ) -> ExpenseExplorer:
+        found = expense_service.query_expense_explorer(
+            self.db,
+            query,
+            account=account,
+            period_index=period_index,
+            rollover=rollover,
+            saved=self._preference(PlanSettings.KEY),
+        )
+        return unwrap(found)
+
+    # -------------------------------------------------------------- projection
+
+    def project(
+        self,
+        scenario: Scenario,
+        progress: Callable[[ProjectionProgress], None] | None = None,
+    ) -> Projection:
+        return projection_engine.project(self.db, scenario, progress=progress)
+
+    def projection_month(
+        self,
+        scenario: Scenario,
+        month_index: int,
+        projected: Projection | None = None,
+    ) -> ProjectionMonthDetail:
+        result = (
+            projected if projected is not None else projection_engine.project(self.db, scenario)
+        )
+        if not 0 <= month_index < len(result.rows):
+            raise ApiError(
+                404, "projection.month.not_found", ("month_index",), "no such projection month"
+            )
+        return projection_engine.explain_month(self.db, result, month_index)
+
+    # --------------------------------------------------------------- net worth
+
+    def net_worth_history(
+        self,
+        start: date,
+        end: date,
+        period: ReportingPeriod = ReportingPeriod.MONTH,
+        today: date | None = None,
+    ) -> NetWorthHistory:
+        found = net_worth_service.query_net_worth_history(self.db, start, end, period, today)
+        return unwrap(found)
+
+    def net_worth_change(self, start: date, end: date, today: date | None = None) -> NetWorthChange:
+        return unwrap(net_worth_service.query_net_worth_change(self.db, start, end, today))
+
+    # ----------------------------------------------------- historical estimates
+
+    def schedules_view(self, days: int = 60) -> schedule_editing.SchedulesView:
+        return unwrap(schedule_editing.schedules_view(self.db, days))
+
+    def schedule_editor(self, schedule: str) -> schedule_editing.ScheduleEditorView:
+        return unwrap(schedule_editing.schedule_editor(self.db, schedule))
+
+    def scheduled_page(
+        self, days: int | None = None, as_of: date | None = None
+    ) -> schedule_editing.ScheduledPage:
+        return unwrap(schedule_editing.scheduled_page(self.db, days, as_of))
+
+    def schedule_layout(
+        self, definition: ScheduledTransaction
+    ) -> schedule_editing.ScheduleEditorView:
+        return unwrap(schedule_editing.schedule_layout(self.db, definition))
+
+    def schedule_draft(self, transaction: str) -> schedule_editing.ScheduleEditorView:
+        return unwrap(schedule_editing.schedule_draft(self.db, transaction))
+
+    def historical_estimates(
+        self,
+        months: int = 12,
+        min_active_months: int = 3,
+        scenario: str | None = None,
+        as_of: date | None = None,
+    ) -> HistoricalEstimatesView:
+        return unwrap(
+            estimate_service.historical_estimates(
+                self.db, months, min_active_months, scenario, as_of
+            )
+        )
+
+    def draft_scenario_estimate(self, request: AcceptHistoricalEstimate) -> ScenarioSchedule:
+        return unwrap(estimate_service.draft_scenario_estimate(self.db, request))
+
+    def accept_historical_estimate(self, request: AcceptHistoricalEstimate) -> AcceptedEstimate:
+        return unwrap(estimate_service.accept_historical_estimate(self.db, request))
+
+    # ---------------------------------------------------------------- activity
+
+    def activity(
+        self,
+        start: date,
+        end: date,
+        period: ReportingPeriod = ReportingPeriod.MONTH,
+        as_of: date | None = None,
+    ) -> ActivityView:
+        return unwrap(activity_service.activity_view(self.db, start, end, period, as_of))
+
+    # ------------------------------------------------------------- budget jars
+
+    def budget_jars(
+        self,
+        start: date,
+        end: date,
+        period: ReportingPeriod = ReportingPeriod.MONTH,
+        today: date | None = None,
+    ) -> JarsView:
+        return unwrap(jars_service.jars_view(self.db, start, end, period, today))
+
+    # ------------------------------------------------------- investment reports
+
+    def holdings(self, as_of: date | None = None) -> HoldingsView:
+        return investment_report_service.holdings_view(self.db, as_of)
+
+    def realized_gains(
+        self, year: int | None = None, account: str | None = None
+    ) -> RealizedGainsView:
+        if account is not None:
+            self.account(account)  # an unknown handle is refused, not reported as no sales
+        return investment_report_service.realized_gains_view(self.db, year, account)
+
+    def tax_year(self, year: int | None = None) -> TaxYearView:
+        return investment_report_service.tax_year_view(self.db, year)
+
+    # -------------------------------------------------------------- receivables
+
+    def receivables_view(self, as_of: date | None = None) -> ReceivablesView:
+        return receivable_service.receivables_view(self.db, as_of)
+
+    def receivable_candidates(
+        self, receivable: str | None = None
+    ) -> tuple[tuple[CandidateLine, ...], tuple[CandidateLine, ...]]:
+        return unwrap(receivable_service.receivable_candidate_lines(self.db, receivable))
+
+    def find_receivable(self, reference: str) -> Receivable:
+        found = receivable_service.find_receivable(self.db, reference)
+        return _named(found, reference, "receivable")
+
+    def save_receivable(self, request: SaveReceivable) -> Receivable:
+        return unwrap(receivable_service.save_receivable(self.db, request))
+
+    def link_receivable_split(
+        self, receivable: str, transaction: str, split: str, role: str
+    ) -> Receivable:
+        if role not in ("expense", "reimbursement"):
+            raise ApiError(
+                400, "receivable.role.invalid", ("role",), "choose expense or reimbursement"
+            )
+        link = (
+            receivable_service.attach_expense_split
+            if role == "expense"
+            else receivable_service.attach_reimbursement_split
+        )
+        return unwrap(link(self.db, receivable, transaction, split))
+
+    def detach_receivable_split(self, receivable: str, transaction: str, split: str) -> Receivable:
+        return unwrap(receivable_service.detach_split(self.db, receivable, transaction, split))
+
+    def mark_disputed(self, receivable: str, disputed_on: date, note: str = "") -> Receivable:
+        return unwrap(receivable_service.mark_disputed(self.db, receivable, disputed_on, note))
+
+    def clear_dispute(self, receivable: str) -> Receivable:
+        return unwrap(receivable_service.clear_dispute(self.db, receivable))
+
+    def record_write_off(self, request: RecordWriteOff) -> Receivable:
+        return unwrap(receivable_service.record_write_off(self.db, request))
+
+    def delete_receivable(self, receivable: str) -> str:
+        return unwrap(receivable_service.delete_receivable(self.db, receivable))
+
+    def reimbursable_costs(self, start: date, end: date) -> tuple[CategoryActivity, ...]:
+        return unwrap(receivable_service.reimbursable_costs(self.db, start, end))
+
+    def reimbursement_proposals(
+        self, as_of: date | None = None, account: str | None = None
+    ) -> tuple[ReimbursementProposal, ...]:
+        found = receivable_service.reimbursement_proposals(self.db, as_of=as_of, account=account)
+        return unwrap(found)
+
+    def accept_reimbursements(
+        self, chosen: tuple[tuple[str, str, str], ...]
+    ) -> AcceptedReimbursements:
+        return unwrap(receivable_service.accept_reimbursements(self.db, chosen))
+
+    def set_reimbursement_override(self, request: SetReimbursementOverride) -> Scenario:
+        return unwrap(scenario_service.set_reimbursement_override(self.db, request))
+
+    # ---------------------------------------------------------- reconciliation
+
+    def reconciliation(self, account: str) -> ReconciliationView:
+        return unwrap(reconciliations.reconciliation_view(self.db, account))
+
+    def start_reconciliation(self, request: StartReconciliation) -> ReconciliationSummary:
+        return unwrap(reconciliations.start_reconciliation(self.db, request))
+
+    def update_reconciliation(self, request: UpdateReconciliation) -> ReconciliationSummary:
+        return unwrap(reconciliations.update_reconciliation(self.db, request))
+
+    def complete_reconciliation(self, reconciliation: str) -> Reconciliation:
+        action = reconciliations.ReconciliationAction(reconciliation)
+        return unwrap(reconciliations.complete_reconciliation(self.db, action))
+
+    def cancel_reconciliation(self, reconciliation: str) -> Reconciliation:
+        action = reconciliations.ReconciliationAction(reconciliation)
+        return unwrap(reconciliations.cancel_reconciliation(self.db, action))
+
+    def reopen_reconciliation(self, reconciliation: str) -> Reconciliation:
+        action = reconciliations.ReconciliationAction(reconciliation)
+        return unwrap(reconciliations.reopen_reconciliation(self.db, action))
+
+    def toggle_cleared(self, request: ToggleCleared) -> ReconcileState:
+        return unwrap(reconciliations.toggle_cleared(self.db, request))
+
+    def reconciled_balance(self, account: str, through: date) -> Money:
+        return unwrap(reconciliations.reconciled_balance(self.db, account, through))
+
+    def add_statement_entry(self, request: AddStatementEntry) -> SavedTransaction:
+        return unwrap(reconciliations.add_statement_entry(self.db, request))
+
+    # ------------------------------------------------------------ savings goals
+
+    def savings_goals(self, as_of: date, include_closed: bool = False) -> SavingsGoalsView:
+        return savings_goals.savings_goals_view(self.db, as_of, include_closed=include_closed)
+
+    def find_savings_goal(self, reference: str) -> SavingsGoal:
+        return _named(
+            savings_goals.find_savings_goal(self.db, reference), reference, "savings goal"
+        )
+
+    def save_savings_goal(self, request: SaveSavingsGoal) -> SavingsGoal:
+        return unwrap(savings_goals.save_savings_goal(self.db, request))
+
+    def allocate_to_goal(self, request: AllocateToGoal) -> SavingsGoal:
+        return unwrap(savings_goals.allocate_to_goal(self.db, request))
+
+    def close_savings_goal(self, goal: str, closed_on: date) -> SavingsGoal:
+        return unwrap(savings_goals.close_savings_goal(self.db, goal, closed_on))
+
+    def reopen_savings_goal(self, goal: str) -> SavingsGoal:
+        return unwrap(savings_goals.reopen_savings_goal(self.db, goal))
+
+    def delete_savings_goal(self, goal: str) -> str:
+        return unwrap(savings_goals.delete_savings_goal(self.db, goal))
+
+    def set_goal_override(self, request: SetGoalOverride) -> Scenario:
+        return unwrap(savings_goals.set_goal_override(self.db, request))
+
+    # ------------------------------------------------- categorization rules
+
+    # --------------------------------------------------- personal preferences
+
+    def _personal(self) -> tuple[UserDirectory, User, str] | None:
+        """Whose preferences calls are served with, and the book's id; None for a
+        book without an id (read-only, or in memory), whose own settings serve."""
+        book_id = self.book_id()
+        if not book_id:
+            return None
+        directory, user = acting_user()
+        try:
+            return directory, user or directory.host_user(), book_id
+        except (OSError, sqlite3.Error):
+            return None
+
+    def _preference(self, key: str) -> object:
+        personal = self._personal()
+        if personal is None:
+            return None
+        directory, user, book_id = personal
+        try:
+            return directory.preference(user, book_id, key)
+        except (OSError, sqlite3.Error):
+            return None
+
+    def _keeper(self, key: str) -> Callable[[object], None] | None:
+        personal = self._personal()
+        if personal is None:
+            return None
+        directory, user, book_id = personal
+
+        def keep(value: object) -> None:
+            try:
+                directory.set_preference(user, book_id, key, value)
+            except (OSError, sqlite3.Error) as exc:
+                code = "preferences.unavailable"
+                message = service_error_message(ServiceError(code, ()))
+                raise ApiError(503, code, (), message) from exc
+
+        return keep
+
+    @contextmanager
+    def _changing(self, kind: str) -> Iterator[None]:
+        """Name ``kind`` in the change a write inside the block makes.
+
+        Rules are kept in the book's metadata, which raises no storage signal.
+        """
+        self._pending.add(kind)
+        try:
+            yield
+        finally:
+            self._pending.discard(kind)
+
+    def categorization_rules(self) -> CategorizationRules:
+        return categorization.categorization_rules(self.db)
+
+    def add_rule(self, request: AddRule) -> CategoryRule:
+        with self._changing("categorization-rule"):
+            return unwrap(categorization.add_rule(self.db, request))
+
+    def move_rule(self, rule: str, position: int) -> CategoryRule:
+        with self._changing("categorization-rule"):
+            return unwrap(categorization.move_rule(self.db, rule, position))
+
+    def delete_rule(self, rule: str) -> CategoryRule:
+        with self._changing("categorization-rule"):
+            return unwrap(categorization.delete_rule(self.db, rule))
+
+    def apply_category_proposals(
+        self, transactions: tuple[str, ...] | None = None
+    ) -> AppliedCategories:
+        return unwrap(categorization.apply_category_proposals(self.db, transactions))
+
+
+class HeldElsewhere(Protocol):
+    """A book another process holds, reached through that process's server (GTK's
+    ``RemoteBook``, decision 0004)."""
+
+    book_api: BookApi
+
+
+def book_server(db: DbSQLite | HeldElsewhere) -> BookApi:
+    """The book API for what a caller holds: the one in-process server over ``db``,
+    or the server of the process that holds the book.
+
+    GTK holds its book directly, or (when the account's host holds it) through the
+    host; each view and dialog asks for the book here, so one server (and one set of
+    storage-signal connections, or one change stream) serves the whole application.
+    """
+    if not isinstance(db, DbSQLite):
+        return db.book_api
+    # Kept on the book itself (a cycle the collector frees with it), not in a cache
+    # whose values would keep every book ever opened alive.
+    server = getattr(db, "_book_server", None)
+    if not isinstance(server, LocalBookServer):
+        server = LocalBookServer(db)
+        db._book_server = server  # type: ignore[attr-defined]
+    return server
+
+
+def _number_format(value: str) -> Literal["auto", "dot", "comma"]:
+    if value not in ("auto", "dot", "comma"):
+        raise ApiError(
+            400, "entry.number_format.invalid", ("number_format",), "unknown number format"
+        )
+    return cast('Literal["auto", "dot", "comma"]', value)
+
+
+def _named(found, reference: str, kind: str):
+    """``found``'s value, or its failure worded with the reference that was asked for."""
+    if found.value is not None:
+        return found.value
+    error = found.errors[0]
+    if error.code.endswith(".not_found"):
+        raise ApiError(404, error.code, error.fields, f"no {kind} matches {reference!r}")
+    raise ApiError(
+        400,
+        error.code,
+        error.fields,
+        f"{reference!r} matches more than one {kind}; use more characters",
+    )
+
+
+def lookup_schedule(db: DbSQLite, reference: str) -> ScheduledTransaction:
+    """A schedule by handle, unique handle prefix, or exact name, or an ApiError."""
+    found = find_schedule(db, reference)
+    if found.value is not None:
+        return found.value
+    error = found.errors[0]
+    if error.code == "schedule.not_found":
+        raise ApiError(404, error.code, error.fields, f"no schedule matches {reference!r}")
+    raise ApiError(400, error.code, error.fields, f"{reference!r} matches more than one schedule")
+
+
+@contextmanager
+def open_book_server(path: str, mode: str = "w") -> Iterator[LocalBookServer]:
+    """Open the book at ``path`` and serve it in process until the block ends."""
+    db = DbSQLite()
+    db.load(path, mode=mode)
+    server = LocalBookServer(db)
+    try:
+        yield server
+    finally:
+        server.close()
+        db.close()

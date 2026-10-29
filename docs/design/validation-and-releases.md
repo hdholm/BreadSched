@@ -110,7 +110,11 @@ the `tomli` fallback.
 and grants Documents access (the default book location) and network access (the
 loopback web interface). Desktop integration files under `data/` are named by the
 application id: a desktop entry launching `breadsched-gtk`, AppStream metainfo, and
-a scalable icon that the GTK application also sets as its window icon. CI builds the
+a scalable icon that the GTK application also sets as its window icon. The icon and
+the logo are made from the artwork in `data/brand` by `scripts/brand_assets.py`
+(needs Pillow): the scalable icon carries the 512-pixel image, and the package
+itself carries the hicolor sizes, the logo, and the browser's favicon and home-screen
+icon, so a checkout or `pip` install shows the icon too. CI builds the
 Flatpak from the checkout, installs it from a local repository, validates the
 desktop files with `desktop-file-validate` and `appstreamcli`, and, with the network
 unshared, runs the CLI (Dashboard, CSV export, backup, restore, imported-book

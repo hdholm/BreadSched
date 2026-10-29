@@ -2,7 +2,9 @@
 
 The browser register sends what was typed and shows what comes back, so a
 shortcut or an arithmetic amount means the same thing as in the desktop
-register. Every rule stays in ``gen/services/entry_input``; nothing here writes.
+register. Every rule stays in ``gen/services/entry_input``, reached through the book
+server (``entry_amount``, ``entry_trade``, ``entry_accounts``, ``next_num``) except
+the date, which needs no book; nothing here writes.
 """
 
 from __future__ import annotations
@@ -10,13 +12,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, Literal, cast
 
-from ..gen.services.entry_input import (
-    complete_entry_account,
-    next_entry_num,
-    read_entry_amount,
-    read_entry_date,
-    read_entry_trade,
-)
+from ..gen.services.entry_input import ReadEntryTrade, read_entry_date
 from .controls import service_error
 
 if TYPE_CHECKING:
@@ -41,15 +37,7 @@ def entry_amount(api: Api, query: QueryParams) -> dict[str, object]:
     currency = query.text("currency")
     number_format = query.choice("number_format", _FORMATS, "auto")
     query.finish()
-    result = read_entry_amount(
-        api.db,
-        text,
-        currency=currency,
-        number_format=cast(Literal["auto", "dot", "comma"], number_format),
-    )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    value = result.value.value
+    value = api.book.entry_amount(text, currency, number_format).value
     return {"amount": None if value is None else str(value)}
 
 
@@ -63,19 +51,17 @@ def entry_trade(api: Api, query: QueryParams) -> dict[str, object]:
     currency = query.text("currency")
     number_format = query.choice("number_format", _FORMATS, "auto")
     query.finish()
-    result = read_entry_trade(
-        api.db,
-        account,
-        shares=shares,
-        price=price,
-        amount=amount,
-        changed=cast(Literal["shares", "price", "amount"], changed),
-        currency=currency,
-        number_format=cast(Literal["auto", "dot", "comma"], number_format),
+    filled = api.book.entry_trade(
+        ReadEntryTrade(
+            account,
+            shares=shares,
+            price=price,
+            amount=amount,
+            changed=cast(Literal["shares", "price", "amount"], changed),
+            currency=currency,
+            number_format=cast(Literal["auto", "dot", "comma"], number_format),
+        )
     )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    filled = result.value
     return {
         "shares": None if filled.shares is None else f"{filled.shares:f}",
         "price": None if filled.price is None else f"{filled.price:f}",
@@ -88,11 +74,10 @@ def entry_accounts(api: Api, query: QueryParams) -> dict[str, object]:
     exclude = query.text("exclude")
     limit = query.integer("limit", default=20, minimum=1, maximum=200)
     query.finish()
-    result = complete_entry_account(api.db, text, exclude=exclude, limit=limit or 20)
-    assert result.value is not None
+    found = api.book.entry_accounts(text, exclude, limit or 20)
     return {
         "accounts": [
-            {"handle": account.handle, "full_name": account.full_name} for account in result.value
+            {"handle": account.handle, "full_name": account.full_name} for account in found
         ]
     }
 
@@ -102,7 +87,4 @@ def entry_num(api: Api, query: QueryParams) -> dict[str, object]:
     text = query.text("text") or ""
     step = query.integer("step", default=1, minimum=-1000, maximum=1000)
     query.finish()
-    result = next_entry_num(api.db, account, text, step or 0)
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return {"num": result.value}
+    return {"num": api.book.next_num(account, text, step or 0)}

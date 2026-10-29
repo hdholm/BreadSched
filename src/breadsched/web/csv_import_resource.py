@@ -10,19 +10,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
-from ..gen.services.claims import claim_link_proposals
-from ..gen.services.csv_import import (
-    CsvImportRequest,
-    CsvInspection,
-    CsvMapping,
-    InspectCsv,
-    import_csv,
-    inspect_csv,
-    preview_csv_import,
-)
-from ..gen.services.receivables import reimbursement_proposals
+from ..gen.services.csv_import import CsvImportRequest, CsvMapping, InspectCsv
 from ..presentation import claim_link_notice, reimbursement_notice
-from .controls import service_error
 
 if TYPE_CHECKING:
     from .context import Api
@@ -118,7 +107,7 @@ def _request(payload: Mapping[str, Any]) -> CsvImportRequest:
 def csv_inspect(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     nested = payload.get("mapping")
     raw: Mapping[str, Any] = nested if isinstance(nested, Mapping) else payload
-    result = inspect_csv(
+    inspection = api.book.inspect_csv(
         InspectCsv(
             source=_text(payload, "path"),
             encoding=_text(raw, "encoding", "auto") or "auto",
@@ -126,9 +115,6 @@ def csv_inspect(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
             header=_flag(raw, "header", True),
         )
     )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    inspection: CsvInspection = result.value
     return {
         "encoding": inspection.encoding,
         "delimiter": inspection.delimiter,
@@ -138,10 +124,8 @@ def csv_inspect(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
 
 
 def csv_preview(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    result = preview_csv_import(api.db, _request(payload))
-    if result.value is None:
-        raise service_error(result.errors[0])
-    preview = result.value
+    preview = api.book.preview_csv(_request(payload))
+    names = {record.account.handle: record.full_name for record in api.book.accounts()}
     return {
         "encoding": preview.encoding,
         "delimiter": preview.delimiter,
@@ -164,9 +148,9 @@ def csv_preview(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
                 "memo": row.memo,
                 "status": row.status,
                 "reason": row.reason,
-                "category": api.db.full_name(row.category) if row.category else None,
+                "category": names.get(row.category, row.category) if row.category else None,
                 "splits": [
-                    {"category": api.db.full_name(account), "amount": str(value.to_decimal())}
+                    {"category": names.get(account, account), "amount": str(value.to_decimal())}
                     for account, value in row.splits
                 ],
             }
@@ -177,10 +161,7 @@ def csv_preview(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
 
 def csv_import(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     request = _request(payload)
-    result = import_csv(api.db, request)
-    if result.value is None:
-        raise service_error(result.errors[0])
-    imported = result.value
+    imported = api.book.import_csv(request)
     return {
         "new": imported.result.transactions_new,
         "already_imported": imported.result.transactions_unchanged,
@@ -191,8 +172,6 @@ def csv_import(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         "skipped": imported.result.skipped,
         "detail": imported.result.detail(limit=50),
         "problems": [problem.as_dict() for problem in imported.result.problems()],
-        "reimbursement_notice": reimbursement_notice(
-            len(reimbursement_proposals(api.db).value or ())
-        ),
-        "claim_link_notice": claim_link_notice(len(claim_link_proposals(api.db).value or ())),
+        "reimbursement_notice": reimbursement_notice(len(api.book.reimbursement_proposals())),
+        "claim_link_notice": claim_link_notice(len(api.book.claim_link_proposals())),
     }

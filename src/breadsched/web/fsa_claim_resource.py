@@ -3,7 +3,8 @@
 This adapter only parses JSON into the shared claim service's requests and
 translates its results. Validation, the claim arithmetic in
 ``gen/engine/fsa_claims``, and every write stay in ``gen/services/claims``, so a
-rejected request never changes the stored claim.
+rejected request never changes the stored claim. Every read and write goes
+through the book server, ``api.book`` (#354).
 """
 
 from __future__ import annotations
@@ -12,8 +13,6 @@ from collections.abc import Mapping
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
-from ..gen.engine import fsa_claims as claims_engine
-from ..gen.lib import AccountClass, AccountType
 from ..gen.lib.fsa_claim import FsaClaimEvent
 from ..gen.services import (
     ClaimAllocationInput,
@@ -21,15 +20,11 @@ from ..gen.services import (
     ClaimLinkInput,
     ClaimRejectionInput,
     CloseClaim,
-    DeleteClaim,
     ReopenClaim,
     SaveClaim,
-    close_claim,
-    delete_claim,
-    reopen_claim,
-    save_claim,
 )
-from .controls import input_money, service_error
+from ..gen.services.claims import ClaimCandidate, ClaimCandidates
+from .controls import input_money
 from .receivable_resource import shared_cost_json
 
 if TYPE_CHECKING:
@@ -54,9 +49,10 @@ def _event(event: FsaClaimEvent) -> dict[str, object]:
 def fsa_claims(api: Api, query: QueryParams) -> dict[str, object]:
     """Every claim's stored links and recomputed standing, plus linkable splits."""
     query.finish()
+    view = api.book.fsa_claims()
     rows = []
-    for claim in claims_engine.iter_claims(api.db):
-        summary = claims_engine.claim_summary(api.db, claim)
+    for summary in view.claims:
+        claim = summary.claim
         rows.append(
             {
                 "handle": claim.handle,
@@ -89,85 +85,43 @@ def fsa_claims(api: Api, query: QueryParams) -> dict[str, object]:
                     shared_cost_json(summary.shared) if summary.shared is not None else None
                 ),
                 "allocations": [
-                    {
-                        **allocation.serialize(),
-                        "account_name": (
-                            api.db.full_name(allocation.account)
-                            if api.db.get_account(allocation.account)
-                            else allocation.account
-                        ),
-                    }
+                    {**allocation.serialize(), "account_name": view.name(allocation.account)}
                     for allocation in claim.allocations
                 ],
             }
         )
-    return {"claims": rows, "candidates": _candidates(api)}
+    return {"claims": rows, "candidates": _candidates(view.candidates)}
 
 
-def _candidates(api: Api) -> dict[str, object]:
-    payments = []
-    refunds = []
-    reimbursements = []
-    repayments = []
-    fsa_years = [
-        year
-        for account in api.db.iter_accounts()
-        if account.atype is AccountType.FSA
-        for year in account.fsa.years
-    ]
-    candidate_start = min((year.start for year in fsa_years), default=None)
-    for transaction in api.db.iter_transactions():
-        if candidate_start is not None and transaction.post_date < candidate_start:
-            continue
-        for split in transaction.splits:
-            account = api.db.get_account(split.account)
-            if account is None:
-                continue
-            row = {
-                "transaction": transaction.handle,
-                "split": split.handle,
-                "date": transaction.post_date.isoformat(),
-                "description": transaction.description,
-                "account": account.handle,
-                "account_name": api.db.full_name(account),
-                "amount": _decimal(abs(split.value)),
-            }
-            if account.account_class is AccountClass.EXPENSE and split.value > 0:
-                payments.append(row)
-            if account.account_class is AccountClass.EXPENSE and split.value < 0:
-                refunds.append(row)
-            if account.atype is AccountType.FSA and split.value < 0:
-                reimbursements.append(row)
-            # Money paid back into the FSA, such as an over-reimbursement.
-            if account.atype is AccountType.FSA and split.value > 0:
-                repayments.append(row)
-    fsa_accounts = [
-        {
-            "handle": account.handle,
-            "name": api.db.full_name(account),
-            "years": [year.serialize() for year in account.fsa.years],
-        }
-        for account in api.db.iter_accounts()
-        if account.atype is AccountType.FSA
-    ]
+def _candidate(item: ClaimCandidate) -> dict[str, object]:
     return {
-        "payments": payments,
-        "refunds": refunds,
-        "reimbursements": reimbursements,
-        "repayments": repayments,
-        "fsa_accounts": fsa_accounts,
-        # A payer covering part of a claim's expense (issue #192).
-        "receivables": [
+        "transaction": item.transaction,
+        "split": item.split,
+        "date": item.date.isoformat(),
+        "description": item.description,
+        "account": item.account,
+        "account_name": item.account_name,
+        "amount": _decimal(item.amount),
+    }
+
+
+def _candidates(candidates: ClaimCandidates) -> dict[str, object]:
+    return {
+        "payments": [_candidate(item) for item in candidates.payments],
+        "refunds": [_candidate(item) for item in candidates.refunds],
+        "reimbursements": [_candidate(item) for item in candidates.reimbursements],
+        "repayments": [_candidate(item) for item in candidates.repayments],
+        "fsa_accounts": [
             {
                 "handle": item.handle,
-                "label": (
-                    f"{item.payer} — {item.description or 'expense'} "
-                    f"({item.incurred_date.isoformat()})"
-                ),
+                "name": item.name,
+                "years": [year.serialize() for year in item.years],
             }
-            for item in sorted(
-                api.db.iter_receivables(), key=lambda item: (item.incurred_date, item.payer)
-            )
+            for item in candidates.fsa_accounts
+        ],
+        # A payer covering part of a claim's expense (issue #192).
+        "receivables": [
+            {"handle": item.handle, "label": item.name} for item in candidates.receivables
         ],
     }
 
@@ -188,12 +142,6 @@ def _date(payload: Mapping[str, Any], key: str) -> date | None:
 
 def _link(item: Mapping[str, Any]) -> ClaimLinkInput:
     return ClaimLinkInput(str(item["transaction"]), str(item["split"]))
-
-
-def _result(api: Api, result) -> Any:
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return result.value
 
 
 def fsa_claim_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
@@ -232,16 +180,15 @@ def fsa_claim_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         receivable=_text(payload, "receivable") or None,
         eob_note=_text(payload, "eob_note"),
     )
-    saved = _result(
-        api,
-        save_claim(api.db, SaveClaim(definition, existing_handle=_text(payload, "handle") or None)),
+    saved = api.book.save_fsa_claim(
+        SaveClaim(definition, existing_handle=_text(payload, "handle") or None)
     )
     return {"handle": saved.handle}
 
 
 def fsa_claim_delete(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     handle = str(payload.get("handle", ""))
-    _result(api, delete_claim(api.db, DeleteClaim(handle)))
+    api.book.delete_fsa_claim(handle)
     return {"handle": handle}
 
 
@@ -252,7 +199,7 @@ def fsa_claim_close(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         _date(payload, "on") or date.today(),
         _text(payload, "reason"),
     )
-    saved = _result(api, close_claim(api.db, request))
+    saved = api.book.close_fsa_claim(request)
     return {"handle": saved.handle}
 
 
@@ -263,5 +210,5 @@ def fsa_claim_reopen(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         _date(payload, "on") or date.today(),
         _text(payload, "note"),
     )
-    saved = _result(api, reopen_claim(api.db, request))
+    saved = api.book.reopen_fsa_claim(request)
     return {"handle": saved.handle}

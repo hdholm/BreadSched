@@ -1,8 +1,9 @@
 """HTTP input and output for statement reconciliation.
 
-This adapter only parses request fields into the typed reconciliation service
-requests and shapes their results; opening, selection, balancing, completion,
-cancellation, and reopening rules all stay in ``gen/services/reconciliations``.
+This adapter only parses request fields into the book server's typed
+reconciliation requests and shapes their results; opening, selection, balancing,
+completion, cancellation, and reopening rules all stay in
+``gen/services/reconciliations``, behind the book server (``Api.book``).
 """
 
 from __future__ import annotations
@@ -11,21 +12,11 @@ from collections.abc import Mapping
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
+from ..api.contract import ApiError
 from ..gen.engine import reconciliation as reconciliation_engine
-from ..gen.services.claims import claim_link_proposals
-from ..gen.services.receivables import reimbursement_proposals
-from ..gen.services.reconciliations import (
-    ReconciliationAction,
-    StartReconciliation,
-    UpdateReconciliation,
-    cancel_reconciliation,
-    complete_reconciliation,
-    reopen_reconciliation,
-    start_reconciliation,
-    update_reconciliation,
-)
+from ..gen.services.reconciliations import StartReconciliation, UpdateReconciliation
 from ..presentation import claim_link_notice, reimbursement_notice
-from .controls import input_money, service_error
+from .controls import input_money
 
 if TYPE_CHECKING:
     from .context import Api
@@ -51,20 +42,20 @@ def reconciliation(api: Api, query: QueryParams) -> dict[str, object]:
     sort = query.choice("sort", reconciliation_engine.CANDIDATE_SORTS, "date")
     descending = query.flag("descending")
     query.finish()
-    account = api.db.get_account(account_handle)
-    if account is None:
-        raise KeyError(account_handle)
-    current = reconciliation_engine.open_for_account(api.db, account_handle)
-    current_state = reconciliation_engine.summary(api.db, current) if current else None
-    proposals = reimbursement_proposals(api.db, account=account_handle).value or ()
+    try:
+        view = api.book.reconciliation(account_handle)
+    except ApiError as exc:
+        if exc.status == 404:
+            raise KeyError(account_handle) from None
+        raise
+    current_state = view.current
+    current = current_state.reconciliation if current_state is not None else None
     return {
-        "account": {"handle": account.handle, "name": api.db.full_name(account)},
+        "account": {"handle": view.account, "name": view.account_name},
         # A deposit being reconciled may be money back on a reimbursable expense.
-        "reimbursement_notice": reimbursement_notice(len(proposals)),
+        "reimbursement_notice": reimbursement_notice(view.reimbursement_proposals),
         # An FSA statement line may belong on a claim.
-        "claim_link_notice": claim_link_notice(
-            len(claim_link_proposals(api.db, account=account_handle).value or ())
-        ),
+        "claim_link_notice": claim_link_notice(view.claim_link_proposals),
         "open": (
             {
                 "handle": current.handle,
@@ -113,7 +104,7 @@ def reconciliation(api: Api, query: QueryParams) -> dict[str, object]:
                     {"action": event.action, "at": event.occurred_at} for event in item.audit_events
                 ],
             }
-            for item in reversed(list(api.db.iter_reconciliations(account_handle)))
+            for item in view.history
         ],
     }
 
@@ -125,13 +116,9 @@ def reconciliation_start(api: Api, payload: Mapping[str, Any]) -> dict[str, obje
     except ValueError as exc:
         raise ValueError("enter a valid statement date") from exc
     ending = input_money(dict(payload), payload.get("ending_balance", ""))
-    result = start_reconciliation(
-        api.db,
-        StartReconciliation(account, statement_date, ending),
-    )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    started = result.value.reconciliation
+    started = api.book.start_reconciliation(
+        StartReconciliation(account, statement_date, ending)
+    ).reconciliation
     return {"handle": started.handle, "status": started.status.value}
 
 
@@ -145,48 +132,26 @@ def reconciliation_update(api: Api, payload: Mapping[str, Any]) -> dict[str, obj
         if "ending_balance" in payload
         else None
     )
-    result = update_reconciliation(
-        api.db,
+    state = api.book.update_reconciliation(
         UpdateReconciliation(
             handle,
             selected_splits=tuple(raw_splits),
             ending_balance=ending,
         ),
     )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    state = result.value
     return {"handle": handle, "difference": state.difference, "balanced": state.balanced}
 
 
 def reconciliation_complete(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    result = complete_reconciliation(
-        api.db,
-        ReconciliationAction(str(payload.get("handle") or "")),
-    )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    completed = result.value
+    completed = api.book.complete_reconciliation(str(payload.get("handle") or ""))
     return {"handle": completed.handle, "status": completed.status.value}
 
 
 def reconciliation_cancel(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    result = cancel_reconciliation(
-        api.db,
-        ReconciliationAction(str(payload.get("handle") or "")),
-    )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    cancelled = result.value
+    cancelled = api.book.cancel_reconciliation(str(payload.get("handle") or ""))
     return {"handle": cancelled.handle, "status": cancelled.status.value}
 
 
 def reconciliation_reopen(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    result = reopen_reconciliation(
-        api.db,
-        ReconciliationAction(str(payload.get("handle") or "")),
-    )
-    if result.value is None:
-        raise service_error(result.errors[0])
-    reopened = result.value
+    reopened = api.book.reopen_reconciliation(str(payload.get("handle") or ""))
     return {"handle": reopened.handle, "status": reopened.status.value}

@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from datetime import date
 
-from ..gen.db.sqlite import DbSQLite
+from ..api.protocol import BookApi
 from ..gen.engine import plan_detail
-from ..gen.lib import Assumptions, PlanningFlowKind, Scenario
+from ..gen.lib import PlanningFlowKind
+from ..gen.services.plan_cells import PlanCellQuery
 from ..presentation import plan_detail_cost_text
 
 
 def plan_detail_report(
-    db: DbSQLite,
+    book: BookApi,
     account_handle: str,
     start_value: str,
     end_value: str,
@@ -20,67 +21,48 @@ def plan_detail_report(
     requirement_kind: str | None = None,
 ) -> dict:
     """Explain one Plan category, planning-flow, or cash-requirement cell."""
-    start = date.fromisoformat(start_value)
-    end = date.fromisoformat(end_value)
-    scenarios = list(db.iter_scenarios())
-    if scenario_handle:
-        scenario = next((item for item in scenarios if item.handle == scenario_handle), None)
-        if scenario is None:
-            raise KeyError(scenario_handle)
-        scenario_name = scenario.name
-    else:
-        scenario = Scenario(
-            name="Base scenario",
-            start=start,
-            years=max(1, end.year - start.year + 1),
+    explained = book.explain_plan_cell(
+        PlanCellQuery(
+            account=account_handle,
+            start=date.fromisoformat(start_value),
+            end=date.fromisoformat(end_value),
+            scenario=scenario_handle or None,
+            flow_kind=PlanningFlowKind(flow_kind) if flow_kind else None,
+            requirement_kind=requirement_kind or None,
         )
-        stored = db.get_metadata("planning.base_assumptions", None)
-        if isinstance(stored, dict):
-            scenario.assumptions = Assumptions.from_dict(stored)
-        scenario_name = "Base scenario"
-
+    )
+    scenario_name = explained.scenario_name
     detail: (
         plan_detail.CategoryPeriodDetail
         | plan_detail.PlanningFlowPeriodDetail
         | plan_detail.MortgagePaymentPeriodDetail
     )
-    if requirement_kind:
-        if requirement_kind != "mortgage":
-            raise ValueError("unknown Plan cash-requirement kind")
-        mortgage_detail = plan_detail.explain_mortgage_payment_period(
-            db, account_handle, start, end, scenario=scenario
-        )
-        detail = mortgage_detail
+    if explained.mortgage is not None:
+        detail = explained.mortgage
         category = {
-            "account": mortgage_detail.account,
-            "name": mortgage_detail.name,
-            "full_name": mortgage_detail.full_name,
+            "account": detail.account,
+            "name": detail.name,
+            "full_name": detail.full_name,
             "class": "cash_requirement",
             "kind": "mortgage",
         }
-    elif flow_kind:
-        kind = PlanningFlowKind(flow_kind)
-        flow_detail = plan_detail.explain_planning_flow_period(
-            db, kind, account_handle, start, end, scenario=scenario
-        )
-        detail = flow_detail
+    elif explained.flow is not None:
+        detail = explained.flow
         category = {
-            "account": flow_detail.account,
-            "name": flow_detail.name,
-            "full_name": flow_detail.full_name,
+            "account": detail.account,
+            "name": detail.name,
+            "full_name": detail.full_name,
             "class": "planning_flow",
-            "kind": kind.value,
+            "kind": detail.kind.value,
         }
     else:
-        category_detail = plan_detail.explain_category_period(
-            db, account_handle, start, end, scenario=scenario
-        )
-        detail = category_detail
+        assert explained.category is not None
+        detail = explained.category
         category = {
-            "account": category_detail.account,
-            "name": category_detail.name,
-            "full_name": category_detail.full_name,
-            "class": category_detail.account_class.value,
+            "account": detail.account,
+            "name": detail.name,
+            "full_name": detail.full_name,
+            "class": detail.account_class.value,
         }
     return {
         "category": category,

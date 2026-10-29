@@ -11,6 +11,7 @@ beyond the recorded purchases, is reported with the problem its account names.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 
@@ -22,6 +23,7 @@ __all__ = [
     "RealizedGainsReport",
     "RealizedSale",
     "YearTotal",
+    "currency_handles",
     "currency_labels",
     "realized_gains",
 ]
@@ -44,13 +46,13 @@ class RealizedSale:
     def lots(self) -> tuple[Lot, ...]:
         return self.sale.lots
 
-    def as_dict(self, db: DbSQLite) -> dict[str, object]:
+    def as_dict(self, mnemonics: Mapping[str, str]) -> dict[str, object]:
+        """The sale as JSON, its currency named by ``mnemonics`` (handle when unnamed)."""
         sale = self.sale
-        commodity = db.get_commodity(self.currency) if self.currency else None
         return {
             "account": self.account,
             "account_name": self.account_name,
-            "currency": commodity.mnemonic if commodity is not None else self.currency,
+            "currency": _named(mnemonics, self.currency),
             "sold": sale.sold,
             "quantity": shares_text(sale.quantity),
             "proceeds": sale.proceeds,
@@ -94,17 +96,14 @@ class RealizedGainsReport:
     #: Problems named by the accounts that sold, as "Account: problem".
     problems: tuple[str, ...]
 
-    def as_dict(self, db: DbSQLite) -> dict[str, object]:
-        def currency(handle: str | None) -> str | None:
-            commodity = db.get_commodity(handle) if handle else None
-            return commodity.mnemonic if commodity is not None else handle
-
+    def as_dict(self, mnemonics: Mapping[str, str]) -> dict[str, object]:
+        """The report as JSON, currencies named by ``mnemonics`` (handle when unnamed)."""
         return {
-            "sales": [sale.as_dict(db) for sale in self.sales],
+            "sales": [sale.as_dict(mnemonics) for sale in self.sales],
             "years": [
                 {
                     "year": total.year,
-                    "currency": currency(total.currency),
+                    "currency": _named(mnemonics, total.currency),
                     "proceeds": total.proceeds,
                     "cost": total.cost,
                     "gain": total.gain,
@@ -152,11 +151,22 @@ def realized_gains(
     return RealizedGainsReport(tuple(sales), years, tuple(problems))
 
 
-def currency_labels(db: DbSQLite, report: RealizedGainsReport) -> dict[str | None, str]:
-    """The mnemonic of each currency the report uses, for layouts that never query."""
+def currency_handles(report: RealizedGainsReport) -> set[str]:
+    """Every currency the report uses."""
+    found = {sale.currency for sale in report.sales} | {total.currency for total in report.years}
+    return {handle for handle in found if handle}
+
+
+def currency_labels(
+    report: RealizedGainsReport, mnemonics: Mapping[str, str]
+) -> dict[str | None, str]:
+    """The mnemonic of each currency the report uses, for layouts that never query.
+
+    A sale without one currency, or whose currency ``mnemonics`` does not name, is "mixed".
+    """
     handles = {sale.currency for sale in report.sales} | {total.currency for total in report.years}
-    labels: dict[str | None, str] = {}
-    for handle in handles:
-        commodity = db.get_commodity(handle) if handle else None
-        labels[handle] = commodity.mnemonic if commodity is not None else "mixed"
-    return labels
+    return {handle: mnemonics.get(handle, "mixed") if handle else "mixed" for handle in handles}
+
+
+def _named(mnemonics: Mapping[str, str], handle: str | None) -> str | None:
+    return mnemonics.get(handle, handle) if handle else handle

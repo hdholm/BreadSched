@@ -40,8 +40,12 @@ committing, or submitting work in this repository.
    every required CI check as successful or explicitly pending/failed.
 8. For a web response, keep typed query parsing in `web.resources`, the handler in
    a `web/*_resource.py` adapter (the `web.context.Api` context only carries the open
-   book), financial calculations in shared services/engines, and preserve the
-   complete response and error contract with route-level tests.
+   book and its book server, `Api.book`), financial calculations in shared
+   services/engines, and preserve the complete response and error contract with
+   route-level tests. The web, the command line, and GTK reach a book only through
+   the book server (`breadsched.api`, decision 0003); the web and the command line
+   serialize it with `breadsched.api.views`, and every new book operation declares
+   its permission in `api.permissions` (decision 0004).
 9. For web financial writes, keep request parsing and response translation in a
    presentation adapter, and leave validation and the complete database write in
    the shared service. Test that rejected inputs preserve the stored object.

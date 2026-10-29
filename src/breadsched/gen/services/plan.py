@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from calendar import monthrange
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
@@ -110,7 +111,11 @@ def _previous_month(when: date) -> date:
 
 def _bounds(db: DbSQLite, today: date) -> tuple[date, date]:
     dates: list[date] = []
-    dates.extend(transaction.post_date for transaction in db.iter_transactions())
+    # The earliest transaction, asked of the database rather than by decoding every
+    # transaction, which took seconds on a long book.
+    first = db.first_transaction_date()
+    if first is not None:
+        dates.append(first)
     dates.extend(schedule.recurrence.start for schedule in db.iter_scheduled())
     for scenario in db.iter_scenarios():
         dates.extend(item.recurrence.start for item in scenario.schedule_overrides)
@@ -140,16 +145,31 @@ def _baseline(db: DbSQLite, start: date, end: date) -> Scenario:
     return scenario
 
 
-def query_plan(db: DbSQLite, request: PlanQuery) -> ServiceResult[PlanQueryResult]:
-    """Validate selection state and calculate the primary and comparison reports."""
+@dataclass(frozen=True, slots=True)
+class PlanBounds:
+    """The months a Plan may show, each as its first day, as ``PlanQueryResult``
+    reports them: from the first month with book data through the last month that
+    ends before the 150th anniversary of today."""
+
+    minimum: date
+    maximum: date
+
+
+def plan_bounds(db: DbSQLite, today: date | None = None) -> PlanBounds:
+    """The range ``query_plan`` accepts, for controls to offer before calculating."""
+    return PlanBounds(*_bounds(db, today or date.today()))
+
+
+def query_plan(
+    db: DbSQLite, request: PlanQuery, saved: object = None
+) -> ServiceResult[PlanQueryResult]:
+    """Validate selection state and calculate the primary and comparison reports.
+    ``use_saved`` restores ``saved`` (a person's own view, decision 0004), else the
+    book's."""
     today = request.today or date.today()
     minimum, maximum_month = _bounds(db, today)
     maximum = _month_end(maximum_month)
-    defaults = PlanSettings.load(
-        db,
-        date(today.year, 1, 1),
-        date(today.year + 1, 12, 31),
-    )
+    defaults = plan_settings(db, date(today.year, 1, 1), date(today.year + 1, 12, 31), saved)
     if request.use_saved:
         start = defaults.start
         end = defaults.end
@@ -257,3 +277,37 @@ def query_plan(db: DbSQLite, request: PlanQuery) -> ServiceResult[PlanQueryResul
             goal_milestones=plan_goal_milestones(db, scenario, start, end, today),
         )
     )
+
+
+def plan_settings(
+    db: DbSQLite, default_start: date, default_end: date, stored: object = None
+) -> PlanSettings:
+    """The Plan presentation last applied: a person's own ``stored`` one (their
+    :meth:`PlanSettings.serialize`), else the one kept in the book, else the defaults."""
+    if isinstance(stored, dict):
+        return PlanSettings.from_stored(stored, default_start, default_end)
+    return PlanSettings.load(db, default_start, default_end)
+
+
+def save_plan_settings(
+    db: DbSQLite,
+    settings: PlanSettings,
+    keep: Callable[[dict[str, object]], None] | None = None,
+) -> ServiceResult[PlanSettings]:
+    """Remember the Plan presentation GTK and the browser both restore: with ``keep``
+    (a person's own preferences, decision 0004) or else in the book."""
+    errors = []
+    if settings.end < settings.start:
+        errors.append(ServiceError("plan.end.before_start", ("end",)))
+    known = {item.handle for item in db.iter_scenarios()} | {BASE_SCENARIO}
+    if settings.scenario is not None and settings.scenario not in known:
+        errors.append(ServiceError("plan.scenario.not_found", ("scenario",)))
+    if settings.compare is not None and settings.compare not in known:
+        errors.append(ServiceError("plan.comparison.not_found", ("compare",)))
+    if errors:
+        return ServiceResult.failure(*errors)
+    if keep is None:
+        settings.save(db)
+    else:
+        keep(settings.serialize())
+    return ServiceResult.success(settings)

@@ -332,7 +332,7 @@ class TestRealizedGainsReport:
         assert report.sales[1].lots[0].acquired == date(2025, 1, 10)
         assert [sale.sold for sale in realized_gains(db, year=2026).sales] == [date(2026, 2, 1)]
         assert realized_gains(db, account="other").sales == ()
-        data = report.as_dict(db)
+        data = report.as_dict({usd.handle: "USD"})
         assert data["years"][0]["currency"] == "USD"
         assert data["sales"][1]["specific"] is True
         assert data["sales"][1]["lots"][0]["lot"] == third.handle
@@ -418,3 +418,62 @@ def test_a_lot_choice_is_not_a_change_for_gnucash(db, book):
     set_sale_lots(db, SetSaleLots(sale.handle, split.handle, ((second.handle, "5"),)))
     after = import_review.transaction_source_facts(db.get_transaction(sale.handle))
     assert before == after
+
+
+@pytest.fixture(params=["in-process", "http"])
+def book_api(request, db):
+    """The book server (#354): the same calls in process and over HTTP."""
+    import threading
+
+    from breadsched.api import LocalBookServer
+    from breadsched.api.http_client import HttpBookClient
+    from breadsched.web.server import serve
+
+    if request.param == "in-process":
+        yield LocalBookServer(db)
+        return
+    httpd = serve(db, host="127.0.0.1", port=0)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        yield HttpBookClient(f"http://127.0.0.1:{httpd.server_port}", httpd.token)
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_lots_and_tax_marks_through_the_book_server_alike(db, book, book_api):
+    from breadsched.api import ApiError
+    from breadsched.gen.services.tax import SetTaxMarks
+
+    account, usd, first, second, third = _three_lots(db, book)
+    sale = _trade(db, account, usd, book.checking, date(2026, 2, 1), "-10", "-2500")
+    split = _sale_split(sale, account).handle
+    offered = book_api.sale_lots(sale.handle, split)
+    assert [lot.transaction for lot in offered.offered] == [
+        first.handle,
+        second.handle,
+        third.handle,
+    ]
+    assert (offered.method, offered.picks, offered.account.handle) == ("fifo", (), account.handle)
+    chosen = book_api.set_sale_lots(SetSaleLots(sale.handle, split, ((third.handle, "10"),)))
+    assert chosen.picks == (LotPick(third.handle, Money(10)),)
+    assert chosen.sale.cost == Money(2000)
+
+    before = repr(db.get_transaction(sale.handle).serialize())
+    with pytest.raises(ApiError) as refused:
+        book_api.set_sale_lots(SetSaleLots(sale.handle, split, (("nowhere", "1"),)))
+    assert refused.value.code == "lots.lot.unknown"
+    with pytest.raises(ApiError) as missing:
+        book_api.sale_lots("missing", split)
+    assert missing.value.status == 404
+    assert repr(db.get_transaction(sale.handle).serialize()) == before
+
+    marks = book_api.tax_marks()
+    assert account.handle in {mark.account.handle for mark in marks.accounts}
+    changed = book_api.set_tax_marks(SetTaxMarks({account.handle: True}, {"medical": True}))
+    mark = next(item for item in changed.accounts if item.account.handle == account.handle)
+    assert (mark.override, mark.relevant) == (True, True)
+    assert ("medical", True) in changed.tags
+    with pytest.raises(ApiError):
+        book_api.set_tax_marks(SetTaxMarks({"missing": True}))
+    assert db.get_account(account.handle).planning.tax_relevant is True

@@ -207,7 +207,11 @@ class Money:
     __slots__ = ("_num", "_den")
 
     def __init__(self, numerator: int | str | Decimal = 0, denominator: int = 1) -> None:
-        if isinstance(numerator, Money):
+        if type(numerator) is int and type(denominator) is int:
+            # The common case (arithmetic, database columns): plain ints skip the
+            # abstract-type checks below, which dominated long reports.
+            num, den = numerator, denominator
+        elif isinstance(numerator, Money):
             num, den = numerator._num, numerator._den * denominator
         elif isinstance(numerator, str):
             num, den = self._parse(numerator)
@@ -308,6 +312,8 @@ class Money:
     def _coerce(other: object) -> Money | None:
         if isinstance(other, Money):
             return other
+        if type(other) is int:
+            return Money(other)
         if isinstance(other, (str, Decimal)) or isinstance(other, Integral):
             return Money(other)  # type: ignore[arg-type]
         return None
@@ -316,6 +322,8 @@ class Money:
     def _coerce_comparison(other: object) -> Money | None:
         if isinstance(other, Money):
             return other
+        if type(other) is int:
+            return Money(other)
         if isinstance(other, Decimal):
             return Money(other)
         if isinstance(other, Integral):

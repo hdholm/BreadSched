@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from ..db.sqlite import DbSQLite
-from ..engine.currency import reporting_currency_handle
+from ..engine.currency import reporting_currency_handle, reporting_currency_label
 from ..engine.savings_goals import GoalProgress, goals_progress, spendable_hold
 from ..lib.account import AccountClass
 from ..lib.money import Money
@@ -22,10 +22,15 @@ from .contracts import ServiceError, ServiceResult
 
 __all__ = [
     "AllocateToGoal",
+    "GoalOverrideLine",
     "GoalProgress",
+    "NamedChoice",
     "SaveSavingsGoal",
     "SavingsGoalReport",
+    "SavingsGoalsView",
     "SetGoalOverride",
+    "find_savings_goal",
+    "savings_goals_view",
     "allocate_to_goal",
     "goal_overrides",
     "set_goal_override",
@@ -299,3 +304,69 @@ def goal_overrides(db: DbSQLite) -> dict[str, list[tuple[Scenario, GoalOverride]
         for handle, override in scenario.goal_overrides.items():
             found.setdefault(handle, []).append((scenario, override))
     return found
+
+
+def find_savings_goal(db: DbSQLite, reference: str) -> ServiceResult[SavingsGoal]:
+    """A savings goal by exact handle, unique handle prefix, or exact name (any case)."""
+    goals = list(db.iter_savings_goals())
+    matches = [goal for goal in goals if goal.handle == reference]
+    matches = matches or [goal for goal in goals if reference and goal.handle.startswith(reference)]
+    matches = matches or [goal for goal in goals if goal.name.casefold() == reference.casefold()]
+    if not matches:
+        return ServiceResult.failure(ServiceError("savings_goal.not_found", ("goal",)))
+    if len(matches) > 1:
+        return ServiceResult.failure(ServiceError("savings_goal.reference.ambiguous", ("goal",)))
+    return ServiceResult.success(matches[0])
+
+
+@dataclass(frozen=True, slots=True)
+class NamedChoice:
+    handle: str
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class GoalOverrideLine:
+    """How one scenario changes a goal."""
+
+    scenario: str
+    scenario_name: str
+    override: GoalOverride
+
+
+@dataclass(frozen=True, slots=True)
+class SavingsGoalsView:
+    """Everything a savings goals screen shows, and the choices its forms offer."""
+
+    report: SavingsGoalReport
+    #: Each goal's scenario changes, by goal handle.
+    overrides: dict[str, tuple[GoalOverrideLine, ...]]
+    accounts: tuple[NamedChoice, ...]
+    purchase_accounts: tuple[NamedChoice, ...]
+    scenarios: tuple[NamedChoice, ...]
+    #: The reporting currency's code, for the progress chart.
+    currency: str
+
+
+def savings_goals_view(
+    db: DbSQLite, as_of: date, *, include_closed: bool = False
+) -> SavingsGoalsView:
+    report = query_savings_goals(db, as_of, include_closed=include_closed).value
+    assert report is not None
+    return SavingsGoalsView(
+        report,
+        {
+            goal: tuple(
+                GoalOverrideLine(scenario.handle, scenario.name, override)
+                for scenario, override in changes
+            )
+            for goal, changes in goal_overrides(db).items()
+        },
+        tuple(NamedChoice(handle, name) for handle, name in goal_accounts(db)),
+        tuple(NamedChoice(handle, name) for handle, name in purchase_accounts(db)),
+        tuple(
+            NamedChoice(scenario.handle, scenario.name)
+            for scenario in sorted(db.iter_scenarios(), key=lambda item: item.name.casefold())
+        ),
+        reporting_currency_label(db),
+    )

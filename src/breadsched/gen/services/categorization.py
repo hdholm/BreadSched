@@ -28,10 +28,15 @@ from .contracts import ServiceError, ServiceResult
 __all__ = [
     "AddRule",
     "AppliedCategories",
+    "CategorizationRules",
+    "CategoryChoice",
     "CategoryProposal",
     "CategoryRule",
+    "ProposalLine",
+    "RuleLine",
     "add_rule",
     "apply_category_proposals",
+    "categorization_rules",
     "delete_rule",
     "list_rules",
     "move_rule",
@@ -139,3 +144,70 @@ def apply_category_proposals(
                         split.account = proposal.category
                 db.commit_transaction(transaction, txn)
     return ServiceResult.success(AppliedCategories(len(accepted), len(wanted) - len(accepted)))
+
+
+@dataclass(frozen=True, slots=True)
+class RuleLine:
+    #: 1-based priority; earlier rules win.
+    position: int
+    rule: CategoryRule
+    category_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProposalLine:
+    proposal: CategoryProposal
+    category_name: str
+    #: The category name of each of the proposal's conflicts, in order.
+    conflict_names: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CategoryChoice:
+    """An account a rule may choose: a non-placeholder income or expense account."""
+
+    handle: str
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class CategorizationRules:
+    """Everything a rules screen shows: the rules, their proposals, and the choices."""
+
+    rules: tuple[RuleLine, ...]
+    proposals: tuple[ProposalLine, ...]
+    categories: tuple[CategoryChoice, ...]
+
+
+def categorization_rules(db: DbSQLite) -> CategorizationRules:
+    """The rules in priority order, the current proposals, and the category choices,
+    each with its account's full name; writes nothing."""
+
+    def name(handle: str) -> str:
+        return db.full_name(handle) or handle
+
+    return CategorizationRules(
+        tuple(
+            RuleLine(position, rule, name(rule.category))
+            for position, rule in enumerate(load_rules(db), start=1)
+        ),
+        tuple(
+            ProposalLine(
+                proposal,
+                name(proposal.category),
+                tuple(name(conflict.category) for conflict in proposal.conflicts),
+            )
+            for proposal in propose_categories(db)
+        ),
+        tuple(
+            sorted(
+                (
+                    CategoryChoice(account.handle, name(account.handle))
+                    for account in db.iter_accounts()
+                    if not account.placeholder
+                    and account.account_class in (AccountClass.INCOME, AccountClass.EXPENSE)
+                ),
+                key=lambda choice: choice.name.casefold(),
+            )
+        ),
+    )

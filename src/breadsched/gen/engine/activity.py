@@ -128,7 +128,11 @@ class PlanSettings:
 
     @classmethod
     def load(cls, db: DbSQLite, default_start: date, default_end: date) -> PlanSettings:
-        stored = db.get_metadata(cls.KEY, None)
+        return cls.from_stored(db.get_metadata(cls.KEY, None), default_start, default_end)
+
+    @classmethod
+    def from_stored(cls, stored: object, default_start: date, default_end: date) -> PlanSettings:
+        """Settings from their stored form (:meth:`serialize`), or the defaults."""
         if not isinstance(stored, dict):
             return cls(default_start, default_end)
         try:

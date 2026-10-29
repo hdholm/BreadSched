@@ -5,15 +5,17 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import date
 
-from ...gen.db.sqlite import DbSQLite
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.engine.cost_basis import shares_text
-from ...gen.engine.tax_year import TaxYearReport, currency_labels, tax_year, tax_years
+from ...gen.engine.tax_year import TaxYearReport
 from ...gen.lib.money import Money
-from ...gen.services import SetTaxMarks, set_tax_marks, tax_marks
+from ...gen.services import SetTaxMarks
+from ...gen.services.investment_reports import TaxYearView
 from ...plugins.export.report_layout import tax_year_layout
-from ...presentation import service_error_message
 from .. import printing
 from ..gi_setup import Gtk, Pango
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
@@ -51,15 +53,16 @@ def _check_row(body: Gtk.Box, text: str, accessible: str, active: bool) -> Gtk.C
 class TaxYearDialog(BoundedWindow):
     """Gains by term, tax-relevant accounts and tags, and income by source for a year."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite, year: int | None = None) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: OpenBook, year: int | None = None) -> None:
         super().__init__(title="Tax Year", transient_for=parent)
         self.db = db
         self.set_default_size(900, 640)
-        self.years = list(tax_years(db)) or [date.today().year]
-        self.year = year if year is not None else self.years[0]
+        self.view: TaxYearView = book_server(db).tax_year(year)
+        self.report: TaxYearReport = self.view.report
+        self.year = self.report.year
+        self.years = list(self.view.available_years) or [date.today().year]
         if self.year not in self.years:
             self.years = sorted({*self.years, self.year}, reverse=True)
-        self.report: TaxYearReport = tax_year(db, self.year)
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         for side in ("top", "bottom", "start", "end"):
@@ -131,13 +134,14 @@ class TaxYearDialog(BoundedWindow):
 
     def refresh(self) -> None:
         """Recompute the chosen year and redraw it."""
-        self.report = report = tax_year(self.db, self.year)
+        self.view = book_server(self.db).tax_year(self.year)
+        self.report = report = self.view.report
         child = self.body.get_first_child()
         while child is not None:
             following = child.get_next_sibling()
             self.body.remove(child)
             child = following
-        labels = currency_labels(self.db, report)
+        labels = self.view.labels()
 
         def label(handle: str | None) -> str:
             return labels.get(handle, handle or "")
@@ -233,7 +237,7 @@ class TaxYearDialog(BoundedWindow):
         return dialog
 
     def layout(self):
-        return tax_year_layout(self.report, currency_labels(self.db, self.report))
+        return tax_year_layout(self.report, self.view.labels())
 
     def print_report(self) -> None:
         printing.print_document(self, self.layout())
@@ -243,13 +247,13 @@ class TaxMarksDialog(BoundedWindow):
     """Check the accounts (with those beneath them) and tags the tax year totals."""
 
     def __init__(
-        self, parent: Gtk.Window | None, db: DbSQLite, on_saved: Callable[[], None] | None = None
+        self, parent: Gtk.Window | None, db: OpenBook, on_saved: Callable[[], None] | None = None
     ) -> None:
         super().__init__(title="Tax-Relevant Accounts and Tags", transient_for=parent)
         self.db = db
         self.on_saved = on_saved
         self.set_default_size(560, 560)
-        self.marks = tax_marks(db)
+        self.marks = book_server(db).tax_marks()
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         for side in ("top", "bottom", "start", "end"):
@@ -318,9 +322,10 @@ class TaxMarksDialog(BoundedWindow):
             for tag, marked in self.marks.tags
             if self.tag_checks[tag].get_active() != marked
         }
-        result = set_tax_marks(self.db, SetTaxMarks(accounts, tags))
-        if result.value is None:
-            self.message.set_label(service_error_message(result.errors[0]))
+        try:
+            book_server(self.db).set_tax_marks(SetTaxMarks(accounts, tags))
+        except ApiError as error:
+            self.message.set_label(str(error))
             return False
         if self.on_saved is not None:
             self.on_saved()

@@ -4,90 +4,65 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any
 
-from ..gen.db.sqlite import DbSQLite
-from ..gen.services.categorization import (
-    AddRule,
-    add_rule,
-    apply_category_proposals,
-    delete_rule,
-    list_rules,
-    move_rule,
-    preview_category_proposals,
-)
-from ..presentation import (
-    service_error_message,
-)
+from ..api.protocol import BookApi
+from ..gen.services.categorization import AddRule
 from .common import (
     AddCommand,
     CommandError,
+    add_server_options,
+    book_api,
     emit,
-    find_transaction,
-    open_book,
-    resolve_account,
     table,
 )
 
 
-def _rule_at(db: DbSQLite, position: int) -> str:
-    rules = list_rules(db)
+def _rule_at(book: BookApi, position: int) -> str:
+    rules = book.categorization_rules().rules
     if not 1 <= position <= len(rules):
         raise CommandError(f"there is no rule {position}; there are {len(rules)}")
-    return rules[position - 1].handle
+    return rules[position - 1].rule.handle
 
 
 def cmd_rules(args: argparse.Namespace) -> int:
     """List categorization rules, change them, or preview and accept their proposals."""
     writes = args.add_description or args.delete or args.move
     read_only = not (writes or args.accept or args.accept_all)
-    db = open_book(args.book, "r" if read_only else "w")
-
-    def name(handle: str) -> str:
-        return db.full_name(handle) or handle
-
-    def check(result):
-        if result.value is None:
-            raise CommandError(service_error_message(result.errors[0]))
-        return result.value
-
-    try:
+    with book_api(args, "r" if read_only else "w") as book:
         if args.add_description:
             if not args.category:
                 raise CommandError("--category is required when adding a rule")
-            rule = check(
-                add_rule(
-                    db,
-                    AddRule(
-                        category=resolve_account(db, args.category).handle,
-                        description=args.add_description,
-                        position=args.position,
-                    ),
+            category = book.find_account(args.category)
+            rule = book.add_rule(
+                AddRule(
+                    category=category.handle,
+                    description=args.add_description,
+                    position=args.position,
                 )
             )
             emit(
                 {"handle": rule.handle, "category": rule.category, "key": rule.key},
                 args,
-                f"Added rule: {rule.key} -> {name(rule.category)}",
+                f"Added rule: {rule.key} -> {category.full_name}",
             )
             return 0
         if args.delete:
-            rule = check(delete_rule(db, _rule_at(db, args.delete)))
+            rule = book.delete_rule(_rule_at(book, args.delete))
             emit({"deleted": rule.handle}, args, f"Deleted rule {args.delete}")
             return 0
         if args.move:
             if args.to is None:
                 raise CommandError("--to is required with --move")
-            check(move_rule(db, _rule_at(db, args.move), args.to))
+            book.move_rule(_rule_at(book, args.move), args.to)
             emit({"moved": args.move, "to": args.to}, args, f"Moved rule {args.move} to {args.to}")
             return 0
         if args.accept or args.accept_all:
             chosen = (
                 None
                 if args.accept_all
-                else tuple(find_transaction(db, reference).handle for reference in args.accept)
+                else tuple(book.find_transaction(reference).handle for reference in args.accept)
             )
-            applied = check(apply_category_proposals(db, chosen))
+            applied = book.apply_category_proposals(chosen)
             emit(
                 {"assigned": applied.assigned, "unchanged": applied.unchanged},
                 args,
@@ -95,97 +70,90 @@ def cmd_rules(args: argparse.Namespace) -> int:
                 f"{applied.unchanged} left unchanged",
             )
             return 0
-        if args.preview:
-            proposals = check(preview_category_proposals(db))
-            emit(
-                [
-                    {
-                        "transaction": item.transaction,
-                        "date": item.when,
-                        "description": item.description,
-                        "amount": item.amount,
-                        "category": item.category,
-                        "category_name": name(item.category),
-                        "rule_position": item.rule_position,
-                        "conflicts": [
-                            {"rule_position": c.rule_position, "category_name": name(c.category)}
-                            for c in item.conflicts
-                        ],
-                    }
-                    for item in proposals
-                ],
-                args,
-                table(
-                    [
-                        [
-                            item.when.isoformat(),
-                            item.transaction[:8],
-                            item.description,
-                            item.amount.format(parens_negative=True),
-                            name(item.category),
-                            str(item.rule_position),
-                            "; ".join(
-                                f"rule {c.rule_position}: {name(c.category)}"
-                                for c in item.conflicts
-                            )
-                            or "-",
-                        ]
-                        for item in proposals
-                    ],
-                    ["date", "transaction", "description", "amount", "category", "rule", "also"],
-                    right={3, 5},
-                )
-                if proposals
-                else "No uncategorized imported transactions match a rule.",
-            )
-            return 0
-        rules = list_rules(db)
+        view = book.categorization_rules()
+    if args.preview:
+        proposals = view.proposals
         emit(
             [
                 {
-                    "position": position,
-                    "handle": rule.handle,
-                    "key": rule.key,
-                    "category": rule.category,
-                    "category_name": name(rule.category),
+                    "transaction": line.proposal.transaction,
+                    "date": line.proposal.when,
+                    "description": line.proposal.description,
+                    "amount": line.proposal.amount,
+                    "category": line.proposal.category,
+                    "category_name": line.category_name,
+                    "rule_position": line.proposal.rule_position,
+                    "conflicts": [
+                        {"rule_position": c.rule_position, "category_name": name}
+                        for c, name in zip(
+                            line.proposal.conflicts, line.conflict_names, strict=True
+                        )
+                    ],
                 }
-                for position, rule in enumerate(rules, start=1)
+                for line in proposals
             ],
             args,
             table(
                 [
                     [
-                        str(position),
-                        f"description {rule.key}",
-                        name(rule.category),
+                        line.proposal.when.isoformat(),
+                        line.proposal.transaction[:8],
+                        line.proposal.description,
+                        line.proposal.amount.format(parens_negative=True),
+                        line.category_name,
+                        str(line.proposal.rule_position),
+                        "; ".join(
+                            f"rule {c.rule_position}: {name}"
+                            for c, name in zip(
+                                line.proposal.conflicts, line.conflict_names, strict=True
+                            )
+                        )
+                        or "-",
                     ]
-                    for position, rule in enumerate(rules, start=1)
+                    for line in proposals
                 ],
-                ["rule", "matches", "category"],
-                right={0},
+                ["date", "transaction", "description", "amount", "category", "rule", "also"],
+                right={3, 5},
             )
-            if rules
-            else "No categorization rules yet. Add one with --add-description.",
+            if proposals
+            else "No uncategorized imported transactions match a rule.",
         )
         return 0
-    finally:
-        db.close()
+    rules = view.rules
+    emit(
+        [
+            {
+                "position": line.position,
+                "handle": line.rule.handle,
+                "key": line.rule.key,
+                "category": line.rule.category,
+                "category_name": line.category_name,
+            }
+            for line in rules
+        ],
+        args,
+        table(
+            [
+                [str(line.position), f"description {line.rule.key}", line.category_name]
+                for line in rules
+            ],
+            ["rule", "matches", "category"],
+            right={0},
+        )
+        if rules
+        else "No categorization rules yet. Add one with --add-description.",
+    )
+    return 0
 
 
 def cmd_tags(args: argparse.Namespace) -> int:
     """List the book's tags, the transactions carrying one, or set a transaction's tags."""
-    from ..gen.services import set_tags, tag_counts, transactions_with_tag
-
-    db = open_book(args.book, "w" if args.set is not None else "r")
-    try:
+    with book_api(args, "w" if args.set is not None else "r") as book:
         if args.set is not None:
             if not args.transaction:
                 raise CommandError("--transaction is required with --set")
-            target = find_transaction(db, args.transaction)
-            result = set_tags(db, target.handle, args.set.split(","))
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
-            tags = result.value.tags
+            target = book.find_transaction(args.transaction)
+            tags = book.set_tags(target.handle, args.set.split(",")).tags
             emit(
                 {"handle": target.handle, "tags": tags},
                 args,
@@ -194,7 +162,8 @@ def cmd_tags(args: argparse.Namespace) -> int:
             return 0
         if args.tag:
             found = sorted(
-                transactions_with_tag(db, args.tag), key=lambda item: (item.post_date, item.handle)
+                book.transactions_with_tag(args.tag),
+                key=lambda item: (item.post_date, item.handle),
             )
             emit(
                 [
@@ -218,83 +187,59 @@ def cmd_tags(args: argparse.Namespace) -> int:
                 else f"No transaction is tagged {args.tag!r}.",
             )
             return 0
-        counts = tag_counts(db)
-        emit(
-            [{"tag": item.tag, "transactions": item.transactions} for item in counts],
-            args,
-            table(
-                [[item.tag, str(item.transactions)] for item in counts],
-                ["tag", "transactions"],
-                right={1},
-            )
-            if counts
-            else "No tags.",
+        counts = book.tag_counts()
+    emit(
+        [{"tag": item.tag, "transactions": item.transactions} for item in counts],
+        args,
+        table(
+            [[item.tag, str(item.transactions)] for item in counts],
+            ["tag", "transactions"],
+            right={1},
         )
-        return 0
-    finally:
-        db.close()
+        if counts
+        else "No tags.",
+    )
+    return 0
 
 
 def cmd_attachments(args: argparse.Namespace) -> int:
     """List linked documents and which are missing, or link, unlink, and relink them."""
     from ..gen.engine import attachments as attachment_engine
-    from ..gen.services import (
-        attach_file,
-        attach_location,
-        attachment_report,
-        detach,
-        relink,
-        set_attachment_folder,
-        set_source_link_folder,
-    )
 
     writes = (args.add, args.remove, args.relink, args.folder, args.gnucash_folder)
-    db = open_book(args.book, "w" if any(item is not None for item in writes) else "r")
-    try:
-
-        def check(result: Any) -> Any:
-            if result.value is None:
-                raise CommandError(service_error_message(result.errors[0]))
-            return result.value
-
+    with book_api(args, "w" if any(item is not None for item in writes) else "r") as book:
         if args.folder is not None:
-            folder = check(set_attachment_folder(db, args.folder))
-            emit({"folder": str(folder)}, args, f"Attachment folder: {folder}")
+            chosen = book.set_attachment_folder(args.folder)
+            emit({"folder": chosen}, args, f"Attachment folder: {chosen}")
             return 0
         if args.gnucash_folder is not None:
-            folder = check(set_source_link_folder(db, args.gnucash_folder))
-            emit({"folder": str(folder)}, args, f"GnuCash linked files resolve from: {folder}")
+            chosen = book.set_source_link_folder(args.gnucash_folder)
+            emit({"folder": chosen}, args, f"GnuCash linked files resolve from: {chosen}")
             return 0
-        target = find_transaction(db, args.transaction) if args.transaction else None
+        target = book.find_transaction(args.transaction) if args.transaction else None
         if any(item is not None for item in (args.add, args.remove, args.relink)):
             if target is None:
                 raise CommandError("--transaction is required to change attachments")
             if args.add is not None:
                 if attachment_engine.is_web_address(args.add):
-                    changed = check(attach_location(db, target.handle, args.add))
+                    changed = book.link_attachment(target.handle, args.add)
                 else:
-                    changed = check(
-                        attach_file(db, target.handle, Path(args.add), copy=not args.link)
-                    )
+                    # The file is read where the server holding the book runs.
+                    path = str(Path(args.add).resolve())
+                    changed = book.attach_file(target.handle, path, copy=not args.link)
                 text = f"Linked {changed.attachments[-1]}"
             elif args.remove is not None:
-                changed = check(detach(db, target.handle, args.remove))
+                changed = book.unlink_attachment(target.handle, args.remove)
                 text = f"Unlinked {args.remove}; the file itself is kept"
             else:
                 if not args.to:
                     raise CommandError("--to is required with --relink")
-                changed = check(relink(db, target.handle, args.relink, args.to))
+                changed = book.relink_attachment(target.handle, args.relink, args.to)
                 text = f"Relinked {args.relink} to {args.to}"
             emit({"handle": changed.handle, "attachments": changed.attachments}, args, text)
             return 0
-        if target is not None:
-            found = attachment_engine.statuses(db, target)
-            if args.missing:
-                found = [item for item in found if item.missing]
-            folder = attachment_engine.attachment_folder(db)
-        else:
-            report = attachment_report(db, missing_only=args.missing)
-            found, folder = list(report.attachments), report.folder
+        report = book.attachment_report(args.missing, target.handle if target else None)
+        found, folder = list(report.attachments), report.folder
 
         def state(item: attachment_engine.AttachmentStatus) -> str:
             if item.present is None:
@@ -338,8 +283,6 @@ def cmd_attachments(args: argparse.Namespace) -> int:
             text,
         )
         return 0
-    finally:
-        db.close()
 
 
 def register(add: AddCommand) -> None:
@@ -366,6 +309,7 @@ def register(add: AddCommand) -> None:
         help="accept one proposal (repeatable; handle or unique prefix)",
     )
     rules_cmd.add_argument("--accept-all", action="store_true", help="accept every proposal")
+    add_server_options(rules_cmd)
     rules_cmd.set_defaults(func=cmd_rules)
 
     tags_cmd = add("tags", "List tags, the transactions with one, or set a transaction's tags")
@@ -376,6 +320,7 @@ def register(add: AddCommand) -> None:
     tags_cmd.add_argument(
         "--set", metavar="TAGS", help="replace the transaction's tags (comma-separated; '' clears)"
     )
+    add_server_options(tags_cmd)
     tags_cmd.set_defaults(func=cmd_tags)
 
     attachments_cmd = add(
@@ -413,4 +358,5 @@ def register(add: AddCommand) -> None:
         help="where relative GnuCash linked documents live (GnuCash's 'Path head for linked "
         "files'; '' restores the home folder)",
     )
+    add_server_options(attachments_cmd)
     attachments_cmd.set_defaults(func=cmd_attachments)

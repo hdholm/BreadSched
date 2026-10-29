@@ -17,12 +17,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 from functools import partial
 
-from ...gen.db.sqlite import DbSQLite
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.engine import ledger
 from ...gen.lib.transaction import Transaction
-from ...gen.services import DeleteTransaction, delete_transaction
-from ...presentation import service_error_message
 from ..gi_setup import Gtk
+from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.confirm import delete_button
 from ..widgets.help import help_row
@@ -30,23 +30,26 @@ from ..widgets.help import help_row
 __all__ = ["PostedTransactionsDialog", "split_lines"]
 
 
-def split_lines(db: DbSQLite, transaction: Transaction) -> list[tuple[str, str, str, str]]:
+def split_lines(db: OpenBook, transaction: Transaction) -> list[tuple[str, str, str, str]]:
     """Each split as (account, memo, heading, amount), money in before money out.
 
     The heading is the split account's own register heading for its direction
     (Deposit, Expense, Withdrawal, …), so the line reads as that register would.
     """
     lines = []
+    # Accounts and their names through the book server (#358).
+    records = {record.account.handle: record for record in book_server(db).accounts()}
     ordered = sorted(transaction.splits, key=lambda split: split.value < 0)
     for split in ordered:
-        account = db.get_account(split.account)
+        record = records.get(split.account)
+        account = record.account if record is not None else None
         increase, decrease = (
             ledger.register_headings(account.atype) if account is not None else ("In", "Out")
         )
         heading = increase if split.value >= 0 else decrease
         lines.append(
             (
-                db.full_name(split.account),
+                record.full_name if record is not None else split.account,
                 split.memo,
                 heading,
                 abs(split.value).format(),
@@ -61,7 +64,7 @@ class PostedTransactionsDialog(BoundedWindow):
     def __init__(
         self,
         parent: Gtk.Window | None,
-        db: DbSQLite,
+        db: OpenBook,
         handles: Iterable[str],
         *,
         skipped: int = 0,
@@ -110,9 +113,14 @@ class PostedTransactionsDialog(BoundedWindow):
 
     def transactions(self) -> list[Transaction]:
         """The posted transactions still in the book, in date order."""
-        found = [self.db.get_transaction(handle) for handle in self.handles]
+        found = []
+        for handle in self.handles:
+            try:
+                found.append(book_server(self.db).find_transaction(handle))
+            except ApiError:
+                continue  # deleted since it was posted
         return sorted(
-            (txn for txn in found if txn is not None),
+            found,
             key=lambda txn: (txn.post_date, txn.description),
         )
 
@@ -172,8 +180,9 @@ class PostedTransactionsDialog(BoundedWindow):
 
     def edit(self, handle: str) -> Gtk.Window | None:
         """Open ``handle`` in the full editor; the list rereads it when that closes."""
-        transaction = self.db.get_transaction(handle)
-        if transaction is None:
+        try:
+            transaction = book_server(self.db).find_transaction(handle)
+        except ApiError:
             self.refresh()
             return None
         from .transaction_dialog import TransactionDialog
@@ -189,13 +198,14 @@ class PostedTransactionsDialog(BoundedWindow):
         return False  # let the editor close
 
     def delete(self, handle: str) -> bool:
-        """Delete ``handle`` through the shared service; False with the reason if refused."""
-        result = delete_transaction(self.db, DeleteTransaction(handle))
-        if result.value is None:
-            self.status.set_text(service_error_message(result.errors[0]))
+        """Delete ``handle`` through the book server; False with the reason if refused."""
+        try:
+            deleted = book_server(self.db).delete_transaction(handle)
+        except ApiError as error:
+            self.status.set_text(str(error))
             self.status.add_css_class("negative")
             return False
         self.status.remove_css_class("negative")
-        self.status.set_text(f"Deleted {result.value.description}. Ctrl+Z restores it.")
+        self.status.set_text(f"Deleted {deleted.description}. Ctrl+Z restores it.")
         self.refresh()
         return True

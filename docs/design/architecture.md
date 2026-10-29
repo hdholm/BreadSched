@@ -193,6 +193,87 @@ into a typed service request or engine call and formats the result; architecture
 tests check that the entry point defines no handlers and that every command's
 handler is in the module that registers it.
 
+## Book server
+
+`breadsched.api` is the book server of
+[decision 0003](decisions/0003-book-server.md).
+`LocalBookServer` wraps one open `DbSQLite` and implements the `BookApi` protocol
+over the application services. Requests and results are the services' typed
+dataclasses. A failure is an `ApiError`, the same class as the web's
+`ResourceError`, and `api.views` gives each response its one JSON form. The server
+turns the book's storage signals into numbered `Change` events for its
+subscribers. It imports nothing from the interfaces, and architecture tests check
+that.
+
+Scheduled transactions went through it first; decision 0003 records each area that
+has followed (accounts, the register, budgets, reports, and more):
+
+- the command line's `due-review`, `scheduled-next`, `scheduled-advance`, and
+  `scheduled --post`, through `open_book_api`;
+- the browser's due review, next-occurrence, schedule delete and duplicate, and
+  post-scheduled routes, through `Api.book`, the server over the request's book;
+- GTK's due review, Enter Next and Skip Next, schedule delete and duplicate, and
+  the schedule editor's save, through `api.local.book_server`.
+
+Transaction saves and deletes go through it too, from GTK's register, transaction
+editor, and Posted transactions, the browser's register and entry form, and the
+command line's `add`, `edit`, and `delete`. Over `/api/v1`, a save travels in
+`api.transaction_codec`'s form; money in the book API's JSON is always exact
+(`api.contract.exact_money`).
+
+The browser's schedule save routes go through the server as well. Over `/api/v1`,
+an editor's typed request travels in `api.schedule_codec`'s lossless, strictly
+decoded JSON form.
+
+Their command-line JSON is therefore the browser's JSON.
+
+Every browser resource now reaches the book through `Api.book`; only the HTTP
+transport's binary document route reads the book it serves, and
+`tests/test_architecture.py` checks that no resource reads `api.db`.
+
+The same operations are served as versioned resources under `/api/v1` (#357):
+- **Handlers:** `web/v1_resource.py`, each calling `Api.book`.
+- **Routing:** `web.resources.V1_ROUTES` maps a method and a path pattern with
+  `{handle}` segments to each handler. A known path with the wrong method answers
+  405.
+- **`ETag`:** `web.transport` sends the book revision (see
+  [Book revision](storage.md#book-revision)) as the `ETag` of every response. It
+  checks a write's `If-Match` against the revision under the writer lock and answers
+  412 if the book has moved on.
+- **Change stream:** `/api/v1/events` streams server-sent events: a `hello` with the
+  current revision, saying whether the client's `since` missed changes, then one
+  `change` per change, with keep-alive comments in between.
+- **Client:** `breadsched.api.http_client.HttpBookClient` implements the same
+  protocol over these resources and decodes responses back into the services'
+  dataclasses. `tests/test_book_server.py` runs one contract against both the
+  in-process server and this client.
+
+A writable `breadsched serve` or `breadsched web` publishes a server record
+(`api.discovery`; see [Security](security.md)) for each book it holds; one server may
+hold several (`api.host`, decision 0004), and a request names its book by id in
+`X-BreadSched-Book`. `api.connect.open_book_api` gives a
+command an explicit `--server`, else the recorded server, else an in-process server.
+So `due-review`, `scheduled-next`, `scheduled-advance`, `scheduled`, `accounts`,
+`account`, `register`, `balance`, `add`, `edit`, `delete`, `rules`, `tags`, `goals`,
+`receivables`, `scenario`, `drawdown`, `payroll`, `claims`, `review`, the `plan-*`
+review commands, `import-review`, `sale-lots`, `tax-marks`, `quotes`, `quote-source`,
+`rate`, `attachments`, `net-worth`, `net-worth-change`, `project`, `compare`,
+`holdings`, `realized-gains`, `tax-year`, `jars`, `dashboard`, `activity`,
+`gnucash-writeback`, `estimate suggest`, `find`, and `import-csv` work while another
+process holds the book
+(#358). `cli.common.book_api` and `add_server_options` give each such command the
+connection and its `--server` and `--token-file` options. `tests/test_book_sharing.py`
+covers the record's life, stale records, the commands through a holding server, an
+explicit server, and `serve`.
+
+GTK reaches every book only through `api.local.book_server(db)`: the in-process
+server over the file it opened, or, for a book the account's host already holds,
+that host's book API (`gui.remote_book`, decision 0004), so the same views and
+dialogs work on either.
+`gui.book_sharing` serves GTK's own book when **Preferences → Sharing** is on.
+`web.transport.serve` takes an executor that runs each writer request on the GTK
+main loop instead of under the transport's lock.
+
 ## GTK and web parity
 
 GTK4 defines the reference workflow and interaction model. The web UI must maintain

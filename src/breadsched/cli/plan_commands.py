@@ -5,65 +5,44 @@ from __future__ import annotations
 import argparse
 from datetime import date
 
+from ..api.local import lookup_schedule
+from ..api.views import (
+    advance_days_json,
+    due_review_json,
+    next_occurrence_json,
+    posted_due_json,
+    resolution_json,
+)
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
     activity,
-    category_report,
-    estimates,
-    planning,
-    schedule,
 )
-from ..gen.engine.payroll import PaycheckBreakdown, PayrollLine, paycheck_breakdown
+from ..gen.engine.payroll import PaycheckBreakdown, PayrollLine
 from ..gen.lib import (
     Money,
     PeriodType,
     Recurrence,
-    ScheduledSplit,
     ScheduledTransaction,
 )
 from ..gen.services import (
-    DeleteSchedule,
     DueDecision,
+    FixedScheduleInput,
+    PostDue,
+    PostedDue,
     ResolveDue,
     ResolveNext,
     ReviewOccurrence,
-    ReviewTransaction,
-    SaveSchedule,
-    ServiceError,
-    delete_schedule,
-    mark_review_unexpected,
-    match_review,
-    next_occurrence,
-    pending_due_review,
-    reject_review,
-    resolve_due,
-    resolve_next,
-    save_schedule,
+    SaveFixedSchedule,
+    SetAdvanceDays,
 )
-from ..gen.services.payroll import (
-    CreatePaycheck,
-    PayChange,
-    SavePayrollTemplate,
-    apply_pay_change,
-    create_paycheck_schedule,
-    delete_payroll_template,
-    list_payroll_templates,
-    paychecks,
-    preview_pay_change,
-    save_payroll_template,
-    template_from_schedule,
-)
-from ..presentation import (
-    service_error_message,
-)
+from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from .common import (
     AddCommand,
     CommandError,
+    add_server_options,
+    book_api,
     emit,
-    find_transaction,
-    open_book,
     parse_date,
-    resolve_account,
     table,
 )
 
@@ -92,35 +71,25 @@ def _due_references(reviews, reference: str) -> list[tuple[str, date]]:
 
 def cmd_review(args: argparse.Namespace) -> int:
     """Unresolved transactions, the planned items Review offers, and why."""
-    from ..gen.engine import review_explain
-    from ..gen.lib.transaction import PlanningResolution
     from ..presentation import REVIEW_ACTION_HELP
 
-    db = open_book(args.book, "r")
-    try:
-        pending = sorted(
-            (
-                transaction
-                for transaction in db.iter_transactions()
-                if transaction.planning_resolution is PlanningResolution.UNRESOLVED
-            ),
-            key=lambda transaction: (transaction.post_date, transaction.handle),
-        )
+    with book_api(args, "r") as book:
+        pending = list(book.review_queue())
         if args.transaction:
             pending = [item for item in pending if item.handle.startswith(args.transaction)]
             if not pending:
                 raise CommandError(f"no unresolved transaction matches {args.transaction!r}")
         items = []
         lines: list[str] = []
-        for transaction in pending:
-            explained = review_explain.explain_candidates(db, transaction)
-            hint = review_explain.fsa_hint(db, transaction)
-            reason = None if explained else review_explain.no_candidate_reason(db, transaction)
+        for actual in pending:
+            detail = book.review_detail(actual.handle)
+            explained, hint = detail.candidates, detail.fsa_hint
+            reason = detail.no_candidate_reason
             items.append(
                 {
-                    "handle": transaction.handle,
-                    "date": transaction.post_date,
-                    "description": transaction.description,
+                    "handle": actual.handle,
+                    "date": actual.date,
+                    "description": actual.description,
                     "fsa_hint": hint,
                     "no_candidate_reason": reason,
                     "candidates": [
@@ -135,10 +104,7 @@ def cmd_review(args: argparse.Namespace) -> int:
                     ],
                 }
             )
-            lines.append(
-                f"{transaction.post_date.isoformat()}  {transaction.description}  "
-                f"[{transaction.handle[:8]}]"
-            )
+            lines.append(f"{actual.date.isoformat()}  {actual.description}  [{actual.handle[:8]}]")
             if hint:
                 lines.append(f"  {hint}")
             for item in explained:
@@ -157,8 +123,6 @@ def cmd_review(args: argparse.Namespace) -> int:
         lines.extend(REVIEW_ACTION_HELP[key] for key in ("match", "reject", "skip", "unexpected"))
         emit({"transactions": items, "actions": REVIEW_ACTION_HELP}, args, "\n".join(lines))
         return 0
-    finally:
-        db.close()
 
 
 def cmd_due_review(args: argparse.Namespace) -> int:
@@ -166,9 +130,8 @@ def cmd_due_review(args: argparse.Namespace) -> int:
     if args.post_all and args.skip_all:
         raise CommandError("choose either --post-all or --skip-all, not both")
     as_of = parse_date(args.as_of) or date.today()
-    db = open_book(args.book)
-    try:
-        reviews = pending_due_review(db, as_of)
+    with book_api(args, "w") as book:
+        reviews = book.due_review(as_of)
         decisions: dict[tuple[str, date], DueDecision] = {}
         if args.post_all or args.skip_all:
             chosen = DueDecision.POST if args.post_all else DueDecision.SKIP
@@ -188,19 +151,14 @@ def cmd_due_review(args: argparse.Namespace) -> int:
                 for key in _due_references(reviews, reference):
                     decisions[key] = decision
         if decisions:
-            resolved = resolve_due(
-                db,
+            outcome = book.resolve_due(
                 ResolveDue(
                     tuple((handle, when, choice) for (handle, when), choice in decisions.items()),
                     as_of=as_of,
-                ),
+                )
             )
-            if not resolved.ok:
-                raise CommandError(service_error_message(resolved.errors[0]))
-            assert resolved.value is not None
-            outcome = resolved.value
             emit(
-                {"posted": outcome.posted, "skipped": outcome.skipped},
+                resolution_json(outcome),
                 args,
                 f"Posted {outcome.posted}; marked {outcome.skipped} as done",
             )
@@ -217,130 +175,88 @@ def cmd_due_review(args: argparse.Namespace) -> int:
             for review in reviews
         ]
         emit(
-            [
-                {
-                    "schedule": review.schedule,
-                    "name": review.name,
-                    "frequency": review.frequency,
-                    "total": review.total,
-                    "items": [
-                        {
-                            "date": item.when,
-                            "amount": item.amount,
-                            "overdue": item.overdue,
-                            "stage": item.stage,
-                        }
-                        for item in review.items
-                    ],
-                }
-                for review in reviews
-            ],
+            due_review_json(reviews),
             args,
             table(rows, ["schedule", "id", "due", "dates", "frequency", "total"], right={2, 5})
             if rows
             else "Nothing is due.",
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_scheduled_next(args: argparse.Namespace) -> int:
     """Show, enter, or skip a schedule's next occurrence before it is due (#351)."""
     decision = DueDecision.POST if args.enter else DueDecision.SKIP if args.skip else None
-    db = open_book(args.book, "w" if decision is not None else "r")
-    try:
-        as_of = parse_date(args.as_of)
-        sched = _find_schedule(db, args.schedule)
-        upcoming = next_occurrence(db, sched.handle, as_of=as_of)
+    as_of = parse_date(args.as_of)
+    mode = "w" if decision is not None else "r"
+    with book_api(args, mode) as book:
+        sched = book.find_schedule(args.schedule)
+        upcoming = book.next_occurrence(sched.handle, as_of=as_of)
         if decision is None:
-            if upcoming is None:
-                emit(None, args, f"{sched.name} has no occurrence to enter or skip")
-            else:
-                emit(
-                    {"schedule": sched.handle, "date": upcoming.when, "amount": upcoming.amount},
-                    args,
-                    f"{sched.name}: next {upcoming.when.isoformat()} {upcoming.amount.format()}",
-                )
+            emit(
+                next_occurrence_json(upcoming),
+                args,
+                f"{sched.name} has no occurrence to enter or skip"
+                if upcoming is None
+                else f"{sched.name}: next {upcoming.when.isoformat()} {upcoming.amount.format()}",
+            )
             return 0
-        result = resolve_next(
-            db,
+        outcome = book.resolve_next(
             ResolveNext(
                 sched.handle,
                 decision,
                 when=upcoming.when if upcoming is not None else None,
                 as_of=as_of,
-            ),
+            )
         )
-        if result.value is None:
-            raise CommandError(service_error_message(result.errors[0]))
         assert upcoming is not None
         verb = "Entered" if decision is DueDecision.POST else "Skipped"
         emit(
-            {
-                "schedule": sched.handle,
-                "date": upcoming.when,
-                "posted": result.value.posted,
-                "skipped": result.value.skipped,
-            },
+            resolution_json(outcome),
             args,
             f"{verb} {sched.name} for {upcoming.when.isoformat()}",
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_scheduled_advance(args: argparse.Namespace) -> int:
     """Show or set how many days ahead a schedule is entered or reminded (#352)."""
     writing = args.enter_days is not None or args.remind_days is not None
-    db = open_book(args.book, "w" if writing else "r")
-    try:
-        sched = _find_schedule(db, args.schedule)
-        if writing:
-            edited = ScheduledTransaction.from_dict(sched.serialize())
-            if args.enter_days is not None:
-                edited.advance_days = args.enter_days
-            if args.remind_days is not None:
-                edited.remind_days = args.remind_days
-            result = save_schedule(db, SaveSchedule(edited, sched.handle))
-            if not result.ok:
-                raise CommandError(service_error_message(result.errors[0]))
-            sched = edited
+    with book_api(args, "w" if writing else "r") as book:
+        sched = book.find_schedule(args.schedule)
+        days = (
+            book.set_advance_days(SetAdvanceDays(sched.handle, args.enter_days, args.remind_days))
+            if writing
+            else book.advance_days(sched.handle)
+        )
         emit(
-            {
-                "schedule": sched.handle,
-                "enter_days": sched.advance_days,
-                "remind_days": sched.remind_days,
-            },
+            advance_days_json(days),
             args,
-            f"{sched.name}: enter {sched.advance_days} day(s) and remind "
-            f"{sched.remind_days} day(s) in advance",
+            f"{days.name}: enter {days.advance_days} day(s) and remind "
+            f"{days.remind_days} day(s) in advance",
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_scheduled(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r" if not args.post else "w")
-    try:
-        as_of = parse_date(args.as_of) or date.today()
-        if args.post:
-            posted = schedule.post_due(db, as_of=as_of, only_auto=not args.all)
-            emit(
-                [{"date": t.post_date, "description": t.description} for t in posted],
-                args,
-                f"Posted {len(posted)} scheduled transaction(s)"
-                + (
-                    ""
-                    if not posted
-                    else ":\n" + "\n".join(f"  {t.post_date}  {t.description}" for t in posted)
-                ),
-            )
-            return 0
-
-        occurrences = schedule.due_occurrences(db, as_of=as_of, horizon_days=args.days)
+    as_of = parse_date(args.as_of) or date.today()
+    if args.post:
+        # Through the book server, so it also works while one holds the book (#358).
+        with book_api(args, "w") as book:
+            posted = book.post_due(PostDue(as_of=as_of, only_automatic=not args.all)).posted
+        emit(
+            posted_due_json(PostedDue(posted)),
+            args,
+            f"Posted {len(posted)} scheduled transaction(s)"
+            + (
+                ""
+                if not posted
+                else ":\n" + "\n".join(f"  {item.when}  {item.description}" for item in posted)
+            ),
+        )
+        return 0
+    with book_api(args, "r") as book:
+        occurrences = book.due_occurrences(as_of, args.days)
         payload = [
             {"date": occ.when, "name": occ.name, "amount": occ.amount} for occ in occurrences
         ]
@@ -354,26 +270,14 @@ def cmd_scheduled(args: argparse.Namespace) -> int:
             ),
         )
         return 0
-    finally:
-        db.close()
 
 
 def _find_schedule(db: DbSQLite, reference: str) -> ScheduledTransaction:
     """Locate a schedule by handle, unique handle prefix, or exact name."""
-    exact = db.get_scheduled(reference)
-    if exact is not None:
-        return exact
-    schedules = list(db.iter_scheduled())
-    named = [item for item in schedules if item.name.casefold() == reference.casefold()]
-    matches = named or [item for item in schedules if item.handle.startswith(reference)]
-    if not matches:
-        raise CommandError(f"no schedule matches {reference!r}")
-    if len(matches) > 1:
-        raise CommandError(f"{reference!r} matches {len(matches)} schedules; use its handle")
-    return matches[0]
+    return lookup_schedule(db, reference)
 
 
-def _payroll_line_text(db: DbSQLite, line: PayrollLine) -> str:
+def _payroll_line_text(view: PayrollView, line: PayrollLine) -> str:
     amount = (
         f"{line.percent}% of gross"
         if line.percent is not None
@@ -381,7 +285,7 @@ def _payroll_line_text(db: DbSQLite, line: PayrollLine) -> str:
         if line.amount is not None
         else ""
     )
-    return f"{db.full_name(line.account) or line.account}: {amount}"
+    return f"{view.name(line.account)}: {amount}"
 
 
 def _paycheck_text(breakdown: PaycheckBreakdown) -> str:
@@ -399,32 +303,24 @@ def cmd_payroll(args: argparse.Namespace) -> int:
     writes = (
         args.save_template or args.delete_template or args.create or args.pay_change
     ) and not args.preview
-    db = open_book(args.book, "w" if writes else "r")
-
-    def check(result):
-        if result.value is None:
-            raise CommandError(service_error_message(result.errors[0]))
-        return result.value
-
-    try:
-        as_of = parse_date(args.as_of)
+    as_of = parse_date(args.as_of)
+    with book_api(args, "w" if writes else "r") as book:
         if args.save_template:
             if not args.from_schedule:
                 raise CommandError("--from-schedule is required with --save-template")
-            source = _find_schedule(db, args.from_schedule)
-            template = check(
-                template_from_schedule(db, source.handle, args.save_template, when=as_of)
-            )
-            saved = check(save_payroll_template(db, SavePayrollTemplate(template)))
+            source = book.find_schedule(args.from_schedule)
+            template = book.template_from_schedule(source.handle, args.save_template, as_of)
+            saved = book.save_payroll_template(SavePayrollTemplate(template))
+            view = book.payroll(as_of)
             emit(
                 saved.serialize(),
                 args,
                 f"Saved payroll template {saved.name!r} from {source.name!r}"
-                + "".join(f"\n  {_payroll_line_text(db, line)}" for line in saved.lines),
+                + "".join(f"\n  {_payroll_line_text(view, line)}" for line in saved.lines),
             )
             return 0
         if args.delete_template:
-            removed = check(delete_payroll_template(db, args.delete_template))
+            removed = book.delete_payroll_template(args.delete_template)
             emit({"deleted": removed.name}, args, f"Deleted payroll template {removed.name!r}")
             return 0
         if args.create:
@@ -435,41 +331,36 @@ def cmd_payroll(args: argparse.Namespace) -> int:
                 interval=args.interval,
                 start=parse_date(args.start) or date.today(),
             )
-            created = check(
-                create_paycheck_schedule(
-                    db,
-                    CreatePaycheck(
-                        args.template,
-                        args.create,
-                        recurrence,
-                        gross=Money(args.gross) if args.gross else None,
-                        auto_create=args.auto_create,
-                    ),
+            created = book.create_paycheck(
+                CreatePaycheck(
+                    args.template,
+                    args.create,
+                    recurrence,
+                    gross=Money(args.gross) if args.gross else None,
+                    auto_create=args.auto_create,
                 )
             )
-            schedule = db.get_scheduled(created.handle)
-            assert schedule is not None
-            breakdown = paycheck_breakdown(db, schedule, recurrence.start)
+            breakdown = book.paycheck(created.handle, recurrence.start)
             emit(
-                breakdown.as_dict() if breakdown else {"handle": created.handle},
+                breakdown.as_dict(),
                 args,
                 f"Added paycheck {created.name!r} {recurrence.describe()}\n"
-                + (_paycheck_text(breakdown) if breakdown else ""),
+                + _paycheck_text(breakdown),
             )
             return 0
         if args.pay_change:
             if not args.gross or not args.start:
                 raise CommandError("--gross and --start are required with --pay-change")
-            schedule = _find_schedule(db, args.pay_change)
+            schedule = book.find_schedule(args.pay_change)
             scaled = None
             if args.scale is not None:
-                scaled = frozenset(resolve_account(db, item).handle for item in args.scale)
+                scaled = frozenset(book.find_account(item).handle for item in args.scale)
             amounts: dict[str, Money] = {}
             for item in args.set or ():
                 account, _sep, amount = item.rpartition("=")
                 if not account:
                     raise CommandError(f"--set takes ACCOUNT=AMOUNT, not {item!r}")
-                amounts[resolve_account(db, account).handle] = Money(amount)
+                amounts[book.find_account(account).handle] = Money(amount)
             request = PayChange(
                 schedule.handle,
                 parse_date(args.start) or date.today(),
@@ -477,8 +368,8 @@ def cmd_payroll(args: argparse.Namespace) -> int:
                 scaled=scaled,
                 amounts=amounts,
             )
-            plan = check(
-                preview_pay_change(db, request) if args.preview else apply_pay_change(db, request)
+            plan = (
+                book.preview_pay_change(request) if args.preview else book.apply_pay_change(request)
             )
             rows = [
                 [line.kind.label, line.name, line.before.format(), line.after.format(), line.how]
@@ -493,18 +384,11 @@ def cmd_payroll(args: argparse.Namespace) -> int:
             )
             return 0
         if args.show:
-            schedule = _find_schedule(db, args.show)
-            breakdown = paycheck_breakdown(
-                db, schedule, as_of or max(date.today(), schedule.recurrence.start)
-            )
-            if breakdown is None:
-                raise CommandError(
-                    service_error_message(ServiceError("payroll.schedule.not_paycheck"))
-                )
+            breakdown = book.paycheck(book.find_schedule(args.show).handle, as_of)
             emit(breakdown.as_dict(), args, _paycheck_text(breakdown))
             return 0
-        templates = list_payroll_templates(db)
-        found = paychecks(db, as_of)
+        view = book.payroll(as_of)
+        found, templates = view.paychecks, view.templates
         emit(
             {
                 "paychecks": [item.as_dict() for item in found],
@@ -534,7 +418,7 @@ def cmd_payroll(args: argparse.Namespace) -> int:
                 "Payroll templates:\n"
                 + "\n".join(
                     f"  {item.name}: gross {item.gross.format()}; "
-                    + "; ".join(_payroll_line_text(db, line) for line in item.lines)
+                    + "; ".join(_payroll_line_text(view, line) for line in item.lines)
                     for item in templates
                 )
                 if templates
@@ -543,25 +427,19 @@ def cmd_payroll(args: argparse.Namespace) -> int:
             ),
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_activity(args: argparse.Namespace) -> int:
     """Show event-driven plan versus actuals in display-only time buckets."""
-    db = open_book(args.book, "r")
-    try:
-        start = parse_date(args.start)
-        end = parse_date(args.end)
-        if start is None or end is None:
-            raise CommandError("activity requires --start and --end")
-        report = activity.build_activity_report(
-            db,
-            start,
-            end,
-            period=activity.ReportingPeriod(args.period),
-            as_of=parse_date(args.as_of),
+    start = parse_date(args.start)
+    end = parse_date(args.end)
+    if start is None or end is None:
+        raise CommandError("activity requires --start and --end")
+    with book_api(args, "r") as book:
+        view = book.activity(
+            start, end, activity.ReportingPeriod(args.period), parse_date(args.as_of)
         )
+        report = view.report
         rows = [
             [
                 period.label,
@@ -604,7 +482,7 @@ def cmd_activity(args: argparse.Namespace) -> int:
                 f"{signed(report.cash_variance_through_as_of)}. Period columns include "
                 "everything dated in each period, even after that date."
             )
-        notes = category_report.currency_notes(db, report)
+        notes = view.currency_notes
         if not report.completeness.complete:
             # Totals are subtotals of what converted; say so beside them (#236).
             notes = (f"{report.completeness.label}: totals leave out the amounts below.", *notes)
@@ -612,19 +490,16 @@ def cmd_activity(args: argparse.Namespace) -> int:
             text = "\n".join((text, "", *notes))
         emit(report.as_dict(), args, text)
         return 0
-    finally:
-        db.close()
 
 
 def cmd_plan_unresolved(args: argparse.Namespace) -> int:
     """List unresolved scheduled expectations over an exact date horizon."""
-    db = open_book(args.book, "r")
-    try:
-        start = parse_date(args.start)
-        end = parse_date(args.end)
-        if start is None or end is None:
-            raise CommandError("plan-unresolved requires --start and --end")
-        events = planning.unresolved_events(db, start, end)
+    start = parse_date(args.start)
+    end = parse_date(args.end)
+    if start is None or end is None:
+        raise CommandError("plan-unresolved requires --start and --end")
+    with book_api(args, "r") as book:
+        events = book.unresolved_occurrences(start, end)
         rows = [
             [
                 event.key,
@@ -640,16 +515,13 @@ def cmd_plan_unresolved(args: argparse.Namespace) -> int:
             table(rows, ["occurrence", "planned", "description", "expected"], right={3}),
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_plan_matches(args: argparse.Namespace) -> int:
     """Show unresolved scheduled occurrences that could explain one actual."""
-    db = open_book(args.book, "r")
-    try:
-        transaction = find_transaction(db, args.transaction)
-        candidates = planning.match_candidates(db, transaction, window_days=args.window_days)
+    with book_api(args, "r") as book:
+        transaction = book.find_transaction(args.transaction)
+        candidates = book.match_candidates(transaction.handle, args.window_days)
         payload = [
             {
                 "occurrence": candidate.event.as_dict(),
@@ -678,97 +550,109 @@ def cmd_plan_matches(args: argparse.Namespace) -> int:
         )
         emit(payload, args, text)
         return 0
-    finally:
-        db.close()
 
 
 def cmd_plan_resolve(args: argparse.Namespace) -> int:
     """Resolve one actual transaction against a selected scheduled occurrence."""
-    db = open_book(args.book)
-    try:
-        transaction = find_transaction(db, args.transaction)
-        result = match_review(db, ReviewOccurrence(transaction.handle, args.occurrence))
-        if not result.ok:
-            raise CommandError(service_error_message(result.errors[0]))
-        saved_transaction = db.get_transaction(transaction.handle)
-        assert saved_transaction is not None
-        event = planning.event_by_key(db, args.occurrence)
-        assert event is not None
+    with book_api(args, "w") as book:
+        transaction = book.find_transaction(args.transaction)
+        matched = book.match_review(ReviewOccurrence(transaction.handle, args.occurrence))
+        assert matched.resolution is not None
+        event = book.plan_occurrence(args.occurrence)
         emit(
             {
-                "transaction": saved_transaction.handle,
-                "resolution": saved_transaction.planning_resolution.value,
+                "transaction": matched.transaction,
+                "resolution": matched.resolution.value,
                 "occurrence": event.key,
                 "planned_for": event.planned_date,
                 "planned_amount": event.expected_amount,
             },
             args,
-            f"Matched {saved_transaction.handle[:8]} to {event.key}",
+            f"Matched {matched.transaction[:8]} to {event.key}",
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_plan_reject(args: argparse.Namespace) -> int:
     """Persistently reject one suggested occurrence for an unresolved actual."""
-    db = open_book(args.book)
-    try:
-        transaction = find_transaction(db, args.transaction)
-        result = reject_review(db, ReviewOccurrence(transaction.handle, args.occurrence))
-        if not result.ok:
-            raise CommandError(service_error_message(result.errors[0]))
-        saved_transaction = db.get_transaction(transaction.handle)
-        assert saved_transaction is not None
+    with book_api(args, "w") as book:
+        transaction = book.find_transaction(args.transaction)
+        book.reject_review(ReviewOccurrence(transaction.handle, args.occurrence))
+        saved = book.find_transaction(transaction.handle)
         emit(
             {
-                "transaction": saved_transaction.handle,
+                "transaction": saved.handle,
                 "rejected_occurrence": args.occurrence,
-                "rejected": list(saved_transaction.rejected_plan_occurrences),
+                "rejected": list(saved.rejected_plan_occurrences),
             },
             args,
-            f"Rejected {args.occurrence} for {saved_transaction.handle[:8]}",
+            f"Rejected {args.occurrence} for {saved.handle[:8]}",
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_plan_unexpected(args: argparse.Namespace) -> int:
     """Explicitly declare an actual transaction to have no planned occurrence."""
-    db = open_book(args.book)
-    try:
-        transaction = find_transaction(db, args.transaction)
-        result = mark_review_unexpected(db, ReviewTransaction(transaction.handle))
-        if not result.ok:
-            raise CommandError(service_error_message(result.errors[0]))
-        saved_transaction = db.get_transaction(transaction.handle)
-        assert saved_transaction is not None
+    with book_api(args, "w") as book:
+        transaction = book.find_transaction(args.transaction)
+        marked = book.mark_review_unexpected(transaction.handle)
+        assert marked.resolution is not None
         emit(
-            {
-                "transaction": saved_transaction.handle,
-                "resolution": saved_transaction.planning_resolution.value,
-            },
+            {"transaction": marked.transaction, "resolution": marked.resolution.value},
             args,
-            f"Marked {saved_transaction.handle[:8]} as unexpected",
+            f"Marked {marked.transaction[:8]} as unexpected",
         )
         return 0
-    finally:
-        db.close()
+
+
+def _estimate_suggestions(args: argparse.Namespace) -> int:
+    """Category estimates proposed from closed history, through the book server."""
+    with book_api(args, "r") as book:
+        proposals = book.historical_estimates(
+            args.months, args.min_active_months, as_of=parse_date(args.as_of)
+        ).proposals
+        payload = [
+            {
+                "key": proposal.key,
+                "purpose": proposal.purpose_name,
+                "account": proposal.category_name,
+                "funding": proposal.funding_name,
+                "amount": proposal.display_amount,
+                "frequency": proposal.recurrence.describe(),
+                "confidence": proposal.confidence,
+                "evidence": proposal.evidence.serialize(),
+            }
+            for proposal in proposals
+        ]
+        rows = [
+            [
+                proposal.purpose_name,
+                proposal.display_amount.format(),
+                proposal.recurrence.describe(),
+                f"{proposal.confidence:.0%}",
+            ]
+            for proposal in proposals
+        ]
+        details = "\n\n".join(
+            f"{proposal.purpose_name}\n" + "\n".join(proposal.evidence.summary_lines())
+            for proposal in proposals
+        )
+        text = table(rows, ["purpose", "amount", "frequency", "confidence"], right={1})
+        if details:
+            text += "\n\n" + details
+        emit(payload, args, text)
+        return 0
 
 
 def cmd_estimate(args: argparse.Namespace) -> int:
     """Manage placeholder flows: recurring estimates that are never posted."""
-    db = open_book(
-        args.book if args.action not in {"list", "suggest"} else args.book,
-        "r" if args.action in {"list", "suggest"} else "w",
-    )
-    try:
+    if args.action == "suggest":
+        return _estimate_suggestions(args)
+    with book_api(args, "r" if args.action == "list" else "w") as book:
+        estimates = [s for s in book.scheduled_page().schedules if s.placeholder]
         if args.action == "list":
             rows, payload = [], []
-            for sched in db.iter_scheduled():
-                if not sched.placeholder:
-                    continue
+            for sched in estimates:
                 rows.append(
                     [
                         sched.name,
@@ -788,105 +672,64 @@ def cmd_estimate(args: argparse.Namespace) -> int:
             emit(payload, args, table(rows, ["name", "frequency", "amount", "enabled"], right={2}))
             return 0
 
-        if args.action == "suggest":
-            proposals = estimates.propose_historical_estimates(
-                db,
-                as_of=parse_date(args.as_of),
-                months=args.months,
-                min_active_months=args.min_active_months,
-            )
-            payload = [
-                {
-                    "key": proposal.key,
-                    "purpose": proposal.purpose_name,
-                    "account": proposal.category_name,
-                    "funding": proposal.funding_name,
-                    "amount": proposal.display_amount,
-                    "frequency": proposal.recurrence.describe(),
-                    "confidence": proposal.confidence,
-                    "evidence": proposal.evidence.serialize(),
-                }
-                for proposal in proposals
-            ]
-            rows = [
-                [
-                    proposal.purpose_name,
-                    proposal.display_amount.format(),
-                    proposal.recurrence.describe(),
-                    f"{proposal.confidence:.0%}",
-                ]
-                for proposal in proposals
-            ]
-            details = "\n\n".join(
-                f"{proposal.purpose_name}\n" + "\n".join(proposal.evidence.summary_lines())
-                for proposal in proposals
-            )
-            text = table(rows, ["purpose", "amount", "frequency", "confidence"], right={1})
-            if details:
-                text += "\n\n" + details
-            emit(payload, args, text)
-            return 0
-
         if args.action == "remove":
-            match = next(
-                (s for s in db.iter_scheduled() if s.placeholder and s.name == args.name), None
-            )
+            match = next((s for s in estimates if s.name == args.name), None)
             if match is None:
                 raise CommandError(f"no estimate named {args.name!r}")
-            result = delete_schedule(db, DeleteSchedule(match.handle))
-            if not result.ok:
-                raise CommandError(service_error_message(result.errors[0]))
+            book.delete_schedule(match.handle)
             emit({"removed": args.name}, args, f"Removed estimate {args.name!r}")
             return 0
 
-        account = resolve_account(db, args.account)
-        funding = resolve_account(db, args.funded_from)
+        account = book.find_account(args.account)
+        funding = book.find_account(args.funded_from)
         recurrence = Recurrence(
             period=args.every,
             interval=args.interval,
             start=parse_date(args.start) or date.today().replace(day=1),
         )
         value = Money(args.amount)
-        sched = ScheduledTransaction(
-            name=args.name,
-            recurrence=recurrence,
-            splits=[
-                ScheduledSplit(account.handle, value),
-                ScheduledSplit(funding.handle, -value),
-            ],
+        if not value:
+            raise CommandError("--amount must not be zero")
+        # The amount goes to the account as given (a negative one for income), and
+        # the funding account takes the other side.
+        saved = book.save_fixed_schedule(
+            SaveFixedSchedule(
+                FixedScheduleInput(
+                    name=args.name,
+                    recurrence=recurrence,
+                    category=account.handle,
+                    funding=funding.handle,
+                    amount=abs(value),
+                    category_ledger_direction=1 if value > 0 else -1,
+                    placeholder=True,
+                )
+            )
         )
-        sched.placeholder = True
-        result = save_schedule(db, SaveSchedule(sched))
-        if not result.ok:
-            raise CommandError(service_error_message(result.errors[0]))
         emit(
-            {"name": sched.name, "handle": sched.handle},
+            {"name": args.name, "handle": saved.handle},
             args,
-            f"Added estimate {sched.name!r}: {Money(args.amount).format()} on "
-            f"{db.full_name(account)} {recurrence.describe()}",
+            f"Added estimate {args.name!r}: {value.format()} on "
+            f"{account.full_name} {recurrence.describe()}",
         )
         return 0
-    finally:
-        db.close()
 
 
 def cmd_jars(args: argparse.Namespace) -> int:
-    from ..gen.engine.budget_jars import budget_jars, currency_labels, jar_kind_label
+    from ..gen.engine.budget_jars import jar_kind_label
 
     start = parse_date(args.start)
     end = parse_date(args.end)
     if start is None or end is None or end < start:
         raise CommandError("--start and --end are dates, and --end is not before --start")
-    db = open_book(args.book, "r")
-    try:
-        report = budget_jars(
-            db,
+    with book_api(args, "r") as book:
+        view = book.budget_jars(
             start,
             end,
-            period=activity.ReportingPeriod(args.period),
-            today=parse_date(args.as_of) or date.today(),
+            activity.ReportingPeriod(args.period),
+            parse_date(args.as_of) or date.today(),
         )
-        labels = currency_labels(db, report)
+        report = view.report
+        labels = view.labels()
 
         def period_data(item) -> dict[str, object]:
             return {
@@ -971,8 +814,6 @@ def cmd_jars(args: argparse.Namespace) -> int:
         lines.extend(f"note: {problem}" for problem in report.problems)
         emit(payload, args, "\n".join(lines) if lines else "No jars in this range.")
         return 0
-    finally:
-        db.close()
 
 
 def register(add: AddCommand) -> None:
@@ -982,6 +823,7 @@ def register(add: AddCommand) -> None:
     sched.add_argument("--days", type=int, default=30, help="look this far ahead")
     sched.add_argument("--post", action="store_true", help="write due occurrences")
     sched.add_argument("--all", action="store_true", help="with --post, include manual schedules")
+    add_server_options(sched)
     sched.set_defaults(func=cmd_scheduled)
 
     next_cmd = add(
@@ -995,6 +837,7 @@ def register(add: AddCommand) -> None:
         "--skip", action="store_true", help="mark the next occurrence done without posting"
     )
     next_cmd.add_argument("--as-of", help="today, for testing (YYYY-MM-DD)")
+    add_server_options(next_cmd)
     next_cmd.set_defaults(func=cmd_scheduled_next)
 
     advance_cmd = add(
@@ -1008,6 +851,7 @@ def register(add: AddCommand) -> None:
     advance_cmd.add_argument(
         "--remind-days", type=int, help="days before its date an occurrence is a reminder"
     )
+    add_server_options(advance_cmd)
     advance_cmd.set_defaults(func=cmd_scheduled_advance)
 
     review_cmd = add(
@@ -1015,6 +859,7 @@ def register(add: AddCommand) -> None:
         "List unresolved transactions, the planned items Review offers for each, and why",
     )
     review_cmd.add_argument("--transaction", metavar="ID", help="only this transaction (id prefix)")
+    add_server_options(review_cmd)
     review_cmd.set_defaults(func=cmd_review)
 
     due_review = add(
@@ -1042,6 +887,7 @@ def register(add: AddCommand) -> None:
         action="store_true",
         help="mark every due date (not reminders) as done without posting",
     )
+    add_server_options(due_review)
     due_review.set_defaults(func=cmd_due_review)
 
     plan_unresolved = add(
@@ -1050,6 +896,7 @@ def register(add: AddCommand) -> None:
     )
     plan_unresolved.add_argument("--start", required=True, help="first date (YYYY-MM-DD)")
     plan_unresolved.add_argument("--end", required=True, help="last date (YYYY-MM-DD)")
+    add_server_options(plan_unresolved)
     plan_unresolved.set_defaults(func=cmd_plan_unresolved)
 
     plan_matches = add(
@@ -1058,16 +905,19 @@ def register(add: AddCommand) -> None:
     )
     plan_matches.add_argument("transaction", help="transaction handle, or a unique prefix")
     plan_matches.add_argument("--window-days", type=int, default=7)
+    add_server_options(plan_matches)
     plan_matches.set_defaults(func=cmd_plan_matches)
 
     plan_resolve = add("plan-resolve", "Match an actual transaction to a planned occurrence")
     plan_resolve.add_argument("transaction", help="transaction handle, or a unique prefix")
     plan_resolve.add_argument("occurrence", help="stable scheduled occurrence key")
+    add_server_options(plan_resolve)
     plan_resolve.set_defaults(func=cmd_plan_resolve)
 
     plan_reject = add("plan-reject", "Reject a planned occurrence as a match candidate")
     plan_reject.add_argument("transaction", help="transaction handle, or a unique prefix")
     plan_reject.add_argument("occurrence", help="stable scheduled occurrence key")
+    add_server_options(plan_reject)
     plan_reject.set_defaults(func=cmd_plan_reject)
 
     plan_unexpected = add(
@@ -1075,6 +925,7 @@ def register(add: AddCommand) -> None:
         "Declare an actual transaction to be intentionally outside the plan",
     )
     plan_unexpected.add_argument("transaction", help="transaction handle, or a unique prefix")
+    add_server_options(plan_unexpected)
     plan_unexpected.set_defaults(func=cmd_plan_unexpected)
 
     jars = add("jars", "Budget jars: each schedule and goal filled from income and drawn")
@@ -1087,6 +938,7 @@ def register(add: AddCommand) -> None:
         help="display grouping; does not change event dates",
     )
     jars.add_argument("--as-of", help="income after this date is expected (default today)")
+    add_server_options(jars)
     jars.set_defaults(func=cmd_jars)
 
     activity_cmd = add(
@@ -1108,6 +960,7 @@ def register(add: AddCommand) -> None:
             "convert foreign amounts (default today)"
         ),
     )
+    add_server_options(activity_cmd)
     activity_cmd.set_defaults(func=cmd_activity)
 
     estimate = add("estimate", "Recurring Plan estimates that never post")
@@ -1134,6 +987,7 @@ def register(add: AddCommand) -> None:
     estimate.add_argument("--as-of", help="analysis date for suggest (YYYY-MM-DD)")
     estimate.add_argument("--months", type=int, default=12, help="completed history months")
     estimate.add_argument("--min-active-months", type=int, default=3)
+    add_server_options(estimate)  # used by suggest
     estimate.set_defaults(func=cmd_estimate)
 
     payroll_cmd = add(
@@ -1175,4 +1029,5 @@ def register(add: AddCommand) -> None:
     payroll_cmd.add_argument(
         "--preview", action="store_true", help="show the pay change without saving it"
     )
+    add_server_options(payroll_cmd)
     payroll_cmd.set_defaults(func=cmd_payroll)

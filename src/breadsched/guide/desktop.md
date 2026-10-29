@@ -14,8 +14,8 @@ breadsched-gtk household.breadsched
 
 With no book argument, the application offers to create a book, open a book, or
 import a GnuCash book into a new BreadSched book. With no argument it reopens the
-book you used last, and the window says **Opening** and the book's name until it is
-ready (or that it is upgrading, for an older book). The equivalent commands are
+book you used last, and the window shows the BreadSched logo with **Opening** and the
+book's name until it is ready (or that it is upgrading, for an older book). The equivalent commands are
 `breadsched gui` and `python -m breadsched.gui`. **File → New Book** creates a book
 at any time, and **File → Import GnuCash Book into New Book** starts from GnuCash.
 
@@ -202,7 +202,11 @@ change anywhere reach every tab whose scenario uses them.
 
 Each book remembers its tabs: opening it again brings back the same views,
 registers, and scenario tabs, in the same order, with the same tab selected. A tab for an account or
-scenario deleted since is left out. Another book has its own tabs.
+scenario deleted since is left out. Another book has its own tabs. Only the selected
+tab is drawn when the book opens, so many open tabs no longer slow opening it; the
+others are drawn when you choose them. Registers, Accounts, and the Plan are read in
+the background instead: they are ready when you switch to them, and after a change the
+Plan keeps showing what it had, marked **Updating…**, until the new figures are in.
 
 Registers can also open in independent windows; their account, filter, and cursor
 do not replace the main window's register state.
@@ -219,7 +223,8 @@ needs, saying why. See [Accounts](../USER_GUIDE.md#accounts).
 ## Configure the Dashboard
 
 On the Dashboard, **Configure Dashboard** (toolbar icon or the Actions menu) holds
-everything the Dashboard can be told, on three pages:
+everything the Dashboard can be told, on three pages. All of it is your own
+arrangement of this book: anyone else it is shared with keeps theirs.
 
 - **General**: the two horizons, **Liquid for** so many days of bills and how many
   months of outgoings the **Emergency fund covers**, and which sections show:
@@ -569,7 +574,8 @@ occurrence joins the review; its rows say *(in advance)* or *(reminder)*. See
 
 ## Plan and projection
 
-Set the Plan controls and apply them; they are shared with the browser. Select a
+Set the Plan controls and apply them; they are yours, shared with the browser when you
+use it on this computer, while anyone else the book is shared with keeps their own. Select a
 value to inspect its occurrences and actual splits, and use **Resolve actuals…** to
 match an actual, mark it unexpected, or review it. In **Resolve actuals**, each
 candidate lists why it is offered, the buttons explain themselves on hover, and the
@@ -818,11 +824,38 @@ work. They are kept in your own settings, not in a book:
 - **Online quotes**: the Alpha Vantage API key, the same key **Online Quotes…**
   keeps (see [Online quotes](#online-quotes)).
 - **Dashboard**: **Configure Dashboard…** opens the open book's Dashboard settings
-  (see [Configure the Dashboard](#configure-the-dashboard)); they belong to the book.
+  (see [Configure the Dashboard](#configure-the-dashboard)); they are your own for
+  the book.
 - **Windows**: **Forget remembered window sizes** returns every window to its own
   size. BreadSched remembers the main window's size (and whether it was maximized)
   and an independent register window's size each time you close them, and the
   size of any other window you resize, for every book.
+- **Sharing**: **Let other BreadSched commands use the open book**
+  lets commands such as `breadsched due-review` and `breadsched scheduled-next` work
+  on the book open in this window, through it, instead of stopping because the book
+  is already open. Their changes appear here at once and can be undone here. It is
+  off unless you turn it on; see
+  [Share a book with a running server](cli.md#share-a-book-with-a-running-server).
+  The other way round works too: opening a book that `breadsched serve` (or another
+  BreadSched window sharing it) already holds uses it through that server, as you,
+  without a prompt, so the desktop and phones or tablets work on one book at once.
+  Everything works as usual; a projection says only when it is done, and the book
+  stays open for the others when you close it here.
+- **Users**: says "Only you" until someone else may use this
+  computer's books. **Users and devices…** sets your own password (needed only to
+  sign in from another device), adds a person with a temporary password they replace
+  when they first sign in, resets or removes them, and lists your devices and scripts:
+  **Add a device or script…** makes a token shown only once, and **Revoke** stops
+  one at once. With a book open it also lists **Who may use** it: you own it, and
+  each other person has a role (owner, editor, viewer, or entry, which only adds
+  transactions) that you can change, take away, or give with **Give someone
+  access…**. The same can be done with `breadsched users`, `password`, `token`, and
+  `share` (see [Users and devices](cli.md#users-and-devices)).
+  **Two-step sign-in** can be turned on there for your own sign-ins from other
+  devices (the secret for an authenticator app, its first code, then recovery codes
+  shown once), and turned off for someone who lost their phone. When
+  someone changes a book you share, **Undo** names them ("Undo: Add transaction
+  (Eddie)"); an editor or owner may undo anyone's change.
 
 **Save** stores them all and redraws open registers; **Cancel** or Escape changes
 nothing.

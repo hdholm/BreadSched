@@ -99,7 +99,37 @@ spellings or symlink aliases from becoming competing writers. A competing writer
 fails with an explicit read-only alternative; read-only opens remain allowed. A
 stale lock is reclaimed automatically only when it belongs to the same host and its
 recorded process no longer exists. Lock removal verifies the ownership token so one
-process cannot delete another writer's lock.
+process cannot delete another writer's lock. The server holding a book publishes where to reach it, and a command for the same
+book connects to it instead of failing on the lock (#358; see
+[decision 0003](decisions/0003-book-server.md)). The lock itself is unchanged and
+still admits one writer.
+
+## Minimized transaction JSON
+
+A stored transaction leaves out each key
+whose value is the constant default that `Transaction.from_dict` and
+`Split.from_dict` read when the key is missing (`gen.db.compact`; decision
+[0001](decisions/0001-transaction-storage.md), re-evaluation).
+- **What it saves:** about half the JSON per transaction, so books get smaller.
+- **Compatibility:** every version reads the result unchanged, and earlier full
+  blobs keep working beside minimized ones.
+- **Reads inside storage:** `_read` expands a blob back to the full form, so writes
+  that change nothing are still skipped and the undo journal holds complete records.
+- **SQL over the blob:** `json_extract` reads an omitted key as null, which is the
+  default for every key that SQL inspects.
+
+## Book revision
+
+A book carries a change counter, `DbSQLite.revision()`, stored under the
+metadata key `book_revision` (no schema change). Every committed database
+transaction that changed a record, and every undo or redo, raises it by one inside
+the same SQL transaction, so a read-only snapshot sees exactly the revision of the
+generation it reads and every process agrees on it. It is written outside the undo
+records, so undoing a change moves the counter forward rather than back. Metadata
+written outside a database transaction (presentation settings) does not count. The
+book server's `ETag` and change events report this value (#357); see
+[decision 0003](decisions/0003-book-server.md). `tests/test_book_server.py`
+covers reopening, undo, and a read-only snapshot.
 
 ## Verification, backup, and restore
 

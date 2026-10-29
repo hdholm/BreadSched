@@ -34,6 +34,7 @@ __all__ = [
     "copy_into_folder",
     "is_web_address",
     "location_for",
+    "location_in",
     "resolve",
     "statuses",
 ]
@@ -121,8 +122,12 @@ def resolve(db: DbSQLite, location: str, folder: Path | None = None) -> Path | N
 
 def location_for(db: DbSQLite, path: Path) -> str:
     """How to record a chosen file: relative inside the attachment folder, else absolute."""
+    return location_in(attachment_folder(db), path)
+
+
+def location_in(folder: Path | None, path: Path) -> str:
+    """:func:`location_for` given the attachment folder, as a book server reported it."""
     path = path.resolve()
-    folder = attachment_folder(db)
     if folder is not None:
         try:
             return path.relative_to(folder.resolve()).as_posix()

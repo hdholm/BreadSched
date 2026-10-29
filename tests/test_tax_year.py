@@ -257,7 +257,7 @@ class TestTaxMarksService:
 
 
 def test_the_layout_prints_every_section(db, book):
-    from breadsched.gen.engine.tax_year import currency_labels
+    from breadsched.gen.services.investment_reports import tax_year_view
     from breadsched.plugins.export.report_layout import tax_year_layout
 
     account, _fund_commodity, usd = _fund(db, book)
@@ -266,8 +266,11 @@ def test_the_layout_prints_every_section(db, book):
     _spend(db, book, date(2025, 1, 31), book.salary, "5000", income=True)
     db.set_metadata(TAX_TAGS_KEY, ["Charity"])
     _mark(db, book.rent, True)
-    report = tax_year(db, 2025)
-    document = tax_year_layout(report, currency_labels(db, report))
+    view = tax_year_view(db, 2025)
+    report = view.report
+    assert report == tax_year(db, 2025)
+    assert view.labels()[usd.handle] == "USD"
+    document = tax_year_layout(report, view.labels())
     assert (document.title, document.kind) == ("Tax year 2025", "tax-year")
     text = document.text()
     for expected in (

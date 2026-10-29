@@ -10,20 +10,17 @@ from __future__ import annotations
 from calendar import monthrange
 from datetime import date
 
+from ...api import ApiError
+from ...api.local import book_server
 from ...gen.engine.activity import PlanMeasure, PlanSettings, ReportingPeriod
 from ...gen.engine.category_report import CategoryReport
-from ...gen.engine.plan_detail import (
-    explain_category_period,
-    explain_mortgage_payment_period,
-    explain_planning_flow_period,
-)
 from ...gen.lib import Money, Scenario
 from ...gen.services import (
     PlanQuery,
     SuppressScenarioSchedule,
-    query_plan,
-    suppress_scenario_schedule,
 )
+from ...gen.services.plan import PlanBounds
+from ...gen.services.plan_cells import PlanCellQuery
 from ...presentation import (
     PLAN_REIMBURSABLE_HEADING,
     plan_goal_text,
@@ -90,6 +87,7 @@ class PlanView(BaseView):
         self._period_index = 0
         self._measure_index = 0
         self._bounds_initialized = False
+        self._bounds_cache: tuple[int, PlanBounds] | None = None
         self._updating_controls = False
         self._scenarios: list[Scenario] = []
         self._scenario_handle: str | None = selected_scenario_handle(manager)
@@ -240,10 +238,8 @@ class PlanView(BaseView):
             super().set_db(None)
             return
         today = date.today()
-        settings = PlanSettings.load(
-            db,
-            date(today.year, 1, 1),
-            date(today.year + 1, 12, 31),
+        settings = book_server(db).plan_settings(
+            date(today.year, 1, 1), date(today.year + 1, 12, 31)
         )
         self._start_date = settings.start
         self._end_date = settings.end
@@ -252,6 +248,7 @@ class PlanView(BaseView):
         self._scenario_handle = settings.scenario
         self._compare_handle = settings.compare
         self._bounds_initialized = False
+        self._bounds_cache = None
         self._updating_controls = True
         try:
             self.start_year.set_value(self._start_date.year)
@@ -267,7 +264,7 @@ class PlanView(BaseView):
     def _populate_scenarios(self) -> None:
         if self.db is None:
             return
-        self._scenarios = list(self.db.iter_scenarios())
+        self._scenarios = book_server(self.db).scenarios()
         model = Gtk.StringList()
         model.append("Base scenario")
         selected = 0
@@ -430,10 +427,13 @@ class PlanView(BaseView):
         scenario = self._require_scenario()
         if scenario is None or self.db is None:
             return
-        suppress_scenario_schedule(
-            self.db,
-            SuppressScenarioSchedule(scenario.handle, schedule.handle),
-        )
+        try:
+            book_server(self.db).suppress_scenario_schedule(
+                SuppressScenarioSchedule(scenario.handle, schedule.handle)
+            )
+        except ApiError:
+            # The schedule or scenario is gone; the refresh shows what is left.
+            pass
 
     def _grouping(self) -> ReportingPeriod:
         return (
@@ -455,30 +455,24 @@ class PlanView(BaseView):
             return date(when.year - 1, 12, 1)
         return date(when.year, when.month - 1, 1)
 
+    def _plan_bounds(self) -> PlanBounds:
+        """The months the server's Plan accepts, read once per change to the book."""
+        assert self.db is not None
+        cached = self._bounds_cache
+        if cached is None or cached[0] != self._changes:
+            cached = (self._changes, book_server(self.db).plan_bounds())
+            self._bounds_cache = cached
+        return cached[1]
+
     def _earliest_data_date(self) -> date:
-        today = date.today()
         if self.db is None:
-            return date(today.year, 1, 1)
-        dates: list[date] = []
-        dates.extend(transaction.post_date for transaction in self.db.iter_transactions())
-        dates.extend(schedule.recurrence.start for schedule in self.db.iter_scheduled())
-        for scenario in self.db.iter_scenarios():
-            dates.extend(item.recurrence.start for item in scenario.schedule_overrides)
-            dates.extend(item.when for item in scenario.one_offs)
-        return min(dates, default=date(today.year, 1, 1))
+            return date(date.today().year, 1, 1)
+        return self._plan_bounds().minimum
 
     def _maximum_through_month(self) -> date:
-        today = date.today()
-        anniversary_year = today.year + 150
-        anniversary = date(
-            anniversary_year,
-            today.month,
-            min(today.day, monthrange(anniversary_year, today.month)[1]),
-        )
-        candidate = date(anniversary.year, anniversary.month, 1)
-        if self._month_end(candidate.year, candidate.month) > anniversary:
-            candidate = self._previous_month(candidate)
-        return candidate
+        if self.db is None:
+            return date(date.today().year + 149, 1, 1)
+        return self._plan_bounds().maximum
 
     def _initialize_range_bounds(self) -> None:
         if self.db is None or self._bounds_initialized:
@@ -548,41 +542,78 @@ class PlanView(BaseView):
         self._start_date, self._end_date = self._pending_range()
         self._period_index = self.period.get_selected()
         self._measure_index = self.measure.get_selected()
-        PlanSettings(
-            start=self._start_date,
-            end=self._end_date,
-            period=self._grouping(),
-            measure=self._measure(),
-            scenario=self._scenario_handle,
-            compare=self._compare_handle,
-        ).save(self.db)
+        try:
+            book_server(self.db).save_plan_settings(
+                PlanSettings(
+                    start=self._start_date,
+                    end=self._end_date,
+                    period=self._grouping(),
+                    measure=self._measure(),
+                    scenario=self._scenario_handle,
+                    compare=self._compare_handle,
+                )
+            )
+        except ApiError as error:
+            self.control_status.set_text(str(error))
+            self.control_status.add_css_class("negative")
+            return
         self.control_status.set_text(
             f"Showing {self._start_date:%b %Y} through {self._end_date:%b %Y}."
         )
         self.control_status.remove_css_class("negative")
         self.refresh()
 
+    def _plan_query(self) -> PlanQuery:
+        """The applied selection, read from the controls on GTK's loop."""
+        assert self.db is not None
+        self._initialize_range_bounds()
+        self._populate_scenarios()
+        return PlanQuery(
+            start=self._start_date,
+            end=self._end_date,
+            period=self._grouping(),
+            measure=self._measure(),
+            scenario=self._scenario_handle,
+            baseline=baseline_scenario(self.manager, self.db),
+        )
+
     def refresh(self) -> None:
         if self.db is None:
             return
-        self._initialize_range_bounds()
-        self._populate_scenarios()
-        result = query_plan(
-            self.db,
-            PlanQuery(
-                start=self._start_date,
-                end=self._end_date,
-                period=self._grouping(),
-                measure=self._measure(),
-                scenario=self._scenario_handle,
-                baseline=baseline_scenario(self.manager, self.db),
-            ),
-        )
-        if result.value is None:
-            self.control_status.set_text(result.errors[0].code)
-            self.control_status.add_css_class("negative")
+        query = self._plan_query()
+        try:
+            plan = book_server(self.db).plan(query)
+        except ApiError as error:
+            self._show_plan_error(error)
             return
-        self._report = result.value.report
+        self._show_plan(plan)
+
+    def background_refresh(self):
+        """The Plan is calculated from a snapshot; only drawing it uses GTK's loop (#389)."""
+        if self.db is None:
+            return None
+        query = self._plan_query()
+
+        def show(plan) -> None:
+            if isinstance(plan, ApiError):
+                self._show_plan_error(plan)
+            else:
+                self._show_plan(plan)
+
+        def read(book):
+            try:
+                return book.plan(query)
+            except ApiError as error:
+                return error
+
+        return read, show
+
+    def _show_plan_error(self, error: ApiError) -> None:
+        self.control_status.set_text(error.code)
+        self.control_status.add_css_class("negative")
+
+    def _show_plan(self, plan) -> None:
+        self._report = plan.report
         activity = self._report.activity
         position = self._report.cash_position
         minimum_date = (
@@ -613,7 +644,7 @@ class PlanView(BaseView):
             self.currency_note.add_css_class("negative")
         else:
             self.currency_note.remove_css_class("negative")
-        self.goal_milestones = result.value.goal_milestones
+        self.goal_milestones = plan.goal_milestones
         self.goal_note.set_text(
             "Savings goals reaching their target:\n"
             + "\n".join(plan_goal_text(item) for item in self.goal_milestones)
@@ -880,46 +911,37 @@ class PlanView(BaseView):
         return row + 1
 
     def _on_flow_cell_clicked(self, _button, flow, period) -> None:
-        if self.db is None:
-            return
-        scenario = self._selected_scenario() or baseline_scenario(self.manager, self.db)
-        detail = explain_planning_flow_period(
-            self.db, flow.kind, flow.account, period.start, period.end, scenario=scenario
-        )
-        from ..dialogs.plan_detail_dialog import PlanDetailDialog
-
-        PlanDetailDialog(
-            self.get_root(),
-            self.db,
-            detail,
-            period_label=period.label,
-            scenario_name=("Base scenario" if self._scenario_handle is None else scenario.name),
-        ).present()
+        self._explain(period, account=flow.account, flow_kind=flow.kind)
 
     def _on_mortgage_cell_clicked(self, _button, payment, period) -> None:
-        if self.db is None:
-            return
-        scenario = self._selected_scenario() or baseline_scenario(self.manager, self.db)
-        detail = explain_mortgage_payment_period(
-            self.db, payment.account, period.start, period.end, scenario=scenario
-        )
-        from ..dialogs.plan_detail_dialog import PlanDetailDialog
-
-        PlanDetailDialog(
-            self.get_root(),
-            self.db,
-            detail,
-            period_label=period.label,
-            scenario_name=("Base scenario" if self._scenario_handle is None else scenario.name),
-        ).present()
+        self._explain(period, account=payment.account, requirement_kind="mortgage")
 
     def _on_plan_cell_clicked(self, _button, category, period) -> None:
+        self._explain(period, account=category.account)
+
+    def _explain(self, period, *, account: str, flow_kind=None, requirement_kind=None) -> None:
+        """Explain one cell of the Plan through the book server, which reads the saved
+        scenario (or the Base assumptions as saved) itself."""
         if self.db is None:
             return
-        scenario = self._selected_scenario() or baseline_scenario(self.manager, self.db)
-        detail = explain_category_period(
-            self.db, category.account, period.start, period.end, scenario=scenario
-        )
+        try:
+            explained = book_server(self.db).explain_plan_cell(
+                PlanCellQuery(
+                    account=account,
+                    start=period.start,
+                    end=period.end,
+                    scenario=self._scenario_handle,
+                    flow_kind=flow_kind,
+                    requirement_kind=requirement_kind,
+                )
+            )
+        except ApiError as error:
+            self.control_status.set_text(str(error))
+            self.control_status.add_css_class("negative")
+            return
+        detail = explained.category or explained.flow or explained.mortgage
+        if detail is None:
+            return
         from ..dialogs.plan_detail_dialog import PlanDetailDialog
 
         PlanDetailDialog(
@@ -927,5 +949,5 @@ class PlanView(BaseView):
             self.db,
             detail,
             period_label=period.label,
-            scenario_name=("Base scenario" if self._scenario_handle is None else scenario.name),
+            scenario_name=explained.scenario_name,
         ).present()

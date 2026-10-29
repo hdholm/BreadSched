@@ -1,9 +1,10 @@
 """Web holdings: each security's cost basis, lots, and gains; sale lots; realized gains.
 
 The lots and gains are derived in ``gen/engine/cost_basis`` and
-``gen/engine/realized_gains``; choosing a sale's lots goes through
-``gen/services/lots``. This adapter only parses queries and payloads and
-serializes, with the same sentences every interface shows.
+``gen/engine/realized_gains`` and read through the book server (``holdings``,
+``realized_gains``); choosing a sale's lots goes through it too (``sale_lots``,
+``set_sale_lots``). This adapter only parses queries and payloads and serializes,
+with the same sentences every interface shows.
 """
 
 from __future__ import annotations
@@ -12,7 +13,6 @@ from collections.abc import Mapping
 from datetime import date
 from typing import TYPE_CHECKING, Any, cast
 
-from ..gen.engine.cost_basis import holdings_charts, holdings_cost_basis
 from ..presentation import holding_cost_text, lot_move_text
 
 if TYPE_CHECKING:
@@ -30,23 +30,18 @@ def holdings(api: Api, query: QueryParams) -> dict[str, object]:
         from .resources import QueryError  # resources imports this module
 
         raise QueryError("query.invalid", ("as_of",)) from None
-    found = holdings_cost_basis(api.db, as_of=as_of)
-    db = api.db
-
-    def other_name(handle: str | None) -> str | None:
-        account = db.get_account(handle) if handle else None
-        return db.full_name(account) if account is not None else None
-
+    view = api.book.holdings(as_of)
+    found = view.holdings
     return {
         "as_of": as_of,
-        "charts": [chart.as_dict() for chart in holdings_charts(db, found)],
+        "charts": [chart.as_dict() for chart in view.charts],
         "holdings": [
             {
                 **item.as_dict(),
-                "name": db.full_name(item.account),
+                "name": view.name(item.account.handle),
                 "text": holding_cost_text(item),
                 "moves": [
-                    {**data, "text": lot_move_text(move, other_name(move.other_account))}
+                    {**data, "text": lot_move_text(move, view.other_name(move.other_account))}
                     for move, data in zip(
                         item.moves,
                         cast("list[dict[str, object]]", item.as_dict()["moves"]),
@@ -74,20 +69,19 @@ def _lot_data(lot) -> dict[str, object]:
 
 def realized_gains_report(api: Api, query: QueryParams) -> dict[str, object]:
     """Every sale with the lots it took, and totals by year, for a year or all years."""
-    from ..gen.engine.realized_gains import realized_gains
     from ..presentation import sale_text
 
     year = query.integer("year", minimum=1900, maximum=9999)
     account = query.text("account")
     query.finish()
-    report = realized_gains(api.db, year=year, account=account)
-    data = report.as_dict(api.db)
+    view = api.book.realized_gains(year, account)
+    report = view.report
+    data = report.as_dict(view.mnemonics)
     sales = cast("list[dict[str, object]]", data["sales"])
     for row, item in zip(sales, report.sales, strict=True):
         row["text"] = sale_text(item.sale)
         row["lots"] = [_lot_data(lot) for lot in item.lots]
-    years = sorted({sale.sold.year for sale in realized_gains(api.db, account=account).sales})
-    return {**data, "year": year, "account": account, "available_years": years}
+    return {**data, "year": year, "account": account, "available_years": list(view.available_years)}
 
 
 def _sale_lots_data(chosen) -> dict[str, object]:
@@ -112,22 +106,15 @@ def _sale_lots_data(chosen) -> dict[str, object]:
 
 def sale_lots_view(api: Api, query: QueryParams) -> dict[str, object]:
     """The lots a sale could name and the ones it names now."""
-    from ..gen.services import sale_lots
-    from .controls import service_error
-
     transaction = query.text("transaction", required=True)
     split = query.text("split", required=True)
     query.finish()
-    result = sale_lots(api.db, str(transaction), str(split))
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return _sale_lots_data(result.value)
+    return _sale_lots_data(api.book.sale_lots(str(transaction), str(split)))
 
 
 def sale_lots_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """Name the lots a sale sells; an empty list returns it to the account's method."""
-    from ..gen.services import SetSaleLots, set_sale_lots
-    from .controls import service_error
+    from ..gen.services import SetSaleLots
 
     transaction = payload.get("transaction")
     split = payload.get("split")
@@ -142,7 +129,4 @@ def sale_lots_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     ):
         raise ValueError("picks must be a list of {lot, quantity}")
     picks = tuple((item["lot"], str(item["quantity"])) for item in raw)
-    result = set_sale_lots(api.db, SetSaleLots(transaction, split, picks))
-    if result.value is None:
-        raise service_error(result.errors[0])
-    return _sale_lots_data(result.value)
+    return _sale_lots_data(api.book.set_sale_lots(SetSaleLots(transaction, split, picks)))

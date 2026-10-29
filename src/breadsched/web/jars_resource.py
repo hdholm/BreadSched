@@ -1,7 +1,8 @@
 """Web budget jars: each schedule and goal, filled from income and drawn by actuals.
 
-The jars are derived in ``gen/engine/budget_jars``; this adapter parses the month
-range and grouping and serializes the report.
+The jars are derived in ``gen/engine/budget_jars`` and read through the book server
+(``budget_jars``); this adapter parses the month range and grouping and serializes
+the report.
 """
 
 from __future__ import annotations
@@ -11,13 +12,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from ..gen.engine.activity import ReportingPeriod
-from ..gen.engine.budget_jars import (
-    JarPeriod,
-    budget_jars,
-    currency_labels,
-    jar_charts,
-    jar_kind_label,
-)
+from ..gen.engine.budget_jars import JarPeriod, jar_kind_label
 
 if TYPE_CHECKING:
     from .context import Api
@@ -66,9 +61,10 @@ def jars_report(api: Api, query: QueryParams) -> dict[str, object]:
     end = date(through.year, through.month, monthrange(through.year, through.month)[1])
     if end < start:
         raise QueryError("query.invalid", ("through",))
-    report = budget_jars(api.db, start, end, period=period, today=today)
-    labels = currency_labels(api.db, report)
-    charts = jar_charts(report, labels)
+    view = api.book.budget_jars(start, end, period, today)
+    report = view.report
+    labels = view.labels()
+    charts = view.charts()
     return {
         "from": start.strftime("%Y-%m"),
         "through": end.strftime("%Y-%m"),

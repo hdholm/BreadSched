@@ -15,19 +15,31 @@ over toolbars:
   book (its horizons, sections, and groups belong to the book, not to these
   settings).
 * **Windows** – forget the remembered window sizes (#349).
+* **Sharing** – let other BreadSched commands use the open book through this window
+  (``general.share_book``, #359).
+* **Users** – **Users and devices…**: your password, the other people who may use
+  this computer's books, and your devices (decision 0004). Used alone,
+  nothing here needs changing.
 
 **Save** writes them all; **Cancel** (or Escape) changes nothing.
 """
 
 from __future__ import annotations
 
+import sqlite3
+from pathlib import Path
+
+from ...api.local import book_server
+from ...api.users import UserDirectory
 from ...plugins.quotes import alphavantage_key, save_alphavantage_key
+from ..book_sharing import SETTING as SHARE_SETTING
 from ..gi_setup import Gio, GLib, Gtk
 from ..views.register import BANDING_CHOICES, apply_register_display
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
 from ..widgets.window_sizes import forget_sizes
+from .users_dialog import UsersDialog
 
 __all__ = ["PreferencesDialog"]
 
@@ -124,6 +136,28 @@ class PreferencesDialog(BoundedWindow):
         grid.attach(self.forget_sizes, 0, row, 2, 1)
         row += 1
 
+        heading("Sharing")
+        self.share_book = Gtk.CheckButton(label="Let other BreadSched commands use the open book")
+        self.share_book.set_tooltip_text(
+            "Commands such as breadsched due-review work through this window "
+            "instead of finding the book already open"
+        )
+        self.share_book.set_active(self.settings.get_bool(*SHARE_SETTING))
+        grid.attach(self.share_book, 0, row, 2, 1)
+        row += 1
+
+        heading("Users")
+        self.users_summary = Gtk.Label(xalign=0, wrap=True, hexpand=True)
+        grid.attach(self.users_summary, 0, row, 1, 1)
+        users = Gtk.Button(label="Users and devices…")
+        users.set_tooltip_text(
+            "Your password, the people who may use this computer's books, and your devices"
+        )
+        users.connect("clicked", self._on_users)
+        grid.attach(users, 1, row, 1, 1)
+        row += 1
+        self._show_users_summary()
+
         self.status = Gtk.Label(xalign=0, wrap=True)
         self.status.add_css_class("dim")
         box.append(self.status)
@@ -169,10 +203,40 @@ class PreferencesDialog(BoundedWindow):
         if parent is not None:
             parent.activate_action("win.dashboard-configure", None)
 
+    # ------------------------------------------------------------------ users
+
+    def _show_users_summary(self) -> None:
+        try:
+            others = [user for user in UserDirectory().users() if not user.host_account]
+        except (OSError, sqlite3.Error):
+            self.users_summary.set_text("The list of users could not be read.")
+            return
+        self.users_summary.set_text(
+            "Only you"
+            if not others
+            else f"You and {len(others)} other {'person' if len(others) == 1 else 'people'}"
+        )
+
+    def _on_users(self, _button) -> UsersDialog:
+        # With a book open, the window also says who may use it (decision 0004).
+        db = getattr(self.application, "db", None)
+        book_id = book_server(db).book_id() if db is not None else None
+        path = getattr(self.application, "book_path", "") or ""
+        dialog = UsersDialog(self, book_id=book_id, book_name=Path(path).name if path else "")
+
+        def closed(*_args) -> bool:
+            self._show_users_summary()
+            return False
+
+        dialog.connect("close-request", closed)
+        dialog.present()
+        return dialog
+
     # ----------------------------------------------------------------- saving
 
     def save(self) -> bool:
         """Write every setting; False, with the reason shown, if one could not be saved."""
+        self.settings.set(*SHARE_SETTING, self.share_book.get_active())
         if self.book_path:
             self.settings.set("general", "last_book_path", self.book_path)
         else:

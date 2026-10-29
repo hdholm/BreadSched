@@ -8,7 +8,7 @@ atomic transaction, read-back, round-trip comparison, restore on failure).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ...plugins.export.gnucash_writeback import (
     DEFAULT_KEEP_BACKUPS,
@@ -33,6 +33,7 @@ __all__ = [
     "preview_writeback",
     "set_writeback_keep_backups",
     "writeback_keep_backups",
+    "writeback_preview",
 ]
 
 _FIELDS = {
@@ -63,6 +64,23 @@ def preview_writeback(db: DbSQLite) -> ServiceResult[WritebackPlan]:
         return ServiceResult.success(plan_writeback(db))
     except WritebackError as exc:
         return _failure(exc)
+
+
+def _shown(change: WritebackChange) -> WritebackChange:
+    """The change as an interface shows it, without the write it would perform."""
+    return replace(change, operation=None)
+
+
+def writeback_preview(db: DbSQLite) -> ServiceResult[WritebackPlan]:
+    """The preview as every interface shows it: what each write changes, and why
+    others cannot be written; the operations behind it stay in the server."""
+    found = preview_writeback(db)
+    if found.value is None:
+        return found
+    plan = found.value
+    return ServiceResult.success(
+        replace(plan, changes=tuple(_shown(change) for change in plan.changes))
+    )
 
 
 def writeback_keep_backups(db: DbSQLite) -> int:
@@ -104,4 +122,6 @@ def apply_writeback(
     except WritebackError as exc:
         return _failure(exc)
     db.emit("database-changed", (db,))
-    return ServiceResult.success(WritebackApplied(written, str(backup)))
+    return ServiceResult.success(
+        WritebackApplied(tuple(_shown(change) for change in written), str(backup))
+    )
