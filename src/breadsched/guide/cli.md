@@ -278,7 +278,9 @@ front of the server on the same machine; the server itself only listens on this
 machine. `--trusted-origin https://books.example.lan` lets pages from the proxy's
 address use the book, and `--token-file PATH` keeps the token in a private file
 instead of printing it. Another machine's commands then use
-`--server https://books.example.lan` with `--token-file`, and `--ca-file`,
+`--server https://books.example.lan` with `--token-file` (a plain `http://` address
+is refused for anything but this machine, since the token would cross the network
+unencrypted), and `--ca-file`,
 `--client-cert`, and `--client-key` when the proxy uses its own certificate
 authority or asks for a client certificate. See the design notes (decision 0003)
 for a complete nginx configuration and the checks the proxy must keep.

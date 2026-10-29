@@ -21,7 +21,7 @@ from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, TypeVar
-from urllib.parse import unquote, urlencode, urlparse
+from urllib.parse import quote, unquote, urlencode, urlparse
 
 from ..api.contract import ApiError
 from ..api.host import (
@@ -33,7 +33,7 @@ from ..api.host import (
     hosted_name,
 )
 from ..api.local import local_caller
-from ..api.permissions import acting_as
+from ..api.permissions import ROLE_PERMISSIONS, Permission, acting_as
 from ..api.protocol import Change
 from ..api.typed_codec import to_data
 from ..api.users import SESSION_DAYS, Caller, User, UserDirectory, UserError, acting_for
@@ -41,7 +41,12 @@ from ..api.views import change_json
 from ..gen.db.sqlite import DbSQLite
 from ..gen.lib import Money, Rate
 from ..gen.utils.logs import get_logger
-from .attachment_resource import MAX_ATTACHMENT_BYTES, attachment_content, attachment_upload
+from .attachment_resource import (
+    MAX_ATTACHMENT_BYTES,
+    SAFE_DOCUMENT_TYPES,
+    attachment_content,
+    attachment_upload,
+)
 from .context import Api
 from .controls import ResourceError
 from .resources import (
@@ -235,6 +240,8 @@ class Handler(BaseHTTPRequestHandler):
         body: bytes,
         content_type: str,
         headers: dict[str, str] | None = None,
+        *,
+        sandbox: bool = False,
     ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -256,15 +263,24 @@ class Handler(BaseHTTPRequestHandler):
                     "form-action 'self'",
                     "frame-ancestors 'none'",
                     "object-src 'none'",
+                    # A document a person attached runs nothing, even opened directly.
+                    *(("sandbox",) if sandbox else ()),
                 )
             ),
         )
+        self.send_header("Referrer-Policy", "no-referrer")
         self.end_headers()
         self.wfile.write(body)
 
     def _json(self, status: int, payload: object, headers: dict[str, str] | None = None) -> None:
         body = json.dumps(payload, default=_encode).encode("utf-8")
-        self._send(status, body, "application/json; charset=utf-8", headers)
+        # The book's figures are never kept in a browser's or proxy's cache.
+        self._send(
+            status,
+            body,
+            "application/json; charset=utf-8",
+            {"Cache-Control": "no-store", **(headers or {})},
+        )
 
     def _error(
         self,
@@ -942,6 +958,13 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     change = changes.get(timeout=self.EVENT_KEEPALIVE)
                 except queue.Empty:
+                    change = None
+                # A stream lasts only while its caller may still read the book: a
+                # session that ended, a revoked token, or a role taken away ends it
+                # within one keep-alive.
+                if not self._still_reading():
+                    break
+                if change is None:
                     self.wfile.write(b": keep-alive\n\n")
                     self.wfile.flush()
                     continue
@@ -950,6 +973,14 @@ class Handler(BaseHTTPRequestHandler):
             pass
         finally:
             stop()
+
+    def _still_reading(self) -> bool:
+        """Whether this request's caller, asked afresh, may still follow the book."""
+        self._resolved = None
+        caller = self._caller()
+        if caller is None or caller.user.must_change:
+            return False
+        return Permission.READ in ROLE_PERMISSIONS.get(self._role(), frozenset())
 
     def _event(self, name: str, revision: int, payload: object) -> None:
         data = json.dumps(payload, default=_encode)
@@ -1072,7 +1103,18 @@ class Handler(BaseHTTPRequestHandler):
                 content, kind = attachment_content(api.db, transaction, location)
             finally:
                 self._close_read_api(reader)
-            self._send(200, content, kind)
+            name = Path(location.replace("\\", "/")).name or "document"
+            disposition = "inline" if kind in SAFE_DOCUMENT_TYPES else "attachment"
+            self._send(
+                200,
+                content,
+                kind,
+                {
+                    "Cache-Control": "no-store",
+                    "Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(name)}",
+                },
+                sandbox=True,
+            )
         except QueryError as exc:
             self._error(400, exc.code, exc.fields)
         except ResourceError as exc:

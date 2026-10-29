@@ -75,8 +75,17 @@ changes still open. For a proxy (#358):
   not verify is a `server.unreachable` failure, never a fallback to plain HTTP.
 
 Every request served over HTTP, `/api/v1` included, may link or relink a document
-only by web address or inside the attachment folder; decision 0003 notes the copy
-path (`attach_file`) that still reads any file the server's user can read.
+only by web address or inside the attachment folder, and may copy one in only from
+the uploads folder unless it comes from the computer account on this computer. A
+document is served as itself only if it cannot run (PDF, common images, plain text);
+anything else is sent as bytes to be saved, and every document carries a `sandbox`
+content security policy. JSON responses and documents are `no-store` with
+`Referrer-Policy: no-referrer`. A change stream asks again, at every change and
+keep-alive, whether its caller may still read the book. Sign-in attempts are checked
+one at a time, so throttling and single-use codes hold for attempts sent together.
+The HTTP client sends a token in the clear only to loopback, and trusts a server
+record only for a loopback address. Decision 0004 records the security review these
+come from and the risks it accepted.
 
 GTK shares its open book only when the user turns on **Preferences → Sharing**. It
 then listens on the loopback interface with the same per-server token, trusted-Host,

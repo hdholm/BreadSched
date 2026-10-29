@@ -27,7 +27,14 @@ from .controls import ResourceError
 if TYPE_CHECKING:
     from .context import Api
 
+#: The document types a browser may open in place (``accounts.js`` opens these, and
+#: saves anything else): none of them runs script.
+SAFE_DOCUMENT_TYPES = frozenset(
+    {"application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp", "text/plain"}
+)
+
 __all__ = [
+    "SAFE_DOCUMENT_TYPES",
     "attachment_content",
     "attachment_upload",
     "document_json",
@@ -134,4 +141,8 @@ def attachment_content(db: DbSQLite, transaction: str, location: str) -> tuple[b
     if not item.path.is_file():
         raise _refuse(404, "attachment.missing", "location")
     kind = mimetypes.guess_type(item.path.name)[0] or "application/octet-stream"
+    # Anything else (a web page, a script, an SVG image) would run as this site if
+    # opened, with the reader's session: it is only ever saved, as bytes.
+    if kind not in SAFE_DOCUMENT_TYPES:
+        kind = "application/octet-stream"
     return item.path.read_bytes(), kind

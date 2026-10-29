@@ -40,6 +40,7 @@ import re
 import secrets
 import socket
 import sqlite3
+import threading
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -87,6 +88,8 @@ FREE_FAILURES = 5
 MAX_DELAY = timedelta(minutes=15)
 #: The roles a user may be granted in a book (``api.permissions.ROLES``).
 _ROLES = ("owner", "editor", "viewer", "entry")
+#: Sign-in attempts are checked one at a time (see ``UserDirectory.sign_in``).
+_SIGNING_IN = threading.Lock()
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 #: scrypt cost: 16 MiB and well under a second per attempt on a household computer.
 _SCRYPT = {"n": 2**14, "r": 8, "p": 1}
@@ -769,7 +772,12 @@ class UserDirectory:
         ``signin.code.invalid`` (a failure like any other)."""
         moment = now or _now()
         keys = (f"name:{name.casefold()}", f"address:{client}")
-        with self._connect() as connection:
+        # One attempt at a time, from the throttle check to recording its outcome:
+        # otherwise attempts sent together all pass the check before any failure is
+        # counted, and one code could be used twice. The lock keeps this process's
+        # attempts in turn; the immediate transaction, any other process's.
+        with _SIGNING_IN, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             if any(self._wait(connection, key, moment) for key in keys):
                 raise UserError("signin.throttled", ())
             row = self._find(connection, name)

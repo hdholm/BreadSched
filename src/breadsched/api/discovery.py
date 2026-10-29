@@ -27,22 +27,36 @@ import os
 import socket
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from ..gen.db.book_lock import BookWriterLock
 from ..gen.utils.user_paths import runtime_directory
 
 __all__ = [
+    "LOOPBACK",
     "HostRecord",
     "ServerRecord",
     "find_host",
     "find_server",
     "host_record_path",
+    "is_loopback_url",
     "publish_host",
     "publish_server",
     "record_path",
     "withdraw_host",
     "withdraw_server",
 ]
+
+
+#: The host names a book server listens on: it never listens beyond loopback.
+LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def is_loopback_url(url: str) -> bool:
+    """Whether ``url`` is a plain ``http://`` address on this computer's loopback, as
+    every address a server publishes is."""
+    parsed = urlparse(url)
+    return parsed.scheme == "http" and parsed.hostname in LOOPBACK
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,7 +149,11 @@ def find_host(directory: Path | None = None) -> HostRecord | None:
     record = _read_host(path)
     if record is None:
         return None
-    if record.host == socket.gethostname() and BookWriterLock.pid_is_alive(record.pid):
+    if (
+        record.host == socket.gethostname()
+        and is_loopback_url(record.url)
+        and BookWriterLock.pid_is_alive(record.pid)
+    ):
         return record
     try:
         path.unlink()
@@ -207,8 +225,11 @@ def find_server(book: str, directory: Path | None = None) -> ServerRecord | None
     if record is None:
         return None
     here = record.host == socket.gethostname()
+    # A record names only a loopback address; any other was not written by a server,
+    # and the account's device token must not be sent there.
     live = (
         record.book == _canonical(book)
+        and is_loopback_url(record.url)
         and _holds_lock(record)
         and (not here or BookWriterLock.pid_is_alive(record.pid))
     )

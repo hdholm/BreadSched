@@ -193,6 +193,7 @@ from ..gen.services.transaction_editing import TransactionEditorView
 from ..gen.services.transaction_search import FindResult
 from .account_codec import save_account_json
 from .contract import ApiError, to_json
+from .discovery import LOOPBACK
 from .host import BOOK_HEADER, HostedBook
 from .protocol import Change, Listener
 from .schedule_codec import fixed_request_json, formula_request_json
@@ -254,6 +255,10 @@ class HttpBookClient:
             raise ValueError("a book server URL is http://host:port or https://host[:port]")
         if parsed.scheme == "http" and (ca_file or client_cert or client_key):
             raise ValueError("certificates are only used with an https:// server")
+        if parsed.scheme == "http" and parsed.hostname not in LOOPBACK:
+            # The token would cross the network in the clear; another computer is
+            # reached only through the TLS proxy (decision 0003).
+            raise ValueError("a book server on another computer is reached over https://")
         self.host = parsed.hostname
         self.port = parsed.port or (443 if parsed.scheme == "https" else 80)
         self.token = token

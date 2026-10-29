@@ -399,8 +399,65 @@ other accounts; 3 and 4 make it a household application.
   command never prints the secret or the recovery codes: it writes them to a new
   file only the account can read (`--setup-file`), as `--token-file` keeps tokens.
 
-All five phases are built on the experimental branch. What remains is the security
-review before the proxy is used with all of this.
+All five phases are built on the experimental branch, and the security review below
+is done.
+
+## Security review (2026-10-29)
+
+The review read the request path end to end (the transport's checks, the user
+directory, the role guard and its table, the host and its joined books, server
+discovery, the HTTP client, and GTK on a held book) against a household member with
+a role, a stranger reaching the proxy, and another program on the computer. Its
+findings are fixed, each held by `tests/test_server_hardening.py`:
+
+1. **A document could run as the app (high).** `/api/attachment/content` served an
+   attached file with the type its name suggests, so an editor's attached web page
+   and script, opened at that address in the signed-in app, would have run with the
+   owner's session. Only PDF, PNG, JPEG, GIF, WebP, and plain text are now served as
+   themselves (inline); anything else is `application/octet-stream` with
+   `Content-Disposition: attachment`, and every document carries a `sandbox`
+   content security policy and `no-store`.
+2. **Sign-ins sent together escaped throttling (medium).** The throttle check and
+   the recording of a failure were not one transaction, so attempts sent at once all
+   passed the check (16 of 24 in the test, against 5 allowed), and one two-step code
+   could let in two sign-ins. Sign-in now runs one attempt at a time (a lock, and an
+   immediate transaction for other processes).
+3. **Change streams outlived their caller (medium).** `/api/v1/events` was checked
+   once, so it kept sending changes after signing out, a revoked token, or a removed
+   role. It now asks again at every change and keep-alive (15 seconds) and ends.
+4. **The client sent its token in the clear (medium).** `HttpBookClient` accepted
+   `http://` to another computer; it now requires `https://` for anything but
+   loopback.
+5. **A server record's address was not checked (low).** Only a server writes a
+   record, always at a loopback address, but the client sent the computer account's
+   device token to whatever address a record named. A record or host record naming
+   any other address is now not trusted.
+6. **Responses could be cached (low).** Only `/api/v1` responses said `no-store`;
+   every JSON response and document now does, with `Referrer-Policy: no-referrer`.
+
+Checked and kept as they are:
+- **Roles:** the web layer reaches the book only through `GuardedBook` (the
+  architecture tests list the few routes given the file, and each checks the role);
+  every operation has a permission; the transport always sets a role, `none` for an
+  unknown caller, so the unchecked in-process path is never reached over HTTP. A
+  remote caller names files only inside the uploads and attachment folders, and the
+  owner's folders and GnuCash write-back need the computer account on this computer.
+- **Sign-in and sessions:** `scrypt` passwords, digests of random tokens, the same
+  cost and answer for an unknown name, a temporary password changed before anything
+  else, sessions ended by a password change or reset, an `HttpOnly`,
+  `SameSite=Strict` cookie, and writes only as `application/json` (so another site
+  cannot send one without the browser asking first).
+- **Accepted risks:** throttling by name lets anyone delay one person's sign-in (at
+  most 15 minutes between attempts; their sessions go on); a session lasts while it
+  is used, 30 days after its last use; an entry user's suggestions show the
+  descriptions and amounts of earlier matching entries; the server's own token and
+  `--token-file` are the computer account, owner of every book, and must stay
+  private; and a book GTK or a command opens in process is checked by nothing but
+  its file's permissions.
+- **What the proxy must do** (decision 0003's configuration): set `Host` to the
+  loopback address, overwrite `X-Real-IP` with the client's address (or throttling
+  by address can be avoided; throttling by name still holds), and serve only over
+  TLS.
 
 ## Answers to the review questions (2026-10-28)
 
