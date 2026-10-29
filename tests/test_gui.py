@@ -18,6 +18,7 @@ import itertools
 import os
 import re
 import shutil
+import sys
 import threading
 from datetime import date, timedelta
 from decimal import Decimal
@@ -983,6 +984,29 @@ class TestRegisterGrid:
         window.open_register(app.db.get_account_by_name("Assets:Checking Account").handle)
         assert window._views["register"].grid.columns[-1] == "balance"
 
+    def test_a_register_whose_book_closed_neither_focuses_nor_fails(
+        self, app, window, populated_book, monkeypatch
+    ):
+        # A focus request still waiting when the book closed read the closed book: a
+        # security register's footer asked a book of None for its account.
+        app.open_book(populated_book)
+        account, _fund = _security_account(app.db)
+        window.present()
+        assert _spin(window.get_mapped)
+        window.open_register(account.handle)
+        view = window._views["register"]
+        assert _spin(lambda: view.grid.get_mapped() and view.grid._height > 0, 3.0)
+        failures = []
+        monkeypatch.setattr(sys, "excepthook", lambda *error: failures.append(error))
+        view.focus_entry()
+        view.set_db(None)
+        _spin(lambda: False, 0.3)
+        assert failures == [] and view._focus_source == 0
+        # Even a request made after the book closed does nothing.
+        view.focus_entry()
+        _spin(lambda: False, 0.3)
+        assert failures == []
+
     def test_reaching_a_cell_selects_all_of_it(self, app, window, populated_book):
         # #332: a proposed value had to be erased character by character.
         view = _grid_register(app, window, populated_book)
@@ -1859,7 +1883,7 @@ class TestDialogs:
     def test_split_rows_name_their_columns_and_hold_the_rest(self, app, window, populated_book):
         """#369: Increase/Decrease named for each row's account; the rest on a new row."""
         from breadsched.gen.lib import Money
-        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+        from breadsched.gui.dialogs.transaction_dialog import CHOOSE_ACCOUNT, TransactionDialog
 
         app.open_book(populated_book)
         db = app.db
@@ -1890,6 +1914,10 @@ class TestDialogs:
             assert len(dialog.splits) == 3
             rest = dialog.splits[2]
             assert rest.auto and rest.account_handle is None
+            # It shows the choice of no account, which GTK 4.16 and later keep: they
+            # cannot unselect a drop-down, so it once kept the first account.
+            assert rest.account.get_selected() == len(dialog.accounts)
+            assert rest.account.get_selected_item().get_string() == CHOOSE_ACCOUNT
             assert rest.increase.get_placeholder_text() == "15.00"
             assert dialog.save_button.get_sensitive() is False
             rest.account.set_selected(handles.index(checking.handle))
@@ -9953,8 +9981,11 @@ class TestTabs:
             focus = window.get_focus()
             return focus is not None and focus.is_ancestor(register.grid.editor)
 
-        # The tab's own focus lands first; Ctrl+F then moves it to the filter.
+        # The tab's own focus lands first; Ctrl+F then moves it to the filter, and a
+        # request to focus the cursor's cell still waiting (a slow display's) is
+        # overtaken rather than taking the keyboard back.
         assert _spin(in_register)
+        register.focus_entry()
         window.activate_action("win.find", None)
         _spin(lambda: False, 0.2)
         focus = window.get_focus()

@@ -10,6 +10,21 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a307 - 2026-10-29
+
+- **The desktop works on newer GTK and Adwaita (#395).** On GTK 4.16 and later a
+  drop-down cannot be unselected, so the row the transaction editor adds to hold the
+  rest of an unbalanced entry kept the first account and the entry could be saved
+  out of balance. Each split row's account list now ends with **Choose an account…**,
+  which that row shows until an account is chosen. **Manage FSA Claims…** uses
+  `folder-documents-symbolic`, since current Adwaita no longer has
+  `emblem-documents-symbolic`.
+- **A register's late focus request waits its turn (#395).** Only a register's latest
+  request to focus its cursor's cell waits for the grid to be shown, Ctrl+F overtakes
+  it, and it does nothing once the book has closed. A slow display let it take the
+  keyboard back from the filter, and after closing a book a security register's
+  footer read the closed book.
+
 ## 0.2.0a306 - 2026-10-29
 
 - **Dates read alike everywhere (#393).** Every desktop date field reads a date as
