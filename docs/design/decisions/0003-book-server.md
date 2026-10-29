@@ -1,12 +1,12 @@
 # 0003: A book server that owns a book for every interface
 
 Part of the [BreadSched design](../../../DESIGN.md); see
-[Architecture and ownership](../architecture.md#book-server-experimental).
+[Architecture and ownership](../architecture.md#book-server).
 
-- **Status:** experimental, 2026-10-23. Work happens on the
-  `claude/experimental-book-server` branch and does not land on `main` until its
-  full impact is understood (#354).
-- **Decision under trial:** a *book server* owns one open book: its storage, undo
+- **Status:** accepted, 2026-10-29; on `main` from 0.2.0a308. It was tried on the
+  `claude/experimental-book-server` branch from 2026-10-23 until its impact was
+  understood (#354).
+- **Decision:** a *book server* owns one open book: its storage, undo
   history, and change notifications. The command line, the browser, and GTK reach a
   book only through one API, the `BookApi` protocol. An interface can use an
   in-process server, or a server started on its own that several interfaces share.

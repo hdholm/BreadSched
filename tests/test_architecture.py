@@ -316,7 +316,7 @@ class TestServiceBoundaries:
 
     def test_gui_plan_consumes_the_typed_query_service(self):
         calls = calls_in_method(SRC / "gui/views/plan.py", "PlanView", "refresh")
-        # Through the book server on the experimental branch (#354).
+        # Through the book server (#354).
         assert "plan" in calls and "query_plan" not in calls
         assert "build_category_report" not in calls
 
@@ -326,8 +326,7 @@ class TestServiceBoundaries:
 
         assert "plan_report" in route_calls
         assert "query_plan" not in route_calls
-        # On the experimental book-server branch (#354) the service is reached
-        # through the book server.
+        # The service is reached through the book server.
         assert "plan" in resource_calls and "query_plan" not in resource_calls
         assert "build_category_report" not in resource_calls
 
@@ -457,8 +456,7 @@ class TestServiceBoundaries:
                 "_reopen_claim",
                 "reopen_fsa_claim",
             ),
-            # On the experimental book-server branch (#354) these reach the claim
-            # services through the book server.
+            # These reach the claim services through the book server.
             ("web/fsa_claim_resource.py", None, "fsa_claim_save", "save_fsa_claim"),
             ("web/fsa_claim_resource.py", None, "fsa_claim_delete", "delete_fsa_claim"),
             ("web/fsa_claim_resource.py", None, "fsa_claim_close", "close_fsa_claim"),
@@ -793,8 +791,11 @@ class TestServiceBoundaries:
 
     def test_cli_estimate_writes_use_schedule_services(self):
         calls = calls_in_function(SRC / "cli/plan_commands.py", "cmd_estimate")
-        assert {"save_schedule", "delete_schedule"} <= calls
-        assert calls.isdisjoint({"add_scheduled", "remove_scheduled", "db.transaction"})
+        # Through the book server, so they work while a server holds the book (#358).
+        assert {"book_api", "save_fixed_schedule", "delete_schedule"} <= calls
+        assert calls.isdisjoint(
+            {"open_book", "save_schedule", "add_scheduled", "remove_scheduled", "db.transaction"}
+        )
 
 
 class TestEngineBoundaries:

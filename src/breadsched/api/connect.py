@@ -1,6 +1,6 @@
 """Reaching a book through whichever book server holds it (#358).
 
-**Experimental.** :func:`open_book_api` gives a caller the book API for a book:
+:func:`open_book_api` gives a caller the book API for a book:
 an explicitly named server, else the server already holding the book (found by
 :mod:`breadsched.api.discovery`), else an in-process server over the book opened
 here. The caller cannot tell which it has.

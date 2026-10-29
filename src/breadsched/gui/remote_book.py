@@ -1,6 +1,6 @@
 """A book another process holds, used from GTK through its server (decision 0004).
 
-**Experimental.** When the computer account's book host (``breadsched serve``, or
+When the computer account's book host (``breadsched serve``, or
 another GTK window's sharing) already holds a book, GTK cannot open the file for
 writing: the host has its writer lock. Instead it opens a :class:`RemoteBook`, the
 same book reached over the host's loopback address as the computer account's own

@@ -1,6 +1,6 @@
 """One book host serving several books (decision 0004, phase 3).
 
-**Experimental.** A host (``breadsched serve``, ``breadsched web``, or GTK's sharing)
+A host (``breadsched serve``, ``breadsched web``, or GTK's sharing)
 may hold several books on one address. Each book keeps its own writer lock,
 revision, and change stream; a request names the book it is for by id in the
 ``X-BreadSched-Book`` header. A host holding one book needs no header, so a client

@@ -1,6 +1,6 @@
 """The JSON form of an account save (#356, #357).
 
-**Experimental.** ``SaveAccount`` carries a whole account, so its JSON form carries
+``SaveAccount`` carries a whole account, so its JSON form carries
 the account (and the account an edit is based on) in their stored forms, with the
 opening balance and its date. Decoding is strict: a value of the wrong type, or an
 account the stored form cannot rebuild, is a ``ValueError`` (a 400).

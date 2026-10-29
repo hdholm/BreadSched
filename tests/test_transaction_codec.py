@@ -1,4 +1,4 @@
-"""Transaction editor requests travel as JSON without loss (#356, #357, experimental)."""
+"""Transaction editor requests travel as JSON without loss (#356, #357)."""
 
 from __future__ import annotations
 

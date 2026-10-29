@@ -1,7 +1,6 @@
 """Serving a book through a TLS reverse proxy (#358).
 
-**Experimental** (branch ``claude/experimental-book-server``). The server still
-listens on loopback over plain HTTP; what changes is what a proxy in front of it
+The server still listens on loopback over plain HTTP; what changes is what a proxy in front of it
 needs. A configured trusted origin lets the proxy's pages write without the proxy
 rewriting ``Origin``; a token file keeps the token out of the terminal and stable
 across restarts; and the HTTP client speaks HTTPS, verifying the proxy's

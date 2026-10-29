@@ -193,10 +193,10 @@ into a typed service request or engine call and formats the result; architecture
 tests check that the entry point defines no handlers and that every command's
 handler is in the module that registers it.
 
-## Book server (experimental)
+## Book server
 
 `breadsched.api` is the book server of
-[decision 0003](decisions/0003-book-server.md), under trial on its own branch.
+[decision 0003](decisions/0003-book-server.md).
 `LocalBookServer` wraps one open `DbSQLite` and implements the `BookApi` protocol
 over the application services. Requests and results are the services' typed
 dataclasses. A failure is an `ApiError`, the same class as the web's

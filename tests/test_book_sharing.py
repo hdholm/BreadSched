@@ -1,7 +1,6 @@
 """Several interfaces share one book through the server holding it (#358).
 
-**Experimental** (branch ``claude/experimental-book-server``). A writable
-``breadsched serve`` or ``breadsched web`` publishes a user-only server record;
+A writable ``breadsched serve`` or ``breadsched web`` publishes a user-only server record;
 book-server commands for the same book find it and work through that server
 instead of failing on the writer lock. A record whose process is gone, or no
 longer holds the lock, is ignored and removed.

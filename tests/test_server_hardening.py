@@ -1,7 +1,6 @@
 """What the security review of the shared book server found, kept fixed (decision 0004).
 
-**Experimental** (branch ``claude/experimental-book-server``). Each test holds one
-finding of the review closed:
+Each test holds one finding of the review closed:
 
 - a document a person attached is never served as something that can run;
 - sign-in attempts sent together are throttled and checked one at a time, so a code

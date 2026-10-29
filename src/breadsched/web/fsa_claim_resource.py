@@ -3,8 +3,8 @@
 This adapter only parses JSON into the shared claim service's requests and
 translates its results. Validation, the claim arithmetic in
 ``gen/engine/fsa_claims``, and every write stay in ``gen/services/claims``, so a
-rejected request never changes the stored claim. On the experimental book-server
-branch (#354) every read and write goes through the book server, ``api.book``.
+rejected request never changes the stored claim. Every read and write goes
+through the book server, ``api.book`` (#354).
 """
 
 from __future__ import annotations

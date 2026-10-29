@@ -1,6 +1,6 @@
 """The JSON form of the transaction editors' typed request (#356, #357).
 
-**Experimental.** Every editor (GTK's register and transaction editor, the
+Every editor (GTK's register and transaction editor, the
 browser's register and entry form, the command line's ``add`` and ``edit``) saves
 through ``SaveTransaction``. This module gives that request a lossless JSON form for
 HTTP and decodes it strictly: a value of the wrong type is a ``ValueError`` (a

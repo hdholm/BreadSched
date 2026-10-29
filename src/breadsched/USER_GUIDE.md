@@ -144,6 +144,26 @@ Scenarios answer "what if" without changing the book
 A child scenario inherits everything from its parent, so later changes to Base
 carry into it unless it overrides them.
 
+### Share a book with your household
+
+One book can be used from several places at once. While `breadsched serve` holds it
+(or the desktop shares the book it has open, **Preferences → Sharing**), the desktop
+application, commands, and browsers on this computer all use it through that server,
+and each sees the others' changes as they are saved. To reach it from a phone or
+tablet, put a TLS reverse proxy in front of the server; the phone-sized **Quick
+entry** page enters one transaction at a time
+([command line](guide/cli.md#share-a-book-with-a-running-server),
+[browser](guide/web.md#quick-entry-from-a-phone)).
+
+Used alone, nothing changes: there is no sign-in and no password. To let someone
+else in, give them a user and a role in the book: an *owner*, an *editor* who reads
+and changes it, a *viewer* who only reads, or an *entry* user who only adds
+transactions. They sign in with their own password, and optionally a code from an
+authenticator app. The Plan's controls and the Dashboard's arrangement are each
+person's own; the book holds everything else
+([command line](guide/cli.md#users-and-devices),
+[desktop](guide/desktop.md#preferences)).
+
 ## Understand the model
 
 ### Ledger and exact amounts

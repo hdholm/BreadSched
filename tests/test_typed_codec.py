@@ -1,7 +1,6 @@
 """The book API's generic typed JSON form (#357).
 
-**Experimental** (branch ``claude/experimental-book-server``). ``api.typed_codec``
-writes the services' typed requests and results as JSON data and reads them back
+``api.typed_codec`` writes the services' typed requests and results as JSON data and reads them back
 from their types alone. A server reads what a client sends, so reading refuses an
 unknown field, a missing one, or a value of the wrong type, and names where it is.
 """

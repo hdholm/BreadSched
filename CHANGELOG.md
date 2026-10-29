@@ -10,6 +10,51 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a308 - 2026-10-29
+
+The book server (decisions 0003 and 0004, #354–#359), tried on its own branch since
+2026-10-23, comes to `main`.
+
+- **One book server for every interface (#354–#357).** The command line, the
+  browser, and GTK reach a book only through one API (`breadsched.api`, the
+  `BookApi` protocol): in process (`LocalBookServer`), or over HTTP
+  (`/api/v1`, `HttpBookClient`). Every interface reads the same results, writes
+  through the same validation, and serializes the same JSON. The book carries a
+  revision (`ETag`, `If-Match`), and `/api/v1/events` streams its changes.
+- **Share a book between interfaces (#358, #359).** `breadsched serve` holds a book
+  (or several on one address) and every command for it, the browser, and the
+  desktop use it through that server instead of stopping on the writer lock; a
+  later `serve` joins the running one. The desktop shares the book it has open with
+  **Preferences → Sharing**, and opens a book a server holds through that server.
+  Only `migrate` and `restore` still need the file to themselves.
+- **Through a TLS reverse proxy.** `--trusted-origin`, `--token-file`, and an HTTPS
+  client with `--ca-file` and client certificates reach a book from another device;
+  decision 0003 gives a complete nginx configuration and what the proxy must do.
+- **Users, roles, and sign-in (decision 0004).** Used alone, nothing shows. Others
+  get a user with a temporary password and a role in each book: owner, editor,
+  viewer, or entry (adds transactions only), checked before every operation. They
+  sign in with a password (`scrypt`, throttled, an `HttpOnly` `SameSite=Strict`
+  session cookie) and optionally an authenticator code (RFC 6238, with single-use
+  recovery codes; `two-step on --setup-file`). `breadsched users`, `password`,
+  `two-step`, `token`, and `share`, and the desktop's **Preferences → Users**,
+  manage them. Undo stays the book's and names whose step it undoes.
+- **Personal views.** The Plan's controls and the Dashboard's arrangement are each
+  person's own, kept for that book by its id in the host's user directory.
+- **Quick entry from a phone.** `/quick` is a phone-sized page that enters one
+  transaction; the browser asks which book when several are shared with you.
+- **Faster desktop.** Only the shown remembered tab is drawn when a book opens, and
+  the Plan, Accounts, registers, Expense Explorer, and Projection are read from a
+  snapshot off the main loop.
+- **Smaller books.** A stored transaction leaves out keys at their constant defaults
+  (`gen.db.compact`, about half the JSON); every version reads the result.
+- **Security review.** Before the merge the request path was reviewed end to end;
+  its six findings are fixed and held by `tests/test_server_hardening.py`, and
+  decision 0004 records the accepted risks.
+- **Command-line JSON changes.** `due-review --json` prints `{"schedules": [...]}`
+  (what `GET /api/due-review` returns) rather than a bare list; due decisions also
+  report `deferred` and the transactions they posted; and `scheduled --post --json`
+  answers `{"posted", "transactions": [...]}`.
+
 ## 0.2.0a307 - 2026-10-29
 
 - **The desktop works on newer GTK and Adwaita (#395).** On GTK 4.16 and later a

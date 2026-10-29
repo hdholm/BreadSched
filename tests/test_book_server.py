@@ -1,10 +1,9 @@
 """The book server: one API over an open book for every interface (#354-#357).
 
-**Experimental** (branch ``claude/experimental-book-server``). The same contract
-runs against the in-process server and against the HTTP client talking to a running
-web server's ``/api/v1``: each observes every change to its book, refuses a bad
-write without changing anything, and reports failures in one error envelope. The
-command line and the browser give the same JSON.
+The same contract runs against the in-process server and against the HTTP client
+talking to a running web server's ``/api/v1``: each observes every change to its
+book, refuses a bad write without changing anything, and reports failures in one
+error envelope. The command line and the browser give the same JSON.
 """
 
 from __future__ import annotations

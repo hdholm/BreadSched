@@ -2,9 +2,8 @@
 
 The candidate list, its reasons, and the FSA hint come from
 ``engine.review_explain``; every decision goes through the shared review service, so
-a rejected request never changes the book. On the experimental book-server branch
-(#354) the queue, each actual's detail, and every decision go through the book
-server, ``api.book``.
+a rejected request never changes the book. The queue, each actual's detail, and
+every decision go through the book server, ``api.book`` (#354).
 """
 
 from __future__ import annotations

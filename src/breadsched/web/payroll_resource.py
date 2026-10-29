@@ -3,8 +3,8 @@
 This adapter only parses JSON into the shared payroll service's requests and
 translates its results. Paycheck arithmetic stays in ``gen/engine/payroll`` and
 validation and every write in ``gen/services/payroll``, so a rejected request never
-changes the book. On the experimental book-server branch (#354) every read and write
-goes through the book server, ``api.book``.
+changes the book. Every read and write goes through the book server, ``api.book``
+(#354).
 """
 
 from __future__ import annotations

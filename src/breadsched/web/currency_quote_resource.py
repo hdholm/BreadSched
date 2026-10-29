@@ -1,7 +1,6 @@
 """HTTP input and output for manual currency quotes.
 
-On the experimental book-server branch (#354) the quote is checked and saved by
-the book server, ``api.book``.
+The quote is checked and saved by the book server, ``api.book`` (#354).
 """
 
 from __future__ import annotations

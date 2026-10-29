@@ -2,9 +2,8 @@
 
 Availability comes from ``gen/engine/fsa`` and the claims, their totals, and the
 reasons one needs attention from ``gen/engine/fsa_claim_report``; this adapter
-parses the grouping and serializes. On the experimental book-server branch (#354)
-the report, the benefit years, and the claim-link proposals come from the book
-server, ``api.book``.
+parses the grouping and serializes. The report, the benefit years, and the
+claim-link proposals come from the book server, ``api.book`` (#354).
 """
 
 from __future__ import annotations

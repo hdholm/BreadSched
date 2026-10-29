@@ -235,7 +235,7 @@ def cmd_web(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
-    """Serve a book to other interfaces (experimental, #358)."""
+    """Serve a book to other interfaces (#358)."""
     return _serve_book(args, open_browser=False, read_only=False)
 
 
@@ -250,7 +250,7 @@ def _add_more_books(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_listener_options(parser: argparse.ArgumentParser) -> None:
-    """Options for serving through a TLS reverse proxy (experimental, #358)."""
+    """Options for serving through a TLS reverse proxy (#358)."""
     parser.add_argument(
         "--trusted-origin",
         action="append",
@@ -504,7 +504,7 @@ def register(add: AddCommand) -> None:
 
     serve_cmd = add(
         "serve",
-        "Hold a book and serve it to other BreadSched commands and browsers (experimental)",
+        "Hold a book and serve it to other BreadSched commands and browsers",
     )
     serve_cmd.add_argument("--host", default="127.0.0.1")
     serve_cmd.add_argument("--port", type=int, default=8765)

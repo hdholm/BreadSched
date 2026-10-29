@@ -146,12 +146,12 @@ used before fills in its category, and its amount if you have not typed one.
 that device, and **Saved here** lists what you entered. **Full view** opens the
 complete interface. To use it from a phone or tablet away from this computer, reach
 the book through the TLS reverse proxy described in
-[Share a book with a running server](cli.md#share-a-book-with-a-running-server-experimental); add the page to the home screen to
+[Share a book with a running server](cli.md#share-a-book-with-a-running-server); add the page to the home screen to
 open it like an app, with BreadSched's icon.
 
 A phone or tablet opening the page without the address BreadSched printed asks you to
 **Sign in** with a user name and password (see
-[Users and devices](cli.md#users-and-devices-experimental)). The first time, or after
+[Users and devices](cli.md#users-and-devices)). The first time, or after
 your password was reset, you choose your own password. The device then stays signed
 in: its session lasts 30 days from when you last used it. What you may do depends on
 the role the book's owner gave you; someone given only the entry role uses quick

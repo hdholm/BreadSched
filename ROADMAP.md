@@ -38,39 +38,14 @@ The rest of this file is unscheduled and comes after the first Beta.
 
 ### Architecture
 
-- **Book server (experimental, #354).** One API owns a book for the command line,
-  browser, and GTK: in process, or a server started on its own that several interfaces
-  share. Developed on the `claude/experimental-book-server` branch and kept off `main`
-  until its impact is understood; see
-  [decision 0003](docs/design/decisions/0003-book-server.md). The phases are: protocol
-  and contract (#355), the in-process server under the command line and browser (#356,
-  with scheduled transactions moved first), HTTP transport with revisions and change
-  events (#357), a shared independent server (#358), and GTK on the protocol (#359).
-  Phases 1–2 cover scheduled transactions, transaction saves and deletes, ledger reads
-  (lookups, registers, balances), accounts, categorization rules, tags, savings goals,
-  reconciliation, receivables, scenarios with their assumptions, payroll, FSA claims,
-  Plan review, held GnuCash changes, sale lots, tax marks, online quotes, new loans,
-  manual exchange rates, the Dashboard settings, linked documents, the net worth
-  reports, the Plan and Expense Explorer, the Projection outside GTK, and the
-  investment reports (holdings, realized gains, and the tax year), Budget jars, the
-  Dashboard, plan versus actuals (`activity`), reading register entry, security
-  prices, GnuCash write-back, the browser's book summary and Verify page, the
-  browser's register, the Plan's saved presentation, historical estimates, Find
-  transactions, and every remaining browser resource (schedules, scenario estimates,
-  imports, and Plan cells) so far
-  (most through a generic typed JSON codec), and phase 3 has a stored book revision,
-  `/api/v1` resources with `ETag`/`If-Match`, a change stream, and an HTTP client.
-  Phase 4 has `breadsched serve`, a user-only server record, and command-line commands
-  that use the server holding a book. Phase 5 has GTK's due review and Enter/Skip Next
-  on the protocol, and an opt-in **Preferences → Sharing** that serves GTK's open book
-  to commands. Decision 0003 also documents reaching a book through a TLS reverse
-  proxy (nginx). The server takes a trusted origin and a token file for that proxy,
-  and the HTTP client speaks HTTPS with client certificates; a Unix-socket listener is
-  still to come, and copying a document in over HTTP still reads any path the server
-  can. A phone-sized quick entry page (`/quick`) enters one transaction apart from the
-  full interface, toward entering transactions from a phone before Beta. GTK draws
-  only the chosen remembered tab when a book opens and reads the Plan, Accounts, and
-  registers from a snapshot in the background; the other views follow as they move.
+- **Book server follow-ups.** The book server (decisions
+  [0003](docs/design/decisions/0003-book-server.md) and
+  [0004](docs/design/decisions/0004-users-and-access.md)) is on `main` since
+  0.2.0a308. Still to come: long operations (imports, quote fetches, projections)
+  as jobs with progress and cancellation once a client is another process (a
+  projection over a host shows its result without progress), and Expense Explorer
+  reusing its own result for a cell's detail over a host rather than asking the host
+  again.
 
 - Split oversized modules/functions where ownership is clear. Split large GUI test
   modules only when the resulting fixture ownership and runtime isolation improve;
@@ -154,19 +129,6 @@ The rest of this file is unscheduled and comes after the first Beta.
 
 ### Storage, integrity, and recovery
 
-- Write transaction JSON compactly, omitting fields at their default values (as
-  `Split.importer_added` already is). Measured on 2026-10-24 (decision
-  [0001](docs/design/decisions/0001-transaction-storage.md), re-evaluation):
-  - **Gains:** 38% smaller books, half the JSON per transaction, load-all at par,
-    and faster registers.
-  - **Costs:** slower writes, until a precomputed table of defaults per class
-    replaces the per-key filtering.
-  - **Requirements:** pin the defaults with a test and version them with `_schema`.
-  - **Book server:** it would also halve the stored forms the experimental book
-    server sends.
-  - **Status:** implemented on the experimental branch (`gen.db.compact`), with no
-    schema change. Earlier readers stay compatible because only constant
-    `.get` defaults are left out.
 - Longer term, separate planning resolutions/classifications from imported ledger
   records where doing so materially simplifies synchronization and ownership.
 

@@ -11596,7 +11596,7 @@ class TestSearchableChoices:
 
 
 class TestBookSharing:
-    """#359 (experimental): commands use the book open in GTK through this window."""
+    """#359: commands use the book open in GTK through this window."""
 
     @pytest.fixture
     def shared(self, app, window, tmp_path, monkeypatch):

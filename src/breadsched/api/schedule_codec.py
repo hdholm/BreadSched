@@ -1,6 +1,6 @@
 """The JSON form of the schedule editors' typed requests (#356, #357).
 
-**Experimental.** Saving a fixed or formula schedule takes the services' own
+Saving a fixed or formula schedule takes the services' own
 ``SaveFixedSchedule`` and ``FormulaScheduleInput``. Over HTTP the request must
 travel as JSON, so this module encodes every field losslessly and decodes it back,
 strictly: a value of the wrong type is a ``ValueError`` (a 400), never a guess.

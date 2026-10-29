@@ -1,6 +1,6 @@
 """The people a book host serves, and how they prove who they are (decision 0004).
 
-**Experimental.** A *book host* (every book server one computer account runs) keeps
+A *book host* (every book server one computer account runs) keeps
 one user directory, ``users.sqlite`` in the account's data folder, never in a book:
 a book file may be copied or synced and must not carry anyone's credentials.
 

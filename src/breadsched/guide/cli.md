@@ -239,7 +239,7 @@ or with `--enter-days` and `--remind-days` sets, how many days ahead its
 occurrences are entered or reminded (0 to 999). See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
-### Share a book with a running server (experimental)
+### Share a book with a running server
 
 ```bash
 breadsched serve household.breadsched --port 8765
@@ -285,7 +285,7 @@ A command on another machine sends the files it names: `import`, `import-csv`, a
 server's own computer, which read its record, may name files there, change the
 attachment folder, or link a document outside it.
 
-### Users and devices (experimental)
+### Users and devices
 
 Used alone on one computer, BreadSched needs no user name or password. The people who
 may use this computer's books, and the devices they use, are managed with:

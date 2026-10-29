@@ -705,7 +705,7 @@ POST_ROUTES: dict[str, PostRoute] = {
 
 # ------------------------------------------------------------------ /api/v1
 #
-# The versioned book-server resources (#357, experimental). A route is a method and
+# The versioned book-server resources (#357). A route is a method and
 # a path pattern whose ``{name}`` segments are handed to the handler; GET handlers
 # take the typed query, writes the JSON body. ``/api/v1/events`` is a stream the
 # transport serves itself.

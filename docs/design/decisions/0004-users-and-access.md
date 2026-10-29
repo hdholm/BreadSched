@@ -3,9 +3,9 @@
 Part of the [BreadSched design](../../../DESIGN.md); builds on
 [decision 0003](0003-book-server.md).
 
-- **Status:** accepted for the experimental branch, 2026-10-28, with the answers to
-  its review questions (at the end) folded in. It is built on the
-  `claude/experimental-book-server` branch in the phases below.
+- **Status:** accepted, 2026-10-28, with the answers to its review questions (at
+  the end) folded in. Built in the phases below on the
+  `claude/experimental-book-server` branch, and on `main` from 0.2.0a308.
 - **Decision:** the book server knows *users*. Every request is made by a user
   (signed in, or the computer's own account acting for itself), every book is shared
   with named users in a role, and every display choice is personal. Used alone on one
@@ -399,8 +399,7 @@ other accounts; 3 and 4 make it a household application.
   command never prints the secret or the recovery codes: it writes them to a new
   file only the account can read (`--setup-file`), as `--token-file` keeps tokens.
 
-All five phases are built on the experimental branch, and the security review below
-is done.
+All five phases are built, and the security review below is done.
 
 ## Security review (2026-10-29)
 

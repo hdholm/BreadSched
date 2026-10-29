@@ -1,6 +1,6 @@
 """Versioned book-server resources: ``/api/v1`` (#357).
 
-**Experimental.** Each handler serves one operation of the book API
+Each handler serves one operation of the book API
 (:class:`~breadsched.api.protocol.BookApi`) as a resource, through the request's
 book server (``Api.book``), and returns its JSON form from
 :mod:`breadsched.api.views`. ``web.resources.V1_ROUTES`` maps methods and paths to

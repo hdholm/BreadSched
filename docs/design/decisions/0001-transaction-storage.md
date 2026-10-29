@@ -70,9 +70,9 @@ size difference were stable across runs.
   as `Split.importer_added` already is) is the cheaper route to smaller books. It
   is listed after the first Beta in the roadmap.
 
-## Re-evaluation with the experimental book server (2026-10-24)
+## Re-evaluation with the book server (2026-10-24)
 
-The experimental book server (decision [0003](0003-book-server.md), branch
+The book server (decision [0003](0003-book-server.md), then tried on the branch
 `claude/experimental-book-server`) changes how the book is used. One server holds
 the book for every interface. Each browser or HTTP read opens its own read-only
 snapshot, and the book API sends stored forms of records over the wire: the
@@ -123,7 +123,7 @@ runs with 30,000 transactions, best of 7, with SQLite 3.45.1 and Python 3.11 on 
 
 **Outcome:**
 - **Normalized tables:** the decision stands for normalized tables.
-- **Minimized JSON:** implemented on the experimental branch (`gen.db.compact`).
+- **Minimized JSON:** implemented (`gen.db.compact`), on `main` from 0.2.0a308.
   - **What is left out:** only keys that every reader, including earlier
     versions, already reads with a constant default.
   - **Always written:** required keys (handles, accounts, dates, values,

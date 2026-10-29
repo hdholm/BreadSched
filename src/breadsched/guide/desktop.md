@@ -830,18 +830,18 @@ work. They are kept in your own settings, not in a book:
   size. BreadSched remembers the main window's size (and whether it was maximized)
   and an independent register window's size each time you close them, and the
   size of any other window you resize, for every book.
-- **Sharing** (experimental): **Let other BreadSched commands use the open book**
+- **Sharing**: **Let other BreadSched commands use the open book**
   lets commands such as `breadsched due-review` and `breadsched scheduled-next` work
   on the book open in this window, through it, instead of stopping because the book
   is already open. Their changes appear here at once and can be undone here. It is
   off unless you turn it on; see
-  [Share a book with a running server](cli.md#share-a-book-with-a-running-server-experimental).
+  [Share a book with a running server](cli.md#share-a-book-with-a-running-server).
   The other way round works too: opening a book that `breadsched serve` (or another
   BreadSched window sharing it) already holds uses it through that server, as you,
   without a prompt, so the desktop and phones or tablets work on one book at once.
   Everything works as usual; a projection says only when it is done, and the book
   stays open for the others when you close it here.
-- **Users** (experimental): says "Only you" until someone else may use this
+- **Users**: says "Only you" until someone else may use this
   computer's books. **Users and devices…** sets your own password (needed only to
   sign in from another device), adds a person with a temporary password they replace
   when they first sign in, resets or removes them, and lists your devices and scripts:
@@ -850,7 +850,7 @@ work. They are kept in your own settings, not in a book:
   each other person has a role (owner, editor, viewer, or entry, which only adds
   transactions) that you can change, take away, or give with **Give someone
   access…**. The same can be done with `breadsched users`, `password`, `token`, and
-  `share` (see [Users and devices](cli.md#users-and-devices-experimental)).
+  `share` (see [Users and devices](cli.md#users-and-devices)).
   **Two-step sign-in** can be turned on there for your own sign-ins from other
   devices (the secret for an authenticator app, its first code, then recovery codes
   shown once), and turned off for someone who lost their phone. When

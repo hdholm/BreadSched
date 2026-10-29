@@ -42,9 +42,10 @@ committing, or submitting work in this repository.
    a `web/*_resource.py` adapter (the `web.context.Api` context only carries the open
    book and its book server, `Api.book`), financial calculations in shared
    services/engines, and preserve the complete response and error contract with
-   route-level tests. On the experimental book-server branch (#354), an area moved
-   onto `breadsched.api` is reached only through the book server by both the web and
-   the command line, and both serialize it with `breadsched.api.views`.
+   route-level tests. The web, the command line, and GTK reach a book only through
+   the book server (`breadsched.api`, decision 0003); the web and the command line
+   serialize it with `breadsched.api.views`, and every new book operation declares
+   its permission in `api.permissions` (decision 0004).
 9. For web financial writes, keep request parsing and response translation in a
    presentation adapter, and leave validation and the complete database write in
    the shared service. Test that rejected inputs preserve the stored object.

@@ -17,7 +17,7 @@ the page moves it into ``X-BreadSched-Token`` request headers and removes it fro
 visible URL. Static assets do not need the token, but they still require a trusted
 Host.
 
-The experimental versioned resources under `/api/v1` (#357) follow the same rules:
+The versioned resources under `/api/v1` (#357) follow the same rules:
 trusted Host and Origin, the per-server token on every request (including the
 change stream at `/api/v1/events`), and `application/json` for every write.
 `PATCH` is accepted only for `/api/v1` resources. A write with an `If-Match` naming

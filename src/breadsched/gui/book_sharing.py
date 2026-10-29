@@ -1,4 +1,4 @@
-"""Share the book open in GTK with other BreadSched commands (#359, experimental).
+"""Share the book open in GTK with other BreadSched commands (#359).
 
 When **Preferences → Sharing → Let other BreadSched commands use the open book**
 is on, GTK serves its writable book on the loopback interface, exactly as

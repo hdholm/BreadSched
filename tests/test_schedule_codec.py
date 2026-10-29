@@ -1,4 +1,4 @@
-"""Schedule editor requests travel as JSON without loss (#356, #357, experimental).
+"""Schedule editor requests travel as JSON without loss (#356, #357).
 
 The browser, GTK, and an HTTP client save fixed and formula schedules through the
 book server with the services' own typed requests; ``api.schedule_codec`` gives

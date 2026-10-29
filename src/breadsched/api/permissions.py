@@ -1,6 +1,6 @@
 """What each role in a book may do, and the guard that enforces it (decision 0004).
 
-**Experimental.** Every :class:`~breadsched.api.protocol.BookApi` operation declares
+Every :class:`~breadsched.api.protocol.BookApi` operation declares
 one permission, and an architecture test keeps the table complete, so a new
 operation cannot be added open:
 

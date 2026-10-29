@@ -103,7 +103,7 @@ being drawn (`BaseView.set_db` asks `ViewManager.defers_refresh`), and a registe
 created with its account set so it reads that account once. Twelve remembered tabs on
 a 12-year book took 31 s to open; they now take as long as one.
 
-Slow views are calculated off GTK's loop (experimental branch). `gui.background.
+Slow views are calculated off GTK's loop. `gui.background.
 SnapshotReader` is one worker thread per open book that runs book-server reads against
 a read-only snapshot (`DbSQLite.load(path, "r")`, an in-memory copy, so a long read
 neither blocks a save nor sees part of one), reusing the snapshot until the book's
@@ -127,7 +127,7 @@ place. The
 browser has no tab bar: `openInNewTab` opens a browser tab with the view and account
 or scenario in its query string.
 
-The browser's **Quick entry** page (`/quick`, experimental branch) is the small-screen
+The browser's **Quick entry** page (`/quick`) is the small-screen
 entry point: a separate `quick.html` that loads only `core.js` and `quick.js`
 (`web.transport.QUICK_SCRIPTS`), one column at most 480 px wide with 44 px touch
 targets and 16 px fields (so iOS does not zoom), a decimal keyboard for the amount,

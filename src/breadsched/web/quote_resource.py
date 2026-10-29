@@ -2,9 +2,9 @@
 
 Choosing a source and storing quotes go through ``gen/services/quotes``; fetching
 uses ``plugins.quotes`` and is the only network access the web server makes. The
-key is never sent back to the browser, which learns only whether one is set. On the
-experimental book-server branch (#354) the web adapter fetches and the book server,
-``api.book``, stores, so the book server itself never reaches the network.
+key is never sent back to the browser, which learns only whether one is set. The
+web adapter fetches and the book server, ``api.book``, stores (#354), so the book
+server itself never reaches the network.
 """
 
 from __future__ import annotations

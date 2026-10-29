@@ -1,6 +1,6 @@
 """A book API client over HTTP (#357).
 
-**Experimental.** :class:`HttpBookClient` implements
+:class:`HttpBookClient` implements
 :class:`~breadsched.api.protocol.BookApi` against a running BreadSched web server's
 ``/api/v1`` resources, so a caller written for the in-process server works
 unchanged against a remote one. Results are decoded back into the services' typed

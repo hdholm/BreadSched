@@ -1,6 +1,6 @@
 """Finding the book server that already holds a book (#358).
 
-**Experimental.** A server started for a writable book (``breadsched serve`` or
+A server started for a writable book (``breadsched serve`` or
 ``breadsched web``) publishes a *server record*: the book, the server's address, the
 id requests name the book by there (a host may serve several, decision 0004), and
 the process that holds the book's writer lock. It carries no token: a program of the

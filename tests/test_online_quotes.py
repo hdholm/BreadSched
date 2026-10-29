@@ -511,7 +511,7 @@ class TestFinanceQuoteMethods:
 
 @pytest.mark.parametrize("remote", [False, True], ids=["in-process", "http"])
 def test_quotes_through_the_book_server_alike(db, commodities, remote):
-    """Experimental book server (#354): the caller fetches; the server only stores."""
+    """The book server (#354): the caller fetches; the server only stores."""
     import threading
 
     from breadsched.api import ApiError, LocalBookServer

@@ -422,7 +422,7 @@ def test_a_lot_choice_is_not_a_change_for_gnucash(db, book):
 
 @pytest.fixture(params=["in-process", "http"])
 def book_api(request, db):
-    """Experimental book server (#354): the same calls in process and over HTTP."""
+    """The book server (#354): the same calls in process and over HTTP."""
     import threading
 
     from breadsched.api import LocalBookServer

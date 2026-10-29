@@ -16,9 +16,9 @@ over toolbars:
   settings).
 * **Windows** – forget the remembered window sizes (#349).
 * **Sharing** – let other BreadSched commands use the open book through this window
-  (``general.share_book``; experimental, #359).
+  (``general.share_book``, #359).
 * **Users** – **Users and devices…**: your password, the other people who may use
-  this computer's books, and your devices (decision 0004; experimental). Used alone,
+  this computer's books, and your devices (decision 0004). Used alone,
   nothing here needs changing.
 
 **Save** writes them all; **Cancel** (or Escape) changes nothing.
@@ -137,9 +137,7 @@ class PreferencesDialog(BoundedWindow):
         row += 1
 
         heading("Sharing")
-        self.share_book = Gtk.CheckButton(
-            label="Let other BreadSched commands use the open book (experimental)"
-        )
+        self.share_book = Gtk.CheckButton(label="Let other BreadSched commands use the open book")
         self.share_book.set_tooltip_text(
             "Commands such as breadsched due-review work through this window "
             "instead of finding the book already open"

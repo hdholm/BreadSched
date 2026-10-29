@@ -1,9 +1,8 @@
 """HTTP input and output for creating a loan through the shared loan service.
 
 This adapter parses browser terms into ``loans.LoanTerms`` and translates the
-preview and save results. Validation and the write stay in ``services.loans``; on
-the experimental book-server branch (#354) both go through the book server,
-``api.book``.
+preview and save results. Validation and the write stay in ``services.loans``, and
+both go through the book server, ``api.book`` (#354).
 """
 
 from __future__ import annotations

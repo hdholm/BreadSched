@@ -99,15 +99,14 @@ spellings or symlink aliases from becoming competing writers. A competing writer
 fails with an explicit read-only alternative; read-only opens remain allowed. A
 stale lock is reclaimed automatically only when it belongs to the same host and its
 recorded process no longer exists. Lock removal verifies the ownership token so one
-process cannot delete another writer's lock. On the experimental book-server branch,
-the server holding a book publishes where to reach it, and a command for the same
+process cannot delete another writer's lock. The server holding a book publishes where to reach it, and a command for the same
 book connects to it instead of failing on the lock (#358; see
 [decision 0003](decisions/0003-book-server.md)). The lock itself is unchanged and
 still admits one writer.
 
-## Minimized transaction JSON (experimental)
+## Minimized transaction JSON
 
-On the experimental book-server branch, a stored transaction leaves out each key
+A stored transaction leaves out each key
 whose value is the constant default that `Transaction.from_dict` and
 `Split.from_dict` read when the key is missing (`gen.db.compact`; decision
 [0001](decisions/0001-transaction-storage.md), re-evaluation).
@@ -128,7 +127,7 @@ the same SQL transaction, so a read-only snapshot sees exactly the revision of t
 generation it reads and every process agrees on it. It is written outside the undo
 records, so undoing a change moves the counter forward rather than back. Metadata
 written outside a database transaction (presentation settings) does not count. The
-experimental book server's `ETag` and change events report this value (#357); see
+book server's `ETag` and change events report this value (#357); see
 [decision 0003](decisions/0003-book-server.md). `tests/test_book_server.py`
 covers reopening, undo, and a read-only snapshot.
 

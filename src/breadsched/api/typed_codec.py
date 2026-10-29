@@ -1,6 +1,6 @@
 """One JSON form for the book API's typed requests and results (#357).
 
-**Experimental.** The services' requests and results are frozen dataclasses of a
+The services' requests and results are frozen dataclasses of a
 few kinds of value, so instead of a hand-written codec per area this module writes
 any of them as JSON data (:func:`to_data`) and reads it back from its type alone
 (:func:`from_data`):

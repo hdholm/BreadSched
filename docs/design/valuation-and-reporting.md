@@ -281,7 +281,7 @@ change. Both editors save through `services.save_dashboard_config`, which refuse
 blank or repeated group name, an unknown kind or account, and an account in two
 groups, leaving the book unchanged; it also refuses a section name it does not
 know. `resolve_groups` therefore merges nothing: the configuration it is given is
-complete. On the experimental book server (decision 0004) this is the book's own
+complete. With the book server's users (decision 0004) this is the book's own
 arrangement, where each person starts: a person's saved arrangement is kept with them,
 members included (`DashboardConfig.serialize_personal`, and `load(db, stored)`), and
 the server never changes the book's. The book holds what the household decides (horizons, sections, groups);

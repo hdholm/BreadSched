@@ -497,7 +497,7 @@ def test_unreconciled_source_deletions_are_still_mirrored(db, gnucash_sqlite_pat
 
 @pytest.mark.parametrize("remote", [False, True], ids=["in-process", "http"])
 def test_held_changes_through_the_book_server_alike(db, reconciled, remote):
-    """Experimental book server (#354): the same review in process and over HTTP."""
+    """The book server (#354): the same review in process and over HTTP."""
     import threading
 
     from breadsched.api import ApiError, LocalBookServer
