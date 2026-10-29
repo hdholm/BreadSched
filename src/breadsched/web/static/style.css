@@ -303,5 +303,9 @@ header a.action { text-decoration: none; }
 .account-form { display: grid; gap: 0.75rem; max-width: 22rem; margin: 2rem auto; }
 .account-form label { display: grid; gap: 0.25rem; }
 .book-choice { max-width: 26rem; margin: 2rem auto; }
+.account-view { max-width: 28rem; margin: 0 auto; }
+.account-view .account-form { margin: 1.5rem 0; }
+.two-step-secret { word-break: break-all; }
+.recovery-codes ul { columns: 2; }
 .book-choice ul { list-style: none; padding: 0; display: grid; gap: 0.5rem; }
 .book-choice li { display: flex; align-items: baseline; gap: 0.5rem; }

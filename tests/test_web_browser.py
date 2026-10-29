@@ -2003,3 +2003,66 @@ def test_a_person_chooses_among_the_books_a_host_shares_with_them(tmp_path):
         httpd.server_close()
         for db in books:
             db.close()
+
+
+def test_a_person_turns_on_two_step_sign_in_and_signs_in_with_a_code(served):
+    """Decision 0004, phase 5: from the Account view a person sets up two-step sign-in
+    with their authenticator app, sees their recovery codes once, signs out, and then
+    signs in with password and code."""
+    import time as clock
+
+    from breadsched.api import users
+    from breadsched.api.local import book_server
+    from breadsched.api.users import UserDirectory
+
+    db, httpd = served
+    directory = UserDirectory()
+    directory.add_user("alice", "temporary-pass", display_name="Alice")
+    directory.set_password("alice", "alices-own-password", current="temporary-pass")
+    directory.grant(book_server(db).book_id() or "", "alice", "viewer")
+
+    def code(secret, ahead=0):
+        return users.totp_code(secret, int(clock.time()) // users.TOTP_STEP + ahead)
+
+    with sync_api.sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch(executable_path=_chromium())
+        except Exception as exc:  # noqa: BLE001 - no usable browser here
+            pytest.skip(f"Chromium is not available: {exc}")
+        view = browser.new_page()
+        errors: list[str] = []
+        view.on("pageerror", lambda error: errors.append(str(error)))
+        view.goto(f"http://127.0.0.1:{httpd.server_port}/")
+        view.fill("input[name=name]", "alice")
+        view.fill("input[name=password]", "alices-own-password")
+        view.click("button:has-text('Sign in')")
+        view.locator("#nav").get_by_role("button", name="Account", exact=True).click()
+        view.wait_for_selector("text=Signed in as Alice (alice).")
+        view.get_by_role("button", name="Turn on two-step sign-in").click()
+        secret = view.locator(".two-step-secret").inner_text()
+        assert (
+            view.get_by_role("link", name="Open in authenticator app")
+            .get_attribute("href")
+            .startswith("otpauth://totp/BreadSched:alice?secret=" + secret)
+        )
+        view.fill("input[name=code]", code(secret))
+        view.get_by_role("button", name="Turn on", exact=True).click()
+        view.wait_for_selector("text=Your recovery codes")
+        assert view.locator(".recovery-codes li").count() == 10
+        assert view.locator("text=Two-step sign-in is on").count() == 1
+
+        view.get_by_role("button", name="Sign out").click()
+        view.wait_for_selector("text=Sign in to BreadSched")
+        view.fill("input[name=name]", "alice")
+        view.fill("input[name=password]", "alices-own-password")
+        view.click("button:has-text('Sign in')")
+        view.wait_for_selector("text=Enter your code")
+        view.fill("input[name=code]", "123")
+        view.click("button:has-text('Sign in')")
+        view.wait_for_selector("text=That code is not right")
+        # The code used to turn it on cannot be used again; the next one can.
+        view.fill("input[name=code]", code(secret, 1))
+        view.click("button:has-text('Sign in')")
+        view.locator("#nav").get_by_role("button", name="Account", exact=True).wait_for()
+        assert errors == []
+        browser.close()

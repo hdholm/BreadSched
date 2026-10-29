@@ -19,6 +19,10 @@ a book file may be copied or synced and must not carry anyone's credentials.
   each person's own view of shared data (the Plan's period and range, say), never
   in the book. :func:`acting_for` names the user a request is served for; in process
   it is the computer account.
+- **Two-step sign-in** (optional, per user; decision 0004, phase 5) asks, after the
+  password, for a code from an authenticator app (RFC 6238: SHA-1, six digits, 30
+  seconds, one step either side, never the same step twice) or one of ten single-use
+  recovery codes, kept only as digests.
 - **Signing in is throttled:** after :data:`FREE_FAILURES` failures for one name or
   from one address, each further attempt must wait twice as long as the last (up to
   :data:`MAX_DELAY`). A failure never says whether the name exists.
@@ -59,6 +63,8 @@ __all__ = [
     "MIN_PASSWORD_LENGTH",
     "SESSION_DAYS",
     "SignedIn",
+    "TwoStepSetup",
+    "totp_code",
     "User",
     "UserDirectory",
     "UserError",
@@ -84,6 +90,11 @@ _ROLES = ("owner", "editor", "viewer", "entry")
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 #: scrypt cost: 16 MiB and well under a second per attempt on a household computer.
 _SCRYPT = {"n": 2**14, "r": 8, "p": 1}
+#: RFC 6238 time step, in seconds, and the digits of a code.
+TOTP_STEP = 30
+TOTP_DIGITS = 6
+#: Recovery codes made when two-step sign-in is turned on.
+RECOVERY_CODES = 10
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -124,6 +135,17 @@ CREATE TABLE IF NOT EXISTS preferences (
     key TEXT NOT NULL,
     value TEXT NOT NULL,
     PRIMARY KEY (user_id, book_id, key)
+);
+CREATE TABLE IF NOT EXISTS second_factors (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    secret TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 0,
+    last_step INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS recovery_codes (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    digest TEXT NOT NULL,
+    PRIMARY KEY (user_id, digest)
 );
 CREATE TABLE IF NOT EXISTS failures (
     key TEXT PRIMARY KEY,
@@ -260,6 +282,45 @@ def _password_matches(password: str, stored: str | None) -> bool:
     except (ValueError, TypeError):
         return False
     return hmac.compare_digest(derived, base64.b64decode(expected))
+
+
+@dataclass(frozen=True, slots=True)
+class TwoStepSetup:
+    """What an authenticator app needs: the secret (base32) and the same as a URI
+    (``otpauth://``) for a QR code."""
+
+    secret: str
+    uri: str
+
+
+def totp_code(secret: str, step: int) -> str:
+    """The RFC 6238 code for ``secret`` (base32) in time step ``step``."""
+    key = base64.b32decode(secret + "=" * (-len(secret) % 8), casefold=True)
+    digest = hmac.new(key, step.to_bytes(8, "big"), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    number = int.from_bytes(digest[offset : offset + 4], "big") & 0x7FFFFFFF
+    return str(number % 10**TOTP_DIGITS).zfill(TOTP_DIGITS)
+
+
+def _step(moment: datetime) -> int:
+    return int(moment.timestamp()) // TOTP_STEP
+
+
+def _matching_step(secret: str, code: str, moment: datetime, after: int) -> int | None:
+    """The step within one of ``moment``'s whose code ``code`` is, if later than
+    ``after`` (a code is never used twice)."""
+    digits = "".join(code.split())
+    if not digits.isdigit() or len(digits) != TOTP_DIGITS:
+        return None
+    now = _step(moment)
+    for step in (now - 1, now, now + 1):
+        if step > after and hmac.compare_digest(totp_code(secret, step), digits):
+            return step
+    return None
+
+
+def _recovery_text(code: str) -> str:
+    return "".join(char for char in code.casefold() if char.isalnum())
 
 
 def _check_password(password: str) -> None:
@@ -582,6 +643,104 @@ class UserDirectory:
                 (user.id, book_id, key, json.dumps(value, sort_keys=True)),
             )
 
+    # ---------------------------------------------------------- two-step sign-in
+
+    def two_step_on(self, user: User) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT active FROM second_factors WHERE user_id = ?", (user.id,)
+            ).fetchone()
+        return bool(row and row[0])
+
+    def start_two_step(self, user: User) -> TwoStepSetup:
+        """A new secret for ``user``'s authenticator app; nothing changes at sign-in
+        until :meth:`confirm_two_step` is given a code from it."""
+        if self.two_step_on(user):
+            raise UserError("two_step.already_on", ())
+        secret = base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO second_factors (user_id, secret) VALUES (?, ?)"
+                " ON CONFLICT(user_id) DO UPDATE SET secret = excluded.secret, active = 0,"
+                " last_step = 0",
+                (user.id, secret),
+            )
+        label = f"BreadSched:{user.name}"
+        uri = f"otpauth://totp/{label}?secret={secret}&issuer=BreadSched"
+        return TwoStepSetup(secret, f"{uri}&digits={TOTP_DIGITS}&period={TOTP_STEP}")
+
+    def confirm_two_step(
+        self, user: User, code: str, *, now: datetime | None = None
+    ) -> tuple[str, ...]:
+        """Turn two-step sign-in on with a first code from the app; the recovery codes,
+        shown once."""
+        moment = now or _now()
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT secret, active FROM second_factors WHERE user_id = ?", (user.id,)
+            ).fetchone()
+            if row is None or row[1]:
+                raise UserError("two_step.not_started", ())
+            step = _matching_step(row[0], code, moment, 0)
+            if step is None:
+                raise UserError("two_step.code.invalid", ("code",))
+            codes = tuple(
+                f"{secrets.token_hex(2)}-{secrets.token_hex(2)}-{secrets.token_hex(2)}"
+                for _ in range(RECOVERY_CODES)
+            )
+            connection.execute(
+                "UPDATE second_factors SET active = 1, last_step = ? WHERE user_id = ?",
+                (step, user.id),
+            )
+            connection.execute("DELETE FROM recovery_codes WHERE user_id = ?", (user.id,))
+            connection.executemany(
+                "INSERT INTO recovery_codes VALUES (?, ?)",
+                [(user.id, _digest(_recovery_text(code))) for code in codes],
+            )
+        return codes
+
+    def stop_two_step(self, user: User, password: str) -> None:
+        """Turn ``user``'s two-step sign-in off; their password is asked for again."""
+        with self._connect() as connection:
+            stored = connection.execute(
+                "SELECT password FROM users WHERE id = ?", (user.id,)
+            ).fetchone()
+            if stored is None or (stored[0] and not _password_matches(password, stored[0])):
+                raise UserError("users.password.wrong", ("password",))
+            connection.execute("DELETE FROM second_factors WHERE user_id = ?", (user.id,))
+            connection.execute("DELETE FROM recovery_codes WHERE user_id = ?", (user.id,))
+
+    def reset_two_step(self, name: str) -> None:
+        """An administrator turns someone's two-step sign-in off (a lost phone)."""
+        user = self.user(name)
+        with self._connect() as connection:
+            connection.execute("DELETE FROM second_factors WHERE user_id = ?", (user.id,))
+            connection.execute("DELETE FROM recovery_codes WHERE user_id = ?", (user.id,))
+
+    def _second_step(
+        self, connection: sqlite3.Connection, user_id: str, code: str | None, moment: datetime
+    ) -> str | None:
+        """None when the code (or a recovery code) lets the user in, else the refusal."""
+        row = connection.execute(
+            "SELECT secret, last_step FROM second_factors WHERE user_id = ? AND active = 1",
+            (user_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        if not code or not code.strip():
+            return "signin.code_required"
+        step = _matching_step(row[0], code, moment, row[1])
+        if step is not None:
+            connection.execute(
+                "UPDATE second_factors SET last_step = ? WHERE user_id = ?", (step, user_id)
+            )
+            return None
+        used = connection.execute(
+            "DELETE FROM recovery_codes WHERE user_id = ? AND digest = ?",
+            (user_id, _digest(_recovery_text(code))),
+        )
+        return None if used.rowcount else "signin.code.invalid"
+
     # --------------------------------------------------------------- signing in
 
     def _wait(self, connection: sqlite3.Connection, key: str, moment: datetime) -> timedelta:
@@ -600,11 +759,14 @@ class UserDirectory:
         *,
         client: str,
         device: str = "Signed in",
+        code: str | None = None,
         now: datetime | None = None,
     ) -> SignedIn:
         """A session for ``name``, or ``signin.failed`` (whatever was wrong) or
         ``signin.throttled`` while too many recent attempts failed. ``client`` is
-        the address the attempt came from."""
+        the address the attempt came from. With two-step sign-in on, a right password
+        without ``code`` is ``signin.code_required`` and a wrong code
+        ``signin.code.invalid`` (a failure like any other)."""
         moment = now or _now()
         keys = (f"name:{name.casefold()}", f"address:{client}")
         with self._connect() as connection:
@@ -618,6 +780,14 @@ class UserDirectory:
                 ).fetchone()[0]
             # Checked even for a name that does not exist, at the same cost.
             matches = _password_matches(password, stored)
+            refusal = "signin.failed"
+            if row is not None and matches:
+                second = self._second_step(connection, row[0], code, moment)
+                if second == "signin.code_required":
+                    # The password was right: asking for the code is no failure.
+                    raise UserError(second, ("code",))
+                if second is not None:
+                    matches, refusal = False, second
             if row is None or not matches:
                 for key in keys:
                     connection.execute(
@@ -638,7 +808,7 @@ class UserDirectory:
                 )
         # Raised outside the block, so the failure counts are committed.
         if failed or row is None:
-            raise UserError("signin.failed", ())
+            raise UserError(refusal, ("code",) if refusal != "signin.failed" else ())
         return SignedIn(self._user(row), token, expires)
 
 

@@ -155,7 +155,11 @@ A phone or tablet opening the page without the address BreadSched printed asks y
 your password was reset, you choose your own password. The device then stays signed
 in: its session lasts 30 days from when you last used it. What you may do depends on
 the role the book's owner gave you; someone given only the entry role uses quick
-entry and nothing else. When the server holds several books shared with you, the page
+entry and nothing else. **Account** (the last view) changes your password, signs out,
+and turns on **two-step sign-in**: open the link on the phone with your authenticator
+app (or type the secret into it), enter the code it shows, and keep the ten recovery
+codes it then shows once. Signing in then asks for the app's newest code (or a
+recovery code) after your password. When the server holds several books shared with you, the page
 asks which to open, keeps that choice when it reloads, and **Other books** goes back
 to the choice.
 

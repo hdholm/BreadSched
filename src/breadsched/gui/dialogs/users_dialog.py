@@ -88,6 +88,29 @@ class UsersDialog(BoundedWindow):
                 ),
             )
         )
+        two_step = self.directory.two_step_on(you)
+        self.content.append(
+            _row(
+                Gtk.Label(
+                    label="Two-step sign-in is "
+                    + (
+                        "on: signing in elsewhere also asks for your app's code"
+                        if two_step
+                        else "off"
+                    ),
+                    xalign=0,
+                    hexpand=True,
+                    wrap=True,
+                ),
+                _button("Turn off…", self._ask_two_step_off)
+                if two_step
+                else _button(
+                    "Turn on…",
+                    self._start_two_step,
+                    "Also ask for a code from an authenticator app when you sign in elsewhere",
+                ),
+            )
+        )
 
         self._heading("People")
         if not others:
@@ -105,18 +128,28 @@ class UsersDialog(BoundedWindow):
                 notes.append("administrator")
             if user.must_change:
                 notes.append("chooses a password at next sign-in")
-            self.content.append(
-                _row(
-                    Gtk.Label(
-                        label=f"{user.display_name} ({', '.join(notes)})",
-                        xalign=0,
-                        hexpand=True,
-                        wrap=True,
-                    ),
-                    _button("Reset password…", lambda *_, u=user: self._ask_reset(u)),
-                    _button("Remove", lambda *_, u=user: self._remove(u)),
-                )
+            their_two_step = self.directory.two_step_on(user)
+            if their_two_step:
+                notes.append("two-step sign-in")
+            row = _row(
+                Gtk.Label(
+                    label=f"{user.display_name} ({', '.join(notes)})",
+                    xalign=0,
+                    hexpand=True,
+                    wrap=True,
+                ),
+                _button("Reset password…", lambda *_, u=user: self._ask_reset(u)),
             )
+            if their_two_step:
+                row.append(
+                    _button(
+                        "Turn off two-step",
+                        lambda *_, u=user: self._reset_two_step(u),
+                        "For a lost phone: they sign in with their password alone",
+                    )
+                )
+            row.append(_button("Remove", lambda *_, u=user: self._remove(u)))
+            self.content.append(row)
         self.content.append(_row(_button("Add a person…", self._ask_add)))
 
         if self.book_id:
@@ -277,6 +310,76 @@ class UsersDialog(BoundedWindow):
             return "Your password is set; use it to sign in from another device."
 
         self._show(_Form("Your password", fields, "Save", self, save))
+
+    def _start_two_step(self, *_args) -> None:
+        """Show the secret for the authenticator app, then ask for its first code."""
+        you = self.directory.host_user()
+        try:
+            setup = self.directory.start_two_step(you)
+        except UserError as error:
+            self.status.set_text(error.message)
+            return
+
+        def confirm(values: dict[str, str]) -> str:
+            codes = self.directory.confirm_two_step(you, values["code"])
+            self.refresh()
+            shown = Gtk.Label(label="\n".join(codes), xalign=0, selectable=True)
+            shown.set_name("recovery-codes")
+            self.content.prepend(shown)
+            self.content.prepend(
+                Gtk.Label(
+                    label="Two-step sign-in is on. Your recovery codes, shown only now: "
+                    "keep them somewhere safe; each signs you in once without the app.",
+                    xalign=0,
+                    wrap=True,
+                )
+            )
+            return ""
+
+        form = _Form(
+            "Add BreadSched to your authenticator app",
+            [("code", "The code the app shows now")],
+            "Turn on",
+            self,
+            confirm,
+            keep_open=True,
+        )
+        secret = Gtk.Label(label=setup.secret, xalign=0, selectable=True, wrap=True)
+        secret.set_name("two-step-secret")
+        link = Gtk.Label(label=setup.uri, xalign=0, selectable=True, wrap=True)
+        for widget in reversed(
+            (
+                Gtk.Label(
+                    label="Type this secret into the app, or open the link on its phone:",
+                    xalign=0,
+                    wrap=True,
+                ),
+                secret,
+                link,
+            )
+        ):
+            form.insert_child_after(widget, form.get_first_child())
+        self._show(form)
+
+    def _ask_two_step_off(self, *_args) -> None:
+        you = self.directory.host_user()
+
+        def off(values: dict[str, str]) -> str:
+            self.directory.stop_two_step(you, values.get("password", ""))
+            return "Two-step sign-in is off."
+
+        fields = [("password", "Your password")] if you.has_password else []
+        if not fields:
+            self._attempt(lambda: off({}))
+            return
+        self._show(_Form("Turn off two-step sign-in", fields, "Turn off", self, off))
+
+    def _reset_two_step(self, user: User) -> None:
+        def reset() -> str:
+            self.directory.reset_two_step(user.name)
+            return f"{user.display_name} signs in with their password alone now."
+
+        self._attempt(reset)
 
     def _ask_add(self, *_args) -> None:
         def add(values: dict[str, str]) -> str:

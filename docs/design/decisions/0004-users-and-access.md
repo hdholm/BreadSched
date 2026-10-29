@@ -367,6 +367,27 @@ other accounts; 3 and 4 make it a household application.
   The history stays in the host's memory, as before; a durable "entered by" on each
   transaction is not kept. **Phase 4 is built.**
 
+**Phase 5 is built:** optional two-step sign-in, per user.
+- **The code:** RFC 6238 with the standard library (`hmac`, SHA-1, six digits, 30
+  seconds), one step either side of now, and never a step at or before the last one
+  used, so a code cannot be replayed. The secret (20 random bytes, base32) is in the
+  user directory's `second_factors` table; `start_two_step` makes it (with an
+  `otpauth://` URI) and `confirm_two_step` turns it on with a first code, returning
+  ten recovery codes, kept only as digests (`recovery_codes`) and each good once.
+- **Signing in:** with it on, a right password without a code is 401
+  `signin.code_required` (not a failure); a wrong code is 401 `signin.code.invalid`
+  and counts toward throttling like a wrong password. `POST /api/v1/session` takes
+  `code`; the pages ask for it after the password.
+- **Turning it on and off:** `POST /api/v1/me/two-step` (the secret and URI), `.../confirm`
+  (`code`; the recovery codes), and `.../off` (`password`); `/api/v1/me` says
+  `two_step`. The browser's **Account** view, GTK's **Users and devices**, and
+  `breadsched two-step on|off|status` use them; an administrator's
+  `users reset-two-step` (or GTK's **Turn off two-step**) is for a lost phone.
+
+All five phases are built on the experimental branch. What remains is GTK opening a
+book the host holds (it waits on GTK being wholly a protocol client) and the
+security review before the proxy is used with all of this.
+
 ## Answers to the review questions (2026-10-28)
 
 1. **Roles:** owner, editor, and viewer, and an *entry* role as well.

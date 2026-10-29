@@ -219,6 +219,11 @@ _SERVICE_MESSAGES = {
     "host.local_only": "Only your own commands on this computer may change what the host serves",
     "signin.failed": "That name and password do not match",
     "signin.throttled": "Too many attempts; wait a little and try again",
+    "signin.code_required": "Enter the code from your authenticator app",
+    "signin.code.invalid": "That code is not right; try the newest one, or a recovery code",
+    "two_step.already_on": "Two-step sign-in is already on",
+    "two_step.not_started": "Start turning on two-step sign-in first",
+    "two_step.code.invalid": "That code does not match; check the app's newest code",
     "file.local_only": "Send the file itself: only programs on the book's own computer "
     "may name files there",
     "attachment.folder.local_only": "Only programs on the book's own computer may change "

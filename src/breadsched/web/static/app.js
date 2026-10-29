@@ -7,6 +7,7 @@ const RENDERERS = {
   Rules: showRules, "Reimbursable Expenses": showReimbursables, "Savings Goals": showGoals,
   Verify: showVerify,
   Guide: showGuide,
+  Account: showAccount,
 };
 
 // Views whose workflow has a section in the browser guide get a Help button.

@@ -98,9 +98,23 @@ ACCOUNT_ME = "/api/v1/me"
 ACCOUNT_PASSWORD = "/api/v1/me/password"
 #: The books this host holds that the caller may use (decision 0004).
 ACCOUNT_BOOKS = "/api/v1/books"
+#: Turning one's own two-step sign-in on (start, then confirm with a code) and off.
+ACCOUNT_TWO_STEP = "/api/v1/me/two-step"
+ACCOUNT_TWO_STEP_CONFIRM = "/api/v1/me/two-step/confirm"
+ACCOUNT_TWO_STEP_OFF = "/api/v1/me/two-step/off"
 #: Answered before the caller is known (signing in) or while a temporary password
 #: must still be changed, or for no one book.
-ACCOUNT_PATHS = frozenset({ACCOUNT_SESSION, ACCOUNT_ME, ACCOUNT_PASSWORD, ACCOUNT_BOOKS})
+ACCOUNT_PATHS = frozenset(
+    {
+        ACCOUNT_SESSION,
+        ACCOUNT_ME,
+        ACCOUNT_PASSWORD,
+        ACCOUNT_BOOKS,
+        ACCOUNT_TWO_STEP,
+        ACCOUNT_TWO_STEP_CONFIRM,
+        ACCOUNT_TWO_STEP_OFF,
+    }
+)
 #: Another command of the computer account asking the host to serve a book, or to let
 #: it go (decision 0004: one host per account).
 HOST_BOOKS = "/api/v1/host/books"
@@ -123,14 +137,16 @@ class _Book:
     executor: Callable[[Callable[[], Any]], Any]
 
 
-def _me(caller: Caller) -> dict[str, object]:
+def _me(caller: Caller, two_step: bool = False) -> dict[str, object]:
     user = caller.user
     return {
         "name": user.name,
         "display_name": user.display_name,
         "administrator": user.administrator,
         "must_change": user.must_change,
+        "has_password": user.has_password,
         "this_computer": caller.host_files,
+        "two_step": two_step,
     }
 
 
@@ -666,7 +682,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._refuse()
                 return
             if (method, path) == ("GET", ACCOUNT_ME):
-                self._json(200, _me(caller))
+                self._json(200, _me(caller, self.users.two_step_on(caller.user)))
+                return
+            if method == "POST" and path in (
+                ACCOUNT_TWO_STEP,
+                ACCOUNT_TWO_STEP_CONFIRM,
+                ACCOUNT_TWO_STEP_OFF,
+            ):
+                self._two_step(caller, path, body)
                 return
             if (method, path) == ("GET", ACCOUNT_BOOKS):
                 if caller.user.must_change:
@@ -687,7 +710,12 @@ class Handler(BaseHTTPRequestHandler):
         except (json.JSONDecodeError, UnicodeDecodeError):
             self._error(400, "request.body.json_invalid", ("body",))
         except UserError as exc:
-            status = {"signin.failed": 401, "signin.throttled": 429}.get(exc.code, 400)
+            status = {
+                "signin.failed": 401,
+                "signin.code_required": 401,
+                "signin.code.invalid": 401,
+                "signin.throttled": 429,
+            }.get(exc.code, 400)
             self._error(status, exc.code, exc.fields, message=exc.message)
         except Exception:  # noqa: BLE001 - isolate the threaded server
             self._unexpected()
@@ -751,6 +779,24 @@ class Handler(BaseHTTPRequestHandler):
                 usable.append(HostedBook(book.key, book.name, role))
         return sorted(usable, key=lambda book: (book.name.casefold(), book.id))
 
+    def _two_step(self, caller: Caller, path: str, body: dict[str, Any]) -> None:
+        """One's own two-step sign-in (decision 0004): start (the secret for the app),
+        confirm with a first code (the recovery codes, shown once), or turn it off
+        with one's password."""
+        assert self.users is not None
+        if caller.user.must_change:
+            self._error(403, "request.untrusted")
+            return
+        if path == ACCOUNT_TWO_STEP:
+            setup = self.users.start_two_step(caller.user)
+            self._json(200, {"secret": setup.secret, "uri": setup.uri})
+        elif path == ACCOUNT_TWO_STEP_CONFIRM:
+            codes = self.users.confirm_two_step(caller.user, str(body.get("code", "")))
+            self._json(200, {"two_step": True, "recovery_codes": list(codes)})
+        else:
+            self.users.stop_two_step(caller.user, str(body.get("password", "")))
+            self._json(200, {"two_step": False})
+
     def _sign_in(self, body: dict[str, Any]) -> None:
         assert self.users is not None
         # Behind the proxy every request comes from loopback; the proxy names the
@@ -761,6 +807,7 @@ class Handler(BaseHTTPRequestHandler):
             str(body.get("password", "")),
             client=client,
             device=str(body.get("device") or "Browser")[:80],
+            code=str(body["code"]) if body.get("code") else None,
         )
         days = SESSION_DAYS * 24 * 60 * 60
         self._json(

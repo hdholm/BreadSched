@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import getpass
 import io
 import json
@@ -658,3 +659,156 @@ def test_the_share_command_grants_changes_and_removes_roles(tmp_path, capsys, mo
     assert main(["share", book, "alice", "--remove"]) == 0
     assert main(["share", book, "alice", "--remove"]) == 2
     assert "had no role" in capsys.readouterr().err
+
+
+# ------------------------------------------------------------ two-step sign-in (phase 5)
+
+
+def test_totp_codes_follow_rfc_6238():
+    # RFC 6238's SHA-1 key, "12345678901234567890", at 59 s and 1111111109 s.
+    secret = base64.b32encode(b"12345678901234567890").decode()
+    assert users.totp_code(secret, 59 // 30) == "287082"
+    assert users.totp_code(secret, 1111111109 // 30) == "081804"
+
+
+def test_two_step_sign_in_asks_for_a_code_after_the_password():
+    directory = UserDirectory()
+    directory.add_user("alice", "temporary-pass")
+    directory.set_password("alice", "alices-own-password", current="temporary-pass")
+    alice = directory.user("alice")
+    start = datetime(2026, 10, 29, 12, 0, tzinfo=UTC)
+
+    def at(seconds):
+        return start + timedelta(seconds=seconds)
+
+    def code(setup, seconds):
+        return users.totp_code(setup.secret, int(at(seconds).timestamp()) // 30)
+
+    setup = directory.start_two_step(alice)
+    wrong_code = "000000" if code(setup, 0) != "000000" else "111111"
+    assert setup.uri.startswith("otpauth://totp/BreadSched:alice?secret=")
+    # Nothing changes until a code from the app confirms it.
+    assert not directory.two_step_on(alice)
+    with pytest.raises(users.UserError) as wrong:
+        directory.confirm_two_step(alice, wrong_code, now=at(0))
+    assert wrong.value.code == "two_step.code.invalid"
+    recovery = directory.confirm_two_step(alice, code(setup, 0), now=at(0))
+    assert len(recovery) == 10 and len(set(recovery)) == 10
+    assert directory.two_step_on(alice)
+    with pytest.raises(users.UserError) as again:
+        directory.start_two_step(alice)
+    assert again.value.code == "two_step.already_on"
+
+    def sign_in(**kwargs):
+        return directory.sign_in("alice", "alices-own-password", client="phone", **kwargs)
+
+    # The right password alone asks for the code, and is not counted as a failure.
+    for _ in range(users.FREE_FAILURES + 2):
+        with pytest.raises(users.UserError) as asked:
+            sign_in(now=at(60))
+        assert asked.value.code == "signin.code_required"
+    assert sign_in(code=code(setup, 60), now=at(60)).user.name == "alice"
+    # A code is never used twice, nor one from long ago.
+    for used in (code(setup, 60), code(setup, 0)):
+        with pytest.raises(users.UserError) as replayed:
+            sign_in(code=used, now=at(61))
+        assert replayed.value.code == "signin.code.invalid"
+    # Each recovery code lets one sign-in through, once, written any way.
+    assert sign_in(code=recovery[0].upper().replace("-", " "), now=at(120))
+    with pytest.raises(users.UserError) as spent:
+        sign_in(code=recovery[0], now=at(150))
+    assert spent.value.code == "signin.code.invalid"
+    # Wrong codes are failures like a wrong password: they are throttled.
+    refusals = []
+    for _ in range(users.FREE_FAILURES + 1):
+        with pytest.raises(users.UserError) as refused:
+            sign_in(code="not-a-code", now=at(150))
+        refusals.append(refused.value.code)
+    # The replayed and spent codes above were failures too, so the wait comes sooner.
+    assert refusals[0] == "signin.code.invalid" and refusals[-1] == "signin.throttled"
+
+    # Turning it off needs the password; an administrator can reset a lost phone.
+    with pytest.raises(users.UserError) as refused:
+        directory.stop_two_step(alice, "wrong-password")
+    assert refused.value.code == "users.password.wrong"
+    directory.stop_two_step(alice, "alices-own-password")
+    assert not directory.two_step_on(alice)
+    setup = directory.start_two_step(alice)
+    directory.confirm_two_step(alice, code(setup, 3600), now=at(3600))
+    directory.reset_two_step("alice")
+    assert not directory.two_step_on(alice)
+
+
+def test_two_step_sign_in_over_http(hosted):
+    directory = UserDirectory()
+    book_id = hosted.db.get_metadata("book.id")
+    token = person(directory, "alice", "viewer", book_id)
+    header = {"X-BreadSched-Token": token}
+    status, me, _ = _call(hosted.base, "GET", "/api/v1/me", headers=header)
+    assert (status, me["two_step"]) == (200, False)
+    status, setup, _ = _call(hosted.base, "POST", "/api/v1/me/two-step", {}, header)
+    assert status == 200 and setup["uri"].startswith("otpauth://totp/")
+    now = int(datetime.now(UTC).timestamp()) // 30
+    status, turned, _ = _call(
+        hosted.base,
+        "POST",
+        "/api/v1/me/two-step/confirm",
+        {"code": users.totp_code(setup["secret"], now)},
+        header,
+    )
+    assert status == 200 and turned["two_step"] and len(turned["recovery_codes"]) == 10
+
+    signing = {"name": "alice", "password": "alice-own-password"}
+    status, asked, _ = _call(hosted.base, "POST", "/api/v1/session", signing)
+    assert (status, asked["code"]) == (401, "signin.code_required")
+    status, wrong, _ = _call(hosted.base, "POST", "/api/v1/session", {**signing, "code": "x"})
+    assert (status, wrong["code"]) == (401, "signin.code.invalid")
+    status, signed, _ = _call(
+        hosted.base,
+        "POST",
+        "/api/v1/session",
+        {**signing, "code": users.totp_code(setup["secret"], now + 1)},
+    )
+    assert status == 200 and signed["name"] == "alice"
+    status, off, _ = _call(
+        hosted.base, "POST", "/api/v1/me/two-step/off", {"password": "nope"}, header
+    )
+    assert (status, off["code"]) == (400, "users.password.wrong")
+    status, off, _ = _call(
+        hosted.base,
+        "POST",
+        "/api/v1/me/two-step/off",
+        {"password": "alice-own-password"},
+        header,
+    )
+    assert (status, off["two_step"]) == (200, False)
+
+
+def test_the_two_step_commands_turn_it_on_and_off(capsys, monkeypatch):
+    from breadsched.cli.main import main
+
+    fixed = b"12345678901234567890"
+    secret = base64.b32encode(fixed).decode().rstrip("=")
+    real = users.secrets.token_bytes
+    # Only the 20-byte secret is fixed; recovery codes stay random.
+    monkeypatch.setattr(
+        users.secrets, "token_bytes", lambda size: fixed if size == 20 else real(size)
+    )
+    assert main(["two-step", "status"]) == 0
+    assert "off" in capsys.readouterr().out
+    step = int(datetime.now(UTC).timestamp()) // users.TOTP_STEP
+    monkeypatch.setattr("sys.stdin", io.StringIO(users.totp_code(secret, step) + "\n"))
+    assert main(["two-step", "on", "--code-stdin", "--json"]) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["two_step"] and shown["secret"] == secret and len(shown["recovery_codes"]) == 10
+    assert UserDirectory().two_step_on(UserDirectory().host_user())
+    # The computer account has no password yet, so turning it off asks for none.
+    monkeypatch.setattr("sys.stdin", io.StringIO("\n"))
+    assert main(["two-step", "off", "--code-stdin"]) == 0
+    assert not UserDirectory().two_step_on(UserDirectory().host_user())
+    # An administrator turns off someone else's, for a lost phone.
+    directory = UserDirectory()
+    directory.add_user("alice", "temporary-pass")
+    directory.start_two_step(directory.user("alice"))
+    assert main(["users", "reset-two-step", "alice"]) == 0
+    assert "Turned off alice's two-step sign-in" in capsys.readouterr().out

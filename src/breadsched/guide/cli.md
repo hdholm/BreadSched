@@ -292,6 +292,9 @@ breadsched users add alice --display-name "Alice"   # asks for a temporary passw
 breadsched users reset-password alice
 breadsched users remove alice
 breadsched password                                 # your own, to sign in elsewhere
+breadsched two-step on                              # also ask for an authenticator code
+breadsched two-step off
+breadsched users reset-two-step alice               # for a lost phone
 breadsched token create "Backup script"             # shown once; keep it in a private file
 breadsched token list
 breadsched token revoke TOKEN-ID
@@ -299,6 +302,11 @@ breadsched share household.breadsched                     # who may use this boo
 breadsched share household.breadsched alice --role viewer # owner, editor, viewer, entry
 breadsched share household.breadsched alice --remove
 ```
+
+`two-step on` shows a secret (and an `otpauth://` link) for an authenticator app,
+asks for the code it shows, and prints ten recovery codes, each good for one sign-in
+without the app. From then on signing in from another device asks for a code after
+the password. Anyone can turn theirs on from the browser's **Account** view too.
 
 Your computer account owns every book it serves. Anyone else may use a book only in
 the role it gives them: an *editor* reads and changes it (and may undo anyone's

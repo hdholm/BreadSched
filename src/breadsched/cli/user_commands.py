@@ -86,6 +86,13 @@ def cmd_users(args: argparse.Namespace) -> int:
         elif args.action == "remove":
             directory.remove_user(args.name)
             emit({"removed": args.name}, args, f"Removed {args.name}")
+        elif args.action == "reset-two-step":
+            directory.reset_two_step(args.name)
+            emit(
+                {"two_step": False, "name": args.name},
+                args,
+                f"Turned off {args.name}'s two-step sign-in; they sign in with their password.",
+            )
         else:
             user = directory.reset_password(args.name, _password(args, "Temporary password"))
             emit(
@@ -116,6 +123,42 @@ def cmd_password(args: argparse.Namespace) -> int:
     except UserError as error:
         raise _refused(error) from error
     emit(_user_json(changed), args, f"Set the password for {changed.name}")
+    return 0
+
+
+def cmd_two_step(args: argparse.Namespace) -> int:
+    """Turn this computer account's own two-step sign-in on or off, or say whether it
+    is on (decision 0004): needed only to sign in from another device."""
+    directory = UserDirectory()
+    user = directory.host_user()
+    try:
+        if args.action == "status":
+            on = directory.two_step_on(user)
+            emit({"two_step": on}, args, f"Two-step sign-in is {'on' if on else 'off'}.")
+        elif args.action == "on":
+            setup = directory.start_two_step(user)
+            if not args.json:
+                print("Add this to your authenticator app (or open the link on your phone):")
+                print(f"  secret: {setup.secret}")
+                print(f"  link:   {setup.uri}")
+            code = sys.stdin.readline().strip() if args.code_stdin else input("Code: ").strip()
+            codes = directory.confirm_two_step(user, code)
+            emit(
+                {"two_step": True, "secret": setup.secret, "recovery_codes": list(codes)},
+                args,
+                "Two-step sign-in is on. Keep these recovery codes somewhere safe; each "
+                "signs you in once without the app:\n" + "\n".join(f"  {c}" for c in codes),
+            )
+        else:
+            password = (
+                sys.stdin.readline().rstrip("\n")
+                if args.code_stdin
+                else getpass.getpass("Password: ")
+            )
+            directory.stop_two_step(user, password)
+            emit({"two_step": False}, args, "Two-step sign-in is off.")
+    except UserError as error:
+        raise _refused(error) from error
     return 0
 
 
@@ -217,7 +260,9 @@ def cmd_share(args: argparse.Namespace) -> int:
 def register(add: AddCommand) -> None:
     """Add the user subcommands."""
     users = add("users", "List, add, or remove the people who may use this computer's books", False)
-    users.add_argument("action", choices=("list", "add", "remove", "reset-password"))
+    users.add_argument(
+        "action", choices=("list", "add", "remove", "reset-password", "reset-two-step")
+    )
     users.add_argument("name", nargs="?", help="the user's sign-in name")
     users.add_argument("--display-name", help="the name shown for the user (add)")
     users.add_argument("--administrator", action="store_true", help="may manage users (add)")
@@ -237,6 +282,20 @@ def register(add: AddCommand) -> None:
         help="read the current (if any) and new password from standard input, one per line",
     )
     password.set_defaults(func=cmd_password)
+
+    two_step = add(
+        "two-step",
+        "Turn two-step sign-in (a code from an authenticator app) on or off for this "
+        "computer account",
+        False,
+    )
+    two_step.add_argument("action", choices=("status", "on", "off"))
+    two_step.add_argument(
+        "--code-stdin",
+        action="store_true",
+        help="read the app's code (on) or your password (off) from standard input",
+    )
+    two_step.set_defaults(func=cmd_two_step)
 
     token = add("token", "Make, list, or revoke device tokens for scripts and devices", False)
     token.add_argument("action", choices=("create", "list", "revoke"))

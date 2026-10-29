@@ -1,6 +1,6 @@
 // Page state, DOM and number helpers, and the authenticated JSON API calls.
 
-const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Find", "Scheduled", "Payroll", "Plan", "Review", "Projection", "Enter", "Import", "Rules", "Reimbursable Expenses", "Savings Goals", "Verify", "Guide"];
+const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Find", "Scheduled", "Payroll", "Plan", "Review", "Projection", "Enter", "Import", "Rules", "Reimbursable Expenses", "Savings Goals", "Verify", "Guide", "Account"];
 const launchParams = new URLSearchParams(window.location.search);
 let current = VIEWS.includes(launchParams.get("view")) ? launchParams.get("view") : "Dashboard";
 let state = {
@@ -115,7 +115,11 @@ async function post(path, body) {
     body: JSON.stringify({ number_format: browserNumberFormat, ...(body || {}) }),
   });
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || response.statusText);
+  if (!response.ok) {
+    const error = new Error(payload.error || response.statusText);
+    error.code = payload.code;
+    throw error;
+  }
   return payload;
 }
 
@@ -134,10 +138,26 @@ async function signedIn() {
       ], (values) => post("/api/v1/me/password", values));
       continue;
     }
+    let entered = null;
     await accountForm("Sign in to BreadSched", "Sign in", [
       ["name", "User name", "username"],
       ["password", "Password", "current-password"],
-    ], (values) => post("/api/v1/session", { ...values, device: navigator.platform || "Browser" }));
+    ], async (values) => {
+      try {
+        await post("/api/v1/session", { ...values, device: navigator.platform || "Browser" });
+      } catch (error) {
+        // With two-step sign-in on, the right password is followed by the app's code.
+        if (error.code !== "signin.code_required") throw error;
+        entered = values;
+      }
+    });
+    if (entered) {
+      await accountForm("Enter your code", "Sign in", [
+        ["code", "Code from your authenticator app, or a recovery code", "one-time-code"],
+      ], (values) => post("/api/v1/session", {
+        ...entered, ...values, device: navigator.platform || "Browser",
+      }));
+    }
   }
 }
 
@@ -183,7 +203,7 @@ function accountForm(title, action, fields, submit) {
   return new Promise((resolve) => {
     const inputs = fields.map(([name, label, autocomplete]) => [label, el("input", {
       name, autocomplete, required: "required",
-      type: name === "name" ? "text" : "password",
+      type: name === "name" || name === "code" ? "text" : "password",
       autocapitalize: "none",
     })]);
     const problem = el("p", { class: "note neg", role: "alert" });

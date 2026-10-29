@@ -11036,6 +11036,53 @@ class TestPreferences:
         users.close()
         dialog.close()
 
+    def test_two_step_sign_in_is_turned_on_and_off_from_users_and_devices(self, app, window):
+        """Decision 0004, phase 5: the secret for an authenticator app, its first code,
+        the recovery codes shown once; and an administrator's reset for a lost phone."""
+        import time
+
+        from breadsched.api import users as users_module
+        from breadsched.api.users import UserDirectory
+
+        directory = UserDirectory()
+        dialog = app.on_preferences()
+        users = dialog._on_users(None)
+        assert "Two-step sign-in is off" in _texts(users.content)
+        users._start_two_step()
+        secret = next(
+            w for w in _descendants(users.content) if w.get_name() == "two-step-secret"
+        ).get_text()
+        users.form.fill(code="000000")
+        users.form.submit_button.emit("clicked")
+        step = int(time.time()) // users_module.TOTP_STEP
+        if users_module.totp_code(secret, step) != "000000":
+            assert "does not match" in users.status.get_text()
+        users.form.fill(code=users_module.totp_code(secret, step))
+        users.form.submit_button.emit("clicked")
+        shown = next(w for w in _descendants(users.content) if w.get_name() == "recovery-codes")
+        assert len(shown.get_text().splitlines()) == 10
+        assert directory.two_step_on(directory.host_user())
+        assert "Two-step sign-in is on" in _texts(users.content)
+        # The computer account has no password here, so it turns off at once.
+        users._ask_two_step_off()
+        assert not directory.two_step_on(directory.host_user())
+
+        # Another person's, reset for a lost phone.
+        directory.add_user("alice", "temporary-pass", display_name="Alice")
+        directory.start_two_step(directory.user("alice"))
+        alice_secret = directory.start_two_step(directory.user("alice")).secret
+        directory.confirm_two_step(
+            directory.user("alice"), users_module.totp_code(alice_secret, step)
+        )
+        users.refresh()
+        assert "Alice (alice, chooses a password at next sign-in, two-step sign-in)" in (
+            _texts(users.content)
+        )
+        users._reset_two_step(directory.user("alice"))
+        assert not directory.two_step_on(directory.user("alice"))
+        users.close()
+        dialog.close()
+
     def test_forget_and_cancel(self, app, window, populated_book):
         app.open_book(populated_book)
         stored = app.settings.get("general", "last_book_path")
