@@ -3,14 +3,18 @@
 Part of the [BreadSched design](../../../DESIGN.md); see
 [Planning](../planning.md#event-driven-plan).
 
-- **Status:** proposed, 2026-10-30, for review (#397). Nothing is built yet; the
-  review questions at the end need answers first.
+- **Status:** proposed, 2026-10-30, for review (#397). Nothing is built yet. Five of
+  the six review questions are answered (at the end). Before it is accepted, the
+  design is to be reworked together with savings goals, Budget jars, and the Plan,
+  which are tied together and should share code. It needs a clear usage model and a
+  handful of practical examples, which will also serve as documentation and a
+  walk-through.
 - **Decision:** an actual is matched to the plan *by split and amount*. One split
   may count toward one planned occurrence, several splits of one transaction toward
   several occurrences, and several actuals toward one occurrence, each for part or
   all of its amount. An estimate keeps what is left of it until its period ends. You
   do the matching in a window that works like reconciling a statement, opened from
-  the Plan, a schedule, or a transaction. It replaces the Review view.
+  the Plan, a schedule, or a transaction, alongside the Review view, which stays.
 
 ## Context
 
@@ -129,7 +133,7 @@ A **Match window**, modeless like the reconcile window, opens from three places:
 - **From a planned occurrence:** a Plan cell's detail, a row in Scheduled or
   Upcoming, or a Budget jar. It shows the occurrence's expected, applied, and
   remaining amounts at the top, and below, the candidate splits in its period,
-  proposed ones checked. Each candidate row shows:
+  ranked and explained but none checked (question 3). Each candidate row shows:
   - the date, number, description, and the account on the other side;
   - the transaction's notes and the split's memo;
   - the split amount, and the amount to allocate, which you can edit for a partial
@@ -142,12 +146,12 @@ A **Match window**, modeless like the reconcile window, opens from three places:
   It lists the transaction's splits, each with its ranked occurrences and how much
   remains of each, so a split receipt can count toward two estimates at once.
 - **From what is left:** the Plan shows how many actuals in the range are unmatched
-  or partly matched. Choosing that count opens the list, grouped by category,
-  replacing today's Review view. **Not planned** is a choice there and in the window
-  from an actual.
+  or partly matched. Choosing that count opens Review on them, grouped by category.
+  **Not planned** is a choice for each split there and in the window from an actual.
 
-Review stops being a main view: its toolbar button and View menu item go, and its
-work moves to these windows. The browser gets the same windows on the Plan, the
+Review stays a main view for working through a backlog (question 6). It shows each
+actual's splits with the account on the other side and the notes, and opens the
+window from an actual for the one chosen. The browser gets the same windows on the Plan, the
 schedules, and its register; `breadsched plan-*` commands gain allocation forms
 (`plan-allocate TRANSACTION[:SPLIT] OCCURRENCE [--amount]`, and `plan-matches` with
 remaining amounts).
@@ -193,9 +197,8 @@ remaining amounts).
 - **Import and re-import** keep allocations as they keep `planned_occurrence` now
   (`engine.import_review`). A GnuCash re-import that changes a split's amount below
   what is allocated drops the allocations to fit and says so.
-- **Interfaces.** The GTK Review view, its toolbar button, and the browser's Review
-  page go once the Match windows replace them. The command line keeps `review` as a
-  read-only list of unmatched actuals.
+- **Interfaces.** Review stays in GTK, the browser, and the command line, and works
+  by split; the Match windows are added beside it.
 - **Cost.** Large: a storage field and its migration, engine changes in planning,
   activity, projection, and jars, a new service and book-server operations, and new
   windows in GTK and the browser. It is built in phases, and the old resolution
@@ -213,7 +216,7 @@ remaining amounts).
    account and notes in every interface's candidate rows.
 3. **The Match windows in GTK.** From an occurrence (Plan detail, Scheduled,
    Upcoming, jars) and from a transaction (register, editor); the unmatched list from
-   the Plan; Review retired.
+   the Plan; Review by split.
 4. **Browser and command line.** The same windows on the browser's Plan, schedules,
    and register; `plan-allocate` and remaining amounts in `plan-matches`.
 
@@ -239,3 +242,34 @@ remaining amounts).
 6. **Review's place.** Should Review go entirely once the Match windows exist, as
    proposed? Or should an "unmatched actuals" list stay as a main view for working
    through a backlog?
+
+## Answers to the review questions (2026-10-30)
+
+1. **An estimate's period:** open. It is to be settled with the rework below, since
+   an estimate's remainder and a budget jar's leftover are close to the same thing.
+2. **Partly paid commitments:** yes, although rarely needed. For example, money down
+   on a bill, or a bill paid in parts.
+3. **Proposals checked:** no. A reconciliation does not start rows checked, and
+   neither should matching. Proposals are ranked and explained, never pre-checked.
+4. **Not planned:** per split. A department store purchase may have some splits
+   that were planned (groceries) and others that were opportunistic and in no
+   planned expenditure.
+5. **Schema version:** BreadSched is still alpha, and the schema can change often
+   and substantially to get a better result for Beta. Raise it when this is built.
+6. **Review's place:** Review stays. The Match windows add to it; they do not
+   replace it.
+
+## Still to do before accepting
+
+- **Estimates and budget jars are almost the same thing.** Distinguish their
+  purposes carefully, together with savings goals and the Plan, and let that decide
+  the mechanisms (allocations, remainders, leftovers, earmarks) and what code they
+  share.
+- **A usage model** that a household can follow: what an estimate, a commitment, a
+  jar, and a goal each are for, and when to use which.
+- **Worked examples**, usable as guide walk-throughs:
+  - a monthly groceries estimate filled by many purchases;
+  - a department store receipt that is part groceries, part household goods, and
+    part an unplanned purchase;
+  - money down on a bill, then the balance paid;
+  - an annual expense saved for through a jar or a goal, then paid.
