@@ -257,7 +257,8 @@ def merge_local_state(incoming: Transaction, existing: Transaction) -> bool:
     incoming.notes, incoming.imported_notes_digest, conflict = reconcile_imported_notes(
         existing.notes, existing.imported_notes_digest, incoming.notes
     )
-    incoming.scheduled_from = existing.scheduled_from
+    # A schedule link the source records fills one BreadSched has not made.
+    incoming.scheduled_from = existing.scheduled_from or incoming.scheduled_from
     incoming.planned_occurrence = existing.planned_occurrence
     incoming.planned_for = existing.planned_for
     incoming.planned_amount = existing.planned_amount

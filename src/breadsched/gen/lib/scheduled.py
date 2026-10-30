@@ -8,9 +8,9 @@ evaluated with :mod:`decimal`, never with :func:`eval`.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..utils.logs import get_logger
 from .base import PrimaryObject
@@ -25,6 +25,9 @@ from .transaction import (
     Transaction,
 )
 
+if TYPE_CHECKING:
+    from .scenario import ScenarioSchedule
+
 __all__ = [
     "ScheduleGrowthPolicy",
     "ScheduledAmountChange",
@@ -32,7 +35,7 @@ __all__ = [
     "ScheduledMonthAmount",
     "ScheduledOccurrenceAdjustment",
     "ScheduledSplit",
-    "scheduled_occurrence_preview",
+    "occurrence_preview",
     "ScheduledTransaction",
 ]
 
@@ -136,38 +139,57 @@ class ScheduledOccurrenceAdjustment:
         return cls(date.fromisoformat(data["when"]), Money(*data["amount"]))
 
 
-def scheduled_occurrence_preview(
-    recurrence: Recurrence,
-    base_amount: Money,
-    amount_changes: list[ScheduledAmountChange],
-    skipped: list[date],
-    occurrence_adjustments: list[ScheduledOccurrenceAdjustment],
+def occurrence_preview(
+    definition: ScheduledTransaction | ScenarioSchedule,
+    today: date,
     *,
     limit: int = 8,
 ) -> list[tuple[date, Money, str]]:
-    """Return upcoming occurrence dates with effective amount and exception state."""
-    horizon = date(min(recurrence.start.year + 10, 9999), 12, 31)
-    skipped_dates = set(skipped)
-    adjustments = {item.when: item.amount for item in occurrence_adjustments}
-    changes = sorted(amount_changes, key=lambda item: item.start)
+    """The next occurrences an editor lists as upcoming, each at the amount it will have.
+
+    The list starts at the first occurrence not yet entered: the day after the last
+    one posted, or today when none was (an estimate is never posted). Each amount
+    is what the definition resolves to on that date, so every future change counts:
+    the schedule's and each leg's future amounts, seasonal months, and one-time
+    amounts.
+    """
+    last_posted = getattr(definition, "last_posted", None)
+    if definition.placeholder or last_posted is None:
+        since = today
+    else:
+        since = last_posted + timedelta(days=1)
+    horizon = date(min(since.year + 10, 9999), 12, 31)
     rows: list[tuple[date, Money, str]] = []
-    for when in recurrence.occurrences(horizon):
-        amount = base_amount
-        status = "Normal"
-        for change in changes:
-            if change.start > when:
-                break
-            amount = change.amount
-            status = "Future amount"
-        if when in adjustments:
-            amount = adjustments[when]
-            status = "One-time amount"
-        if when in skipped_dates:
-            status = "Skipped"
+    for when in definition.recurrence.occurrences(horizon, since=since):
+        try:
+            values = definition.resolved_splits(when=when)
+        except (FormulaError, ArithmeticError):
+            break
+        amount = Money(0)
+        for _account, value in values:
+            if value > 0:
+                amount = amount + value
+        status = _preview_status(definition, when)
+        if when < today:
+            status = "Overdue" if status == "Normal" else f"Overdue, {status.lower()}"
         rows.append((when, amount, status))
         if len(rows) >= limit:
             break
     return rows
+
+
+def _preview_status(definition: ScheduledTransaction | ScenarioSchedule, when: date) -> str:
+    if when in definition.skipped:
+        return "Skipped"
+    if any(item.when == when for item in definition.occurrence_adjustments):
+        return "One-time amount"
+    if any(change.start <= when for change in definition.amount_changes) or any(
+        change.start <= when for split in definition.splits for change in split.amount_changes
+    ):
+        return "Future amount"
+    if any(item.month == when.month for item in definition.seasonal_amounts):
+        return "Seasonal amount"
+    return "Normal"
 
 
 class ScheduledSplit:

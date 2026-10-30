@@ -17,13 +17,14 @@ import sqlite3
 from datetime import date
 
 import pytest
-from gnucash_fixtures import create_book
+from gnucash_fixtures import create_book, new_guid, write_transaction
 from gnucash_xml_fixtures import create_xml_book
 
 from breadsched.cli.main import main as cli
 from breadsched.gen.db.sqlite import DbSQLite
-from breadsched.gen.engine import ledger, schedule
+from breadsched.gen.engine import ledger, planning, schedule
 from breadsched.gen.lib import Money
+from breadsched.gen.lib.transaction import PlanningResolution
 from breadsched.plugins.importer import gnucash_sqlite, gnucash_xml
 
 
@@ -331,3 +332,119 @@ class TestMergingIntoAnExistingBook:
         report = json.loads(capsys.readouterr().out)
         assert report["skipped"] == 0
         assert report["transactions"] == 2
+
+
+# ------------------------------------------- occurrences GnuCash already created
+
+
+def _run_by_gnucash(path: str, ids, *dates: date) -> list[str]:
+    """Record that GnuCash's Since Last Run created the schedule's ``dates``, as it
+    does: a transaction for each, named on a ``from-sched-xaction`` slot, and the
+    last one as the schedule's last occurrence."""
+    created = []
+    with sqlite3.connect(path) as conn:
+        for when in dates:
+            guid = write_transaction(
+                conn,
+                new_guid(),
+                ids.currency,
+                when,
+                "Rent",
+                [(ids.rent, 180000, 100, ""), (ids.checking, -180000, 100, "")],
+            )
+            conn.execute(
+                "INSERT INTO slots (obj_guid,name,slot_type,guid_val) VALUES (?,?,?,?)",
+                (guid, "from-sched-xaction", 10, ids.sched),
+            )
+            created.append(guid)
+        conn.execute(
+            "UPDATE schedxactions SET last_occur=?, instance_count=?",
+            (dates[-1].strftime("%Y%m%d"), len(dates)),
+        )
+    return created
+
+
+def _shows_them_as_done(db, sched: str, created: list[str]) -> None:
+    today = date(2026, 3, 15)
+    assert db.get_scheduled(sched).last_posted == date(2026, 3, 1)
+    for handle in created:
+        assert db.get_transaction(handle).scheduled_from == sched
+    assert schedule.already_posted(db, sched, date(2026, 2, 1))
+    # Nothing GnuCash already entered is due, upcoming, or on the due review again.
+    assert schedule.due_occurrences(db, as_of=today) == []
+    assert schedule.review_occurrences(db, as_of=today) == []
+    assert [item.when for item in schedule.upcoming_occurrences(db, as_of=today)] == [
+        date(2026, 4, 1)
+    ]
+    # The Plan shows each as matched by the transaction GnuCash entered for it.
+    events = {
+        event.planned_date: event.actual_transaction
+        for event in planning.scheduled_events(db, date(2026, 2, 1), date(2026, 3, 31))
+    }
+    assert events == {date(2026, 2, 1): created[0], date(2026, 3, 1): created[1]}
+
+
+def test_sqlite_occurrences_gnucash_created_are_not_due_again(db, gnucash_sqlite_path):
+    """GnuCash had entered the past occurrences, yet each still showed as upcoming
+    and the Plan as unmatched: the SQLite importer read neither the schedule's last
+    occurrence nor the link on the transactions GnuCash created from it."""
+    ids = gnucash_sqlite_path.ids
+    created = _run_by_gnucash(gnucash_sqlite_path.path, ids, date(2026, 2, 1), date(2026, 3, 1))
+    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+    _shows_them_as_done(db, ids.sched, created)
+    # Created transactions remain settled history, never queued for Review.
+    assert all(
+        db.get_transaction(handle).planning_resolution is PlanningResolution.HISTORICAL
+        for handle in created
+    )
+
+
+def test_importing_again_repairs_a_book_imported_before(db, gnucash_sqlite_path):
+    """A book imported without the links gains them when imported again."""
+    ids = gnucash_sqlite_path.ids
+    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+    created = _run_by_gnucash(gnucash_sqlite_path.path, ids, date(2026, 2, 1), date(2026, 3, 1))
+    with sqlite3.connect(gnucash_sqlite_path.path) as conn:
+        conn.execute("UPDATE schedxactions SET last_occur=NULL")
+        conn.execute("UPDATE slots SET name='unrelated' WHERE name='from-sched-xaction'")
+    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+    assert db.get_transaction(created[0]).scheduled_from is None
+    assert len(schedule.due_occurrences(db, as_of=date(2026, 3, 15))) == 3
+
+    with sqlite3.connect(gnucash_sqlite_path.path) as conn:
+        conn.execute("UPDATE schedxactions SET last_occur='20260301'")
+        conn.execute("UPDATE slots SET name='from-sched-xaction' WHERE name='unrelated'")
+    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+    _shows_them_as_done(db, ids.sched, created)
+
+
+def test_a_link_made_in_breadsched_is_kept_on_import(db, gnucash_sqlite_path):
+    ids = gnucash_sqlite_path.ids
+    [handle] = _run_by_gnucash(gnucash_sqlite_path.path, ids, date(2026, 2, 1))
+    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+    other = new_guid()
+    with db.transaction("link elsewhere") as txn:
+        linked = db.get_transaction(handle)
+        linked.scheduled_from = other
+        db.commit_transaction(linked, txn)
+    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+    assert db.get_transaction(handle).scheduled_from == other
+
+
+def test_xml_transactions_gnucash_created_from_a_schedule_are_linked(db, tmp_path, xml_book):
+    body = xml_book.body.replace(
+        "<trn:date-posted><ts:date>2026-01-02 10:59:00 +0000</ts:date></trn:date-posted>",
+        "<trn:date-posted><ts:date>2026-01-01 10:59:00 +0000</ts:date></trn:date-posted>"
+        "<trn:slots><slot><slot:key>from-sched-xaction</slot:key>"
+        f'<slot:value type="guid">{xml_book.schedule}</slot:value></slot></trn:slots>',
+        1,
+    ).replace("<sx:start>", "<sx:last><gdate>2026-01-01</gdate></sx:last>\n    <sx:start>", 1)
+    path = tmp_path / "run.gnucash"
+    path.write_text(body, encoding="utf-8")
+    gnucash_xml.import_book(db, str(path))
+
+    assert db.get_transaction(xml_book.txn).scheduled_from == xml_book.schedule
+    assert db.get_scheduled(xml_book.schedule).last_posted == date(2026, 1, 1)
+    [event] = planning.scheduled_events(db, date(2026, 1, 1), date(2026, 1, 31))
+    assert event.actual_transaction == xml_book.txn
+    assert [item.when for item in schedule.due_occurrences(db, as_of=date(2026, 1, 20))] == []

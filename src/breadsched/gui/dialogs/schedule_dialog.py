@@ -35,7 +35,7 @@ from ...gen.lib import (
     ScheduleGrowthPolicy,
     WeekendAdjust,
     evaluate,
-    scheduled_occurrence_preview,
+    occurrence_preview,
 )
 from ...gen.services import (
     FixedScheduleInput,
@@ -1038,9 +1038,10 @@ class ScheduleDialog(BoundedWindow):
             if extra_amount <= 0:
                 problems.append("additional split amounts must be greater than zero")
                 break
+        draft: ScheduledTransaction | None = None
         if not problems:
             try:
-                book_server(self.db).draft_fixed_schedule(self._fixed_request())
+                draft = book_server(self.db).draft_fixed_schedule(self._fixed_request())
                 refused: str | None = None
             except ApiError as error:
                 refused = error.code
@@ -1063,16 +1064,8 @@ class ScheduleDialog(BoundedWindow):
         self.save_button.set_sensitive(not problems)
         self.status.set_text("; ".join(problems).capitalize() if problems else "")
 
-        if recurrence is not None and not problems:
-            amount = self._amount()
-            assert amount is not None
-            rows = scheduled_occurrence_preview(
-                recurrence,
-                amount,
-                amount_changes or [],
-                skipped or [],
-                adjustments or [],
-            )
+        if draft is not None and not problems:
+            rows = occurrence_preview(draft, date.today())
             self.preview.set_text(
                 "Upcoming:\n"
                 + "\n".join(

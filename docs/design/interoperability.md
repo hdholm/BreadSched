@@ -84,6 +84,14 @@ Presentation layers consume a shared
 editability decision; they do not independently infer that a source definition is
 safe from the number of splits or a familiar-looking recurrence label.
 
+A source schedule's last occurrence (`schedxactions.last_occur`, `sx:last`) becomes
+`ScheduledTransaction.last_posted`, the later of it and BreadSched's own on
+re-import. A transaction's `from-sched-xaction` slot names the schedule GnuCash
+created it from and becomes `Transaction.scheduled_from`, so due, upcoming, and the
+Plan's matching treat that occurrence as realized; the transaction still imports as
+historical, never queued for Review. The link is plan-link state, so a re-import
+fills one BreadSched has not made and keeps one it has.
+
 On a matching GnuCash transaction GUID, source-owned ledger facts (dates,
 descriptions, numbers, accounts, values, quantities, memos/actions, and reconcile
 state) may refresh from the source, and the transaction's note follows the

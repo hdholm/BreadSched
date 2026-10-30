@@ -2066,3 +2066,47 @@ def test_a_person_turns_on_two_step_sign_in_and_signs_in_with_a_code(served):
         view.locator("#nav").get_by_role("button", name="Account", exact=True).wait_for()
         assert errors == []
         browser.close()
+
+
+def test_the_schedule_editors_upcoming_list_follows_its_future_changes(page, served):
+    """Upcoming began at the schedule's first date and ignored seasonal months."""
+    db, _httpd = served
+    page.wait_for_selector("#nav button")
+    page.evaluate(
+        "() => [...document.querySelectorAll('#nav button')]"
+        ".find((button) => button.textContent === 'Scheduled').click()"
+    )
+    page.get_by_role("button", name="New scheduled…").click()
+    form = page.locator(".detail-dialog form")
+    form.locator("input[name=name]").wait_for()
+    expense = next(
+        a for a in db.iter_accounts() if a.account_class.value == "expense" and not a.placeholder
+    )
+    bank = next(a for a in db.iter_accounts() if a.atype.value == "BANK" and not a.placeholder)
+    form.locator("input[name=name]").fill("Long-running rent")
+    form.locator("select[name=category]").select_option(expense.handle)
+    form.locator("select[name=funding]").select_option(bank.handle)
+    form.locator("input[name=start]").fill("2019-01-01")
+    form.locator("input[name=amount]").fill("1800.00")
+    form.locator("input[name=amount]").dispatch_event("change")
+    rows = form.locator(".schedule-preview .preview-row")
+    rows.first.wait_for()
+    page.wait_for_function(
+        "() => { const cell = document.querySelector('.schedule-preview .preview-row span');"
+        " return cell && !cell.textContent.startsWith('2019'); }"
+    )
+    first = rows.first.locator("span").first.inner_text()
+    assert first >= date.today().replace(day=1).isoformat()
+
+    month = date.fromisoformat(first).month
+    form.locator("summary", has_text="Future changes").click()
+    form.get_by_role("button", name="Add seasonal month").click()
+    seasonal = form.locator(".timeline-row").last
+    seasonal.locator("select").select_option(str(month))
+    seasonal.locator("input").fill("1700.00")
+    seasonal.locator("input").dispatch_event("change")
+    page.wait_for_function(
+        "() => document.querySelector('.schedule-preview .preview-row')"
+        "?.textContent.includes('Seasonal amount')"
+    )
+    assert "1,700.00" in rows.first.inner_text()

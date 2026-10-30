@@ -954,6 +954,7 @@ class ImportSink:
         splits: list[dict[str, Any]],
         source_notes: str = "",
         source_link: str = "",
+        scheduled_from: str | None = None,
     ) -> Transaction | None:
         """Build and store one transaction.
 
@@ -979,6 +980,9 @@ class ImportSink:
         txn_obj.notes = source_notes
         txn_obj.imported_notes_digest = notes_digest(source_notes)
         txn_obj.source_link = source_link
+        # A transaction GnuCash created from a schedule names it; without the link
+        # its occurrence would still look due, and the Plan would show it unmatched.
+        txn_obj.scheduled_from = scheduled_from or None
         subject = txn_obj.describe()
 
         if not splits:

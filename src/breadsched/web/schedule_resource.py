@@ -17,7 +17,7 @@ from ..gen.lib import (
     InvestmentActivityKind,
     PlanningFlowKind,
     ScheduleGrowthPolicy,
-    scheduled_occurrence_preview,
+    occurrence_preview,
 )
 from ..gen.services import (
     DueDecision,
@@ -46,6 +46,7 @@ from .schedule_controls import (
 )
 
 if TYPE_CHECKING:
+    from ..gen.lib import ScenarioSchedule, ScheduledTransaction
     from .context import Api
 
 
@@ -249,30 +250,11 @@ def scheduled_occurrence_options(api: Api, payload: dict) -> dict:
     result: dict[str, object] = {
         "occurrences": [item.isoformat() for item in recurrence.occurrences(horizon)[:500]]
     }
-    raw_amount = str(payload.get("amount") or "").strip()
-    if raw_amount:
-        try:
-            amount = abs(input_amount(payload, raw_amount))
-        except (ValueError, ArithmeticError) as exc:
-            raise ValueError("amount must be a valid number") from exc
-        if not amount:
-            raise ValueError("amount must be greater than zero")
-        amount_changes = parse_amount_changes(payload, start)
-        skipped = parse_skipped(payload, recurrence)
-        adjustments = parse_occurrence_adjustments(payload, recurrence)
-        if set(skipped) & {item.when for item in adjustments}:
-            raise ValueError("an occurrence cannot be both skipped and overridden")
-        result["preview"] = [
-            {"when": when, "amount": value, "status": status}
-            for when, value, status in scheduled_occurrence_preview(
-                recurrence, amount, amount_changes, skipped, adjustments
-            )
-        ]
     return result
 
 
-def scheduled_save(api: Api, payload: dict) -> dict:
-    """Create or update a fixed-split baseline schedule."""
+def _fixed_schedule_request(api: Api, payload: dict) -> SaveFixedSchedule:
+    """The fixed-split baseline schedule an editor's fields describe."""
     handle = str(payload.get("handle") or "").strip()
     editor = api.book.schedule_editor(handle) if handle else None
     existing = editor.schedule if editor is not None else None
@@ -399,40 +381,62 @@ def scheduled_save(api: Api, payload: dict) -> dict:
             raise ValueError("active status must be true or false")
         enabled = payload["enabled"]
 
-    saved = api.book.save_fixed_schedule(
-        SaveFixedSchedule(
-            definition=FixedScheduleInput(
-                name=name,
-                recurrence=recurrence,
-                category=category_handle,
-                funding=funding_handle,
-                amount=amount,
-                category_planning_flow=category_planning_flow,
-                funding_planning_flow=planning_flow,
-                investment_activity=investment_activity,
-                category_ledger_direction=category_ledger_direction,
-                additional_splits=additional_splits,
-                category_memo=category_memo,
-                funding_memo=funding_memo,
-                enabled=enabled,
-                auto_create=bool(payload.get("auto", False)),
-                placeholder=placeholder,
-                growth_policy=growth_policy,
-                amount_changes=tuple(amount_changes),
-                split_amount_changes={
-                    account: tuple(changes) for account, changes in split_changes.items()
-                },
-                seasonal_amounts=tuple(seasonal_amounts),
-                skipped=tuple(skipped),
-                occurrence_adjustments=tuple(adjustments),
-                estimate_evidence=evidence,
-                advance_days=_days(payload, "advance_days"),
-                remind_days=_days(payload, "remind_days"),
-            ),
-            existing_handle=existing.handle if existing is not None else None,
+    return SaveFixedSchedule(
+        definition=FixedScheduleInput(
+            name=name,
+            recurrence=recurrence,
+            category=category_handle,
+            funding=funding_handle,
+            amount=amount,
+            category_planning_flow=category_planning_flow,
+            funding_planning_flow=planning_flow,
+            investment_activity=investment_activity,
+            category_ledger_direction=category_ledger_direction,
+            additional_splits=additional_splits,
+            category_memo=category_memo,
+            funding_memo=funding_memo,
+            enabled=enabled,
+            auto_create=bool(payload.get("auto", False)),
+            placeholder=placeholder,
+            growth_policy=growth_policy,
+            amount_changes=tuple(amount_changes),
+            split_amount_changes={
+                account: tuple(changes) for account, changes in split_changes.items()
+            },
+            seasonal_amounts=tuple(seasonal_amounts),
+            skipped=tuple(skipped),
+            occurrence_adjustments=tuple(adjustments),
+            estimate_evidence=evidence,
+            advance_days=_days(payload, "advance_days"),
+            remind_days=_days(payload, "remind_days"),
         ),
+        existing_handle=existing.handle if existing is not None else None,
     )
+
+
+def scheduled_save(api: Api, payload: dict) -> dict:
+    """Create or update a fixed-split baseline schedule."""
+    saved = api.book.save_fixed_schedule(_fixed_schedule_request(api, payload))
     return {"handle": saved.handle, "name": saved.name}
+
+
+def scheduled_preview(api: Api, payload: dict) -> dict:
+    """The upcoming occurrences of the schedule a save would store, unsaved."""
+    draft = api.book.draft_fixed_schedule(_fixed_schedule_request(api, payload))
+    return {"preview": preview_rows(draft, payload)}
+
+
+def preview_rows(draft: ScheduledTransaction | ScenarioSchedule, payload: dict) -> list[dict]:
+    """A preview from ``as_of`` (today when absent) onward, as an editor lists it."""
+    raw = str(payload.get("as_of") or "").strip()
+    try:
+        today = date.fromisoformat(raw) if raw else date.today()
+    except ValueError:
+        raise ValueError("as_of must be a date") from None
+    return [
+        {"when": when, "amount": value, "status": status}
+        for when, value, status in occurrence_preview(draft, today)
+    ]
 
 
 def scheduled_formula_save(api: Api, payload: dict) -> dict:

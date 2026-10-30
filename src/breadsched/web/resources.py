@@ -127,6 +127,7 @@ from .scenario_resource import (
     scenario_drawdown_delete,
     scenario_drawdown_save,
     scenario_duplicate,
+    scenario_event_preview,
     scenario_event_save,
     scenario_event_suppress,
     scenario_events,
@@ -148,6 +149,7 @@ from .schedule_resource import (
     scheduled_formula_save,
     scheduled_next,
     scheduled_occurrence_options,
+    scheduled_preview,
     scheduled_save,
 )
 from .tax_resource import tax_marks_save, tax_marks_view, tax_year_report
@@ -674,6 +676,7 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/post-scheduled": _without_body(post_scheduled),
     "/api/scheduled/next": scheduled_next,
     "/api/scheduled/occurrences": scheduled_occurrence_options,
+    "/api/scheduled/preview": scheduled_preview,
     "/api/scheduled/save": scheduled_save,
     "/api/scheduled/formula-save": scheduled_formula_save,
     "/api/scheduled/delete": scheduled_delete,
@@ -694,6 +697,7 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/scenario/period/delete": scenario_period_delete,
     "/api/scenario/drawdown/save": scenario_drawdown_save,
     "/api/scenario/drawdown/delete": scenario_drawdown_delete,
+    "/api/scenario/event/preview": scenario_event_preview,
     "/api/scenario/event/save": scenario_event_save,
     "/api/scenario/event/suppress": scenario_event_suppress,
     "/api/projection/calculate": projection_calculate,

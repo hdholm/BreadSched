@@ -423,10 +423,15 @@ function openScheduledEditor(data, source) {
       const result = await post("/api/scheduled/occurrences", payload);
       skipEditor.setOptions(result.occurrences);
       oneTimeEditor.setOptions(result.occurrences);
-      preview.show(result.preview || []);
     } catch (_error) {
       skipEditor.setOptions([]);
       oneTimeEditor.setOptions([]);
+    }
+    // The schedule a save would store, so every future change counts.
+    try {
+      preview.show((await post("/api/scheduled/preview", saveBody())).preview || []);
+    } catch (_error) {
+      preview.show([]);
     }
   };
   [frequency, form.elements.start, form.elements.end, form.elements.count, weekend]
@@ -435,29 +440,32 @@ function openScheduledEditor(data, source) {
   refreshTimeline = () => { countChanges(); return refreshOccurrenceOptions(); };
   form.elements.amount.addEventListener("change", refreshOccurrenceOptions);
   refreshOccurrenceOptions();
+  function saveBody() {
+    const values = Object.fromEntries(new FormData(form).entries());
+    return {
+      handle: source?.handle || null, name: values.name,
+      enabled: values.enabled === "true", placeholder: values.kind === "estimate", growth_policy: values.growth_policy,
+      category: values.category, funding: values.funding,
+      category_planning_flow: values.category_planning_flow || null,
+      category_memo: values.category_memo, funding_memo: values.funding_memo,
+      planning_flow: values.planning_flow || null, amount: values.amount,
+      investment_activity: values.investment_activity || null,
+      additional_splits: additionalSplits.values(),
+      split_amount_changes: splitAmountChanges.values(),
+      amount_changes: futureEditor.values().map((item)=>({start:item.when, amount:item.amount})),
+      seasonal_amounts: seasonalEditor.values(),
+      skipped: skipEditor.values(), occurrence_adjustments: oneTimeEditor.values(),
+      frequency: values.frequency, interval: values.interval, start: values.start,
+      end: values.end || null, count: values.count || null, weekend: values.weekend,
+      auto: values.posting === "automatic" && values.kind !== "estimate",
+      advance_days: values.advance_days, remind_days: values.remind_days,
+      estimate_evidence: source?.estimate_evidence || null,
+    };
+  }
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const values = Object.fromEntries(new FormData(form).entries());
     try {
-      await post("/api/scheduled/save", {
-        handle: source?.handle || null, name: values.name,
-        enabled: values.enabled === "true", placeholder: values.kind === "estimate", growth_policy: values.growth_policy,
-        category: values.category, funding: values.funding,
-        category_planning_flow: values.category_planning_flow || null,
-        category_memo: values.category_memo, funding_memo: values.funding_memo,
-        planning_flow: values.planning_flow || null, amount: values.amount,
-        investment_activity: values.investment_activity || null,
-        additional_splits: additionalSplits.values(),
-        split_amount_changes: splitAmountChanges.values(),
-        amount_changes: futureEditor.values().map((item)=>({start:item.when, amount:item.amount})),
-        seasonal_amounts: seasonalEditor.values(),
-        skipped: skipEditor.values(), occurrence_adjustments: oneTimeEditor.values(),
-        frequency: values.frequency, interval: values.interval, start: values.start,
-        end: values.end || null, count: values.count || null, weekend: values.weekend,
-        auto: values.posting === "automatic" && values.kind !== "estimate",
-        advance_days: values.advance_days, remind_days: values.remind_days,
-        estimate_evidence: source?.estimate_evidence || null,
-      });
+      await post("/api/scheduled/save", saveBody());
       backdrop.remove(); say(source?.handle ? "Scheduled transaction updated." : "Scheduled transaction added."); render();
     } catch (error) { say(error.message, "error"); }
   });
