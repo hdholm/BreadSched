@@ -32,6 +32,7 @@ choices that were tested before being made:
 - [0002: Third-party packages outside the core, and where online quotes come from](docs/design/decisions/0002-dependencies-and-online-quotes.md)
 - [0003: A book server that owns a book for every interface](docs/design/decisions/0003-book-server.md)
 - [0004: People, not processes, use a book server](docs/design/decisions/0004-users-and-access.md)
+- [0005: Match actuals to plans by split and amount, like reconciling a statement](docs/design/decisions/0005-matching-actuals-to-plans.md) (proposed)
 
 ## Product boundary
 
