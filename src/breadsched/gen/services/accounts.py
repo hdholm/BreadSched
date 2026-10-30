@@ -199,10 +199,6 @@ def _card_errors(db: DbSQLite, account: Account, existing: Account | None) -> li
             errors.append(
                 ServiceError("account.card.payment_account.invalid", ("payment_account",))
             )
-        elif payment.hidden and (
-            existing is None or payment.handle != existing.card.payment_account
-        ):
-            errors.append(ServiceError("account.card.payment_account.hidden", ("payment_account",)))
     return errors
 
 

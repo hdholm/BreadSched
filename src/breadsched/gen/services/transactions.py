@@ -156,12 +156,6 @@ def build_transaction(
             and (source is None or source.account != item.account)
         ):
             errors.append(ServiceError("transaction.quantity.required", (f"{path}.quantity",)))
-        if (
-            account is not None
-            and account.hidden
-            and (source is None or source.account != item.account)
-        ):
-            errors.append(ServiceError("transaction.account.hidden", (f"{path}.account",)))
 
         same_commodity = account_commodity is None or account_commodity == currency
         value_changed = (

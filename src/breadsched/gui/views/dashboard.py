@@ -23,6 +23,7 @@ from ...gen.engine import receivables
 from ...gen.lib.money import Money
 from ...presentation import goal_status_text
 from ..gi_setup import Gio, Gtk, Pango
+from ..widgets.wrap_box import WrapBox
 from ._base import BaseView, Row, column, sorted_model, table_section
 
 __all__ = ["DashboardView"]
@@ -86,12 +87,9 @@ class DashboardView(BaseView):
         # Groups, bills, and income are separate sections, each sized to its own
         # columns rather than stretched to the window; they sit side by side when
         # the window has room and stack when it does not (#152).
-        self.sections = Gtk.FlowBox()
-        self.sections.set_selection_mode(Gtk.SelectionMode.NONE)
-        self.sections.set_homogeneous(False)
-        self.sections.set_max_children_per_line(3)
-        self.sections.set_column_spacing(24)
-        self.sections.set_row_spacing(12)
+        # A line holds as many as fit, so a narrow section floats up beside
+        # another under a wide one, and a section not shown takes no room (#397).
+        self.sections = WrapBox(column_spacing=24, row_spacing=12)
         self.sections.set_valign(Gtk.Align.START)
         content.append(self.sections)
 

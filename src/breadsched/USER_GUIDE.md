@@ -27,6 +27,13 @@ reimbursables, and goals, also have a **Help** button that opens their
 section of the desktop or browser part. The interfaces share one book and one set
 of rules, so you can move between them freely.
 
+To report a problem or ask for a change, open a
+[bug report](https://github.com/hdholm/BreadSched/issues/new?template=bug_report.yml)
+or a [feature request](https://github.com/hdholm/BreadSched/issues/new?template=feature_request.yml)
+on GitHub (in the desktop application, **Help → Report a Problem…** fills in the
+version for you). Describe the problem with neutral names and amounts; never attach
+a real book, statement, or screenshot of real accounts.
+
 ## Getting started
 
 ### Install and download
@@ -341,10 +348,12 @@ has a different household meaning.
 ### Organize and edit accounts
 
 Use parent accounts to create a readable hierarchy. Placeholder accounts organize
-children but should not receive transaction splits. Hidden accounts remain visible
-where old records refer to them but are omitted from new-entry choices, until
-**View → Show Hidden Accounts** is on: then a hidden account is listed and usable
-everywhere an account is chosen, its own register included.
+children but should not receive transaction splits. Hiding an account only keeps it
+out of the way: it remains visible where old records refer to them but is omitted
+from new-entry choices, until **View → Show Hidden Accounts** is on. Then a hidden
+account is listed, marked **(hidden)**, and usable everywhere an account is chosen,
+its own register included. A hidden account is never refused: typing its name in
+the browser or on the command line uses it too.
 
 An account imported from GnuCash is yours to change like any other: its name,
 parent, code, description, commodity, placeholder and hidden state, and the other

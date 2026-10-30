@@ -11889,3 +11889,139 @@ class TestABookTheHostHolds:
             view = window._views[category]
             assert _spin(lambda v=view: not getattr(v, "_background_running", False), 30)
         window.snapshot_reader.wait(30)
+
+
+class TestIssue397:
+    """#397: hidden accounts in use, the View toggle, Help's report links, the
+    reconcile window's editor, the Dashboard's sections, and the FSA Dashboard."""
+
+    def _hide(self, db, name):
+        account = db.get_account_by_name(name)
+        account.hidden = True
+        with db.transaction("Hide") as txn:
+            db.commit_account(account, txn)
+        return account
+
+    def test_a_shown_hidden_account_takes_new_transactions(self, app, window, populated_book):
+        from breadsched.gui import hidden_accounts
+
+        app.open_book(populated_book)
+        card = self._hide(app.db, "Credit Card")
+        rent = self._hide(app.db, "Expenses:Rent")
+        window.lookup_action("show-hidden").change_state(GLib.Variant.new_boolean(True))
+        assert hidden_accounts.shown()
+        window.open_register(card.handle)
+        view = window._views["register"]
+        view.refresh()
+        sheet = view.sheet
+        assert sheet.enabled is True
+        sheet.to_blank()
+        for column, text in (
+            ("description", "Charge to an old card"),
+            ("transfer", "Expenses:Rent"),
+            ("increase", "25"),
+        ):
+            sheet.column = column
+            sheet.set_text(text)
+            assert sheet.settle()
+        # Both the register's own account and the transfer are hidden; the save
+        # refuses neither (it used to refuse both).
+        assert sheet.save(), sheet.message
+        [saved] = [t for t in app.db.iter_transactions() if t.description.startswith("Charge to")]
+        assert {split.account for split in saved.splits} == {card.handle, rent.handle}
+
+    def test_show_hidden_accounts_leaves_the_shown_view(self, app, window, populated_book):
+        from breadsched.gui import hidden_accounts
+
+        app.open_book(populated_book)
+        self._hide(app.db, "Expenses:Rent")
+        window.show_category("register")
+        action = window.lookup_action("show-hidden")
+        action.change_state(GLib.Variant.new_boolean(True))
+        assert window.current_category == "register"
+        assert hidden_accounts.shown() and action.get_state().get_boolean()
+        # The Accounts tree lists it, saying it is hidden, as the choices do.
+        window.show_category("accounts")
+        window.present()
+        accounts = window._views["accounts"]
+        assert _spin(lambda: "Rent (hidden)" in _texts(accounts)), "a shown hidden account says so"
+        # The register's account picker offers it too, marked the same way.
+        window.show_category("register")
+        register = window._views["register"]
+        register.refresh()
+        names = [
+            register.account_picker.get_model().get_string(i)
+            for i in range(register.account_picker.get_model().get_n_items())
+        ]
+        assert "Expenses:Rent (hidden)" in names
+        action.change_state(GLib.Variant.new_boolean(False))
+        register.refresh()
+        names = [
+            register.account_picker.get_model().get_string(i)
+            for i in range(register.account_picker.get_model().get_n_items())
+        ]
+        assert not any("Rent" in name for name in names)
+
+    def test_help_opens_the_issue_forms(self, app, monkeypatch):
+        opened = []
+        monkeypatch.setattr(app, "_open_issue_form", lambda url: opened.append(url) or url)
+        app.activate_action("report-problem", None)
+        app.activate_action("request-feature", None)
+        problem, feature = opened
+        assert problem.startswith("https://github.com/hdholm/BreadSched/issues/new?")
+        assert "template=bug_report.yml" in problem and "version=" in problem
+        assert "template=feature_request.yml" in feature
+
+    def test_the_reconcile_windows_editor_blocks_only_that_window(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.dialogs.reconciliation_dialog import ReconciliationDialog
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        reconcile = ReconciliationDialog.present_for(window, app.db, checking)
+        editor = TransactionDialog(reconcile, app.db)
+        try:
+            # A modal editor holds the input of its own window group only: the
+            # reconcile window's, never the main window's.
+            assert reconcile.get_group() is reconcile.window_group
+            assert editor.get_group() is reconcile.window_group
+            assert window.get_group() is not reconcile.window_group
+        finally:
+            editor.destroy()
+            reconcile.destroy()
+
+    def test_dashboard_sections_wrap_beside_each_other(self, app):
+        from breadsched.gui.widgets.wrap_box import WrapBox
+
+        box = WrapBox(column_spacing=10, row_spacing=5)
+        wide, narrow, hidden, other = (Gtk.Box() for _ in range(4))
+        for child, width in ((wide, 700), (narrow, 300), (hidden, 300), (other, 300)):
+            child.set_size_request(width, 40)
+            box.append(child)
+        hidden.set_visible(False)
+        # 800 wide: the wide one alone, then the two narrow ones side by side, and
+        # the hidden one takes no room.
+        assert box.measure(Gtk.Orientation.VERTICAL, 800)[0] == 40 + 5 + 40
+        lines = box._lines(800)
+        assert [[child for child, _ in line] for line in lines] == [[wide], [narrow, other]]
+        # Narrow enough, each sits on its own line.
+        assert [[child for child, _ in line] for line in box._lines(500)] == [
+            [wide],
+            [narrow],
+            [other],
+        ]
+
+    def test_the_fsa_dashboard_reads_off_the_main_loop(self, app, window, populated_book):
+        from breadsched.api.local import book_server
+
+        app.open_book(populated_book)
+        window.show_category("fsa-dashboard")
+        view = window._views["fsa-dashboard"]
+        job = view.background_refresh()
+        assert job is not None
+        read, show = job
+        data = read(book_server(app.db))
+        assert len(data) == 4
+        show(data)

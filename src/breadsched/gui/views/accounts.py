@@ -15,7 +15,7 @@ from ...api.local import book_server  # noqa: E402
 from ...gen.lib.account import Account  # noqa: E402
 from ...gen.services import BalanceSummary, ChartLine  # noqa: E402
 from .. import hidden_accounts  # noqa: E402
-from ..gi_setup import Gio, Gtk, Pango
+from ..gi_setup import Gio, GLib, Gtk, Pango
 from ._base import (
     BaseView,
     Row,
@@ -50,7 +50,6 @@ class AccountTreeView(BaseView):
 
     def __init__(self, manager) -> None:
         super().__init__(manager)
-        self._show_hidden = False
         self._show_zero = True
         #: The chart as last read through the book server, by handle, and each
         #: account's children in the server's order (#358).
@@ -123,8 +122,9 @@ class AccountTreeView(BaseView):
             expander.set_list_row(tree_row)
             account = tree_row.get_item().payload
             label = expander.get_child()
-            label.set_text(account.name)
-            if account.placeholder:
+            # Shown hidden accounts say so, as the account choices do (#397).
+            label.set_text(f"{account.name} (hidden)" if account.hidden else account.name)
+            if account.placeholder or account.hidden:
                 label.add_css_class("dim")
             else:
                 label.remove_css_class("dim")
@@ -195,7 +195,7 @@ class AccountTreeView(BaseView):
     def _children_store(self, parent: str | None) -> Gio.ListStore:
         store = Gio.ListStore.new(Row)
         for account in self._children.get(parent, ()):
-            if account.hidden and not self._show_hidden:
+            if account.hidden and not hidden_accounts.shown():
                 continue
             if not self._show_zero and not self._has_value(account):
                 continue
@@ -362,11 +362,12 @@ class AccountTreeView(BaseView):
 
     def set_show_hidden(self, show: bool) -> None:
         """Show hidden accounts here and make them usable everywhere (registers,
-        dialogs), or put them away again."""
-        self._show_hidden = show
-        hidden_accounts.set_shown(show)
+        dialogs), or put them away again: **View → Show Hidden Accounts**, which
+        the window owns so choosing it leaves the shown view where it is (#397)."""
         root = self.get_root()
-        refresh = getattr(root, "refresh_views", None)
-        if callable(refresh):
-            refresh()
+        action = root.lookup_action("show-hidden") if isinstance(root, Gtk.Window) else None
+        if action is not None:
+            action.change_state(GLib.Variant.new_boolean(show))
+            return
+        hidden_accounts.set_shown(show)
         self._lay_out()

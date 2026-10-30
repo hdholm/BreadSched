@@ -2924,7 +2924,7 @@ class TestWriting:
         holding_split = next(split for split in transaction.splits if split.value > 0)
         assert holding_split.investment_activity is InvestmentActivityKind.CONTRIBUTION
 
-    def test_hidden_accounts_are_reported_but_refused_for_new_entries(self, client):
+    def test_hidden_accounts_are_reported_and_take_new_entries(self, client):
         hidden = client.database.get_account_by_name("Expenses:Rent")
         assert hidden is not None
         hidden.hidden = True
@@ -2934,18 +2934,20 @@ class TestWriting:
         _status, accounts = client.get("/api/accounts")
         rent = next(account for account in accounts if account["full_name"] == "Expenses:Rent")
         assert rent["hidden"] is True
-        with pytest.raises(urllib.error.HTTPError) as caught:
-            client.post(
-                "/api/transaction",
-                {
-                    "date": "2026-02-03",
-                    "description": "Must not revive an archived category",
-                    "from": "Assets:Checking",
-                    "to": "Expenses:Rent",
-                    "amount": "10.00",
-                },
-            )
-        assert caught.value.code == 400
+        # Hiding keeps an account out of the way, never out of use (#397).
+        status, saved = client.post(
+            "/api/transaction",
+            {
+                "date": "2026-02-03",
+                "description": "An old category used again",
+                "from": "Assets:Checking",
+                "to": "Expenses:Rent",
+                "amount": "10.00",
+            },
+        )
+        assert status == 200
+        stored = client.database.get_transaction(saved["handle"])
+        assert hidden.handle in {split.account for split in stored.splits}
 
     @pytest.mark.parametrize(
         "changes",

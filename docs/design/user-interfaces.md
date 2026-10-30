@@ -108,7 +108,8 @@ SnapshotReader` is one worker thread per open book that runs book-server reads a
 a read-only snapshot (`DbSQLite.load(path, "r")`, an in-memory copy, so a long read
 neither blocks a save nor sees part of one), reusing the snapshot until the book's
 revision changes. A view that can split its refresh into a read and a draw overrides
-`BaseView.background_refresh` (the Plan does, through `book.plan`); its redraw after a
+`BaseView.background_refresh` (the Plan does, through `book.plan`, and the FSA
+Dashboard, reading its claims and benefit years once); its redraw after a
 change, or when shown out of date, then keeps the old figures under an **Updating…**
 label and draws the new ones when they arrive, rereading if the book changed meanwhile.
 `ViewManager._prefill` redraws hidden tabs of such views (`BACKGROUND_VIEWS`) shortly
@@ -244,7 +245,11 @@ Windows must stay usable on small screens whatever the book holds:
   shows (#395). Toolbar icons are ones current Adwaita still ships
   (`TestMenusAndIcons`). View
   toolbars scroll, Dashboard cards wrap in a `Gtk.FlowBox`, and the main stacks are
-  not homogeneous, so the window's minimum is the shown page's.
+  not homogeneous, so the window's minimum is the shown page's. The Dashboard's
+  tables sit in a `widgets.wrap_box.WrapBox`: each line takes as many as fit at their
+  natural widths and a section switched off takes no room, where a `Gtk.FlowBox`
+  aligned them in columns, so one wide table kept the narrower ones below it from
+  sitting side by side (#397).
 - Every secondary window is a `widgets.bounded.BoundedWindow`, which opens at its
   natural size capped to 90% of the monitor, because a wrapping label's natural width
   is its whole text on one line.

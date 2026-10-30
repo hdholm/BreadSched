@@ -30,6 +30,7 @@ from ...api.protocol import Change
 from ...gen.engine import ledger
 from ...gen.lib.account import Account, AccountClass, AccountType
 from ...presentation.investments import share_summary_text
+from .. import hidden_accounts
 from ..gi_setup import GLib, Gtk
 from ..register_sheet import RegisterSheet
 from ..widgets.choice import bounded_dropdown
@@ -386,7 +387,15 @@ class RegisterView(BaseView):
             (
                 record
                 for record in book_server(db).accounts()
-                if not record.account.is_root and not record.account.placeholder
+                if not record.account.is_root
+                and not record.account.placeholder
+                # A hidden account is a choice while hidden accounts are shown, or
+                # while it is the one this register shows (#397).
+                and (
+                    not record.account.hidden
+                    or hidden_accounts.shown()
+                    or record.account.handle == self.account_handle
+                )
             ),
             key=lambda record: record.full_name,
         )
@@ -394,7 +403,8 @@ class RegisterView(BaseView):
         self._pickable = accounts
         model = Gtk.StringList()
         for record in records:
-            model.append(record.full_name)
+            hidden = " (hidden)" if record.account.hidden else ""
+            model.append(f"{record.full_name}{hidden}")
         self.account_picker.set_model(model)
         if self.account_handle is None and accounts:
             self.account_handle = accounts[0].handle

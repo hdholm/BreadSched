@@ -107,7 +107,7 @@ def _account_errors(
     account = db.get_account(handle)
     if account is None:
         return [ServiceError("loan.account.not_found", (field,))]
-    if account.is_root or account.placeholder or account.hidden:
+    if account.is_root or account.placeholder:
         return [ServiceError("loan.account.unavailable", (field,))]
     if not accepts(account):
         return [ServiceError(role_code, (field,))]

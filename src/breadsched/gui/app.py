@@ -23,6 +23,7 @@ from ..presentation import (  # noqa: E402
     book_upgrade_progress,
 )
 from ..user_guide import help_target
+from ..versioning import issue_url  # noqa: E402
 from .gi_setup import Gdk, Gio, GLib, Gtk
 from .remote_book import OpenBook, book_snapshot, open_held_book
 from .user_guide import UserGuideWindow
@@ -238,6 +239,8 @@ class BreadSchedApplication(Gtk.Application):
             ("preferences", self.on_preferences, "<Control>comma"),
             ("user-guide", self.on_user_guide, "F1"),
             ("about", self.on_about, None),
+            ("report-problem", self.on_report_problem, None),
+            ("request-feature", self.on_request_feature, None),
             ("quit", self.on_quit, "<Control>q"),
         ):
             action = Gio.SimpleAction.new(name, None)
@@ -760,6 +763,23 @@ class BreadSchedApplication(Gtk.Application):
         )
         about.present()
 
+    def on_report_problem(self, *_args) -> str:
+        """Open GitHub's bug report form, this version and platform filled in (#397)."""
+        return self._open_issue_form(issue_url("bug"))
+
+    def on_request_feature(self, *_args) -> str:
+        """Open GitHub's feature request form (#397)."""
+        return self._open_issue_form(issue_url("feature"))
+
+    def _open_issue_form(self, url: str) -> str:
+        parent = self.props.active_window
+        launcher = getattr(Gtk, "UriLauncher", None)  # GTK 4.10 and later
+        if launcher is not None:
+            launcher.new(url).launch(parent, None, None, None)
+        else:
+            Gtk.show_uri(parent, url, 0)
+        return url
+
     def on_user_guide(self, *_args) -> None:
         """Present the packaged guide, reusing its window when it is already open."""
         self.show_guide()
@@ -942,6 +962,7 @@ def build_menu_model(actions_menu: ActionsMenu | None = None) -> Gio.Menu:
         for item in actions:
             if item.toggle:
                 toggles.append(item.label, f"win.{view_action_name(key, item)}")
+    toggles.append("Show Hi_dden Accounts", "win.show-hidden")
     view_menu.append_section(None, toggles)
     tabs = Gio.Menu()
     tabs.append("_Previous Tab", "win.previous-tab")
@@ -966,7 +987,13 @@ def build_menu_model(actions_menu: ActionsMenu | None = None) -> Gio.Menu:
 
     help_menu = Gio.Menu()
     help_menu.append("_User Guide", "app.user-guide")
-    help_menu.append("_About BreadSched", "app.about")
+    reports = Gio.Menu()
+    reports.append("_Report a Problem…", "app.report-problem")
+    reports.append("Request a _Feature…", "app.request-feature")
+    help_menu.append_section(None, reports)
+    about = Gio.Menu()
+    about.append("_About BreadSched", "app.about")
+    help_menu.append_section(None, about)
     menubar.append_submenu("_Help", help_menu)
     return menubar
 
