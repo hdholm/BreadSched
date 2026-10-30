@@ -10,6 +10,29 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a311 - 2026-10-30
+
+Fixes a field report (#401).
+
+- **Occurrences GnuCash already entered are not due again.** The SQLite importer now
+  reads a schedule's last occurrence (`schedxactions.last_occur`, as the XML importer
+  already read `sx:last`), and both importers read the `from-sched-xaction` link on
+  each transaction GnuCash created from a schedule into `Transaction.scheduled_from`.
+  Those past occurrences no longer show in Upcoming or the due review, and the Plan
+  shows each matched by its transaction; the transactions remain historical, never
+  queued for Review. Re-importing the GnuCash book repairs a book imported earlier:
+  the merge fills a schedule link BreadSched has not made and keeps one it has.
+- **The schedule editors' Upcoming list follows every future change.** On the
+  desktop and in the browser, for baseline and scenario schedules, it is now drawn
+  from the definition a save would store (`scheduled_occurrence_preview` became
+  `occurrence_preview`), so each split's future amounts and seasonal months count
+  along with future, skipped, and one-time amounts. It starts after the last
+  occurrence posted, or today for an estimate or a schedule never posted, rather
+  than at the schedule's first date, and marks earlier unposted occurrences
+  **Overdue**. The browser editors ask the new `/api/scheduled/preview` and
+  `/api/scenario/event/preview` routes, which build the same request as a save;
+  `/api/scheduled/occurrences` now returns only the dates.
+
 ## 0.2.0a310 - 2026-10-30
 
 Fixes a field report (#397).

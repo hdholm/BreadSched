@@ -41,7 +41,7 @@ from .scheduled import (
     ScheduledSplitAmountChange,
     ScheduledTransaction,
     ScheduleGrowthPolicy,
-    scheduled_occurrence_preview,
+    occurrence_preview,
 )
 from .split_link import SplitLink
 from .transaction import (
@@ -106,7 +106,7 @@ __all__ = [
     "ScheduledTransaction",
     "LotPick",
     "Split",
-    "scheduled_occurrence_preview",
+    "occurrence_preview",
     "Transaction",
     "UnbalancedError",
     "WeekendAdjust",

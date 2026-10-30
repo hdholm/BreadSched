@@ -50,6 +50,7 @@ from .schedule_controls import (
     simple_parts,
     weekend_key,
 )
+from .schedule_resource import preview_rows
 
 if TYPE_CHECKING:
     from .context import Api
@@ -546,8 +547,8 @@ def scenario_event_suppress(api: Api, payload: dict) -> dict:
     return scenario_events(api, scenario.handle)
 
 
-def scenario_event_save(api: Api, payload: dict) -> dict:
-    """Save a scenario schedule through the shared service; return the scenario's events."""
+def _scenario_schedule_request(api: Api, payload: dict) -> SaveFixedScenarioSchedule:
+    """The scenario schedule an editor's fields describe."""
     view = api.book.scenario_events(_events_handle(payload.get("handle")))
     scenario = view.scenario
     source_handle = str(payload.get("source_schedule") or "").strip() or None
@@ -622,43 +623,53 @@ def scenario_event_save(api: Api, payload: dict) -> dict:
         )
     except ValueError:
         raise ValueError("choose a valid projection growth policy") from None
-    api.book.save_fixed_scenario_schedule(
-        SaveFixedScenarioSchedule(
-            scenario_handle=scenario.handle,
-            source_schedule=source_handle,
-            definition=FixedScheduleInput(
-                name=name,
-                recurrence=recurrence,
-                category=category_handle,
-                funding=funding_handle,
-                amount=amount,
-                category_planning_flow=category_planning_flow,
-                funding_planning_flow=planning_flow,
-                investment_activity=investment_activity,
-                additional_splits=additional_splits,
-                enabled=True,
-                placeholder=source.placeholder if source is not None else True,
-                growth_policy=growth_policy,
-                amount_changes=tuple(parse_amount_changes(payload, start)),
-                seasonal_amounts=tuple(
-                    parse_seasonal_amounts(payload)
-                    if "seasonal_amounts" in payload
-                    else source.seasonal_amounts
-                    if source is not None
-                    else ()
-                ),
-                skipped=tuple(skipped),
-                occurrence_adjustments=tuple(adjustments),
-                estimate_evidence=(
-                    payload.get("estimate_evidence")
-                    if isinstance(payload.get("estimate_evidence"), dict)
-                    else existing_change.estimate_evidence
-                    if existing_change is not None
-                    else source.estimate_evidence
-                    if source is not None
-                    else None
-                ),
+    return SaveFixedScenarioSchedule(
+        scenario_handle=scenario.handle,
+        source_schedule=source_handle,
+        definition=FixedScheduleInput(
+            name=name,
+            recurrence=recurrence,
+            category=category_handle,
+            funding=funding_handle,
+            amount=amount,
+            category_planning_flow=category_planning_flow,
+            funding_planning_flow=planning_flow,
+            investment_activity=investment_activity,
+            additional_splits=additional_splits,
+            enabled=True,
+            placeholder=source.placeholder if source is not None else True,
+            growth_policy=growth_policy,
+            amount_changes=tuple(parse_amount_changes(payload, start)),
+            seasonal_amounts=tuple(
+                parse_seasonal_amounts(payload)
+                if "seasonal_amounts" in payload
+                else source.seasonal_amounts
+                if source is not None
+                else ()
+            ),
+            skipped=tuple(skipped),
+            occurrence_adjustments=tuple(adjustments),
+            estimate_evidence=(
+                payload.get("estimate_evidence")
+                if isinstance(payload.get("estimate_evidence"), dict)
+                else existing_change.estimate_evidence
+                if existing_change is not None
+                else source.estimate_evidence
+                if source is not None
+                else None
             ),
         ),
     )
-    return scenario_events(api, scenario.handle)
+
+
+def scenario_event_save(api: Api, payload: dict) -> dict:
+    """Save a scenario schedule through the shared service; return the scenario's events."""
+    request = _scenario_schedule_request(api, payload)
+    api.book.save_fixed_scenario_schedule(request)
+    return scenario_events(api, request.scenario_handle)
+
+
+def scenario_event_preview(api: Api, payload: dict) -> dict:
+    """The upcoming occurrences of the scenario schedule a save would store, unsaved."""
+    draft = api.book.draft_fixed_scenario_schedule(_scenario_schedule_request(api, payload))
+    return {"preview": preview_rows(draft, payload)}

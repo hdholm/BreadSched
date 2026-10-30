@@ -1234,28 +1234,115 @@ class TestItServes:
             "2026-04-15",
         ]
 
-    def test_occurrence_options_can_preview_effective_amounts_and_exceptions(self, client):
+    def _accounts(self, client):
+        _status, data = client.get("/api/scheduled")
+        category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+        funding = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
+        return category["handle"], funding["handle"]
+
+    def test_the_preview_shows_every_future_change_from_today(self, client):
+        """The editor's Upcoming list counted from the schedule's first date and knew
+        only the schedule-wide future amounts: a long-running schedule never showed
+        a change, and per-leg and seasonal amounts never counted."""
+        category, funding = self._accounts(client)
         status, payload = client.post(
-            "/api/scheduled/occurrences",
+            "/api/scheduled/preview",
             {
-                "frequency": "monthly",
-                "start": "2026-01-15",
-                "count": "5",
-                "weekend": "none",
+                "name": "Rent",
+                "category": category,
+                "funding": funding,
                 "amount": "1800.00",
-                "amount_changes": [{"start": "2026-03-01", "amount": "1950.00"}],
-                "skipped": ["2026-04-15"],
-                "occurrence_adjustments": [{"when": "2026-05-15", "amount": "2300.00"}],
+                "frequency": "monthly",
+                "start": "2019-01-15",
+                "weekend": "none",
+                "amount_changes": [{"start": "2026-12-01", "amount": "1950.00"}],
+                "split_amount_changes": [
+                    {"account": category, "start": "2027-02-01", "amount": "2000.00"},
+                    {"account": funding, "start": "2027-02-01", "amount": "-2000.00"},
+                ],
+                "seasonal_amounts": [{"month": 11, "amount": "1700.00"}],
+                "skipped": ["2027-03-15"],
+                "occurrence_adjustments": [{"when": "2027-04-15", "amount": "2300.00"}],
+                "as_of": "2026-10-20",
             },
         )
         assert status == 200
-        assert [(row["when"], row["amount"], row["status"]) for row in payload["preview"]] == [
-            ("2026-01-15", "1800.00", "Normal"),
-            ("2026-02-15", "1800.00", "Normal"),
-            ("2026-03-15", "1950.00", "Future amount"),
-            ("2026-04-15", "1950.00", "Skipped"),
-            ("2026-05-15", "2300.00", "One-time amount"),
+        assert [(row["when"], row["amount"], row["status"]) for row in payload["preview"]][:7] == [
+            ("2026-11-15", "1700.00", "Seasonal amount"),
+            ("2026-12-15", "1950.00", "Future amount"),
+            ("2027-01-15", "1950.00", "Future amount"),
+            ("2027-02-15", "1950.00", "Future amount"),
+            ("2027-03-15", "1950.00", "Skipped"),
+            ("2027-04-15", "2300.00", "One-time amount"),
+            ("2027-05-15", "1950.00", "Future amount"),
         ]
+
+    def test_the_preview_follows_per_leg_amounts_alone(self, client):
+        category, funding = self._accounts(client)
+        _status, payload = client.post(
+            "/api/scheduled/preview",
+            {
+                "name": "Rent",
+                "category": category,
+                "funding": funding,
+                "amount": "1800.00",
+                "frequency": "monthly",
+                "start": "2026-01-01",
+                "split_amount_changes": [
+                    {"account": category, "start": "2026-12-01", "amount": "1900.00"},
+                    {"account": funding, "start": "2026-12-01", "amount": "-1900.00"},
+                ],
+                "as_of": "2026-10-20",
+            },
+        )
+        assert [(row["when"], row["amount"], row["status"]) for row in payload["preview"]][:3] == [
+            ("2026-11-01", "1800.00", "Normal"),
+            ("2026-12-01", "1900.00", "Future amount"),
+            ("2027-01-01", "1900.00", "Future amount"),
+        ]
+
+    def test_the_preview_starts_after_the_last_posted_occurrence(self, client):
+        category, funding = self._accounts(client)
+        body = {
+            "name": "Rent",
+            "category": category,
+            "funding": funding,
+            "amount": "1800.00",
+            "frequency": "monthly",
+            "start": "2026-01-01",
+        }
+        _status, created = client.post("/api/scheduled/save", body)
+        with client.database.transaction("posted") as txn:
+            stored = client.database.get_scheduled(created["handle"])
+            stored.last_posted = date(2026, 8, 1)
+            client.database.commit_scheduled(stored, txn)
+        before = client.database.get_scheduled(created["handle"]).serialize()
+        _status, payload = client.post(
+            "/api/scheduled/preview", {**body, "handle": created["handle"], "as_of": "2026-10-20"}
+        )
+        assert [(row["when"], row["status"]) for row in payload["preview"]][:3] == [
+            ("2026-09-01", "Overdue"),
+            ("2026-10-01", "Overdue"),
+            ("2026-11-01", "Normal"),
+        ]
+        # A preview never saves.
+        assert client.database.get_scheduled(created["handle"]).serialize() == before
+
+    def test_the_preview_refuses_what_a_save_would(self, client):
+        category, _funding = self._accounts(client)
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/scheduled/preview",
+                {
+                    "name": "Rent",
+                    "category": category,
+                    "funding": category,
+                    "amount": "1800.00",
+                    "frequency": "monthly",
+                    "start": "2026-01-01",
+                },
+            )
+        assert caught.value.code == 400
 
     def test_simple_scheduled_transaction_can_be_created_and_edited(self, client):
         _status, data = client.get("/api/scheduled")
@@ -4865,6 +4952,39 @@ class TestScenarioEventWebParity:
         after = scenario_event_client.database.get_scenario(scenario["handle"])
         assert after is not None
         assert after.serialize() == before.serialize()
+
+    def test_scenario_preview_shows_its_future_changes(self, scenario_event_client):
+        scenario = self._saved_scenario(scenario_event_client)
+        _status, events = scenario_event_client.get(
+            "/api/scenario/events?" + urllib.parse.urlencode({"handle": scenario["handle"]})
+        )
+        rent = next(account for account in events["accounts"] if account["name"].endswith("Rent"))
+        bank = next(
+            account for account in events["accounts"] if account["name"].endswith("Checking")
+        )
+        before = scenario_event_client.database.get_scenario(scenario["handle"]).serialize()
+        _status, payload = scenario_event_client.post(
+            "/api/scenario/event/preview",
+            {
+                "handle": scenario["handle"],
+                "name": "Lower rent estimate",
+                "category": rent["handle"],
+                "funding": bank["handle"],
+                "amount": "1500.00",
+                "amount_changes": [{"start": "2027-01-01", "amount": "1550.00"}],
+                "seasonal_amounts": [{"month": 12, "amount": "1600.00"}],
+                "frequency": "monthly",
+                "start": "2024-03-01",
+                "as_of": "2026-10-20",
+            },
+        )
+        assert [(row["when"], row["amount"], row["status"]) for row in payload["preview"]][:3] == [
+            ("2026-11-01", "1500.00", "Normal"),
+            ("2026-12-01", "1600.00", "Seasonal amount"),
+            ("2027-01-01", "1550.00", "Future amount"),
+        ]
+        after = scenario_event_client.database.get_scenario(scenario["handle"]).serialize()
+        assert after == before
 
     def test_scenario_only_estimate_is_persisted(self, scenario_event_client):
         scenario = self._saved_scenario(scenario_event_client)

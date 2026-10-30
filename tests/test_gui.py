@@ -3195,6 +3195,48 @@ class TestScheduleEntry:
         same_handle = [item for item in app.db.iter_scheduled() if item.handle == source.handle]
         assert len(same_handle) == 1
 
+    def test_upcoming_follows_every_future_change(self, app, window, populated_book):
+        """The editor's Upcoming list began at the schedule's first date and knew only
+        the schedule-wide future amounts, so a per-leg change never showed."""
+        from breadsched.gen.lib import scheduled as schedlib
+        from breadsched.gen.lib.recurrence import add_months
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        assert bank is not None and rent is not None
+        this_month = date.today().replace(day=1)
+        change = add_months(this_month, 2)
+        source = ScheduledTransaction(
+            name="Long-running rent",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2019, 1, 1)),
+            splits=[
+                ScheduledSplit(
+                    rent.handle,
+                    Money("1800.00"),
+                    amount_changes=[schedlib.ScheduledSplitAmountChange(change, "1900.00")],
+                ),
+                ScheduledSplit(
+                    bank.handle,
+                    Money("-1800.00"),
+                    amount_changes=[schedlib.ScheduledSplitAmountChange(change, "-1900.00")],
+                ),
+            ],
+        )
+        source.last_posted = add_months(this_month, -1)
+        with app.db.transaction("add long-running schedule") as txn:
+            app.db.add_scheduled(source, txn)
+
+        dialog = ScheduleDialog(window, app.db, source=source)
+        dialog._validate()
+        lines = dialog.preview.get_text().splitlines()
+        assert lines[0] == "Upcoming:"
+        # It starts after the last occurrence posted, not in 2019.
+        assert lines[1].startswith(this_month.isoformat())
+        assert f"{change.isoformat()}   {Money('1900.00').format()}   Future amount" in lines
+        dialog.destroy()
+
     def test_historical_estimate_draft_adjusts_all_review_fields(self, app, window, populated_book):
         from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
 

@@ -521,6 +521,15 @@ def _import_transactions(conn: sqlite3.Connection, sink: ImportSink, report=None
             if row["string_val"] and newer:
                 source_links[row["obj_guid"]] = row["string_val"]
 
+    # The schedule GnuCash created a transaction from.
+    created_from: dict[str, str] = {}
+    if _table_exists(conn, "slots"):
+        for row in conn.execute(
+            "SELECT obj_guid, guid_val FROM slots WHERE name = 'from-sched-xaction'"
+        ):
+            if row["guid_val"]:
+                created_from[row["obj_guid"]] = row["guid_val"]
+
     done = 0
     for row in conn.execute("SELECT * FROM transactions ORDER BY post_date"):
         done += 1
@@ -554,6 +563,7 @@ def _import_transactions(conn: sqlite3.Connection, sink: ImportSink, report=None
             splits=splits_by_txn.get(row["guid"], []),
             source_notes=source_notes.get(row["guid"], ""),
             source_link=source_links.get(row["guid"], ""),
+            scheduled_from=created_from.get(row["guid"]),
         )
 
 
@@ -612,6 +622,7 @@ def _import_scheduled(conn: sqlite3.Connection, sink: ImportSink, db: DbSQLite, 
             advance_days=row["adv_creation"] or 0,
             remind_days=(row["adv_notify"] if "adv_notify" in row.keys() else 0) or 0,
         )
+        sched.last_posted = _last_occurrence(row)
         if len(recurrences) > 1:
             sched.source_recurrence = [dict(item) for item in recurrences]
             sched.unsupported_reason = (
@@ -640,6 +651,17 @@ def _import_scheduled(conn: sqlite3.Connection, sink: ImportSink, db: DbSQLite, 
         preserve_breadsched_schedule_state(sched, db.get_scheduled(sched.handle))
         db.add_scheduled(sched, txn)
         sink.result.scheduled += 1
+
+
+def _last_occurrence(row: sqlite3.Row) -> date | None:
+    """The last occurrence GnuCash created, so earlier ones are not due again."""
+    raw = row["last_occur"] if "last_occur" in row.keys() else None
+    if not raw:
+        return None
+    try:
+        return parse_gnc_sql_posting_date(raw)
+    except ValueError:
+        return None
 
 
 def _source_flag(value: object) -> bool:

@@ -702,7 +702,11 @@ The schedule editors show first what most schedules need: name, kind, accounts,
 amount, and when it repeats. Splits, future changes (future, seasonal, skipped, and
 one-time amounts), and defaults set once (projection growth, planning purposes,
 weekend rule, posting, enter and remind days) are a tab or a fold away, and a
-section that holds something says so. Investment activity is offered only for an
+section that holds something says so. Their **Upcoming** list shows the next
+occurrences not yet entered, from the day after the last one posted (or from today,
+for an estimate or a schedule never posted), each at the amount it will have with
+every future change applied, including each split's future amounts and seasonal
+months. Investment activity is offered only for an
 investment or retirement account. The transaction editor likewise keeps tags and
 documents on a second tab and shows each split's planning purpose and investment
 activity on request ([desktop](guide/desktop.md#scheduled-activity),
@@ -1695,6 +1699,16 @@ reconciled is held for your decision (see
 Local planning
 decisions are not overwritten by source refreshes. BreadSched does not connect to
 banks itself; see [Bank downloads through AqBanking](#bank-downloads-through-aqbanking).
+
+A GnuCash schedule keeps the date of the last occurrence GnuCash entered (by
+**Since Last Run** or **Create transactions**), and each transaction it entered names
+its schedule. BreadSched imports both, so an occurrence GnuCash already entered is
+neither due nor upcoming again, and the Plan shows it matched by that transaction.
+These transactions are settled history and never appear in Review. A book imported
+before version 0.2.0a311 lacked both; importing the GnuCash book again adds them
+without changing anything you set in BreadSched. An occurrence you entered by hand
+in GnuCash, without its schedule, is not linked to it, as in GnuCash, where Since
+Last Run would still offer it.
 
 GnuCash books saved as SQLite by GnuCash before 2.6.10 stored each date as local
 midnight in UTC. BreadSched reads those dates as the calendar day you entered,

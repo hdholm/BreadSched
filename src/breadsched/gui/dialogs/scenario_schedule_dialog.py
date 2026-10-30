@@ -31,7 +31,7 @@ from ...gen.lib import (
     ScheduleGrowthPolicy,
     WeekendAdjust,
     evaluate,
-    scheduled_occurrence_preview,
+    occurrence_preview,
 )
 from ...gen.services import (
     FixedScheduleInput,
@@ -757,6 +757,7 @@ class ScenarioScheduleDialog(BoundedWindow):
         self.count_entry.set_sensitive(bounded and self.ends.get_selected() == 2)
         if recurrence is None:
             problems.append("check the schedule dates/count")
+        draft: ScenarioSchedule | None = None
         if not self._formula_mode:
             for (
                 _account_index,
@@ -776,7 +777,7 @@ class ScenarioScheduleDialog(BoundedWindow):
                     break
             if not problems:
                 try:
-                    self.book.draft_fixed_scenario_schedule(self._fixed_request())
+                    draft = self.book.draft_fixed_scenario_schedule(self._fixed_request())
                     refused = None
                 except ApiError as error:
                     refused = error.code
@@ -800,15 +801,8 @@ class ScenarioScheduleDialog(BoundedWindow):
         self.status.set_text("; ".join(problems).capitalize() if problems else "")
         if problems or self._formula_mode:
             self.preview.set_text("")
-        elif recurrence is not None:
-            assert amount is not None
-            rows = scheduled_occurrence_preview(
-                recurrence,
-                amount,
-                amount_changes or [],
-                skipped or [],
-                adjustments or [],
-            )
+        elif draft is not None:
+            rows = occurrence_preview(draft, date.today())
             self.preview.set_text(
                 "Upcoming:\n"
                 + "\n".join(

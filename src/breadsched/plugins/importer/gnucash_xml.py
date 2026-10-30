@@ -459,6 +459,7 @@ def _read_transaction(element: ET.Element, sink: ImportSink) -> None:
         splits=splits,
         source_notes=_slot_value(element, "notes") or "",
         source_link=_slot_value(element, "doclink") or _slot_value(element, "assoc_uri") or "",
+        scheduled_from=_slot_value(element, "from-sched-xaction"),
     )
 
 
