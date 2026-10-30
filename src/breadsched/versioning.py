@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import platform
 from typing import TypedDict
+from urllib.parse import urlencode
 
 from . import __version__
 from .gen.db.migrations import MIN_SUPPORTED_SCHEMA_VERSION
 from .gen.db.sqlite import SCHEMA_VERSION
 
-__all__ = ["VersionDetails", "version_details", "version_summary"]
+__all__ = ["ISSUES_URL", "VersionDetails", "issue_url", "version_details", "version_summary"]
 
 
 class SchemaWindow(TypedDict):
@@ -41,3 +43,21 @@ def version_summary(program: str = "breadsched") -> str:
         f"(native schema {SCHEMA_VERSION}; supports {MIN_SUPPORTED_SCHEMA_VERSION}–"
         f"{SCHEMA_VERSION})"
     )
+
+
+#: Where BreadSched's issues are reported (its GitHub issue forms).
+ISSUES_URL = "https://github.com/hdholm/BreadSched/issues"
+
+
+def issue_url(kind: str = "bug", *, interface: str = "Desktop (GTK)") -> str:
+    """The GitHub form for a new bug report (``bug``) or feature request
+    (``feature``), with this version and platform already filled in (#397)."""
+    if kind == "feature":
+        return f"{ISSUES_URL}/new?" + urlencode({"template": "feature_request.yml"})
+    fields = {
+        "template": "bug_report.yml",
+        "version": __version__,
+        "interface": interface,
+        "platform": f"{platform.system()} {platform.release()}".strip(),
+    }
+    return f"{ISSUES_URL}/new?" + urlencode(fields)

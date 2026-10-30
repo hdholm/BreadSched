@@ -57,7 +57,6 @@ _SERVICE_MESSAGES = {
     "account.card.usual_payment.non_positive": "The usual payment must be positive",
     "account.card.payment_account.not_found": "The card payment account no longer exists",
     "account.card.payment_account.invalid": "Choose a Bank or Cash payment account",
-    "account.card.payment_account.hidden": "A hidden account cannot fund a new card payment",
     "account.fsa_dependent_care.carryover": (
         "A dependent care FSA cannot carry unused money into the next plan year"
     ),
@@ -154,7 +153,6 @@ _SERVICE_MESSAGES = {
     "transaction.splits.too_few": "A transaction needs at least two splits",
     "transaction.accounts.same": "Use at least two different accounts",
     "transaction.account.not_found": "Choose an existing account for every split",
-    "transaction.account.hidden": "Hidden accounts cannot be used for new transactions",
     "transaction.split.duplicate": "A transaction split was submitted more than once",
     "transaction.split.not_found": "A transaction split no longer exists",
     "transaction.currency.not_found": "Choose an existing transaction currency",
@@ -180,7 +178,7 @@ _SERVICE_MESSAGES = {
     "loan.rate.negative": "The annual rate cannot be negative",
     "loan.years.out_of_range": "The term must be between 1 and 100 years",
     "loan.account.not_found": "A selected loan account no longer exists",
-    "loan.account.unavailable": "Choose a visible posting account",
+    "loan.account.unavailable": "Choose a posting account",
     "loan.account.liability_required": "Choose a loan or liability account",
     "loan.account.expense_required": "Choose an interest expense account",
     "loan.account.cash_required": "Choose a Bank or Cash payment account",
@@ -482,7 +480,6 @@ _SERVICE_MESSAGES = {
     "schedule.identity.changed": "The schedule identity changed while it was edited",
     "schedule.source.not_found": "The baseline schedule no longer exists",
     "schedule.account.not_found": "A scheduled account no longer exists",
-    "schedule.account.hidden": "Hidden accounts cannot be used for a new schedule",
     "schedule.accounts.same": "Choose two different accounts",
     "schedule.accounts.duplicate": "Each additional split needs a different account",
     "schedule.amount.non_positive": "The scheduled amount must be greater than zero",

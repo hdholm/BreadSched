@@ -200,9 +200,11 @@ Per-book presentation conveniences that do not change financial meaning may rema
 ordinary metadata. The last successful import source is one such value: GTK, web,
 and CLI update the same key only after a successful import. GTK/web may preselect it,
 but remembering a path grants neither permission to repeat the import nor permission
-to write to the source. Hidden accounts follow a similarly conservative presentation
-rule: new-entry choices omit them, while an editor must retain and visibly identify a
-hidden account already referenced by an existing split.
+to write to the source. Hidden accounts follow a presentation
+rule only: new-entry choices omit them unless the desktop's **Show Hidden Accounts**
+is on, and an editor must retain and visibly identify a hidden account already
+referenced by an existing split. Hiding never disables an account: no service
+refuses one for a transaction, schedule, card payment, or loan (#397).
 
 Financial workflow records should not be stored as opaque metadata collections when
 they have their own identity and lifecycle. FSA claims are first-class primary

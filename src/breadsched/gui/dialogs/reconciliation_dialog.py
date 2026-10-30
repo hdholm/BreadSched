@@ -154,6 +154,12 @@ class ReconciliationDialog(BoundedWindow):
             title=f"Reconcile {book_server(db).account(account.handle).full_name}", modal=False
         )
         self.opener = parent
+        # A window group of its own: a dialog opened over this window (editing a
+        # transaction, adding a statement entry) is modal to this window only, so
+        # the main window stays usable even when it covers this one and the dialog
+        # with it (#397).
+        self.window_group = Gtk.WindowGroup()
+        self.window_group.add_window(self)
         if parent is not None:
             application = parent.get_application()
             if application is not None:

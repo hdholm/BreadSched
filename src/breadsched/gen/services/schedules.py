@@ -523,10 +523,6 @@ def _candidate_errors(
         account = db.get_account(split.account)
         if account is None:
             errors.append(ServiceError("schedule.account.not_found", (f"splits.{index}.account",)))
-        elif account.hidden and (
-            existing is None or split.account not in {item.account for item in existing.splits}
-        ):
-            errors.append(ServiceError("schedule.account.hidden", (f"splits.{index}.account",)))
 
     recurrence = candidate.recurrence
     if recurrence.end is not None and recurrence.end < recurrence.start:

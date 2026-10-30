@@ -1668,13 +1668,8 @@ class TestBookServerBoundaries:
             ("web/fsa_resource.py", ("fsa_dashboard", "fsa_claim_links_accept")),
             (
                 "gui/views/fsa_dashboard.py",
-                (
-                    "_render_proposals",
-                    "_on_link_selected",
-                    "_render_years",
-                    "_render_claims",
-                    "_render_report",
-                ),
+                # Read once, in the background, then drawn (#397).
+                ("_read", "_on_link_selected", "_regroup"),
             ),
             (
                 "gui/dialogs/fsa_claims_dialog.py",

@@ -36,6 +36,7 @@ from ..api.local import book_server
 from ..api.protocol import Change
 from ..gen.services.ledger_reads import AccountRecord
 from ..gen.utils.settings import Settings  # noqa: E402
+from . import hidden_accounts
 from .background import SnapshotReader
 from .gi_setup import Gdk, Gio, GLib, GObject, Gtk, Pango
 from .paths import default_book_path  # noqa: E402
@@ -170,6 +171,13 @@ class ViewManager(Gtk.ApplicationWindow):
         )
         self.double_line_action.connect("change-state", self._on_double_line)
         self.add_action(self.double_line_action)
+        # View → Show Hidden Accounts: one setting for the whole application, which
+        # changes no view (#397); it is the window's, not the Accounts view's.
+        self.show_hidden_action = Gio.SimpleAction.new_stateful(
+            "show-hidden", None, GLib.Variant.new_boolean(hidden_accounts.shown())
+        )
+        self.show_hidden_action.connect("change-state", self._on_show_hidden)
+        self.add_action(self.show_hidden_action)
         # Tabs and finding, with the shortcuts other tabbed applications use.
         for name, handler in (
             ("close-tab", self._on_close_tab),
@@ -1117,6 +1125,15 @@ class ViewManager(Gtk.ApplicationWindow):
             return False
         self.move_tab(dragged, self._tabs.index(onto))
         return True
+
+    def _on_show_hidden(self, action, value) -> None:
+        """List hidden accounts and make them usable everywhere, or put them away,
+        leaving the shown view as it is (#397)."""
+        action.set_state(value)
+        hidden_accounts.set_shown(value.get_boolean())
+        self.refresh_views()
+        for _window, view in self._register_windows:
+            view.invalidate()
 
     def _on_double_line(self, action, value) -> None:
         """Show or hide every register's notes line, and remember the choice."""

@@ -108,7 +108,7 @@ class FsaDashboardView(BaseView):
         report_row.append(self.report_heading)
         report_row.append(Gtk.Label(label="Group by"))
         self.report_by = bounded_dropdown([label for _key, label in GROUPINGS])
-        self.report_by.connect("notify::selected", lambda *_a: self._render_report())
+        self.report_by.connect("notify::selected", lambda *_a: self._regroup())
         report_row.append(self.report_by)
         self.report_row = report_row
         content.append(report_row)
@@ -133,16 +133,41 @@ class FsaDashboardView(BaseView):
     def refresh(self) -> None:
         if self.db is None:
             return
-        self._render_proposals()
-        self._render_years()
-        self._render_claims()
-        self._render_report()
+        self._show(self._read(book_server(self.db), self._grouping()))
 
-    def _render_proposals(self) -> None:
+    def background_refresh(self):
+        """The claims and benefit years are read from a snapshot, off GTK's loop, so
+        a large book's FSA Dashboard says it is updating rather than freezing (#397)."""
+        if self.db is None:
+            return None
+        by = self._grouping()
+        return (lambda book: self._read(book, by)), self._show
+
+    def _grouping(self) -> str:
+        return GROUPINGS[min(self.report_by.get_selected(), len(GROUPINGS) - 1)][0]
+
+    @staticmethod
+    def _read(book, by: str):
+        """Everything the dashboard shows, read once; the claim report once for the
+        claims and once more only when grouped differently."""
+        claims = book.fsa_claim_report(ClaimReportQuery())
+        grouped = (
+            claims
+            if by == ClaimReportQuery().by
+            else book.fsa_claim_report(ClaimReportQuery(by=by))
+        )
+        return book.claim_link_proposals(), book.benefit_years(), claims, grouped
+
+    def _show(self, data) -> None:
+        proposals, years, claims, grouped = data
+        self._render_proposals(proposals)
+        self._render_years(years)
+        self._render_claims(claims)
+        self._render_report(grouped)
+
+    def _render_proposals(self, proposals) -> None:
         _empty(self.proposal_grid)
         self._proposal_checks = []
-        assert self.db is not None
-        proposals = book_server(self.db).claim_link_proposals()
         for widget in (self.proposal_heading, self.proposal_grid, self.proposal_actions):
             widget.set_visible(bool(proposals))
         if not proposals:
@@ -185,10 +210,8 @@ class FsaDashboardView(BaseView):
         self.proposal_status.set_label(text)
         self.proposal_actions.set_visible(True)
 
-    def _render_years(self) -> None:
+    def _render_years(self, years) -> None:
         _empty(self.fsa_grid)
-        assert self.db is not None
-        years = book_server(self.db).benefit_years()
         statuses = years.years
         self.fsa_heading.set_visible(bool(statuses))
         self.fsa_grid.set_visible(bool(statuses))
@@ -233,10 +256,8 @@ class FsaDashboardView(BaseView):
                     label.add_css_class("numeric")
                 self.fsa_grid.attach(label, column_index, row_index, 1, 1)
 
-    def _render_claims(self) -> None:
+    def _render_claims(self, report) -> None:
         _empty(self.claim_grid)
-        assert self.db is not None
-        report = book_server(self.db).fsa_claim_report(ClaimReportQuery())
         waiting = len(report.needing_attention)
         self.attention_label.set_label(
             f"{waiting} claim{' needs' if waiting == 1 else 's need'} attention." if waiting else ""
@@ -293,12 +314,14 @@ class FsaDashboardView(BaseView):
             )
             self.claim_grid.attach(review, 8, row_index, 1, 1)
 
-    def _render_report(self) -> None:
+    def _regroup(self) -> None:
+        if self.db is not None:
+            report = book_server(self.db).fsa_claim_report(ClaimReportQuery(by=self._grouping()))
+            self._render_report(report)
+
+    def _render_report(self, report) -> None:
         _empty(self.report_grid)
-        if self.db is None:
-            return
-        key, label = GROUPINGS[min(self.report_by.get_selected(), len(GROUPINGS) - 1)]
-        report = book_server(self.db).fsa_claim_report(ClaimReportQuery(by=key))
+        label = GROUPINGS[min(self.report_by.get_selected(), len(GROUPINGS) - 1)][1]
         self.report_row.set_visible(bool(report.lines))
         self.report_grid.set_visible(bool(report.lines))
         if not report.lines:

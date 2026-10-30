@@ -440,7 +440,8 @@ def test_transaction_service_owns_delete_and_reports_stale_handles(db, book):
     assert stale.errors == (ServiceError("transaction.not_found", ("handle",)),)
 
 
-def test_transaction_service_returns_stable_errors_without_partial_write(db, book):
+def test_a_hidden_account_takes_new_transactions(db, book):
+    """#397: hiding an account only keeps it out of the way; it never disables it."""
     hidden = db.get_account(book.rent)
     assert hidden is not None
     hidden.hidden = True
@@ -450,9 +451,10 @@ def test_transaction_service_returns_stable_errors_without_partial_write(db, boo
 
     result = save_transaction(db, _transaction_request(db, book))
 
-    assert result.value is None
-    assert ServiceError("transaction.account.hidden", ("splits.0.account",)) in result.errors
-    assert db.summary()["txn"] == before
+    assert result.ok and result.value is not None
+    assert db.summary()["txn"] == before + 1
+    stored = db.get_transaction(result.value.handle)
+    assert book.rent in {split.account for split in stored.splits}
 
 
 def test_transaction_service_preserves_hidden_accounts_and_source_metadata_on_edit(db, book):

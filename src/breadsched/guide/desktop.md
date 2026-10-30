@@ -28,7 +28,10 @@ Press `F1` or choose **Help → User Guide** to open this guide. The switcher at
 top shows the overview or the desktop, browser, or command-line part, and a link to
 another part opens it. **Help** in an import, reconciliation, schedule, paycheck,
 rule, reimbursable, goal, Expense Explorer, or net worth history window opens
-the guide at that window's section.
+the guide at that window's section. **Help → Report a Problem…** opens GitHub's bug
+report form in your browser with this version and platform filled in, and **Help →
+Request a Feature…** its feature request form; never attach a real book or
+statement.
 
 ### Install on Windows
 
@@ -122,8 +125,10 @@ the Actions menu in every view),
 and **Compare**, **Export**, and **New tab** in Projection. Each icon stands for one
 command, so the same picture never means two things. **View → Hide Empty
 Accounts** filters the account tree. **View → Show Hidden Accounts** lists hidden
-accounts there and makes them usable everywhere an account is chosen (registers, the
-transaction editor, schedules, reconciliation, loans) until it is turned off. **View
+accounts there, marked **(hidden)**, and makes them usable everywhere an account is
+chosen (registers and their account list, the transaction editor, schedules,
+reconciliation, loans) until it is turned off; choosing it leaves the view you are
+in where it is. **View
 → Double Line** shows every register's notes line.
 
 Every date field reads dates as the register does: `2026-03-15`, `3/15/26`, `3/15`
@@ -351,8 +356,9 @@ where they came from (see
 [Transactions and registers](../USER_GUIDE.md#transactions-and-registers)).
 
 If something is missing or wrong, the line under the register says what; your
-typing stays, and the cursor moves to that cell. A hidden or placeholder account
-takes no new entries, and the line under the register says why.
+typing stays, and the cursor moves to that cell. A placeholder account takes no
+new entries, nor does a hidden one until **View → Show Hidden Accounts** is on, and
+the line under the register says why.
 
 To change an existing transaction, click any of its cells or move to it with
 **Up** and **Down**; type, then press **Enter** to save it (the cursor moves on)
@@ -502,7 +508,9 @@ each leg that matches. Activate a row to open its register. See
 
 The window does not block the rest of BreadSched, nor stay on top of it: you can
 bring the main window in front, enter a missed scheduled transaction or correct one
-in a register, and the lists follow. It closes when the main window does.
+in a register, and the lists follow. A transaction editor it opens blocks only the
+reconcile window, so the main window stays usable even when it covers both. It
+closes when the main window does.
 **New Transaction…** enters one in this account dated on the statement, and **Edit
 Transaction…** opens the transaction of the selected row you clicked last. Choosing Reconcile again brings
 the open window forward.

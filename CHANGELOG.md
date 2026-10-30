@@ -10,6 +10,31 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a310 - 2026-10-30
+
+Fixes a field report (#397).
+
+- **Hidden accounts are never refused.** Hiding an account only keeps it out of the
+  way. Saving a transaction, a schedule, a card's payment account, or a loan no
+  longer refuses a hidden account (the services refused one not already in use, so
+  **Show Hidden Accounts** offered accounts that could not be saved). Shown hidden
+  accounts are marked **(hidden)** in the Accounts tree and the register's account
+  list, which now follows the setting as the other choices do.
+- **View → Show Hidden Accounts** is the window's setting and leaves the shown view
+  where it is; it no longer switches to Accounts.
+- **Help → Report a Problem… and Request a Feature…** open GitHub's issue forms, the
+  bug report with this version and platform filled in; the guide's overview links
+  them too.
+- **The reconcile window's transaction editor blocks only that window.** The window
+  has a window group of its own, so a modal editor it opens no longer locks the main
+  window, which may be in front of both.
+- **The Dashboard's tables wrap beside each other.** They sit in a wrapping
+  container (`widgets.wrap_box.WrapBox`): narrower tables such as Pending
+  reimbursables float up beside each other under a wide one, and a table switched
+  off takes no room.
+- **The FSA Dashboard reads off GTK's loop.** Its claims and benefit years are read
+  from a snapshot in the background, once, while **Updating…** shows.
+
 ## 0.2.0a309 - 2026-10-29
 
 - **Make a register transaction repeat (#392).** **Actions → Make Scheduled…** in a
