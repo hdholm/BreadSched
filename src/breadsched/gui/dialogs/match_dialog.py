@@ -248,12 +248,7 @@ class TransactionMatchWindow(_MatchWindow):
         entry.set_text(leg.unallocated.format())
         match = Gtk.Button(label="Match")
         match.set_sensitive(bool(labels) and not leg.not_planned and bool(leg.unallocated))
-        match.connect(
-            "clicked",
-            lambda _b: self.allocate(
-                leg, leg.candidates[dropdown.get_selected()].key, _amount(entry.get_text())
-            ),
-        )
+        match.connect("clicked", lambda _b: self.match_more(leg, dropdown, entry))
         for widget in (dropdown, entry, match):
             choose.append(widget)
         box.append(choose)
@@ -265,6 +260,17 @@ class TransactionMatchWindow(_MatchWindow):
         row.dropdown, row.entry, row.match, row.not_planned = dropdown, entry, match, not_planned
         row.set_child(box)
         return row
+
+    def match_more(self, leg: MatchingLeg, dropdown: Gtk.DropDown, entry: Gtk.Entry) -> None:
+        """**Match** counts the amount typed on top of what the leg already counts
+        toward the chosen occurrence."""
+        key = leg.candidates[dropdown.get_selected()].key
+        typed = _amount(entry.get_text())
+        if typed is None:
+            self._say("Type an amount to match.")
+            return
+        already = sum((item.amount for item in leg.allocations if item.occurrence == key), Money(0))
+        self.allocate(leg, key, already + typed)
 
     def allocate(self, leg: MatchingLeg, key: str, amount: Money | None) -> None:
         try:

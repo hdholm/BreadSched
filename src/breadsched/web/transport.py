@@ -78,6 +78,7 @@ SCRIPTS = (
     "plan.js",
     "scenarios.js",
     "review.js",
+    "matching.js",
     "projection.js",
     "household.js",
     "book.js",

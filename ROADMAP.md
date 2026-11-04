@@ -19,9 +19,9 @@ Every item planned for this stage is delivered; see `CHANGELOG.md` through
   of their period are built (0.2.0a312, 0.2.0a315), and so are category-first proposals
   with the other account and notes (0.2.0a316), and the Match windows in GTK from the
   Plan, the register, and Review, with partial allocations, *not planned*, Close
-  occurrence, and `plan-allocate` (0.2.0a317). Still to come: the window from
-  Scheduled, Upcoming, and Budget jars, the Plan's count of unmatched actuals, and the
-  browser's windows.
+  occurrence, and `plan-allocate` (0.2.0a317), and the windows from Scheduled,
+  Upcoming, Budget jars, and the browser with the Plan's unmatched count (0.2.0a318).
+  Still to come: Review grouped by category.
 
 ## At the first Beta
 

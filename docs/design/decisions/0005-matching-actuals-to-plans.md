@@ -13,9 +13,10 @@ Part of the [BreadSched design](../../../DESIGN.md); see
   `plan-matches`. Phase 3 is built (0.2.0a317): `services.plan_matching` and its
   book-server operations and routes, the Match windows in GTK from a Plan cell's
   detail, the register, and Review, *not planned* per split, Close and Reopen
-  occurrence, and `plan-allocate` and `plan-close`. Still to come: opening the
-  window from Scheduled, Upcoming, and Budget jars, the Plan's count of unmatched
-  actuals, and the browser's windows (phase 4).
+  occurrence, and `plan-allocate` and `plan-close`. Phase 4 is built (0.2.0a318):
+  the window from Scheduled, Upcoming, and Budget jars, the Plan's count of unmatched
+  actuals on **Resolve actuals (N)…**, and the browser's windows on its Plan,
+  schedules, register, and Review. Review is not yet grouped by category.
 - **Decision:** an actual is matched to the plan *by split and amount*. One split
   may count toward one planned occurrence, several splits of one transaction toward
   several occurrences, and several actuals toward one occurrence, each for part or

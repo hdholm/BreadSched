@@ -900,8 +900,9 @@ def match_candidates(
     schedules = {schedule.handle: schedule for schedule in db.iter_scheduled()}
     candidates: list[MatchCandidate] = []
     for event in scheduled_events(db, start, end, include_actualized=True):
+        # A transaction counting toward it in part may still count the rest.
         if not event.matchable or any(
-            item.transaction.handle == transaction.handle for item in event.actuals
+            item.transaction.handle == transaction.handle and item.whole for item in event.actuals
         ):
             continue
         if event.expected_currency != actual_currency:

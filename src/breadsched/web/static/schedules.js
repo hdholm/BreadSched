@@ -56,6 +56,9 @@ async function showScheduled() {
             render();
           } catch (error) { say(error.message, "error"); }
         }}, "Duplicate…"),
+      s.current_occurrence ? el("button", { class:"action", type:"button",
+        title:"Choose the splits that count toward its current occurrence",
+        onclick:()=>openOccurrenceMatch(s.current_occurrence) }, "Match…") : null,
       s.next ? el("button", { class:"action", type:"button",
         title:`Enter the ${s.next.date} occurrence now, before it is due`,
         onclick:()=>resolveNextOccurrence(s, "post") }, `Enter next (${s.next.date})`) : null,

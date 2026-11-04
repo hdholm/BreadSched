@@ -320,3 +320,7 @@ button.attention { animation: attention-pulse 0.8s ease-out 2; }
 /* Find prints as the Transaction detail report: its results, not its form (#408). */
 @media print { .no-print { display: none !important; } }
 tr.find-group th { font-weight: 600; text-align: left; }
+.match-dialog { max-width: 860px; }
+.match-amount { width: 7em; text-align: right; }
+.match-leg { margin: 8px 0; padding: 10px 12px; }
+.match-allocation { gap: 8px; align-items: center; }

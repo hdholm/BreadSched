@@ -139,6 +139,15 @@ class ScheduledView(BaseView):
         self.skip_next_button.connect("clicked", lambda *_: self.resolve_next(DueDecision.SKIP))
         bar.append(self.skip_next_button)
 
+        # Decision 0005: the Match window on the schedule's current occurrence.
+        self.match_button = Gtk.Button(label="Match…")
+        self.match_button.set_tooltip_text(
+            "Choose the splits that count toward its current occurrence, as in a reconciliation"
+        )
+        self.match_button.set_sensitive(False)
+        self.match_button.connect("clicked", lambda *_: self.match_selected())
+        bar.append(self.match_button)
+
         self.duplicate_button = Gtk.Button(label="Duplicate…")
         self.duplicate_button.set_sensitive(False)
         self.duplicate_button.connect("clicked", self._on_duplicate_clicked)
@@ -362,7 +371,27 @@ class ScheduledView(BaseView):
         saved_schedule = isinstance(payload, ScheduledTransaction)
         self.delete_button.set_sensitive(saved_schedule)
         self.duplicate_button.set_sensitive(saved_schedule)
+        self.match_button.set_sensitive(saved_schedule)
         self._show_next()
+
+    def match_selected(self, today=None):
+        """Open the Match window on the selected schedule's current occurrence."""
+        from datetime import date
+
+        from ..dialogs.match_dialog import OccurrenceMatchWindow
+
+        sched = self._selected_schedule()
+        if sched is None or self.db is None:
+            return None
+        when = sched.current_occurrence(today or date.today())
+        if when is None:
+            return None
+        root = self.get_root()
+        window = OccurrenceMatchWindow(
+            root if isinstance(root, Gtk.Window) else None, self.db, sched.occurrence_key(when)
+        )
+        window.present()
+        return window
 
     def _show_next(self) -> None:
         """Name the date Enter Next and Skip Next act on, or why they cannot."""
@@ -684,6 +713,13 @@ class UpcomingView(BaseView):
         self.horizon_picker.connect("notify::selected", self._on_horizon_changed)
         bar.append(self.horizon_picker)
 
+        self.match_button = Gtk.Button(label="Match…")
+        self.match_button.set_tooltip_text(
+            "Choose the splits that count toward the selected occurrence"
+        )
+        self.match_button.connect("clicked", lambda *_: self.match_selected())
+        bar.append(self.match_button)
+
         self.post_button = Gtk.Button(label="Review Due Transactions…")
         self.post_button.add_css_class("suggested-action")
         self.post_button.connect("clicked", self._on_post_clicked)
@@ -766,6 +802,25 @@ class UpcomingView(BaseView):
     def _on_horizon_changed(self, picker, _param) -> None:
         self._horizon = [0, 7, 30, 90, 365][picker.get_selected()]
         self.refresh()
+
+    def match_selected(self):
+        """Open the Match window on the selected upcoming occurrence (decision 0005)."""
+        from ..dialogs.match_dialog import OccurrenceMatchWindow
+
+        selection = self.upcoming_view.get_model()
+        selected = selection.get_selected_item() if selection is not None else None
+        occurrence = unwrap(selected) if selected is not None else None
+        schedule = getattr(occurrence, "schedule", None)
+        if occurrence is None or not isinstance(schedule, ScheduledTransaction) or self.db is None:
+            return None
+        root = self.get_root()
+        window = OccurrenceMatchWindow(
+            root if isinstance(root, Gtk.Window) else None,
+            self.db,
+            schedule.occurrence_key(occurrence.when),
+        )
+        window.present()
+        return window
 
     def _on_activated(self, _view, position: int) -> None:
         selection = self.upcoming_view.get_model()

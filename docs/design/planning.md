@@ -116,7 +116,16 @@ accounts in its period (none chosen); `transaction_matching` reads each plan leg
 with its allocations and the ranked occurrences that plan its account. They are the
 book server's `occurrence_matching`, `transaction_matching` (READ), `allocate`,
 `mark_split_not_planned`, `close_occurrence`, and `reopen_occurrence` (WRITE), with
-`/api/v1` routes, and `breadsched plan-allocate` and `plan-close` use them. With no candidate, `no_candidate_reason` searches 60 days either side for
+`/api/v1` routes, and `breadsched plan-allocate` and `plan-close` use them. The GTK
+windows (`gui.dialogs.match_dialog`) open from a Plan cell's detail, the register,
+Review, Scheduled, Upcoming, and Budget jars; the browser's (`static/matching.js`)
+from a Plan cell's detail, a schedule, a register row, and Review, writing through
+those routes. A schedule opens on `ScheduledTransaction.current_occurrence` (the
+latest occurrence up to today not skipped, else the next), which the browser's
+schedule rows carry as `current_occurrence`. **Match** in the window from a
+transaction adds the amount typed to what the split already counts toward that
+occurrence, and Review keeps offering an occurrence that a transaction counts toward
+only in part. With no candidate, `no_candidate_reason` searches 60 days either side for
 an open occurrence sharing an account and reports the first applicable cause: a
 nearby one in another currency, every nearby one rejected, the nearest outside the
 seven-day window, or no schedule using the accounts. `fsa_hint` classifies an FSA

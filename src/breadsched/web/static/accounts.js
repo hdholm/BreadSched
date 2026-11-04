@@ -1491,6 +1491,9 @@ async function showRegister() {
         el("button", { class:"action", type:"button",
           onclick:()=>makeScheduled(row.handle) }, "Make scheduled…"),
         el("button", { class:"action", type:"button",
+          title:"Count each split, for part or all of its amount, toward a planned item",
+          onclick:()=>openTransactionMatch(row.handle, render) }, "Match to plan…"),
+        el("button", { class:"action", type:"button",
           title:"Track this expense as owed back by an insurer, employer, or other payer",
           onclick:()=>{ state.receivableFrom = row.handle; switchTo("Reimbursable Expenses"); } },
           "Reimbursable…")))));

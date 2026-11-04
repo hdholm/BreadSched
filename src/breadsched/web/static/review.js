@@ -167,7 +167,14 @@ async function showReview() {
             render();
           } catch (error) { say(error.message, "error"); }
         },
-      }, "Mark unexpected")),
+      }, "Mark unexpected"),
+      // Decision 0005: count each split, for part or all of its amount.
+      el("button", {
+        class: "action", type: "button",
+        title: "Count each split, for part or all of its amount, toward a planned item, "
+          + "or mark a split not planned",
+        onclick: () => openTransactionMatch(selected.handle, () => { state.review = null; render(); }),
+      }, "Match by split…")),
     el("details", { class: "review-help" },
       el("summary", {}, "What each action does"),
       el("ul", {}, ["match", "reject", "skip", "unexpected", "fsa"]

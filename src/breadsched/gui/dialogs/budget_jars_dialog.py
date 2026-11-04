@@ -131,6 +131,7 @@ class BudgetJarsDialog(BoundedWindow):
         charts = self.view.charts()
         self.charts: list[ModelChartView] = []
         self.account_rows: list[Gtk.Expander] = []
+        self.match_buttons: list[Gtk.Button] = []
         for total in report.totals:
             label = labels.get(total.currency, "")
             heading = _cell("All jars" + (f" ({label})" if label else ""))
@@ -152,7 +153,22 @@ class BudgetJarsDialog(BoundedWindow):
             for jar in bundle.jars:
                 title = _cell(f"{jar.name} — {jar_kind_label(jar.kind)}")
                 title.add_css_class("dim")
-                box.append(title)
+                key = self._current_occurrence(jar)
+                if key is None:
+                    box.append(title)
+                else:
+                    # Decision 0005: match the jar's current occurrence.
+                    heading = Gtk.Box(spacing=8)
+                    title.set_hexpand(True)
+                    heading.append(title)
+                    match = Gtk.Button(label="Match…")
+                    match.set_tooltip_text(
+                        "Choose the splits that count toward its current occurrence"
+                    )
+                    match.connect("clicked", lambda _b, k=key: self.open_matching(k))
+                    heading.append(match)
+                    self.match_buttons.append(match)
+                    box.append(heading)
                 box.append(_grid(jar.periods))
             expander = Gtk.Expander(
                 label=f"{bundle.account_name}{f' ({label})' if label else ''}: "
@@ -169,6 +185,27 @@ class BudgetJarsDialog(BoundedWindow):
             warning.set_wrap(True)
             warning.add_css_class("negative")
             self.body.append(warning)
+
+    def _current_occurrence(self, jar) -> str | None:
+        """The jar's occurrence planned last on or before today (else its first)."""
+        from datetime import date
+
+        planned = sorted(
+            (event for event in jar.events if event.kind == "planned" and event.occurrence),
+            key=lambda event: event.when,
+        )
+        if not planned or not planned[0].occurrence.startswith("scheduled:"):
+            return None
+        today = date.today()
+        past = [event for event in planned if event.when <= today]
+        return (past[-1] if past else planned[0]).occurrence
+
+    def open_matching(self, key: str):
+        from .match_dialog import OccurrenceMatchWindow
+
+        window = OccurrenceMatchWindow(self, self.db, key)
+        window.present()
+        return window
 
     def layout(self):
         return budget_jars_layout(self.report, self.view.labels())
