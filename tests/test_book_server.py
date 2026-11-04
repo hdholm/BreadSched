@@ -76,6 +76,28 @@ def _serve(db):
     return httpd, f"http://127.0.0.1:{httpd.server_port}"
 
 
+def test_no_other_socket_can_take_the_servers_port(db):
+    """On Windows ``SO_REUSEADDR`` lets a second socket bind a port already held and
+    take its connections (and their tokens); the server holds its port exclusively
+    there, and reuse elsewhere never lets a second socket bind a listening port."""
+    import socket
+    import sys
+
+    from breadsched.web.transport import BreadSchedHTTPServer
+
+    assert BreadSchedHTTPServer.allow_reuse_address is (sys.platform != "win32")
+    httpd, _base = _serve(db)
+    intruder = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        intruder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        with pytest.raises(OSError):
+            intruder.bind(("127.0.0.1", httpd.server_port))
+    finally:
+        intruder.close()
+        httpd.shutdown()
+        httpd.server_close()
+
+
 @pytest.fixture(params=["in-process", "http"])
 def target(request, db, book):
     """The book API over a small book with one rent schedule, either way."""

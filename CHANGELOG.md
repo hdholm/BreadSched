@@ -32,6 +32,11 @@ Native schema 14.
   `scenario_events(..., remainders=True)` give Projection what remains. Budget jars
   draw only what a split allocates and leave the rest to unmatched spending.
   Verification accepts several actuals on one estimate.
+- **The server holds its port alone on Windows.** `HTTPServer` set `SO_REUSEADDR`,
+  which on Windows lets another socket bind a port the server already holds and take
+  its connections and their tokens; it now binds with `SO_EXCLUSIVEADDRUSE` there.
+  This was also why book-server tests over HTTP sometimes timed out on the Windows
+  CI runners.
 - **Migration 13→14** writes each existing link as allocations, keeping its planned
   date and amount, and checks that nothing else changed. 0.2.0a314 and earlier
   refuse to open a schema 14 book; keep the pre-migration backup to go back.
