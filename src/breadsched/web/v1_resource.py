@@ -168,7 +168,9 @@ Resources so far, all under ``/api/v1``:
   ``period_index``, ``rollover``) – reads whose request is a typed query.
 * ``POST /projection`` (``scenario``, saved or a draft) and ``POST /projection/month``
   (``scenario``, ``month_index``).
-* ``POST /undo`` and ``POST /redo``.
+* ``POST /undo/preview`` – what undo would undo: its name and its changes by kind
+  (#405); it reads the writer's history, which no read snapshot holds;
+  ``POST /undo`` and ``POST /redo``.
 * ``GET /events`` (``since``) – server-sent change events, served by the transport.
 """
 
@@ -465,6 +467,7 @@ __all__ = [
     "transaction_save",
     "redo_post",
     "schedule_lookup",
+    "undo_preview_post",
     "undo_post",
 ]
 
@@ -572,6 +575,13 @@ def advance_days_patch(api: Api, path: Path, body: dict[str, Any]) -> dict:
         remind_days=_optional_days(body, "remind_days"),
     )
     return advance_days_json(api.book.set_advance_days(request))
+
+
+def undo_preview_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    # The undo history is the writer's, never a read snapshot's: hence a POST.
+    _only(body, set())
+    preview = api.book.undo_preview()
+    return {"undo": None if preview is None else to_data(preview)}
 
 
 def undo_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:

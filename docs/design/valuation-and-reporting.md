@@ -525,9 +525,16 @@ generator.
     states.
 - **Order.** Rows sort by date, amount, account, or description, with the date and
   handles as tie-breakers, so equal keys stay in a stable order.
-- **Groups.** `QueryGroup`s, by account, month, year, or tag (a split appears under
-  each tag), carry signed totals keyed by currency mnemonic. The grand total counts
-  each split once. Amounts are never converted between currencies.
+- **Groups.** `QueryGroup`s, by account, month, year, tag (a split appears under
+  each tag), description, or notes, carry signed totals keyed by currency mnemonic.
+  `TransactionQuery.subtotals` nests them in the order given (`QueryGroup.children`,
+  `depth`; `group_by` is the one-level form, and `levels` reads either), each group
+  totalling its own rows (#408). The grand total counts each split once. Amounts are
+  never converted between currencies.
+- **Report.** `report_layout.transaction_detail_layout` prints a result with its
+  nested headings and subtotals; the desktop's **Reports → Transaction Detail…**
+  opens the Find window as that report, and the browser's Find prints its results
+  alone.
 - **Invalid queries.** `TransactionQuery.problems` lists what makes a query
   unrunnable, and `run_query` raises `ValueError` with those words:
   - the CLI reports it with exit status 2;

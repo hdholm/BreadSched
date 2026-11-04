@@ -140,3 +140,101 @@ def test_the_command_line_finds_groups_and_totals(tmp_path, capsys):
     assert "--amount: 'lots' is not an amount" in capsys.readouterr().err
     assert cli(["find", str(path), "--start", "2026-09-01", "--end", "2026-01-01"]) == 2
     assert "The first date is after the last" in capsys.readouterr().err
+
+
+def test_subtotals_nest_in_the_order_chosen(db, book, activity):
+    """#408: subtotals by account, then month, then description, each with its total."""
+    activity["Corner grocer"].notes = "weekly shop"
+    with db.transaction("Notes") as txn:
+        db.commit_transaction(activity["Corner grocer"], txn)
+    result = run_query(
+        db,
+        TransactionQuery(
+            accounts=(book.groceries, book.rent),
+            subtotals=("account", "month", "description"),
+        ),
+    )
+    assert result.query.levels == ("account", "month", "description")
+    groceries, rent = result.groups
+    assert (groceries.key, groceries.depth, groceries.totals) == (
+        "Expenses:Groceries",
+        0,
+        {"USD": Money("109.10")},
+    )
+    assert [(child.key, child.depth) for child in groceries.children] == [
+        ("2026-01", 1),
+        ("2026-02", 1),
+    ]
+    [shop] = groceries.children[0].children
+    assert (shop.key, shop.depth, [row.value for row in shop.rows]) == (
+        "Corner grocer",
+        2,
+        [Money("67.00")],
+    )
+    assert rent.totals == {"USD": Money("1067.25")}
+    assert result.totals == {"USD": Money("1176.35")}
+
+    by_notes = run_query(db, TransactionQuery(accounts=(book.groceries,), subtotals=("notes",)))
+    assert [group.key for group in by_notes.groups] == ["(no notes)", "weekly shop"]
+    # The one-level form still works, and the two agree.
+    assert [g.key for g in run_query(db, TransactionQuery(group_by="month")).groups] == [
+        g.key for g in run_query(db, TransactionQuery(subtotals=("month",))).groups
+    ]
+
+
+@pytest.mark.parametrize(
+    ("subtotals", "words"),
+    [(("account", "account"), "chosen once"), (("week",), "subtotals"), (("none",), "subtotals")],
+)
+def test_subtotals_that_cannot_run_say_why(db, book, subtotals, words):
+    query = TransactionQuery(subtotals=subtotals)
+    assert any(words in problem for problem in query.problems())
+
+
+def test_the_command_line_nests_subtotals(tmp_path, capsys):
+    import json
+
+    from breadsched.cli.main import main as cli
+    from breadsched.gen.sample_book import create_sample_book
+
+    path = tmp_path / "find.breadsched"
+    create_sample_book(path, as_of=date(2026, 8, 15))
+    command = [
+        "find",
+        str(path),
+        "--account",
+        "Expenses:Groceries",
+        "--account",
+        "Expenses:Housing",
+        "--subtotal",
+        "account",
+        "--subtotal",
+        "month",
+    ]
+    assert cli([*command, "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["subtotals"] == ["account", "month"]
+    assert [group["key"] for group in payload["groups"]] == [
+        "Expenses:Groceries",
+        "Expenses:Housing",
+    ]
+    assert all(group["children"] and group["depth"] == 0 for group in payload["groups"])
+    assert {child["depth"] for g in payload["groups"] for child in g["children"]} == {1}
+    assert cli(command) == 0
+    assert "  subtotal:" in capsys.readouterr().out
+
+
+def test_the_transaction_detail_layout_prints_nested_groups(db, book, activity):
+    from breadsched.gen.services.transaction_search import find_transactions
+    from breadsched.plugins.export.report_layout import transaction_detail_layout
+
+    result = find_transactions(
+        db, TransactionQuery(accounts=(book.expenses,), subtotals=("account", "month"))
+    ).value
+    document = transaction_detail_layout(result)
+    assert (document.title, document.kind) == ("Transaction detail", "transaction-detail")
+    assert "subtotals by account, then month" in document.subtitle
+    text = document.text()
+    for expected in ("Expenses:Groceries", "2026-01", "Subtotal: 2026-02", "Corner grocer"):
+        assert expected in text, expected
+    assert text.index("Subtotal: Expenses:Groceries") < text.index("Expenses:Rent")

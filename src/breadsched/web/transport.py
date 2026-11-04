@@ -9,8 +9,10 @@ import os
 import queue
 import re
 import secrets
+import socket
 import socketserver
 import sqlite3
+import sys
 import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -1217,12 +1219,22 @@ class BreadSchedHTTPServer(ThreadingHTTPServer):
         self.stopping.set()
         super().shutdown()
 
+    #: ``HTTPServer`` asks for ``SO_REUSEADDR`` everywhere, but on Windows that lets
+    #: another socket bind a port this server already holds and take its
+    #: connections (and the tokens they carry). There the port is held exclusively
+    #: instead; elsewhere reuse only lets a restart bind past ``TIME_WAIT``.
+    allow_reuse_address = sys.platform != "win32"
+
     def server_bind(self) -> None:
-        """Bind without ``HTTPServer``'s reverse lookup of the loopback address.
+        """Bind without ``HTTPServer``'s reverse lookup of the loopback address,
+        holding the port exclusively on Windows.
 
         ``socket.getfqdn`` can stall for many seconds where reverse DNS is slow
         (macOS runners), delaying every start; the name is only informational.
         """
+        exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+        if sys.platform == "win32" and exclusive is not None:
+            self.socket.setsockopt(socket.SOL_SOCKET, exclusive, 1)
         socketserver.TCPServer.server_bind(self)
         host, port = self.server_address[:2]
         self.server_name = str(host)

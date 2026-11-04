@@ -30,6 +30,7 @@ from enum import Enum
 from ..db.sqlite import DbSQLite
 from ..engine import schedule as schedule_engine
 from ..engine.currency import commodity_fraction
+from ..engine.plan_allocations import account_classes, allocate_posted
 from ..lib.money import Money
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import UnbalancedError
@@ -172,6 +173,7 @@ def _apply(
     posted: list[str] = []
     skipped = deferred = 0
     touched: dict[str, ScheduledTransaction] = {}
+    class_of = account_classes(db)
     try:
         with db.transaction(message) as txn:
             for handle, when, decision in decisions:
@@ -187,6 +189,7 @@ def _apply(
                 real = definition.instantiate(
                     when, fraction=commodity_fraction(db, definition.currency)
                 )
+                allocate_posted(real, class_of)
                 db.add_transaction(real, txn)
                 posted.append(real.handle)
                 if definition.last_posted is None or when > definition.last_posted:

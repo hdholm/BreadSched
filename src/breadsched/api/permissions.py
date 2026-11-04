@@ -182,6 +182,7 @@ _WRITE = {
 }
 _READ = {
     "subscribe",
+    "undo_preview",
     "find_schedule",
     "due_review",
     "due_occurrences",

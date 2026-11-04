@@ -9862,6 +9862,63 @@ class TestReconcileWindow:
         finally:
             dialog.destroy()
 
+    def test_lines_from_recent_statements_come_back_without_amounts(
+        self, app, window, populated_book
+    ):
+        """#403: the start page offers the lines added before, and one more to type
+        into; a remembered line added once is done for this statement."""
+        from breadsched.gui.dialogs.reconciliation_dialog import ReconciliationDialog
+
+        db, card, rent, _made = self._card(app, populated_book)
+        dialog = ReconciliationDialog.present_for(window, db, card)
+        try:
+            dialog.statement_date.set_text("2030-01-31")
+            dialog.entry_description.set_text("Late fee")
+            dialog.entry_account.set_selected(dialog.entry_accounts.index(rent))
+            dialog.entry_amount.set_text("-25")
+            assert dialog.add_statement_entry()
+        finally:
+            dialog.destroy()
+        dialog = ReconciliationDialog(window, db, card)
+        try:
+            [row] = dialog.remembered_rows
+            assert row.description.get_text() == "Late fee"
+            assert dialog.entry_accounts[row.account.get_selected()] == rent
+            assert row.amount.get_text() == ""
+            # The line to type into is still there, and is not the same line again.
+            assert dialog.entry_amount.get_text() == ""
+            dialog.statement_date.set_text("2030-02-28")
+            row.amount.set_text("-25")
+            assert dialog.add_statement_entry(row)
+            assert row.add.get_label() == "Added" and not row.add.get_sensitive()
+            assert dialog.entry_description.get_sensitive()
+            assert len([t for t in db.iter_transactions() if t.description == "Late fee"]) == 2
+        finally:
+            dialog.destroy()
+
+    def test_an_earlier_statement_points_at_reopen(self, app, window, populated_book):
+        """#403: starting a statement already reconciled says so and shows Reopen."""
+        from breadsched.gen.lib.reconciliation import Reconciliation, ReconciliationStatus
+        from breadsched.gui.dialogs.reconciliation_dialog import ReconciliationDialog
+
+        db, card, _rent, _made = self._card(app, populated_book)
+        last_month_end = date.today().replace(day=1) - timedelta(days=1)
+        before_that = last_month_end.replace(day=1) - timedelta(days=1)
+        done = Reconciliation(card.handle, before_that, "0", status=ReconciliationStatus.COMPLETED)
+        with db.transaction("Statement") as txn:
+            db.add_reconciliation(done, txn)
+        dialog = ReconciliationDialog(window, db, card)
+        try:
+            # It proposes a month after that statement: the last month's end.
+            assert dialog.statement_date.get_text() == last_month_end.isoformat()
+            dialog.statement_date.set_text((before_that - timedelta(days=10)).isoformat())
+            dialog.ending_balance.set_text("0")
+            dialog.start_button.emit("clicked")
+            assert "already reconciled" in dialog.status.get_text()
+            assert dialog.reopen_button.has_css_class("attention")
+        finally:
+            dialog.destroy()
+
     def test_funds_in_and_out_are_separate_columns_with_their_own_totals(
         self, app, window, populated_book
     ):
@@ -11510,7 +11567,8 @@ class TestMenusAndIcons:
             "win.plan-explore-expenses",
             "win.plan-budget-jars",
         } == reports
-        assert set(_menu_actions(_submenu(app, "_Reports"))) == reports
+        # #408: Transaction Detail is the Find window as a report, an app action.
+        assert set(_menu_actions(_submenu(app, "_Reports"))) == reports | {"app.transaction-detail"}
         assert not reports & set(_menu_actions(_submenu(app, "_Actions")))
         app.open_book(populated_book)
         window.show_category("dashboard")
@@ -11930,6 +11988,41 @@ class TestFindTransactions:
         assert opened == [dialog.lines[0].handle]
         dialog.destroy()
 
+    def test_several_accounts_nested_subtotals_and_print(self, app, window, populated_book):
+        """#408: any accounts, subtotals nested in the order chosen, and a report."""
+        from breadsched.gen.engine.transaction_query import GROUPINGS
+        from breadsched.gui.dialogs.find_dialog import FindDialog
+
+        app.open_book(populated_book)
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        dialog = app.on_transaction_detail()
+        try:
+            assert isinstance(dialog, FindDialog) and dialog.get_title() == "Transaction Detail"
+            dialog.choose_accounts((rent.handle, checking.handle))
+            assert dialog.accounts_button.get_label() == "2 accounts"
+            dialog.subaccounts_check.set_active(False)
+            dialog.group_by.set_selected(GROUPINGS.index("account"))
+            dialog.then_by[0].set_selected(GROUPINGS.index("month"))
+            assert dialog.subtotals() == ("account", "month")
+            assert not dialog.print_button.get_sensitive()
+            result = dialog.find()
+            assert result is not None
+            assert {row.account for row in result.rows} <= {rent.handle, checking.handle}
+            assert all(group.children for group in result.groups)
+            kinds = [line.kind for line in dialog.lines]
+            assert kinds[0] == "heading" and kinds[-1] == "total"
+            assert dialog.print_button.get_sensitive()
+            document = dialog.layout()
+            assert document.title == "Transaction Detail"
+            assert "then month" in document.subtitle
+            # The same subtotal twice is refused, naming it.
+            dialog.then_by[0].set_selected(GROUPINGS.index("account"))
+            assert dialog.find() is None
+            assert "only once" in dialog.status.get_text()
+        finally:
+            dialog.destroy()
+
     def test_criteria_that_cannot_be_read_say_so(self, app, window, populated_book):
         from breadsched.gui.dialogs.find_dialog import FindDialog
 
@@ -12189,3 +12282,50 @@ class TestIssue397:
         data = read(book_server(app.db))
         assert len(data) == 4
         show(data)
+
+
+class TestLargeUndo:
+    """#405: a large step is confirmed, undone off GTK's loop, and shows progress."""
+
+    def _import_like(self, db, count):
+        checking = db.get_account_by_name("Assets:Checking Account")
+        rent = db.get_account_by_name("Expenses:Rent")
+        with db.transaction("Import GnuCash book") as txn:
+            for day in range(count):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, 1, 1 + day % 28),
+                        f"Imported {day}",
+                        rent.handle,
+                        checking.handle,
+                        "10",
+                    ),
+                    txn,
+                )
+
+    def test_a_large_undo_shows_progress_and_then_tells_the_views(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.undo import LARGE_UNDO, describe_undo, run_undo
+
+        app.open_book(populated_book)
+        db = app.db
+        self._import_like(db, LARGE_UNDO + 50)
+        preview = db.undo_preview()
+        assert describe_undo(preview) == f"removes {LARGE_UNDO + 50:,} transactions"
+        heard: list[str] = []
+        db.connect("database-changed", lambda *_args: heard.append("changed"))
+        progress = run_undo(window, db, preview)
+        assert progress is not None and progress.get_title() == "Undoing"
+        assert _spin(lambda: not progress.job.active and heard)
+        assert not [t for t in db.iter_transactions() if t.description.startswith("Imported")]
+        assert heard
+
+    def test_a_small_step_is_undone_at_once(self, app, window, populated_book):
+        from breadsched.gui.undo import undo_with_care
+
+        app.open_book(populated_book)
+        db = app.db
+        self._import_like(db, 2)
+        undo_with_care(window, db)
+        assert not [t for t in db.iter_transactions() if t.description.startswith("Imported")]

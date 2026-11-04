@@ -51,11 +51,19 @@ def result_json(result: FindResult) -> dict[str, object]:
             "tags": list(item.tags),
         }
 
+    def group(item) -> dict[str, object]:
+        return {
+            "key": item.key,
+            "depth": item.depth,
+            "rows": [row(entry) for entry in item.rows],
+            "totals": item.totals,
+            # The next subtotal's groups within this one (#408).
+            "children": [group(child) for child in item.children],
+        }
+
     return {
-        "groups": [
-            {"key": group.key, "rows": [row(item) for item in group.rows], "totals": group.totals}
-            for group in result.groups
-        ],
+        "groups": [group(item) for item in result.groups],
+        "subtotals": list(result.query.levels),
         "totals": result.totals,
         "splits": result.splits,
         "transactions": result.transactions,
@@ -79,33 +87,43 @@ def cmd_find(args: argparse.Namespace) -> int:
             sort=args.sort,
             descending=args.descending,
             group_by=args.group_by,
+            subtotals=tuple(args.subtotal or ()),
         )
         result = book.find(query)
     if args.json:
         emit(result_json(result), args)
         return 0
-    grouped = query.group_by != "none"
-    for group in result.groups:
+    grouped = bool(query.levels)
+
+    def show(group) -> None:
+        indent = "  " * group.depth
         if grouped:
-            print(f"{group.key}")
-        print(
-            table(
-                [
+            print(f"{indent}{group.key}")
+        if group.children:
+            for child in group.children:
+                show(child)
+        else:
+            print(
+                table(
                     [
-                        item.date.isoformat(),
-                        item.num[:8],
-                        item.description[:36],
-                        item.account_name[:36],
-                        item.amount.format(parens_negative=True),
-                    ]
-                    for item in group.rows
-                ],
-                ["date", "num", "description", "account", "amount"],
-                right={4},
+                        [
+                            item.date.isoformat(),
+                            item.num[:8],
+                            item.description[:36],
+                            item.account_name[:36],
+                            item.amount.format(parens_negative=True),
+                        ]
+                        for item in group.rows
+                    ],
+                    ["date", "num", "description", "account", "amount"],
+                    right={4},
+                )
             )
-        )
         if grouped:
-            print(f"  subtotal: {_totals_text(group.totals)}\n")
+            print(f"{indent}  subtotal: {_totals_text(group.totals)}\n")
+
+    for group in result.groups:
+        show(group)
     print(
         f"{result.splits} split(s) in {result.transactions} transaction(s); "
         f"total {_totals_text(result.totals)}"
@@ -138,5 +156,11 @@ def register(add: AddCommand) -> None:
     find.add_argument("--sort", choices=SORTS, default="date")
     find.add_argument("--descending", action="store_true")
     find.add_argument("--group-by", choices=GROUPINGS, default="none", help="subtotal groups")
+    find.add_argument(
+        "--subtotal",
+        action="append",
+        choices=GROUPINGS[1:],
+        help="subtotals nested in the order given, outermost first (repeat; #408)",
+    )
     add_server_options(find)
     find.set_defaults(func=cmd_find)

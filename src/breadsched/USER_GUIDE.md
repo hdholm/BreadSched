@@ -222,14 +222,22 @@ occurrences and actual splits, and use **Resolve actuals** when an actual needs 
 matched, marked unexpected, or reviewed. Correct a posted split's planning purpose
 in the transaction editor; correct a scheduled purpose in the schedule editor.
 
+An estimate fills from many purchases. Matching a $120 grocery purchase to a $600
+groceries estimate counts $120 toward it and leaves $480 still expected: Review keeps
+offering the estimate for the month's other purchases, the Projection still counts
+what remains of it, and its jar is drawn by each purchase on its own date. When its
+period ends, what remains lapses, and a purchase that arrives late may still be
+matched to it. A scheduled payment (a bill) is done once a transaction is matched to
+it or posted from it, even for a different amount.
+
 Review explains its suggestions. Each planned item it offers for an actual is a
 **Close match** (within two days and 5% of the expected amount) or a **Possible
 match**, with the reasons: the accounts it shares, how far the amount and date are
 from the plan, and any words the descriptions share. When nothing is offered, Review
 says why: the nearest planned item using those accounts is outside the seven-day
 window, is planned in another currency, or was rejected, or no schedule uses the
-accounts at all. Each action says what it will do: **Match** marks the planned item
-done, **Reject** stops offering it for this transaction, **Skip** removes the planned
+accounts at all. Each action says what it will do: **Match** counts the transaction
+toward the planned item, **Reject** stops offering it for this transaction, **Skip** removes the planned
 item from the plan, and **Unexpected** records the transaction as unplanned. A
 transaction that moves FSA money also says which FSA flow it is (payroll funding, a
 payment from the FSA card, a reimbursement, or a provider refund) and whether and how
@@ -252,7 +260,8 @@ every scheduled estimate (such as groceries) is a jar, and so is every
    spoken for.
 2. **Actual transactions draw the jars.** When Review (or posting a due item)
    matches a real transaction to a planned occurrence, that transaction draws the
-   jar on its own date for its own amount. Spending less leaves money in the jar;
+   jar on its own date for its own amount; an estimate is drawn by every purchase
+   matched to it. Spending less leaves money in the jar;
    spending more shows as a variance. Spending you never match is still spending:
    every transaction posted to a jar's account draws that account's jar on its own
    date (a refund puts money back), just as the Plan counts it. When the account
@@ -655,9 +664,21 @@ checked first, either way, to find an entry that is missing from it; entries aft
 the statement stay last. Checks are saved with the open statement as you make them, so a
 statement can be left and resumed later.
 
+A new statement proposes its date: a month after the last statement reconciled
+(a month's last day goes to the next month's last), or with none yet, the end of
+last month. When a month after the last would be in the future, it proposes the
+end of last month, or today once last month is reconciled. A statement already
+reconciled is not started again: starting one says so and points at its **Reopen**
+button. The charges and credits added to the last few statements (their
+description and account, not their amount) are offered again, each on its own line,
+and one more line is always there to type into; the same description and account
+are never offered twice.
+
 Between statements, a register's **R** column marks entries cleared (**c**) or not
 (**n**) one at a time, and an open statement picks up the change. Reconciled
-entries (**y**) change only through their statement.
+entries (**y**) change only through their statement. Editing a transaction asks
+before it changes the account, amount, or shares of a reconciled split, or removes
+one, since the statement's reconciled balance would no longer match it.
 
 Cancel (**Abandon** on the desktop) leaves ledger splits unchanged and retains an
 audit record; a transaction you added or edited while reconciling stays in the book. The most recent
@@ -682,17 +703,23 @@ direction belong to one leg of a transaction:
 
 - Text, dates, and tags choose transactions. The text matches anything the
   transaction holds, as the register filter does.
-- An account (with its subaccounts), an amount or a range of amounts, a direction,
-  and a reconcile state choose the splits shown.
+- Accounts (any number of them, with their subaccounts), an amount or a range of
+  amounts, a direction, and a reconcile state choose the splits shown.
 - An amount matches a split's size in either direction: 67 finds both legs of a
   67.00 charge, never check 1067.
 - With no account or amount chosen, every leg of each matching transaction is
   listed, so the grand total of a balanced book is zero; choose an account (such as
   Expenses) to total spending.
 
-**Groups and totals.** Rows can be grouped by account, month, year, or tag, each
-with a subtotal. A transaction with two tags appears under both tags but counts once
+**Groups and totals.** Rows can be grouped by account, month, year, tag,
+description, or notes, each with a subtotal, and the groups can nest in the order
+you choose: by account, then month within each account, then description within
+each month, say. A transaction with two tags appears under both tags but counts once
 in the total. Totals are kept per currency and never converted.
+
+**As a report.** The result prints, groups and subtotals included. On the desktop,
+**Reports → Transaction Detail…** opens the same window as the Transaction Detail
+report.
 
 ## Scheduled activity
 
@@ -1702,7 +1729,10 @@ import and re-import. If a price refers only to an ambiguous mnemonic, inspect i
 import warning and resolve the source identifier before relying on that quote.
 Imports run as one atomic undo step; a cancelled import writes nothing
 ([desktop](guide/desktop.md#import-files), [browser](guide/web.md#import-files),
-[command line](guide/cli.md#import-files)).
+[command line](guide/cli.md#import-files)). On the desktop, undoing a large step
+such as an import first says what it undoes (the step's name and how many
+transactions, accounts, and other records it removes or puts back) and asks, then
+shows its progress.
 
 Every import ends with a summary. **Skipped records by reason** gives one line per
 reason, most frequent first, with how many records it stopped and the first few of

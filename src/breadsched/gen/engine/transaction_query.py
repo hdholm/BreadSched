@@ -13,6 +13,9 @@ and a direction belong to one leg of a transaction, not to the whole:
   ignored), ``direction`` (``debit`` for money in, ``credit`` for money out, as the
   split's sign records it), and ``reconcile`` choose the splits shown.
 
+``subtotals`` nests groups in the order given (#408): by account, then month, then
+description, say, each with its own subtotal; ``group_by`` is the one-level form.
+
 Amounts are totalled per currency and never converted: a group of splits in two
 currencies has two totals.
 """
@@ -44,7 +47,7 @@ DIRECTIONS = ("any", "debit", "credit")
 #: How rows can be ordered.
 SORTS = ("date", "amount", "account", "description")
 #: How rows can be grouped for subtotals; ``none`` gives one list and a grand total.
-GROUPINGS = ("none", "account", "month", "year", "tag")
+GROUPINGS = ("none", "account", "month", "year", "tag", "description", "notes")
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +67,15 @@ class TransactionQuery:
     sort: str = "date"
     descending: bool = False
     group_by: str = "none"
+    #: Subtotals nested in this order, outermost first (#408); overrides ``group_by``.
+    subtotals: tuple[str, ...] = ()
+
+    @property
+    def levels(self) -> tuple[str, ...]:
+        """The groupings, outermost first; empty for one ungrouped list."""
+        if self.subtotals:
+            return tuple(self.subtotals)
+        return () if self.group_by == "none" else (self.group_by,)
 
     def problems(self) -> list[str]:
         """What is wrong with the query, in words; empty when it can run."""
@@ -74,6 +86,10 @@ class TransactionQuery:
             found.append(f"sort must be one of {', '.join(SORTS)}")
         if self.group_by not in GROUPINGS:
             found.append(f"group by must be one of {', '.join(GROUPINGS)}")
+        if any(level not in GROUPINGS or level == "none" for level in self.subtotals):
+            found.append(f"subtotals must be among {', '.join(GROUPINGS[1:])}")
+        elif len(set(self.subtotals)) != len(self.subtotals):
+            found.append("each subtotal may be chosen once")
         if self.start and self.end and self.start > self.end:
             found.append("the start date is after the end date")
         if self.amount_min is not None and self.amount_max is not None:
@@ -97,11 +113,15 @@ class QueryRow:
 
 @dataclass(slots=True)
 class QueryGroup:
-    #: The group's key as shown: an account name, ``2026-03``, ``2026``, a tag, or "".
+    #: The group's key as shown: an account name, ``2026-03``, ``2026``, a tag, a
+    #: description, notes, or "".
     key: str
     rows: list[QueryRow] = field(default_factory=list)
     #: Signed totals by currency mnemonic, in the order first met.
     totals: dict[str, Money] = field(default_factory=dict)
+    #: The next subtotal's groups within this one, and how deep this one is (#408).
+    children: list[QueryGroup] = field(default_factory=list)
+    depth: int = 0
 
     def add(self, row: QueryRow) -> None:
         self.rows.append(row)
@@ -187,7 +207,24 @@ def _group_keys(row: QueryRow, group_by: str) -> list[str]:
     if group_by == "tag":
         # A split appears under each of its transaction's tags, or once untagged.
         return sorted(row.transaction.tags, key=str.casefold) or ["(untagged)"]
+    if group_by == "description":
+        return [row.transaction.description.strip() or "(no description)"]
+    if group_by == "notes":
+        return [(row.transaction.notes or "").strip() or "(no notes)"]
     return [""]
+
+
+def _nest(rows: list[QueryRow], levels: tuple[str, ...], depth: int) -> list[QueryGroup]:
+    """Groups for ``levels[0]``, each holding the next level's groups, by key."""
+    groups: dict[str, QueryGroup] = {}
+    for row in rows:
+        for key in _group_keys(row, levels[0]):
+            groups.setdefault(key, QueryGroup(key, depth=depth)).add(row)
+    ordered = sorted(groups.values(), key=lambda group: group.key.casefold())
+    if len(levels) > 1:
+        for group in ordered:
+            group.children = _nest(group.rows, levels[1:], depth + 1)
+    return ordered
 
 
 def run_query(db: DbSQLite, query: TransactionQuery) -> QueryResult:
@@ -227,11 +264,15 @@ def run_query(db: DbSQLite, query: TransactionQuery) -> QueryResult:
                 )
     rows.sort(key=_sort_key(query), reverse=query.descending)
 
-    groups: dict[str, QueryGroup] = {}
     totals: dict[str, Money] = defaultdict(lambda: Money(0))
     for row in rows:
-        for key in _group_keys(row, query.group_by):
-            groups.setdefault(key, QueryGroup(key)).add(row)
         totals[row.currency] = totals[row.currency] + row.value
-    ordered = sorted(groups.values(), key=lambda group: group.key.casefold())
+    levels = query.levels
+    if levels:
+        ordered = _nest(rows, levels, 0)
+    else:
+        everything = QueryGroup("")
+        for row in rows:
+            everything.add(row)
+        ordered = [everything]
     return QueryResult(query, ordered, dict(totals))

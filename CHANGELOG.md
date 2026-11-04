@@ -10,6 +10,64 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a315 - 2026-11-04
+
+Decision 0005, phase 1: actuals count toward plans by split and amount (#397).
+Native schema 14.
+
+- **An estimate fills from many purchases.** Review's **Match** counts a purchase
+  toward an estimate for its amount and leaves the rest expected, so the month's
+  other purchases can be matched to it too; the Projection counts what remains of a
+  partly met estimate until its period ends, and its jar is drawn by each purchase on
+  its own date. A late purchase may still be matched to an ended estimate. A
+  scheduled payment is done once matched or posted, as before.
+- **Storage.** `Split.plan_allocations` keeps, per split, the occurrences it counts
+  toward with the planned date and amount; schedules gain `closed_occurrences`
+  (written only when set). Posting a schedule and Review's Match write allocations of
+  the transaction's plan legs in full (`engine.plan_allocations`). Editing a split
+  lower, or a re-import, cuts its allocations to fit.
+- **Engine.** `PlannedEvent` gains `actuals`, `applied_amount`, `remaining_amount`,
+  `closed`, and `matchable`; its JSON adds `actual_transactions`, `applied_amount`,
+  `remaining_amount`, and `closed`. `planning.remainder_event` and
+  `scenario_events(..., remainders=True)` give Projection what remains. Budget jars
+  draw only what a split allocates and leave the rest to unmatched spending.
+  Verification accepts several actuals on one estimate.
+- **The server holds its port alone on Windows.** `HTTPServer` set `SO_REUSEADDR`,
+  which on Windows lets another socket bind a port the server already holds and take
+  its connections and their tokens; it now binds with `SO_EXCLUSIVEADDRUSE` there.
+  This was also why book-server tests over HTTP sometimes timed out on the Windows
+  CI runners.
+- **Migration 13→14** writes each existing link as allocations, keeping its planned
+  date and amount, and checks that nothing else changed. 0.2.0a314 and earlier
+  refuse to open a schema 14 book; keep the pre-migration backup to go back.
+
+## 0.2.0a314 - 2026-11-04
+
+Fixes three field reports (#403, #405, #408).
+
+- **Reconcile remembers** (#403). The charges and credits added to an account's last
+  statements (up to five distinct description-and-account pairs, kept in the book
+  and undone with the entry) are offered again on the next statement without their
+  amounts, with one more line always free to type into; a line added shows
+  **Added**, and the same pair is never offered twice. The statement date proposed
+  is a month after the last statement (month end to month end), or the latest month
+  end, or today once that month is reconciled. Starting a statement already
+  reconciled says so and points at **Reopen**. Changing the account, amount, or
+  shares of a reconciled split, or removing one, asks first in the desktop register,
+  the transaction editor, and the browser register
+  (`services.transactions.reconciled_changes`). Desktop and browser.
+- **Undoing a large step asks and shows progress** (#405). Undo of a step with 200
+  or more changes, such as an import, names it and counts what it removes or puts
+  back, asks, and then runs off GTK's loop with a progress bar. The book server's
+  `undo_preview` (`POST /api/v1/undo/preview`, READ) reports the step.
+- **Find takes several accounts and nested subtotals, and prints** (#408). Choose any
+  accounts (desktop: a filterable checklist; browser: a multiple choice; command line:
+  `--account` repeated, as before). Subtotals nest in the order chosen (account,
+  month, year, tag, and now description and notes; `TransactionQuery.subtotals`,
+  `--subtotal` repeated, `subtotal` repeated on `/api/find`). The result prints as
+  the Transaction detail report, and **Reports → Transaction Detail…** opens the
+  desktop window as that report. JSON groups gain `depth` and `children`.
+
 ## 0.2.0a313 - 2026-11-04
 
 Fixes three field reports (#404, #406, #407).

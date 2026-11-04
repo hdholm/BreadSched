@@ -3,9 +3,12 @@
 The register's filter searches one account; this window searches the whole book
 through the book server's ``find`` (``services.transaction_search``), the same
 search the browser's Find view and the command line's ``find`` run. Rows are
-splits, so an amount or an account picks out the leg that has it. Grouping gives
-subtotals per account, month, year, or tag, and the last line is the grand total,
-per currency. Activating a row opens that split's register.
+splits, so an amount or an account picks out the leg that has it. Subtotals nest
+in the order chosen (account, month, year, tag, description, or notes), several
+accounts can be searched at once, and the last line is the grand total, per
+currency (#408). Activating a row opens that split's register. **Print…** prints the
+result; opened from the Reports menu the same window is the Transaction Detail
+report.
 """
 
 from __future__ import annotations
@@ -19,7 +22,8 @@ from ...api import ApiError
 from ...api.local import book_server
 from ...gen.engine.transaction_query import DIRECTIONS, GROUPINGS, SORTS, TransactionQuery
 from ...gen.lib import Money
-from ...gen.services.transaction_search import FindResult
+from ...gen.services.transaction_search import FindResult, FoundGroup
+from .. import printing
 from ..gi_setup import Gio, Gtk
 from ..remote_book import OpenBook
 from ..views._base import Row, column
@@ -48,7 +52,11 @@ _GROUP_LABELS = {
     "month": "Month",
     "year": "Year",
     "tag": "Tag",
+    "description": "Description",
+    "notes": "Notes",
 }
+#: How many subtotals can be nested.
+SUBTOTAL_LEVELS = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,10 +83,11 @@ def _totals(totals: dict[str, Money]) -> str:
 
 
 def result_lines(result: FindResult) -> list[ResultLine]:
-    """The rows as shown: each group's splits and subtotal, then the total."""
-    grouped = result.query.group_by != "none"
+    """The rows as shown: each group's heading, its splits or inner groups, and its
+    subtotal, nested in the order chosen, then the total."""
     lines: list[ResultLine] = []
-    for group in result.groups:
+
+    def splits(group: FoundGroup) -> None:
         for row in group.rows:
             lines.append(
                 ResultLine(
@@ -91,12 +100,29 @@ def result_lines(result: FindResult) -> list[ResultLine]:
                     row.account,
                 )
             )
-        if grouped:
-            lines.append(
-                ResultLine(
-                    "subtotal", description=f"Subtotal: {group.key}", amount=_totals(group.totals)
-                )
+
+    def nested(group: FoundGroup) -> None:
+        indent = "    " * group.depth
+        if group.depth or group.children:
+            lines.append(ResultLine("heading", description=f"{indent}{group.key}"))
+        if group.children:
+            for child in group.children:
+                nested(child)
+        else:
+            splits(group)
+        lines.append(
+            ResultLine(
+                "subtotal",
+                description=f"{indent}Subtotal: {group.key}",
+                amount=_totals(group.totals),
             )
+        )
+
+    for group in result.groups:
+        if result.query.levels:
+            nested(group)
+        else:
+            splits(group)
     lines.append(
         ResultLine(
             "total",
@@ -117,8 +143,12 @@ class FindDialog(BoundedWindow):
         parent: Gtk.Window | None,
         db: OpenBook,
         open_account: Callable[[str], None] | None = None,
+        *,
+        report: bool = False,
     ) -> None:
-        super().__init__(title="Find transactions", transient_for=parent, modal=False)
+        #: Opened from the Reports menu: the Transaction Detail report (#408).
+        self.title = "Transaction Detail" if report else "Find transactions"
+        super().__init__(title=self.title, transient_for=parent, modal=False)
         self.db = db
         self.book = book_server(db)
         self.open_account = open_account
@@ -140,8 +170,38 @@ class FindDialog(BoundedWindow):
         self.text_entry = Gtk.Entry(placeholder_text="Anything a transaction holds")
         self.text_entry.connect("activate", lambda *_: self.find())
         form.add("Text", self.text_entry)
-        self.account = bounded_dropdown(["All accounts", *(record.full_name for record in records)])
-        form.add("Account", self.account)
+        # Any collection of accounts (#408); none chosen searches every one.
+        self.account_checks: dict[str, Gtk.CheckButton] = {}
+        self.accounts_button = Gtk.MenuButton(label="All accounts")
+        self.accounts_button.set_tooltip_text("Choose the accounts to search")
+        picker = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(picker, f"set_margin_{side}")(8)
+        filter_entry = Gtk.SearchEntry(placeholder_text="Filter accounts")
+        picker.append(filter_entry)
+        listing = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        for record in records:
+            check = Gtk.CheckButton(label=record.full_name)
+            check.connect("toggled", lambda *_: self._show_chosen())
+            self.account_checks[record.account.handle] = check
+            listing.append(check)
+        scroll = Gtk.ScrolledWindow(child=listing, propagate_natural_width=True)
+        scroll.set_min_content_height(240)
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        picker.append(scroll)
+        clear = Gtk.Button(label="All accounts")
+        clear.connect("clicked", lambda *_: self.choose_accounts(()))
+        picker.append(clear)
+
+        def narrow(entry) -> None:
+            needle = entry.get_text().casefold()
+            for check in self.account_checks.values():
+                check.set_visible(needle in (check.get_label() or "").casefold())
+
+        filter_entry.connect("search-changed", narrow)
+        popover = Gtk.Popover(child=picker)
+        self.accounts_button.set_popover(popover)
+        form.add("Accounts", self.accounts_button)
         self.subaccounts_check = Gtk.CheckButton(label="Include subaccounts")
         self.subaccounts_check.set_active(True)
         form.add(None, self.subaccounts_check)
@@ -173,8 +233,18 @@ class FindDialog(BoundedWindow):
         order.append(self.sort)
         order.append(self.descending_check)
         form.add("Sort by", order)
+        # Subtotals nest in the order chosen: by this, then by that (#408).
+        subtotals = Gtk.Box(spacing=6)
         self.group_by = bounded_dropdown([_GROUP_LABELS[name] for name in GROUPINGS])
-        form.add("Subtotal by", self.group_by)
+        subtotals.append(self.group_by)
+        self.then_by: list[Gtk.DropDown] = []
+        for _level in range(SUBTOTAL_LEVELS - 1):
+            then = bounded_dropdown(["(no more)", *(_GROUP_LABELS[name] for name in GROUPINGS[1:])])
+            then.update_property([Gtk.AccessibleProperty.LABEL], ["Then subtotal by"])
+            self.then_by.append(then)
+            subtotals.append(Gtk.Label(label="then"))
+            subtotals.append(then)
+        form.add("Subtotal by", subtotals)
         box.append(form)
 
         actions = Gtk.Box(spacing=8)
@@ -185,6 +255,10 @@ class FindDialog(BoundedWindow):
         find.add_css_class("suggested-action")
         find.connect("clicked", lambda *_: self.find())
         actions.append(find)
+        self.print_button = Gtk.Button(label="Print…")
+        self.print_button.set_sensitive(False)
+        self.print_button.connect("clicked", lambda *_: self.print_report())
+        actions.append(self.print_button)
         box.append(actions)
 
         self.results = Gtk.ColumnView()
@@ -233,10 +307,46 @@ class FindDialog(BoundedWindow):
         except (InvalidOperation, ValueError):
             raise ValueError(f"check the {label} amount") from None
 
+    def chosen_accounts(self) -> tuple[str, ...]:
+        return tuple(handle for handle, check in self.account_checks.items() if check.get_active())
+
+    def choose_accounts(self, handles) -> None:
+        wanted = set(handles)
+        for handle, check in self.account_checks.items():
+            check.set_active(handle in wanted)
+        self._show_chosen()
+
+    def _show_chosen(self) -> None:
+        chosen = [
+            check.get_label() or "" for check in self.account_checks.values() if check.get_active()
+        ]
+        self.accounts_button.set_label(
+            "All accounts"
+            if not chosen
+            else chosen[0]
+            if len(chosen) == 1
+            else f"{len(chosen)} accounts"
+        )
+
+    def subtotals(self) -> tuple[str, ...]:
+        """The subtotals in the order chosen, each once."""
+        first = GROUPINGS[self.group_by.get_selected()]
+        if first == "none":
+            return ()
+        found = [first]
+        for then in self.then_by:
+            index = then.get_selected()
+            if index == 0:
+                break
+            name = GROUPINGS[index]
+            if name in found:
+                raise ValueError(f"choose {_GROUP_LABELS[name].lower()} as a subtotal only once")
+            found.append(name)
+        return tuple(found)
+
     def query(self) -> TransactionQuery:
         """The criteria as typed; ``ValueError`` naming one that cannot be read."""
-        chosen = self.account.get_selected()
-        accounts = (self.accounts[chosen - 1].handle,) if chosen > 0 else ()
+        accounts = self.chosen_accounts()
         tags = tuple(part.strip() for part in self.tag_entry.get_text().split(",") if part.strip())
         return TransactionQuery(
             text=self.text_entry.get_text().strip(),
@@ -252,6 +362,7 @@ class FindDialog(BoundedWindow):
             sort=SORTS[self.sort.get_selected()],
             descending=self.descending_check.get_active(),
             group_by=GROUPINGS[self.group_by.get_selected()],
+            subtotals=self.subtotals(),
         )
 
     def find(self) -> FindResult | None:
@@ -273,7 +384,19 @@ class FindDialog(BoundedWindow):
         for line in self.lines:
             store.append(Row(line))
         self.results.set_model(Gtk.SingleSelection(model=store))
+        self.print_button.set_sensitive(True)
         return result
+
+    def layout(self):
+        """The last result as a printable report (#408)."""
+        from ...plugins.export.report_layout import transaction_detail_layout
+
+        assert self.result is not None
+        return transaction_detail_layout(self.result, self.title)
+
+    def print_report(self) -> None:
+        if self.result is not None:
+            printing.print_document(self, self.layout())
 
     def _on_activate(self, _view, position: int) -> None:
         line = self.lines[position] if position < len(self.lines) else None

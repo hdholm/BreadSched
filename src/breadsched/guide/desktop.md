@@ -484,10 +484,12 @@ See [Tags and linked documents](../USER_GUIDE.md#tags-and-linked-documents).
 
 ## Find transactions
 
-**Edit → Find Transactions…** (Ctrl+Shift+F) searches every register. **Text**
-matches anything a transaction holds, as the register filter does. **Account**
-narrows it to one account, with its subaccounts unless you untick **Include
-subaccounts**. **Dates** bound it.
+**Edit → Find Transactions…** (Ctrl+Shift+F) searches every register, and
+**Reports → Transaction Detail…** opens the same window as a report. **Text**
+matches anything a transaction holds, as the register filter does. **Accounts**
+narrows it to the accounts you check in its list (filter the list by typing), with
+their subaccounts unless you untick **Include subaccounts**; **All accounts**
+clears the choice. **Dates** bound it.
 
 **Amount** finds a split of exactly that size, either direction, so 67 finds a
 67.00 charge and never check 1067; **At least** and **At most** give a range.
@@ -495,20 +497,26 @@ subaccounts**. **Dates** bound it.
 transactions that have every tag listed.
 
 **Sort by** and **Descending** order the rows. **Subtotal by** groups them by
-account, month, year, or tag, with a subtotal under each group; the last line is
-the total, per currency. A row is one split, so a transaction can appear once for
-each leg that matches. Activate a row to open its register. See
+account, month, year, tag, description, or notes, and the two **then** choices nest
+further groups inside each, with a subtotal under every group; the last line is the
+total, per currency. A row is one split, so a transaction can appear once for each
+leg that matches. Activate a row to open its register. **Print…** prints the result
+with its groups and subtotals. See
 [Find transactions](../USER_GUIDE.md#find-transactions).
 
 ## Reconcile a statement
 
 1. Choose **Reconcile** in the register's toolbar or **Actions → Reconcile…**.
-2. Enter the statement date and ending balance. Compare **Starting balance**, the
-   account's reconciled balance on that date, with the statement's previous balance.
-   A charge or credit on the statement that is not yet in the book, such as interest,
-   can be added here: enter its description, the account it belongs to, and the
-   amount (positive raises the balance, as interest charged on a card does), then
-   choose **Add**. It is added cleared, so it starts checked.
+2. Enter the statement date and ending balance; the date proposed is a month after
+   the last statement. Compare **Starting balance**, the account's reconciled balance
+   on that date, with the statement's previous balance. A charge or credit on the
+   statement that is not yet in the book, such as interest, can be added here: enter
+   its description, the account it belongs to, and the amount (positive raises the
+   balance, as interest charged on a card does), then choose **Add**. It is added
+   cleared, so it starts checked. Lines added to recent statements are listed with
+   their description and account, ready for an amount; each one added shows
+   **Added**, and the last line is always free to type into. Starting a statement
+   already reconciled points at **Reopen statement through …** instead.
 3. Choose **Start reconciliation**. Entries are listed in two columns, **Funds In**
    and **Funds Out**, each with its checked total; below them are the starting,
    reconciled, and ending balances and the difference. Entries dated after the
@@ -538,6 +546,14 @@ the open window forward.
 Checks are saved as you make them. **Postpone** closes the window and keeps the
 statement, which reopens where you left off; **Abandon…** discards the statement
 without changing any transaction.
+
+Changing the account, amount, or shares of a split already reconciled, in a register
+or the transaction editor, asks **Change a reconciled split?** first; **Cancel**
+leaves it as it was.
+
+**Edit → Undo** of a large step, such as an import, says what it undoes and asks
+first, then shows its progress while the window stays usable; a small step is undone
+at once.
 
 If a deposit in that account looks like money back on a
 [reimbursable expense](#reimbursable-expenses), the dialog says how many such

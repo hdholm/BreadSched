@@ -22,7 +22,7 @@ from datetime import date
 from pathlib import Path
 from typing import Literal, Protocol, cast
 
-from ..gen.db.base import current_author
+from ..gen.db.base import UndoPreview, current_author
 from ..gen.db.sqlite import DbSQLite
 from ..gen.db.verification import BookVerification
 from ..gen.engine import projection as projection_engine
@@ -365,6 +365,9 @@ class LocalBookServer:
 
     def undo(self) -> bool:
         return self.db.undo()
+
+    def undo_preview(self) -> UndoPreview | None:
+        return self.db.undo_preview()
 
     def redo(self) -> bool:
         return self.db.redo()

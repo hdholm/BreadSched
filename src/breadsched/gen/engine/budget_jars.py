@@ -61,7 +61,8 @@ from .cash_flow import income_occurrences, income_schedules
 from .chart_model import BARS, ChartModel, ChartSeries
 from .currency import reporting_currency_handle, reporting_fraction
 from .dashboard_bills import cycle_days
-from .planning import PlannedEvent, PlannedSplit, scheduled_events
+from .plan_allocations import OccurrenceActual
+from .planning import PlannedEvent, PlannedSplit, period_end, scheduled_events
 
 __all__ = [
     "Jar",
@@ -101,6 +102,9 @@ class JarEvent:
     #: The occurrence (schedule key) or goal it belongs to, and a transaction if any.
     occurrence: str = ""
     transaction: str | None = None
+    #: An actual that counts toward its occurrence as a whole draws the whole of
+    #: its legs; one that allocates part draws only that part (decision 0005).
+    whole: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,6 +198,16 @@ def _jar_legs(splits: Iterable[PlannedSplit], accounts: dict[str, Account]) -> d
     return dict(expense) if expense else dict(other)
 
 
+def _actual_legs(item: OccurrenceActual, accounts: dict[str, Account]) -> dict[str, Money]:
+    """What one actual draws from an occurrence's jars: its legs when it counts as a
+    whole, else only what it allocates (decision 0005)."""
+    if item.share == 1:
+        legs = [PlannedSplit(split.account, split.value) for split in item.transaction.splits]
+    else:
+        legs = [PlannedSplit(account, amount) for account, amount in item.allocated]
+    return _jar_legs(legs, accounts)
+
+
 def _cycle_start(schedule: ScheduledTransaction, due: date) -> date:
     days = cycle_days(schedule)
     lookback = timedelta(days=int(days) + 15)
@@ -266,7 +280,7 @@ def _scheduled_jars(
         legs = _jar_legs(event.expected_splits, accounts)
         if not legs:
             continue
-        actual_legs = _jar_legs(event.actual_splits, accounts) if event.actual_transaction else {}
+        draws = [(item, _actual_legs(item, accounts)) for item in event.actuals]
         for account, amount in legs.items():
             key = (schedule.handle, account)
             if key not in jars:
@@ -277,14 +291,15 @@ def _scheduled_jars(
             ):
                 found.append(JarEvent(when, "fill", part, event.key))
             found.append(JarEvent(event.planned_date, "planned", amount, event.key))
-            if event.actual_transaction and event.actual_date is not None:
+            for item, actual_legs in draws:
                 found.append(
                     JarEvent(
-                        event.actual_date,
+                        item.transaction.post_date,
                         "actual",
                         actual_legs.get(account, Money(0)),
                         event.key,
-                        event.actual_transaction,
+                        item.transaction.handle,
+                        item.share == 1,
                     )
                 )
     return jars
@@ -303,17 +318,18 @@ def _unmatched_draws(
     """
     reporting = reporting_currency_handle(db)
     begins: dict[tuple[str, str | None], date] = {}
-    drawn: set[tuple[str, str]] = set()
+    drawn: dict[tuple[str, str], Money] = defaultdict(lambda: Money(0))
+    whole: set[tuple[str, str]] = set()
     for (_handle, account), (_schedule, currency, events) in jars.items():
         fills = [event.when for event in events if event.kind == "fill"]
         if fills:
             key = (account, currency)
             begins[key] = min(min(fills), begins.get(key, fills[0]))
-        drawn.update(
-            (event.transaction, account)
-            for event in events
-            if event.kind == "actual" and event.transaction
-        )
+        for event in events:
+            if event.kind == "actual" and event.transaction:
+                if event.whole:
+                    whole.add((event.transaction, account))
+                drawn[(event.transaction, account)] += event.amount
     if not begins:
         return {}
     found: dict[tuple[str, str | None], list[JarEvent]] = defaultdict(list)
@@ -323,13 +339,15 @@ def _unmatched_draws(
         amounts: dict[str, Money] = defaultdict(lambda: Money(0))
         for split in transaction.splits:
             amounts[split.account] += split.value
-        for account, amount in amounts.items():
+        for account, total in amounts.items():
             begin = begins.get((account, currency))
+            # A leg an occurrence drew in part leaves the rest unmatched.
+            amount = total - drawn.get((transaction.handle, account), Money(0))
             if (
                 begin is None
                 or transaction.post_date < begin
                 or not amount
-                or (transaction.handle, account) in drawn
+                or (transaction.handle, account) in whole
             ):
                 continue
             found[(account, currency)].append(
@@ -367,7 +385,7 @@ def _lapses(
         if index + 1 < len(planned):
             lapses_on = planned[index + 1].when
         else:
-            lapses_on = _period_end(schedule, occurrence.when) + timedelta(days=1)
+            lapses_on = period_end(schedule, occurrence.when) + timedelta(days=1)
         if lapses_on > through:
             break
         ended = ended + filled_for.get(occurrence.occurrence, Money(0))
@@ -379,18 +397,6 @@ def _lapses(
             found.append(JarEvent(lapses_on, "lapsed", amount, occurrence.occurrence))
             released = released + amount
     return found
-
-
-def _period_end(schedule: ScheduledTransaction, when: date) -> date:
-    """The last day of an estimate's period: the day before its next occurrence, or
-    for a last occurrence its end date (its own date when it has none)."""
-    following = schedule.recurrence.next_after(when)
-    while following is not None and following in schedule.skipped:
-        following = schedule.recurrence.next_after(following)
-    if following is not None:
-        return following - timedelta(days=1)
-    end = schedule.recurrence.end
-    return end if end is not None and end >= when else when
 
 
 # ----------------------------------------------------------------------- goals

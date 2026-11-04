@@ -628,6 +628,17 @@ function registerEntry(data, usable, row) {
         { account:draft.transfer, value:entryValue(-value), handle:draft.handles[1] },
       ];
     }
+    if (editing) {
+      // A split reconciled against a statement that would change or go (#403).
+      const changed = row.splits.filter((old) => old.reconciled && !splits.some((split) =>
+        split.handle === old.handle && split.account === old.account
+        && BigInt(split.value[0]) === entryUnits(old.value, "dot")));
+      if (changed.length && !window.confirm(
+        `This changes a split already reconciled against a statement (${changed.map(
+          (split) => split.account_name).join(", ")}). Save anyway?`)) {
+        return fail("Not saved: a reconciled split would change.", null);
+      }
+    }
     try {
       await post("/api/register/entry", {
         handle: editing ? row.handle : null, date:draft.date, num:draft.num,

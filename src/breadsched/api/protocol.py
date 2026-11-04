@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
+from ..gen.db.base import UndoPreview
 from ..gen.db.verification import BookVerification
 from ..gen.engine.activity import PlanSettings, ReportingPeriod
 from ..gen.engine.category_report import CategoryActivity
@@ -225,6 +226,10 @@ class BookApi(Protocol):
         ...
 
     def undo(self) -> bool: ...
+
+    def undo_preview(self) -> UndoPreview | None:
+        """What Undo would undo: its name and how many changes of each kind (#405)."""
+        ...
 
     def redo(self) -> bool: ...
 

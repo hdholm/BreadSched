@@ -42,15 +42,19 @@ def find_json(result: FindResult) -> dict[str, object]:
             "tags": list(item.tags),
         }
 
+    def group(item) -> dict[str, object]:
+        return {
+            "key": item.key,
+            "depth": item.depth,
+            "rows": [row(entry) for entry in item.rows],
+            "totals": {code: _amount(total) for code, total in item.totals.items()},
+            # The next subtotal's groups within this one (#408).
+            "children": [group(child) for child in item.children],
+        }
+
     return {
-        "groups": [
-            {
-                "key": group.key,
-                "rows": [row(item) for item in group.rows],
-                "totals": {code: _amount(total) for code, total in group.totals.items()},
-            }
-            for group in result.groups
-        ],
+        "groups": [group(item) for item in result.groups],
+        "subtotals": list(result.query.levels),
         "totals": {code: _amount(total) for code, total in result.totals.items()},
         "splits": result.splits,
         "transactions": result.transactions,
@@ -74,6 +78,8 @@ def find(api: Api, query: QueryParams) -> dict[str, object]:
         sort=query.choice("sort", SORTS, "date"),
         descending=query.flag("descending"),
         group_by=query.choice("group_by", GROUPINGS, "none"),
+        # Repeated, outermost first (#408); the service refuses a repeat.
+        subtotals=query.texts("subtotal"),
     )
     query.finish()
     return find_json(api.book.find(request))

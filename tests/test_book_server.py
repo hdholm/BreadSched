@@ -76,6 +76,28 @@ def _serve(db):
     return httpd, f"http://127.0.0.1:{httpd.server_port}"
 
 
+def test_no_other_socket_can_take_the_servers_port(db):
+    """On Windows ``SO_REUSEADDR`` lets a second socket bind a port already held and
+    take its connections (and their tokens); the server holds its port exclusively
+    there, and reuse elsewhere never lets a second socket bind a listening port."""
+    import socket
+    import sys
+
+    from breadsched.web.transport import BreadSchedHTTPServer
+
+    assert BreadSchedHTTPServer.allow_reuse_address is (sys.platform != "win32")
+    httpd, _base = _serve(db)
+    intruder = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        intruder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        with pytest.raises(OSError):
+            intruder.bind(("127.0.0.1", httpd.server_port))
+    finally:
+        intruder.close()
+        httpd.shutdown()
+        httpd.server_close()
+
+
 @pytest.fixture(params=["in-process", "http"])
 def target(request, db, book):
     """The book API over a small book with one rent schedule, either way."""
@@ -143,6 +165,24 @@ def test_a_write_is_one_change_every_subscriber_sees(target):
     # And whether a step is left to undo or redo, for the window's buttons.
     assert (change.can_undo, change.can_redo) == (True, False)
     assert change_json(change)["can_undo"] is True
+
+
+def test_undo_preview_reads_alike(target, book):
+    """#405: what undo would undo, the same in-process and over HTTP."""
+    api, db = target.api, target.db
+    with db.transaction("Two rents") as txn:
+        for day in (1, 2):
+            db.add_transaction(
+                Transaction.simple(date(2026, 9, day), "Rent", book.rent, book.checking, "9"),
+                txn,
+            )
+    preview = api.undo_preview()
+    assert preview == db.undo_preview()
+    assert (preview.message, preview.total, preview.changes) == (
+        "Two rents",
+        2,
+        (("transaction", "added", 2),),
+    )
 
 
 def test_undo_redo_and_writes_from_other_code_are_changes_too(target, book):
@@ -1529,12 +1569,21 @@ def test_find_reads_alike(target, book):
     assert march.totals == {"USD": Money("1146.50")}
     exact = api.find(TransactionQuery(amount=Money("67")))
     assert {row.description for row in exact.rows} == {"Shop 3"}
+    # #408: nested subtotals and several accounts travel alike.
+    nested_query = TransactionQuery(
+        accounts=(book.groceries, book.rent), subtotals=("account", "month")
+    )
+    nested = api.find(nested_query)
+    assert nested == find_transactions(db, nested_query).value
+    assert nested.groups and all(group.children for group in nested.groups)
+    assert {child.depth for group in nested.groups for child in group.children} == {1}
     before = db.summary()
     for bad, code in (
         (TransactionQuery(start=date(2026, 4, 1), end=date(2026, 3, 1)), "find.dates.order"),
         (TransactionQuery(amount_min=Money("5"), amount_max=Money("1")), "find.amounts.order"),
         (TransactionQuery(accounts=("nowhere",)), "find.account.missing"),
         (TransactionQuery(sort="colour"), "find.sort.invalid"),
+        (TransactionQuery(subtotals=("month", "month")), "find.subtotals.invalid"),
     ):
         with pytest.raises(ApiError) as refused:
             api.find(bad)

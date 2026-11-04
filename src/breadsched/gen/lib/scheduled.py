@@ -381,6 +381,9 @@ class ScheduledTransaction(PrimaryObject):
         #: again. Recorded per date rather than by moving ``last_posted``, because
         #: skipping March must not also dismiss February.
         self.skipped: list[date] = sorted(set(skipped or []))
+        #: Occurrences closed early (decision 0005): what is left of them is no
+        #: longer expected, though what was matched to them still counts.
+        self.closed_occurrences: list[date] = []
         #: Exact importer-owned recurrence representation when the source cannot be
         #: mapped safely to BreadSched's recurrence model.
         self.source_recurrence: dict[str, Any] | list[dict[str, Any] | str] | str | None = None
@@ -616,6 +619,11 @@ class ScheduledTransaction(PrimaryObject):
             "placeholder": self.placeholder,
             "estimate_evidence": self.estimate_evidence,
             "skipped": [when.isoformat() for when in self.skipped],
+            **(
+                {"closed_occurrences": [when.isoformat() for when in self.closed_occurrences]}
+                if self.closed_occurrences
+                else {}
+            ),
             "source_recurrence": self.source_recurrence,
             "unsupported_reason": self.unsupported_reason,
         }
@@ -652,6 +660,9 @@ class ScheduledTransaction(PrimaryObject):
         self.placeholder = data.get("placeholder", False)
         self.estimate_evidence = data.get("estimate_evidence")
         self.skipped = [date.fromisoformat(d) for d in data.get("skipped", [])]
+        self.closed_occurrences = sorted(
+            date.fromisoformat(d) for d in data.get("closed_occurrences", [])
+        )
         self.source_recurrence = data.get("source_recurrence")
         self.unsupported_reason = str(data.get("unsupported_reason", ""))
 

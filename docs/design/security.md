@@ -7,8 +7,10 @@ web requests are untrusted inputs. The loopback web interface must defend agains
 browser-origin attacks and DNS rebinding rather than assuming loopback binding alone
 is sufficient.
 
-The local web server therefore uses defense in depth: it binds only to loopback,
-rejects non-loopback ``Host`` values, rejects foreign ``Origin`` values, requires
+The local web server therefore uses defense in depth: it binds only to loopback
+(on Windows with ``SO_EXCLUSIVEADDRUSE`` rather than the ``SO_REUSEADDR`` that
+``HTTPServer`` asks for, which there would let another local program bind the same
+port and receive its requests and their tokens), rejects non-loopback ``Host`` values, rejects foreign ``Origin`` values, requires
 ``application/json`` for ordinary writes (or bounded ``application/octet-stream``
 for the dedicated import upload), and requires an unguessable token generated for
 each server process on every API request. The launcher supplies that token in the

@@ -17,7 +17,7 @@ import json
 import sqlite3
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import date
 from pathlib import Path
 from typing import Any, TypeVar
@@ -35,7 +35,7 @@ from ..lib.transaction import Transaction
 from ..utils.logs import get_logger
 from ..utils.user_paths import portal_document_id, sync_service_for_path
 from .backups import backup_connection, migration_backup_path, restore_backup, snapshot_of
-from .base import DbError, DbReadonlyError, DbTxn
+from .base import DbError, DbReadonlyError, DbTxn, UndoPreview
 from .book_lock import BookWriterLock
 from .change_verification import ChangeVerification
 from .compact import expand_transaction, minimize_transaction
@@ -47,7 +47,7 @@ LOG = get_logger(__name__)
 
 __all__ = ["DbSQLite", "is_portal_book", "migration_backup_path", "stored_schema_version"]
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 T = TypeVar("T", bound=PrimaryObject)
 
 _SCHEMA = """
@@ -791,7 +791,12 @@ class DbSQLite(ChangeVerification):
 
     # --------------------------------------------------------------- undo/redo
 
-    def _replay(self, txn: DbTxn, reverse: bool) -> None:
+    def _replay(
+        self,
+        txn: DbTxn,
+        reverse: bool,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> None:
         if self._active_txn is not None:
             raise DbError("cannot undo or redo while a database transaction is active")
         with self._write_lock:
@@ -799,9 +804,12 @@ class DbSQLite(ChangeVerification):
             try:
                 conn.execute("BEGIN IMMEDIATE")
                 records = reversed(txn.records) if reverse else txn.records
-                for table, handle, before, after in records:
+                total = len(txn.records)
+                for done, (table, handle, before, after) in enumerate(records, start=1):
                     target = before if reverse else after
                     self._store(table, handle, target)
+                    if progress is not None and (done % 200 == 0 or done == total):
+                        progress(done, total)
                 issues = self._verify_changes(txn.records, reverse=reverse)
                 if issues:
                     first = issues[0]
@@ -815,18 +823,53 @@ class DbSQLite(ChangeVerification):
                 self._reload_account_cache()
                 raise
 
-    def undo(self) -> bool:
+    def undo(
+        self,
+        progress: Callable[[int, int], None] | None = None,
+        *,
+        announce: bool = True,
+    ) -> bool:
+        """Undo the last step. ``progress`` hears (changes done, changes in all) as a
+        large step is replayed (#405); with ``announce`` false the change signals
+        wait for :meth:`announce_undo`, so a worker thread can undo while only the
+        main loop tells the views."""
         if not self.undo_stack:
             return False
         txn = self.undo_stack[-1]
-        self._replay(txn, reverse=True)
+        self._replay(txn, reverse=True, progress=progress)
         self.undo_stack.pop()
         self.redo_stack.append(txn)
+        if announce:
+            self.announce_undo()
+        return True
+
+    def announce_undo(self) -> None:
+        """Tell listeners about the step :meth:`undo` just undid."""
+        if not self.redo_stack:
+            return
         # Announced once the stacks have moved, so a listener sees what is left.
-        self._emit_for(txn, reverse=True)
+        self._emit_for(self.redo_stack[-1], reverse=True)
         self.emit("undo-available", (bool(self.undo_stack),))
         self.emit("redo-available", (True,))
-        return True
+
+    def undo_preview(self) -> UndoPreview | None:
+        """What :meth:`undo` would undo: its name, and how many changes of each kind."""
+        if not self.undo_stack:
+            return None
+        txn = self.undo_stack[-1]
+        counts: dict[tuple[str, str], int] = {}
+        for table, _handle, before, after in txn.records:
+            if table == "metadata":
+                continue
+            kind = "added" if before is None else "removed" if after is None else "changed"
+            key = (_TABLES[table][1] if table in _TABLES else table, kind)
+            counts[key] = counts.get(key, 0) + 1
+        return UndoPreview(
+            txn.message,
+            len(txn.records),
+            tuple((stem, kind, count) for (stem, kind), count in sorted(counts.items())),
+            txn.author,
+        )
 
     def redo(self) -> bool:
         if not self.redo_stack:
@@ -924,7 +967,8 @@ class DbSQLite(ChangeVerification):
         return Transaction.from_dict(data) if data else None
 
     def iter_plan_linked_transactions(self) -> Iterator[Transaction]:
-        """Transactions that name a scheduled occurrence or schedule, in ledger order.
+        """Transactions that name a scheduled occurrence or schedule, or have a split
+        allocated to one (decision 0005), in ledger order.
 
         Plan, Projection, and the Expense Explorer look these up on every build;
         filtering in SQL decodes only them instead of the whole ledger (#310).
@@ -935,13 +979,18 @@ class DbSQLite(ChangeVerification):
             "SELECT t.handle, t.post_date, t.blob FROM txn t"
             " WHERE json_extract(t.blob, '$.planned_occurrence') IS NOT NULL"
             " OR json_extract(t.blob, '$.scheduled_from') IS NOT NULL"
+            " OR t.blob LIKE '%\"plan_allocations\"%'"
             " ORDER BY t.post_date, t.handle"
         )
         try:
             rows = conn.execute(sql).fetchall()
         except sqlite3.OperationalError:
             for transaction in self.iter_transactions():
-                if transaction.planned_occurrence or transaction.scheduled_from:
+                if (
+                    transaction.planned_occurrence
+                    or transaction.scheduled_from
+                    or any(split.plan_allocations for split in transaction.splits)
+                ):
                     yield transaction
             return
         for row in rows:

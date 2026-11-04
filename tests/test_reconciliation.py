@@ -411,3 +411,69 @@ def test_candidates_sort_by_a_column_with_later_entries_kept_last():
     assert names("checked", True) == ["Rent", "Bonus", "coffee", "Arrears"]
     with pytest.raises(ValueError, match="sort must be one of"):
         reconciliation.sort_candidates(items, "colour")
+
+
+# ---------------------------------------------------------------- memory (#403)
+
+
+def test_statement_lines_are_remembered_without_amounts(db, statement_book):
+    """#403: the charges and credits added to recent statements are offered again."""
+    from breadsched.gen.services.reconciliations import reconciliation_view
+
+    bank, _cleared, pending, _future = statement_book
+    expense = pending.splits[0].account
+    income = next(a for a in db.iter_accounts() if a.name == "Household income")
+
+    def add(description, other, amount="-5"):
+        result = add_statement_entry(
+            db, AddStatementEntry(bank.handle, other, date(2026, 1, 31), description, Money(amount))
+        )
+        assert result.value is not None
+
+    add("Fee", expense)
+    add("Interest", income.handle, "2")
+    add("Fee", expense)  # the same line again is remembered once
+    view = reconciliation_view(db, bank.handle, today=date(2026, 2, 3)).value
+    assert [(d, o) for d, o, _name in view.remembered_lines] == [
+        ("Fee", expense),
+        ("Interest", income.handle),
+    ]
+    assert view.remembered_lines[1][2] == "Household income"
+    # Undoing the entry forgets it with it.
+    db.undo()
+    view = reconciliation_view(db, bank.handle, today=date(2026, 2, 3)).value
+    assert [(d, o) for d, o, _name in view.remembered_lines] == [
+        ("Interest", income.handle),
+        ("Fee", expense),
+    ]
+    for index in range(7):
+        add(f"Line {index}", expense)
+    remembered = reconciliation.remembered_lines(db, bank.handle)
+    assert len(remembered) == reconciliation.REMEMBERED_LINES
+    assert remembered[0] == ("Line 6", expense)
+
+
+@pytest.mark.parametrize(
+    ("last", "today", "proposed"),
+    [
+        # No statement yet: the latest end of a month.
+        (None, date(2026, 3, 14), date(2026, 2, 28)),
+        (None, date(2026, 3, 31), date(2026, 3, 31)),
+        # A month after the last statement, a month end going to a month end.
+        (date(2026, 1, 31), date(2026, 3, 14), date(2026, 2, 28)),
+        (date(2026, 1, 15), date(2026, 3, 14), date(2026, 2, 15)),
+        # A month after would be in the future: the latest month end, or today
+        # once that month is reconciled.
+        (date(2026, 2, 20), date(2026, 3, 14), date(2026, 2, 28)),
+        (date(2026, 2, 28), date(2026, 3, 14), date(2026, 3, 14)),
+    ],
+)
+def test_the_proposed_statement_date(db, statement_book, last, today, proposed):
+    from breadsched.gen.lib.reconciliation import Reconciliation
+
+    bank, _cleared, _pending, _future = statement_book
+    if last is not None:
+        done = Reconciliation(bank.handle, last, "1000", status=ReconciliationStatus.COMPLETED)
+        with db.transaction("Statement") as txn:
+            db.add_reconciliation(done, txn)
+    assert reconciliation.default_statement_date(db, bank.handle, today) == proposed

@@ -19,6 +19,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
 
@@ -33,9 +34,29 @@ from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import Transaction
 from ..utils.callback import Callback
 
-__all__ = ["DbBase", "DbTxn", "DbError", "DbReadonlyError", "authored_by", "current_author"]
+__all__ = [
+    "DbBase",
+    "DbTxn",
+    "DbError",
+    "DbReadonlyError",
+    "UndoPreview",
+    "authored_by",
+    "current_author",
+]
 
 _AUTHOR: ContextVar[str | None] = ContextVar("breadsched_change_author", default=None)
+
+
+@dataclass(frozen=True, slots=True)
+class UndoPreview:
+    """What Undo would undo, so a large step can be confirmed first (#405)."""
+
+    message: str
+    #: Every change the step made, its count of each kind included.
+    total: int
+    #: (kind of record, ``added``/``changed``/``removed``, how many), sorted.
+    changes: tuple[tuple[str, str, int], ...]
+    author: str | None = None
 
 
 @contextmanager

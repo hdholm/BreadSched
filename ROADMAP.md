@@ -15,18 +15,10 @@ Every item planned for this stage is delivered; see `CHANGELOG.md` through
 
 - **Match actuals to plans by split and amount** (#397,
   [decision 0005](docs/design/decisions/0005-matching-actuals-to-plans.md)), in its
-  four phases: allocations with remaining amounts and estimates that lapse at the end
-  of their period; category-first proposals with the other account and notes; the
-  Match windows in GTK; then the browser and command line.
-- **Reconcile remembers** (#403): the charges, credits, and interest of the last few
-  statements as candidates, a default statement date from the last one, a visible
-  hint instead of a silent refusal for an earlier statement, and a warning before a
-  reconciled leg is changed.
-- **Undoing a large step** (#405), such as an import: say how much it undoes, ask
-  first, and show progress.
-- **Find and a Transaction Detail report** (#408): several accounts at once,
-  subtotals nested in a chosen order (including description and notes), printing,
-  and the same query as a report.
+  four phases. Allocations with remaining amounts and estimates that lapse at the end
+  of their period are built (0.2.0a312, 0.2.0a315); still to come are category-first
+  proposals with the other account and notes, the Match windows in GTK (with Close
+  occurrence and partial allocations), and then the browser and command line.
 
 ## At the first Beta
 

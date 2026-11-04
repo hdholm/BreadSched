@@ -333,6 +333,7 @@ from .v1_resource import (
     transaction_lookup,
     transaction_save,
     undo_post,
+    undo_preview_post,
     writeback_apply,
     writeback_get,
     writeback_settings_get,
@@ -919,6 +920,7 @@ V1_ROUTES: tuple[tuple[str, str, Callable[..., object]], ...] = (
     ("POST", "/rules/accept", v1_rules_accept),
     ("PATCH", "/rules/{handle}", v1_rule_move),
     ("DELETE", "/rules/{handle}", v1_rule_delete),
+    ("POST", "/undo/preview", undo_preview_post),
     ("POST", "/undo", undo_post),
     ("POST", "/redo", redo_post),
 )

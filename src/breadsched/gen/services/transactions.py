@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 
@@ -15,8 +16,10 @@ from ..lib.money import Money
 from ..lib.transaction import (
     InvestmentActivityKind,
     PlanningFlowKind,
+    ReconcileState,
     Split,
     Transaction,
+    fitting_allocations,
 )
 from .contracts import ServiceError, ServiceResult
 from .receivables import is_owned_posting, sync_linked_receivables
@@ -181,6 +184,7 @@ def build_transaction(
             split = Split(item.account, item.value.value, quantity=quantity, handle=item.handle)
         split.account = item.account
         split.value = item.value.value
+        split.plan_allocations = fitting_allocations(split.plan_allocations, split.value)
         if item.quantity is not None:
             split.quantity = item.quantity.value
         split.memo = item.memo.strip()
@@ -294,3 +298,25 @@ def delete_transaction(db: DbSQLite, request: DeleteTransaction) -> ServiceResul
     return ServiceResult.success(
         SavedTransaction(existing.handle, existing.post_date, existing.description)
     )
+
+
+def reconciled_changes(
+    before: Transaction, splits: Iterable[TransactionSplitInput]
+) -> tuple[str, ...]:
+    """The accounts of ``before``'s reconciled splits that ``splits`` would change
+    (its account, value, or quantity) or drop, so an editor asks first (#403)."""
+    given = {split.handle: split for split in splits if split.handle is not None}
+    changed = []
+    for split in before.splits:
+        if split.reconcile is not ReconcileState.RECONCILED:
+            continue
+        after = given.get(split.handle)
+        same = (
+            after is not None
+            and after.account == split.account
+            and after.value.value == split.value
+            and (after.quantity is None or after.quantity.value == split.quantity)
+        )
+        if not same:
+            changed.append(split.account)
+    return tuple(changed)

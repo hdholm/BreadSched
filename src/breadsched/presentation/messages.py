@@ -25,7 +25,10 @@ _SERVICE_MESSAGES = {
     "plan.requirement_kind.invalid": "Only a mortgage cash requirement can be explained",
     "find.direction.invalid": "Choose money in, money out, or either",
     "find.sort.invalid": "Choose date, amount, account, or description to sort by",
-    "find.group_by.invalid": "Choose account, month, year, tag, or no groups",
+    "find.group_by.invalid": ("Choose account, month, year, tag, description, notes, or no groups"),
+    "find.subtotals.invalid": (
+        "Choose subtotals among account, month, year, tag, description, and notes, each once"
+    ),
     "find.dates.order": "The first date is after the last",
     "find.amounts.order": "The smallest amount is larger than the largest",
     "find.account.missing": "An account to search no longer exists",

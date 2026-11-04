@@ -28,6 +28,7 @@ from ...gen.lib.money import Money
 from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer, SpendingPoint
 from ...gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ...gen.services.plan import PlanGoalMilestone
+from ...gen.services.transaction_search import FindResult, FoundGroup
 from ...presentation import (
     PLAN_REIMBURSABLE_HEADING,
     goal_status_text,
@@ -60,6 +61,7 @@ __all__ = [
     "realized_gains_layout",
     "tax_year_layout",
     "budget_jars_layout",
+    "transaction_detail_layout",
     "chart_blocks",
     "chart_table",
     "ModelChart",
@@ -1481,3 +1483,90 @@ def chart_table(model: ChartModel) -> Table:
             for index, category in enumerate(model.categories)
         ),
     )
+
+
+#: Each grouping's name as a report heading says it (#408).
+SUBTOTAL_LABELS = {
+    "account": "account",
+    "month": "month",
+    "year": "year",
+    "tag": "tag",
+    "description": "description",
+    "notes": "notes",
+}
+
+
+def _currency_totals(totals: Mapping[str, Money]) -> str:
+    return (
+        "\n".join(
+            f"{amount.format(parens_negative=True)} {code}".strip()
+            for code, amount in totals.items()
+        )
+        or Money(0).format()
+    )
+
+
+def transaction_detail_layout(
+    result: FindResult, title: str = "Transaction detail", criteria: str = ""
+) -> ReportDocument:
+    """Found splits as a report: each group's heading, its splits or its inner
+    groups, and its subtotal, nested in the order chosen; then the grand total (#408)."""
+    rows: list[TableRow] = []
+
+    def total_row(label: str, totals, depth: int, style: str) -> TableRow:
+        return TableRow(
+            (
+                Cell(label, indent=depth, span=4),
+                Cell(_currency_totals(totals), numeric=True),
+            ),
+            style,
+        )
+
+    def split_rows(group: FoundGroup, depth: int) -> None:
+        for row in group.rows:
+            rows.append(
+                TableRow(
+                    (
+                        Cell(row.date.isoformat(), indent=depth),
+                        Cell(row.num),
+                        Cell(row.description, note=row.memo, below=bool(row.memo)),
+                        Cell(row.account_name),
+                        _amount(row.amount, signed=True),
+                    )
+                )
+            )
+
+    def group_rows(group: FoundGroup) -> None:
+        rows.append(TableRow((Cell(group.key, indent=group.depth, span=5),), "heading"))
+        if group.children:
+            for child in group.children:
+                group_rows(child)
+        else:
+            split_rows(group, group.depth + 1)
+        rows.append(total_row(f"Subtotal: {group.key}", group.totals, group.depth, "total"))
+
+    if result.query.levels:
+        for group in result.groups:
+            group_rows(group)
+    else:
+        for group in result.groups:
+            split_rows(group, 0)
+    rows.append(
+        total_row(
+            f"Total: {result.splits} split(s) in {result.transactions} transaction(s)",
+            result.totals,
+            0,
+            "grand",
+        )
+    )
+    levels = result.query.levels
+    subtitle = criteria or "Every split found"
+    if levels:
+        subtitle += "; subtotals by " + ", then ".join(SUBTOTAL_LABELS[level] for level in levels)
+    table = Table(
+        _columns("Date", "Num", "Description", "Account", "#Amount"),
+        tuple(rows),
+        empty="Nothing found.",
+    )
+    blocks: list[Block] = [table]
+    return ReportDocument(title, subtitle, (Section(tuple(blocks)),), kind="transaction-detail")

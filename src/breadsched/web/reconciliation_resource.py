@@ -56,6 +56,12 @@ def reconciliation(api: Api, query: QueryParams) -> dict[str, object]:
         "reimbursement_notice": reimbursement_notice(view.reimbursement_proposals),
         # An FSA statement line may belong on a claim.
         "claim_link_notice": claim_link_notice(view.claim_link_proposals),
+        # A month after the last statement, and the lines added to recent ones (#403).
+        "default_statement_date": view.default_statement_date,
+        "remembered_lines": [
+            {"description": description, "account": other, "account_name": name}
+            for description, other, name in view.remembered_lines
+        ],
         "open": (
             {
                 "handle": current.handle,

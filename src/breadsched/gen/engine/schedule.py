@@ -23,6 +23,7 @@ from ..lib.recurrence import PeriodType, Recurrence, add_months
 from ..lib.scheduled import ScheduledSplit, ScheduledTransaction
 from ..lib.transaction import Transaction
 from .currency import commodity_fraction
+from .plan_allocations import account_classes, allocate_posted
 
 __all__ = [
     "Occurrence",
@@ -804,10 +805,12 @@ def post_due(
     if not candidates:
         return posted
 
+    class_of = account_classes(db)
     with db.transaction(message) as txn:
         touched: dict[str, ScheduledTransaction] = {}
         for occ in candidates:
             real = occ.instantiate(commodity_fraction(db, occ.schedule.currency))
+            allocate_posted(real, class_of)
             db.add_transaction(real, txn)
             posted.append(real)
             sched = touched.setdefault(occ.schedule.handle, occ.schedule)
@@ -832,10 +835,12 @@ def post_occurrences(
     posted: list[Transaction] = []
     if not chosen:
         return posted
+    class_of = account_classes(db)
     with db.transaction(message) as txn:
         touched: dict[str, ScheduledTransaction] = {}
         for occurrence in chosen:
             real = occurrence.instantiate(commodity_fraction(db, occurrence.schedule.currency))
+            allocate_posted(real, class_of)
             db.add_transaction(real, txn)
             posted.append(real)
             sched = touched.setdefault(occurrence.schedule.handle, occurrence.schedule)

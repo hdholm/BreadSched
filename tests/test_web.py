@@ -360,8 +360,8 @@ class TestItServes:
         assert payload == {
             "ok": True,
             "application_version": __version__,
-            "native_schema_version": 13,
-            "supported_schema_versions": {"minimum": 6, "maximum": 13},
+            "native_schema_version": 14,
+            "supported_schema_versions": {"minimum": 6, "maximum": 14},
             "sqlite": [],
             "issues": [],
         }
@@ -812,6 +812,40 @@ class TestItServes:
         status, reopened = client.post("/api/reconciliation/reopen", {"handle": current["handle"]})
         assert status == 200
         assert reopened["status"] == "open"
+
+    def test_reconciliation_proposes_a_date_and_remembers_statement_lines(self, client):
+        """#403: the start page's date, and the lines added to recent statements."""
+        _status, accounts = client.get("/api/accounts")
+        checking = next(a for a in accounts if a["name"] == "Checking")
+        expense = next(a for a in accounts if a["type"] == "EXPENSE" and not a["placeholder"])
+        query = "/api/reconciliation?" + urllib.parse.urlencode({"account": checking["handle"]})
+        _status, state = client.get(query)
+        today = date.today()
+        month_end = (
+            today
+            if (today + timedelta(days=1)).day == 1
+            else (today.replace(day=1) - timedelta(days=1))
+        )
+        assert state["default_statement_date"] == month_end.isoformat()
+        assert state["remembered_lines"] == []
+        status, _added = client.post(
+            f"/api/v1/accounts/{checking['handle']}/statement-entries",
+            {
+                "other_account": expense["handle"],
+                "post_date": month_end.isoformat(),
+                "description": "Service fee",
+                "amount": "-4.00",
+            },
+        )
+        assert status == 200
+        _status, state = client.get(query)
+        assert state["remembered_lines"] == [
+            {
+                "description": "Service fee",
+                "account": expense["handle"],
+                "account_name": expense["full_name"],
+            }
+        ]
 
     def test_reconciliation_entries_come_in_the_order_asked(self, client):
         """#377: ``sort`` and ``descending`` order the statement's entries."""
@@ -3790,6 +3824,37 @@ class TestFindApi:
         keys = {group["key"]: group["totals"]["USD"] for group in monthly["groups"]}
         assert keys["2026-03"] == "1134.25" and keys["2026-04"] == "42.10"
         assert monthly["totals"]["USD"] == "1176.35"
+
+    def test_several_accounts_and_nested_subtotals(self, found):
+        """#408: accounts repeat, and subtotals nest in the order given."""
+        client, groceries = found
+        checking = client.database.get_account_by_name("Assets:Checking")
+        _status, nested = client.get(
+            "/api/find?"
+            + urllib.parse.urlencode(
+                [
+                    ("account", groceries.handle),
+                    ("account", checking.handle),
+                    ("subtotal", "account"),
+                    ("subtotal", "description"),
+                    ("start", "2026-03-01"),
+                ]
+            )
+        )
+        assert nested["subtotals"] == ["account", "description"]
+        by_account = {group["key"]: group for group in nested["groups"]}
+        assert set(by_account) == {"Assets:Checking", client.database.full_name(groceries)}
+        grocer = by_account[client.database.full_name(groceries)]
+        assert [child["key"] for child in grocer["children"]] == [
+            "Check 1067",
+            "Corner grocer",
+            "Market",
+        ]
+        assert all(child["depth"] == 1 and child["rows"] for child in grocer["children"])
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get("/api/find?subtotal=month&subtotal=month")
+        assert caught.value.code == 400
+        assert json.loads(caught.value.read())["code"] == "find.subtotals.invalid"
 
     @pytest.mark.parametrize(
         ("query", "status", "code"),

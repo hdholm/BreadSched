@@ -96,6 +96,8 @@ reference month. See [Synthetic sample book](../USER_GUIDE.md#synthetic-sample-b
 $ breadsched find home.breadsched --amount 67
 $ breadsched find home.breadsched --account Expenses --start 2026-01-01 --end 2026-03-31 --group-by month
 $ breadsched find home.breadsched --text "corner grocer" --sort amount --descending --json
+$ breadsched find home.breadsched --account Expenses:Groceries --account Expenses:Dining \
+    --subtotal account --subtotal month --subtotal description
 ```
 
 - `--text` matches anything a transaction holds.
@@ -106,6 +108,9 @@ $ breadsched find home.breadsched --text "corner grocer" --sort amount --descend
 - `--direction debit|credit`, `--tag` (repeatable), and `--reconcile n|c|y` narrow
   it further.
 - `--sort date|amount|account|description` and `--descending` order the rows.
+- `--subtotal account|month|year|tag|description|notes` (repeatable) nests subtotals
+  in the order given, outermost first; `--group-by` is the one-level form. `--json`
+  gives each group's `depth` and its `children`.
 - `--group-by account|month|year|tag` prints a subtotal under each group; the last
   line is the total, per currency.
 

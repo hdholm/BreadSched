@@ -10,6 +10,7 @@ from ..engine.activity import PeriodActivity, PlanMeasure
 from ..engine.chart_model import LINE, SHARE, STACKED, ChartMarker, ChartModel, ChartSeries
 from ..engine.completeness import Completeness
 from ..engine.conversion import ReportingConverter
+from ..engine.plan_allocations import OccurrenceActual
 from ..engine.plan_detail import (
     CategoryActualDetail,
     CategoryPeriodDetail,
@@ -19,7 +20,6 @@ from ..engine.plan_detail import (
 from ..engine.planning import linked_actuals
 from ..lib.account import Account, AccountClass
 from ..lib.money import Money
-from ..lib.transaction import Transaction
 from .contracts import ServiceError, ServiceResult
 from .plan import PlanQuery, PlanQueryResult, query_plan
 
@@ -417,7 +417,7 @@ class _Details:
         self.plan = plan
         self.accounts: dict[str, Account] = {item.handle: item for item in db.iter_accounts()}
         self.converter = ReportingConverter(db, plan.report.as_of)
-        self._linked: dict[str, Transaction] | None = None
+        self._linked: dict[str, list[OccurrenceActual]] | None = None
 
     def explain(self, account: str, index: int) -> CategoryPeriodDetail:
         bucket = self.plan.report.activity.periods[index]

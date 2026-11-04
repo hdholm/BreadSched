@@ -1530,7 +1530,7 @@ def test_reconciliation_marks_entries_after_the_statement(page, served):
     page.get_by_role("button", name="Reconcile…").click()
     early = min(t.post_date for t in db.iter_transactions(account=register))
     page.locator(".detail-dialog input[type=date]").fill(early.isoformat())
-    page.locator(".detail-dialog input[inputmode=decimal]").fill("0")
+    page.locator(".detail-dialog").get_by_role("textbox", name="Ending balance").fill("0")
     page.get_by_role("button", name="Start reconciliation").click()
     later = page.locator(".detail-dialog tr.after-statement")
     later.first.wait_for()
@@ -1548,7 +1548,7 @@ def test_a_reconciliation_row_opens_its_transaction_in_the_register(page, served
     page.get_by_role("button", name="Reconcile…").click()
     latest = max(t.post_date for t in db.iter_transactions(account=register))
     page.locator(".detail-dialog input[type=date]").fill(latest.isoformat())
-    page.locator(".detail-dialog input[inputmode=decimal]").fill("0")
+    page.locator(".detail-dialog").get_by_role("textbox", name="Ending balance").fill("0")
     page.get_by_role("button", name="Start reconciliation").click()
     first = page.locator(".detail-dialog tbody tr").first
     first.wait_for()
@@ -1578,7 +1578,7 @@ def test_reconciliation_headings_sort_the_entries_and_keep_checks(page, served):
     page.get_by_role("button", name="Reconcile…").click()
     latest = max(t.post_date for t in db.iter_transactions(account=register))
     page.locator(".detail-dialog input[type=date]").fill(latest.isoformat())
-    page.locator(".detail-dialog input[inputmode=decimal]").fill("0")
+    page.locator(".detail-dialog").get_by_role("textbox", name="Ending balance").fill("0")
     page.get_by_role("button", name="Start reconciliation").click()
     rows = page.locator(".detail-dialog tbody tr")
     rows.first.wait_for()
@@ -1810,14 +1810,22 @@ def test_find_searches_every_register_with_subtotals(page, served):
     form = page.locator("form.find-form")
     form.wait_for()
     expenses = next(a for a in db.iter_accounts() if a.name == "Expenses" and a.placeholder)
-    form.locator("select[name=account]").select_option(expenses.handle)
-    form.locator("select[name=group_by]").select_option("month")
+    income = next(a for a in db.iter_accounts() if a.name == "Income" and a.placeholder)
+    # #408: several accounts, and subtotals nested in the order chosen.
+    form.locator("select[name=accounts]").select_option([expenses.handle, income.handle])
+    form.locator("select[name=subtotal0]").select_option("account")
+    form.locator("select[name=subtotal1]").select_option("month")
     form.get_by_role("button", name="Find").click()
     page.wait_for_selector(".find-results tr.total")
     text = page.locator(".find-results").inner_text()
     assert "Subtotal: " in text and "Total: " in text
+    headings = page.locator(".find-results tr.find-group").all_inner_texts()
+    assert any(heading.startswith("Expenses:") for heading in headings)
+    assert any(heading.startswith("Income:") for heading in headings)
+    assert any(heading[:4].isdigit() for heading in headings)  # the months inside
     first_account = page.locator(".find-results tbody button").first.inner_text()
-    assert first_account.startswith("Expenses:")
+    assert first_account.startswith(("Expenses:", "Income:"))
+    assert page.get_by_role("button", name="Print…").is_visible()
 
 
 @pytest.fixture
@@ -2139,3 +2147,40 @@ def test_the_schedule_editors_upcoming_list_follows_its_future_changes(page, ser
         "?.textContent.includes('Seasonal amount')"
     )
     assert "1,700.00" in rows.first.inner_text()
+
+
+def test_changing_a_reconciled_split_asks_first(page, served):
+    """#403: the browser register confirms before a reconciled split changes."""
+    from breadsched.gen.lib import ReconcileState
+
+    db, httpd = served
+    checking = db.get_account_by_name("Assets:Checking")
+    stored = next(t for t in db.iter_transactions() if t.split_for(checking.handle))
+    stored.split_for(checking.handle).reconcile = ReconcileState.RECONCILED
+    with db.transaction("Reconciled") as txn:
+        db.commit_transaction(stored, txn)
+    page.goto("about:blank")
+    page.goto(f"http://127.0.0.1:{httpd.server_port}/#token={httpd.token}")
+    _open_register(page)
+    page.locator("select").first.select_option(checking.handle)
+    row = page.locator(f"tbody tr.editable:has-text('{stored.description}')").first
+    row.locator("td").first.click()
+    page.locator("[aria-label='Edited transaction description']").wait_for()
+    amount = next(
+        (field for field in page.locator("tr.entry-row input.num").all() if field.input_value()),
+        None,
+    )
+    assert amount is not None
+    before = stored.split_for(checking.handle).value
+    asked: list[str] = []
+
+    def dismiss(dialog):
+        asked.append(dialog.message)
+        dialog.dismiss()
+
+    page.once("dialog", dismiss)
+    amount.fill("12345.67")
+    amount.press("Enter")
+    page.wait_for_selector("text=Not saved: a reconciled split would change.")
+    assert asked and "reconciled against a statement" in asked[0]
+    assert db.get_transaction(stored.handle).split_for(checking.handle).value == before

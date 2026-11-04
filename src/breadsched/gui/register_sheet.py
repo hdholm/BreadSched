@@ -62,6 +62,7 @@ from ..gen.services import (
 from ..gen.services.autocomplete import EarlierNotes, SuggestEntry, complete_note
 from ..gen.services.entry_input import ReadEntryTrade
 from ..gen.services.register_view import RegisterView
+from ..gen.services.transactions import reconciled_changes
 from ..presentation.investments import trade_price_text
 from . import hidden_accounts
 
@@ -335,6 +336,9 @@ class RegisterSheet:
         self.disabled_reason = ""
         #: Asked when shares, price, and amount were all filled and one changed.
         self.trade_question: TradeQuestion | None = None
+        #: The accounts of reconciled splits a save would change, waiting on a yes.
+        self.reconciled_question: tuple[str, ...] | None = None
+        self._reconciled_confirmed = False
         if view is not None:
             # Read in the background through the book server (#389).
             self.apply_view(view, keep_cursor=False)
@@ -1470,6 +1474,22 @@ class RegisterSheet:
         self.move_to(following, "date")
         return True
 
+    def _reconciled_changes(self, splits) -> tuple[str, ...]:
+        """The names of reconciled splits that ``splits`` would change or drop."""
+        source = self.draft.source
+        if source is None:
+            return ()
+        return tuple(self._name(account) for account in reconciled_changes(source, splits))
+
+    def confirm_reconciled(self) -> bool:
+        """Save a change to a reconciled split once it was confirmed, as Enter does."""
+        self.reconciled_question = None
+        self._reconciled_confirmed = True
+        try:
+            return self.enter()
+        finally:
+            self._reconciled_confirmed = False
+
     def escape(self) -> None:
         """Escape: put the transaction back as it was (the blank one empties)."""
         source = self.draft.source
@@ -1541,6 +1561,15 @@ class RegisterSheet:
             if not built:
                 return False
             splits, amount = built
+        reconciled = self._reconciled_changes(splits)
+        if reconciled and not self._reconciled_confirmed:
+            # A reconciled split's account or amount changes: ask first (#403).
+            self.reconciled_question = reconciled
+            return self._fail(
+                "This changes a reconciled split ("
+                + ", ".join(reconciled)
+                + "); confirm to save it anyway."
+            )
         self.saving = True
         try:
             saved = self._save_transaction(when, description, currency, splits)

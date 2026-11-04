@@ -372,6 +372,38 @@ class RegisterView(BaseView):
         self._show_balance()
         if sheet.trade_question is not None and not self._asking_trade:
             self.ask_trade(sheet.trade_question)
+        if sheet.reconciled_question is not None and not self._asking_trade:
+            self.ask_reconciled(sheet.reconciled_question)
+
+    def ask_reconciled(self, accounts: tuple[str, ...]) -> None:
+        """A save would change a reconciled split: ask before it does (#403)."""
+        sheet = self.sheet
+        assert sheet is not None
+        sheet.reconciled_question = None
+        alert = Gtk.AlertDialog(
+            message="Change a reconciled split?",
+            detail=(
+                "This changes a split already reconciled against a statement ("
+                + ", ".join(accounts)
+                + "). The statement's reconciled balance will no longer match it."
+            ),
+            buttons=["Cancel", "Save anyway"],
+            cancel_button=0,
+            default_button=0,
+        )
+        self._asking_trade = True
+
+        def finished(dialog, result) -> None:
+            self._asking_trade = False
+            try:
+                choice = dialog.choose_finish(result)
+            except GLib.Error:
+                choice = 0
+            if choice == 1 and self.sheet is not None:
+                self.sheet.confirm_reconciled()
+                self.grid.sync()
+
+        alert.choose(self.get_root(), None, finished)
 
     def ask_trade(self, question) -> None:
         """Shares, price, and amount were all filled and one changed: ask which of

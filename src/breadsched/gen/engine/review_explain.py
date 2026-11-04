@@ -142,8 +142,7 @@ def no_candidate_reason(db: DbSQLite, transaction: Transaction, *, window_days: 
     open_events = [
         event
         for event in planning.scheduled_events(db, start, end, include_actualized=True)
-        if event.status is not planning.EventStatus.ACTUALIZED
-        and accounts & {split.account for split in event.expected_splits}
+        if event.matchable and accounts & {split.account for split in event.expected_splits}
     ]
     rejected = [
         event for event in open_events if event.key in transaction.rejected_plan_occurrences

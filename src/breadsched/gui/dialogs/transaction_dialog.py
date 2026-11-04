@@ -53,6 +53,7 @@ from ...gen.services import (
     TransactionSplitInput,
 )
 from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry
+from ...gen.services.transactions import reconciled_changes
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import claim_role_label
 from .. import hidden_accounts
@@ -990,11 +991,42 @@ class TransactionDialog(BoundedWindow):
         except ApiError as error:
             raise ValueError(str(error)) from error
 
-    def _on_save(self, _button) -> None:
+    def _on_save(self, _button, *, confirmed: bool = False) -> None:
         try:
             request = self._request()
         except ValueError as exc:
             self.status.set_text(str(exc))
+            return
+        changed = (
+            reconciled_changes(self.transaction, request.definition.splits)
+            if self.editing and self.transaction is not None and not confirmed
+            else ()
+        )
+        if changed:
+            # A split already reconciled against a statement would change (#403).
+            book = book_server(self.db)
+            names = ", ".join(book.account(account).full_name for account in changed)
+            alert = Gtk.AlertDialog(
+                message="Change a reconciled split?",
+                detail=(
+                    f"This changes a split already reconciled against a statement ({names}). "
+                    "The statement's reconciled balance will no longer match it."
+                ),
+                buttons=["Cancel", "Save anyway"],
+                cancel_button=0,
+                default_button=0,
+            )
+
+            def answered(dialog, result) -> None:
+                try:
+                    choice = dialog.choose_finish(result)
+                except GLib.Error:
+                    choice = 0
+                if choice == 1:
+                    self._on_save(None, confirmed=True)
+
+            alert.choose(self, None, answered)
+            self.reconciled_question = changed
             return
         try:
             book_server(self.db).save_transaction(request)
