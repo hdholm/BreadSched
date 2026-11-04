@@ -350,9 +350,19 @@ def _lapses(
     assumes; the report needs none after ``through``.
     """
     planned = sorted((event for event in events if event.kind == "planned"), key=lambda e: e.when)
-    due = {event.occurrence: event.when for event in planned}
+    filled_for: dict[str, Money] = defaultdict(lambda: Money(0))
+    for event in events:
+        if event.kind == "fill":
+            filled_for[event.occurrence] += event.amount
+    actuals = sorted((e for e in events if e.kind == "actual"), key=lambda e: e.when)
     found: list[JarEvent] = []
+    # Every fill of an occurrence comes before its date, so on the day a period
+    # lapses the level less what later occurrences already hold is the ended
+    # occurrences' fills less every draw so far and every earlier release.
+    ended = Money(0)
+    drawn = Money(0)
     released = Money(0)
+    position = 0
     for index, occurrence in enumerate(planned):
         if index + 1 < len(planned):
             lapses_on = planned[index + 1].when
@@ -360,21 +370,11 @@ def _lapses(
             lapses_on = _period_end(schedule, occurrence.when) + timedelta(days=1)
         if lapses_on > through:
             break
-        before = [event for event in events if event.when < lapses_on]
-        level = (
-            sum((e.amount for e in before if e.kind == "fill"), Money(0))
-            - sum((e.amount for e in before if e.kind == "actual"), Money(0))
-            - released
-        )
-        kept = sum(
-            (
-                e.amount
-                for e in before
-                if e.kind == "fill" and due.get(e.occurrence, lapses_on) >= lapses_on
-            ),
-            Money(0),
-        )
-        amount = level - kept
+        ended = ended + filled_for.get(occurrence.occurrence, Money(0))
+        while position < len(actuals) and actuals[position].when < lapses_on:
+            drawn = drawn + actuals[position].amount
+            position += 1
+        amount = ended - drawn - released
         if amount:
             found.append(JarEvent(lapses_on, "lapsed", amount, occurrence.occurrence))
             released = released + amount
