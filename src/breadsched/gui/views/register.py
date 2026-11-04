@@ -168,6 +168,7 @@ class RegisterView(BaseView):
 
         self.append_toolbar(bar)
 
+        self._asking_trade = False
         self.grid = RegisterGrid(on_change=self._show_message)
         self.grid.set_banding(self._settings_banding())
         for side in ("start", "end"):
@@ -369,6 +370,37 @@ class RegisterView(BaseView):
             return
         self.set_entry_status(sheet.message, error=sheet.error)
         self._show_balance()
+        if sheet.trade_question is not None and not self._asking_trade:
+            self.ask_trade(sheet.trade_question)
+
+    def ask_trade(self, question) -> None:
+        """Shares, price, and amount were all filled and one changed: ask which of
+        the other two changes to match, rather than changing one unasked (#407)."""
+        names = {"shares": "shares", "price": "price", "amount": "amount"}
+        buttons = ["Cancel", *(f"Change the {names[choice]}" for choice in question.choices)]
+        alert = Gtk.AlertDialog(
+            message=f"You changed the {names[question.changed]}.",
+            detail=(
+                "Shares, price, and amount were all filled in. Which should change to "
+                "match? Cancel puts back what you changed."
+            ),
+            buttons=buttons,
+            cancel_button=0,
+            default_button=1,
+        )
+        self._asking_trade = True
+
+        def finished(dialog, result) -> None:
+            self._asking_trade = False
+            try:
+                index = dialog.choose_finish(result)
+            except GLib.Error:
+                index = 0
+            if self.sheet is not None:
+                self.sheet.answer_trade(question.choices[index - 1] if index > 0 else None)
+                self.grid.sync()
+
+        alert.choose(self.get_root(), None, finished)
 
     def _account(self) -> Account | None:
         """The register's account as the book server stores it, if it still exists."""

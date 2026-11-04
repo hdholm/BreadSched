@@ -89,7 +89,7 @@ from ..gen.services.account_inference import (
 from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
-from ..gen.services.autocomplete import EntryProposal, SuggestEntry
+from ..gen.services.autocomplete import EarlierNotes, EntryProposal, SuggestEntry
 from ..gen.services.book_info import BookCounts, BookSummary
 from ..gen.services.budget_jars import JarsView
 from ..gen.services.categorization import (
@@ -565,6 +565,14 @@ class HttpBookClient:
         }
         return from_data(EntryProposal, self._call("GET", "/entry/suggestion", params))
 
+    def earlier_notes(self, request: EarlierNotes) -> tuple[str, ...]:
+        params = {
+            "description": request.description,
+            "memos": "true" if request.memos else None,
+            "exclude": request.exclude,
+        }
+        return tuple(self._call("GET", "/entry/notes", params)["notes"])
+
     def entry_amount(
         self, text: str, currency: str | None = None, number_format: str = "auto"
     ) -> EntryAmount:
@@ -580,6 +588,7 @@ class HttpBookClient:
             "changed": request.changed,
             "currency": request.currency,
             "number_format": request.number_format,
+            "recompute": request.recompute,
         }
         return from_data(TradeFill, self._call("GET", "/entry/trade", params))
 

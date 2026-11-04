@@ -9,6 +9,10 @@ carries the earlier transaction's notes, for an entry whose notes are empty (#36
 but never reconcile state, source identifiers, planning purposes or links,
 investment activity, or FSA claims.
 
+While a note is typed, ``earlier_notes`` offers the notes (or split memos) of
+earlier transactions with the same description, most recent first, so a note can
+be completed from what was written before (#407).
+
 Candidates are limited to transactions with a split in the entry's account (when
 given), in the entry's currency (the reporting currency when not given), and whose
 accounts are all visible and postable, so a proposal can always be saved as is.
@@ -26,7 +30,16 @@ from ..engine.description_keys import match_key
 from ..lib.money import Money
 from .contracts import ServiceError, ServiceResult
 
-__all__ = ["EntryProposal", "EntrySuggestion", "SuggestEntry", "SuggestedSplit", "suggest_entry"]
+__all__ = [
+    "EarlierNotes",
+    "EntryProposal",
+    "EntrySuggestion",
+    "SuggestEntry",
+    "SuggestedSplit",
+    "complete_note",
+    "earlier_notes",
+    "suggest_entry",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,3 +147,61 @@ def suggest_entry(db: DbSQLite, query: SuggestEntry) -> ServiceResult[EntryPropo
             },
         )
     )
+
+
+@dataclass(frozen=True, slots=True)
+class EarlierNotes:
+    description: str = ""
+    #: The splits' memos instead of the transactions' notes.
+    memos: bool = False
+    #: A transaction being edited, whose own text is not offered back.
+    exclude: str | None = None
+
+
+#: At most this many earlier texts are offered.
+NOTE_CHOICES = 50
+
+
+def earlier_notes(db: DbSQLite, query: EarlierNotes) -> ServiceResult[tuple[str, ...]]:
+    """The distinct notes (or memos) of transactions with the same description,
+    most recent first; empty when the description is blank."""
+    key = match_key(query.description)
+    if not key:
+        return ServiceResult.success(())
+    dated: list[tuple[tuple, str]] = []
+    for transaction in db.iter_transactions():
+        if transaction.handle == query.exclude or match_key(transaction.description) != key:
+            continue
+        rank = (transaction.post_date, transaction.enter_date, transaction.handle)
+        texts = (
+            [split.memo for split in transaction.splits]
+            if query.memos
+            else [transaction.notes or ""]
+        )
+        dated.extend((rank, text) for text in texts if text.strip())
+    dated.sort(key=lambda item: item[0], reverse=True)
+    found: list[str] = []
+    seen: set[str] = set()
+    for _rank, text in dated:
+        if text not in seen:
+            seen.add(text)
+            found.append(text)
+        if len(found) >= NOTE_CHOICES:
+            break
+    return ServiceResult.success(tuple(found))
+
+
+def complete_note(typed: str, choices: tuple[str, ...] | list[str]) -> str | None:
+    """The first earlier note that begins with ``typed``, else the first containing
+    it (ignoring case), or ``None``; never one no longer than what was typed."""
+    key = typed.casefold()
+    if not key.strip():
+        return None
+    longer = [text for text in choices if len(text) > len(typed)]
+    for text in longer:
+        if text.casefold().startswith(key):
+            return text
+    for text in longer:
+        if key in text.casefold():
+            return text
+    return None

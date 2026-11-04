@@ -35,7 +35,8 @@ def _unsigned_text(raw: str) -> str:
 def detect_number_format(values: Iterable[str]) -> NumberFormat | None:
     """Infer one decimal convention from a collection of amount strings.
 
-    A separator followed by one or two digits is treated as decimal evidence.
+    A separator followed by one or two digits is treated as decimal evidence, and so
+    is a separator with no digit before it (``.5``), which cannot be grouping (#404).
     When both separators occur in one value, the rightmost separator is decimal.
     Values such as ``1,234`` are deliberately ambiguous and provide no evidence.
     Conflicting evidence raises ``ValueError`` rather than silently mixing formats.
@@ -47,6 +48,9 @@ def detect_number_format(values: Iterable[str]) -> NumberFormat | None:
             continue
         if "." in text and "," in text:
             evidence.add("dot" if text.rfind(".") > text.rfind(",") else "comma")
+            continue
+        if text[0] in ".," and text[1:].isdigit():
+            evidence.add("dot" if text[0] == "." else "comma")
             continue
         separators: tuple[tuple[str, NumberFormat], ...] = ((".", "dot"), (",", "comma"))
         for separator, convention in separators:
@@ -84,6 +88,9 @@ def parse_decimal_amount(raw: str, number_format: NumberFormat) -> Decimal:
         if not groups[0] or any(len(group) != 3 for group in groups[1:]):
             raise ValueError(f"invalid amount {raw!r}")
     digits = "".join(groups)
+    if not digits and fraction and len(groups) == 1:
+        # No leading zero: ``.1`` is 0.1 (#404).
+        digits = "0"
     if not digits or not digits.isdigit():
         raise ValueError(f"invalid amount {raw!r}")
     normalized = f"{digits}.{fraction}" if fraction else digits

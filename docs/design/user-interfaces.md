@@ -152,7 +152,10 @@ the transaction editor's per-split planning purpose and investment activity foll
 its **Planning detail** toggle (`SplitEditor.show_detail`).
 
 Every table except the register grid (below) is built with `_base.table_section()`: a heading row with the table's
-own column chooser (never in the view toolbar, where identical icons could not be
+own column chooser (`column_menu`, which also moves columns, and
+`arrange_columns`, which keeps one expanding column, the last marked to expand,
+and remembers order and widths by title under `columns:<view id>`, the first column
+pinned first, #406) (never in the view toolbar, where identical icons could not be
 told apart; the Dashboard hides its tables' choosers and lists the same columns,
 under the same `columns:<view id>` settings, on the Columns page of
 `dialogs.dashboard_dialog.DashboardDialog`, #381) above a scrolled `Gtk.ColumnView` carrying the `data-table` class, which
@@ -310,7 +313,12 @@ parallel transaction models:
   vertical scrollbar drives the first drawn row; nothing is recycled, so the
   cursor cannot jump when a split transaction expands (the regression that a
   `Gtk.ColumnView` with hosted editors showed). There is no column chooser or
-  sorting: a register is always in ledger order.
+  sorting: a register is always in ledger order. The account list under the
+  transfer cell opens above the row when it would not fit below
+  (`match_list_placement`, #406). A cash register that a security moved through
+  shows `TRADE_COLUMNS` (Shares and Price for the security leg); a security's split
+  line takes them, and with shares, price, and amount all filled a change waits on
+  `RegisterSheet.trade_question` for which other one to work out (#407).
 - **Cells and keys.** Arriving in a cell selects all of its text, so typing or
   Backspace replaces a proposed value and Left or Right goes to its start or end
   (#332). Date (defaulting to the last date entered), Num, Description,

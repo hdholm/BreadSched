@@ -170,10 +170,17 @@ postings behind it below the table; that section has its own **Print…** and
 **Export CSV…**. See [Net worth history](../USER_GUIDE.md#net-worth-history).
 
 Each table has its own column chooser (the "⋯" button at the right of that table's
-heading); its tooltip names the table, and the columns you hide are remembered. The
+heading); its tooltip names the table, and the columns you hide are remembered.
+Drag a column's heading to move it, or use the arrows beside it in the chooser; the
+first column stays first. Drag a heading's edge to resize a column. One column (the
+description, where a table has one) takes the table's spare width, so making any
+other column narrower widens that one rather than its neighbour. The order and the
+widths are remembered too. The
 Dashboard's tables are the exception: their columns are chosen in **Configure
 Dashboard** (see [Configure the Dashboard](#configure-the-dashboard)).
-The register is a ledger grid with GnuCash's fixed columns, so it has no chooser.
+The register is a ledger grid with GnuCash's fixed columns, so it has no chooser;
+its account list opens above the row when there is no room below it, as for the new
+transaction at the bottom.
 When you make the window narrower, text columns such as descriptions shorten (with
 "…") so every column, including every amount, stays visible. On a small screen, a
 long dialog scrolls its form, and its Save and Cancel buttons stay at the bottom.
@@ -223,7 +230,10 @@ menu) open the account editor: its name, type, parent, code, description, and no
 whether it is a placeholder or hidden, and the settings its type has, such as a
 card's payment terms, a loan's asset, an FSA's funding years, or an investment's
 return and cost method. **Delete** asks first, and refuses an account the book still
-needs, saying why. See [Accounts](../USER_GUIDE.md#accounts).
+needs, saying why. Its table shows each account's **Balance** in what it holds (its
+own currency, or shares for a security), its **Value** in the reporting currency,
+the **Price** that values a security or foreign currency, and the **Last Quote
+Update** (the quote's date and source). See [Accounts](../USER_GUIDE.md#accounts).
 
 ## Configure the Dashboard
 
@@ -394,8 +404,9 @@ To record a purchase or sale, type any two of **Shares**, **Price**, and the
 amount under **Buy** or **Sell**, and the third is worked out when you leave the
 cell: shares and a price give the amount (to the cent), shares and an amount give
 the price, and a price and an amount give the shares (to the fraction of a share
-the account records). Changing the shares or the price later recomputes the
-amount; changing the amount recomputes the price. Shares are entered as a number
+the account records). When all three are already filled, changing one asks which of
+the other two should change to match, or **Cancel** puts it back; nothing changes
+unasked. Shares are entered as a number
 of shares; whether they are bought or sold follows the amount's column. A
 transaction needs its shares: without them it is not saved, and the cursor moves
 to **Shares**. A share split, which changes shares with no amount, shows its shares
@@ -404,10 +415,19 @@ and no price.
 In the transaction editor, a split in such an account has a **Shares** entry
 beside its amount; a negative number means shares sold or moved out.
 
+A cash register a security has moved through, such as the checking account you buy
+a fund from, has **Shares** and **Price** columns too. Each transaction shows its
+security leg's shares and price, and in a transaction's split lines the security's
+line takes them as in the fund's own register; choosing a security for a split line
+adds the columns.
+
 **View → Double Line** (also in **Edit → Preferences…**) adds a second line under
 every transaction in every register, the blank one included, for its notes, as in
 GnuCash: Tab moves from the last amount to the notes line, and Enter saves what you
-typed there with the transaction. The choice is remembered. With it off, saving keeps the notes a transaction already has.
+typed there with the transaction. Typing a note (or a split's memo) completes it from
+the notes written before for transactions with the same description: one beginning
+with what you typed first, else one containing it, with the rest selected so the
+next letter replaces it. The choice is remembered. With it off, saving keeps the notes a transaction already has.
 Whether you are entering a new transaction or changing one, **Enter** (or **Tab**
 past the last cell) saves it and moves to the next transaction.
 

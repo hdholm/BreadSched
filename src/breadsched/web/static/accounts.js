@@ -1395,6 +1395,10 @@ async function showRegister() {
       openScheduledEditor(schedules, draft);
     } catch (error) { say(error.message, "error"); }
   };
+  // Shares and Price columns: a security's register, a cash register a security moved
+  // through, or one whose entry has just chosen a security for a split (#407).
+  const trades = Boolean(data.security || data.trades || state.registerTrades === state.account);
+  data.trades = trades && !data.security;
   const rows = [];
   for (const row of data.rows) {
     if (state.editing && state.editing.split === row.split) {
@@ -1420,9 +1424,10 @@ async function showRegister() {
             ? ` (${row.documents.filter((item)=>item.missing).length} missing)` : "")) : null),
       el("td", { class: "muted" }, row.transfer),
       el("td", {}, reconcileButton(row)),
-      // A security's register shows each row's shares and price (#323).
-      data.security ? el("td", { class: "num" }, row.shares) : null,
-      data.security ? el("td", { class: "num" }, row.price) : null,
+      // A security's register shows each row's shares and price (#323), and a cash
+      // register its security leg's (#407).
+      trades ? el("td", { class: "num" }, row.shares || "") : null,
+      trades ? el("td", { class: "num" }, row.price || "") : null,
       el("td", { class: "num" }, amount > 0 ? money(row.amount) : ""),
       el("td", { class: "num" }, amount < 0 ? money(String(row.amount).slice(1)) : ""),
       data.security
@@ -1475,7 +1480,7 @@ async function showRegister() {
       el("span", { class: "muted" }, `${data.rows.length} entries`)),
     data.summary ? el("p", { class: "note register-summary" }, data.summary) : null,
     table(["Date", "Num", "Description", "Transfer", "R",
-           ...(data.security ? [{ label: "Shares", num: true }, { label: "Price", num: true }] : []),
+           ...(trades ? [{ label: "Shares", num: true }, { label: "Price", num: true }] : []),
            { label: data.debit_label, num: true }, { label: data.credit_label, num: true },
            { label: data.security ? "Shares Held" : "Balance", num: true }, ""], rows));
 }

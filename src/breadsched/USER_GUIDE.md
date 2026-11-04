@@ -534,7 +534,10 @@ entry in place ([desktop](guide/desktop.md#enter-transactions-in-a-register),
 An account that holds a security (a fund or stock, with shares rather than a
 currency) shows each transaction's shares and price and the shares held after it,
 and takes shares with each purchase or sale: any two of shares, price, and amount
-give the third ([desktop](guide/desktop.md#shares-in-an-investment-register)).
+give the third ([desktop](guide/desktop.md#shares-in-an-investment-register)). With
+all three filled, changing one asks which of the other two should change. A cash
+register that a security has moved through shows the security leg's shares and
+price too, and takes them in its split lines.
 
 ### Typing shortcuts in the register
 
@@ -550,7 +553,8 @@ The desktop and browser registers read what you type the same way:
 - **Amounts.** Type arithmetic such as `12.50+3*2` or `(100-20)/4` and leaving the
   field shows the result. The result is rounded half up to the currency's smallest
   unit (cents), and a negative result moves to the other column. A single number is
-  kept exactly as typed. Only numbers, `+ - * /`, and parentheses are accepted.
+  kept exactly as typed, and needs no leading zero: `.1` is 0.10. Only numbers,
+  `+ - * /`, and parentheses are accepted.
 - **Accounts.** Account names match segment by segment: `Ex:Gr` matches
   **Expenses:Groceries**, because `Ex` begins `Expenses` and `Gr` begins
   `Groceries`. Accounts exactly as deep as what you typed come first. Text without
@@ -563,6 +567,9 @@ The desktop and browser registers read what you type the same way:
   the matches and the line under the register says which account was picked.
 - **Descriptions.** In the desktop register a description also completes from
   earlier descriptions in the account when you type a new entry, most recent first.
+- **Notes and memos.** In the desktop register a transaction's notes line and a
+  split's memo complete from those written before for the same description, most
+  recent first: one beginning with what you typed, else one containing it.
 - **Numbers.** In **Num**, `+` and `-` step a number up or down, keeping leading
   zeros (`0099` → `0100`). In an empty field they continue from the register's last
   numbered transaction.

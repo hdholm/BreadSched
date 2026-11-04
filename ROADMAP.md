@@ -24,14 +24,6 @@ Every item planned for this stage is delivered; see `CHANGELOG.md` through
   reconciled leg is changed.
 - **Undoing a large step** (#405), such as an import: say how much it undoes, ask
   first, and show progress.
-- **Amounts without a leading zero** (#404): `.1` is accepted wherever an amount is.
-- **Desktop columns** (#406): reorderable columns everywhere, column resizing that
-  takes from the neighbour being dragged, and the register's account list kept on
-  screen for the last row.
-- **Entering transactions** (#407): notes completed from earlier transactions with
-  the same description; a security leg shown with its shares and price in any
-  register, asking which value to change; and Accounts columns for the last quote
-  update, value in the reporting currency, and price.
 - **Find and a Transaction Detail report** (#408): several accounts at once,
   subtotals nested in a chosen order (including description and notes), printing,
   and the same query as a report.

@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from fractions import Fraction
+from typing import Any, Literal
 
 from ..api import ApiError
 from ..api.local import book_server
@@ -58,7 +59,7 @@ from ..gen.services import (
     TransactionInput,
     TransactionSplitInput,
 )
-from ..gen.services.autocomplete import SuggestEntry
+from ..gen.services.autocomplete import EarlierNotes, SuggestEntry, complete_note
 from ..gen.services.entry_input import ReadEntryTrade
 from ..gen.services.register_view import RegisterView
 from ..presentation.investments import trade_price_text
@@ -101,6 +102,20 @@ SECURITY_COLUMNS = (
     "decrease",
     "share_balance",
 )
+#: The columns of an account kept in a currency once a security moves through it:
+#: a security's split shows and takes its shares and price there too (#407).
+TRADE_COLUMNS = (
+    "date",
+    "num",
+    "description",
+    "transfer",
+    "reconcile",
+    "shares",
+    "price",
+    "increase",
+    "decrease",
+    "balance",
+)
 #: What the transfer cell shows for a transaction of more than two splits.
 SPLIT_LABEL = "-- Split Transaction --"
 _TRANSACTION_FIELDS = ("date", "num", "description", "transfer", "increase", "decrease")
@@ -120,6 +135,11 @@ def _frac(value: Money) -> Fraction:
 
 def _trade_cells(holder) -> dict[str, str]:
     return {column: getattr(holder, column).strip() for column in _TRADE_COLUMNS}
+
+
+TradeField = Literal["shares", "price", "amount"]
+#: What changing one of shares, price, or amount may work out again.
+TRADE_CHOICES: tuple[TradeField, ...] = ("shares", "price", "amount")
 
 
 @dataclass
@@ -237,6 +257,19 @@ class Draft:
                 setattr(self, "decrease" if column == "increase" else "increase", "")
 
 
+@dataclass(frozen=True)
+class TradeQuestion:
+    """Shares, price, and amount were all filled and one changed: which other one
+    should change to match (#407)?"""
+
+    holder: Any
+    #: The cell that changed, and what it is.
+    column: str
+    changed: TradeField
+    #: The two that could be worked out again, in the order offered.
+    choices: tuple[TradeField, ...]
+
+
 @dataclass(frozen=True, slots=True)
 class SheetRow:
     kind: str
@@ -291,6 +324,8 @@ class RegisterSheet:
         self.security_accounts: frozenset[str] = frozenset()
         #: Earlier descriptions in this register, most recent first.
         self.descriptions: list[str] = []
+        #: Earlier notes or memos for one description, as last read (#407).
+        self._note_choices: tuple[tuple[str, bool], tuple[str, ...]] | None = None
         self.debit_heading, self.credit_heading = "Increase", "Decrease"
         #: The security this account holds, or None for an account kept in a currency.
         self.security: Commodity | None = None
@@ -298,6 +333,8 @@ class RegisterSheet:
         self.share_fraction = 1
         self.enabled = True
         self.disabled_reason = ""
+        #: Asked when shares, price, and amount were all filled and one changed.
+        self.trade_question: TradeQuestion | None = None
         if view is not None:
             # Read in the background through the book server (#389).
             self.apply_view(view, keep_cursor=False)
@@ -323,7 +360,27 @@ class RegisterSheet:
     @property
     def columns(self) -> tuple[str, ...]:
         """The columns this register shows, in display order."""
-        return SECURITY_COLUMNS if self.security is not None else COLUMNS
+        if self.security is not None:
+            return SECURITY_COLUMNS
+        return TRADE_COLUMNS if self.shows_trades() else COLUMNS
+
+    def shows_trades(self) -> bool:
+        """Whether a security moves through this cash register: a stored transaction
+        here has a split in one, or the transaction being entered does."""
+        if not self.security_accounts:
+            return False
+        if any(self._holds_security(line) for line in self.draft.lines):
+            return True
+        return any(
+            split.account in self.security_accounts
+            for row in self.ledger_rows
+            for split in row.transaction.splits
+        )
+
+    def _security_leg(self, transaction: Transaction):
+        """The one split of ``transaction`` in a security, or None."""
+        legs = [s for s in transaction.splits if s.account in self.security_accounts]
+        return legs[0] if len(legs) == 1 else None
 
     def reload(self, *, keep_cursor: bool = True, changed: Iterable[str] | None = None) -> None:
         """Re-read the ledger, keeping the cursor on its transaction where it still is.
@@ -607,7 +664,7 @@ class RegisterSheet:
             decrease=(-value).format() if value < 0 else "",
             handle=split.handle,
         )
-        if self.security is not None and split.account in self.security_accounts:
+        if split.account in self.security_accounts:
             self._load_trade(line, split)
         return line
 
@@ -661,7 +718,10 @@ class RegisterSheet:
                 return self.residual().format(parens_negative=True)
             return ""
         if row.current:
-            if column in _SECURITY_TRANSACTION_FIELDS:
+            # A cash register's collapsed row shows the security leg's shares and
+            # price as stored (they are typed in its split lines, #407).
+            stored_trade = self.security is None and column in _TRADE_FIELDS
+            if column in _SECURITY_TRANSACTION_FIELDS and not stored_trade:
                 if draft.expanded and column in ("transfer", *_TRADE_COLUMNS):
                     return SPLIT_LABEL if column == "transfer" else ""
                 return draft.cell(column)
@@ -692,6 +752,13 @@ class RegisterSheet:
             return ledger_row.credit.format() if ledger_row.credit else ""
         if column == "balance":
             return ledger_row.running.format(parens_negative=True)
+        if column in ("shares", "price") and self.security is None:
+            leg = self._security_leg(ledger_row.transaction)
+            if leg is None or not leg.quantity:
+                return ""
+            if column == "shares":
+                return shares_text(abs(leg.quantity))
+            return trade_price_text(trade_price(_frac(leg.value), _frac(leg.quantity)))
         if column == "shares":
             return shares_text(ledger_row.shares) if ledger_row.shares else ""
         if column == "price":
@@ -727,7 +794,10 @@ class RegisterSheet:
         if not self.enabled and row.kind == BLANK:
             return ()
         if row.kind == SPLIT:
-            return _SECURITY_SPLIT_FIELDS if self.security is not None else _SPLIT_FIELDS
+            assert row.line is not None
+            line = self.draft.lines[row.line]
+            trades = self.security is not None or self._holds_security(line)
+            return _SECURITY_SPLIT_FIELDS if trades else _SPLIT_FIELDS
         if row.kind == NOTES:
             if not self.enabled and row.register_row is None:
                 return ()
@@ -827,12 +897,41 @@ class RegisterSheet:
                 self.account_names if self.rows[self.cursor].kind == SPLIT else self.transfer_names
             )
             return quickfill_account(typed, names)
-        if self.column == "description" and self.rows[self.cursor].kind not in (SPLIT, NOTES):
+        kind = self.rows[self.cursor].kind
+        if self.column == "description" and kind not in (SPLIT, NOTES):
             if self.draft.source is None:
                 found = quickfill_description(typed, self.descriptions)
                 if found is not None:
                     return found, []
+        elif self.column == "description":
+            # A note or a split's memo completes from those written for the same
+            # description before, beginning with or containing what is typed (#407).
+            found = complete_note(typed, self._earlier_notes(memos=kind == SPLIT))
+            if found is not None:
+                return found, []
         return typed, []
+
+    def _earlier_notes(self, *, memos: bool) -> tuple[str, ...]:
+        """Notes (or memos) of earlier transactions with the draft's description,
+        read once for each description."""
+        description = self.draft.description.strip()
+        key = (description, memos)
+        cached = self._note_choices
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        source = self.draft.source
+        try:
+            found = book_server(self.db).earlier_notes(
+                EarlierNotes(
+                    description=description,
+                    memos=memos,
+                    exclude=source.handle if source is not None else None,
+                )
+            )
+        except ApiError:
+            found = ()
+        self._note_choices = (key, found)
+        return found
 
     def date_key(self, text: str, key: str) -> str | None:
         """A date shortcut applied to ``text``; None lets the key be typed."""
@@ -893,15 +992,9 @@ class RegisterSheet:
             self.column = saved
         elif column == "description" and row.kind not in (SPLIT, NOTES) and text:
             self.propose()
-        if (
-            self.security is not None
-            and column in _TRADE_COLUMNS
-            and row.kind
-            in (
-                TRANSACTION,
-                BLANK,
-                SPLIT,
-            )
+        if column in _TRADE_COLUMNS and (
+            (self.security is not None and row.kind in (TRANSACTION, BLANK, SPLIT))
+            or (row.kind == SPLIT and self._trade_holder(row) is not None)
         ):
             return self._fill_trade(row, column)
         return True
@@ -911,6 +1004,8 @@ class RegisterSheet:
     def _trade_holder(self, row: SheetRow) -> Draft | Line | None:
         """What holds the trade cells of ``row``: the draft, or a split line in a security."""
         if row.kind != SPLIT:
+            if self.security is None:
+                return None
             return None if self.draft.expanded else self.draft
         assert row.line is not None
         line = self.draft.lines[row.line]
@@ -920,16 +1015,41 @@ class RegisterSheet:
         handle = self.account_names.get(line.account.strip())
         return handle is not None and handle in self.security_accounts
 
-    def _read_shares(self, text: str) -> Decimal | None:
-        """Typed shares, arithmetic evaluated; ``EntryInputError`` when unreadable."""
-        return parse_entry_amount(text, "auto", self.share_fraction)
+    def _read_shares(self, text: str, holder: Draft | Line | None = None) -> Decimal | None:
+        """Typed shares, arithmetic evaluated; ``EntryInputError`` when unreadable.
 
-    def _fill_trade(self, row: SheetRow, column: str) -> bool:
-        """Work out the third of shares, price, and amount from the two typed (#323)."""
+        A split line's shares round to its own security's unit, which in a cash
+        register is not the register's (#407).
+        """
+        fraction = self.share_fraction
+        if isinstance(holder, Line):
+            account = self.accounts.get(self.account_names.get(holder.account.strip(), ""))
+            if account is not None and account.commodity_scu:
+                fraction = account.commodity_scu
+        return parse_entry_amount(text, "auto", fraction)
+
+    def _fill_trade(self, row: SheetRow, column: str, recompute: TradeField | None = None) -> bool:
+        """Work out the third of shares, price, and amount from the two typed (#323).
+
+        When all three were already filled, changing one changes neither of the
+        others until the question in :attr:`trade_question` is answered (#407).
+        """
         holder = self._trade_holder(row)
         if holder is None:
             return True
         if getattr(holder, column).strip() == holder.settled.get(column, ""):
+            return True
+        changed: TradeField = "amount" if column in ("increase", "decrease") else column  # type: ignore[assignment]
+        settled = holder.settled
+        was_full = bool(
+            settled.get("shares")
+            and settled.get("price")
+            and (settled.get("increase") or settled.get("decrease"))
+        )
+        if recompute is None and was_full and getattr(holder, column).strip():
+            self.trade_question = TradeQuestion(
+                holder, column, changed, tuple(f for f in TRADE_CHOICES if f != changed)
+            )
             return True
         amount_text = holder.increase.strip() or holder.decrease.strip()
         source = self.draft.source
@@ -943,9 +1063,10 @@ class RegisterSheet:
                     shares=holder.shares,
                     price=holder.price,
                     amount=amount_text,
-                    changed="amount" if column in ("increase", "decrease") else column,  # type: ignore[arg-type]
+                    changed=changed,
                     currency=(source.currency if source else None)
                     or book_server(self.db).transaction_currency(),
+                    recompute=recompute,
                 )
             )
         except ApiError as error:
@@ -968,6 +1089,27 @@ class RegisterSheet:
         if isinstance(holder, Line):
             self._grow_lines()
         return True
+
+    def answer_trade(self, choice: TradeField | None) -> None:
+        """Answer :attr:`trade_question`: work out ``choice`` again from the other
+        two, or with ``None`` put the changed cell back as it was."""
+        question = self.trade_question
+        self.trade_question = None
+        if question is None:
+            return
+        holder = question.holder
+        if choice is None:
+            for name, text in holder.settled.items():
+                setattr(holder, name, text)
+            self._rebuild()
+            return
+        row = next(
+            (candidate for candidate in self.rows if self._trade_holder(candidate) is holder),
+            None,
+        )
+        if row is not None:
+            self._fill_trade(row, question.column, recompute=choice)
+            self._rebuild()
 
     def _quantity(self, holder: Draft | Line, handle: str | None) -> Money | None:
         """The shares a draft or line saves, signed like its amount; None when blank.
@@ -993,7 +1135,7 @@ class RegisterSheet:
             size = abs(source.quantity)
             typed_sign = -1 if text.startswith("-") else 1
         else:
-            value = self._read_shares(text)
+            value = self._read_shares(text, holder)
             if value is None:
                 return None
             size = abs(Money(value))
@@ -1515,7 +1657,7 @@ class RegisterSheet:
                     "Enter an amount, or arithmetic such as 12.50+3.", "increase", index
                 )
             quantity = None
-            if self.security is not None and self._holds_security(line):
+            if self._holds_security(line):
                 try:
                     quantity = self._quantity(line, line.handle)
                 except EntryInputError:

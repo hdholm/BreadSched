@@ -361,18 +361,29 @@ def fill_trade(
     *,
     share_fraction: int,
     currency_fraction: int,
+    recompute: Literal["shares", "price", "amount"] | None = None,
 ) -> TradeFill:
     """Shares, price, and amount with the third worked out from the two just typed.
 
     ``changed`` is the field just left. Shares or a price recompute the amount
     when the other is known; an amount recomputes the price when shares are
-    known, else the shares from the price. Signs are the caller's: every value
+    known, else the shares from the price. With all three already filled the
+    caller asks which to change and names it in ``recompute`` (#407), and that
+    one is worked out from the other two. Signs are the caller's: every value
     here is a size. A value that cannot be worked out (no shares to divide by)
     is left as it was.
     """
     shares = abs(shares) if shares is not None else None
     price = abs(price) if price is not None else None
     amount = abs(amount) if amount is not None else None
+    if recompute is not None and recompute != changed:
+        if recompute == "amount" and shares is not None and price is not None:
+            amount = _round(Fraction(shares) * Fraction(price), currency_fraction)
+        elif recompute == "price" and shares and amount is not None:
+            price = trade_price(amount, shares)
+        elif recompute == "shares" and price and amount is not None:
+            shares = _round(Fraction(amount) / Fraction(price), share_fraction)
+        return TradeFill(shares, price, amount)
     if changed in ("shares", "price"):
         if shares is not None and price is not None:
             amount = _round(Fraction(shares) * Fraction(price), currency_fraction)

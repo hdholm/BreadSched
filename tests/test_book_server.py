@@ -2413,6 +2413,26 @@ def test_security_prices_are_listed_and_saved_alike(target, book):
     assert refused.value.code == "security.symbol.duplicate"
 
 
+def test_earlier_notes_read_alike(target, book):
+    """#407: notes and memos to complete from, the same in-process and over HTTP."""
+    from breadsched.gen.services.autocomplete import EarlierNotes, earlier_notes
+
+    api, db = target.api, target.db
+    dentist = Transaction.simple(date(2026, 9, 6), "Dentist", book.rent, book.checking, "90")
+    dentist.notes = "Filling, Dr. Ames"
+    dentist.splits[0].memo = "copay"
+    with db.transaction("Dentist") as txn:
+        db.add_transaction(dentist, txn)
+    for request in (
+        EarlierNotes(description="dentist"),
+        EarlierNotes(description="Dentist", memos=True),
+        EarlierNotes(description="Dentist", exclude=dentist.handle),
+        EarlierNotes(description=""),
+    ):
+        assert api.earlier_notes(request) == earlier_notes(db, request).value
+    assert api.earlier_notes(EarlierNotes(description="Dentist")) == ("Filling, Dr. Ames",)
+
+
 def test_entry_input_reads_alike(target, book):
     from test_specific_lots import _fund
 
@@ -2450,6 +2470,23 @@ def test_entry_input_reads_alike(target, book):
         )
     )
     assert filled.amount == Decimal("250.00")
+    # #407: with all three filled, the one asked for is worked out again.
+    asked = api.entry_trade(
+        ReadEntryTrade(
+            account.handle,
+            shares="10",
+            price="25",
+            amount="300",
+            changed="amount",
+            currency=usd.handle,
+            recompute="shares",
+        )
+    )
+    assert (asked.shares, asked.price, asked.amount) == (
+        Decimal("12.000"),
+        Decimal("25"),
+        Decimal("300.00"),
+    )
     with pytest.raises(ApiError) as refused:
         api.entry_trade(ReadEntryTrade(book.checking, shares="1", price="1"))
     assert refused.value.code == "entry.account.not_security"

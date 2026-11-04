@@ -10,6 +10,36 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a313 - 2026-11-04
+
+Fixes three field reports (#404, #406, #407).
+
+- **Amounts need no leading zero** (#404). `.1`, `-.1`, `(.5)`, and `1+.5` are read
+  wherever an amount is typed; a separator with no digit before it is always the
+  decimal point.
+- **Desktop columns move, resize sensibly, and are remembered** (#406). Every
+  table's columns drag into another order, or move with the arrows in its column
+  chooser (the first column stays first). Only one column takes spare width (the
+  description), so narrowing another widens it rather than a neighbour. Order and
+  widths are remembered by title. The register's account list opens above the row
+  when there is no room below, so the new transaction at the bottom shows its whole
+  list.
+- **Accounts columns** (#407): **Balance** in what the account holds (shares, or its
+  own currency), **Value** in the reporting currency, **Price**, and **Last Quote
+  Update** (formerly *Quote evidence*), with the quote's date and source.
+- **Notes complete from earlier ones** (#407). In the desktop register a notes line
+  or a split's memo completes from those written for the same description, one
+  beginning with what is typed first, else one containing it. The book server's
+  `earlier_notes` (`GET /api/v1/entry/notes`) serves them, with READ.
+- **A security leg in a cash register** (#407). A cash register that a security moved
+  through shows its security legs' shares and price, and a split line in a security
+  takes them, on the desktop and in the browser; the browser no longer refuses such
+  a line for lacking shares it could not take.
+- **Changing a trade asks** (#407). With shares, price, and amount all filled,
+  changing one asks which of the other two should change to match, or Cancel puts
+  it back. `ReadEntryTrade.recompute` (`recompute` on `/entry/trade`) names the one
+  to work out again.
+
 ## 0.2.0a312 - 2026-11-04
 
 Begins decision 0005 (#397).

@@ -1460,6 +1460,35 @@ def test_a_security_register_shows_and_takes_shares(page, served):
     assert sorted(t.handle for t in db.iter_transactions()) == before
 
 
+def test_a_cash_register_shows_a_security_leg_and_asks_which_value_changes(page, served):
+    """#407: the checking register shows a purchase's shares and price, and changing
+    one of three filled values asks which other changes."""
+    db, httpd = served
+    account, cash = _add_fund(db)
+    page.goto("about:blank")
+    page.goto(f"http://127.0.0.1:{httpd.server_port}/#token={httpd.token}")
+    _open_register(page)
+    page.locator("select").first.select_option(cash.handle)
+    page.wait_for_selector("th:has-text('Shares')")
+    row = page.locator("tr:has-text('Fund buy')").first
+    assert "10.123" in row.inner_text() and "24.696236" in row.inner_text()
+
+    # In the fund's own register, all three are filled; changing the amount asks.
+    page.locator("select").first.select_option(account.handle)
+    page.wait_for_selector("th:has-text('Shares Held')")
+    page.locator("tr:has-text('Fund buy')").first.click()
+    buy = page.locator("tr.entry-row [aria-label$='buy']").first
+    buy.fill("300")
+    buy.press("Tab")
+    page.wait_for_selector(".trade-question")
+    assert "You changed the amount." in page.locator(".trade-question").inner_text()
+    page.get_by_role("button", name="Change the price").click()
+    page.wait_for_function(
+        "() => [...document.querySelectorAll('tr.entry-row input.num')]"
+        ".some((node) => node.value === '29.635484')"
+    )
+
+
 def test_deleting_a_rule_asks_first(page, served):
     # #335: every delete asks before it removes anything, in the browser too.
     from breadsched.gen.services.categorization import list_rules
