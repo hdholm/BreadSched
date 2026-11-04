@@ -239,7 +239,7 @@ to attach it to a claim.
 
 BreadSched plans with **jars**. Every scheduled payment (a bill such as rent) and
 every scheduled estimate (such as groceries) is a jar, and so is every
-[savings goal](#savings-goals). Money flows through them in three steps:
+[savings goal](#savings-goals). Money flows through them in four steps:
 
 1. **Planned income fills the jars.** Each occurrence of a scheduled payment or
    estimate is filled by the income that arrives in its cycle, the time since its
@@ -259,7 +259,14 @@ every scheduled estimate (such as groceries) is a jar, and so is every
    has several jars and the spending could belong to any of them, it shows as
    **Unmatched spending** in that account instead. Closing a goal releases its
    money.
-3. **Views read the same dated events.** The Dashboard holds the jars of
+3. **An estimate's leftover lapses.** An estimate is an allowance for its period,
+   from its date to the day before its next occurrence. The day after the period
+   ends, whatever it left is released (**Lapsed**), and an overspent period is
+   brought back to zero the same way, so nothing carries into the next period.
+   Money that should carry forward belongs in a [savings goal](#savings-goals), or
+   in an estimate over the period it really covers, such as a yearly one. A
+   scheduled payment's money stays in its jar until it is paid or skipped.
+4. **Views read the same dated events.** The Dashboard holds the jars of
    commitments that are filling now; the Plan compares planned and actual amounts
    by category; [Budget jars](#budget-jars) shows each jar's fills, planned and
    actual draws, and level by period and account; and the Projection carries
@@ -284,10 +291,11 @@ estimate, starting in June, plans about 600 of groceries on the 20th of each mon
 - *Plan.* June's Groceries row shows 600 planned and 550 actual, a variance of 50
   under plan.
 - *Budget jars.* The Groceries jar in Expenses:Groceries shows June filled 600,
-  planned 600, actual 550, and a level of 50. In July nothing has been spent yet,
-  so it is filled and planned 600 with no actual, and its level is 650: the money
-  set aside is still there. Had you skipped **Match**, the 550 would still be
-  June's actual, because it was posted to Expenses:Groceries.
+  planned 600, actual 550, and a level of 50: until July 19 the 50 is still June's
+  to spend. On July 20 June's period ends and the 50 lapses, so July shows filled
+  and planned 600, no actual, lapsed 50, and a level of 600, the money set aside
+  for July. Had you skipped **Match**, the 550 would still be June's actual,
+  because it was posted to Expenses:Groceries.
 - *Projection.* The paycheck and the groceries estimate continue as dated events
   in every future month; a matched actual takes the place of its planned
   occurrence.
@@ -973,14 +981,19 @@ the Plan's range, bundled by account: the expense account of a scheduled payment
 estimate (or, for a payment with no expense, the loan or asset it pays into), and
 the account of a savings goal. For each period it lists what was **Filled** from
 income, the **Planned** and **Actual** draws, their **Variance** (actual less
-planned), and the jar's **Level** at the period's end. Open an account to see each
+planned), what estimates' ended periods left and released (**Lapsed**, in
+parentheses when a period was overspent), and the jar's **Level** at the period's
+end. Open an account to see each
 jar on its own. Each account also has two charts, each with a table of its exact
 values beside it: **planned and actual** draws side by side for every period, and
 **jar levels**, each jar's level at the end of the range beside its target (the next
 planned payment, or a goal's target amount). Hover over a column to see its exact
-amount. A level accounts for everything before the range too: every fill and every
-actual draw since the schedule began, so money an earlier month left over (or
-overspent) is carried in. Every transaction posted to the account counts as an actual
+amount. A level accounts for everything before the range too: every fill, actual
+draw, and lapse since the schedule began. A scheduled payment's earlier leftovers (or
+overspending) are carried in; an estimate's lapse at the end of each period, so its
+level is only what is set aside for its current and coming periods. A period that
+ends after today is shown lapsing what it would hold if nothing more were spent.
+Every transaction posted to the account counts as an actual
 draw, matched or not, so an account's actual is the same as its Plan row; spending
 that could belong to more than one jar in the account is listed as **Unmatched
 spending**. Amounts in different currencies

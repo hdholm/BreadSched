@@ -23,13 +23,21 @@ every savings goal is a jar for its account.
   account's actual always equals the Plan's. A refund draws a negative amount. A
   goal is drawn when it is closed (its earmark is released, usually because the
   money was spent).
+* **Lapsing.** An estimate is an allowance for its period, from its date to the
+  day before its next occurrence (decision 0005). The day after a period ends,
+  whatever that period left is released (``lapsed``), and an overspent period is
+  brought back to zero the same way, so nothing carries into the next period. What
+  income has already set aside for later occurrences stays. A period that ends
+  after today lapses, in the report, with what it would hold if nothing more were
+  spent. A bill's money stays until it is drawn.
 * **Reporting.** Every fill, planned draw, and actual draw is dated. Periods
   (month, quarter, year) only gather those dated events; nothing is spread into
   monthly cells. Jars are bundled by account, and a jar's level at a period's end
-  is what it holds then: every fill less every actual draw since the schedule
-  began, so what earlier occurrences left over or overspent is carried in, and an
-  occurrence never matched to an actual keeps its money in the jar until it is
-  matched or skipped. A goal's level is its whole earmark.
+  is what it holds then: every fill less every actual draw and lapse since the
+  schedule began. What a bill's earlier occurrences left over or overspent is
+  carried in, and a bill never matched to an actual keeps its money in the jar until
+  it is matched or skipped; an estimate's earlier periods have lapsed. A goal's
+  level is its whole earmark.
 
 Amounts are in each jar's currency (the schedule's currency or the reporting
 currency, and the goal account's commodity); totals never add currencies together.
@@ -84,7 +92,8 @@ class JarKind:
 
 @dataclass(frozen=True, slots=True)
 class JarEvent:
-    """One dated change: ``fill``, a ``planned`` draw, or an ``actual`` draw."""
+    """One dated change: ``fill``, a ``planned`` draw, an ``actual`` draw, or what an
+    estimate's ended period left, ``lapsed`` (negative when it was overspent)."""
 
     when: date
     kind: str
@@ -103,6 +112,8 @@ class JarPeriod:
     planned: Money
     actual: Money
     level: Money
+    #: What estimates' ended periods released (negative: overspending written off).
+    lapsed: Money = field(default_factory=lambda: Money(0))
 
     @property
     def variance(self) -> Money:
@@ -327,6 +338,61 @@ def _unmatched_draws(
     return found
 
 
+def _lapses(
+    schedule: ScheduledTransaction, events: list[JarEvent], through: date
+) -> list[JarEvent]:
+    """What each period of an estimate's jar left, released the day after it ends.
+
+    The release brings the jar to what income has already set aside for the
+    occurrences still to come, so a leftover (or an overspend) from the ended
+    period, matched or not, never carries forward. A period that ends after today
+    lapses with what it holds by then if nothing more is spent, as every later level
+    assumes; the report needs none after ``through``.
+    """
+    planned = sorted((event for event in events if event.kind == "planned"), key=lambda e: e.when)
+    due = {event.occurrence: event.when for event in planned}
+    found: list[JarEvent] = []
+    released = Money(0)
+    for index, occurrence in enumerate(planned):
+        if index + 1 < len(planned):
+            lapses_on = planned[index + 1].when
+        else:
+            lapses_on = _period_end(schedule, occurrence.when) + timedelta(days=1)
+        if lapses_on > through:
+            break
+        before = [event for event in events if event.when < lapses_on]
+        level = (
+            sum((e.amount for e in before if e.kind == "fill"), Money(0))
+            - sum((e.amount for e in before if e.kind == "actual"), Money(0))
+            - released
+        )
+        kept = sum(
+            (
+                e.amount
+                for e in before
+                if e.kind == "fill" and due.get(e.occurrence, lapses_on) >= lapses_on
+            ),
+            Money(0),
+        )
+        amount = level - kept
+        if amount:
+            found.append(JarEvent(lapses_on, "lapsed", amount, occurrence.occurrence))
+            released = released + amount
+    return found
+
+
+def _period_end(schedule: ScheduledTransaction, when: date) -> date:
+    """The last day of an estimate's period: the day before its next occurrence, or
+    for a last occurrence its end date (its own date when it has none)."""
+    following = schedule.recurrence.next_after(when)
+    while following is not None and following in schedule.skipped:
+        following = schedule.recurrence.next_after(following)
+    if following is not None:
+        return following - timedelta(days=1)
+    end = schedule.recurrence.end
+    return end if end is not None and end >= when else when
+
+
 # ----------------------------------------------------------------------- goals
 
 
@@ -395,8 +461,9 @@ def _periods(
         filled = sum((e.amount for e in inside if e.kind == "fill"), Money(0))
         planned = sum((e.amount for e in inside if e.kind == "planned"), Money(0))
         actual = sum((e.amount for e in inside if e.kind == "actual"), Money(0))
-        level = level + filled - actual
-        found.append(JarPeriod(first, last, label, filled, planned, actual, level))
+        lapsed = sum((e.amount for e in inside if e.kind == "lapsed"), Money(0))
+        level = level + filled - actual - lapsed
+        found.append(JarPeriod(first, last, label, filled, planned, actual, level, lapsed))
     return tuple(found)
 
 
@@ -419,6 +486,7 @@ def _add(periods: Iterable[tuple[JarPeriod, ...]], labels) -> tuple[JarPeriod, .
                 sum((row[index].planned for row in rows), Money(0)),
                 sum((row[index].actual for row in rows), Money(0)),
                 sum((row[index].level for row in rows), Money(0)),
+                sum((row[index].lapsed for row in rows), Money(0)),
             )
         )
     return tuple(found)
@@ -469,11 +537,17 @@ def budget_jars(
         )
 
     for (handle, account), (schedule, currency, events) in scheduled.items():
+        if schedule.placeholder:
+            events.extend(_lapses(schedule, events, end))
         opening = sum(
             (event.amount for event in events if event.when < start and event.kind == "fill"),
             Money(0),
         ) - sum(
-            (event.amount for event in events if event.when < start and event.kind == "actual"),
+            (
+                event.amount
+                for event in events
+                if event.when < start and event.kind in ("actual", "lapsed")
+            ),
             Money(0),
         )
         events.sort(key=lambda item: (item.when, item.kind))

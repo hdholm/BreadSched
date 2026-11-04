@@ -39,6 +39,7 @@ def _period(item: JarPeriod) -> dict[str, object]:
         "planned": item.planned,
         "actual": item.actual,
         "variance": item.variance,
+        "lapsed": item.lapsed,
         "level": item.level,
     }
 

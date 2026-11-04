@@ -3,8 +3,9 @@
 Part of the [BreadSched design](../../../DESIGN.md); see
 [Planning](../planning.md#event-driven-plan).
 
-- **Status:** accepted, 2026-11-04 (#397), after review on 2026-10-30. To be built
-  in the four phases at the end; nothing is built yet.
+- **Status:** accepted, 2026-11-04 (#397), after review on 2026-10-30. Built in the
+  four phases at the end. So far an estimate's jar lapses at the end of each period
+  (0.2.0a312); allocations and the rest are still to come.
 - **Decision:** an actual is matched to the plan *by split and amount*. One split
   may count toward one planned occurrence, several splits of one transaction toward
   several occurrences, and several actuals toward one occurrence, each for part or

@@ -10,6 +10,25 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a312 - 2026-11-04
+
+Begins decision 0005 (#397).
+
+- **An estimate's leftover lapses at the end of its period.** An estimate's period
+  runs from its date to the day before its next occurrence (through its end date
+  when it is the last). The day after it ends, Budget jars release whatever the
+  period left, matched or not, as a **Lapsed** event, and bring an overspent period
+  back to zero the same way, so nothing carries into the next period. What income
+  has already set aside for later occurrences stays. A period ending after today
+  lapses in the report with what it would hold if nothing more were spent, so an
+  estimate's future levels no longer grow month after month. A scheduled payment's
+  jar still carries its leftovers until it is paid or skipped.
+- **A Lapsed column** in Budget jars on the desktop, in the browser, on the command
+  line (`breadsched jars`, and `lapsed` in its JSON and `/api/budget-jars`), and in
+  print.
+- **Decision 0005 accepted** with a usage model (commitments, estimates, savings
+  goals, and budget jars, and when to use which) and four worked examples.
+
 ## 0.2.0a311 - 2026-10-30
 
 Fixes a field report (#401).
