@@ -140,6 +140,12 @@ from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.plan import PlanBounds, PlanQuery, PlanQueryResult
 from ..gen.services.plan_cells import PlanCellDetail, PlanCellQuery
+from ..gen.services.plan_matching import (
+    AllocateSplit,
+    OccurrenceMatching,
+    SplitNotPlanned,
+    TransactionMatching,
+)
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
     AcceptedReimbursements,
@@ -1211,6 +1217,38 @@ class HttpBookClient:
         path = f"/transactions/{quote(transaction, safe='')}/plan-matches"
         found = self._call("GET", path, {"window_days": window_days})
         return from_data(tuple[MatchCandidate, ...], found["candidates"], "candidates")
+
+    def occurrence_matching(self, key: str) -> OccurrenceMatching:
+        found = self._call("GET", "/plan/matching", {"occurrence": key})
+        return from_data(OccurrenceMatching, found)
+
+    def transaction_matching(self, transaction: str) -> TransactionMatching:
+        path = f"/transactions/{quote(transaction, safe='')}/matching"
+        return from_data(TransactionMatching, self._call("GET", path))
+
+    def allocate(self, request: AllocateSplit) -> TransactionMatching:
+        path = (
+            f"/transactions/{quote(request.transaction, safe='')}"
+            f"/splits/{quote(request.split, safe='')}/allocations"
+        )
+        body = {"occurrence": request.occurrence, "amount": request.amount}
+        return from_data(TransactionMatching, self._call("POST", path, body=body))
+
+    def mark_split_not_planned(self, request: SplitNotPlanned) -> TransactionMatching:
+        path = (
+            f"/transactions/{quote(request.transaction, safe='')}"
+            f"/splits/{quote(request.split, safe='')}/not-planned"
+        )
+        body = {"not_planned": request.not_planned}
+        return from_data(TransactionMatching, self._call("POST", path, body=body))
+
+    def close_occurrence(self, key: str) -> OccurrenceMatching:
+        found = self._call("POST", "/plan/occurrences/close", body={"occurrence": key})
+        return from_data(OccurrenceMatching, found)
+
+    def reopen_occurrence(self, key: str) -> OccurrenceMatching:
+        found = self._call("POST", "/plan/occurrences/reopen", body={"occurrence": key})
+        return from_data(OccurrenceMatching, found)
 
     # ------------------------------------------------------------ import review
 

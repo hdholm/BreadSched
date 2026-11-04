@@ -128,6 +128,14 @@ class ResolutionView(BaseView):
         self.unexpected_button = Gtk.Button(label="Mark unexpected")
         self.unexpected_button.connect("clicked", self._on_unexpected)
         buttons.append(self.unexpected_button)
+        # Decision 0005: match each split, for part or all of its amount.
+        self.split_button = Gtk.Button(label="Match by Split…")
+        self.split_button.set_tooltip_text(
+            "Count each split, for part or all of its amount, toward a planned item, "
+            "or mark a split not planned"
+        )
+        self.split_button.connect("clicked", self.open_split_matching)
+        buttons.append(self.split_button)
         detail.append(buttons)
         for key, button in (
             ("match", self.match_button),
@@ -142,6 +150,25 @@ class ResolutionView(BaseView):
         self.action_help.add_css_class("dim")
         detail.append(self.action_help)
         self._set_action_sensitivity()
+
+    def open_split_matching(self, *_args):
+        """Open the Match window for the chosen actual; Review refreshes when it closes."""
+        if self.db is None or self._transaction_handle is None:
+            return None
+        from ..dialogs.match_dialog import TransactionMatchWindow
+
+        root = self.get_root()
+        window = TransactionMatchWindow(
+            root if isinstance(root, Gtk.Window) else None, self.db, self._transaction_handle
+        )
+
+        def closing(_window) -> bool:
+            self.refresh()
+            return False
+
+        window.connect("close-request", closing)
+        window.present()
+        return window
 
     def _clear_list(self, widget: Gtk.ListBox) -> None:
         while (row := widget.get_row_at_index(0)) is not None:
@@ -299,6 +326,7 @@ class ResolutionView(BaseView):
         has_fsa = has_actual and self._detail is not None and bool(self._detail.roles)
         self.fsa_button.set_sensitive(has_fsa)
         self.unexpected_button.set_sensitive(has_actual)
+        self.split_button.set_sensitive(has_actual)
         help_keys: tuple[str, ...]
         if has_actual and has_candidate:
             help_keys = ("match", "reject", "skip", "unexpected")

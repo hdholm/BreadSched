@@ -628,7 +628,11 @@ match an actual, mark it unexpected, or review it. In **Resolve actuals**, each
 actual shows what it was for, where the money came from, and its notes; the summary
 of the one chosen lists its legs (• marks what it was for) and memos; and each
 candidate, ranked by category first, lists why it is offered and how much of an
-estimate remains, the buttons explain themselves on hover, and the
+estimate remains. **Match by Split…** there, **Actions → Match to Plan…** in the
+register, and **Match …** beside each scheduled item in a Plan value's detail open the
+[Match to Plan](../USER_GUIDE.md#actuals-and-planned-occurrences) windows, which count
+part or all of each split, mark a split not planned, and close or reopen an
+occurrence. In Resolve actuals, the buttons explain themselves on hover, and the
 line under them says what the available actions do. The Plan summary gives planned,
 actual, and variance through the as-of date; **Show** chooses Plan, Period actual,
 or Period variance for the table (see

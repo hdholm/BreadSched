@@ -146,6 +146,7 @@ from ..gen.services import lots as lot_service
 from ..gen.services import net_worth as net_worth_service
 from ..gen.services import payroll as payroll_service
 from ..gen.services import plan as plan_service
+from ..gen.services import plan_matching as matching_service
 from ..gen.services import quotes as quote_service
 from ..gen.services import receivables as receivable_service
 from ..gen.services import register_view as register_view_service
@@ -211,6 +212,12 @@ from ..gen.services.lots import SaleLots, SetSaleLots
 from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.plan import PlanBounds, PlanQuery, PlanQueryResult
+from ..gen.services.plan_matching import (
+    AllocateSplit,
+    OccurrenceMatching,
+    SplitNotPlanned,
+    TransactionMatching,
+)
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
     AcceptedReimbursements,
@@ -756,6 +763,26 @@ class LocalBookServer:
         self, transaction: str, window_days: int = 7
     ) -> tuple[MatchCandidate, ...]:
         return unwrap(review_service.match_candidates(self.db, transaction, window_days))
+
+    def occurrence_matching(self, key: str) -> OccurrenceMatching:
+        return unwrap(matching_service.occurrence_matching(self.db, key))
+
+    def transaction_matching(self, transaction: str) -> TransactionMatching:
+        return unwrap(matching_service.transaction_matching(self.db, transaction))
+
+    def allocate(self, request: AllocateSplit) -> TransactionMatching:
+        return unwrap(matching_service.allocate(self.db, request))
+
+    def mark_split_not_planned(self, request: SplitNotPlanned) -> TransactionMatching:
+        return unwrap(matching_service.mark_split_not_planned(self.db, request))
+
+    def close_occurrence(self, key: str) -> OccurrenceMatching:
+        request = matching_service.OccurrenceRequest(key)
+        return unwrap(matching_service.close_occurrence(self.db, request))
+
+    def reopen_occurrence(self, key: str) -> OccurrenceMatching:
+        request = matching_service.OccurrenceRequest(key)
+        return unwrap(matching_service.reopen_occurrence(self.db, request))
 
     # ------------------------------------------------------------ import review
 

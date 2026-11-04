@@ -212,7 +212,19 @@ breadsched review household.breadsched --transaction 3f2a --json
 it was for, where the money came from, and its notes; the planned items Review
 offers, ranked by category first, with **Close match** or **Possible match**, the
 reasons, and how much of an estimate remains; or why nothing is offered; and what
-each action does. Decide in the desktop application or the browser.
+each action does. Decide in the desktop application or the browser, or match by split
+here:
+
+```bash
+breadsched plan-allocate household.breadsched 3f2a:0 scheduled:…:2026-06-01 --amount 30
+breadsched plan-close household.breadsched scheduled:…:2026-06-01      # or --reopen
+```
+
+`plan-allocate` counts part or all of one plan leg (`TRANSACTION:INDEX`, the index
+`breadsched plan-allocate` prints, or a split handle) toward an occurrence; without
+`--amount` it counts all that is left of the split, and `--amount 0` removes it.
+`plan-close` closes an occurrence early so what remains lapses, and `--reopen` undoes
+that.
 
 ### Review due transactions
 

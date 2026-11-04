@@ -97,7 +97,26 @@ estimate of the same category in its period that the amount fits, or a commitmen
 within two days and 5% of its amount; otherwise *possible*. `services.review` gives
 each pending actual its `categories` (its plan legs' accounts), `funding`, and
 `notes`, and the detail its `splits` with memos, so every interface shows what an
-actual was for beside its candidates. With no candidate, `no_candidate_reason` searches 60 days either side for
+actual was for beside its candidates.
+
+`services.plan_matching` owns the Match windows' writes (phase 3): `allocate` sets,
+changes, or (amount zero) removes what one split counts toward one occurrence, by
+default all that is left of the split; `mark_split_not_planned` sets
+`Split.not_planned` and clears the split's allocations; `close_occurrence` and
+`reopen_occurrence` keep `closed_occurrences` on the schedule. Each refuses, under a
+stable `matching.*` code and leaving the book unchanged, a missing transaction,
+split, or occurrence, another currency, a closed-early occurrence the split is not
+already in, an amount of the other sign, or one that would pass the split's value.
+After each write the transaction's resolution follows from its plan legs (matched
+when every one is allocated in full or not planned, unexpected when all are not
+planned, otherwise unresolved), and a whole-transaction link (`planned_occurrence`)
+stays only while one occurrence holds every leg. `occurrence_matching` reads an
+occurrence's figures, what counts toward it, and the candidate splits on its category
+accounts in its period (none chosen); `transaction_matching` reads each plan leg
+with its allocations and the ranked occurrences that plan its account. They are the
+book server's `occurrence_matching`, `transaction_matching` (READ), `allocate`,
+`mark_split_not_planned`, `close_occurrence`, and `reopen_occurrence` (WRITE), with
+`/api/v1` routes, and `breadsched plan-allocate` and `plan-close` use them. With no candidate, `no_candidate_reason` searches 60 days either side for
 an open occurrence sharing an account and reports the first applicable cause: a
 nearby one in another currency, every nearby one rejected, the nearest outside the
 seven-day window, or no schedule using the accounts. `fsa_hint` classifies an FSA

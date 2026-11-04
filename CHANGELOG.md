@@ -10,6 +10,29 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a317 - 2026-11-04
+
+Decision 0005, phase 3: the Match windows (#397).
+
+- **Match to Plan, like reconciling.** From a planned occurrence (**Match …** in a
+  Plan value's detail), a window shows its expected, applied, and remaining amounts
+  and the splits in its period that could count toward it, none checked; checking one
+  counts the amount beside it, and **Close occurrence** / **Reopen occurrence** let
+  what remains lapse now or undo that. From a transaction (**Actions → Match to
+  Plan…** in the register, **Match by Split…** in Review), each plan leg lists its
+  ranked occurrences, takes part or all of its amount, and can be marked **Not
+  planned**. A transaction leaves Review once every plan leg is matched or not
+  planned.
+- **One write.** `services.plan_matching`: `allocate`, `mark_split_not_planned`,
+  `close_occurrence`, `reopen_occurrence`, and the reads `occurrence_matching` and
+  `transaction_matching`, as book-server operations (READ to read, WRITE to change)
+  with `/api/v1` routes (`GET /plan/matching`, `GET /transactions/{h}/matching`,
+  `POST /transactions/{h}/splits/{s}/allocations` and `/not-planned`,
+  `POST /plan/occurrences/close` and `/reopen`). Refusals keep the book unchanged
+  under `matching.*` codes. Splits gain `not_planned` (written only when set).
+- **Command line.** `breadsched plan-allocate TRANSACTION[:INDEX] OCCURRENCE
+  [--amount]` and `breadsched plan-close OCCURRENCE [--reopen]`.
+
 ## 0.2.0a316 - 2026-11-04
 
 Decision 0005, phase 2: Review proposes by what a transaction was for (#397).

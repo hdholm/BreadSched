@@ -6233,6 +6233,16 @@ class TestResolutionView:
             part for part in (", ".join(queued.categories), ", ".join(queued.funding)) if part
         )
         assert queued.categories and texts[2:] == [accounts, "Paid by phone"]
+        # Match by Split… opens the window from this actual.
+        from breadsched.gui.dialogs.match_dialog import TransactionMatchWindow
+
+        assert view.split_button.get_sensitive()
+        matcher = view.open_split_matching()
+        try:
+            assert isinstance(matcher, TransactionMatchWindow)
+            assert matcher.transaction == actual_handle
+        finally:
+            matcher.destroy()
 
     def test_candidates_and_actions_are_explained(self, app, window, populated_book):
         from breadsched.presentation import REVIEW_ACTION_HELP
@@ -9705,6 +9715,76 @@ class TestReceivablesDialog:
             dialog.destroy()
         [made] = [item for item in db.iter_scheduled() if item.handle not in before]
         assert made.name == "Rent" and made.recurrence.start == start
+
+    def test_the_match_windows_allocate_by_split_and_close_an_occurrence(
+        self, app, window, populated_book
+    ):
+        """Decision 0005 phase 3: Actions → Match to Plan… from the register, and the
+        window from an occurrence, write allocations through the book server."""
+        from breadsched.gen.lib import (
+            Money,
+            PeriodType,
+            Recurrence,
+            ScheduledSplit,
+            ScheduledTransaction,
+        )
+        from breadsched.gui.dialogs.match_dialog import (
+            OccurrenceMatchWindow,
+            TransactionMatchWindow,
+        )
+
+        db, rent_txn, rent_account, _cost = self._book(app, populated_book)
+        rent = getattr(rent_account, "handle", rent_account)
+        bank = next(split.account for split in rent_txn.splits if split.account != rent)
+        allowance = ScheduledTransaction(
+            name="Rent allowance",
+            recurrence=Recurrence(PeriodType.MONTH, interval=1, start=rent_txn.post_date),
+            splits=[
+                ScheduledSplit(rent, Money("5000")),
+                ScheduledSplit(bank, Money("-5000")),
+            ],
+        )
+        allowance.placeholder = True
+        with db.transaction("Allowance") as txn:
+            db.add_scheduled(allowance, txn)
+        key = allowance.occurrence_key(rent_txn.post_date)
+        assert window.lookup_action("register-match-to-plan") is not None
+        window.open_register(db.get_account_by_name("Assets:Checking Account").handle)
+        view = window._views["register"]
+        view.sheet.to_blank()
+        assert view.match_selected_to_plan() is None
+        assert view.sheet.select_transaction(rent_txn.handle)
+        matcher = view.match_selected_to_plan()
+        try:
+            assert isinstance(matcher, TransactionMatchWindow)
+            row = matcher.rows.get_row_at_index(0)
+            assert matcher.view.legs[0].candidates[0].key == key
+            row.entry.set_text("100")
+            row.match.emit("clicked")
+            [leg] = matcher.view.legs
+            assert [item.amount for item in leg.allocations] == [Money("100")]
+        finally:
+            matcher.destroy()
+
+        occurrence = OccurrenceMatchWindow(window, db, key)
+        try:
+            assert "Applied 100.00" in occurrence.totals.get_text()
+            row = occurrence.rows.get_row_at_index(0)
+            assert row.check.get_active()
+            # Unchecking removes it; checking with an amount puts it back.
+            row.check.set_active(False)
+            assert "Applied 0.00" in occurrence.totals.get_text()
+            row = occurrence.rows.get_row_at_index(0)
+            row.entry.set_text("250")
+            row.check.set_active(True)
+            assert "Applied 250.00" in occurrence.totals.get_text()
+            occurrence.close_button.emit("clicked")
+            assert occurrence.view.closed_early
+            assert occurrence.close_button.get_label() == "Reopen occurrence"
+            occurrence.close_button.emit("clicked")
+            assert not occurrence.view.closed_early
+        finally:
+            occurrence.destroy()
 
     def test_the_menu_and_register_actions_exist(self, app, window, populated_book):
         app.open_book(populated_book)

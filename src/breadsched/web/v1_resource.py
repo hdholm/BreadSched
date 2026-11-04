@@ -94,6 +94,12 @@ Resources so far, all under ``/api/v1``:
   (``occurrence``), ``/unexpected``, and ``/claim``; ``GET /plan/occurrences``
   (``start``, ``end``) and ``/plan/occurrences/lookup`` (``key``);
   ``GET /transactions/{handle}/plan-matches`` (``window_days``).
+* Matching by split (decision 0005): ``GET /plan/matching`` (``occurrence``) – an
+  occurrence's figures, allocations, and candidate splits;
+  ``GET /transactions/{handle}/matching`` – each plan leg and its occurrences;
+  ``POST /transactions/{handle}/splits/{split}/allocations`` (``occurrence``,
+  ``amount``; zero removes) and ``/not-planned`` (``not_planned``);
+  ``POST /plan/occurrences/close`` and ``/reopen`` (``occurrence``).
 * ``GET /held-imports`` – GnuCash changes held back from reconciled transactions;
   ``POST /held-imports/resolve`` (``ResolveHeldImports``).
 * ``GET /account-suggestions`` – loan/asset links and card settings the book suggests;
@@ -243,6 +249,7 @@ from ..gen.services.lots import SetSaleLots
 from ..gen.services.payroll import CreatePaycheck, PayChange, SavePayrollTemplate
 from ..gen.services.plan import PlanQuery
 from ..gen.services.plan_cells import PlanCellQuery
+from ..gen.services.plan_matching import AllocateSplit, SplitNotPlanned
 from ..gen.services.quotes import SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import RecordWriteOff, SaveReceivable
 from ..gen.services.reconciliations import (
@@ -356,6 +363,12 @@ __all__ = [
     "held_imports_resolve",
     "plan_matches_get",
     "plan_occurrence_lookup",
+    "occurrence_matching_get",
+    "transaction_matching_get",
+    "split_allocate_v1",
+    "split_not_planned_v1",
+    "occurrence_close_v1",
+    "occurrence_reopen_v1",
     "plan_occurrences_get",
     "review_claim_v1",
     "review_detail_get",
@@ -1415,6 +1428,50 @@ def plan_matches_get(api: Api, path: Path, query: QueryParams) -> dict:
     query.finish()
     assert window is not None
     return {"candidates": to_data(api.book.match_candidates(path["handle"], window))}
+
+
+def occurrence_matching_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    key = query.text("occurrence", required=True) or ""
+    query.finish()
+    return to_data(api.book.occurrence_matching(key))
+
+
+def transaction_matching_get(api: Api, path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.transaction_matching(path["handle"]))
+
+
+@dataclass(frozen=True, slots=True)
+class _Allocation:
+    occurrence: str
+    amount: Money | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _NotPlanned:
+    not_planned: bool = True
+
+
+def split_allocate_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    chosen = from_data(_Allocation, body, "request")
+    request = AllocateSplit(path["handle"], path["split"], chosen.occurrence, chosen.amount)
+    return to_data(api.book.allocate(request))
+
+
+def split_not_planned_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    chosen = from_data(_NotPlanned, body, "request")
+    request = SplitNotPlanned(path["handle"], path["split"], chosen.not_planned)
+    return to_data(api.book.mark_split_not_planned(request))
+
+
+def occurrence_close_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    chosen = from_data(_Occurrence, body, "request")
+    return to_data(api.book.close_occurrence(chosen.occurrence))
+
+
+def occurrence_reopen_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    chosen = from_data(_Occurrence, body, "request")
+    return to_data(api.book.reopen_occurrence(chosen.occurrence))
 
 
 def held_imports_get(api: Api, _path: Path, query: QueryParams) -> dict:

@@ -127,6 +127,12 @@ from ..gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ..gen.services.payroll import CreatePaycheck, PayChange, PayrollView, SavePayrollTemplate
 from ..gen.services.plan import PlanBounds, PlanQuery, PlanQueryResult
 from ..gen.services.plan_cells import PlanCellDetail, PlanCellQuery
+from ..gen.services.plan_matching import (
+    AllocateSplit,
+    OccurrenceMatching,
+    SplitNotPlanned,
+    TransactionMatching,
+)
 from ..gen.services.quotes import QuotePlan, QuoteUpdate, SetQuoteSource, StoreQuotes
 from ..gen.services.receivables import (
     AcceptedReimbursements,
@@ -827,6 +833,29 @@ class BookApi(Protocol):
     ) -> tuple[MatchCandidate, ...]:
         """Unresolved occurrences that could explain one actual, best first."""
         ...
+
+    # ---------------------------------------------- matching by split (0005)
+
+    def occurrence_matching(self, key: str) -> OccurrenceMatching:
+        """An occurrence's expected, applied, and remaining amounts, what counts
+        toward it, and the splits in its period that could."""
+        ...
+
+    def transaction_matching(self, transaction: str) -> TransactionMatching:
+        """A transaction's plan legs with their allocations and ranked occurrences."""
+        ...
+
+    def allocate(self, request: AllocateSplit) -> TransactionMatching:
+        """Count part or all of a split toward an occurrence; zero removes it."""
+        ...
+
+    def mark_split_not_planned(self, request: SplitNotPlanned) -> TransactionMatching: ...
+
+    def close_occurrence(self, key: str) -> OccurrenceMatching:
+        """Close an occurrence early: what remains of it is no longer expected."""
+        ...
+
+    def reopen_occurrence(self, key: str) -> OccurrenceMatching: ...
 
     # ------------------------------------------------------------ import review
 

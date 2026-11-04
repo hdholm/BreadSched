@@ -17,9 +17,11 @@ Every item planned for this stage is delivered; see `CHANGELOG.md` through
   [decision 0005](docs/design/decisions/0005-matching-actuals-to-plans.md)), in its
   four phases. Allocations with remaining amounts and estimates that lapse at the end
   of their period are built (0.2.0a312, 0.2.0a315), and so are category-first proposals
-  with the other account and notes (0.2.0a316); still to come are the Match windows in
-  GTK (with Close occurrence and partial allocations), and then the browser and
-  `plan-allocate`.
+  with the other account and notes (0.2.0a316), and the Match windows in GTK from the
+  Plan, the register, and Review, with partial allocations, *not planned*, Close
+  occurrence, and `plan-allocate` (0.2.0a317). Still to come: the window from
+  Scheduled, Upcoming, and Budget jars, the Plan's count of unmatched actuals, and the
+  browser's windows.
 
 ## At the first Beta
 

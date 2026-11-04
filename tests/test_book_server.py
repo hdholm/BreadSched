@@ -3289,3 +3289,47 @@ def test_editors_previews_save_nothing_alike(target, book):
             call()
         assert refused.value.code == code
     assert _snapshot(db) == before
+
+
+def test_matching_by_split_reads_and_writes_alike(target, book):
+    """Decision 0005 phase 3: the Match windows' reads and writes, the same in-process
+    and over HTTP, and a refusal over HTTP keeps its code."""
+    from breadsched.gen.lib import Split
+    from breadsched.gen.services.plan_matching import AllocateSplit, SplitNotPlanned
+
+    api, db = target.api, target.db
+    groceries = ScheduledTransaction(
+        name="Groceries",
+        recurrence=Recurrence(period=PeriodType.MONTH, interval=1, start=date(2026, 10, 1)),
+        splits=[
+            ScheduledSplit(book.groceries, Money("600")),
+            ScheduledSplit(book.checking, Money("-600")),
+        ],
+    )
+    groceries.placeholder = True
+    receipt = Transaction(post_date=date(2026, 10, 5), description="Market")
+    receipt.add_split(Split(book.groceries, Money("50"), memo="bread"))
+    receipt.add_split(Split(book.checking, Money("-50")))
+    with db.transaction("Setup") as txn:
+        db.add_scheduled(groceries, txn)
+        db.add_transaction(receipt, txn)
+    key = groceries.occurrence_key(date(2026, 10, 1))
+    leg = receipt.splits[0].handle
+
+    view = api.occurrence_matching(key)
+    assert (view.expected, view.applied, view.estimate) == (Money("600"), Money("0"), True)
+    assert [row.split for row in view.candidates] == [leg]
+    offers = api.transaction_matching(receipt.handle)
+    assert offers.legs[0].candidates[0].key == key
+
+    matched = api.allocate(AllocateSplit(receipt.handle, leg, key, Money("30")))
+    assert matched.legs[0].unallocated == Money("20")
+    assert api.occurrence_matching(key).applied == Money("30")
+    with pytest.raises(ApiError) as refused:
+        api.allocate(AllocateSplit(receipt.handle, leg, key, Money("60")))
+    assert refused.value.code == "matching.amount.too_large"
+
+    assert api.close_occurrence(key).closed_early
+    assert not api.reopen_occurrence(key).closed_early
+    marked = api.mark_split_not_planned(SplitNotPlanned(receipt.handle, leg))
+    assert marked.legs[0].not_planned and marked.legs[0].allocations == ()
