@@ -78,6 +78,18 @@ class ResolutionView(BaseView):
         self.actual_summary = Gtk.Label(xalign=0, wrap=True)
         self.actual_summary.add_css_class("summary-value")
         detail.append(self.actual_summary)
+        # The actual's notes and legs (• marks what it was for) with their memos. A
+        # long note or a receipt of many lines scrolls here rather than growing the
+        # view past the screen.
+        self.actual_legs = Gtk.Label(xalign=0, yalign=0, wrap=True, selectable=True)
+        self.actual_legs.add_css_class("dim")
+        legs_scroll = Gtk.ScrolledWindow(
+            child=self.actual_legs,
+            propagate_natural_height=True,
+            max_content_height=140,
+        )
+        legs_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        detail.append(legs_scroll)
 
         # What an FSA movement is and what to do with it (empty otherwise).
         self.fsa_hint = Gtk.Label(xalign=0, wrap=True)
@@ -160,6 +172,18 @@ class ResolutionView(BaseView):
             amount_label.add_css_class("numeric")
             amount_label.add_css_class("dim")
             box.append(amount_label)
+            # What it was for, where the money came from, and its notes (decision 0005).
+            accounts = " · ".join(
+                part
+                for part in (", ".join(transaction.categories), ", ".join(transaction.funding))
+                if part
+            )
+            for text in (accounts, transaction.notes):
+                if text:
+                    extra = Gtk.Label(label=text, xalign=0)
+                    extra.set_ellipsize(Pango.EllipsizeMode.END)
+                    extra.add_css_class("dim")
+                    box.append(extra)
             row.set_child(box)
             self.actual_list.append(row)
             if transaction.handle == selected:
@@ -173,6 +197,7 @@ class ResolutionView(BaseView):
             self._transaction_handle = None
             self._candidate_key = None
             self.actual_summary.set_text("No unresolved actual transactions.")
+            self.actual_legs.set_text("")
             self._clear_list(self.candidate_list)
             self.variance.set_text("")
             self._set_action_sensitivity()
@@ -187,6 +212,7 @@ class ResolutionView(BaseView):
         self._detail = None
         if self.db is None or self._transaction_handle is None:
             self.actual_summary.set_text("")
+            self.actual_legs.set_text("")
             self.variance.set_text("")
             self._set_action_sensitivity()
             return
@@ -196,9 +222,20 @@ class ResolutionView(BaseView):
             return
         self._detail = detail
         actual = detail.actual
+        legs = "\n".join(
+            f"{'• ' if split.category else '  '}{split.account_name}  {split.amount.format()}"
+            + (f"  ({split.memo})" if split.memo else "")
+            for split in detail.splits
+        )
         self.actual_summary.set_text(
             f"{actual.date.isoformat()} · {actual.description}\n"
             f"Actual amount: {actual.amount.format()}"
+        )
+        # Notes and legs can be long; they share the bounded, scrolling area.
+        self.actual_legs.set_text(
+            "\n".join(
+                part for part in (f"Notes: {actual.notes}" if actual.notes else "", legs) if part
+            )
         )
         hint = detail.fsa_hint
         self.fsa_hint.set_text(hint or "")
@@ -210,7 +247,13 @@ class ResolutionView(BaseView):
             event = candidate.event
             text = (
                 f"{event.planned_date.isoformat()}  {event.description}\n"
-                f"{explained.label} · expected {event.expected_amount.format()}\n"
+                f"{explained.label} · expected {event.expected_amount.format()}"
+                + (
+                    f", {event.remaining_amount.format()} remains"
+                    if event.placeholder or event.applied_amount
+                    else ""
+                )
+                + "\n"
                 + "\n".join(f"• {reason}" for reason in explained.reasons)
             )
             label = Gtk.Label(label=text, xalign=0, wrap=True)

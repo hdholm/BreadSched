@@ -208,10 +208,11 @@ breadsched review household.breadsched
 breadsched review household.breadsched --transaction 3f2a --json
 ```
 
-`breadsched review` lists each actual transaction waiting for a decision, the
-planned items Review offers with **Close match** or **Possible match** and the
-reasons, or why nothing is offered, and what each action does. Decide in the desktop
-application or the browser.
+`breadsched review` lists each actual transaction waiting for a decision with what
+it was for, where the money came from, and its notes; the planned items Review
+offers, ranked by category first, with **Close match** or **Possible match**, the
+reasons, and how much of an estimate remains; or why nothing is offered; and what
+each action does. Decide in the desktop application or the browser.
 
 ### Review due transactions
 

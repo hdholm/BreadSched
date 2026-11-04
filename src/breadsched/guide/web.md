@@ -304,8 +304,11 @@ where it is marked *in advance* or *reminder*. See
 
 ## Review
 
-**Review** lists actual transactions waiting for a decision. Each planned item it
-offers shows **Close match** or **Possible match** and the reasons beneath it; the
+**Review** lists actual transactions waiting for a decision, each with what it was
+for, where the money came from, and its notes; the one chosen shows its legs with
+their memos. Each planned item it offers, ranked by category first, shows **Close
+match** or **Possible match**, the reasons beneath it, and how much of an estimate
+remains; the
 buttons explain themselves on hover, and **What each action does** lists them all.
 When nothing is offered, the page says why.
 

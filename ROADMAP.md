@@ -16,9 +16,10 @@ Every item planned for this stage is delivered; see `CHANGELOG.md` through
 - **Match actuals to plans by split and amount** (#397,
   [decision 0005](docs/design/decisions/0005-matching-actuals-to-plans.md)), in its
   four phases. Allocations with remaining amounts and estimates that lapse at the end
-  of their period are built (0.2.0a312, 0.2.0a315); still to come are category-first
-  proposals with the other account and notes, the Match windows in GTK (with Close
-  occurrence and partial allocations), and then the browser and command line.
+  of their period are built (0.2.0a312, 0.2.0a315), and so are category-first proposals
+  with the other account and notes (0.2.0a316); still to come are the Match windows in
+  GTK (with Close occurrence and partial allocations), and then the browser and
+  `plan-allocate`.
 
 ## At the first Beta
 

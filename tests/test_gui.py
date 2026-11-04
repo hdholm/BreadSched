@@ -6191,6 +6191,49 @@ class TestResolutionView:
 
         assert all(txn.handle != actual_handle for txn in book_server(app.db).review_queue())
 
+    def test_the_queue_and_summary_show_accounts_and_notes(self, app, window, populated_book):
+        """Decision 0005: an actual shows what it was for, where the money came from,
+        its legs with their memos, and its notes."""
+        from breadsched.gen.db.sqlite import DbSQLite
+
+        actual_handle, _key = self._add_matching_actual(populated_book)
+        db = DbSQLite()
+        db.load(populated_book)
+        stored = db.get_transaction(actual_handle)
+        stored.notes = "Paid by phone"
+        with db.transaction("Note") as txn:
+            db.commit_transaction(stored, txn)
+        db.close()
+        app.open_book(populated_book)
+        window.show_category("resolution")
+        view = window._views["resolution"]
+        view._transaction_handle = actual_handle
+        view._refresh_candidates()
+        legs = view.actual_legs.get_text()
+        assert legs.startswith("Notes: Paid by phone\n")
+        for split in stored.splits:
+            assert app.db.full_name(split.account) in legs
+        row = next(
+            row
+            for index in range(50)
+            if (row := view.actual_list.get_row_at_index(index)) is not None
+            and row.transaction_handle == actual_handle
+        )
+        texts = []
+        child = row.get_child().get_first_child()
+        while child is not None:
+            texts.append(child.get_label())
+            child = child.get_next_sibling()
+        from breadsched.api.local import book_server
+
+        [queued] = [
+            item for item in book_server(app.db).review_queue() if item.handle == actual_handle
+        ]
+        accounts = " · ".join(
+            part for part in (", ".join(queued.categories), ", ".join(queued.funding)) if part
+        )
+        assert queued.categories and texts[2:] == [accounts, "Paid by phone"]
+
     def test_candidates_and_actions_are_explained(self, app, window, populated_book):
         from breadsched.presentation import REVIEW_ACTION_HELP
 
@@ -11202,6 +11245,13 @@ class TestBoundedSizes:
             view.flush_refresh()
             if hasattr(view, "wait_for_background"):
                 view.wait_for_background()
+            if key == "resolution":
+                from breadsched.api.local import book_server
+
+                # Measure with a stress actual chosen: long notes and thirty legs.
+                [first, *_rest] = book_server(app.db).review_queue()
+                view._transaction_handle = first.handle
+                view._refresh_candidates()
             assert self._fits(self._minimum(window)), (key, self._minimum(window))
         window.open_register(chain[-1])
         assert self._fits(self._minimum(window)), self._minimum(window)

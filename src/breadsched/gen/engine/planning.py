@@ -11,8 +11,9 @@ changing the dates on which financial state changes.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+import re
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from enum import Enum
 
@@ -30,6 +31,7 @@ from ..lib.transaction import (
 from .currency import reporting_currency_handle
 from .plan_allocations import (
     OccurrenceActual,
+    account_classes,
     allocate_whole,
     clear_allocations,
     occurrence_actuals,
@@ -46,6 +48,7 @@ __all__ = [
     "event_by_key",
     "linked_actuals",
     "mark_unexpected",
+    "description_words",
     "match_candidates",
     "occurrence_actuals",
     "period_end",
@@ -212,19 +215,47 @@ class PlannedEvent:
 
 @dataclass(frozen=True, slots=True)
 class MatchCandidate:
-    """A deterministic possible resolution of a real transaction to an estimate."""
+    """A deterministic possible resolution of a real transaction to a planned occurrence.
+
+    Ranked by decision 0005's rules, in order: the same category (an income or
+    expense account the occurrence plans, or the same planning purpose on the same
+    account), an estimate before a commitment, the actual's date within the
+    occurrence's period, an amount that fits what remains of it (then the closer the
+    better), the same funding account, and words the descriptions share. Date
+    distance and the planned date settle what is left.
+    """
 
     event: PlannedEvent
     date_distance: int
     amount_difference: Money
     common_accounts: int
+    #: Shares a category account (or a planning purpose on the same account).
+    same_category: bool = False
+    #: Shares a funding (non-category) account.
+    same_funding: bool = False
+    #: The actual falls in the occurrence's period: an estimate's, from its date to
+    #: the day before its next; a commitment's, within the matching window.
+    in_period: bool = False
+    #: The actual's amount is no more than what remains of the occurrence.
+    fits: bool = False
+    #: How far the actual's amount is from what remains.
+    remaining_difference: Money = field(default_factory=lambda: Money(0))
+    #: Description words in common.
+    shared_words: int = 0
+    #: The last day of the occurrence's period (estimates).
+    period_end: date | None = None
 
     @property
-    def sort_key(self) -> tuple[int, Money, int, date, str]:
+    def sort_key(self) -> tuple[object, ...]:
         return (
+            not self.same_category,
+            not self.event.placeholder,
+            not self.in_period,
+            not self.fits,
+            self.remaining_difference,
+            not self.same_funding,
+            -self.shared_words,
             self.date_distance,
-            self.amount_difference,
-            -self.common_accounts,
             self.event.planned_date,
             self.event.key,
         )
@@ -805,35 +836,70 @@ def mark_unexpected(transaction: Transaction) -> Transaction:
     return transaction
 
 
+_WORD = re.compile(r"[a-z0-9]+")
+_IGNORED_WORDS = frozenset({"the", "and", "for", "of", "to", "a", "an", "payment", "pay"})
+
+
+def description_words(text: str) -> set[str]:
+    """The words of a description that say something: three letters or more, and not
+    one of the few that every payment shares."""
+    return {
+        word for word in _WORD.findall(text.lower()) if len(word) > 2 and word not in _IGNORED_WORDS
+    }
+
+
+def _category_keys(
+    splits: Iterable[tuple[str, PlanningFlowKind | None]],
+    class_of: Callable[[str], AccountClass | None],
+) -> set[tuple[str, PlanningFlowKind | None]]:
+    """What a set of legs is *for*: each income or expense account, and each planning
+    purpose with the account it is on."""
+    keys: set[tuple[str, PlanningFlowKind | None]] = set()
+    for account, flow in splits:
+        if class_of(account) in (AccountClass.INCOME, AccountClass.EXPENSE):
+            keys.add((account, None))
+        elif flow is not None:
+            keys.add((account, flow))
+    return keys
+
+
+#: How far back an estimate's period may begin: a yearly estimate covers a year.
+_LONGEST_PERIOD_DAYS = 366
+
+
 def match_candidates(
     db: DbSQLite,
     transaction: Transaction,
     *,
     window_days: int = 7,
 ) -> list[MatchCandidate]:
-    """Rank unresolved schedule occurrences near ``transaction`` conservatively.
+    """Rank the open occurrences ``transaction`` could count toward (decision 0005).
 
-    Candidates must share at least one account. Ranking is deterministic: closest
-    date first, then closest gross amount, then the greatest account overlap.
-    This intentionally avoids fuzzy/ML matching until the exact rules have earned
-    user trust.
+    A commitment is a candidate within ``window_days`` of its date; an estimate
+    whose period holds the transaction's date, or within the window of its date.
+    An occurrence that shares no account at all, category or funding, is never one.
+    Ranking is :attr:`MatchCandidate.sort_key`: deterministic and explainable, never
+    fuzzy or learned.
     """
     if transaction.planning_resolution is PlanningResolution.UNEXPECTED:
         return []
     reporting_currency = reporting_currency_handle(db)
     actual_currency = transaction.currency or reporting_currency
-    start = transaction.post_date - timedelta(days=window_days)
-    end = transaction.post_date + timedelta(days=window_days)
+    when = transaction.post_date
+    start = when - timedelta(days=_LONGEST_PERIOD_DAYS)
+    end = when + timedelta(days=window_days)
     actual_splits = _transaction_splits(transaction)
     actual_amount = _positive_total(actual_splits)
     actual_accounts = {split.account for split in actual_splits}
+    class_of = account_classes(db)
+    actual_categories = _category_keys(
+        ((split.account, split.planning_flow) for split in actual_splits), class_of
+    )
+    category_accounts = {account for account, _flow in actual_categories}
+    words = description_words(transaction.description)
+    schedules = {schedule.handle: schedule for schedule in db.iter_scheduled()}
     candidates: list[MatchCandidate] = []
-    for event in scheduled_events(
-        db,
-        start,
-        end,
-        include_actualized=True,
-    ):
+    for event in scheduled_events(db, start, end, include_actualized=True):
         if not event.matchable or any(
             item.transaction.handle == transaction.handle for item in event.actuals
         ):
@@ -846,12 +912,38 @@ def match_candidates(
         common = len(actual_accounts & expected_accounts)
         if common == 0:
             continue
+        distance = abs((when - event.planned_date).days)
+        schedule = schedules.get(event.source_handle or "")
+        last = (
+            period_end(schedule, event.planned_date)
+            if event.placeholder and schedule is not None
+            else None
+        )
+        inside = (last is not None and event.planned_date <= when <= last) or (
+            not event.placeholder and distance <= window_days
+        )
+        if distance > window_days and not inside:
+            continue
+        expected_categories = _category_keys(
+            ((split.account, split.planning_flow) for split in event.expected_splits), class_of
+        )
+        remaining = event.remaining_amount
         candidates.append(
             MatchCandidate(
                 event=event,
-                date_distance=abs((transaction.post_date - event.planned_date).days),
+                date_distance=distance,
                 amount_difference=abs(actual_amount - event.expected_amount),
                 common_accounts=common,
+                same_category=bool(actual_categories & expected_categories),
+                same_funding=bool(
+                    (actual_accounts - category_accounts)
+                    & (expected_accounts - {account for account, _ in expected_categories})
+                ),
+                in_period=inside,
+                fits=actual_amount <= remaining,
+                remaining_difference=abs(remaining - actual_amount),
+                shared_words=len(words & description_words(event.description)),
+                period_end=last,
             )
         )
     return sorted(candidates, key=lambda candidate: candidate.sort_key)

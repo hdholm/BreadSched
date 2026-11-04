@@ -7,7 +7,7 @@ from datetime import date
 
 from ..db.sqlite import DbSQLite
 from ..engine import fsa_claims, planning, review_explain
-from ..engine.plan_allocations import account_classes
+from ..engine.plan_allocations import ClassOf, account_classes, plan_legs
 from ..lib.money import Money
 from ..lib.transaction import PlanningResolution, Transaction
 from .contracts import ServiceError, ServiceResult
@@ -160,6 +160,24 @@ class PendingActual:
     description: str
     #: The transaction's positive legs added up.
     amount: Money
+    #: What it was for: the full names of its plan legs' accounts (decision 0005).
+    categories: tuple[str, ...] = ()
+    #: The accounts on the other side: where the money came from or went.
+    funding: tuple[str, ...] = ()
+    notes: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewSplit:
+    """One leg of a pending actual, as Review shows it."""
+
+    split: str
+    account: str
+    account_name: str
+    amount: Money
+    memo: str
+    #: A plan leg: on an income or expense account, or carrying a planning purpose.
+    category: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +216,8 @@ class ReviewDetail:
     fsa_hint: str | None
     #: Why nothing is offered, when no candidate is.
     no_candidate_reason: str | None
+    #: Its legs, with their accounts and memos.
+    splits: tuple[ReviewSplit, ...] = ()
 
 
 def _gross(transaction: Transaction) -> Money:
@@ -208,9 +228,42 @@ def _gross(transaction: Transaction) -> Money:
     return total
 
 
-def _pending(transaction: Transaction) -> PendingActual:
+def _pending(
+    db: DbSQLite, transaction: Transaction, class_of: ClassOf | None = None
+) -> PendingActual:
+    classes = class_of or account_classes(db)
+    legs = {split.handle for split in plan_legs(transaction, classes)}
+
+    def names(category: bool) -> tuple[str, ...]:
+        seen: dict[str, None] = {}
+        for split in transaction.splits:
+            if (split.handle in legs) is category:
+                seen.setdefault(db.full_name(split.account) or split.account, None)
+        return tuple(seen)
+
     return PendingActual(
-        transaction.handle, transaction.post_date, transaction.description, _gross(transaction)
+        transaction.handle,
+        transaction.post_date,
+        transaction.description,
+        _gross(transaction),
+        names(True),
+        names(False),
+        transaction.notes,
+    )
+
+
+def _splits(db: DbSQLite, transaction: Transaction) -> tuple[ReviewSplit, ...]:
+    legs = {split.handle for split in plan_legs(transaction, account_classes(db))}
+    return tuple(
+        ReviewSplit(
+            split.handle,
+            split.account,
+            db.full_name(split.account) or split.account,
+            split.value,
+            split.memo,
+            split.handle in legs,
+        )
+        for split in transaction.splits
     )
 
 
@@ -224,7 +277,8 @@ def review_queue(db: DbSQLite) -> tuple[PendingActual, ...]:
         ),
         key=lambda transaction: (transaction.post_date, transaction.handle),
     )
-    return tuple(_pending(transaction) for transaction in pending)
+    class_of = account_classes(db)
+    return tuple(_pending(db, transaction, class_of) for transaction in pending)
 
 
 def review_detail(db: DbSQLite, handle: str) -> ServiceResult[ReviewDetail]:
@@ -251,7 +305,7 @@ def review_detail(db: DbSQLite, handle: str) -> ServiceResult[ReviewDetail]:
         )
     return ServiceResult.success(
         ReviewDetail(
-            _pending(transaction),
+            _pending(db, transaction),
             candidates,
             tuple(
                 ReviewRole(
@@ -266,6 +320,7 @@ def review_detail(db: DbSQLite, handle: str) -> ServiceResult[ReviewDetail]:
             tuple(claims),
             review_explain.fsa_hint(db, transaction),
             None if candidates else review_explain.no_candidate_reason(db, transaction),
+            _splits(db, transaction),
         )
     )
 

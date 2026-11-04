@@ -4551,6 +4551,28 @@ class TestReviewApi:
         assert Money(candidate["expected_amount"]) == Money("1800.00")
         assert Money(candidate["amount_variance"]) == Money("25.00")
         assert candidate["date_variance_days"] == 1
+        # Decision 0005: what each actual was for, where the money came from, and
+        # how the candidate ranked.
+        [row] = payload["actuals"]
+        assert (row["categories"], row["funding"], row["notes"]) == (
+            ["Expenses:Rent"],
+            ["Assets:Checking"],
+            "",
+        )
+        assert [
+            (item["account_name"], Money(item["amount"]), item["category"])
+            for item in payload["selected"]["splits"]
+        ] == [
+            ("Expenses:Rent", Money("1825.00"), True),
+            ("Assets:Checking", Money("-1825.00"), False),
+        ]
+        assert (candidate["same_category"], candidate["same_funding"], candidate["estimate"]) == (
+            True,
+            True,
+            False,
+        )
+        assert Money(candidate["remaining_amount"]) == Money("1800.00")
+        assert candidate["reasons"][0] == "Same category: Rent"
 
     def test_rejecting_a_candidate_remembers_the_decision(self, review_client):
         status, payload = review_client.post(

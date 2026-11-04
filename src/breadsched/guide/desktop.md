@@ -625,7 +625,10 @@ Set the Plan controls and apply them; they are yours, shared with the browser wh
 use it on this computer, while anyone else the book is shared with keeps their own. Select a
 value to inspect its occurrences and actual splits, and use **Resolve actuals…** to
 match an actual, mark it unexpected, or review it. In **Resolve actuals**, each
-candidate lists why it is offered, the buttons explain themselves on hover, and the
+actual shows what it was for, where the money came from, and its notes; the summary
+of the one chosen lists its legs (• marks what it was for) and memos; and each
+candidate, ranked by category first, lists why it is offered and how much of an
+estimate remains, the buttons explain themselves on hover, and the
 line under them says what the available actions do. The Plan summary gives planned,
 actual, and variance through the as-of date; **Show** chooses Plan, Period actual,
 or Period variance for the table (see

@@ -12,13 +12,12 @@ FSA money it names the flow (:mod:`fsa_flows`) and what to do with it.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import AccountType
+from ..lib.account import AccountClass, AccountType
 from ..lib.money import Money
 from ..lib.transaction import Transaction
 from . import fsa_flows, planning
@@ -42,8 +41,6 @@ POSSIBLE = "possible"
 
 #: How far (days) to look for an occurrence to explain an empty candidate list.
 _EXPLAIN_WINDOW_DAYS = 60
-_WORD = re.compile(r"[a-z0-9]+")
-_IGNORED_WORDS = {"the", "and", "for", "of", "to", "a", "an", "payment", "pay"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,12 +55,6 @@ class CandidateExplanation:
 
     def as_dict(self) -> dict[str, object]:
         return {"confidence": self.confidence, "label": self.label, "reasons": list(self.reasons)}
-
-
-def _words(text: str) -> set[str]:
-    return {
-        word for word in _WORD.findall(text.lower()) if len(word) > 2 and word not in _IGNORED_WORDS
-    }
 
 
 def _days(count: int) -> str:
@@ -88,40 +79,83 @@ def _gross(transaction: Transaction) -> Money:
 def explain_candidate(
     db: DbSQLite, transaction: Transaction, candidate: planning.MatchCandidate
 ) -> CandidateExplanation:
-    """The reasons ``candidate`` is offered for ``transaction`` and how close it is."""
+    """The reasons ``candidate`` is offered for ``transaction`` and how close it is.
+
+    The reasons follow the ranking (decision 0005): the category, whether it is an
+    estimate, its period, what remains of it, the funding account, and the words
+    in common.
+    """
     event = candidate.event
     reasons: list[str] = []
-    shared = {split.account for split in transaction.splits} & {
-        split.account for split in event.expected_splits
+    expected = {split.account for split in event.expected_splits}
+    actual_accounts = {split.account for split in transaction.splits}
+    shared = actual_accounts & expected
+    categories = {
+        handle
+        for handle in shared
+        if (account := db.get_account(handle)) is not None
+        and account.account_class in (AccountClass.INCOME, AccountClass.EXPENSE)
     }
-    if shared:
-        reasons.append(f"Uses the same account: {_account_names(db, shared)}")
+    if candidate.same_category:
+        named = categories or shared
+        reasons.append(f"Same category: {_account_names(db, named)}")
+    if event.placeholder:
+        reasons.append("An estimate, which many purchases fill")
     actual = _gross(transaction)
-    difference = candidate.amount_difference
-    if not difference:
-        reasons.append("Same amount")
-        amount_close = True
-    else:
-        direction = "more" if actual > event.expected_amount else "less"
-        share = (
-            (difference.to_decimal() / event.expected_amount.to_decimal() * 100)
-            if event.expected_amount
-            else Decimal(100)
-        )
-        reasons.append(
-            f"{difference.format()} {direction} than expected ({share.quantize(Decimal(1))}%)"
-        )
-        amount_close = share <= 5
     offset = (transaction.post_date - event.planned_date).days
-    if offset == 0:
+    if event.placeholder and candidate.period_end is not None:
+        if candidate.in_period:
+            reasons.append(
+                f"In its period, {event.planned_date.isoformat()} to "
+                f"{candidate.period_end.isoformat()}"
+            )
+        else:
+            reasons.append(f"Its period ended {candidate.period_end.isoformat()}")
+    elif offset == 0:
         reasons.append("Same day as planned")
     else:
         when = "after" if offset > 0 else "before"
         reasons.append(f"{_days(abs(offset))} {when} the planned date")
-    common = _words(transaction.description) & _words(event.description)
+    remaining = event.remaining_amount
+    applied = event.applied_amount
+    if event.placeholder or applied:
+        left = f"{remaining.format()} of {event.expected_amount.format()} remains"
+        reasons.append(
+            f"Fits what remains: {left}" if candidate.fits else f"More than remains: {left}"
+        )
+        amount_close = candidate.fits
+    else:
+        difference = candidate.amount_difference
+        if not difference:
+            reasons.append("Same amount")
+            amount_close = True
+        else:
+            direction = "more" if actual > event.expected_amount else "less"
+            share = (
+                (difference.to_decimal() / event.expected_amount.to_decimal() * 100)
+                if event.expected_amount
+                else Decimal(100)
+            )
+            reasons.append(
+                f"{difference.format()} {direction} than expected ({share.quantize(Decimal(1))}%)"
+            )
+            amount_close = share <= 5
+    funding = shared - categories
+    if candidate.same_funding and funding:
+        reasons.append(f"Same funding account: {_account_names(db, funding)}")
+    common = planning.description_words(transaction.description) & planning.description_words(
+        event.description
+    )
     if common:
         reasons.append(f"Description shares “{', '.join(sorted(common))}”")
-    confidence = CLOSE if amount_close and abs(offset) <= 2 else POSSIBLE
+    if event.placeholder:
+        confidence = (
+            CLOSE
+            if candidate.same_category and candidate.in_period and candidate.fits
+            else POSSIBLE
+        )
+    else:
+        confidence = CLOSE if amount_close and abs(offset) <= 2 else POSSIBLE
     return CandidateExplanation(candidate, confidence, tuple(reasons))
 
 
