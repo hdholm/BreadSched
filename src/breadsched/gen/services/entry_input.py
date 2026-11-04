@@ -127,6 +127,8 @@ class ReadEntryTrade:
     changed: Literal["shares", "price", "amount"] = "amount"
     currency: str | None = None
     number_format: NumberFormat | Literal["auto"] = "auto"
+    #: With all three already filled, which one to work out again (#407).
+    recompute: Literal["shares", "price", "amount"] | None = None
 
 
 def read_entry_trade(
@@ -139,6 +141,7 @@ def read_entry_trade(
     changed: Literal["shares", "price", "amount"],
     currency: str | None = None,
     number_format: NumberFormat | Literal["auto"] = "auto",
+    recompute: Literal["shares", "price", "amount"] | None = None,
 ) -> ServiceResult[TradeFill]:
     """A trade in a security account with the third of shares, price, and amount filled.
 
@@ -172,5 +175,6 @@ def read_entry_trade(
             changed,
             share_fraction=fraction,
             currency_fraction=commodity.fraction,
+            recompute=recompute,
         )
     )

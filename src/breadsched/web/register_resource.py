@@ -57,7 +57,20 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
 
     def trade(row) -> dict[str, object]:
         if holding is None:
-            return {}
+            # A cash register shows a security leg's shares and price (#407).
+            legs = [split for split in row.transaction.splits if split.account in shares_held]
+            if len(legs) != 1 or not legs[0].quantity:
+                return {}
+            leg = legs[0]
+            return {
+                "shares": shares_text(abs(leg.quantity)),
+                "price": trade_price_text(
+                    trade_price(
+                        Fraction(leg.value.numerator, leg.value.denominator),
+                        Fraction(leg.quantity.numerator, leg.quantity.denominator),
+                    )
+                ),
+            }
         price = trade_price(
             Fraction(row.split.value.numerator, row.split.value.denominator),
             Fraction(row.shares.numerator, row.shares.denominator),
@@ -92,6 +105,11 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
         ),
         # Accounts whose splits take shares, for the split lines' Shares cells.
         "security_accounts": list(view.security_accounts),
+        # A cash register that a security moved through shows Shares and Price (#407).
+        "trades": holding is None
+        and any(
+            split.account in shares_held for row in view.rows for split in row.transaction.splits
+        ),
         "rows": [
             {
                 "handle": row.transaction.handle,

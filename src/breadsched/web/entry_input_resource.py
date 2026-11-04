@@ -50,6 +50,8 @@ def entry_trade(api: Api, query: QueryParams) -> dict[str, object]:
     changed = query.choice("changed", ("shares", "price", "amount"), "amount")
     currency = query.text("currency")
     number_format = query.choice("number_format", _FORMATS, "auto")
+    # With all three filled, which one to work out again (#407).
+    recompute = query.choice("recompute", ("shares", "price", "amount"), "") or None
     query.finish()
     filled = api.book.entry_trade(
         ReadEntryTrade(
@@ -60,6 +62,7 @@ def entry_trade(api: Api, query: QueryParams) -> dict[str, object]:
             changed=cast(Literal["shares", "price", "amount"], changed),
             currency=currency,
             number_format=cast(Literal["auto", "dot", "comma"], number_format),
+            recompute=cast(Literal["shares", "price", "amount"] | None, recompute),
         )
     )
     return {

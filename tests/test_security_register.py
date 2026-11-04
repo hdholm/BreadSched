@@ -26,7 +26,12 @@ from breadsched.gen.lib import (
     Transaction,
 )
 from breadsched.gen.services.entry_input import read_entry_trade
-from breadsched.gui.register_sheet import COLUMNS, SECURITY_COLUMNS, RegisterSheet
+from breadsched.gui.register_sheet import (
+    COLUMNS,
+    SECURITY_COLUMNS,
+    TRADE_COLUMNS,
+    RegisterSheet,
+)
 from breadsched.presentation.investments import register_share_summary
 
 
@@ -106,6 +111,32 @@ class TestFillTrade:
     def test_changing_the_amount_keeps_the_shares_and_recomputes_the_price(self):
         filled = self._fill("4", "27.5", "120", "amount")
         assert (filled.shares, filled.price) == (Decimal("4"), Decimal("30"))
+
+    @pytest.mark.parametrize(
+        ("changed", "recompute", "expected"),
+        [
+            # 4 shares at 27.50 for 110.00, then one of them changed (#407).
+            ("amount", "price", ("4", "30", "120")),
+            ("amount", "shares", ("4.364", "27.5", "120")),
+            ("shares", "price", ("6", "18.333333", "110.00")),
+            ("price", "shares", ("4", "22", "88")),
+        ],
+    )
+    def test_the_one_asked_for_is_worked_out_again(self, changed, recompute, expected):
+        values = {"shares": "4", "price": "27.5", "amount": "110.00"}
+        values[changed] = {"amount": "120", "shares": "6", "price": "22"}[changed]
+        if changed == "price":
+            values["amount"] = "88"
+        filled = fill_trade(
+            Decimal(values["shares"]),
+            Decimal(values["price"]),
+            Decimal(values["amount"]),
+            changed,
+            share_fraction=1000,
+            currency_fraction=100,
+            recompute=recompute,
+        )
+        assert (filled.shares, filled.price, filled.amount) == tuple(Decimal(v) for v in expected)
 
     def test_signs_are_dropped_and_nothing_divides_by_zero(self):
         assert self._fill("-2.5", None, "-70", "shares") == TradeFill(
@@ -218,7 +249,9 @@ class TestSecuritySheet:
             "Price",
             "Shares Held",
         ]
-        assert RegisterSheet(db, book.checking).columns == COLUMNS
+        # #407: the cash register the shares were bought from shows them too.
+        assert RegisterSheet(db, book.checking).columns == TRADE_COLUMNS
+        assert RegisterSheet(db, book.card).columns == COLUMNS
 
     def test_imported_rows_show_shares_price_and_shares_held(self, db, book):
         account, _fund_, _usd = _imported(db, book)
@@ -339,16 +372,78 @@ class TestSecuritySheet:
         assert saved.description == "Third, renamed"
         assert saved.split_for(account.handle).quantity == Money(1, 3)
 
-    def test_changing_an_amount_keeps_the_shares_and_reprices(self, db, book):
+    def test_changing_an_amount_asks_which_to_change_then_reprices(self, db, book):
+        """#407: with shares, price, and amount all filled, changing one changes
+        neither of the others until asked which."""
         account, _fund_, _usd = _imported(db, book)
         sheet = RegisterSheet(db, account.handle, today=date(2026, 4, 1))
         sheet.move_to(_row(sheet, "Buy more"))
         _type(sheet, "increase", "120")
+        question = sheet.trade_question
+        assert question is not None
+        assert (question.changed, question.choices) == ("amount", ("shares", "price"))
+        assert (sheet.draft.shares, sheet.draft.price) == ("4", "27.50")
+        sheet.answer_trade("price")
+        assert sheet.trade_question is None
         assert sheet.draft.price == "30.00"
         assert sheet.enter(), sheet.message
         saved = next(t for t in db.iter_transactions() if t.description == "Buy more")
         mine = saved.split_for(account.handle)
         assert (mine.value, mine.quantity) == (Money(120), Money(4))
+
+    def test_the_other_answers_and_cancel(self, db, book):
+        account, _fund_, _usd = _imported(db, book)
+        sheet = RegisterSheet(db, account.handle, today=date(2026, 4, 1))
+        sheet.move_to(_row(sheet, "Buy more"))
+        _type(sheet, "increase", "120")
+        sheet.answer_trade("shares")
+        assert (sheet.draft.shares, sheet.draft.price) == ("4.364", "27.50")
+        _type(sheet, "price", "40")
+        assert sheet.trade_question.choices == ("shares", "amount")
+        sheet.answer_trade("amount")
+        assert sheet.draft.increase == "174.56"
+        _type(sheet, "shares", "9")
+        sheet.answer_trade(None)  # Cancel puts the shares back
+        assert (sheet.draft.shares, sheet.draft.price, sheet.draft.increase) == (
+            "4.364",
+            "40.00",
+            "174.56",
+        )
+
+    def test_blank_values_still_fill_without_asking(self, db, book):
+        account, _fund_, _usd = _imported(db, book)
+        sheet = RegisterSheet(db, account.handle, today=date(2026, 4, 1))
+        sheet.to_blank()
+        _type(sheet, "description", "Monthly buy")
+        _type(sheet, "transfer", "Assets:Checking")
+        _type(sheet, "shares", "8")
+        _type(sheet, "price", "30.25")
+        assert sheet.trade_question is None and sheet.draft.increase == "242.00"
+
+    def test_a_cash_register_shows_and_takes_a_security_legs_shares(self, db, book):
+        """#407: from Checking, a purchase's security leg shows its shares and price,
+        and a split line to the security takes them as in its own register."""
+        account, _fund_, _usd = _imported(db, book)
+        sheet = RegisterSheet(db, book.checking, today=date(2026, 4, 1))
+        index = _row(sheet, "Buy more")
+        assert [sheet.text(index, c) for c in ("shares", "price")] == ["4", "27.50"]
+        sheet.to_blank()
+        _type(sheet, "description", "Buy from checking")
+        assert sheet.toggle_split()
+        header = sheet.header_index()
+        sheet.cursor = header + 1
+        _type(sheet, "transfer", "Assets:VTTHX")
+        assert "shares" in sheet.editable_columns(sheet.cursor)
+        _type(sheet, "shares", "2.5")
+        _type(sheet, "price", "40")
+        assert sheet.draft.lines[0].increase == "100.00"
+        sheet.cursor = header + 2
+        _type(sheet, "transfer", "Assets:Checking")
+        _type(sheet, "decrease", "100")
+        assert sheet.enter(), sheet.message
+        saved = next(t for t in db.iter_transactions() if t.description == "Buy from checking")
+        assert saved.split_for(account.handle).quantity == Money("2.5")
+        assert saved.split_for(book.checking).quantity == Money(-100)
 
     def test_split_lines_carry_shares_for_the_security(self, db, book):
         account, _fund_, _usd = _imported(db, book)

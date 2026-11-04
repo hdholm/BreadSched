@@ -6387,7 +6387,11 @@ class TestSecurityRegister:
 
         status, plain = client.get(f"/api/register?account={checking.handle}")
         assert plain["security"] is None and plain["summary"] is None
-        assert all("shares" not in item for item in plain["rows"])
+        # #407: the checking register shows the purchase's security leg.
+        assert plain["trades"] is True
+        bought = [item for item in plain["rows"] if "shares" in item]
+        assert [(item["shares"], item["price"]) for item in bought] == [("10.123", "24.696236")]
+        assert all("share_balance" not in item for item in plain["rows"])
 
     def test_the_register_filters_by_anything_a_transaction_holds(self, client):
         # #382: the browser register filters like the desktop one, amounts included.

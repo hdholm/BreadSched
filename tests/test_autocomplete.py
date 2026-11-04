@@ -12,7 +12,13 @@ from dataclasses import fields
 from datetime import date
 
 from breadsched.gen.lib import Commodity, Money, ReconcileState, Transaction
-from breadsched.gen.services.autocomplete import SuggestEntry, suggest_entry
+from breadsched.gen.services.autocomplete import (
+    EarlierNotes,
+    SuggestEntry,
+    complete_note,
+    earlier_notes,
+    suggest_entry,
+)
 
 
 def _post(db, book, when, description, account, amount, **extra):
@@ -104,3 +110,33 @@ def test_an_unknown_account_is_refused(db, book):
     assert [e.code for e in suggest_entry(db, SuggestEntry("x", account="missing")).errors] == [
         "autocomplete.account.not_found"
     ]
+
+
+def test_earlier_notes_and_memos_for_the_same_description(db, book):
+    """#407: a note is completed from what was written for the same description."""
+    first = _post(db, book, date(2026, 7, 1), "Dentist", book.utilities, "40.00")
+    first.notes = "Cleaning, Dr. Ames"
+    first.splits[0].memo = "copay"
+    second = _post(db, book, date(2026, 9, 1), "DENTIST", book.utilities, "90.00")
+    second.notes = "Filling, Dr. Ames"
+    other = _post(db, book, date(2026, 9, 2), "Pharmacy", book.utilities, "9.00")
+    other.notes = "Filling a prescription"
+    with db.transaction("Notes") as txn:
+        for transaction in (first, second, other):
+            db.commit_transaction(transaction, txn)
+
+    notes = earlier_notes(db, EarlierNotes(description="dentist")).value
+    assert notes == ("Filling, Dr. Ames", "Cleaning, Dr. Ames")
+    memos = earlier_notes(db, EarlierNotes(description="Dentist", memos=True)).value
+    assert memos == ("copay",)
+    assert earlier_notes(db, EarlierNotes(description="Dentist", exclude=second.handle)).value == (
+        "Cleaning, Dr. Ames",
+    )
+    assert earlier_notes(db, EarlierNotes(description="")).value == ()
+
+    # Beginning with what is typed comes first, then containing it.
+    assert complete_note("cle", notes) == "Cleaning, Dr. Ames"
+    assert complete_note("ames", notes) == "Filling, Dr. Ames"
+    assert complete_note("x-ray", notes) is None
+    assert complete_note("", notes) is None
+    assert complete_note("Filling, Dr. Ames", notes) is None

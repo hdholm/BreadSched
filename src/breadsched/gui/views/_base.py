@@ -505,23 +505,27 @@ def column_menu(
     settings=None,
     table_label: str | None = None,
 ) -> Gtk.MenuButton:
-    """A menu for showing and hiding one table's columns.
+    """A menu for showing, hiding, and ordering one table's columns.
 
     It belongs in that table's own header (see :func:`table_section`), never in a
     view's toolbar, and its tooltip names the table: two identical icons in one
     toolbar could not be told apart (#153).
 
-    Hidden columns are remembered by *title* rather than by position, so adding a
-    column in a later release cannot shuffle a saved layout onto the wrong ones —
-    which would make remembering worse than not remembering.
+    Hidden columns, their order, and the widths they are dragged to are remembered
+    by *title* rather than by position, so adding a column in a later release cannot
+    shuffle a saved layout onto the wrong ones — which would make remembering worse
+    than not remembering (#406).
     """
     columns = column_view.get_columns()
     section = f"columns:{view_id}"
+    arrange_columns(column_view, section, settings)
+
+    def items() -> list[Gtk.ColumnViewColumn]:
+        return [columns.get_item(i) for i in range(columns.get_n_items())]
 
     if settings is not None:
         hidden = set(settings.get_list(section, "hidden"))
-        for index in range(columns.get_n_items()):
-            column = columns.get_item(index)
+        for column in items():
             if column.get_title() in hidden:
                 column.set_visible(False)
 
@@ -529,39 +533,64 @@ def column_menu(
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
     for side in ("top", "bottom", "start", "end"):
         getattr(box, f"set_margin_{side}")(8)
-    caption = Gtk.Label(label="Columns", xalign=0)
-    caption.add_css_class("summary-label")
-    box.append(caption)
+    popover.set_child(box)
 
     def remember() -> None:
         if settings is None:
             return
-        names = [
-            columns.get_item(i).get_title()
-            for i in range(columns.get_n_items())
-            if not columns.get_item(i).get_visible()
-        ]
+        names = [column.get_title() for column in items() if not column.get_visible()]
         settings.set(section, "hidden", names)
         settings.save()
 
-    for index in range(columns.get_n_items()):
-        column = columns.get_item(index)
-        title = column.get_title()
-        check = Gtk.CheckButton(label=title or f"Column {index + 1}")
-        check.set_active(column.get_visible())
-        if index == 0:
-            # Hiding the first column leaves a view with nothing to read, and in a
-            # tree view it takes the expander with it.
-            check.set_sensitive(False)
+    def move(column: Gtk.ColumnViewColumn, step: int) -> None:
+        current = items()
+        index = current.index(column)
+        target = index + step
+        if index > 0 and 0 < target < len(current):
+            column_view.insert_column(target, column)
+        fill()
 
-        def on_toggled(button, target=column) -> None:
-            target.set_visible(button.get_active())
-            remember()
+    def fill() -> None:
+        while (child := box.get_first_child()) is not None:
+            box.remove(child)
+        caption = Gtk.Label(label="Columns", xalign=0)
+        caption.add_css_class("summary-label")
+        box.append(caption)
+        current = items()
+        for index, column in enumerate(current):
+            title = column.get_title()
+            line = Gtk.Box(spacing=4)
+            check = Gtk.CheckButton(label=title or f"Column {index + 1}", hexpand=True)
+            check.set_active(column.get_visible())
+            if index == 0:
+                # Hiding the first column leaves a view with nothing to read, and in a
+                # tree view it takes the expander with it.
+                check.set_sensitive(False)
 
-        check.connect("toggled", on_toggled)
-        box.append(check)
+            def on_toggled(button, target=column) -> None:
+                target.set_visible(button.get_active())
+                remember()
 
-    popover.set_child(box)
+            check.connect("toggled", on_toggled)
+            line.append(check)
+            # The first column stays first; every other moves among the rest, as
+            # dragging its heading does.
+            for icon, step, tip in (
+                ("go-up-symbolic", -1, "Move earlier"),
+                ("go-down-symbolic", 1, "Move later"),
+            ):
+                arrow = Gtk.Button(icon_name=icon, has_frame=False, tooltip_text=tip)
+                target = index + step
+                arrow.set_sensitive(index > 0 and 0 < target < len(current))
+                arrow.connect("clicked", lambda _b, c=column, st=step: move(c, st))
+                arrow.update_property(
+                    [Gtk.AccessibleProperty.LABEL], [f"{tip}: {title or index + 1}"]
+                )
+                line.append(arrow)
+            box.append(line)
+
+    fill()
+    popover.connect("show", lambda *_: fill())
     button = Gtk.MenuButton(icon_name="view-more-symbolic", popover=popover)
     button.set_has_frame(False)
     button.set_valign(Gtk.Align.CENTER)
@@ -570,6 +599,70 @@ def column_menu(
     )
     button.column_view = column_view
     return button
+
+
+def arrange_columns(column_view: Gtk.ColumnView, section: str, settings=None) -> None:
+    """Columns drag into a new order and to a new width; both are remembered (#406).
+
+    Only one column takes the table's spare width (the last one marked to expand),
+    so narrowing any other column widens that one rather than its neighbour, and a
+    column dragged to a width keeps it.
+    """
+    columns = column_view.get_columns()
+
+    def items() -> list[Gtk.ColumnViewColumn]:
+        return [columns.get_item(i) for i in range(columns.get_n_items())]
+
+    column_view.set_reorderable(True)
+    expanding = [column for column in items() if column.get_expand()]
+    for column in expanding[:-1]:
+        column.set_expand(False)
+    if settings is None:
+        return
+    restoring = {"busy": True}
+    first = items()[0] if items() else None
+    by_title = {column.get_title(): column for column in items()}
+    position = 1
+    for title in settings.get_list(section, "order"):
+        column = by_title.get(title)
+        if column is None or column is first:
+            continue
+        column_view.insert_column(position, column)
+        position += 1
+    for column in items():
+        width = settings.get_int(section, f"width:{column.get_title()}", 0)
+        if width > 0:
+            column.set_fixed_width(width)
+
+    def remember_order(_model, _position: int, removed: int, added: int) -> None:
+        # Moving a column removes it and then inserts it again; act on the insert.
+        if restoring["busy"] or (removed and not added):
+            return
+        current = items()
+        if current and first is not None and current[0] is not first:
+            # The first column holds the tree's expander and what the row is: keep it.
+            restoring["busy"] = True
+            column_view.insert_column(0, first)
+            restoring["busy"] = False
+            current = items()
+        settings.set(section, "order", [column.get_title() for column in current])
+        settings.save()
+
+    def remember_width(column: Gtk.ColumnViewColumn, _param) -> None:
+        if restoring["busy"]:
+            return
+        width = column.get_fixed_width()
+        key = f"width:{column.get_title()}"
+        if width > 0:
+            settings.set(section, key, width)
+        else:
+            settings.remove(section, key)
+        settings.save()
+
+    columns.connect("items-changed", remember_order)
+    for column in items():
+        column.connect("notify::fixed-width", remember_width)
+    restoring["busy"] = False
 
 
 def table_section(

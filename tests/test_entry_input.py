@@ -301,3 +301,27 @@ class TestAccountsAnywhere:
 
         assert quickfill_account("groc", self.NAMES) == ("groc", ["Expenses:Groceries"])
         assert quickfill_account("Ex", self.NAMES)[0] == "Expenses"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (".1", "0.1"),
+        ("-.1", "-0.1"),
+        ("(.5)", "-0.5"),
+        ("$.75", "0.75"),
+        (".125", "0.125"),
+        (",5", "0.5"),
+        ("1+.5", "1.50"),
+        (".1*3", "0.30"),
+    ],
+)
+def test_an_amount_needs_no_leading_zero(text, expected):
+    """#404: ``.1`` is an amount, in a register or any other field."""
+    assert parse_entry_amount(text) == Decimal(expected)
+
+
+@pytest.mark.parametrize("text", [".", "-.", "1.", ".,5", ".1.2"])
+def test_a_lone_separator_is_still_not_an_amount(text):
+    with pytest.raises(EntryInputError):
+        parse_entry_amount(text)

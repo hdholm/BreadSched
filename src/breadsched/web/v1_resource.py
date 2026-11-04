@@ -143,10 +143,13 @@ Resources so far, all under ``/api/v1``:
   ``GET /book/id`` – its permanent id (decision 0004).
 * ``GET /book/summary`` – the book's counts, cash, net worth, and scenarios;
   ``GET /book/verification`` – its physical and logical checks.
+* ``GET /entry/notes`` (``description``, ``memos``, ``exclude``) – earlier notes or memos
+  of transactions with the same description, most recent first (#407);
 * ``GET /entry/suggestion`` (``description``, ``account``, ``currency``, ``exclude``),
   ``/entry/amount`` (``text``, ``currency``, ``number_format``), ``/entry/trade``
   (``account``, ``shares``, ``price``, ``amount``, ``changed``, ``currency``,
-  ``number_format``), ``/entry/accounts`` (``text``, ``exclude``, ``limit``), and
+  ``number_format``, and ``recompute``, which of the three to work out again),
+  ``/entry/accounts`` (``text``, ``exclude``, ``limit``), and
   ``/entry/num`` (``account``, ``text``, ``step``) – reading what is typed into a
   register; none writes.
 * ``GET /historical-estimates`` (``months``, ``min_active_months``, ``scenario``,
@@ -222,7 +225,7 @@ from ..gen.services import (
 )
 from ..gen.services.account_inference import ApplyAccountSuggestions
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
-from ..gen.services.autocomplete import SuggestEntry
+from ..gen.services.autocomplete import EarlierNotes, SuggestEntry
 from ..gen.services.categorization import AddRule
 from ..gen.services.claims import ClaimReportQuery, CloseClaim, ReopenClaim, SaveClaim
 from ..gen.services.csv_import import CsvImportRequest, InspectCsv
@@ -284,6 +287,7 @@ __all__ = [
     "entry_amount_get",
     "entry_num_get",
     "entry_suggestion_get",
+    "entry_notes_get",
     "entry_trade_get",
     "budget_jars_get",
     "holdings_get",
@@ -1662,6 +1666,16 @@ def entry_suggestion_get(api: Api, _path: Path, query: QueryParams) -> dict:
     return to_data(api.book.suggest_entry(request))
 
 
+def entry_notes_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    request = EarlierNotes(
+        description=query.text("description") or "",
+        memos=query.flag("memos"),
+        exclude=query.text("exclude"),
+    )
+    query.finish()
+    return {"notes": list(api.book.earlier_notes(request))}
+
+
 def entry_amount_get(api: Api, _path: Path, query: QueryParams) -> dict:
     text = query.text("text") or ""
     currency = query.text("currency")
@@ -1684,6 +1698,10 @@ def entry_trade_get(api: Api, _path: Path, query: QueryParams) -> dict:
         number_format=cast(
             'Literal["auto", "dot", "comma"]',
             query.choice("number_format", _NUMBER_FORMATS, "auto"),
+        ),
+        recompute=cast(
+            'Literal["shares", "price", "amount"] | None',
+            query.choice("recompute", ("shares", "price", "amount"), "") or None,
         ),
     )
     query.finish()

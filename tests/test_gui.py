@@ -1202,6 +1202,32 @@ class TestRegisterGrid:
         # #369: an expense goes to the money-out column (Withdrawal).
         assert sheet.column == "decrease" and not grid.match_frame.get_visible()
 
+    def test_the_account_list_opens_above_the_last_row(self, app, window, populated_book):
+        """#406: on the bottom row (the blank transaction) the list opened below
+        the register's edge, showing only a row or two."""
+        from breadsched.gui.widgets.register_grid import match_list_placement
+
+        # 26-pixel rows in a 300-pixel register: rows 0-9 under the heading line.
+        assert match_list_placement(0, 8, 26, 300) == (52, 208)
+        top, height = match_list_placement(9, 8, 26, 300)
+        assert (top, height) == (260 - 208, 208)
+        assert top + height == 26 * 10  # it ends where the row begins
+        # A short list opens below wherever it fits, and above the last row.
+        assert match_list_placement(3, 2, 26, 300) == (130, 52)
+        assert match_list_placement(9, 1, 26, 300) == (234, 26)
+        # With little room either way, the larger side wins and the list scrolls.
+        assert match_list_placement(2, 8, 26, 130) == (0, 78)
+
+        view = _grid_register(app, window, populated_book)
+        grid, sheet = view.grid, view.sheet
+        grid._height = grid.row_height * 6
+        sheet.cursor = grid.first_row + 4
+        sheet.column = "transfer"
+        grid.show_matches(["Expenses:Rent", "Expenses:Groceries", "Assets:Checking Account"])
+        row_top = grid.row_height * 5
+        assert grid.match_frame.get_margin_top() + grid.row_height * 3 == row_top
+        grid.hide_matches()
+
     def test_a_whole_entry_by_keyboard(self, app, window, populated_book):
         view = _grid_register(app, window, populated_book)
         grid, sheet, db = view.grid, view.sheet, app.db
@@ -1279,6 +1305,32 @@ class TestRegisterGrid:
         typed.set_text(earlier_text)
         typed.propose()
         assert typed.draft.notes == "My own"
+
+    def test_typing_a_note_completes_from_earlier_notes(self, app, window, populated_book):
+        """#407: the notes line completes from notes written for the same description,
+        beginning with or containing what is typed."""
+        view = _grid_register(app, window, populated_book)
+        grid, sheet, db = view.grid, view.sheet, view.sheet.db
+        earlier_text = sheet.descriptions[0]
+        earlier = next(t for t in db.iter_transactions() if t.description == earlier_text)
+        earlier.notes = "Receipt in the blue folder"
+        with db.transaction("Notes") as txn:
+            db.commit_transaction(earlier, txn)
+        sheet.set_double_line(True)
+        sheet.draft.description = earlier_text
+        notes_row = next(
+            index for index, row in enumerate(sheet.rows) if row.kind == "notes" and row.current
+        )
+        sheet.cursor, sheet.column = notes_row, "description"
+        grid.sync()
+        _type(grid, "rec")
+        assert grid.editor.get_text() == "Receipt in the blue folder"
+        assert grid.editor.get_selection_bounds() == (3, len("Receipt in the blue folder"))
+        grid.editor.set_text("")
+        _type(grid, "blue")
+        assert grid.editor.get_text() == "Receipt in the blue folder"
+        assert grid.editor.get_selection_bounds() == (19, len("Receipt in the blue folder"))
+        assert sheet.draft.notes == "Receipt in the blue folder"
 
     def test_escape_puts_the_entry_back(self, app, window, populated_book):
         view = _grid_register(app, window, populated_book)
@@ -2816,11 +2868,84 @@ class TestColumnBehaviour:
             "Type",
             "Description",
             "Balance",
-            "Quote evidence",
+            "Value",
+            "Price",
+            "Last Quote Update",
         ]
         for column in columns:
             assert column.get_resizable() is True
             assert column.get_sorter() is not None
+        # #406: only Description takes spare width, so narrowing Account widens it.
+        assert [column.get_title() for column in columns if column.get_expand()] == ["Description"]
+
+    def test_columns_reorder_and_resize_and_are_remembered(self, app, window, populated_book):
+        """#406: columns move (by dragging or the column menu) and keep their widths."""
+        from breadsched.gui.views._base import column, column_menu
+
+        app.open_book(populated_book)
+        window.show_category("accounts")
+        view = window._views["accounts"]
+        settings = app.view_settings
+        section = "columns:accounts"
+
+        def titles(column_view):
+            columns = column_view.get_columns()
+            return [columns.get_item(i).get_title() for i in range(columns.get_n_items())]
+
+        balance = next(c for c in self._columns(view) if c.get_title() == "Balance")
+        assert view.column_view.get_reorderable() is True
+        # Dragging Balance's heading next to Account.
+        view.column_view.insert_column(1, balance)
+        assert titles(view.column_view)[:3] == ["Account", "Balance", "Type"]
+        assert settings.get_list(section, "order")[:3] == ["Account", "Balance", "Type"]
+        balance.set_fixed_width(130)
+        assert settings.get_int(section, "width:Balance") == 130
+        # Account, which holds the tree's expander, stays first.
+        view.column_view.insert_column(2, self._columns(view)[0])
+        assert titles(view.column_view)[0] == "Account"
+
+        # The column menu moves a column too.
+        chooser = view.table.chooser
+        chooser.get_popover().emit("show")
+        box = chooser.get_popover().get_child()
+        lines = [
+            line for line in _descendants(box) if isinstance(line, Gtk.Box) and line is not box
+        ]
+        type_line = next(
+            line
+            for line in lines
+            if isinstance(line.get_first_child(), Gtk.CheckButton)
+            and line.get_first_child().get_label() == "Type"
+        )
+        later = [w for w in _descendants(type_line) if isinstance(w, Gtk.Button)][-1]
+        later.emit("clicked")
+        assert titles(view.column_view)[:4] == ["Account", "Balance", "Description", "Type"]
+
+        # The next time the table is built, it comes back as left.
+        rebuilt = Gtk.ColumnView()
+        for title in ("Account", "Type", "Description", "Balance"):
+            rebuilt.append_column(column(title, str, expand=title == "Description"))
+        column_menu("accounts", rebuilt, settings)
+        assert titles(rebuilt) == ["Account", "Balance", "Description", "Type"]
+        restored = next(
+            rebuilt.get_columns().get_item(i)
+            for i in range(4)
+            if rebuilt.get_columns().get_item(i).get_title() == "Balance"
+        )
+        assert restored.get_fixed_width() == 130
+
+    def test_account_balance_value_and_price_columns(self, app, window, populated_book):
+        """#407: what an account holds, its reporting-currency value, and its price."""
+        app.open_book(populated_book)
+        window.show_category("accounts")
+        view = window._views["accounts"]
+        line = next(iter(view._lines.values()))
+        account = line.record.account
+        assert view._format_value(account) == line.balance.format(parens_negative=True)
+        assert view._format_balance(account).startswith(
+            line.book_balance.format(parens_negative=True)
+        )
+        assert view._format_price(account) == ""
 
     def test_scheduled_columns_resize_and_sort(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -3918,13 +4043,10 @@ class TestColumnHiding:
         window.show_category("accounts")
         button = _find_menu_button(window._views["accounts"])
         box = button.get_popover().get_child()
-        checks = []
-        child = box.get_first_child()
-        while child is not None:
-            if isinstance(child, Gtk.CheckButton):
-                checks.append(child)
-            child = child.get_next_sibling()
+        # Each column's line holds its check and the arrows that move it (#406).
+        checks = [widget for widget in _descendants(box) if isinstance(widget, Gtk.CheckButton)]
         assert checks and checks[0].get_sensitive() is False
+        assert checks[0].get_label() == "Account"
 
 
 def _find_menu_button(view):

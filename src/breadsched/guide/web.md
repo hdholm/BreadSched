@@ -194,8 +194,12 @@ GnuCash, has **Shares** and **Price** columns before **Buy** and **Sell**, and
 hold and their value at the latest price, with its date and source, or says there
 is no price yet. Type any two of shares, price, and amount and the third is filled
 in when you leave the field, as in the
-[desktop register](desktop.md#shares-in-an-investment-register). A purchase or sale
-is not saved without its shares.
+[desktop register](desktop.md#shares-in-an-investment-register); when all three are
+already filled, changing one asks which of the other two to change, or **Cancel**
+puts it back. A purchase or sale is not saved without its shares. A cash register a
+security has moved through shows **Shares** and **Price** for its security legs, and
+a split line in a security takes them there; choosing a security for a split line
+adds the columns.
 
 **Filter this register**, above the table, keeps the rows whose date, number,
 description, notes, tags, memos, accounts, or amounts contain what you type, as the

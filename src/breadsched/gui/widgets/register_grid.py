@@ -23,7 +23,7 @@ from collections.abc import Callable
 from ..gi_setup import Gdk, Gtk, Pango, PangoCairo
 from ..register_sheet import BLANK, IMBALANCE, NOTES, SPLIT, RegisterSheet
 
-__all__ = ["BANDING", "RegisterGrid", "grid_colours"]
+__all__ = ["BANDING", "RegisterGrid", "grid_colours", "match_list_placement"]
 
 #: How rows are shaded (#325): not at all, alternate transactions (a transaction's
 #: notes and split lines share its band), or alternate lines.
@@ -95,6 +95,34 @@ def _typed_end(typed: str, shown: str) -> int:
     head = ":".join(shown_parts[: len(typed_parts) - 1])
     end = len(head) + (1 if len(typed_parts) > 1 else 0) + len(typed_parts[-1])
     return min(end, len(shown))
+
+
+def _note_end(typed: str, shown: str) -> int:
+    """Where what was typed ends in a completed description or note: after it when
+    the completion begins with it, else after where it appears inside (#407)."""
+    if shown.casefold().startswith(typed.casefold()):
+        return len(typed)
+    found = shown.casefold().find(typed.casefold())
+    return len(shown) if found < 0 else found + len(typed)
+
+
+def match_list_placement(row: int, shown: int, row_height: int, height: int) -> tuple[int, int]:
+    """Where the account list opens for the cell on visible ``row``: its top and its
+    largest height, in pixels.
+
+    It opens below the row when ``shown`` rows fit there, else on whichever side has
+    more room, so the list for the last row (the blank transaction, usually) opens
+    above it instead of off the register's bottom edge (#406).
+    """
+    wanted = shown * row_height
+    row_top = row_height * (row + 1)  # the heading line is row 0
+    below_top = row_top + row_height
+    below = max(0, height - below_top)
+    above = row_top
+    if wanted <= below or below >= above:
+        return below_top, max(row_height, min(wanted, below))
+    fitted = max(row_height, min(wanted, above))
+    return row_top - fitted, fitted
 
 
 class RegisterGrid(Gtk.Box):
@@ -261,6 +289,9 @@ class RegisterGrid(Gtk.Box):
             min(visible, rows),
         )
         if sheet is not None:
+            if tuple(sheet.columns) != tuple(self._widths):
+                # A security split arriving in a cash register adds its columns (#407).
+                self._measure()
             self.ensure_visible(sheet.cursor)
             name = sheet.full_names.get(sheet.account, "")
             self.area.update_property([Gtk.AccessibleProperty.LABEL], [f"Register for {name}"])
@@ -365,8 +396,12 @@ class RegisterGrid(Gtk.Box):
         self.matches.select_row(self.matches.get_row_at_index(0))
         x, width = self.column_x("transfer")
         position = self.sheet.cursor - self.first_row
+        top, height = match_list_placement(
+            position, min(len(names), _MATCH_ROWS), self.row_height, self._height
+        )
         self.match_frame.set_margin_start(int(x))
-        self.match_frame.set_margin_top(int(self.row_height * (position + 2)))
+        self.match_frame.set_margin_top(top)
+        self.match_frame.set_max_content_height(height)
         self.match_frame.set_size_request(int(max(width, 240)), -1)
         self.match_frame.set_visible(True)
 
@@ -521,7 +556,10 @@ class RegisterGrid(Gtk.Box):
             typed = literal + character
             self._typed = typed
             shown, names = sheet.quickfill(typed)
-            self._replace(shown, _typed_end(typed, shown))
+            keep = (
+                _typed_end(typed, shown) if sheet.column == "transfer" else _note_end(typed, shown)
+            )
+            self._replace(shown, keep)
             if sheet.column == "transfer":
                 self.show_matches(names)
             return True

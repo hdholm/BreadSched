@@ -82,9 +82,15 @@ class AccountTreeView(BaseView):
         self.column_view.add_css_class("data-table")
         self.column_view.append_column(self._name_column())
         self.column_view.append_column(column("Type", lambda a: a.atype.value))
+        # Description takes the spare width, so narrowing any other column widens it
+        # (#406); every column after Account drags into another order.
         self.column_view.append_column(column("Description", lambda a: a.description, expand=True))
+        # #407: the balance in what the account holds (shares, or its own currency),
+        # its value in the reporting currency, and the price that values it.
         self.column_view.append_column(column("Balance", self._format_balance, numeric=True))
-        self.column_view.append_column(column("Quote evidence", self._quote_evidence))
+        self.column_view.append_column(column("Value", self._format_value, numeric=True))
+        self.column_view.append_column(column("Price", self._format_price, numeric=True))
+        self.column_view.append_column(column("Last Quote Update", self._quote_evidence))
         self.column_view.connect("activate", self._on_activated)
 
         self.append(self._header)
@@ -132,7 +138,6 @@ class AccountTreeView(BaseView):
         factory.connect("setup", on_setup)
         factory.connect("bind", on_bind)
         col = Gtk.ColumnViewColumn(title="Account", factory=factory)
-        col.set_expand(True)
         col.set_resizable(True)
         col.set_sorter(
             Gtk.CustomSorter.new(_compare_by(lambda account: account.name.casefold(), None, False))
@@ -140,12 +145,33 @@ class AccountTreeView(BaseView):
         return col
 
     def _format_balance(self, account) -> str:
+        """What the account and its descendants hold, in their own commodity."""
+        line = self._lines.get(account.handle)
+        if line is None:
+            return ""
+        if line.book_balance is None:
+            return "Mixed commodities"
+        text = line.book_balance.format(parens_negative=True)
+        held = line.commodity
+        if held and line.currency and held != line.currency:
+            text = f"{text} {held}"
+        return text
+
+    def _format_value(self, account) -> str:
+        """The value in the reporting currency; a missing conversion says so."""
         line = self._lines.get(account.handle)
         if line is None:
             return ""
         if line.balance is None:
             return "Missing reporting-currency quote" if line.missing_quotes else "Mixed currencies"
         return line.balance.format(parens_negative=True)
+
+    def _format_price(self, account) -> str:
+        """The latest quote that values a security or a foreign currency."""
+        line = self._lines.get(account.handle)
+        if line is None or line.price is None or line.commodity == line.currency:
+            return ""
+        return f"{line.price.format()} {line.currency or ''}".strip()
 
     def _quote_evidence(self, account) -> str:
         # The quote date already says how current it is (#151).

@@ -74,6 +74,7 @@ _ANY = {"revision", "book_id"}
 _LOOKUP = {
     "account_outline",
     "suggest_entry",
+    "earlier_notes",
     "entry_amount",
     "entry_trade",
     "entry_accounts",

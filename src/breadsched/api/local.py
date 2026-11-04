@@ -164,7 +164,13 @@ from ..gen.services.account_inference import (
 from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
-from ..gen.services.autocomplete import EntryProposal, SuggestEntry, suggest_entry
+from ..gen.services.autocomplete import (
+    EarlierNotes,
+    EntryProposal,
+    SuggestEntry,
+    earlier_notes,
+    suggest_entry,
+)
 from ..gen.services.book_info import BookCounts, BookSummary
 from ..gen.services.budget_jars import JarsView
 from ..gen.services.categorization import (
@@ -454,6 +460,9 @@ class LocalBookServer:
     def suggest_entry(self, request: SuggestEntry) -> EntryProposal:
         return unwrap(suggest_entry(self.db, request))
 
+    def earlier_notes(self, request: EarlierNotes) -> tuple[str, ...]:
+        return unwrap(earlier_notes(self.db, request))
+
     def entry_amount(
         self, text: str, currency: str | None = None, number_format: str = "auto"
     ) -> EntryAmount:
@@ -474,6 +483,7 @@ class LocalBookServer:
                 changed=request.changed,
                 currency=request.currency,
                 number_format=request.number_format,
+                recompute=request.recompute,
             )
         )
 

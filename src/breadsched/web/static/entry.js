@@ -160,6 +160,28 @@ function tradeCells(holder) {
     increase:(holder.increase || "").trim(), decrease:(holder.decrease || "").trim() };
 }
 
+function chooseTradeField(changed, choices) {
+  // Which of the other two values changes to match (#407): a choice, or "" to cancel.
+  return new Promise((resolve) => {
+    const backdrop = el("div", { class:"detail-backdrop trade-question" });
+    const done = (value) => { backdrop.remove(); resolve(value); };
+    const dialog = el("section", { class:"detail-dialog", role:"alertdialog",
+      "aria-label":`You changed the ${changed}` },
+      el("h2", {}, `You changed the ${changed}.`),
+      el("p", {}, "Shares, price, and amount were all filled in. Which should change to "
+        + "match? Cancel puts back what you changed."),
+      el("div", { class:"toolbar" },
+        el("button", { class:"action", type:"button", onclick:()=>done("") }, "Cancel"),
+        ...choices.map((choice, index) => el("button", {
+          class: index === 0 ? "action primary" : "action", type:"button",
+          onclick:()=>done(choice) }, `Change the ${choice}`))));
+    backdrop.addEventListener("keydown", (event) => { if (event.key === "Escape") done(""); });
+    backdrop.append(dialog);
+    document.body.append(backdrop);
+    dialog.querySelector("button.primary")?.focus();
+  });
+}
+
 function registerEntry(data, usable, row) {
   const key = row ? row.split : "blank";
   const editing = Boolean(row);
@@ -169,8 +191,11 @@ function registerEntry(data, usable, row) {
   const transfers = accounts.filter((item) => item.handle !== state.account);
   // An account holding a security takes shares and a price as well (#323).
   const security = Boolean(data.security);
+  // A cash register with Shares and Price columns: its split lines in a security
+  // take shares there (#407).
+  const trades = security || Boolean(data.trades);
   const holdsShares = new Set(data.security_accounts || []);
-  const span = security ? "11" : "9";
+  const span = trades ? "11" : "9";
   if (!editing && (!selected || selected.hidden)) {
     return [el("tr", { class:"entry-row" }, el("td", { colspan:span, class:"note" },
       "Hidden accounts remain readable but take no new transactions."))];
@@ -269,12 +294,31 @@ function registerEntry(data, usable, row) {
     const field = changed === "amount"
       ? (holder.increase.trim() ? "increase" : "decrease") : changed;
     if ((holder[field] || "").trim() === (holder.settled?.[field] ?? "")) return;
+    // With all three already filled, changing one changes neither of the others
+    // until you say which (#407); Cancel puts it back.
+    const before = holder.settled || {};
+    let recompute = "";
+    if (before.shares && before.price && (before.increase || before.decrease)
+        && (holder[field] || "").trim()) {
+      const choices = ["shares", "price", "amount"].filter((item) => item !== changed);
+      recompute = await chooseTradeField(changed, choices);
+      if (!recompute) {
+        for (const [key, value] of Object.entries(before)) {
+          holder[key] = value;
+          if (nodes[key]) nodes[key].value = value;
+        }
+        touch();
+        updateImbalance();
+        return;
+      }
+    }
     const amountText = holder.increase.trim() || holder.decrease.trim();
     const selling = holder.shares.trim().startsWith("-");
     // What this fill reads; a cell typed while it runs is read by its own fill.
     const sent = tradeCells(holder);
     const query = new URLSearchParams({ account, shares:holder.shares, price:holder.price,
       amount:amountText, changed, number_format:browserNumberFormat });
+    if (recompute) query.set("recompute", recompute);
     const filled = await get(`/api/entry/trade?${query}`);
     const written = {};
     if (filled.shares !== null) {
@@ -726,8 +770,8 @@ function registerEntry(data, usable, row) {
     el("td", {}, dateInput), el("td", {}, numInput), el("td", {}, description),
     el("td", {}, draft.split ? el("span", { class:"muted" }, "-- Split --") : transfer),
     el("td", { class:"muted" }, editing ? row.reconcile : ""),
-    security ? el("td", { class:"num" }, draft.split ? null : sharesInput) : null,
-    security ? el("td", { class:"num" }, draft.split ? null : priceInput) : null,
+    trades ? el("td", { class:"num" }, draft.split ? null : sharesInput) : null,
+    trades ? el("td", { class:"num" }, draft.split ? null : priceInput) : null,
     el("td", { class:"num" }, draft.split ? null : increase),
     el("td", { class:"num" }, draft.split ? null : decrease),
     el("td", {}),
@@ -737,7 +781,7 @@ function registerEntry(data, usable, row) {
   if (draft.split) {
     const imbalanceRow = el("tr", { class:"entry-row entry-line" },
       el("td", {}), el("td", {}), el("td", { class:"muted" }, "Imbalance"),
-      el("td", {}), el("td", {}), ...(security ? [el("td", {}), el("td", {})] : []),
+      el("td", {}), el("td", {}), ...(trades ? [el("td", {}), el("td", {})] : []),
       el("td", {}), el("td", {}), imbalance, el("td", {}));
     const lineRow = (line, index) => {
       const label = `${editing ? "Edited" : "New"} split ${index + 1}`;
@@ -757,19 +801,24 @@ function registerEntry(data, usable, row) {
         if (value) takeRest(line);
         grow();
         updateImbalance();
+        if (!trades && holdsShares.has(value)) {
+          // The register gains its Shares and Price columns; the draft is kept.
+          state.registerTrades = state.account;
+          render();
+        }
       }, "(choose account)");
       const [up, down] = amountPair(line, label);
       line.nodes = { up, down };
       up.addEventListener("input", grow);
       down.addEventListener("input", grow);
-      const [lineShares, linePrice] = security
+      const [lineShares, linePrice] = trades
         ? tradeInputs(line, label, up, down, () => line.account) : [null, null];
       lineShares?.addEventListener("input", grow);
       return el("tr", { class:"entry-row entry-line", onkeydown:keys },
         el("td", {}), el("td", {}), el("td", {}, memo),
         el("td", {}, account), el("td", {}),
-        security ? el("td", { class:"num" }, lineShares) : null,
-        security ? el("td", { class:"num" }, linePrice) : null,
+        trades ? el("td", { class:"num" }, lineShares) : null,
+        trades ? el("td", { class:"num" }, linePrice) : null,
         el("td", { class:"num" }, up),
         el("td", { class:"num" }, down),
         el("td", {}), el("td", {}));

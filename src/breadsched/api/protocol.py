@@ -76,7 +76,7 @@ from ..gen.services.account_inference import (
 from ..gen.services.activity import ActivityView
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.attachments import AttachmentReport
-from ..gen.services.autocomplete import EntryProposal, SuggestEntry
+from ..gen.services.autocomplete import EarlierNotes, EntryProposal, SuggestEntry
 from ..gen.services.book_info import BookCounts, BookSummary
 from ..gen.services.budget_jars import JarsView
 from ..gen.services.categorization import (
@@ -327,6 +327,10 @@ class BookApi(Protocol):
 
     def suggest_entry(self, request: SuggestEntry) -> EntryProposal:
         """The latest earlier transaction matching what is being typed; writes nothing."""
+        ...
+
+    def earlier_notes(self, request: EarlierNotes) -> tuple[str, ...]:
+        """Notes (or memos) of earlier transactions with the same description (#407)."""
         ...
 
     def entry_amount(
