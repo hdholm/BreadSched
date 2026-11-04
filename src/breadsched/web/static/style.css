@@ -309,3 +309,12 @@ header a.action { text-decoration: none; }
 .recovery-codes ul { columns: 2; }
 .book-choice ul { list-style: none; padding: 0; display: grid; gap: 0.5rem; }
 .book-choice li { display: flex; align-items: baseline; gap: 0.5rem; }
+/* A button the page points you at, such as Reopen for a statement already
+   reconciled (#403). */
+@keyframes attention-pulse { 0% { box-shadow: 0 0 0 0 var(--accent, #3584e4); }
+  100% { box-shadow: 0 0 0 8px transparent; } }
+button.attention { animation: attention-pulse 0.8s ease-out 2; }
+.statement-lines .statement-line input:first-child { min-width: 10em; }
+/* Find prints as the Transaction detail report: its results, not its form (#408). */
+@media print { .no-print { display: none !important; } }
+tr.find-group th { font-weight: 600; text-align: left; }

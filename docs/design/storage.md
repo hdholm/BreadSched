@@ -131,6 +131,13 @@ book server's `ETag` and change events report this value (#357); see
 [decision 0003](decisions/0003-book-server.md). `tests/test_book_server.py`
 covers reopening, undo, and a read-only snapshot.
 
+Undo shows what it would undo: `DbSQLite.undo_preview` (the book server's
+`undo_preview`, `POST /api/v1/undo/preview`, a POST because only the writer holds the
+undo history) names the step and counts its records by kind, so the desktop confirms
+a step of 200 or more changes first (#405).
+`undo(progress, announce=False)` replays such a step on a worker, reporting its
+progress, and `announce_undo` then raises its change signals on GTK's loop.
+
 ## Verification, backup, and restore
 
 Normal writes are verified incrementally from the records already captured by the

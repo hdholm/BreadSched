@@ -327,8 +327,16 @@ checked Funds In and Funds Out separately for a GnuCash-style two-column window.
 `sort_candidates` orders candidates for display only (date, description, size, or
 checked first; later-dated entries last), so a missing entry is easier to find (#377).
 `add_statement_entry` posts a missing statement line, such as interest, as one
-undoable change: the transaction, its Cleared mark, and its place in the open
-statement's checks. The displayed difference is always statement ending balance minus the account's
+undoable change: the transaction, its Cleared mark, its place in the open
+statement's checks, and the account's remembered line (#403):
+`reconciliation.remember_line` keeps the last five distinct (description, other
+account) pairs in book metadata (`reconcile.lines:<account>`), most recent first, and
+`ReconciliationView.remembered_lines` offers them again without amounts.
+`default_statement_date` proposes a month after the last completed statement (a
+month end to the next month end), else the latest month end, else today once that
+month is reconciled. `services.transactions.reconciled_changes` names the reconciled
+splits an edit would change or drop, so the register, the transaction editor, and the
+browser register ask before saving. The displayed difference is always statement ending balance minus the account's
 natural-sign opening-plus-checked balance. GTK and web merely present this shared
 calculation. Their mutations submit typed start, update, complete, cancel, and reopen
 requests through the application-service boundary. Domain failures retain stable

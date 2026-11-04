@@ -47,11 +47,15 @@ class FoundSplit:
 
 @dataclass(frozen=True, slots=True)
 class FoundGroup:
-    #: An account name, ``2026-03``, ``2026``, a tag, or "" when not grouped.
+    #: An account name, ``2026-03``, ``2026``, a tag, a description, notes, or ""
+    #: when not grouped.
     key: str
     rows: tuple[FoundSplit, ...] = ()
     #: Signed totals by currency mnemonic.
     totals: dict[str, Money] = field(default_factory=dict)
+    #: The next subtotal's groups within this one, outermost first (#408).
+    children: tuple[FoundGroup, ...] = ()
+    depth: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +89,16 @@ def _found(row: QueryRow) -> FoundSplit:
     )
 
 
+def _group(group) -> FoundGroup:
+    return FoundGroup(
+        group.key,
+        tuple(_found(row) for row in group.rows),
+        dict(group.totals),
+        tuple(_group(child) for child in group.children),
+        group.depth,
+    )
+
+
 def _errors(db: DbSQLite, query: TransactionQuery) -> list[ServiceError]:
     found = []
     if query.direction not in DIRECTIONS:
@@ -93,6 +107,10 @@ def _errors(db: DbSQLite, query: TransactionQuery) -> list[ServiceError]:
         found.append(ServiceError("find.sort.invalid", ("sort",)))
     if query.group_by not in GROUPINGS:
         found.append(ServiceError("find.group_by.invalid", ("group_by",)))
+    if any(level not in GROUPINGS or level == "none" for level in query.subtotals) or len(
+        set(query.subtotals)
+    ) != len(query.subtotals):
+        found.append(ServiceError("find.subtotals.invalid", ("subtotals",)))
     if query.start and query.end and query.start > query.end:
         found.append(ServiceError("find.dates.order", ("start", "end")))
     if query.amount_min is not None and query.amount_max is not None:
@@ -109,10 +127,7 @@ def find_transactions(db: DbSQLite, query: TransactionQuery) -> ServiceResult[Fi
     if errors:
         return ServiceResult.failure(*errors)
     result = run_query(db, query)
-    groups = tuple(
-        FoundGroup(group.key, tuple(_found(row) for row in group.rows), dict(group.totals))
-        for group in result.groups
-    )
+    groups = tuple(_group(group) for group in result.groups)
     return ServiceResult.success(
         FindResult(
             query=query,

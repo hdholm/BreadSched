@@ -17,7 +17,7 @@ from ..api import ApiError
 from ..gen.engine.cost_basis import shares_text
 from ..gen.engine.entry_input import trade_price
 from ..gen.lib.amount import Amount
-from ..gen.lib.transaction import InvestmentActivityKind
+from ..gen.lib.transaction import InvestmentActivityKind, ReconcileState
 from ..gen.services import (
     ClaimAttachment,
     SaveTransaction,
@@ -138,6 +138,8 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
                         "memo": split.memo,
                         # Exact shares for a split in a security account, else None.
                         "quantity": shares_of(split),
+                        # A change to a reconciled split is confirmed first (#403).
+                        "reconciled": split.reconcile is ReconcileState.RECONCILED,
                     }
                     for split in row.transaction.splits
                 ],

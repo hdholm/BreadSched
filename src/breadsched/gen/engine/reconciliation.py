@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from ..db.sqlite import DbSQLite
 from ..lib.account import AccountClass
 from ..lib.money import Money
 from ..lib.reconciliation import Reconciliation, ReconciliationEvent, ReconciliationStatus
+from ..lib.recurrence import add_months
 from ..lib.transaction import ReconcileState, Split, Transaction
 
 __all__ = [
@@ -19,6 +20,9 @@ __all__ = [
     "ReconciliationError",
     "cancel",
     "complete",
+    "default_statement_date",
+    "remember_line",
+    "remembered_lines",
     "open_for_account",
     "reconciled_balance",
     "reopen",
@@ -505,3 +509,65 @@ def _require_open(db: DbSQLite, handle: str) -> Reconciliation:
             "reconciliation is not open",
         )
     return reconciliation
+
+
+# ------------------------------------------------------------- remembering (#403)
+
+#: How many statement lines an account remembers.
+REMEMBERED_LINES = 5
+
+
+def _lines_key(account: str) -> str:
+    return f"reconcile.lines:{account}"
+
+
+def remembered_lines(db: DbSQLite, account: str) -> tuple[tuple[str, str], ...]:
+    """The (description, other account) of the charges and credits added to this
+    account's recent statements, most recent first, each pair once (#403). An
+    account since deleted is left out."""
+    raw = db.get_metadata(_lines_key(account), []) or []
+    found: list[tuple[str, str]] = []
+    for item in raw:
+        if not isinstance(item, list) or len(item) != 2:
+            continue
+        pair = (str(item[0]), str(item[1]))
+        if pair not in found and db.get_account(pair[1]) is not None:
+            found.append(pair)
+    return tuple(found[:REMEMBERED_LINES])
+
+
+def remember_line(db: DbSQLite, account: str, description: str, other: str, txn) -> None:
+    """Remember a statement line added to ``account``, in the write ``txn``."""
+    pair = (description.strip(), other)
+    lines = [list(pair), *[list(item) for item in remembered_lines(db, account) if item != pair]]
+    db.set_metadata(_lines_key(account), lines[:REMEMBERED_LINES], txn)
+
+
+def default_statement_date(db: DbSQLite, account: str, today: date) -> date:
+    """The statement date a new reconciliation proposes (#403).
+
+    A month after the last statement reconciled; with none, the most recent end of
+    a month. When a month after the last would be in the future, the most recent
+    end of a month, or today once that month is already reconciled.
+    """
+    one_day = timedelta(days=1)
+    month_end = today if (today + one_day).day == 1 else today.replace(day=1) - one_day
+    completed = [
+        item.statement_date
+        for item in db.iter_reconciliations(account)
+        if item.status is ReconciliationStatus.COMPLETED
+    ]
+    if not completed:
+        return month_end
+    last = max(completed)
+    following = _a_month_after(last)
+    if following <= today:
+        return following
+    return today if last >= month_end else month_end
+
+
+def _a_month_after(when: date) -> date:
+    """The same day next month; a month's last day goes to the next month's last."""
+    if (when + timedelta(days=1)).day == 1:
+        return add_months(when, 1, day=-1)
+    return add_months(when, 1)

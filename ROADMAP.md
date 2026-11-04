@@ -18,15 +18,6 @@ Every item planned for this stage is delivered; see `CHANGELOG.md` through
   four phases: allocations with remaining amounts and estimates that lapse at the end
   of their period; category-first proposals with the other account and notes; the
   Match windows in GTK; then the browser and command line.
-- **Reconcile remembers** (#403): the charges, credits, and interest of the last few
-  statements as candidates, a default statement date from the last one, a visible
-  hint instead of a silent refusal for an earlier statement, and a warning before a
-  reconciled leg is changed.
-- **Undoing a large step** (#405), such as an import: say how much it undoes, ask
-  first, and show progress.
-- **Find and a Transaction Detail report** (#408): several accounts at once,
-  subtotals nested in a chosen order (including description and notes), printing,
-  and the same query as a report.
 
 ## At the first Beta
 

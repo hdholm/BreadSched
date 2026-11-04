@@ -10,6 +10,33 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a314 - 2026-11-04
+
+Fixes three field reports (#403, #405, #408).
+
+- **Reconcile remembers** (#403). The charges and credits added to an account's last
+  statements (up to five distinct description-and-account pairs, kept in the book
+  and undone with the entry) are offered again on the next statement without their
+  amounts, with one more line always free to type into; a line added shows
+  **Added**, and the same pair is never offered twice. The statement date proposed
+  is a month after the last statement (month end to month end), or the latest month
+  end, or today once that month is reconciled. Starting a statement already
+  reconciled says so and points at **Reopen**. Changing the account, amount, or
+  shares of a reconciled split, or removing one, asks first in the desktop register,
+  the transaction editor, and the browser register
+  (`services.transactions.reconciled_changes`). Desktop and browser.
+- **Undoing a large step asks and shows progress** (#405). Undo of a step with 200
+  or more changes, such as an import, names it and counts what it removes or puts
+  back, asks, and then runs off GTK's loop with a progress bar. The book server's
+  `undo_preview` (`POST /api/v1/undo/preview`, READ) reports the step.
+- **Find takes several accounts and nested subtotals, and prints** (#408). Choose any
+  accounts (desktop: a filterable checklist; browser: a multiple choice; command line:
+  `--account` repeated, as before). Subtotals nest in the order chosen (account,
+  month, year, tag, and now description and notes; `TransactionQuery.subtotals`,
+  `--subtotal` repeated, `subtotal` repeated on `/api/find`). The result prints as
+  the Transaction detail report, and **Reports → Transaction Detail…** opens the
+  desktop window as that report. JSON groups gain `depth` and `children`.
+
 ## 0.2.0a313 - 2026-11-04
 
 Fixes three field reports (#404, #406, #407).

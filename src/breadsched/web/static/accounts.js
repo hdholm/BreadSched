@@ -1231,10 +1231,12 @@ async function openReconciliation(account, order = {sort:"date", descending:fals
   };
   let content;
   if (!data.open) {
+    // A month after the last statement, or the latest month end (#403).
     const statementDate = el("input", {
-      type:"date", value:new Date().toISOString().slice(0, 10),
+      type:"date", value:data.default_statement_date || new Date().toISOString().slice(0, 10),
     });
     const ending = el("input", {inputmode:"decimal", placeholder:"0.00"});
+    let reopenButton = null;
     const actions = [
       el("button", {class:"action primary", type:"button", onclick:async()=>{
         try {
@@ -1244,23 +1246,68 @@ async function openReconciliation(account, order = {sort:"date", descending:fals
             ending_balance:ending.value.trim(),
           });
           await reload();
-        } catch (error) { say(error.message, "error"); }
+        } catch (error) {
+          if (error.code === "reconciliation.statement_date.not_after_completed" && reopenButton) {
+            // An earlier statement is changed by reopening it: point at the button.
+            say(`That statement is already reconciled. To change it, choose “${reopenButton.textContent}”.`, "error");
+            reopenButton.classList.add("primary", "attention");
+            reopenButton.focus();
+          } else say(error.message, "error");
+        }
       }}, "Start reconciliation"),
     ];
     const completed = data.history.find((item)=>item.status === "completed");
-    if (completed) actions.push(
-      el("button", {class:"action", type:"button", onclick:async()=>{
+    if (completed) {
+      reopenButton = el("button", {class:"action", type:"button", onclick:async()=>{
         try {
           await post("/api/reconciliation/reopen", {handle:completed.handle});
           await reload();
         } catch (error) { say(error.message, "error"); }
-      }}, `Reopen ${completed.statement_date}`));
+      }}, `Reopen ${completed.statement_date}`);
+      actions.push(reopenButton);
+    }
+    // Charges and credits added to recent statements come back without amounts,
+    // and one more line is always there to type into (#403).
+    const others = state.accounts.filter((item) => item.handle !== account.handle
+      && !item.placeholder && item.depth > 0 && !item.hidden);
+    const interest = others.find((item) => /interest/i.test(item.full_name));
+    const lineRow = (line) => {
+      const description = el("input", {value:line.description, "aria-label":"Statement line description"});
+      const other = el("select", {"aria-label":"Statement line account"}, others.map((item) =>
+        el("option", {value:item.handle, selected:item.handle === line.account ? "selected" : null},
+          item.full_name)));
+      const amount = el("input", {inputmode:"decimal", placeholder:"0.00", class:"num",
+        "aria-label":"Statement line amount",
+        title:"Positive raises the balance, as interest charged on a card or earned on savings"});
+      const add = el("button", {class:"action", type:"button", onclick:async()=>{
+        try {
+          await post(`/api/v1/accounts/${encodeURIComponent(account.handle)}/statement-entries`, {
+            other_account:other.value, post_date:statementDate.value,
+            description:description.value.trim(), amount:amount.value.trim(),
+          });
+          say(`Added ${description.value.trim()} on ${statementDate.value}, cleared; it starts checked.`);
+          amount.value = "";
+          if (line.remembered) {
+            [description, other, amount, add].forEach((node) => { node.disabled = true; });
+            add.textContent = "Added";
+          }
+        } catch (error) { say(error.message, "error"); }
+      }}, "Add");
+      return el("div", {class:"toolbar statement-line"}, description, other, amount, add);
+    };
+    const remembered = (data.remembered_lines || []).map((line) => ({...line, remembered:true}));
+    const blank = {description:"Interest", account:interest?.handle || ""};
+    if (remembered.some((line) => line.description === blank.description
+        && line.account === blank.account)) blank.description = "";
     content = el("div", {class:"stack"},
       el("p", {class:"note"},
         "Already-cleared entries start checked. Ledger states change only when the "
         + "statement difference is zero and you finish."),
       el("label", {}, "Statement date", statementDate),
       el("label", {}, "Ending balance", ending),
+      el("section", {class:"statement-lines"},
+        el("h3", {}, "Add a charge or credit from the statement"),
+        ...remembered.map(lineRow), lineRow(blank)),
       el("div", {class:"toolbar"}, actions));
   } else {
     const session = data.open;
@@ -1497,17 +1544,33 @@ async function showFind() {
   const select = (name, options) => el("select", { name }, options.map(([value, label]) =>
     el("option", { value, selected: value === (saved[name] || options[0][0]) ? "selected" : null },
       label)));
-  const accounts = [["", "All accounts"],
-    ...state.accounts.filter((a) => a.type !== "ROOT").map((a) => [a.handle, a.full_name])];
+  // Any collection of accounts (#408); none chosen searches every one.
+  const chosen = new Set(saved.accounts || []);
+  const accountChoice = el("select", { name: "accounts", multiple: "multiple", size: "6",
+    "aria-label": "Accounts to search" },
+    state.accounts.filter((a) => a.type !== "ROOT").map((a) => el("option", {
+      value: a.handle, selected: chosen.has(a.handle) ? "selected" : null }, a.full_name)));
+  const groupings = [["account", "Account"], ["month", "Month"], ["year", "Year"],
+    ["tag", "Tag"], ["description", "Description"], ["notes", "Notes"]];
+  // Subtotals nest in the order chosen: by this, then by that (#408).
+  const subtotalChoice = (index) => el("select", { name: `subtotal${index}`,
+    "aria-label": index ? `Then subtotal by (${index + 1})` : "Subtotal by" },
+    [["", index ? "(no more)" : "No groups"], ...groupings].map(([value, label]) =>
+      el("option", { value,
+        selected: value === ((saved.subtotals || [])[index] || "") ? "selected" : null }, label)));
   const results = el("div", { class: "find-results" });
   const form = el("form", { class: "entry find-form", onsubmit: (event) => {
     event.preventDefault();
     state.find = Object.fromEntries(new FormData(form).entries());
+    state.find.accounts = [...accountChoice.selectedOptions].map((option) => option.value);
+    state.find.subtotals = [0, 1, 2].map((index) => form.elements[`subtotal${index}`].value);
+    const stop = state.find.subtotals.indexOf("");
+    if (stop >= 0) state.find.subtotals = state.find.subtotals.slice(0, stop);
     state.find.no_subaccounts = form.elements.subaccounts.checked ? "" : "true";
     run().catch((error) => say(error.message, "error"));
   } },
     field("Text", input("text", { placeholder: "Anything a transaction holds" })),
-    field("Account", select("account", accounts)),
+    field("Accounts", accountChoice),
     el("label", { class: "check" }, el("input", { type: "checkbox", name: "subaccounts",
       checked: saved.no_subaccounts === "true" ? null : "checked" }), " Include subaccounts"),
     field("From", input("start", { type: "date" })),
@@ -1522,46 +1585,62 @@ async function showFind() {
       ["description", "Description"]])),
     el("label", { class: "check" }, el("input", { type: "checkbox", name: "descending",
       checked: saved.descending ? "checked" : null }), " Descending"),
-    field("Subtotal by", select("group_by", [["none", "No groups"], ["account", "Account"],
-      ["month", "Month"], ["year", "Year"], ["tag", "Tag"]])),
+    field("Subtotal by", subtotalChoice(0)),
+    field("Then by", subtotalChoice(1)),
+    field("Then by", subtotalChoice(2)),
     el("button", { class: "action primary", type: "submit" }, "Find"));
   const totals = (map) => Object.entries(map).map(([code, value]) => `${money(value)} ${code}`)
     .join(", ") || money("0");
   const run = async () => {
     const values = state.find || {};
     const query = new URLSearchParams();
-    for (const name of ["text", "account", "start", "end", "amount", "min", "max", "direction",
-      "tag", "sort", "group_by"]) {
+    for (const name of ["text", "start", "end", "amount", "min", "max", "direction",
+      "tag", "sort"]) {
       if (values[name]) query.set(name, values[name]);
     }
+    for (const handle of values.accounts || []) query.append("account", handle);
+    for (const level of values.subtotals || []) query.append("subtotal", level);
     if (values.no_subaccounts === "true") query.set("no_subaccounts", "true");
     if (values.descending) query.set("descending", "true");
     const data = await get(`/api/find?${query}`);
-    const grouped = (values.group_by || "none") !== "none";
+    const grouped = (data.subtotals || []).length > 0;
     const rows = [];
-    for (const group of data.groups) {
+    const indent = (depth) => ({ style: `padding-left:${depth * 1.5}em` });
+    const splitRows = (group) => {
       for (const row of group.rows) {
         rows.push([row.date, row.num, row.description,
           el("button", { class: "action", type: "button", onclick: () => {
             state.account = row.account; switchTo("Register"); } }, row.account_name),
           money(row.amount)]);
       }
-      if (grouped) {
-        rows.push(el("tr", { class: "total" }, el("th", { colspan: "4" }, `Subtotal: ${group.key}`),
-          el("td", { class: "num" }, totals(group.totals))));
-      }
+    };
+    const nested = (group) => {
+      rows.push(el("tr", { class: "find-group" },
+        el("th", { colspan: "5", ...indent(group.depth) }, group.key)));
+      if (group.children.length) group.children.forEach(nested);
+      else splitRows(group);
+      rows.push(el("tr", { class: "total" },
+        el("th", { colspan: "4", ...indent(group.depth) }, `Subtotal: ${group.key}`),
+        el("td", { class: "num" }, totals(group.totals))));
+    };
+    for (const group of data.groups) {
+      if (grouped) nested(group); else splitRows(group);
     }
     rows.push(el("tr", { class: "total" },
       el("th", { colspan: "4" },
         `Total: ${data.splits} split(s) in ${data.transactions} transaction(s)`),
       el("td", { class: "num" }, totals(data.totals))));
-    results.replaceChildren(table(["Date", "Num", "Description", "Account",
-      { label: "Amount", num: true }], rows));
+    results.replaceChildren(
+      el("div", { class: "toolbar no-print" },
+        el("button", { class: "action", type: "button", onclick: () => window.print() },
+          "Print…")),
+      el("h2", { class: "print-only" }, "Transaction detail"),
+      table(["Date", "Num", "Description", "Account", { label: "Amount", num: true }], rows));
   };
   if (state.find) run().catch((error) => say(error.message, "error"));
   return el("div", {},
     el("p", { class: "note" }, "Search every register. Rows are splits: an amount finds the "
       + "leg of that size, in or out; text finds anything a transaction holds. Subtotals "
       + "group the rows, and the last line is the total."),
-    el("div", { class: "panel panel-pad-16" }, form), results);
+    el("div", { class: "panel panel-pad-16 no-print" }, form), results);
 }

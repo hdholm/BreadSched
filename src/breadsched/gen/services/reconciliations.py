@@ -141,9 +141,16 @@ class ReconciliationView:
     #: Waiting proposals a deposit or an FSA statement line on this account may answer.
     reimbursement_proposals: int
     claim_link_proposals: int
+    #: The statement date a new reconciliation proposes (#403).
+    default_statement_date: date | None = None
+    #: Charges and credits added to recent statements, offered again without
+    #: amounts: (description, other account, its full name), most recent first.
+    remembered_lines: tuple[tuple[str, str, str], ...] = ()
 
 
-def reconciliation_view(db: DbSQLite, account: str) -> ServiceResult[ReconciliationView]:
+def reconciliation_view(
+    db: DbSQLite, account: str, today: date | None = None
+) -> ServiceResult[ReconciliationView]:
     found = db.get_account(account)
     if found is None:
         return ServiceResult.failure(ServiceError("reconciliation.account.not_found", ("account",)))
@@ -156,6 +163,11 @@ def reconciliation_view(db: DbSQLite, account: str) -> ServiceResult[Reconciliat
             tuple(reversed(list(db.iter_reconciliations(account)))),
             len(reimbursement_proposals(db, account=account).value or ()),
             len(claim_link_proposals(db, account=account).value or ()),
+            reconciliation.default_statement_date(db, account, today or date.today()),
+            tuple(
+                (description, other, db.full_name(other))
+                for description, other in reconciliation.remembered_lines(db, account)
+            ),
         )
     )
 
@@ -226,6 +238,10 @@ def add_statement_entry(
         db.add_transaction(transaction, txn)
         if session is not None and own.handle in session.selected_splits:
             db.commit_reconciliation(session, txn)
+        # Offered again on the next statement, without its amount (#403).
+        reconciliation.remember_line(
+            db, request.account, request.description, request.other_account, txn
+        )
     return ServiceResult.success(
         SavedTransaction(transaction.handle, transaction.post_date, transaction.description)
     )

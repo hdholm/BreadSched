@@ -223,16 +223,23 @@ be opened. See [Tags and linked documents](../USER_GUIDE.md#tags-and-linked-docu
 ## Find transactions
 
 **Find** searches every register with the same choices as the desktop: text,
-account (and its subaccounts), dates, an exact amount or a range (either
-direction), money in or out, a tag, the sort, and **Subtotal by** account, month,
-year, or tag. Each group ends with its subtotal and the last line is the total, per
-currency. Choose a row's account to open that register. See
+accounts (choose several with Ctrl or Shift; none searches all, with their
+subaccounts), dates, an exact amount or a range (either direction), money in or
+out, a tag, the sort, and **Subtotal by** account, month, year, tag, description, or
+notes, with two **Then by** choices to nest groups inside it. Each group ends with
+its subtotal and the last line is the total, per currency. Choose a row's account to
+open that register. **Print…** prints the result alone, as the Transaction detail
+report. See
 [Find transactions](../USER_GUIDE.md#find-transactions).
 
 ## Reconcile a statement
 
-Choose **Reconcile…** in the register, enter the statement date and ending balance,
-check entries until the difference is zero, and finish. The totals show the checked
+Choose **Reconcile…** in the register, enter the statement date (a month after the
+last statement is proposed) and ending balance, check entries until the difference
+is zero, and finish. Before starting, **Add a charge or credit from the statement**
+lists the lines added to recent statements, ready for an amount, and one more to
+type into. Starting a statement already reconciled points at its **Reopen** button.
+Saving a change to a reconciled split in the register asks first. The totals show the checked
 Funds In and Funds Out separately, and entries dated after the statement are listed,
 shaded and marked *after statement*, in case a date is wrong; they are never checked
 for you. Each entry shows its **Num** (a check number, say), sometimes all a

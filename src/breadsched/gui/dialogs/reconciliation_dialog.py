@@ -129,6 +129,33 @@ class _Column:
             button.set_label(_SORT_LABELS[key] + arrow)
 
 
+class StatementLineRow:
+    """One quick-add line: description, account, amount, and Add."""
+
+    def __init__(self, names: list[str], description: str, selected: int | None) -> None:
+        self.box = Gtk.Box(spacing=8)
+        self.description = Gtk.Entry(text=description, hexpand=True)
+        self.description.set_width_chars(12)
+        self.account = bounded_dropdown(names or ["(none)"])
+        self.account.set_hexpand(True)
+        if selected is not None:
+            self.account.set_selected(selected)
+        self.amount = Gtk.Entry(placeholder_text="0.00", xalign=1)
+        self.amount.set_width_chars(10)
+        self.amount.set_tooltip_text(
+            "Positive raises the balance, as interest charged on a card or earned on savings"
+        )
+        self.add = Gtk.Button(label="Add")
+        for widget in (self.description, self.account, self.amount, self.add):
+            self.box.append(widget)
+
+    def done(self) -> None:
+        for widget in (self.description, self.account, self.amount):
+            widget.set_sensitive(False)
+        self.add.set_label("Added")
+        self.add.set_sensitive(False)
+
+
 class ReconciliationDialog(BoundedWindow):
     """Thin GTK presentation over the book server's reconciliation workflow."""
 
@@ -290,11 +317,12 @@ class ReconciliationDialog(BoundedWindow):
         current = view.current
         self.session = current.reconciliation.handle if current is not None else None
         if current is None:
-            self._render_start(view.history)
+            self._render_start(view)
         else:
             self._render_session(current)
 
-    def _render_start(self, history) -> None:
+    def _render_start(self, view) -> None:
+        history = view.history
         explanation = Gtk.Label(
             label=(
                 "Enter the statement date and ending balance. Compare the starting "
@@ -309,7 +337,9 @@ class ReconciliationDialog(BoundedWindow):
         explanation.add_css_class("dim")
         self.body.append(explanation)
         grid = Gtk.Grid(column_spacing=10, row_spacing=8)
-        self.statement_date = attach_date_keys(Gtk.Entry(text=date.today().isoformat()))
+        # A month after the last statement, or the latest month end (#403).
+        proposed = view.default_statement_date or date.today()
+        self.statement_date = attach_date_keys(Gtk.Entry(text=proposed.isoformat()))
         self.statement_date.connect("changed", lambda *_: self._show_starting_balance())
         self.starting_balance = Gtk.Label(xalign=1)
         self.starting_balance.add_css_class("numeric")
@@ -323,16 +353,18 @@ class ReconciliationDialog(BoundedWindow):
         self.body.append(grid)
         self._show_starting_balance()
 
-        self.body.append(self._statement_entry_form())
+        self.body.append(self._statement_entry_form(view.remembered_lines))
         self.status = Gtk.Label(xalign=0, wrap=True)
         self.body.append(self.status)
 
         completed = [item for item in history if item.status is ReconciliationStatus.COMPLETED]
+        self.reopen_button: Gtk.Button | None = None
         if completed:
             latest = max(completed, key=lambda item: item.statement_date)
             reopen = Gtk.Button(label=f"Reopen statement through {latest.statement_date}")
             reopen.connect("clicked", lambda *_: self._on_reopen(latest.handle))
             self.footer.append(reopen)
+            self.reopen_button = reopen
         self.footer.append(Gtk.Box(hexpand=True))
         close = Gtk.Button(label="Close")
         close.connect("clicked", lambda *_: self.close())
@@ -342,14 +374,17 @@ class ReconciliationDialog(BoundedWindow):
         self.start_button.connect("clicked", self._on_start)
         self.footer.append(self.start_button)
 
-    def _statement_entry_form(self) -> Gtk.Widget:
-        """A quick add for a statement line not yet in the book, such as interest."""
+    def _statement_entry_form(self, remembered=()) -> Gtk.Widget:
+        """Quick adds for statement lines not yet in the book, such as interest.
+
+        The lines added to recent statements come back first, with their
+        description and account but no amount (#403); one more line is always
+        there to type into, and no description and account appear twice.
+        """
         frame = Gtk.Frame(label="Add a charge or credit from the statement")
-        box = Gtk.Box(spacing=8)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(8)
-        self.entry_description = Gtk.Entry(text="Interest", hexpand=True)
-        self.entry_description.set_width_chars(12)
+            getattr(outer, f"set_margin_{side}")(8)
         records = sorted(
             (
                 record
@@ -363,23 +398,30 @@ class ReconciliationDialog(BoundedWindow):
         )
         self.entry_accounts = [record.account for record in records]
         names = [record.full_name for record in records]
-        self.entry_account = bounded_dropdown(names or ["(none)"])
-        self.entry_account.set_hexpand(True)
+        handles = [account.handle for account in self.entry_accounts]
+        self.remembered_rows: list[StatementLineRow] = []
+        for description, other, _name in remembered:
+            if other not in handles:
+                continue
+            row = StatementLineRow(names, description, handles.index(other))
+            row.add.connect("clicked", lambda _b, r=row: self.add_statement_entry(r))
+            self.remembered_rows.append(row)
+            outer.append(row.box)
+        taken = {
+            (row.description.get_text(), row.account.get_selected()) for row in self.remembered_rows
+        }
         interest = next(
             (index for index, name in enumerate(names) if "interest" in name.lower()), None
         )
-        if interest is not None:
-            self.entry_account.set_selected(interest)
-        self.entry_amount = Gtk.Entry(placeholder_text="0.00", xalign=1)
-        self.entry_amount.set_width_chars(10)
-        self.entry_amount.set_tooltip_text(
-            "Positive raises the balance, as interest charged on a card or earned on savings"
-        )
-        add = Gtk.Button(label="Add")
-        add.connect("clicked", lambda *_: self.add_statement_entry())
-        for widget in (self.entry_description, self.entry_account, self.entry_amount, add):
-            box.append(widget)
-        frame.set_child(box)
+        blank = StatementLineRow(names, "Interest", interest)
+        if (blank.description.get_text(), blank.account.get_selected()) in taken:
+            blank.description.set_text("")
+        blank.add.connect("clicked", lambda *_: self.add_statement_entry())
+        self.entry_description = blank.description
+        self.entry_account = blank.account
+        self.entry_amount = blank.amount
+        outer.append(blank.box)
+        frame.set_child(outer)
         return frame
 
     def _render_session(self, state: reconciliation.ReconciliationSummary) -> None:
@@ -715,20 +757,24 @@ class ReconciliationDialog(BoundedWindow):
         dialog.present()
         return dialog
 
-    def add_statement_entry(self) -> bool:
-        """Add the quick-add line, cleared, dated on the statement date."""
+    def add_statement_entry(self, row: StatementLineRow | None = None) -> bool:
+        """Add a quick-add line, cleared, dated on the statement date: a remembered
+        ``row``, or the line to type into."""
+        amount_entry = row.amount if row is not None else self.entry_amount
+        account_choice = row.account if row is not None else self.entry_account
+        description_entry = row.description if row is not None else self.entry_description
         try:
             when = parse_date_text(self.statement_date.get_text().strip())
-            amount = Money(parse_user_amount(self.entry_amount.get_text().strip()))
+            amount = Money(parse_user_amount(amount_entry.get_text().strip()))
         except (ValueError, ArithmeticError):
             self.status.set_text("Enter a statement date and an amount to add.")
             return False
-        index = self.entry_account.get_selected()
+        index = account_choice.get_selected()
         if not self.entry_accounts or index >= len(self.entry_accounts):
             self.status.set_text("Choose the account the charge or credit belongs to.")
             return False
         other = self.entry_accounts[index]
-        description = self.entry_description.get_text().strip()
+        description = description_entry.get_text().strip()
         try:
             saved = self.book.add_statement_entry(
                 AddStatementEntry(self.account.handle, other.handle, when, description, amount)
@@ -736,7 +782,10 @@ class ReconciliationDialog(BoundedWindow):
         except ApiError as error:
             self.status.set_text(str(error))
             return False
-        self.entry_amount.set_text("")
+        amount_entry.set_text("")
+        if row is not None:
+            # Added once for this statement; the line to type into stays.
+            row.done()
         self.status.set_text(f"Added {saved.description} on {when}, cleared; it starts checked.")
         self._show_starting_balance()
         return True
@@ -783,10 +832,29 @@ class ReconciliationDialog(BoundedWindow):
             self.book.start_reconciliation(
                 StartReconciliation(self.account.handle, statement_date, ending)
             )
-        except (ValueError, ArithmeticError, ApiError) as exc:
+        except ApiError as exc:
+            self.status.set_text(str(exc))
+            if exc.code == "reconciliation.statement_date.not_after_completed":
+                self._point_at_reopen()
+            return
+        except (ValueError, ArithmeticError) as exc:
             self.status.set_text(str(exc))
             return
         self._render()
+
+    def _point_at_reopen(self) -> None:
+        """A statement already reconciled is changed by reopening it, not by
+        starting it again: say so and show the button (#403)."""
+        reopen = self.reopen_button
+        if reopen is None:
+            return
+        self.status.set_text(
+            "That statement is already reconciled. To change it, reopen it with "
+            f"“{reopen.get_label()}”."
+        )
+        reopen.add_css_class("suggested-action")
+        reopen.add_css_class("attention")
+        reopen.grab_focus()
 
     def _on_update_target(self, handle: str) -> None:
         try:

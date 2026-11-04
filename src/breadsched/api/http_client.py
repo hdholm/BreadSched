@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
+from ..gen.db.base import UndoPreview
 from ..gen.db.verification import BookVerification
 from ..gen.engine.activity import PlanSettings, ReportingPeriod
 from ..gen.engine.category_report import CategoryActivity
@@ -436,6 +437,10 @@ class HttpBookClient:
             thread.join(timeout=5)
 
         return stop
+
+    def undo_preview(self) -> UndoPreview | None:
+        found = self._call("POST", "/undo/preview", body={})["undo"]
+        return None if found is None else from_data(UndoPreview, found)
 
     def undo(self) -> bool:
         return bool(self._call("POST", "/undo")["done"])

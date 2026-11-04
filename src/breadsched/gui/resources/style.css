@@ -62,3 +62,9 @@ scrollbar.horizontal slider {
 /* A reconcile row dated after the statement is listed in case its date is wrong
    (#362), below a heading and shaded so it is not mistaken for statement activity. */
 .after-statement { background: alpha(@warning_color, 0.12); font-style: italic; }
+
+/* A button the window is pointing you at, such as Reopen for a statement already
+   reconciled (#403): it pulses twice. */
+@keyframes attention-pulse { 0% { box-shadow: 0 0 0 0 alpha(@accent_bg_color, 0.8); }
+  100% { box-shadow: 0 0 0 8px alpha(@accent_bg_color, 0); } }
+button.attention { animation: attention-pulse 0.8s ease-out 2; }

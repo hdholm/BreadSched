@@ -729,6 +729,13 @@ def reconciliation_view_json(view: ReconciliationView) -> dict[str, Any]:
         "history": [item.serialize() for item in view.history],
         "reimbursement_proposals": view.reimbursement_proposals,
         "claim_link_proposals": view.claim_link_proposals,
+        "default_statement_date": (
+            view.default_statement_date.isoformat() if view.default_statement_date else None
+        ),
+        "remembered_lines": [
+            {"description": description, "account": other, "account_name": name}
+            for description, other, name in view.remembered_lines
+        ],
     }
 
 
@@ -741,4 +748,13 @@ def reconciliation_view_from_json(payload: dict[str, Any]) -> ReconciliationView
         tuple(Reconciliation.from_dict(item) for item in payload["history"]),
         int(payload["reimbursement_proposals"]),
         int(payload["claim_link_proposals"]),
+        (
+            date.fromisoformat(payload["default_statement_date"])
+            if payload.get("default_statement_date")
+            else None
+        ),
+        tuple(
+            (item["description"], item["account"], item["account_name"])
+            for item in payload.get("remembered_lines", ())
+        ),
     )

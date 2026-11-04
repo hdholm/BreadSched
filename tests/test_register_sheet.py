@@ -648,3 +648,59 @@ def test_a_hidden_account_is_usable_while_hidden_accounts_are_shown(db, book):
     assert name in _sheet(db, book).transfer_names
     shown_register = RegisterSheet(db, book.savings, today=TODAY)
     assert shown_register.enabled is True
+
+
+class TestReconciledSplits:
+    """#403: changing a split already reconciled asks first."""
+
+    def _reconciled(self, db, book):
+        from breadsched.gen.lib import ReconcileState
+
+        rent = Transaction.simple(date(2026, 2, 3), "Rent", book.rent, book.checking, "1800")
+        rent.split_for(book.checking).reconcile = ReconcileState.RECONCILED
+        with db.transaction("Rent") as txn:
+            db.add_transaction(rent, txn)
+        return rent
+
+    def test_changing_its_amount_waits_for_a_yes(self, db, book):
+        rent = self._reconciled(db, book)
+        sheet = _sheet(db, book)
+        assert sheet.select_transaction(rent.handle)
+        _type(sheet, "decrease", "1850")
+        assert not sheet.enter()
+        assert sheet.reconciled_question == (db.full_name(book.checking),)
+        assert "reconciled split" in sheet.message
+        assert db.get_transaction(rent.handle).split_for(book.checking).value == Money(-1800)
+        assert sheet.confirm_reconciled()
+        assert db.get_transaction(rent.handle).split_for(book.checking).value == Money(-1850)
+
+    def test_a_change_elsewhere_saves_without_asking(self, db, book):
+        rent = self._reconciled(db, book)
+        sheet = _sheet(db, book)
+        assert sheet.select_transaction(rent.handle)
+        _type(sheet, "description", "Rent, February")
+        assert sheet.enter(), sheet.message
+        assert sheet.reconciled_question is None
+        assert db.get_transaction(rent.handle).description == "Rent, February"
+
+    def test_the_shared_rule(self, db, book):
+        from breadsched.gen.lib.amount import Amount
+        from breadsched.gen.services.transactions import (
+            TransactionSplitInput,
+            reconciled_changes,
+        )
+
+        rent = self._reconciled(db, book)
+        mine = rent.split_for(book.checking)
+        other = rent.split_for(book.rent)
+        usd = rent.currency or "USD"
+
+        def given(value):
+            return (
+                TransactionSplitInput(book.checking, Amount(Money(value), usd), handle=mine.handle),
+                TransactionSplitInput(book.rent, Amount(-Money(value), usd), handle=other.handle),
+            )
+
+        assert reconciled_changes(rent, given("-1800")) == ()
+        assert reconciled_changes(rent, given("-1850")) == (book.checking,)
+        assert reconciled_changes(rent, given("-1800")[1:]) == (book.checking,)

@@ -225,6 +225,7 @@ class BreadSchedApplication(Gtk.Application):
             ("receivables", self.on_receivables, None),
             ("savings-goals", self.on_savings_goals, None),
             ("find-transactions", self.on_find_transactions, "<Control><Shift>f"),
+            ("transaction-detail", self.on_transaction_detail, None),
             ("fsa-claims", self.on_fsa_claims, None),
             ("gnucash-writeback", self.on_gnucash_writeback, None),
             ("open-default", self.on_open_default, None),
@@ -261,6 +262,7 @@ class BreadSchedApplication(Gtk.Application):
             "receivables",
             "savings-goals",
             "find-transactions",
+            "transaction-detail",
             "fsa-claims",
             "gnucash-writeback",
             "export",
@@ -309,6 +311,7 @@ class BreadSchedApplication(Gtk.Application):
             "receivables",
             "savings-goals",
             "find-transactions",
+            "transaction-detail",
             "fsa-claims",
             "gnucash-writeback",
             "export",
@@ -551,7 +554,7 @@ class BreadSchedApplication(Gtk.Application):
         dialog.present()
         return dialog
 
-    def on_find_transactions(self, *_args):
+    def on_find_transactions(self, *_args, report: bool = False):
         """Search every register; sort, group, and total what is found (#382)."""
         if self.db is None:
             self._report("Open a book before finding transactions.")
@@ -561,10 +564,17 @@ class BreadSchedApplication(Gtk.Application):
         window = self.props.active_window
         manager = window if isinstance(window, ViewManager) else None
         dialog = FindDialog(
-            window, self.db, open_account=manager.open_register if manager is not None else None
+            window,
+            self.db,
+            open_account=manager.open_register if manager is not None else None,
+            report=report,
         )
         dialog.present()
         return dialog
+
+    def on_transaction_detail(self, *_args):
+        """Reports → Transaction Detail: the Find window as a printable report (#408)."""
+        return self.on_find_transactions(report=True)
 
     def on_savings_goals(self, *_args):
         """Open savings goals: add, fund, close, and review their progress."""
@@ -599,7 +609,10 @@ class BreadSchedApplication(Gtk.Application):
 
     def on_undo(self, *_args) -> None:
         if self.db is not None:
-            self.db.undo()
+            from .undo import undo_with_care
+
+            # A large step (an import) says what it undoes and asks first (#405).
+            undo_with_care(self.props.active_window, self.db)
 
     def on_redo(self, *_args) -> None:
         if self.db is not None:
@@ -983,6 +996,8 @@ def build_menu_model(actions_menu: ActionsMenu | None = None) -> Gio.Menu:
         for item in actions:
             if item.report:
                 reports_menu.append(item.label, f"win.{view_action_name(key, item)}")
+    # The Find window, as a report of transactions with nested subtotals (#408).
+    reports_menu.append("Transaction _Detail…", "app.transaction-detail")
     menubar.append_submenu("_Reports", reports_menu)
 
     help_menu = Gio.Menu()
