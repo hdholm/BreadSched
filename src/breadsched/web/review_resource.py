@@ -53,6 +53,9 @@ def review(api: Api, transaction_handle: str | None = None) -> dict:
             "date": item.date,
             "description": item.description,
             "amount": item.amount,
+            "categories": list(item.categories),
+            "funding": list(item.funding),
+            "notes": item.notes,
         }
         for item in api.book.review_queue()
     ]
@@ -67,6 +70,20 @@ def review(api: Api, transaction_handle: str | None = None) -> dict:
             "date": actual.date,
             "description": actual.description,
             "amount": actual.amount,
+            "categories": list(actual.categories),
+            "funding": list(actual.funding),
+            "notes": actual.notes,
+            "splits": [
+                {
+                    "split": item.split,
+                    "account": item.account,
+                    "account_name": item.account_name,
+                    "amount": item.amount,
+                    "memo": item.memo,
+                    "category": item.category,
+                }
+                for item in detail.splits
+            ],
             "fsa": review_fsa_options(detail),
             "fsa_hint": detail.fsa_hint,
             "no_candidate_reason": detail.no_candidate_reason,
@@ -85,6 +102,14 @@ def review(api: Api, transaction_handle: str | None = None) -> dict:
                     "amount_difference": candidate.amount_difference,
                     "amount_variance": actual.amount - event.expected_amount,
                     "common_accounts": candidate.common_accounts,
+                    "estimate": event.placeholder,
+                    "same_category": candidate.same_category,
+                    "same_funding": candidate.same_funding,
+                    "in_period": candidate.in_period,
+                    "period_end": candidate.period_end,
+                    "fits": candidate.fits,
+                    "applied_amount": event.applied_amount,
+                    "remaining_amount": event.remaining_amount,
                     **explained.as_dict(),
                 }
             )

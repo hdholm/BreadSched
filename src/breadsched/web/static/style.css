@@ -126,6 +126,8 @@ form.entry label[hidden] { display: none; }
 .review-detail { padding: 14px 16px; }
 .review-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .review-reasons { margin: 4px 0 0; padding-left: 18px; font-size: 0.9em; }
+.review-accounts, .review-notes { display: block; font-size: 0.85em; }
+.review-category td:first-child { font-weight: 600; }
 .review-help { margin-top: 12px; }
 
 

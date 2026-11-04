@@ -1340,7 +1340,17 @@ def test_plan_review_alike(target, book):
     first, second = actual(date(2026, 10, 7), "1800.00"), actual(date(2026, 11, 9), "1850.00")
     assert [item.handle for item in api.review_queue()] == [first.handle, second.handle]
     assert api.review_queue()[0].amount == Money("1800.00")
+    # What it was for and where the money came from, over HTTP too (decision 0005).
+    assert (api.review_queue()[0].categories, api.review_queue()[0].funding) == (
+        ("Expenses:Rent",),
+        ("Assets:Checking",),
+    )
     detail = api.review_detail(first.handle)
+    assert [(split.account_name, split.category) for split in detail.splits] == [
+        ("Expenses:Rent", True),
+        ("Assets:Checking", False),
+    ]
+    assert detail.candidates[0].candidate.same_category
     [explained] = detail.candidates[:1]
     key = explained.candidate.event.key
     assert explained.candidate.event.planned_date == date(2026, 10, 6)

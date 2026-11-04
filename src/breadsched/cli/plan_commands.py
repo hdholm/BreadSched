@@ -90,6 +90,9 @@ def cmd_review(args: argparse.Namespace) -> int:
                     "handle": actual.handle,
                     "date": actual.date,
                     "description": actual.description,
+                    "categories": list(actual.categories),
+                    "funding": list(actual.funding),
+                    "notes": actual.notes,
                     "fsa_hint": hint,
                     "no_candidate_reason": reason,
                     "candidates": [
@@ -98,6 +101,8 @@ def cmd_review(args: argparse.Namespace) -> int:
                             "date": item.candidate.event.planned_date,
                             "description": item.candidate.event.description,
                             "expected_amount": item.candidate.event.expected_amount,
+                            "remaining_amount": item.candidate.event.remaining_amount,
+                            "estimate": item.candidate.event.placeholder,
                             **item.as_dict(),
                         }
                         for item in explained
@@ -105,13 +110,26 @@ def cmd_review(args: argparse.Namespace) -> int:
                 }
             )
             lines.append(f"{actual.date.isoformat()}  {actual.description}  [{actual.handle[:8]}]")
+            accounts = " · ".join(
+                part for part in (", ".join(actual.categories), ", ".join(actual.funding)) if part
+            )
+            if accounts:
+                lines.append(f"  {accounts}")
+            if actual.notes:
+                lines.append(f"  Notes: {actual.notes}")
             if hint:
                 lines.append(f"  {hint}")
             for item in explained:
                 event = item.candidate.event
                 lines.append(
                     f"  {item.label}: {event.planned_date.isoformat()} {event.description} "
-                    f"(expected {event.expected_amount.format()})"
+                    f"(expected {event.expected_amount.format()}"
+                    + (
+                        f", {event.remaining_amount.format()} remains"
+                        if event.placeholder or event.applied_amount
+                        else ""
+                    )
+                    + ")"
                 )
                 lines.extend(f"    - {text}" for text in item.reasons)
             if reason:
@@ -518,7 +536,8 @@ def cmd_plan_unresolved(args: argparse.Namespace) -> int:
 
 
 def cmd_plan_matches(args: argparse.Namespace) -> int:
-    """Show unresolved scheduled occurrences that could explain one actual."""
+    """Show the open occurrences one actual could count toward, best first, with what
+    remains of each (decision 0005)."""
     with book_api(args, "r") as book:
         transaction = book.find_transaction(args.transaction)
         candidates = book.match_candidates(transaction.handle, args.window_days)
@@ -528,6 +547,11 @@ def cmd_plan_matches(args: argparse.Namespace) -> int:
                 "date_distance_days": candidate.date_distance,
                 "amount_difference": candidate.amount_difference,
                 "common_accounts": candidate.common_accounts,
+                "same_category": candidate.same_category,
+                "same_funding": candidate.same_funding,
+                "in_period": candidate.in_period,
+                "fits": candidate.fits,
+                "remaining_amount": candidate.event.remaining_amount,
             }
             for candidate in candidates
         ]
@@ -537,6 +561,7 @@ def cmd_plan_matches(args: argparse.Namespace) -> int:
                 candidate.event.planned_date.isoformat(),
                 candidate.event.description[:36],
                 candidate.event.expected_amount.format(),
+                candidate.event.remaining_amount.format(),
                 candidate.date_distance,
                 candidate.amount_difference.format(),
                 candidate.common_accounts,
@@ -545,8 +570,17 @@ def cmd_plan_matches(args: argparse.Namespace) -> int:
         ]
         text = table(
             rows,
-            ["occurrence", "planned", "description", "expected", "days", "amount diff", "accounts"],
-            right={3, 4, 5, 6},
+            [
+                "occurrence",
+                "planned",
+                "description",
+                "expected",
+                "remaining",
+                "days",
+                "amount diff",
+                "accounts",
+            ],
+            right={3, 4, 5, 6, 7},
         )
         emit(payload, args, text)
         return 0

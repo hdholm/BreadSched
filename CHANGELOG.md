@@ -10,6 +10,30 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a316 - 2026-11-04
+
+Decision 0005, phase 2: Review proposes by what a transaction was for (#397).
+
+- **Category first.** `planning.match_candidates` ranks open occurrences by the same
+  category (income or expense account, or planning purpose on the same account),
+  then estimates before commitments, the date within the occurrence's period (an
+  estimate's whole period, looked for up to a year back, or a commitment's seven
+  days), the amount fitting what remains (closer first), the same funding account,
+  and words in common. A purchase on the 25th is offered the month's groceries
+  estimate dated the 1st. `MatchCandidate` records each rule (`same_category`,
+  `in_period`, `fits`, `remaining_difference`, `same_funding`, `shared_words`,
+  `period_end`).
+- **Reasons in the same order.** `review_explain` says the category, that it is an
+  estimate, its period, what remains of it, the funding account, and the words in
+  common. *Close* is now also an estimate of the same category whose period holds the
+  date and whose remainder the amount fits.
+- **Context.** Each pending actual carries `categories`, `funding`, and `notes`, and
+  the detail its `splits` with memos (`ReviewSplit`), over the book server too. The
+  desktop and browser Review and `breadsched review` show them; candidate rows show
+  what remains of an estimate. `breadsched plan-matches` adds a remaining column and,
+  in JSON, `remaining_amount`, `same_category`, `same_funding`, `in_period`, and
+  `fits`; `/api/review` adds the same and the context.
+
 ## 0.2.0a315 - 2026-11-04
 
 Decision 0005, phase 1: actuals count toward plans by split and amount (#397).

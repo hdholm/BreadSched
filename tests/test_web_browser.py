@@ -2184,3 +2184,33 @@ def test_changing_a_reconciled_split_asks_first(page, served):
     page.wait_for_selector("text=Not saved: a reconciled split would change.")
     assert asked and "reconciled against a statement" in asked[0]
     assert db.get_transaction(stored.handle).split_for(checking.handle).value == before
+
+
+def test_review_shows_what_an_actual_was_for_and_its_notes(page, served):
+    """Decision 0005: Review lists each actual with its categories, its funding
+    account, and its notes, and the selected actual's legs with their memos."""
+    from breadsched.gen.lib import Money, Split, Transaction
+
+    expect = sync_api.expect
+    db, _httpd = served
+    food = db.get_account_by_name("Groceries") or next(
+        account for account in db.iter_accounts() if account.atype.name == "EXPENSE"
+    )
+    bank = next(account for account in db.iter_accounts() if account.atype.name == "BANK")
+    actual = Transaction(post_date=date.today(), description="Corner market")
+    actual.add_split(Split(food.handle, Money("42.00"), memo="bread"))
+    actual.add_split(Split(bank.handle, Money("-42.00")))
+    actual.notes = "Picnic supplies"
+    with db.transaction("Unresolved actual") as txn:
+        db.add_transaction(actual, txn)
+
+    page.get_by_role("button", name="Review", exact=True).first.click()
+    button = page.locator("button", has_text="Corner market")
+    button.click()
+    expect(button.locator(".review-accounts")).to_have_text(
+        f"{db.full_name(food.handle)} · {db.full_name(bank.handle)}"
+    )
+    expect(button.locator(".review-notes")).to_have_text("Picnic supplies")
+    detail = page.locator(".review-detail")
+    expect(detail.locator(".review-notes")).to_have_text("Picnic supplies")
+    expect(detail.locator("tr.review-category")).to_contain_text("bread")

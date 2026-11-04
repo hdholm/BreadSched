@@ -33,6 +33,7 @@ from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import PlanAllocation, Split, Transaction
 
 __all__ = [
+    "ClassOf",
     "OccurrenceActual",
     "account_classes",
     "allocate_posted",

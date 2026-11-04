@@ -160,6 +160,18 @@ class ResolutionView(BaseView):
             amount_label.add_css_class("numeric")
             amount_label.add_css_class("dim")
             box.append(amount_label)
+            # What it was for, where the money came from, and its notes (decision 0005).
+            accounts = " · ".join(
+                part
+                for part in (", ".join(transaction.categories), ", ".join(transaction.funding))
+                if part
+            )
+            for text in (accounts, transaction.notes):
+                if text:
+                    extra = Gtk.Label(label=text, xalign=0)
+                    extra.set_ellipsize(Pango.EllipsizeMode.END)
+                    extra.add_css_class("dim")
+                    box.append(extra)
             row.set_child(box)
             self.actual_list.append(row)
             if transaction.handle == selected:
@@ -196,9 +208,16 @@ class ResolutionView(BaseView):
             return
         self._detail = detail
         actual = detail.actual
+        legs = "\n".join(
+            f"{'• ' if split.category else '  '}{split.account_name}  {split.amount.format()}"
+            + (f"  ({split.memo})" if split.memo else "")
+            for split in detail.splits
+        )
         self.actual_summary.set_text(
             f"{actual.date.isoformat()} · {actual.description}\n"
             f"Actual amount: {actual.amount.format()}"
+            + (f"\n{legs}" if legs else "")
+            + (f"\nNotes: {actual.notes}" if actual.notes else "")
         )
         hint = detail.fsa_hint
         self.fsa_hint.set_text(hint or "")
@@ -210,7 +229,13 @@ class ResolutionView(BaseView):
             event = candidate.event
             text = (
                 f"{event.planned_date.isoformat()}  {event.description}\n"
-                f"{explained.label} · expected {event.expected_amount.format()}\n"
+                f"{explained.label} · expected {event.expected_amount.format()}"
+                + (
+                    f", {event.remaining_amount.format()} remains"
+                    if event.placeholder or event.applied_amount
+                    else ""
+                )
+                + "\n"
                 + "\n".join(f"• {reason}" for reason in explained.reasons)
             )
             label = Gtk.Label(label=text, xalign=0, wrap=True)

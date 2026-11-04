@@ -845,6 +845,8 @@ class TestPlanningAndProjection:
 
         matches = run_json(capsys, "plan-matches", book_path, posted["handle"])
         assert matches[0]["occurrence"]["key"] == occurrence
+        # What remains of it, and how it ranked (decision 0005).
+        assert {"remaining_amount", "same_category", "in_period", "fits"} <= set(matches[0])
 
         run(capsys, "plan-reject", book_path, posted["handle"], occurrence)
         assert run_json(capsys, "plan-matches", book_path, posted["handle"]) == []

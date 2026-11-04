@@ -15,7 +15,12 @@ async function showReview() {
     onclick: () => { state.review = actual.handle; render(); },
   },
   el("strong", {}, `${actual.date}  ${actual.description}`),
-  el("span", { class: "amount" }, money(actual.amount))));
+  el("span", { class: "amount" }, money(actual.amount)),
+  // What it was for and where the money came from (decision 0005).
+  el("span", { class: "note review-accounts" },
+    [(actual.categories || []).join(", "), (actual.funding || []).join(", ")]
+      .filter(Boolean).join(" · ")),
+  actual.notes ? el("span", { class: "note review-notes" }, actual.notes) : null));
 
   if (!data.actuals.length) {
     state.review = null;
@@ -38,7 +43,11 @@ async function showReview() {
         el("div", { class: "note" }, candidate.label),
         el("ul", { class: "review-reasons" },
           (candidate.reasons || []).map((reason) => el("li", {}, reason)))),
-      el("td", { class: "num" }, money(candidate.expected_amount)),
+      el("td", { class: "num" },
+        el("div", {}, money(candidate.expected_amount)),
+        candidate.estimate || Number(candidate.applied_amount)
+          ? el("div", { class: "note" }, `${money(candidate.remaining_amount)} remains`)
+          : null),
       el("td", { class: cls(candidate.amount_variance) }, varianceText),
       el("td", { class: "num" }, dateText),
       el("td", {},
@@ -131,6 +140,14 @@ async function showReview() {
     el("h2", {}, "Resolve actual"),
     el("p", {}, `${selected.date} · ${selected.description}`),
     el("p", { class: "note" }, `Actual amount: ${money(selected.amount)}`),
+    selected.notes ? el("p", { class: "note review-notes" }, selected.notes) : null,
+    (selected.splits || []).length
+      ? table(["Account", "Memo", { label: "Amount", num: true }],
+        selected.splits.map((split) => el("tr", { class: split.category ? "review-category" : null },
+          el("td", {}, split.account_name),
+          el("td", {}, split.memo),
+          el("td", { class: "num" }, money(split.amount)))))
+      : null,
     selected.fsa_hint ? el("p", { class: "note" }, selected.fsa_hint) : null,
     fsaAttach,
     data.candidates.length

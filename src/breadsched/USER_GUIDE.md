@@ -230,11 +230,25 @@ period ends, what remains lapses, and a purchase that arrives late may still be
 matched to it. A scheduled payment (a bill) is done once a transaction is matched to
 it or posted from it, even for a different amount.
 
-Review explains its suggestions. Each planned item it offers for an actual is a
-**Close match** (within two days and 5% of the expected amount) or a **Possible
-match**, with the reasons: the accounts it shares, how far the amount and date are
-from the plan, and any words the descriptions share. When nothing is offered, Review
-says why: the nearest planned item using those accounts is outside the seven-day
+Review shows each actual with what it was for (its income or expense accounts), where
+the money came from, and its notes; the one you choose also lists its legs with their
+memos. Review explains its suggestions, and ranks them by what the transaction was
+for:
+
+1. A planned item for the same category (the same expense or income account, or the
+   same planning purpose on the same account) comes first.
+2. Within one category, an estimate comes before a scheduled payment, which usually
+   posts itself.
+3. An item whose period holds the transaction's date comes next: all of a monthly
+   estimate's month, or within seven days of a payment's date.
+4. Then an item the amount fits within what remains of it, the closer the better.
+5. Then one paid from the same account, then one whose description shares words.
+
+A planned item that shares no account with the transaction is never offered. Each
+item is a **Close match** (an estimate of the same category whose period holds the
+date and whose remainder the amount fits; a payment within two days and 5% of its
+amount) or a **Possible match**, with the reasons in the same order, and an estimate
+says how much of it remains. When nothing is offered, Review says why: the nearest planned item using those accounts is outside the seven-day
 window, is planned in another currency, or was rejected, or no schedule uses the
 accounts at all. Each action says what it will do: **Match** counts the transaction
 toward the planned item, **Reject** stops offering it for this transaction, **Skip** removes the planned

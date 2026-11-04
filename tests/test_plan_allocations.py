@@ -395,3 +395,108 @@ def test_a_schema_13_book_writes_its_plan_links_as_allocations(tmp_path):
         assert event.applied_amount == Money(55)
     finally:
         migrated.close()
+
+
+# ------------------------------------------------------- ranking (phase 2)
+
+
+def test_a_purchase_late_in_the_month_is_offered_its_estimate_first(db, book):
+    from breadsched.gen.engine import review_explain
+
+    groceries = _groceries(db, book)
+    # A commitment on the same funding account, nearer in date and amount.
+    _schedule(
+        db,
+        "Phone",
+        [ScheduledSplit(book.utilities, Money(80)), ScheduledSplit(book.checking, Money(-80))],
+        start=date(2026, 6, 24),
+    )
+    purchase = _purchase(db, book, date(2026, 6, 25), (book.groceries, "80"))
+    found = planning.match_candidates(db, purchase)
+    # The estimate dated the 1st is 24 days away, outside the seven-day window, but
+    # its period holds the date and it shares the category.
+    assert [candidate.event.key for candidate in found][0] == groceries.occurrence_key(JUNE)
+    first = found[0]
+    assert (first.same_category, first.in_period, first.fits, first.same_funding) == (
+        True,
+        True,
+        True,
+        True,
+    )
+    assert first.period_end == date(2026, 6, 30)
+    [explained, *_rest] = review_explain.explain_candidates(db, purchase)
+    assert explained.confidence == review_explain.CLOSE
+    assert explained.reasons[:4] == (
+        "Same category: Groceries",
+        "An estimate, which many purchases fill",
+        "In its period, 2026-06-01 to 2026-06-30",
+        "Fits what remains: 600.00 of 600.00 remains",
+    )
+
+
+def test_an_estimate_ranks_above_a_commitment_of_the_same_category(db, book):
+    groceries = _groceries(db, book)
+    delivery = _schedule(
+        db,
+        "Grocery box",
+        [ScheduledSplit(book.groceries, Money(60)), ScheduledSplit(book.checking, Money(-60))],
+        start=date(2026, 6, 10),
+    )
+    purchase = _purchase(db, book, date(2026, 6, 10), (book.groceries, "60"))
+    keys = [candidate.event.key for candidate in planning.match_candidates(db, purchase)]
+    assert keys == [groceries.occurrence_key(JUNE), delivery.occurrence_key(date(2026, 6, 10))]
+
+
+def test_what_remains_decides_between_two_estimates_and_shared_funding_alone_ranks_last(db, book):
+    groceries = _groceries(db, book)
+    small = _schedule(
+        db,
+        "Snacks",
+        [ScheduledSplit(book.groceries, Money(50)), ScheduledSplit(book.checking, Money(-50))],
+        placeholder=True,
+    )
+    other = _schedule(
+        db,
+        "Utilities allowance",
+        [ScheduledSplit(book.utilities, Money(90)), ScheduledSplit(book.checking, Money(-90))],
+        placeholder=True,
+    )
+    purchase = _purchase(db, book, date(2026, 6, 12), (book.groceries, "90"))
+    found = planning.match_candidates(db, purchase)
+    # 90 fits what remains of groceries (600), not of snacks (50); utilities shares
+    # only the funding account.
+    assert [candidate.event.source_handle for candidate in found] == [
+        groceries.handle,
+        small.handle,
+        other.handle,
+    ]
+    assert [candidate.fits for candidate in found] == [True, False, True]
+    assert [candidate.same_category for candidate in found] == [True, True, False]
+
+
+def test_the_queue_shows_what_each_actual_was_for_and_its_notes(db, book):
+    from breadsched.gen.services.review import review_detail, review_queue
+
+    purchase = _purchase(
+        db,
+        book,
+        date(2026, 6, 5),
+        (book.groceries, "30"),
+        (book.utilities, "20"),
+        description="Store",
+    )
+    stored = db.get_transaction(purchase.handle)
+    stored.notes = "Bulbs and bread"
+    stored.splits[0].memo = "bread"
+    with db.transaction("Note") as txn:
+        db.commit_transaction(stored, txn)
+    [row] = [item for item in review_queue(db) if item.handle == purchase.handle]
+    assert row.categories == ("Expenses:Groceries", "Expenses:Utilities")
+    assert row.funding == ("Assets:Checking",)
+    assert row.notes == "Bulbs and bread"
+    detail = review_detail(db, purchase.handle).value
+    assert [(split.account_name, split.amount, split.memo) for split in detail.splits] == [
+        ("Expenses:Groceries", Money(30), "bread"),
+        ("Expenses:Utilities", Money(20), ""),
+        ("Assets:Checking", Money(-50), ""),
+    ]

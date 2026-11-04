@@ -7,8 +7,10 @@ Part of the [BreadSched design](../../../DESIGN.md); see
   four phases at the end. An estimate's jar lapses at the end of each period
   (0.2.0a312), and phase 1 is built (0.2.0a315, schema 14): allocations, the
   migration, applied and remaining amounts and the closed state, posting and
-  Review writing allocations, and Projection and jars reading them. Phases 2–4 are
-  still to come.
+  Review writing allocations, and Projection and jars reading them. Phase 2 is built
+  (0.2.0a316): candidates ranked by section 3 with their reasons, and the other
+  account and notes in every interface's Review, with remaining amounts in
+  `plan-matches`. Phases 3 and 4, the Match windows, are still to come.
 - **Decision:** an actual is matched to the plan *by split and amount*. One split
   may count toward one planned occurrence, several splits of one transaction toward
   several occurrences, and several actuals toward one occurrence, each for part or

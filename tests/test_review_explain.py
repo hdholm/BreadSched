@@ -43,10 +43,12 @@ def test_a_close_candidate_says_what_it_shares(db, book):
     [explained] = review_explain.explain_candidates(db, actual)
     assert explained.confidence == review_explain.CLOSE
     assert explained.label == "Close match"
+    # The reasons follow the ranking: category, period, amount, funding, words.
     assert explained.reasons == (
-        "Uses the same account: Checking, Utilities",
-        "Same amount",
+        "Same category: Utilities",
         "1 day after the planned date",
+        "Same amount",
+        "Same funding account: Checking",
         "Description shares “electric”",
     )
 
@@ -146,6 +148,8 @@ def test_the_command_line_lists_candidates_with_their_reasons(db, book, tmp_path
     out = capsys.readouterr().out
     assert "Close match: 2026-05-07 Electric (expected 180.00)" in out
     assert "    - Same amount" in out
+    # What it was for and where the money came from (decision 0005).
+    assert "  Expenses:Utilities · Assets:Checking" in out
     assert REVIEW_ACTION_HELP["match"] in out
 
     assert main(["review", str(path), "--transaction", actual.handle, "--json"]) == 0
@@ -154,4 +158,6 @@ def test_the_command_line_lists_candidates_with_their_reasons(db, book, tmp_path
     assert candidate["confidence"] == "close"
     assert "1 day after the planned date" in candidate["reasons"]
     assert item["no_candidate_reason"] is None
+    assert (item["categories"], item["funding"]) == (["Expenses:Utilities"], ["Assets:Checking"])
+    assert candidate["remaining_amount"] == "180.00"
     assert main(["review", str(path), "--transaction", "zzzz"]) != 0

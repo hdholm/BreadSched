@@ -83,10 +83,21 @@ an actual to an FSA claim validate stable identities before owning their respect
 atomic transaction, schedule, or claim write. Expected stale-state failures use
 stable codes and field paths; candidate ranking remains read-only engine logic.
 
-`engine.review_explain` explains the ranking for every interface. Each candidate gets
-reasons (shared accounts, amount and date offsets, description words in common) and a
-confidence: *close* within two days and 5% of the expected amount, otherwise
-*possible*. With no candidate, `no_candidate_reason` searches 60 days either side for
+`planning.match_candidates` ranks by decision 0005's rules (phase 2), recorded on each
+`MatchCandidate`: `same_category` (an income or expense account the occurrence plans,
+or the same planning purpose on the same account), then estimates before commitments,
+`in_period` (an estimate's period, `planning.period_end`, holds the date; a
+commitment within the seven-day window), `fits` and `remaining_difference` (the
+actual's gross against what remains), `same_funding`, and `shared_words`
+(`planning.description_words`); the date distance and planned date settle the rest.
+It looks a year back for an estimate whose period holds the date, and never offers
+an occurrence sharing no account. `engine.review_explain` explains the ranking for
+every interface, its reasons in the same order, with a confidence: *close* for an
+estimate of the same category in its period that the amount fits, or a commitment
+within two days and 5% of its amount; otherwise *possible*. `services.review` gives
+each pending actual its `categories` (its plan legs' accounts), `funding`, and
+`notes`, and the detail its `splits` with memos, so every interface shows what an
+actual was for beside its candidates. With no candidate, `no_candidate_reason` searches 60 days either side for
 an open occurrence sharing an account and reports the first applicable cause: a
 nearby one in another currency, every nearby one rejected, the nearest outside the
 seven-day window, or no schedule using the accounts. `fsa_hint` classifies an FSA
