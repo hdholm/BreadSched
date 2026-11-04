@@ -78,6 +78,18 @@ class ResolutionView(BaseView):
         self.actual_summary = Gtk.Label(xalign=0, wrap=True)
         self.actual_summary.add_css_class("summary-value")
         detail.append(self.actual_summary)
+        # The actual's notes and legs (• marks what it was for) with their memos. A
+        # long note or a receipt of many lines scrolls here rather than growing the
+        # view past the screen.
+        self.actual_legs = Gtk.Label(xalign=0, yalign=0, wrap=True, selectable=True)
+        self.actual_legs.add_css_class("dim")
+        legs_scroll = Gtk.ScrolledWindow(
+            child=self.actual_legs,
+            propagate_natural_height=True,
+            max_content_height=140,
+        )
+        legs_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        detail.append(legs_scroll)
 
         # What an FSA movement is and what to do with it (empty otherwise).
         self.fsa_hint = Gtk.Label(xalign=0, wrap=True)
@@ -185,6 +197,7 @@ class ResolutionView(BaseView):
             self._transaction_handle = None
             self._candidate_key = None
             self.actual_summary.set_text("No unresolved actual transactions.")
+            self.actual_legs.set_text("")
             self._clear_list(self.candidate_list)
             self.variance.set_text("")
             self._set_action_sensitivity()
@@ -199,6 +212,7 @@ class ResolutionView(BaseView):
         self._detail = None
         if self.db is None or self._transaction_handle is None:
             self.actual_summary.set_text("")
+            self.actual_legs.set_text("")
             self.variance.set_text("")
             self._set_action_sensitivity()
             return
@@ -216,8 +230,12 @@ class ResolutionView(BaseView):
         self.actual_summary.set_text(
             f"{actual.date.isoformat()} · {actual.description}\n"
             f"Actual amount: {actual.amount.format()}"
-            + (f"\n{legs}" if legs else "")
-            + (f"\nNotes: {actual.notes}" if actual.notes else "")
+        )
+        # Notes and legs can be long; they share the bounded, scrolling area.
+        self.actual_legs.set_text(
+            "\n".join(
+                part for part in (f"Notes: {actual.notes}" if actual.notes else "", legs) if part
+            )
         )
         hint = detail.fsa_hint
         self.fsa_hint.set_text(hint or "")

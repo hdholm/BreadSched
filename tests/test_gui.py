@@ -6209,10 +6209,10 @@ class TestResolutionView:
         view = window._views["resolution"]
         view._transaction_handle = actual_handle
         view._refresh_candidates()
-        summary = view.actual_summary.get_text()
-        assert "Notes: Paid by phone" in summary
+        legs = view.actual_legs.get_text()
+        assert legs.startswith("Notes: Paid by phone\n")
         for split in stored.splits:
-            assert app.db.full_name(split.account) in summary
+            assert app.db.full_name(split.account) in legs
         row = next(
             row
             for index in range(50)
@@ -11245,6 +11245,13 @@ class TestBoundedSizes:
             view.flush_refresh()
             if hasattr(view, "wait_for_background"):
                 view.wait_for_background()
+            if key == "resolution":
+                from breadsched.api.local import book_server
+
+                # Measure with a stress actual chosen: long notes and thirty legs.
+                [first, *_rest] = book_server(app.db).review_queue()
+                view._transaction_handle = first.handle
+                view._refresh_candidates()
             assert self._fits(self._minimum(window)), (key, self._minimum(window))
         window.open_register(chain[-1])
         assert self._fits(self._minimum(window)), self._minimum(window)
