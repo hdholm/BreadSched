@@ -958,6 +958,16 @@ class TestItServes:
         status, payload = client.get("/api/scheduled")
         assert status == 200
         assert set(payload) == {"definitions", "accounts", "upcoming"}
+        # Decision 0005: each schedule names the occurrence its Match window opens on.
+        db = client.database
+        for item in payload["definitions"]:
+            schedule = db.get_scheduled(item["handle"])
+            if schedule is None:
+                continue
+            current = schedule.current_occurrence(date.today())
+            assert item["current_occurrence"] == (
+                schedule.occurrence_key(current) if current is not None else None
+            )
         # Which accounts take investment activity, so the editor offers it only there (#383).
         kinds = {item["name"]: item["investment"] for item in payload["accounts"]}
         db = client.database

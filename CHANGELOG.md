@@ -10,6 +10,24 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a318 - 2026-11-04
+
+Decision 0005, phase 4: Match to Plan everywhere (#397).
+
+- **Desktop.** **Match…** in Scheduled (the selected schedule's latest occurrence up
+  to today, `ScheduledTransaction.current_occurrence`), in Upcoming (the selected
+  occurrence), and beside each scheduled jar in Budget jars. The Plan's button reads
+  **Resolve actuals (N)…** with the actuals in its range still to match.
+- **Browser.** The same two windows (`static/matching.js`) over `/api/v1`: **Match…**
+  beside each scheduled item in a Plan value's detail and on each schedule, **Match
+  to plan…** on each register row, and **Match by split…** in Review. Schedule rows in
+  `/api/scheduled` carry `current_occurrence`; the Plan's **Resolve actuals (N)…**
+  shows the count.
+- **Matching the rest of a split.** **Match** in the window from a transaction adds
+  the amount typed to what the split already counts toward that occurrence (desktop
+  and browser), and Review keeps offering an occurrence a transaction counts toward
+  only in part (`planning.match_candidates`).
+
 ## 0.2.0a317 - 2026-11-04
 
 Decision 0005, phase 3: the Match windows (#397).

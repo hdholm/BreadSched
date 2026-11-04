@@ -656,7 +656,12 @@ class PlanView(BaseView):
             + "\n".join(plan_reimbursable_text(row) for row in reimbursable)
         )
         self.reimbursable_note.set_visible(bool(reimbursable))
-        self.review_actuals_button.set_sensitive(activity.unresolved_actual_count > 0)
+        unmatched = activity.unresolved_actual_count
+        self.review_actuals_button.set_sensitive(unmatched > 0)
+        # Decision 0005: how many actuals in the range still need matching.
+        self.review_actuals_button.set_label(
+            f"Resolve actuals ({unmatched})…" if unmatched else "Resolve actuals…"
+        )
         self._update_scenario_actions()
         self._render()
 

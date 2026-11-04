@@ -254,7 +254,8 @@ async function showPlan() {
       disabled: data.summary.unresolved_actuals ? null : "disabled",
       title: "Inspect unmatched actual transactions",
       onclick: () => switchTo("Review"),
-    }, "Resolve actuals…"));
+    }, data.summary.unresolved_actuals
+      ? `Resolve actuals (${data.summary.unresolved_actuals})…` : "Resolve actuals…"));
 
   const summary = data.summary;
   const comparison = data.comparison;
@@ -536,7 +537,12 @@ async function openPlanDetail(
       el("td", {}, item.description,
         ...(item.explanation || []).map((line) => el("div", { class: "note" }, line))),
       el("td", { class: "muted" }, sourceName(item.source)),
-      el("td", { class: "muted" }, item.status),
+      el("td", { class: "muted" }, item.status,
+        String(item.occurrence || "").startsWith("scheduled:")
+          ? el("div", {}, el("button", { class: "action", type: "button",
+            title: "Choose the splits that count toward it, as in a reconciliation",
+            onclick: () => openOccurrenceMatch(item.occurrence) }, "Match…"))
+          : null),
       el("td", { class: cls(item.expected) }, money(item.expected)),
       el("td", { class: item.actual == null ? "num muted" : cls(item.actual) },
         item.actual == null ? "—" : money(item.actual)),

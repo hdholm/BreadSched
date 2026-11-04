@@ -203,3 +203,29 @@ def test_the_command_line_allocates_part_of_a_leg_and_closes_an_occurrence(
     assert main(["plan-close", str(path), key, "--reopen", "--json"]) == 0
     reopened = json.loads(capsys.readouterr().out)
     assert (reopened["closed_early"], reopened["closed"]) == (False, True)
+
+
+def test_a_split_counted_in_part_is_still_offered_its_occurrence_for_the_rest(db, book):
+    groceries = _estimate(db, book, "Groceries", book.groceries, "600")
+    key = groceries.occurrence_key(JUNE)
+    receipt = _receipt(db, book, date(2026, 6, 20), (book.groceries, "50", ""))
+    leg = _leg(db, receipt, book.groceries)
+    matching.allocate(db, AllocateSplit(receipt.handle, leg.handle, key, Money(30)))
+    [offered] = matching.transaction_matching(db, receipt.handle).value.legs
+    assert [item.key for item in offered.candidates][:1] == [key]
+    matching.allocate(db, AllocateSplit(receipt.handle, leg.handle, key))
+    [whole] = matching.transaction_matching(db, receipt.handle).value.legs
+    assert whole.unallocated == Money(0)
+
+
+def test_a_schedule_opens_on_its_latest_occurrence_not_after_today():
+    schedule = ScheduledTransaction(
+        name="Groceries",
+        recurrence=Recurrence(PeriodType.MONTH, interval=1, start=JUNE),
+        splits=[],
+    )
+    assert schedule.current_occurrence(date(2026, 7, 15)) == date(2026, 7, 1)
+    schedule.skipped = [date(2026, 7, 1)]
+    assert schedule.current_occurrence(date(2026, 7, 15)) == JUNE
+    # Before it begins: its first occurrence.
+    assert schedule.current_occurrence(date(2026, 5, 1)) == JUNE

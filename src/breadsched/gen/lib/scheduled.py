@@ -589,6 +589,23 @@ class ScheduledTransaction(PrimaryObject):
         if when not in self.skipped:
             self.skipped.append(when)
 
+    def current_occurrence(self, today: date) -> date | None:
+        """The occurrence a Match window opens on (decision 0005): the latest on or
+        before ``today`` that was not skipped, else the next one."""
+        start = self.recurrence.start or today
+        since = max(start, today - timedelta(days=400))
+        past = [
+            when
+            for when in self.recurrence.occurrences(today, since=since)
+            if when not in self.skipped
+        ]
+        if past:
+            return past[-1]
+        following = self.recurrence.next_after(today)
+        while following is not None and following in self.skipped:
+            following = self.recurrence.next_after(following)
+        return following
+
     def upcoming(self, until: date, since: date | None = None) -> list[date]:
         if not self.postable:
             return []

@@ -2214,3 +2214,68 @@ def test_review_shows_what_an_actual_was_for_and_its_notes(page, served):
     detail = page.locator(".review-detail")
     expect(detail.locator(".review-notes")).to_have_text("Picnic supplies")
     expect(detail.locator("tr.review-category")).to_contain_text("bread")
+
+
+def test_match_to_plan_counts_a_split_like_a_reconciliation(page, served):
+    """Decision 0005 phase 4: the browser's Match windows, from a schedule and from
+    Review, write allocations through /api/v1."""
+    from breadsched.gen.lib import (
+        Money,
+        PeriodType,
+        Recurrence,
+        ScheduledSplit,
+        ScheduledTransaction,
+        Split,
+        Transaction,
+    )
+
+    expect = sync_api.expect
+    db, _httpd = served
+    food = next(a for a in db.iter_accounts() if a.atype.name == "EXPENSE" and not a.placeholder)
+    bank = next(account for account in db.iter_accounts() if account.atype.name == "BANK")
+    today = date.today()
+    estimate = ScheduledTransaction(
+        name="Browser groceries",
+        recurrence=Recurrence(PeriodType.MONTH, interval=1, start=today.replace(day=1)),
+        splits=[
+            ScheduledSplit(food.handle, Money("600")),
+            ScheduledSplit(bank.handle, Money("-600")),
+        ],
+    )
+    estimate.placeholder = True
+    purchase = Transaction(post_date=today, description="Browser market")
+    purchase.add_split(Split(food.handle, Money("40.00"), memo="bread"))
+    purchase.add_split(Split(bank.handle, Money("-40.00")))
+    with db.transaction("Setup") as txn:
+        db.add_scheduled(estimate, txn)
+        db.add_transaction(purchase, txn)
+    key = estimate.occurrence_key(today.replace(day=1))
+
+    page.get_by_role("button", name="Scheduled", exact=True).first.click()
+    row = page.locator("tr", has_text="Browser groceries").first
+    row.get_by_role("button", name="Match…").click()
+    dialog = page.locator(".match-dialog")
+    expect(dialog).to_contain_text("Estimate: Browser groceries")
+    candidate = dialog.locator("tr.match-candidate", has_text="Browser market")
+    expect(candidate).to_contain_text("bread")
+    candidate.locator(".match-amount").fill("25")
+    candidate.get_by_role("checkbox").check()
+    expect(dialog.locator(".match-totals")).to_contain_text("25.00")
+    [leg] = [s for s in db.get_transaction(purchase.handle).splits if s.account == food.handle]
+    assert [(item.occurrence, item.amount) for item in leg.plan_allocations] == [(key, Money("25"))]
+    dialog.get_by_role("button", name="Close occurrence").click()
+    expect(dialog.get_by_role("button", name="Reopen occurrence")).to_be_visible()
+    dialog.get_by_role("button", name="Reopen occurrence").click()
+    dialog.get_by_role("button", name="Done").click()
+
+    # From Review: the rest of the split counts as well.
+    page.get_by_role("button", name="Review", exact=True).first.click()
+    page.locator("button", has_text="Browser market").click()
+    page.get_by_role("button", name="Match by split…").click()
+    matcher = page.locator(".match-dialog")
+    leg_panel = matcher.locator(".match-leg").first
+    expect(leg_panel).to_contain_text("unallocated 15.00")
+    leg_panel.get_by_role("button", name="Match").click()
+    expect(matcher).to_contain_text("Matched")
+    [leg] = [s for s in db.get_transaction(purchase.handle).splits if s.account == food.handle]
+    assert sum((item.amount for item in leg.plan_allocations), Money(0)) == Money("40")

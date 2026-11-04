@@ -231,7 +231,9 @@ matched to it. A scheduled payment (a bill) is done once a transaction is matche
 it or posted from it, even for a different amount.
 
 **Match to Plan** matches by split and amount, the way a statement is reconciled.
-From a planned item (in a Plan value's detail, **Match** beside it), the window shows
+From a planned item (**Match…** beside it in a Plan value's detail, in Scheduled and
+Upcoming, and beside each scheduled jar in Budget jars; a schedule opens on its latest
+occurrence up to today), the window shows
 what was expected, what has counted toward it so far, and what remains, and below,
 the splits in its period that could count, none checked: check a split to count the
 amount beside it (all that is left of the split, or what you type), and uncheck it to
@@ -240,8 +242,12 @@ ended; **Reopen occurrence** undoes that. From a transaction (**Match to Plan…
 the register, or **Match by Split…** in Review), each split it was for lists the
 planned items it could count toward, best first: a store receipt can count its
 groceries toward the groceries estimate and its light bulbs toward the household one.
-A split that needed no plan can be marked **Not planned**. A transaction leaves
-Review once each split it was for is matched or not planned.
+A split that needed no plan can be marked **Not planned**. **Match** there counts the
+amount typed on top of what the split already counts toward that item. A transaction
+leaves Review once each split it was for is matched or not planned, and the Plan's
+**Resolve actuals (N)…** says how many in its range still need it. The browser has
+the same windows: **Match…** in a Plan value's detail and on each schedule, **Match
+to plan…** on each register row, and **Match by split…** in Review.
 
 Review shows each actual with what it was for (its income or expense accounts), where
 the money came from, and its notes; the one you choose also lists its legs with their

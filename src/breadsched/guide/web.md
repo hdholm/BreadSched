@@ -308,8 +308,11 @@ where it is marked *in advance* or *reminder*. See
 for, where the money came from, and its notes; the one chosen shows its legs with
 their memos. Each planned item it offers, ranked by category first, shows **Close
 match** or **Possible match**, the reasons beneath it, and how much of an estimate
-remains; the
-buttons explain themselves on hover, and **What each action does** lists them all.
+remains. **Match by split…** there, **Match to plan…** on a register row, and
+**Match…** on a schedule or beside a scheduled item in a Plan value's detail open the
+[Match to Plan](../USER_GUIDE.md#actuals-and-planned-occurrences) windows; the Plan's
+**Resolve actuals (N)…** counts what still needs matching. The buttons explain
+themselves on hover, and **What each action does** lists them all.
 When nothing is offered, the page says why.
 
 ## Plan and projection

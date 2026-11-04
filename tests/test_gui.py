@@ -3905,6 +3905,17 @@ class TestScheduleEntry:
         assert selection is not None
         assert selection.get_selected_item() is not None
         assert view.edit_button.get_sensitive() is True
+        # Decision 0005: Match… opens the selected schedule's current occurrence.
+        from breadsched.gui.dialogs.match_dialog import OccurrenceMatchWindow
+
+        assert view.match_button.get_sensitive() is True
+        matcher = view.match_selected()
+        try:
+            assert isinstance(matcher, OccurrenceMatchWindow)
+            schedule = view._selected_schedule()
+            assert matcher.key == schedule.occurrence_key(schedule.current_occurrence(date.today()))
+        finally:
+            matcher.destroy()
 
     def test_the_scheduled_view_offers_the_dialog(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -4689,6 +4700,8 @@ class TestDerivedPlanView:
         view = window._views["plan"]
         assert view.review_actuals_button.get_sensitive() is True
         assert "actuals to review" in view.summary.get_text()
+        # Decision 0005: the button says how many actuals still need matching.
+        assert view.review_actuals_button.get_label().startswith("Resolve actuals (")
 
         view.review_actuals_button.emit("clicked")
 
@@ -5091,6 +5104,13 @@ class TestDerivedPlanView:
             assert any(
                 db.full_name(expense) in name and "Market estimate" in name for name in names
             )
+            # Decision 0005: each scheduled jar opens its current occurrence's window.
+            assert dialog.match_buttons
+            from breadsched.gui.dialogs.match_dialog import OccurrenceMatchWindow
+
+            matcher = dialog.open_matching(estimate.occurrence_key(date(2026, 9, 20)))
+            assert isinstance(matcher, OccurrenceMatchWindow)
+            matcher.destroy()
             assert len(dialog.report.labels) == 3
             # Each account shows planned against actual and its jar levels as charts.
             assert [chart.model.title.split(": ")[1] for chart in dialog.charts[:2]] == [
