@@ -233,6 +233,7 @@ class Split:
         "importer_added",
         "lot_picks",
         "plan_allocations",
+        "not_planned",
     )
 
     def __init__(
@@ -250,11 +251,15 @@ class Split:
         importer_added: bool = False,
         lot_picks: Iterable[LotPick] = (),
         plan_allocations: Iterable[PlanAllocation] = (),
+        not_planned: bool = False,
     ) -> None:
         self.handle = handle or create_handle()
         #: The planned occurrences this split counts toward, each for an amount
         #: (decision 0005). Empty when it counts toward none.
         self.plan_allocations: list[PlanAllocation] = list(plan_allocations)
+        #: Chosen as needing no plan (decision 0005): taken out of what still needs
+        #: matching, as *unexpected* is for a whole transaction.
+        self.not_planned = not_planned
         #: For a sale of shares: the lots it sells, instead of the account's
         #: first-in, first-out or average-cost method. BreadSched-owned.
         self.lot_picks: tuple[LotPick, ...] = tuple(lot_picks)
@@ -321,6 +326,7 @@ class Split:
                 if self.plan_allocations
                 else {}
             ),
+            **({"not_planned": True} if self.not_planned else {}),
         }
 
     @classmethod
@@ -341,6 +347,7 @@ class Split:
             plan_allocations=[
                 PlanAllocation.from_dict(item) for item in data.get("plan_allocations", ())
             ],
+            not_planned=bool(data.get("not_planned", False)),
         )
         raw = data.get("reconcile_date")
         split.reconcile_date = date.fromisoformat(raw) if raw else None

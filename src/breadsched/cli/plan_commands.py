@@ -6,6 +6,7 @@ import argparse
 from datetime import date
 
 from ..api.local import lookup_schedule
+from ..api.typed_codec import to_data
 from ..api.views import (
     advance_days_json,
     due_review_json,
@@ -586,6 +587,64 @@ def cmd_plan_matches(args: argparse.Namespace) -> int:
         return 0
 
 
+def _matching_lines(view) -> str:
+    lines = [f"{view.date.isoformat()}  {view.description}  ({view.resolution.value})"]
+    for index, leg in enumerate(view.legs):
+        flag = "  not planned" if leg.not_planned else ""
+        lines.append(
+            f"  [{index}] {leg.account_name}  {leg.amount.format()}  "
+            f"unallocated {leg.unallocated.format()}{flag}"
+        )
+        lines.extend(
+            f"      → {item.occurrence}  {item.amount.format()}" for item in leg.allocations
+        )
+    return "\n".join(lines)
+
+
+def cmd_plan_allocate(args: argparse.Namespace) -> int:
+    """Count part or all of one split toward a planned occurrence (decision 0005)."""
+    from ..gen.services.plan_matching import AllocateSplit
+
+    reference, _, chosen = args.transaction.partition(":")
+    amount = Money(args.amount) if args.amount is not None else None
+    with book_api(args, "w") as book:
+        transaction = book.find_transaction(reference)
+        legs = book.transaction_matching(transaction.handle).legs
+        if chosen.isdigit() and int(chosen) < len(legs):
+            split = legs[int(chosen)].split
+        elif chosen:
+            found = [leg.split for leg in legs if leg.split.startswith(chosen)]
+            if len(found) != 1:
+                raise CommandError(f"no single plan leg of the transaction matches {chosen!r}")
+            split = found[0]
+        elif len(legs) == 1:
+            split = legs[0].split
+        else:
+            raise CommandError(
+                "the transaction has several plan legs; name one as TRANSACTION:INDEX"
+            )
+        view = book.allocate(AllocateSplit(transaction.handle, split, args.occurrence, amount))
+        emit(to_data(view), args, _matching_lines(view))
+        return 0
+
+
+def cmd_plan_close(args: argparse.Namespace) -> int:
+    """Close a planned occurrence early, or reopen it (decision 0005)."""
+    with book_api(args, "w") as book:
+        if args.reopen:
+            view = book.reopen_occurrence(args.occurrence)
+        else:
+            view = book.close_occurrence(args.occurrence)
+        state = "closed" if view.closed else "open"
+        emit(
+            to_data(view),
+            args,
+            f"{view.key}: {state}; expected {view.expected.format()}, applied "
+            f"{view.applied.format()}, remaining {view.remaining.format()}",
+        )
+        return 0
+
+
 def cmd_plan_resolve(args: argparse.Namespace) -> int:
     """Resolve one actual transaction against a selected scheduled occurrence."""
     with book_api(args, "w") as book:
@@ -949,6 +1008,24 @@ def register(add: AddCommand) -> None:
     plan_resolve.add_argument("occurrence", help="stable scheduled occurrence key")
     add_server_options(plan_resolve)
     plan_resolve.set_defaults(func=cmd_plan_resolve)
+
+    plan_allocate = add("plan-allocate", "Count part or all of a split toward a planned occurrence")
+    plan_allocate.add_argument(
+        "transaction",
+        help="transaction handle or prefix, then :INDEX or :SPLIT for one of several plan legs",
+    )
+    plan_allocate.add_argument("occurrence", help="stable scheduled occurrence key")
+    plan_allocate.add_argument(
+        "--amount", help="how much of the split counts (default: all that is left; 0 removes)"
+    )
+    add_server_options(plan_allocate)
+    plan_allocate.set_defaults(func=cmd_plan_allocate)
+
+    plan_close = add("plan-close", "Close a planned occurrence early, so what remains lapses")
+    plan_close.add_argument("occurrence", help="stable scheduled occurrence key")
+    plan_close.add_argument("--reopen", action="store_true", help="reopen it instead")
+    add_server_options(plan_close)
+    plan_close.set_defaults(func=cmd_plan_close)
 
     plan_reject = add("plan-reject", "Reject a planned occurrence as a match candidate")
     plan_reject.add_argument("transaction", help="transaction handle, or a unique prefix")

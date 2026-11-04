@@ -677,6 +677,44 @@ class RegisterView(BaseView):
         dialog.present()
         return dialog
 
+    def match_selected_to_plan(self, *_args):
+        """Open the Match window for the cursor's transaction (decision 0005).
+
+        Typing not yet entered is saved first, as for making a schedule.
+        """
+        if self.db is None or self.sheet is None:
+            return self._refuse_matching("Open a register before matching to the plan.")
+        sheet = self.sheet
+        handle = sheet.draft.source.handle if sheet.draft.source is not None else None
+        if sheet.draft.dirty():
+            if not sheet.leave():
+                self.grid.sync()
+                return self._refuse_matching(
+                    f"Save the transaction first: {sheet.message or 'it could not be saved.'}"
+                )
+            handle = sheet.last_saved
+            if handle is not None:
+                sheet.select_transaction(handle)
+            self.grid.sync()
+        if handle is None:
+            return self._refuse_matching("Put the cursor on a transaction to match it to the plan.")
+        from ..dialogs.match_dialog import TransactionMatchWindow
+
+        root = self.get_root()
+        window = TransactionMatchWindow(
+            root if isinstance(root, Gtk.Window) else None, self.db, handle
+        )
+        window.present()
+        return window
+
+    def _refuse_matching(self, text: str) -> None:
+        self.set_entry_status(text, error=True)
+        root = self.get_root()
+        Gtk.AlertDialog(message="Not matched to the plan", detail=text).show(
+            root if isinstance(root, Gtk.Window) else None
+        )
+        return None
+
     def _refuse_scheduling(self, text: str) -> None:
         self.set_entry_status(text, error=True)
         root = self.get_root()

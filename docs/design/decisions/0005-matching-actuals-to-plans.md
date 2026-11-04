@@ -10,7 +10,12 @@ Part of the [BreadSched design](../../../DESIGN.md); see
   Review writing allocations, and Projection and jars reading them. Phase 2 is built
   (0.2.0a316): candidates ranked by section 3 with their reasons, and the other
   account and notes in every interface's Review, with remaining amounts in
-  `plan-matches`. Phases 3 and 4, the Match windows, are still to come.
+  `plan-matches`. Phase 3 is built (0.2.0a317): `services.plan_matching` and its
+  book-server operations and routes, the Match windows in GTK from a Plan cell's
+  detail, the register, and Review, *not planned* per split, Close and Reopen
+  occurrence, and `plan-allocate` and `plan-close`. Still to come: opening the
+  window from Scheduled, Upcoming, and Budget jars, the Plan's count of unmatched
+  actuals, and the browser's windows (phase 4).
 - **Decision:** an actual is matched to the plan *by split and amount*. One split
   may count toward one planned occurrence, several splits of one transaction toward
   several occurrences, and several actuals toward one occurrence, each for part or

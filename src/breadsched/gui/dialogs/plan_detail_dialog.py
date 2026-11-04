@@ -43,6 +43,7 @@ class PlanDetailDialog(BoundedWindow):
             modal=True,
         )
         self.set_default_size(900, 620)
+        self.db = db
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         for side in ("top", "bottom", "start", "end"):
@@ -139,7 +140,7 @@ class PlanDetailDialog(BoundedWindow):
         ]
         if not rows:
             return Gtk.Label(label="No planned occurrences contribute to this cell.")
-        return self._table(
+        table = self._table(
             (
                 "Planned",
                 "Description",
@@ -153,6 +154,33 @@ class PlanDetailDialog(BoundedWindow):
             rows,
             numeric_start=5,
         )
+        # Decision 0005: match actuals to a scheduled occurrence by split and amount.
+        scheduled = [
+            item for item in detail.planned_events if item.occurrence.startswith("scheduled:")
+        ]
+        if not scheduled:
+            return table
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        page.append(table)
+        buttons = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=3)
+        self.match_buttons: list[Gtk.Button] = []
+        for item in scheduled:
+            button = Gtk.Button(label=f"Match {item.planned_date.isoformat()} {item.description}…")
+            button.set_tooltip_text(
+                "Choose the splits that count toward it, as in a reconciliation"
+            )
+            button.connect("clicked", lambda _b, key=item.occurrence: self.open_matching(key))
+            buttons.append(button)
+            self.match_buttons.append(button)
+        page.append(buttons)
+        return page
+
+    def open_matching(self, key: str):
+        from .match_dialog import OccurrenceMatchWindow
+
+        window = OccurrenceMatchWindow(self, self.db, key)
+        window.present()
+        return window
 
     def _actual_page(
         self,
