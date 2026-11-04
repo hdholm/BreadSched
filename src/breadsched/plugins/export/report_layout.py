@@ -1390,7 +1390,7 @@ def budget_jars_layout(report: JarsReport, currencies: dict[str | None, str]) ->
 
     def periods_table(periods, empty: str) -> Table:
         return Table(
-            _columns("Period", "#Filled", "#Planned", "#Actual", "#Variance", "#Level"),
+            _columns("Period", "#Filled", "#Planned", "#Actual", "#Variance", "#Lapsed", "#Level"),
             tuple(
                 TableRow(
                     (
@@ -1399,6 +1399,7 @@ def budget_jars_layout(report: JarsReport, currencies: dict[str | None, str]) ->
                         _amount(item.planned),
                         _amount(item.actual),
                         _amount(item.variance, signed=True),
+                        _amount(item.lapsed, signed=True),
                         _amount(item.level, signed=True),
                     )
                 )
@@ -1412,7 +1413,8 @@ def budget_jars_layout(report: JarsReport, currencies: dict[str | None, str]) ->
             "Each scheduled payment and estimate, and each savings goal, is a jar. It "
             "fills from each income in its cycle by that income's share, and is drawn "
             "by the actual transaction matched to it. Periods only group dated events. "
-            "A level carries in every earlier fill and draw."
+            "A bill's level carries in every earlier fill and draw; what an estimate's "
+            "period leaves lapses the day after it ends."
         )
     ]
     for total in report.totals:

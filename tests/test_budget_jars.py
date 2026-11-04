@@ -90,11 +90,14 @@ def test_an_estimate_fills_from_each_paycheck_and_is_drawn_by_its_actual(db, boo
     )
     assert june.variance == Money(-50)
     # July's occurrence is unmatched: it is planned and filled but nothing is drawn.
-    assert (july.filled, july.planned, july.actual, july.level) == (
+    # June's period ends July 19, and the 50 it left lapses on July 20 (decision
+    # 0005), leaving what July's paychecks set aside.
+    assert (july.filled, july.planned, july.actual, july.lapsed, july.level) == (
         Money(600),
         Money(600),
         Money(0),
-        Money(650),
+        Money(50),
+        Money(600),
     )
     [actual] = [event for event in jar.events if event.kind == "actual"]
     assert (actual.when, actual.transaction) == (date(2026, 6, 21), market.handle)
@@ -281,7 +284,8 @@ def test_the_user_guide_worked_example(db, book):
     [row] = [item for item in plan.report.categories if item.account == book.groceries]
     assert (row.planned[0], row.actual[0]) == (Money(600), Money(550))
 
-    # Budget jars: June filled 600, planned 600, actual 550, level 50; July 650.
+    # Budget jars: June filled 600, planned 600, actual 550, level 50. On July 20
+    # June's 50 lapses, so July ends at the 600 set aside for July.
     [jar] = budget_jars(db, date(2026, 6, 1), date(2026, 7, 31), today=TODAY).jars
     june, july = jar.periods
     assert (june.filled, june.planned, june.actual, june.level) == (
@@ -290,7 +294,12 @@ def test_the_user_guide_worked_example(db, book):
         Money(550),
         Money(50),
     )
-    assert (july.planned, july.actual, july.level) == (Money(600), Money(0), Money(650))
+    assert (july.planned, july.actual, july.lapsed, july.level) == (
+        Money(600),
+        Money(0),
+        Money(50),
+        Money(600),
+    )
 
 
 def test_the_layout_prints_totals_and_each_account(db, book):
@@ -306,7 +315,7 @@ def test_the_layout_prints_totals_and_each_account(db, book):
     assert (document.title, document.kind) == ("Budget jars", "budget-jars")
     assert document.subtitle == "2026-06-01 to 2026-07-31 by month"
     text = document.text()
-    for expected in ("All jars", "Expenses:Groceries", "Groceries (estimate)", "1,200.00"):
+    for expected in ("All jars", "Expenses:Groceries", "Groceries (estimate)", "Lapsed"):
         assert expected in text, expected
 
 
@@ -397,9 +406,9 @@ def test_jar_charts_pair_planned_with_actual_and_level_with_target(db, book):
     assert draws.rows()[0] == (report.labels[0][2], (Money(600), Money(550)))
     level, target = levels.series
     assert levels.categories == ("Groceries",)
-    # 650 left at the end of July, filling toward August's 600.
+    # June's 50 lapsed on July 20: 600 at the end of July, filling toward August's.
     assert (level.values, target.values, level.slot, target.slot) == (
-        (Money(650),),
+        (Money(600),),
         (Money(600),),
         3,
         4,
@@ -456,8 +465,9 @@ def test_charts_print_beside_their_tables(db, book):
     assert "planned and actual" in document.text()
 
 
-def test_earlier_occurrences_are_carried_in(db, book):
-    """A level accounts for every earlier fill and draw, not only the range's."""
+def test_an_estimates_earlier_periods_lapse_and_a_bills_carry_in(db, book):
+    """What an estimate's period leaves, over or under, lapses the day after it ends
+    (decision 0005); a level counts every earlier fill, draw, and lapse."""
     _pay(db, book)
     groceries = _schedule(
         db,
@@ -471,15 +481,52 @@ def test_earlier_occurrences_are_carried_in(db, book):
     _actual(db, book, groceries, date(2026, 4, 20), date(2026, 4, 20), "650")
     report = budget_jars(db, date(2026, 6, 1), date(2026, 6, 30), today=TODAY)
     [jar] = report.jars
-    # 100 left in March, 50 overspent in April, and May's 600 still set aside; June's
-    # own fills are inside the range.
-    assert jar.opening == Money(100) - Money(50) + Money(600)
+    lapses = [(e.when, e.amount) for e in jar.events if e.kind == "lapsed"]
+    assert lapses == [
+        (date(2026, 4, 20), Money(100)),
+        (date(2026, 5, 20), Money(-50)),
+        (date(2026, 6, 20), Money(600)),
+    ]
+    # On June 1 only May's 600 is still set aside: its period runs to June 19.
+    assert jar.opening == Money(600)
     [june] = jar.periods
-    assert (june.filled, june.planned, june.actual) == (Money(600), Money(600), Money(0))
-    assert june.level == jar.opening + Money(600)
+    assert (june.filled, june.planned, june.actual, june.lapsed) == (
+        Money(600),
+        Money(600),
+        Money(0),
+        Money(600),
+    )
+    assert june.level == Money(600)
     # The same months reported from March show the same end.
     from_march = budget_jars(db, date(2026, 3, 1), date(2026, 6, 30), today=TODAY)
     assert from_march.jars[0].periods[-1].level == june.level
+
+    # A bill keeps what it left: the same schedule as a commitment carries in.
+    groceries.placeholder = False
+    with db.transaction("bill") as txn:
+        db.commit_scheduled(groceries, txn)
+    [bill] = budget_jars(db, date(2026, 6, 1), date(2026, 6, 30), today=TODAY).jars
+    assert bill.opening == Money(100) - Money(50) + Money(600)
+    assert not [e for e in bill.events if e.kind == "lapsed"]
+
+
+def test_a_last_estimate_lapses_after_its_end_date(db, book):
+    _pay(db, book)
+    once = _schedule(
+        db,
+        "Holiday gifts",
+        Recurrence(
+            PeriodType.MONTH, interval=1, start=date(2026, 5, 1), end=date(2026, 5, 31), count=1
+        ),
+        [ScheduledSplit(book.groceries, Money(300)), ScheduledSplit(book.checking, Money(-300))],
+        placeholder=True,
+    )
+    _actual(db, book, once, date(2026, 5, 1), date(2026, 5, 10), "120")
+    [jar] = budget_jars(db, date(2026, 5, 1), date(2026, 6, 30), today=TODAY).jars
+    assert [(e.when, e.amount) for e in jar.events if e.kind == "lapsed"] == [
+        (date(2026, 6, 1), Money(180))
+    ]
+    assert [period.level for period in jar.periods] == [Money(180), Money(0)]
 
 
 def _spend(db, book, when, amount, account=None):
@@ -512,7 +559,9 @@ def test_unmatched_spending_draws_the_accounts_jar_like_the_plan(db, book):
     [jar] = bundle.jars
     june, july = jar.periods
     assert (june.actual, june.level) == (Money(590), Money(10))
-    assert (july.actual, july.level) == (Money(100), Money(510))
+    # July 3 and 6 are still in June's period (June 20 to July 19), which spent 690
+    # of its 600; on July 20 the 90 overspent is written off, not owed by July.
+    assert (july.actual, july.lapsed, july.level) == (Money(100), Money(-90), Money(600))
     unmatched = [e for e in jar.events if e.kind == "actual" and not e.occurrence]
     assert [(e.when, e.amount) for e in unmatched] == [
         (date(2026, 6, 25), Money(40)),

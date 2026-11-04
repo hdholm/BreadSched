@@ -164,12 +164,15 @@ def test_budget_jars_carry_in_years_of_history_quickly(realistic_book):
 
     [jar] = report.jars
     # About 260 earlier weeks were filled, and the book's spending in the account
-    # since then drew the jar (#312): the opening level carries in both.
+    # since then drew the jar (#312); each ended week lapsed what it left
+    # (decision 0005), so the opening level holds only the current week's money.
     before = [event for event in jar.events if event.when < date(2026, 7, 1)]
     filled = sum((e.amount for e in before if e.kind == "fill"), Money(0))
     drawn = sum((e.amount for e in before if e.kind == "actual"), Money(0))
+    lapsed = sum((e.amount for e in before if e.kind == "lapsed"), Money(0))
     assert filled > Money(150 * 250) and drawn > Money(0)
-    assert jar.opening == filled - drawn
+    assert len([e for e in before if e.kind == "lapsed"]) > 200
+    assert jar.opening == filled - drawn - lapsed == Money(150)
     assert elapsed < 5.0, f"budget jars over five weekly years took {elapsed:.3f}s"
 
 

@@ -740,6 +740,7 @@ def cmd_jars(args: argparse.Namespace) -> int:
                 "planned": item.planned,
                 "actual": item.actual,
                 "variance": item.variance,
+                "lapsed": item.lapsed,
                 "level": item.level,
             }
 
@@ -803,12 +804,13 @@ def cmd_jars(args: argparse.Namespace) -> int:
                             item.planned.format(),
                             item.actual.format(),
                             item.variance.format(parens_negative=True),
+                            item.lapsed.format(parens_negative=True),
                             item.level.format(parens_negative=True),
                         ]
                         for item in bundle.periods
                     ],
-                    ["period", "filled", "planned", "actual", "variance", "level"],
-                    right={1, 2, 3, 4, 5},
+                    ["period", "filled", "planned", "actual", "variance", "lapsed", "level"],
+                    right={1, 2, 3, 4, 5, 6},
                 )
             )
         lines.extend(f"note: {problem}" for problem in report.problems)

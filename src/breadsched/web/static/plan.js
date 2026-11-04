@@ -607,13 +607,15 @@ async function openBudgetJars(from, through, period) {
   choice.value = data.period;
   const num = (label) => ({ label, num: true });
   const periodTable = (periods) => table(
-    ["Period", num("Filled"), num("Planned"), num("Actual"), num("Variance"), num("Level")],
+    ["Period", num("Filled"), num("Planned"), num("Actual"), num("Variance"), num("Lapsed"),
+      num("Level")],
     periods.map((item) => el("tr", {},
       el("td", {}, item.label),
       el("td", { class: "num" }, money(item.filled)),
       el("td", { class: "num" }, money(item.planned)),
       el("td", { class: "num" }, money(item.actual)),
       el("td", { class: cls(item.variance) }, money(item.variance)),
+      el("td", { class: cls(item.lapsed) }, money(item.lapsed)),
       el("td", { class: cls(item.level) }, money(item.level)))));
   const printDialog = () => {
     document.body.classList.add("printing-dialog");

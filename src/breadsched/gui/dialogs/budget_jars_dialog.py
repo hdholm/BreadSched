@@ -19,7 +19,7 @@ from ..widgets.model_chart import ModelChartView
 __all__ = ["BudgetJarsDialog"]
 
 _PERIODS = (ReportingPeriod.MONTH, ReportingPeriod.QUARTER, ReportingPeriod.YEAR)
-_HEADINGS = ("Period", "Filled", "Planned", "Actual", "Variance", "Level")
+_HEADINGS = ("Period", "Filled", "Planned", "Actual", "Variance", "Lapsed", "Level")
 
 
 def _cell(text: str, *, numeric: bool = False) -> Gtk.Label:
@@ -43,6 +43,7 @@ def _grid(periods: tuple[JarPeriod, ...]) -> Gtk.Grid:
                 item.planned.format(),
                 item.actual.format(),
                 item.variance.format(parens_negative=True),
+                item.lapsed.format(parens_negative=True),
                 item.level.format(parens_negative=True),
             )
         ):

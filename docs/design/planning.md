@@ -593,9 +593,15 @@ it. A goal's fills are the changes in `savings_goals.goal_progress(...).set_asid
 income, allocation, target, and period-end dates; closing it draws the whole earmark.
 `reporting_periods` only groups those dated events. A scheduled jar's level carries
 in every earlier event: occurrences are read from the earliest schedule's start, and
-the opening level is every fill less every actual draw dated before the range, so
-earlier leftovers and overspending count and an unmatched occurrence's money stays in
-the jar until matched or skipped; a goal's level is its earmark. Jars bundle by account and currency, and totals never add
+the opening level is every fill less every actual draw and lapse dated before the
+range. A bill's earlier leftovers and overspending count, and an unmatched
+occurrence's money stays in the jar until matched or skipped. An estimate's period
+runs from its date to the day before its next occurrence (or through its end date
+when it is the last), and `_lapses` adds a `lapsed` event the day after it ends:
+the jar's level then less the fills already made for later occurrences, so a
+leftover or an overspend never carries forward (decision 0005). Periods ending
+after today lapse what they would hold with no more spending, as later levels
+assume; `JarPeriod.lapsed` totals them. A goal's level is its earmark. Jars bundle by account and currency, and totals never add
 currencies together. `report_layout.budget_jars_layout` prints the report; the GTK
 `BudgetJarsDialog` (Plan → Budget Jars), the browser (`/api/budget-jars`), and
 `breadsched jars` show it.

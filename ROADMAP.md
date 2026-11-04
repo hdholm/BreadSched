@@ -13,6 +13,29 @@ merge without new notes publishes nothing.
 Every item planned for this stage is delivered; see `CHANGELOG.md` through
 0.2.0a273. New defects and requests found before the first Beta are added here.
 
+- **Match actuals to plans by split and amount** (#397,
+  [decision 0005](docs/design/decisions/0005-matching-actuals-to-plans.md)), in its
+  four phases: allocations with remaining amounts and estimates that lapse at the end
+  of their period; category-first proposals with the other account and notes; the
+  Match windows in GTK; then the browser and command line.
+- **Reconcile remembers** (#403): the charges, credits, and interest of the last few
+  statements as candidates, a default statement date from the last one, a visible
+  hint instead of a silent refusal for an earlier statement, and a warning before a
+  reconciled leg is changed.
+- **Undoing a large step** (#405), such as an import: say how much it undoes, ask
+  first, and show progress.
+- **Amounts without a leading zero** (#404): `.1` is accepted wherever an amount is.
+- **Desktop columns** (#406): reorderable columns everywhere, column resizing that
+  takes from the neighbour being dragged, and the register's account list kept on
+  screen for the last row.
+- **Entering transactions** (#407): notes completed from earlier transactions with
+  the same description; a security leg shown with its shares and price in any
+  register, asking which value to change; and Accounts columns for the last quote
+  update, value in the reporting currency, and price.
+- **Find and a Transaction Detail report** (#408): several accounts at once,
+  subtotals nested in a chosen order (including description and notes), printing,
+  and the same query as a report.
+
 ## At the first Beta
 
 - **Signed builds** from the first Beta. Sign `setup.exe` and the installed
