@@ -222,14 +222,22 @@ occurrences and actual splits, and use **Resolve actuals** when an actual needs 
 matched, marked unexpected, or reviewed. Correct a posted split's planning purpose
 in the transaction editor; correct a scheduled purpose in the schedule editor.
 
+An estimate fills from many purchases. Matching a $120 grocery purchase to a $600
+groceries estimate counts $120 toward it and leaves $480 still expected: Review keeps
+offering the estimate for the month's other purchases, the Projection still counts
+what remains of it, and its jar is drawn by each purchase on its own date. When its
+period ends, what remains lapses, and a purchase that arrives late may still be
+matched to it. A scheduled payment (a bill) is done once a transaction is matched to
+it or posted from it, even for a different amount.
+
 Review explains its suggestions. Each planned item it offers for an actual is a
 **Close match** (within two days and 5% of the expected amount) or a **Possible
 match**, with the reasons: the accounts it shares, how far the amount and date are
 from the plan, and any words the descriptions share. When nothing is offered, Review
 says why: the nearest planned item using those accounts is outside the seven-day
 window, is planned in another currency, or was rejected, or no schedule uses the
-accounts at all. Each action says what it will do: **Match** marks the planned item
-done, **Reject** stops offering it for this transaction, **Skip** removes the planned
+accounts at all. Each action says what it will do: **Match** counts the transaction
+toward the planned item, **Reject** stops offering it for this transaction, **Skip** removes the planned
 item from the plan, and **Unexpected** records the transaction as unplanned. A
 transaction that moves FSA money also says which FSA flow it is (payroll funding, a
 payment from the FSA card, a reimbursement, or a provider refund) and whether and how
@@ -252,7 +260,8 @@ every scheduled estimate (such as groceries) is a jar, and so is every
    spoken for.
 2. **Actual transactions draw the jars.** When Review (or posting a due item)
    matches a real transaction to a planned occurrence, that transaction draws the
-   jar on its own date for its own amount. Spending less leaves money in the jar;
+   jar on its own date for its own amount; an estimate is drawn by every purchase
+   matched to it. Spending less leaves money in the jar;
    spending more shows as a variance. Spending you never match is still spending:
    every transaction posted to a jar's account draws that account's jar on its own
    date (a refund puts money back), just as the Plan counts it. When the account

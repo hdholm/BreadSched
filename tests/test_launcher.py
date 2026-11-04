@@ -59,8 +59,8 @@ class TestHelpAndVersion:
         assert launcher.main(["--version"]) == 0
         output = capsys.readouterr().out
         assert __version__ in output
-        assert "native schema 13" in output
-        assert "supports 6–13" in output
+        assert "native schema 14" in output
+        assert "supports 6–14" in output
 
     def test_help_lists_the_equivalent_commands(self, capsys):
         launcher.main(["--help"])

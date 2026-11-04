@@ -10,6 +10,32 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a315 - 2026-11-04
+
+Decision 0005, phase 1: actuals count toward plans by split and amount (#397).
+Native schema 14.
+
+- **An estimate fills from many purchases.** Review's **Match** counts a purchase
+  toward an estimate for its amount and leaves the rest expected, so the month's
+  other purchases can be matched to it too; the Projection counts what remains of a
+  partly met estimate until its period ends, and its jar is drawn by each purchase on
+  its own date. A late purchase may still be matched to an ended estimate. A
+  scheduled payment is done once matched or posted, as before.
+- **Storage.** `Split.plan_allocations` keeps, per split, the occurrences it counts
+  toward with the planned date and amount; schedules gain `closed_occurrences`
+  (written only when set). Posting a schedule and Review's Match write allocations of
+  the transaction's plan legs in full (`engine.plan_allocations`). Editing a split
+  lower, or a re-import, cuts its allocations to fit.
+- **Engine.** `PlannedEvent` gains `actuals`, `applied_amount`, `remaining_amount`,
+  `closed`, and `matchable`; its JSON adds `actual_transactions`, `applied_amount`,
+  `remaining_amount`, and `closed`. `planning.remainder_event` and
+  `scenario_events(..., remainders=True)` give Projection what remains. Budget jars
+  draw only what a split allocates and leave the rest to unmatched spending.
+  Verification accepts several actuals on one estimate.
+- **Migration 13→14** writes each existing link as allocations, keeping its planned
+  date and amount, and checks that nothing else changed. 0.2.0a314 and earlier
+  refuse to open a schema 14 book; keep the pre-migration backup to go back.
+
 ## 0.2.0a314 - 2026-11-04
 
 Fixes three field reports (#403, #405, #408).

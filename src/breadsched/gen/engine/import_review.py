@@ -40,7 +40,7 @@ from ..db.base import DbTxn
 from ..db.sqlite import DbSQLite
 from ..lib.notes import reconcile_imported_notes
 from ..lib.reconciliation import Reconciliation, ReconciliationStatus
-from ..lib.transaction import ReconcileState, Split, Transaction
+from ..lib.transaction import ReconcileState, Split, Transaction, fitting_allocations
 
 __all__ = [
     "REVIEW_KEY",
@@ -278,6 +278,7 @@ def merge_local_state(incoming: Transaction, existing: Transaction) -> bool:
         if split.account == prior.account:
             # Which lots a sale sells is BreadSched's choice; GnuCash keeps its own.
             split.lot_picks = prior.lot_picks
+            split.plan_allocations = fitting_allocations(prior.plan_allocations, split.value)
         if prior.reconcile is ReconcileState.RECONCILED and (
             split.account,
             split.value,

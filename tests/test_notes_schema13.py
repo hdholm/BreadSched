@@ -116,7 +116,7 @@ def test_a_schema_12_book_merges_each_records_two_notes(tmp_path):
     migrated = DbSQLite()
     migrated.load(str(path))
     try:
-        assert migrated.get_metadata("schema_version") == SCHEMA_VERSION == 13
+        assert migrated.get_metadata("schema_version") == SCHEMA_VERSION == 14
         assert migrated.migration_backup is not None
         assert migrated.get_transaction(both.handle).notes == "From GnuCash\n\nMine"
         assert migrated.get_transaction(imported_only.handle).notes == "Only GnuCash"

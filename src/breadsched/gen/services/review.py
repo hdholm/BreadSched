@@ -7,6 +7,7 @@ from datetime import date
 
 from ..db.sqlite import DbSQLite
 from ..engine import fsa_claims, planning, review_explain
+from ..engine.plan_allocations import account_classes
 from ..lib.money import Money
 from ..lib.transaction import PlanningResolution, Transaction
 from .contracts import ServiceError, ServiceResult
@@ -48,7 +49,7 @@ def match_review(db: DbSQLite, request: ReviewOccurrence) -> ServiceResult[Revie
     if error is not None:
         return ServiceResult.failure(error)
     assert transaction is not None and event is not None
-    planning.actualize_transaction(transaction, event)
+    planning.actualize_transaction(transaction, event, account_classes(db))
     with db.transaction("Match transaction to planned occurrence") as txn:
         db.commit_transaction(transaction, txn)
     return ServiceResult.success(
@@ -142,7 +143,7 @@ def _available_event(
     event = planning.event_by_key(db, key)
     if event is None:
         return None, ServiceError("review.occurrence.not_found", ("occurrence",))
-    if event.status is planning.EventStatus.ACTUALIZED:
+    if not event.matchable:
         return None, ServiceError("review.occurrence.resolved", ("occurrence",))
     return event, None
 

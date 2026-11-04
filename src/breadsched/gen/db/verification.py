@@ -305,6 +305,12 @@ def _verify_prices(state: _VerificationState) -> list[BookIssue]:
 def _verify_transactions(state: _VerificationState) -> list[BookIssue]:
     issues: list[BookIssue] = []
     occurrence_owners: dict[str, str] = {}
+    # Many purchases fill one estimate (decision 0005); only a commitment has one actual.
+    estimates = {
+        f"scheduled:{schedule.handle}:"
+        for schedule in state.db.iter_scheduled()
+        if schedule.placeholder
+    }
     global_split_owners: dict[str, str] = {}
     for transaction in state.transactions:
         if transaction.currency is not None and transaction.currency not in state.commodities:
@@ -330,7 +336,7 @@ def _verify_transactions(state: _VerificationState) -> list[BookIssue]:
         if occurrence_key is None and transaction.scheduled_from is not None:
             planned_for = transaction.planned_for or transaction.post_date
             occurrence_key = f"scheduled:{transaction.scheduled_from}:{planned_for.isoformat()}"
-        if occurrence_key is not None:
+        if occurrence_key is not None and occurrence_key.rsplit(":", 1)[0] + ":" not in estimates:
             previous = occurrence_owners.get(occurrence_key)
             if previous is not None and previous != transaction.handle:
                 issues.append(

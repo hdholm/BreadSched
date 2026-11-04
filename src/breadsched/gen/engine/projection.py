@@ -787,7 +787,7 @@ def _project_events(
 
     _report_progress(progress, start, start, end, "Preparing events")
     all_events = []
-    for original in planning.scenario_events(db, scenario, start, end):
+    for original in planning.scenario_events(db, scenario, start, end, remainders=True):
         event = converter.event(original)
         if event is not None and event.actual_transaction is not None:
             if not converter.reporting_actual(event):

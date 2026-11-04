@@ -4,8 +4,11 @@ Part of the [BreadSched design](../../../DESIGN.md); see
 [Planning](../planning.md#event-driven-plan).
 
 - **Status:** accepted, 2026-11-04 (#397), after review on 2026-10-30. Built in the
-  four phases at the end. So far an estimate's jar lapses at the end of each period
-  (0.2.0a312); allocations and the rest are still to come.
+  four phases at the end. An estimate's jar lapses at the end of each period
+  (0.2.0a312), and phase 1 is built (0.2.0a315, schema 14): allocations, the
+  migration, applied and remaining amounts and the closed state, posting and
+  Review writing allocations, and Projection and jars reading them. Phases 2–4 are
+  still to come.
 - **Decision:** an actual is matched to the plan *by split and amount*. One split
   may count toward one planned occurrence, several splits of one transaction toward
   several occurrences, and several actuals toward one occurrence, each for part or
@@ -111,7 +114,10 @@ closing it, as now.
 - **The amount** is in the split's own sign convention and currency, and is never
   more than the split's value. The default is all of it. A split allocated for part
   of its value leaves the rest unallocated.
-- **An occurrence's applied amount** is the sum of the allocations naming it. Its
+- **An occurrence's applied amount** is the sum of the allocations naming it, in the
+  occurrence's terms: each transaction counts the share it allocates of its plan legs
+  (category legs, else its positive legs) times its gross, so a paycheck matched as a
+  whole counts its gross with the withholding, as before. Its
   remaining amount is expected minus applied, which can go negative (spent more than
   planned). Every interface shows those three figures for an occurrence, as a
   reconciliation shows the statement, the cleared total, and the difference.
@@ -222,7 +228,7 @@ remaining amounts).
   WRITE to change (decision 0004), with `/api/v1` routes and contract tests.
 - **Storage.** `Split.plan_allocations` lives in the transaction JSON, and the
   compact form leaves it out when it is empty. Each closed occurrence is kept on its
-  schedule as `closed_occurrences` (a list of occurrence keys), as `skipped` is.
+  schedule as `closed_occurrences` (a list of occurrence dates), as `skipped` is.
   There is no new table. The native schema rises to 14 (question 5).
 - **Migration.** On first open, an existing link becomes allocations:
   - A transaction with `planned_occurrence` (or posted from a schedule) allocates

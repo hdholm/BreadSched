@@ -13,12 +13,16 @@ release workflow compares the installed wheel's line with
 carry a stale schema window. Book
 verification includes the same application and schema details in its human and JSON
 diagnostics. The integer data-format/schema version determines whether a
-native book can be opened or must be migrated; it is currently 13. A behavior-only
+native book can be opened or must be migrated; it is currently 14. A behavior-only
 release changes only the application version. A persistent representation change
 increments the data-format version and supplies an explicit migration.
 
-SQLite is the native persistence engine. The current application writes schema 13 and
-can migrate schemas 6 through 12 before decoding primary objects. Schema 13 keeps
+SQLite is the native persistence engine. The current application writes schema 14 and
+can migrate schemas 6 through 13 before decoding primary objects. Schema 14 keeps
+plan links by split (13→14: each transaction linked to an occurrence, by
+`planned_occurrence` or posted from a schedule, gains `plan_allocations` on its plan
+legs, in full, with its planned date and amount; the step checks no transaction was
+lost and every link names the occurrence it named; see planning); schema 13 keeps
 one note per transaction and account (12→13: a record's imported and BreadSched
 notes are joined, the imported text first, with `imported_notes_digest`
 fingerprinting it; see interoperability); schema 12 stores
@@ -38,11 +42,12 @@ which runs the migration and its pre-migration backup, and reports the old and n
 schema and the backup path; the Windows upgrade test uses it on the book made by
 the previous release.
 
-The supported migration window currently covers seven preceding data-format
-versions: the registry retains 6→7 through 12→13, so the application migrates
-schemas 6 through 12 and opens schema 13 directly. Versioned fixtures for schemas 6, 7, 8, and 9 prove each step;
-the 10→11, 11→12, and 12→13 steps are proved by tests that rewrite a current book into the
-older form (`test_payee_removal.py`, `test_dedupe_schema12.py`, `test_notes_schema13.py`).
+The supported migration window currently covers eight preceding data-format
+versions: the registry retains 6→7 through 13→14, so the application migrates
+schemas 6 through 13 and opens schema 14 directly. Versioned fixtures for schemas 6, 7, 8, and 9 prove each step;
+the 10→11, 11→12, 12→13, and 13→14 steps are proved by tests that rewrite a current book into the
+older form (`test_payee_removal.py`, `test_dedupe_schema12.py`, `test_notes_schema13.py`,
+`test_plan_allocations.py`).
 The window widens only when a real schema migration is needed; there is no no-op
 format bump. A migration must run before ordinary decoding, fail atomically, preserve
 a verified backup, and leave enough version evidence to diagnose or retry safely.

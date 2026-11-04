@@ -20,12 +20,14 @@ from .notes import merge_legacy_notes
 __all__ = [
     "InvestmentActivityKind",
     "LotPick",
+    "PlanAllocation",
     "PlanningFlowKind",
     "PlanningResolution",
     "ReconcileState",
     "Split",
     "Transaction",
     "UnbalancedError",
+    "fitting_allocations",
 ]
 
 
@@ -150,6 +152,69 @@ class LotPick:
         return cls(str(data["lot"]), Money(*data["quantity"]))
 
 
+@dataclass(frozen=True, slots=True)
+class PlanAllocation:
+    """A split's claim on one planned occurrence, for an amount (decision 0005).
+
+    ``amount`` is in the split's own sign and its transaction's currency, never more
+    than the split's value. ``planned_for`` and ``planned_amount`` are the
+    occurrence's date and expected amount when it was matched, so a later schedule
+    edit cannot rewrite its variance.
+    """
+
+    occurrence: str
+    amount: Money
+    planned_for: date | None = None
+    planned_amount: Money | None = None
+
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "occurrence": self.occurrence,
+            "amount": [self.amount.numerator, self.amount.denominator],
+            "planned_for": self.planned_for.isoformat() if self.planned_for else None,
+            "planned_amount": (
+                None
+                if self.planned_amount is None
+                else [self.planned_amount.numerator, self.planned_amount.denominator]
+            ),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PlanAllocation:
+        raw_for = data.get("planned_for")
+        raw_amount = data.get("planned_amount")
+        return cls(
+            str(data["occurrence"]),
+            Money(*data["amount"]),
+            date.fromisoformat(raw_for) if raw_for else None,
+            Money(*raw_amount) if raw_amount is not None else None,
+        )
+
+
+def fitting_allocations(
+    allocations: Iterable[PlanAllocation], value: Money
+) -> list[PlanAllocation]:
+    """``allocations`` cut to fit a split of ``value``, in order (decision 0005).
+
+    An allocation is in its split's sign and never more than its value: one of the
+    other sign is dropped, and the last that would pass the value is cut to what is
+    left, so an edit or re-import that lowers a split keeps what still fits.
+    """
+    room = abs(value)
+    fitted: list[PlanAllocation] = []
+    for item in allocations:
+        if room <= 0 or item.amount == 0 or (item.amount > 0) != (value > 0):
+            continue
+        amount = item.amount if abs(item.amount) <= room else (room if value > 0 else -room)
+        room = room - abs(amount)
+        fitted.append(
+            item
+            if amount == item.amount
+            else PlanAllocation(item.occurrence, amount, item.planned_for, item.planned_amount)
+        )
+    return fitted
+
+
 class Split:
     """One leg of a transaction: an amount posted against one account."""
 
@@ -167,6 +232,7 @@ class Split:
         "fsa_year_start",
         "importer_added",
         "lot_picks",
+        "plan_allocations",
     )
 
     def __init__(
@@ -183,8 +249,12 @@ class Split:
         fsa_year_start: date | str | None = None,
         importer_added: bool = False,
         lot_picks: Iterable[LotPick] = (),
+        plan_allocations: Iterable[PlanAllocation] = (),
     ) -> None:
         self.handle = handle or create_handle()
+        #: The planned occurrences this split counts toward, each for an amount
+        #: (decision 0005). Empty when it counts toward none.
+        self.plan_allocations: list[PlanAllocation] = list(plan_allocations)
         #: For a sale of shares: the lots it sells, instead of the account's
         #: first-in, first-out or average-cost method. BreadSched-owned.
         self.lot_picks: tuple[LotPick, ...] = tuple(lot_picks)
@@ -246,6 +316,11 @@ class Split:
                 if self.lot_picks
                 else {}
             ),
+            **(
+                {"plan_allocations": [item.serialize() for item in self.plan_allocations]}
+                if self.plan_allocations
+                else {}
+            ),
         }
 
     @classmethod
@@ -263,6 +338,9 @@ class Split:
             fsa_year_start=data.get("fsa_year_start"),
             importer_added=bool(data.get("importer_added", False)),
             lot_picks=[LotPick.from_dict(item) for item in data.get("lot_picks", ())],
+            plan_allocations=[
+                PlanAllocation.from_dict(item) for item in data.get("plan_allocations", ())
+            ],
         )
         raw = data.get("reconcile_date")
         split.reconcile_date = date.fromisoformat(raw) if raw else None

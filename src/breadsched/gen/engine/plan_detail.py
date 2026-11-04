@@ -18,7 +18,7 @@ from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
 from ..lib.scenario import Scenario
-from ..lib.transaction import PlanningFlowKind, PlanningResolution, Transaction
+from ..lib.transaction import PlanningFlowKind, PlanningResolution
 from .activity import (
     ActualActivity,
     PeriodActivity,
@@ -33,6 +33,7 @@ from .conversion import (
     ReportingConverter,
 )
 from .escrow import recognition as escrow_recognition
+from .plan_allocations import OccurrenceActual
 from .planning import (
     EventStatus,
     PlannedEvent,
@@ -199,7 +200,7 @@ def category_period_detail(
     *,
     as_of: date | None = None,
     accounts: dict[str, Account] | None = None,
-    linked: dict[str, Transaction] | None = None,
+    linked: dict[str, list[OccurrenceActual]] | None = None,
     converter: ReportingConverter | None = None,
 ) -> CategoryPeriodDetail:
     """Explain one category over activity already built (a Plan period's buckets).

@@ -47,7 +47,7 @@ LOG = get_logger(__name__)
 
 __all__ = ["DbSQLite", "is_portal_book", "migration_backup_path", "stored_schema_version"]
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 T = TypeVar("T", bound=PrimaryObject)
 
 _SCHEMA = """
@@ -967,7 +967,8 @@ class DbSQLite(ChangeVerification):
         return Transaction.from_dict(data) if data else None
 
     def iter_plan_linked_transactions(self) -> Iterator[Transaction]:
-        """Transactions that name a scheduled occurrence or schedule, in ledger order.
+        """Transactions that name a scheduled occurrence or schedule, or have a split
+        allocated to one (decision 0005), in ledger order.
 
         Plan, Projection, and the Expense Explorer look these up on every build;
         filtering in SQL decodes only them instead of the whole ledger (#310).
@@ -978,13 +979,18 @@ class DbSQLite(ChangeVerification):
             "SELECT t.handle, t.post_date, t.blob FROM txn t"
             " WHERE json_extract(t.blob, '$.planned_occurrence') IS NOT NULL"
             " OR json_extract(t.blob, '$.scheduled_from') IS NOT NULL"
+            " OR t.blob LIKE '%\"plan_allocations\"%'"
             " ORDER BY t.post_date, t.handle"
         )
         try:
             rows = conn.execute(sql).fetchall()
         except sqlite3.OperationalError:
             for transaction in self.iter_transactions():
-                if transaction.planned_occurrence or transaction.scheduled_from:
+                if (
+                    transaction.planned_occurrence
+                    or transaction.scheduled_from
+                    or any(split.plan_allocations for split in transaction.splits)
+                ):
                     yield transaction
             return
         for row in rows:

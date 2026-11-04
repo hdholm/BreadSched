@@ -360,8 +360,8 @@ class TestItServes:
         assert payload == {
             "ok": True,
             "application_version": __version__,
-            "native_schema_version": 13,
-            "supported_schema_versions": {"minimum": 6, "maximum": 13},
+            "native_schema_version": 14,
+            "supported_schema_versions": {"minimum": 6, "maximum": 14},
             "sqlite": [],
             "issues": [],
         }

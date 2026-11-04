@@ -19,6 +19,7 @@ from ..lib.transaction import (
     ReconcileState,
     Split,
     Transaction,
+    fitting_allocations,
 )
 from .contracts import ServiceError, ServiceResult
 from .receivables import is_owned_posting, sync_linked_receivables
@@ -183,6 +184,7 @@ def build_transaction(
             split = Split(item.account, item.value.value, quantity=quantity, handle=item.handle)
         split.account = item.account
         split.value = item.value.value
+        split.plan_allocations = fitting_allocations(split.plan_allocations, split.value)
         if item.quantity is not None:
             split.quantity = item.quantity.value
         split.memo = item.memo.strip()

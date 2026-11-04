@@ -99,6 +99,28 @@ When an actual resolves a planned occurrence, BreadSched preserves the original
 occurrence identity, planned date, and expected value so later schedule changes do
 not rewrite historical variance.
 
+Since schema 14 that link is kept by split (decision 0005, phase 1):
+`Split.plan_allocations` names each occurrence a split counts toward, for an amount,
+with the planned date and expected amount at matching. `engine.plan_allocations`
+reads them back by occurrence (`occurrence_actuals`) and writes the whole-transaction
+form that posting a schedule and Review's **Match** make (`allocate_whole`): the
+transaction's *plan legs*, those on income or expense accounts or carrying a
+planning purpose (else its positive legs), each allocated in full. A transaction's
+share of an occurrence is what it allocates over its plan legs' value, and the
+occurrence's applied amount is that share of the transaction's gross, so a whole
+match counts exactly what it counted before. `PlannedEvent` carries every actual
+(`actuals`), the applied and remaining amounts, and `closed`: a commitment is closed
+by a whole match or posting, by being paid in full, or by `closed_occurrences` on
+its schedule; an estimate by the end of its period (`planning.period_end`) or
+`closed_occurrences`. Review offers and accepts any occurrence that is not closed,
+and an estimate whose period ended, for a late purchase (`matchable`). Projection
+reads `scenario_events(..., remainders=True)`, which adds after each partly met open
+occurrence what remains of it (`remainder_event`); Budget jars draw each actual on
+its own date, and only what it allocates when it counts in part, leaving the rest
+to unmatched spending. Re-import and editing keep allocations, cut to fit a lowered
+split (`fitting_allocations`). Verification no longer reports two actuals on one
+estimate as a duplicate occurrence.
+
 ## Schedules and formulas
 
 Schedules are templates for dated future events. Recurrence, occurrence overrides,
