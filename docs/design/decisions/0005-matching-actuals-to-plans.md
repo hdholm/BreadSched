@@ -3,18 +3,15 @@
 Part of the [BreadSched design](../../../DESIGN.md); see
 [Planning](../planning.md#event-driven-plan).
 
-- **Status:** proposed, 2026-10-30, for review (#397). Nothing is built yet. Five of
-  the six review questions are answered (at the end). Before it is accepted, the
-  design is to be reworked together with savings goals, Budget jars, and the Plan,
-  which are tied together and should share code. It needs a clear usage model and a
-  handful of practical examples, which will also serve as documentation and a
-  walk-through.
+- **Status:** accepted, 2026-11-04 (#397), after review on 2026-10-30. To be built
+  in the four phases at the end; nothing is built yet.
 - **Decision:** an actual is matched to the plan *by split and amount*. One split
   may count toward one planned occurrence, several splits of one transaction toward
   several occurrences, and several actuals toward one occurrence, each for part or
-  all of its amount. An estimate keeps what is left of it until its period ends. You
-  do the matching in a window that works like reconciling a statement, opened from
-  the Plan, a schedule, or a transaction, alongside the Review view, which stays.
+  all of its amount. An estimate keeps what is left of it until its period ends, and
+  then what is left lapses: it does not carry into the next period. You do the
+  matching in a window that works like reconciling a statement, opened from the
+  Plan, a schedule, or a transaction, alongside the Review view, which stays.
 
 ## Context
 
@@ -58,6 +55,48 @@ households use estimates (#397):
   schedules whose occurrences it settles, while matching is really a reconciliation
   of a plan against what happened.
 
+## Usage model
+
+A household plans with four things. Three are made on purpose; the fourth, the
+budget jar, is a way of looking at the other three.
+
+| Use | When | What is left at the end |
+| --- | --- | --- |
+| **Commitment** (a scheduled transaction) | A particular payment or receipt you expect: rent, a paycheck, an insurance premium. | Stays expected until it is paid or skipped. |
+| **Estimate** | An allowance for a category in each period: groceries, fuel, eating out. Many purchases count toward it. | Lapses when its period ends. |
+| **Savings goal** | Money to set aside over months for a known purchase or reserve: a car, a holiday, an annual bill. | Carries forward until the goal is closed. |
+| **Budget jar** | Not made: every commitment, estimate, and goal is a jar, showing the money income sets aside for it and what is drawn from it. | Follows the row above. |
+
+Two questions choose among them:
+
+- **Will one transaction settle it?** Then it is a commitment, and it usually posts
+  itself. If many purchases fill it, it is an estimate.
+- **Should unspent money still be there next period?** Then it is not a monthly
+  estimate: save toward it with a goal, or estimate it over the period it really
+  covers (an annual estimate for an annual expense).
+
+So an estimate is a *use it or lose it* allowance, and a goal is a *keep it until
+you need it* reserve. That difference is the whole difference between them. Both
+are filled from income the same way and shown as jars the same way; they differ
+only in what happens to what is left.
+
+### What they share
+
+- **One occurrence ledger.** Every commitment and estimate occurrence has an
+  expected amount, an applied amount (the sum of the allocations naming it), a
+  remaining amount, and an open or closed state. The engine computes these once,
+  and Projection, the Dashboard's needs, Budget jars, and the Plan read them.
+- **One filling rule.** Jars are filled from income for commitments, estimates, and
+  goals alike (`engine.cash_flow`), as now.
+- **Closing decides the leftover.** A commitment closes when it is paid in full or
+  skipped. An estimate closes when its period ends, and its jar is emptied: a
+  leftover returns to what is available, and overspending stays as variance rather
+  than becoming a debt the next period must repay. A goal closes when you close it
+  or record its purchase, and until then its earmark stays.
+
+Goals are not matched to actuals in this decision. A goal's earmark is released by
+closing it, as now.
+
 ## Decision
 
 ### 1. Allocations: a split counts toward an occurrence for an amount
@@ -96,13 +135,21 @@ households use estimates (#397):
 - **What remains is still expected.** Within the period, the remaining amount (when
   positive) is what Projection, the Dashboard's needs, and Budget jars still count,
   instead of the whole estimate or nothing.
-- **After the period ends,** the remainder lapses. It is shown as the occurrence's
-  variance (under budget), and the occurrence is closed without an action. An
-  allocation may still be added to a closed estimate, for a late purchase.
+- **After the period ends, the remainder lapses** (question 1). The occurrence closes
+  without an action. Its variance shows what happened (under or over budget), and
+  nothing carries into the next period, in either direction:
+  - Projection and the Dashboard stop counting it.
+  - Its jar is emptied on the day after the period: a leftover is released as a
+    *lapsed* event, and an overspent jar is brought back to zero the same way.
+  - An allocation may still be added to a closed estimate, for a late purchase. It
+    changes the occurrence's variance, not what is expected.
 - **A commitment** (a scheduled transaction that posts) is closed when its applied
   amount reaches its expected amount, when it is skipped, or when a split from the
   transaction it posted is allocated. A partly paid bill keeps its remainder
-  expected, as an estimate does, until it is paid or skipped.
+  expected, and in its jar, until it is paid or skipped (question 2).
+- **Close occurrence** closes an open occurrence early (a commitment that will not
+  be paid in full, or an estimate you are done with), and **Reopen** undoes that.
+  An estimate whose period has ended stays closed.
 
 ### 3. Candidates ranked by category first
 
@@ -175,7 +222,7 @@ remaining amounts).
 - **Storage.** `Split.plan_allocations` lives in the transaction JSON, and the
   compact form leaves it out when it is empty. Each closed occurrence is kept on its
   schedule as `closed_occurrences` (a list of occurrence keys), as `skipped` is.
-  There is no new table. Whether the schema version rises is review question 5.
+  There is no new table. The native schema rises to 14 (question 5).
 - **Migration.** On first open, an existing link becomes allocations:
   - A transaction with `planned_occurrence` (or posted from a schedule) allocates
     each of its category legs in full to that occurrence, keeping `planned_for` and
@@ -184,14 +231,72 @@ remaining amounts).
   - Nothing else changes, and a verification check confirms the transaction count,
     the links, and each occurrence's actual amount before and after.
 
+## Worked examples
+
+These are also the guide's walk-throughs. Amounts are in dollars; each household
+is paid $2,000 on the 1st and the 15th.
+
+### A monthly groceries estimate filled by many purchases
+
+1. Groceries is an estimate of $600 a month on the 1st. Its period is the month.
+   Each paycheck fills its jar by $300.
+2. On November 4 a $82 purchase at the market posts. In Review, or in the Match
+   window from the November occurrence, the purchase's Groceries split is the top
+   proposal (same category account). Allocating it leaves $518 remaining, and
+   Projection now expects $518 more groceries in November, not $600.
+3. Six more purchases through November 29 bring the applied amount to $571. The
+   remaining $29 is still expected until November 30.
+4. On December 1 the November occurrence closes. Its variance is $29 under budget,
+   the jar releases the $29, and the December occurrence starts at $600. Nothing
+   carries over.
+5. If November's purchases had come to $640 instead, the variance is $40 over, the
+   jar is brought back to zero, and December still starts at $600.
+
+### A department store receipt with three purposes
+
+1. A $150 receipt is entered with three splits: Groceries $60, Household goods $55,
+   and Clothing $35, all paid from the credit card.
+2. In the Match window from the transaction, each split lists its own proposals: the
+   Groceries split the November groceries estimate, the Household goods split the
+   household estimate. Clothing has no estimate.
+3. Allocating the first two and choosing **Not planned** for the clothing split
+   (question 4) matches the whole transaction. Each estimate's remaining amount
+   falls by its own split, and the $35 is unplanned spending in the Plan and in the
+   Clothing jar's *Unmatched spending*.
+
+### Money down on a bill, then the balance
+
+1. A $1,200 furnace repair is a commitment due December 10.
+2. On November 20 a $300 deposit is paid. Its split to Home repairs is allocated to
+   the December 10 occurrence for $300. The commitment stays open with $900
+   remaining, and Projection and its jar now expect $900 on December 10.
+3. On December 10 the $900 balance posts and is allocated. Applied equals expected,
+   so the occurrence closes. Had the final bill been $950, it would close with $50
+   over.
+
+### An annual expense saved for over the year
+
+1. Car insurance of $1,080 is due every June 1.
+2. **As a commitment** with a yearly recurrence: its jar fills from every paycheck of
+   the year, $45 each, and is drawn when the premium posts. Because it is a
+   commitment, nothing lapses while it waits.
+3. **As a goal** instead, when the amount or date is uncertain: a goal of $1,080 in
+   savings by June 1 sets aside a share of each paycheck as an earmark and holds it
+   until the goal is closed.
+4. It should not be a $90 **monthly estimate**: each month's unspent $90 would lapse,
+   and nothing would be left in June.
+
 ## Ramifications
 
 - **The Plan's category totals do not change:** they come from the ledger. What
   changes is per-occurrence variance, what is still expected (Projection, Dashboard
   needs, Budget jars), and which actuals ask for attention.
 - **Budget jars** draw an occurrence's allocated legs instead of the whole linked
-  transaction. *Unmatched spending* holds what is left unallocated, so a
-  half-allocated receipt is no longer drawn twice or not at all.
+  transaction, each on its own date. *Unmatched spending* holds what is left
+  unallocated, so a half-allocated receipt is no longer drawn twice or not at all.
+  An estimate's jar is emptied by a *lapsed* event when its period ends, so its
+  level no longer carries leftovers or overspending forward; a commitment's jar
+  keeps its money until the commitment closes, as now.
 - **History-based estimates** leave out only the allocated part of a split from the
   unscheduled history, not the whole transaction.
 - **Import and re-import** keep allocations as they keep `planned_occurrence` now
@@ -210,8 +315,11 @@ remaining amounts).
    - `Split.plan_allocations`, the migration, and the engine's applied, remaining,
      and closed state.
    - Existing matches, posting, and Review written as allocations.
-   - Projection, Dashboard, and jars reading remaining amounts.
-   - Behavior is unchanged except that a partly used estimate keeps its remainder.
+   - Projection, Dashboard, and jars reading remaining amounts, and an estimate's
+     remainder lapsing at the end of its period, in its jar too.
+   - The native schema rises to 14 (question 5).
+   - Behavior is otherwise unchanged: Review still matches a whole transaction, now
+     written as allocations of its category legs.
 2. **Ranking and context.** Category-first candidates with reasons, and the other
    account and notes in every interface's candidate rows.
 3. **The Match windows in GTK.** From an occurrence (Plan detail, Scheduled,
@@ -258,18 +366,3 @@ remaining amounts).
    and substantially to get a better result for Beta. Raise it when this is built.
 6. **Review's place:** Review stays. The Match windows add to it; they do not
    replace it.
-
-## Still to do before accepting
-
-- **Estimates and budget jars are almost the same thing.** Distinguish their
-  purposes carefully, together with savings goals and the Plan, and let that decide
-  the mechanisms (allocations, remainders, leftovers, earmarks) and what code they
-  share.
-- **A usage model** that a household can follow: what an estimate, a commitment, a
-  jar, and a goal each are for, and when to use which.
-- **Worked examples**, usable as guide walk-throughs:
-  - a monthly groceries estimate filled by many purchases;
-  - a department store receipt that is part groceries, part household goods, and
-    part an unplanned purchase;
-  - money down on a bill, then the balance paid;
-  - an annual expense saved for through a jar or a goal, then paid.
