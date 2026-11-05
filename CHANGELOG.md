@@ -10,6 +10,16 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a320 - 2026-11-05
+
+- **The user directory stops rewriting its schema on every read.** A request to the
+  book server opens the host's user directory several times, and each connection ran
+  the whole schema script: a write transaction, and on Windows a journal file made
+  and removed, even to read a token. It now runs only while a table is missing
+  (`UserDirectory._schema_present`). This is the likeliest cause of the book-server
+  requests on Windows CI that went unanswered past the client's timeout; the ROADMAP
+  item stays until those jobs stay clean.
+
 ## 0.2.0a319 - 2026-11-05
 
 Decision 0005 complete: Review grouped by category (#397).

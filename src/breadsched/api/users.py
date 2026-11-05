@@ -156,6 +156,8 @@ CREATE TABLE IF NOT EXISTS failures (
     last TEXT NOT NULL
 );
 """
+#: Every table ``_SCHEMA`` makes; a directory holding them all needs no schema run.
+_TABLES = tuple(re.findall(r"CREATE TABLE IF NOT EXISTS (\w+)", _SCHEMA))
 _USER_COLUMNS = "id, name, display_name, administrator, host_account, password, must_change"
 
 
@@ -356,11 +358,24 @@ class UserDirectory:
         connection = sqlite3.connect(self.path, timeout=10)
         try:
             connection.execute("PRAGMA foreign_keys = ON")
-            connection.executescript(_SCHEMA)
+            # The schema script is a write (and, on Windows, a journal file made and
+            # removed), so it runs only while a table is missing, not on every read:
+            # a request opens the directory several times.
+            if not self._schema_present(connection):
+                connection.executescript(_SCHEMA)
             with connection:
                 yield connection
         finally:
             connection.close()
+
+    @staticmethod
+    def _schema_present(connection: sqlite3.Connection) -> bool:
+        marks = ",".join("?" * len(_TABLES))
+        found = connection.execute(
+            f"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ({marks})",  # noqa: S608
+            _TABLES,
+        ).fetchone()[0]
+        return found == len(_TABLES)
 
     @staticmethod
     def _user(row: tuple) -> User:

@@ -18,9 +18,11 @@ Every item planned for this stage is delivered; see `CHANGELOG.md` through
   (30 s), most often the first write after a refused request; seen on Windows 3.11–3.14
   under pytest-xdist, on main and in pull requests, and never elsewhere. Holding the
   port exclusively (0.2.0a315) did not end it. Every refusal reads its body first, and
-  each test has its own user directory; a lead still to check is the first use of that
-  directory's SQLite file (created, and its schema run, on every connection) taking
-  the request past the client's timeout. Reproduce on Windows, then fix.
+  each test has its own user directory. The likeliest cause was the user directory's
+  SQLite file running its whole schema script, a write with a journal file made and
+  removed, on every one of the several connections a request makes; since 0.2.0a320
+  it runs only while a table is missing. Keep this item until the Windows jobs stay
+  clean; if they do not, reproduce on Windows.
 
 ## At the first Beta
 
