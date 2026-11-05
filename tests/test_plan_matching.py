@@ -229,3 +229,23 @@ def test_a_schedule_opens_on_its_latest_occurrence_not_after_today():
     assert schedule.current_occurrence(date(2026, 7, 15)) == JUNE
     # Before it begins: its first occurrence.
     assert schedule.current_occurrence(date(2026, 5, 1)) == JUNE
+
+
+def test_review_groups_actuals_by_their_first_category_uncategorized_last():
+    from types import SimpleNamespace
+
+    from breadsched.presentation import UNCATEGORIZED_REVIEW_GROUP, review_groups
+
+    queue = [
+        SimpleNamespace(handle="a", categories=("Expenses:Groceries",)),
+        SimpleNamespace(handle="b", categories=()),
+        SimpleNamespace(handle="c", categories=("Expenses:Dining", "Expenses:Groceries")),
+        SimpleNamespace(handle="d", categories=("Expenses:Groceries",)),
+    ]
+    assert [
+        (name, [item.handle for item in members]) for name, members in review_groups(queue)
+    ] == [
+        ("Expenses:Dining", ["c"]),
+        ("Expenses:Groceries", ["a", "d"]),
+        (UNCATEGORIZED_REVIEW_GROUP, ["b"]),
+    ]

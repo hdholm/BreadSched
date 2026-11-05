@@ -9,7 +9,18 @@ async function showReview() {
     data = await get(`/api/review?transaction=${encodeURIComponent(state.review)}`);
   }
 
-  const actualButtons = data.actuals.map((actual) => el("button", {
+  // Grouped by category, with a heading for each group (decision 0005).
+  const actualButtons = [];
+  let group = null;
+  for (const actual of data.actuals) {
+    if (actual.group !== group) {
+      group = actual.group;
+      const count = data.actuals.filter((item) => item.group === group).length;
+      actualButtons.push(el("h3", { class: "review-group" }, `${group} (${count})`));
+    }
+    actualButtons.push(reviewActualButton(actual));
+  }
+  function reviewActualButton(actual) { return el("button", {
     type: "button",
     class: actual.handle === state.review ? "active" : null,
     onclick: () => { state.review = actual.handle; render(); },
@@ -20,7 +31,7 @@ async function showReview() {
   el("span", { class: "note review-accounts" },
     [(actual.categories || []).join(", "), (actual.funding || []).join(", ")]
       .filter(Boolean).join(" · ")),
-  actual.notes ? el("span", { class: "note review-notes" }, actual.notes) : null));
+  actual.notes ? el("span", { class: "note review-notes" }, actual.notes) : null); }
 
   if (!data.actuals.length) {
     state.review = null;

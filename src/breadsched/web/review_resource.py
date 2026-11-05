@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from ..gen.services import ReviewClaimAttachment, ReviewOccurrence
 from ..gen.services.review import ReviewDetail
-from ..presentation import REVIEW_ACTION_HELP, claim_role_label
+from ..presentation import REVIEW_ACTION_HELP, claim_role_label, review_groups
 
 if TYPE_CHECKING:
     from .context import Api
@@ -47,6 +47,7 @@ def review_fsa_options(detail: ReviewDetail) -> dict:
 
 def review(api: Api, transaction_handle: str | None = None) -> dict:
     """Unresolved actuals and candidate plan occurrences for Review."""
+    # Grouped by category (decision 0005), each group oldest first.
     actuals = [
         {
             "handle": item.handle,
@@ -56,8 +57,10 @@ def review(api: Api, transaction_handle: str | None = None) -> dict:
             "categories": list(item.categories),
             "funding": list(item.funding),
             "notes": item.notes,
+            "group": group,
         }
-        for item in api.book.review_queue()
+        for group, members in review_groups(api.book.review_queue())
+        for item in members
     ]
 
     selected = None

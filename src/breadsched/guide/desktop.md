@@ -624,8 +624,8 @@ occurrence joins the review; its rows say *(in advance)* or *(reminder)*. See
 Set the Plan controls and apply them; they are yours, shared with the browser when you
 use it on this computer, while anyone else the book is shared with keeps their own. Select a
 value to inspect its occurrences and actual splits, and use **Resolve actuals…** to
-match an actual, mark it unexpected, or review it. In **Resolve actuals**, each
-actual shows what it was for, where the money came from, and its notes; the summary
+match an actual, mark it unexpected, or review it. In **Resolve actuals**, actuals
+are grouped under a heading for each category, and each actual shows what it was for, where the money came from, and its notes; the summary
 of the one chosen lists its legs (• marks what it was for) and memos; and each
 candidate, ranked by category first, lists why it is offered and how much of an
 estimate remains. **Match by Split…** there, **Actions → Match to Plan…** in the

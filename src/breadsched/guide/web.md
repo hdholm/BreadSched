@@ -304,7 +304,8 @@ where it is marked *in advance* or *reminder*. See
 
 ## Review
 
-**Review** lists actual transactions waiting for a decision, each with what it was
+**Review** lists actual transactions waiting for a decision, grouped under a heading
+for each category, each with what it was
 for, where the money came from, and its notes; the one chosen shows its legs with
 their memos. Each planned item it offers, ranked by category first, shows **Close
 match** or **Possible match**, the reasons beneath it, and how much of an estimate

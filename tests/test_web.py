@@ -4569,6 +4569,8 @@ class TestReviewApi:
             ["Assets:Checking"],
             "",
         )
+        # Review is grouped by category.
+        assert row["group"] == "Expenses:Rent"
         assert [
             (item["account_name"], Money(item["amount"]), item["category"])
             for item in payload["selected"]["splits"]

@@ -7,7 +7,7 @@ from ...api.local import book_server
 from ...gen.lib.money import Money
 from ...gen.services import ReviewClaimAttachment, ReviewOccurrence
 from ...gen.services.review import ReviewDetail
-from ...presentation import REVIEW_ACTION_HELP, claim_role_label
+from ...presentation import REVIEW_ACTION_HELP, claim_role_label, review_groups
 from ..gi_setup import Gtk, Pango
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
@@ -181,43 +181,28 @@ class ResolutionView(BaseView):
         self._clear_list(self.actual_list)
         transactions = book_server(self.db).review_queue()
         selected_row = None
-        for transaction in transactions:
-            row = Gtk.ListBoxRow()
-            row.transaction_handle = transaction.handle
-            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-            box.set_margin_top(6)
-            box.set_margin_bottom(6)
-            box.set_margin_start(8)
-            box.set_margin_end(8)
-            description = Gtk.Label(
-                label=f"{transaction.date.isoformat()}  {transaction.description}",
-                xalign=0,
-            )
-            description.set_ellipsize(Pango.EllipsizeMode.END)
-            box.append(description)
-            amount_label = Gtk.Label(label=transaction.amount.format(), xalign=0)
-            amount_label.add_css_class("numeric")
-            amount_label.add_css_class("dim")
-            box.append(amount_label)
-            # What it was for, where the money came from, and its notes (decision 0005).
-            accounts = " · ".join(
-                part
-                for part in (", ".join(transaction.categories), ", ".join(transaction.funding))
-                if part
-            )
-            for text in (accounts, transaction.notes):
-                if text:
-                    extra = Gtk.Label(label=text, xalign=0)
-                    extra.set_ellipsize(Pango.EllipsizeMode.END)
-                    extra.add_css_class("dim")
-                    box.append(extra)
-            row.set_child(box)
-            self.actual_list.append(row)
-            if transaction.handle == selected:
-                selected_row = row
+        first_row = None
+        # Grouped by category, so a month's purchases are worked through together.
+        ordered = []
+        for name, members in review_groups(transactions):
+            heading = Gtk.ListBoxRow(selectable=False, activatable=False)
+            label = Gtk.Label(label=f"{name} ({len(members)})", xalign=0)
+            label.add_css_class("heading")
+            label.set_margin_top(8)
+            label.set_margin_start(8)
+            heading.set_child(label)
+            heading.group = name
+            self.actual_list.append(heading)
+            ordered.extend(members)
+            for transaction in members:
+                row = self._actual_row(transaction)
+                self.actual_list.append(row)
+                first_row = first_row or row
+                if transaction.handle == selected:
+                    selected_row = row
 
-        if selected_row is None and transactions:
-            selected_row = self.actual_list.get_row_at_index(0)
+        if selected_row is None and ordered:
+            selected_row = first_row
         if selected_row is not None:
             self.actual_list.select_row(selected_row)
         else:
@@ -228,6 +213,40 @@ class ResolutionView(BaseView):
             self._clear_list(self.candidate_list)
             self.variance.set_text("")
             self._set_action_sensitivity()
+
+    def _actual_row(self, transaction) -> Gtk.ListBoxRow:
+        """One pending actual: date, description, amount, accounts, and notes."""
+        row = Gtk.ListBoxRow()
+        row.transaction_handle = transaction.handle
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        box.set_margin_top(6)
+        box.set_margin_bottom(6)
+        box.set_margin_start(8)
+        box.set_margin_end(8)
+        description = Gtk.Label(
+            label=f"{transaction.date.isoformat()}  {transaction.description}",
+            xalign=0,
+        )
+        description.set_ellipsize(Pango.EllipsizeMode.END)
+        box.append(description)
+        amount_label = Gtk.Label(label=transaction.amount.format(), xalign=0)
+        amount_label.add_css_class("numeric")
+        amount_label.add_css_class("dim")
+        box.append(amount_label)
+        # What it was for, where the money came from, and its notes (decision 0005).
+        accounts = " · ".join(
+            part
+            for part in (", ".join(transaction.categories), ", ".join(transaction.funding))
+            if part
+        )
+        for text in (accounts, transaction.notes):
+            if text:
+                extra = Gtk.Label(label=text, xalign=0)
+                extra.set_ellipsize(Pango.EllipsizeMode.END)
+                extra.add_css_class("dim")
+                box.append(extra)
+        row.set_child(box)
+        return row
 
     def _on_actual_selected(self, _listbox, row) -> None:
         self._transaction_handle = getattr(row, "transaction_handle", None) if row else None

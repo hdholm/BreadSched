@@ -10,6 +10,18 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a319 - 2026-11-05
+
+Decision 0005 complete: Review grouped by category (#397).
+
+- **Grouped by category.** Review lists its actuals under a heading for each
+  category, the first expense or income account each was for, with those having none
+  last and each group oldest first (`presentation.review_groups`): desktop (heading
+  rows that cannot be chosen), browser (`/api/review` gives each actual's `group`, in
+  group order), and `breadsched review` (`== Category (n) ==`, `group` in JSON).
+- **Known defect recorded.** The intermittent unanswered book-server request on
+  Windows CI is now a ROADMAP item with what is known so far.
+
 ## 0.2.0a318 - 2026-11-04
 
 Decision 0005, phase 4: Match to Plan everywhere (#397).

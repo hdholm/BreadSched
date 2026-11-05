@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, TypeVar
 
 from ..gen.lib.money import Money
 from .benefits import reimbursement_outlook_text
@@ -14,6 +15,9 @@ if TYPE_CHECKING:
     from ..gen.engine.savings_goals import GoalProgress
     from ..gen.lib.scenario import GoalOverride
     from ..gen.services.plan import PlanGoalMilestone
+
+
+_Pending = TypeVar("_Pending")
 
 
 def goal_status_text(progress: GoalProgress) -> str:
@@ -189,4 +193,27 @@ def _goal_milestone_verdict(milestone: GoalMilestone) -> str:
     return (
         f"{head}; projected cash of {milestone.cash_close.format(parens_negative=True)} "
         f"{verdict} the {milestone.goals_held.format()} set aside for goals then"
+    )
+
+
+#: The heading of Review's group for actuals with no income or expense leg.
+UNCATEGORIZED_REVIEW_GROUP = "No category"
+
+
+def review_groups(actuals: Sequence[_Pending]) -> list[tuple[str, list[_Pending]]]:
+    """Review's pending actuals grouped by category (decision 0005).
+
+    Each actual goes under its first category (``PendingActual.categories``), so a
+    month's grocery purchases are worked through together. Groups are in name
+    order with the uncategorized last; each keeps the queue's oldest-first order.
+    """
+    groups: dict[str, list[_Pending]] = {}
+    for actual in actuals:
+        categories = getattr(actual, "categories", ()) or ()
+        groups.setdefault(categories[0] if categories else UNCATEGORIZED_REVIEW_GROUP, []).append(
+            actual
+        )
+    return sorted(
+        groups.items(),
+        key=lambda item: (item[0] == UNCATEGORIZED_REVIEW_GROUP, item[0].casefold()),
     )
