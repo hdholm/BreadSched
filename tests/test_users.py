@@ -825,3 +825,36 @@ def test_the_two_step_commands_turn_it_on_and_off(capsys, monkeypatch, tmp_path)
     directory.start_two_step(directory.user("alice"))
     assert main(["users", "reset-two-step", "alice"]) == 0
     assert "Turned off alice's two-step sign-in" in capsys.readouterr().out
+
+
+def test_the_directory_runs_its_schema_only_while_a_table_is_missing(tmp_path, monkeypatch):
+    """Each request opens the directory several times; the schema script is a write
+    (on Windows a journal file made and removed), so a read never runs it."""
+    import sqlite3
+
+    from breadsched.api import users
+
+    counted = (
+        users._SCHEMA
+        + "INSERT INTO failures (key, count, last) VALUES ('schema', 1, 'x') "
+        + "ON CONFLICT (key) DO UPDATE SET count = count + 1;"
+    )
+    monkeypatch.setattr(users, "_SCHEMA", counted)
+    directory = users.UserDirectory(tmp_path / "users.sqlite")
+    host = directory.host_user()
+    for _ in range(5):
+        assert directory.host_user() == host
+        directory.users()
+
+    def runs() -> int:
+        with sqlite3.connect(directory.path) as raw:
+            row = raw.execute("SELECT count FROM failures WHERE key = 'schema'").fetchone()
+        return row[0] if row else 0
+
+    assert runs() == 1
+    # A table gone (an older directory, say) brings the schema back once.
+    with sqlite3.connect(directory.path) as raw:
+        raw.execute("DROP TABLE recovery_codes")
+    directory.users()
+    directory.users()
+    assert runs() == 2
