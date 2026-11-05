@@ -72,17 +72,25 @@ def _due_references(reviews, reference: str) -> list[tuple[str, date]]:
 
 def cmd_review(args: argparse.Namespace) -> int:
     """Unresolved transactions, the planned items Review offers, and why."""
-    from ..presentation import REVIEW_ACTION_HELP
+    from ..presentation import REVIEW_ACTION_HELP, review_groups
 
     with book_api(args, "r") as book:
-        pending = list(book.review_queue())
+        # Grouped by category (decision 0005), each group oldest first.
+        grouped = review_groups(book.review_queue())
+        group_of = {item.handle: name for name, members in grouped for item in members}
+        pending = [item for _name, members in grouped for item in members]
         if args.transaction:
             pending = [item for item in pending if item.handle.startswith(args.transaction)]
             if not pending:
                 raise CommandError(f"no unresolved transaction matches {args.transaction!r}")
         items = []
         lines: list[str] = []
+        heading = None
         for actual in pending:
+            if group_of[actual.handle] != heading:
+                heading = group_of[actual.handle]
+                count = sum(1 for item in pending if group_of[item.handle] == heading)
+                lines.append(f"== {heading} ({count}) ==")
             detail = book.review_detail(actual.handle)
             explained, hint = detail.candidates, detail.fsa_hint
             reason = detail.no_candidate_reason
@@ -94,6 +102,7 @@ def cmd_review(args: argparse.Namespace) -> int:
                     "categories": list(actual.categories),
                     "funding": list(actual.funding),
                     "notes": actual.notes,
+                    "group": group_of[actual.handle],
                     "fsa_hint": hint,
                     "no_candidate_reason": reason,
                     "candidates": [

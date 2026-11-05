@@ -324,3 +324,4 @@ tr.find-group th { font-weight: 600; text-align: left; }
 .match-amount { width: 7em; text-align: right; }
 .match-leg { margin: 8px 0; padding: 10px 12px; }
 .match-allocation { gap: 8px; align-items: center; }
+.review-group { margin: 10px 0 4px; font-size: 0.95em; }

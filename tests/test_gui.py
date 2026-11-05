@@ -6237,7 +6237,7 @@ class TestResolutionView:
             row
             for index in range(50)
             if (row := view.actual_list.get_row_at_index(index)) is not None
-            and row.transaction_handle == actual_handle
+            and getattr(row, "transaction_handle", None) == actual_handle
         )
         texts = []
         child = row.get_child().get_first_child()
@@ -6253,6 +6253,17 @@ class TestResolutionView:
             part for part in (", ".join(queued.categories), ", ".join(queued.funding)) if part
         )
         assert queued.categories and texts[2:] == [accounts, "Paid by phone"]
+        # Grouped by category: a heading row, not selectable, leads its actuals.
+        headings = [
+            row
+            for index in range(50)
+            if (row := view.actual_list.get_row_at_index(index)) is not None
+            and hasattr(row, "group")
+        ]
+        assert queued.categories[0] in [row.group for row in headings]
+        assert not any(row.get_selectable() for row in headings)
+        first = view.actual_list.get_row_at_index(0)
+        assert hasattr(first, "group")
         # Match by Split… opens the window from this actual.
         from breadsched.gui.dialogs.match_dialog import TransactionMatchWindow
 

@@ -2211,6 +2211,8 @@ def test_review_shows_what_an_actual_was_for_and_its_notes(page, served):
         f"{db.full_name(food.handle)} · {db.full_name(bank.handle)}"
     )
     expect(button.locator(".review-notes")).to_have_text("Picnic supplies")
+    # Grouped by category, each group under a heading with its count.
+    expect(page.locator("h3.review-group", has_text=db.full_name(food.handle))).to_be_visible()
     detail = page.locator(".review-detail")
     expect(detail.locator(".review-notes")).to_have_text("Picnic supplies")
     expect(detail.locator("tr.review-category")).to_contain_text("bread")

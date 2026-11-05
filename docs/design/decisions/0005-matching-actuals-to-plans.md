@@ -16,7 +16,8 @@ Part of the [BreadSched design](../../../DESIGN.md); see
   occurrence, and `plan-allocate` and `plan-close`. Phase 4 is built (0.2.0a318):
   the window from Scheduled, Upcoming, and Budget jars, the Plan's count of unmatched
   actuals on **Resolve actuals (N)…**, and the browser's windows on its Plan,
-  schedules, register, and Review. Review is not yet grouped by category.
+  schedules, register, and Review. Review is grouped by category in every interface
+  (0.2.0a319), which completes the decision.
 - **Decision:** an actual is matched to the plan *by split and amount*. One split
   may count toward one planned occurrence, several splits of one transaction toward
   several occurrences, and several actuals toward one occurrence, each for part or

@@ -208,7 +208,8 @@ breadsched review household.breadsched
 breadsched review household.breadsched --transaction 3f2a --json
 ```
 
-`breadsched review` lists each actual transaction waiting for a decision with what
+`breadsched review` lists each actual transaction waiting for a decision, grouped by
+category (`== Expenses:Groceries (3) ==`; `group` in JSON), with what
 it was for, where the money came from, and its notes; the planned items Review
 offers, ranked by category first, with **Close match** or **Possible match**, the
 reasons, and how much of an estimate remains; or why nothing is offered; and what

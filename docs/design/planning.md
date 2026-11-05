@@ -97,7 +97,10 @@ estimate of the same category in its period that the amount fits, or a commitmen
 within two days and 5% of its amount; otherwise *possible*. `services.review` gives
 each pending actual its `categories` (its plan legs' accounts), `funding`, and
 `notes`, and the detail its `splits` with memos, so every interface shows what an
-actual was for beside its candidates.
+actual was for beside its candidates. Every interface lists the queue grouped by
+category with `presentation.review_groups` (each actual under its first category,
+groups in name order with *No category* last, each oldest first); `/api/review` and
+`breadsched review --json` carry each actual's `group`.
 
 `services.plan_matching` owns the Match windows' writes (phase 3): `allocate` sets,
 changes, or (amount zero) removes what one split counts toward one occurrence, by

@@ -150,6 +150,8 @@ def test_the_command_line_lists_candidates_with_their_reasons(db, book, tmp_path
     assert "    - Same amount" in out
     # What it was for and where the money came from (decision 0005).
     assert "  Expenses:Utilities · Assets:Checking" in out
+    # Grouped by category, each group with its count.
+    assert "== Expenses:Utilities (1) ==" in out
     assert REVIEW_ACTION_HELP["match"] in out
 
     assert main(["review", str(path), "--transaction", actual.handle, "--json"]) == 0
@@ -159,5 +161,6 @@ def test_the_command_line_lists_candidates_with_their_reasons(db, book, tmp_path
     assert "1 day after the planned date" in candidate["reasons"]
     assert item["no_candidate_reason"] is None
     assert (item["categories"], item["funding"]) == (["Expenses:Utilities"], ["Assets:Checking"])
+    assert item["group"] == "Expenses:Utilities"
     assert candidate["remaining_amount"] == "180.00"
     assert main(["review", str(path), "--transaction", "zzzz"]) != 0

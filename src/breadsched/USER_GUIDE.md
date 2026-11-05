@@ -249,8 +249,11 @@ leaves Review once each split it was for is matched or not planned, and the Plan
 the same windows: **Match…** in a Plan value's detail and on each schedule, **Match
 to plan…** on each register row, and **Match by split…** in Review.
 
-Review shows each actual with what it was for (its income or expense accounts), where
-the money came from, and its notes; the one you choose also lists its legs with their
+Review lists the actuals waiting for a decision grouped by category (the first
+expense or income account each was for; those with none last), each group oldest
+first, so a month's grocery purchases are worked through together. It shows each
+actual with what it was for (its income or expense accounts), where the money came
+from, and its notes; the one you choose also lists its legs with their
 memos. Review explains its suggestions, and ranks them by what the transaction was
 for:
 

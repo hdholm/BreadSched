@@ -13,15 +13,14 @@ merge without new notes publishes nothing.
 Every item planned for this stage is delivered; see `CHANGELOG.md` through
 0.2.0a273. New defects and requests found before the first Beta are added here.
 
-- **Match actuals to plans by split and amount** (#397,
-  [decision 0005](docs/design/decisions/0005-matching-actuals-to-plans.md)), in its
-  four phases. Allocations with remaining amounts and estimates that lapse at the end
-  of their period are built (0.2.0a312, 0.2.0a315), and so are category-first proposals
-  with the other account and notes (0.2.0a316), and the Match windows in GTK from the
-  Plan, the register, and Review, with partial allocations, *not planned*, Close
-  occurrence, and `plan-allocate` (0.2.0a317), and the windows from Scheduled,
-  Upcoming, Budget jars, and the browser with the Plan's unmatched count (0.2.0a318).
-  Still to come: Review grouped by category.
+- **Book-server requests over HTTP sometimes go unanswered on Windows CI.** A test
+  request to the local server occasionally gets no status line within its timeout
+  (30 s), most often the first write after a refused request; seen on Windows 3.11–3.14
+  under pytest-xdist, on main and in pull requests, and never elsewhere. Holding the
+  port exclusively (0.2.0a315) did not end it. Every refusal reads its body first, and
+  each test has its own user directory; a lead still to check is the first use of that
+  directory's SQLite file (created, and its schema run, on every connection) taking
+  the request past the client's timeout. Reproduce on Windows, then fix.
 
 ## At the first Beta
 
