@@ -14,15 +14,17 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import Enum
 
+from ..db.base import DbTxn
 from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass, AccountType
 from ..lib.base import create_handle
+from ..lib.commodity import CommodityPrice
 from ..lib.formula import FormulaError, evaluate
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence, add_months
 from ..lib.scheduled import ScheduledSplit, ScheduledTransaction
-from ..lib.transaction import Transaction
-from .currency import commodity_fraction
+from ..lib.transaction import Split, Transaction
+from .currency import book_currency, commodity_fraction
 from .plan_allocations import account_classes, allocate_posted
 
 __all__ = [
@@ -38,6 +40,13 @@ __all__ = [
     "already_posted",
     "delete_definition",
     "due_occurrences",
+    "entered_transaction",
+    "LegPricing",
+    "UnpricedLegError",
+    "leg_pricings",
+    "price_legs",
+    "record_leg_price",
+    "transaction_currency",
     "next_pending",
     "ReviewStage",
     "review_occurrences",
@@ -312,6 +321,134 @@ class Occurrence:
 
     def instantiate(self, fraction: int = 100) -> Transaction:
         return self.schedule.instantiate(self.when, fraction=fraction)
+
+
+class UnpricedLegError(ValueError):
+    """A leg buys or sells a commodity that has no quote to price it (#417)."""
+
+    def __init__(self, schedule: str, when: date, account: str, commodity: str) -> None:
+        super().__init__(f"no quote prices {commodity[:8]} on or before {when.isoformat()}")
+        self.schedule = schedule
+        self.when = when
+        self.account = account
+        self.commodity = commodity
+
+
+@dataclass(frozen=True, slots=True)
+class LegPricing:
+    """How one leg in another commodity is priced: the quote, and the units it gives."""
+
+    split: Split
+    commodity: str
+    currency: str
+    #: The latest stored quote on or before the date, or ``None`` when there is none.
+    quote: CommodityPrice | None
+    #: The commodity's value in ``currency``, from ``quote`` (inverted if need be).
+    price: Money | None
+    #: Units the leg's value buys at ``price``, rounded to the commodity's unit.
+    units: Money | None
+
+
+def transaction_currency(db: DbSQLite, transaction: Transaction) -> str | None:
+    if transaction.currency is not None:
+        return transaction.currency
+    found = book_currency(db)
+    return found.handle if found is not None else None
+
+
+def leg_pricings(db: DbSQLite, transaction: Transaction) -> list[LegPricing]:
+    """Every leg whose account holds another commodity than the transaction's
+    currency (shares, or a foreign currency), with the quote that prices it."""
+    currency = transaction_currency(db, transaction)
+    if currency is None:
+        return []
+    found = []
+    when = transaction.post_date
+    for split in transaction.splits:
+        account = db.get_account(split.account)
+        commodity = account.commodity if account is not None else None
+        if not commodity or commodity == currency:
+            continue
+        direct = next(db.iter_prices(commodity=commodity, currency=currency, through=when), None)
+        inverse = next(db.iter_prices(commodity=currency, currency=commodity, through=when), None)
+        quote: CommodityPrice | None
+        if direct is not None and (inverse is None or direct.quote_date >= inverse.quote_date):
+            quote, price = direct, direct.value
+        elif inverse is not None:
+            quote = inverse
+            price = Money(inverse.value.denominator, inverse.value.numerator)
+        else:
+            quote, price = None, None
+        units = (
+            Money(
+                split.value.numerator * price.denominator,
+                split.value.denominator * price.numerator,
+            ).quantize(commodity_fraction(db, commodity))
+            if price is not None
+            else None
+        )
+        found.append(LegPricing(split, commodity, currency, quote, price, units))
+    return found
+
+
+def price_legs(db: DbSQLite, transaction: Transaction) -> None:
+    """Give each leg in another commodity its quantity from a stored quote (#417).
+
+    A schedule stores what each leg is worth in the transaction's currency, never
+    a number of shares, since a share price moves between occurrences. A leg
+    posted to a 401(k) fund or a foreign-currency account therefore takes its
+    quantity from the latest quote of that commodity on or before the
+    transaction's date (a direct quote, else the inverse of one), rounded to the
+    commodity's smallest unit. Without such a quote it raises
+    :class:`UnpricedLegError` rather than post shares equal to the dollar value;
+    the interfaces fetch an online quote or ask for the price before entering.
+    """
+    for leg in leg_pricings(db, transaction):
+        if leg.units is None:
+            raise UnpricedLegError(
+                transaction.scheduled_from or "",
+                transaction.post_date,
+                leg.split.account,
+                leg.commodity,
+            )
+        leg.split.quantity = leg.units
+
+
+def record_leg_price(
+    db: DbSQLite, txn: DbTxn, commodity: str, currency: str, when: date, value: Money
+) -> CommodityPrice:
+    """Save the price the user gave for a leg, as a dated manual quote.
+
+    A manual quote already saved for the same pair and date is replaced, as the
+    Security Prices window does.
+    """
+    existing = next(
+        (
+            item
+            for item in db.iter_prices(commodity=commodity, currency=currency, through=when)
+            if item.quote_date == when and item.source == "breadsched"
+        ),
+        None,
+    )
+    price = CommodityPrice(
+        handle=existing.handle if existing is not None else None,
+        commodity=commodity,
+        currency=currency,
+        quote_date=when,
+        value=value,
+    )
+    if existing is None:
+        db.add_price(price, txn)
+    else:
+        db.commit_price(price, txn)
+    return price
+
+
+def entered_transaction(db: DbSQLite, schedule: ScheduledTransaction, when: date) -> Transaction:
+    """The transaction one occurrence enters into the ledger, every leg priced."""
+    real = schedule.instantiate(when, fraction=commodity_fraction(db, schedule.currency))
+    price_legs(db, real)
+    return real
 
 
 @dataclass(slots=True)
@@ -809,7 +946,11 @@ def post_due(
     with db.transaction(message) as txn:
         touched: dict[str, ScheduledTransaction] = {}
         for occ in candidates:
-            real = occ.instantiate(commodity_fraction(db, occ.schedule.currency))
+            try:
+                real = entered_transaction(db, occ.schedule, occ.when)
+            except UnpricedLegError:
+                # Left due: the review says which quote is missing (#417).
+                continue
             allocate_posted(real, class_of)
             db.add_transaction(real, txn)
             posted.append(real)
@@ -839,7 +980,7 @@ def post_occurrences(
     with db.transaction(message) as txn:
         touched: dict[str, ScheduledTransaction] = {}
         for occurrence in chosen:
-            real = occurrence.instantiate(commodity_fraction(db, occurrence.schedule.currency))
+            real = entered_transaction(db, occurrence.schedule, occurrence.when)
             allocate_posted(real, class_of)
             db.add_transaction(real, txn)
             posted.append(real)

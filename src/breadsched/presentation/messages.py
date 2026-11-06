@@ -422,6 +422,13 @@ _SERVICE_MESSAGES = {
         "That occurrence is no longer due; it may already have been posted or skipped"
     ),
     "schedule.due.unbalanced": "A scheduled transaction does not balance",
+    "schedule.due.price.invalid": "Give a share price or a number of shares above zero",
+    "schedule.due.price.not_entered": "A share price was given for an occurrence not being entered",
+    "schedule.due.price.leg": "A share price was given for a leg that does not buy or sell shares",
+    "schedule.due.no_quote": (
+        "A scheduled leg buys or sells shares that have no price on or before its date; "
+        "enter a price or get online quotes, then enter it again"
+    ),
     "import.review.duplicate": "Decide each held GnuCash change only once",
     "import.review.not_pending": "That GnuCash change is no longer awaiting review",
     "import.review.missing": "The reconciled transaction no longer exists",

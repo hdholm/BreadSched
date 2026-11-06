@@ -15,15 +15,18 @@ from ..api.views import due_review_json, next_occurrence_json, posted_due_json, 
 from ..gen.engine import schedule
 from ..gen.lib import (
     InvestmentActivityKind,
+    Money,
     PlanningFlowKind,
     ScheduleGrowthPolicy,
     occurrence_preview,
 )
 from ..gen.services import (
     DueDecision,
+    DueQuotes,
     DuplicateSchedule,
     FixedScheduleInput,
     FormulaScheduleInput,
+    LegPrice,
     PostDue,
     ResolveDue,
     ResolveNext,
@@ -31,6 +34,8 @@ from ..gen.services import (
 )
 from ..gen.services.historical_estimates import AcceptHistoricalEstimate
 from ..gen.services.schedule_editing import ScheduleEditorView
+from ..plugins.quotes import fetch_due_quotes
+from ..presentation import price_text
 from .controls import input_amount
 from .schedule_controls import (
     frequency_key,
@@ -651,6 +656,79 @@ def due_review(api: Api) -> dict:
     return due_review_json(api.book.due_review())
 
 
+def _leg_prices(payload: dict) -> tuple[LegPrice, ...]:
+    """The share prices or shares typed for legs that buy or sell shares (#417)."""
+    raw = payload.get("prices") or []
+    if not isinstance(raw, list):
+        raise ValueError("prices must be a list")
+    found = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("each price must be an object")
+        price, shares = item.get("price"), item.get("shares")
+        found.append(
+            LegPrice(
+                str(item.get("schedule", "")),
+                date.fromisoformat(str(item.get("date", ""))),
+                str(item.get("account", "")),
+                price=input_amount(payload, price) if price not in (None, "") else None,
+                shares=input_amount(payload, shares) if shares not in (None, "") else None,
+            )
+        )
+    return tuple(found)
+
+
+def _plain(value: Money) -> str:
+    """Up to six places with no trailing zeros, never in exponent form: ``12.5``."""
+    return format(value.to_decimal(6).normalize(), "f")
+
+
+def _fetch_quotes(api: Api, occurrences: tuple[tuple[str, date], ...]):
+    from . import quote_resource
+
+    return fetch_due_quotes(
+        api.book,
+        DueQuotes(occurrences),
+        quote_resource.make_fetcher(quote_resource.alphavantage_key(quote_resource.settings())),
+    )
+
+
+def due_share_prices(api: Api, payload: dict) -> dict:
+    """The legs of the occurrences about to be entered that buy or sell shares,
+    after fetching any online quotes they need (#417)."""
+    raw = payload.get("occurrences")
+    if not isinstance(raw, list):
+        raise ValueError("occurrences must be a list")
+    occurrences = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("each occurrence must be an object")
+        occurrences.append(
+            (str(item.get("schedule", "")), date.fromisoformat(str(item.get("date", ""))))
+        )
+    needs, failures = _fetch_quotes(api, tuple(occurrences))
+    return {
+        "legs": [
+            {
+                "schedule": leg.schedule,
+                "date": leg.when.isoformat(),
+                "name": leg.name,
+                "account": leg.account,
+                "account_name": leg.account_name,
+                "symbol": leg.mnemonic,
+                "currency": leg.currency,
+                "value": str(leg.value.to_decimal(2)),
+                "price": price_text(leg.price) if leg.price is not None else None,
+                "price_date": leg.price_date.isoformat() if leg.price_date else None,
+                "price_source": leg.price_source,
+                "shares": _plain(leg.shares) if leg.shares is not None else None,
+            }
+            for leg in needs.legs
+        ],
+        "failures": [{"symbol": item.symbol, "reason": item.reason} for item in failures],
+    }
+
+
 def due_review_resolve(api: Api, payload: dict) -> dict:
     raw = payload.get("decisions")
     if not isinstance(raw, list):
@@ -666,11 +744,18 @@ def due_review_resolve(api: Api, payload: dict) -> dict:
                 DueDecision(str(item.get("decision"))),
             )
         )
-    return resolution_json(api.book.resolve_due(ResolveDue(tuple(decisions))))
+    return resolution_json(
+        api.book.resolve_due(ResolveDue(tuple(decisions), prices=_leg_prices(payload)))
+    )
 
 
 def post_scheduled(api: Api) -> dict:
-    """Post every due occurrence, automatic or not, without a review."""
+    """Post every due occurrence, automatic or not, without a review.
+
+    Online quotes are fetched first, so shares bought are priced; an occurrence
+    nothing prices is left due for the review to ask about (#417).
+    """
+    _fetch_quotes(api, tuple((occ.schedule.handle, occ.when) for occ in api.book.due_occurrences()))
     return posted_due_json(api.book.post_due(PostDue(only_automatic=False)))
 
 
@@ -694,5 +779,10 @@ def scheduled_next(api: Api, payload: dict) -> dict:
         raise ValueError("decision must be post or skip")
     raw_date = payload.get("date")
     when = date.fromisoformat(str(raw_date)) if raw_date else None
-    request = ResolveNext(str(payload.get("schedule", "")), DueDecision(raw_decision), when=when)
+    request = ResolveNext(
+        str(payload.get("schedule", "")),
+        DueDecision(raw_decision),
+        when=when,
+        prices=_leg_prices(payload),
+    )
     return resolution_json(api.book.resolve_next(request))

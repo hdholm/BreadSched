@@ -60,6 +60,8 @@ from ..gen.services import (
     BalanceQuery,
     BalanceSummary,
     ChartLine,
+    DueQuoteNeeds,
+    DueQuotes,
     DueResolution,
     DueScheduleReview,
     DuplicateSchedule,
@@ -477,14 +479,26 @@ class HttpBookClient:
             ],
             "as_of": request.as_of,
         }
+        if request.prices:
+            body["prices"] = to_data(request.prices)
         return resolution_from_json(self._call("POST", "/due-review", body=body))
+
+    def due_quotes(self, request: DueQuotes) -> DueQuoteNeeds:
+        found = self._call("POST", "/due-review/quotes", body=to_data(request))
+        return from_data(DueQuoteNeeds, found, "needs")
 
     def next_occurrence(self, schedule: str, as_of: date | None = None) -> NextOccurrence | None:
         found = self._call("GET", f"/schedules/{quote(schedule, safe='')}/next", {"as_of": as_of})
         return next_occurrence_from_json(found["next"])
 
     def resolve_next(self, request: ResolveNext) -> DueResolution:
-        body = {"decision": request.decision, "date": request.when, "as_of": request.as_of}
+        body: dict[str, Any] = {
+            "decision": request.decision,
+            "date": request.when,
+            "as_of": request.as_of,
+        }
+        if request.prices:
+            body["prices"] = to_data(request.prices)
         path = f"/schedules/{quote(request.schedule, safe='')}/next"
         return resolution_from_json(self._call("POST", path, body=body))
 

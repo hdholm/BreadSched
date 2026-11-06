@@ -47,6 +47,8 @@ from ..gen.services import (
     BalanceQuery,
     BalanceSummary,
     ChartLine,
+    DueQuoteNeeds,
+    DueQuotes,
     DueResolution,
     DueScheduleReview,
     DuplicateSchedule,
@@ -255,6 +257,12 @@ class BookApi(Protocol):
         ...
 
     def resolve_due(self, request: ResolveDue) -> DueResolution: ...
+
+    def due_quotes(self, request: DueQuotes) -> DueQuoteNeeds:
+        """The legs of occurrences about to be entered that buy or sell shares, each
+        with its latest stored price, and the online quotes worth fetching first
+        (#417). Entering passes the price or shares for each unpriced leg."""
+        ...
 
     def next_occurrence(
         self, schedule: str, as_of: date | None = None

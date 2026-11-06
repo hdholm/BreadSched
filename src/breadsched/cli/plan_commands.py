@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from datetime import date
+from decimal import Decimal, InvalidOperation
 
 from ..api.local import lookup_schedule
 from ..api.typed_codec import to_data
@@ -27,7 +29,9 @@ from ..gen.lib import (
 )
 from ..gen.services import (
     DueDecision,
+    DueQuotes,
     FixedScheduleInput,
+    LegPrice,
     PostDue,
     PostedDue,
     ResolveDue,
@@ -46,6 +50,101 @@ from .common import (
     parse_date,
     table,
 )
+
+
+def _symbol_amounts(values: list[str] | None, option: str) -> dict[str, Money]:
+    """``SYMBOL=AMOUNT`` pairs, keyed by upper-case symbol."""
+    found: dict[str, Money] = {}
+    for value in values or ():
+        symbol, _, amount = value.partition("=")
+        try:
+            parsed = Money(Decimal(amount.strip().replace(",", "")))
+        except (InvalidOperation, ValueError):
+            raise CommandError(f"{option} needs SYMBOL=AMOUNT, not {value!r}") from None
+        if not symbol.strip() or parsed <= 0:
+            raise CommandError(f"{option} needs SYMBOL=AMOUNT above zero, not {value!r}")
+        found[symbol.strip().upper()] = parsed
+    return found
+
+
+def _ask_share_price(leg) -> LegPrice | None:
+    """Ask at the terminal for a leg's share price, or its shares as ``12.5 sh``."""
+    prompt = (
+        f"{leg.name} {leg.when.isoformat()}: {leg.value.format()} of {leg.mnemonic} "
+        f"has no price. Share price in {leg.currency}, or shares as '12.5 sh': "
+    )
+    while True:
+        answer = input(prompt).strip().lower()
+        if not answer:
+            return None
+        shares = answer.endswith("sh")
+        try:
+            amount = Money(Decimal(answer.removesuffix("sh").strip().replace(",", "")))
+        except (InvalidOperation, ValueError):
+            print("Type a price such as 41.25, or shares such as 12.5 sh.", file=sys.stderr)
+            continue
+        if amount <= 0:
+            print("Give an amount above zero.", file=sys.stderr)
+            continue
+        return LegPrice(
+            leg.schedule,
+            leg.when,
+            leg.account,
+            price=None if shares else amount,
+            shares=amount if shares else None,
+        )
+
+
+def _share_prices(
+    book, args: argparse.Namespace, occurrences: list[tuple[str, date]], as_of: date | None
+) -> tuple[LegPrice, ...]:
+    """Price every leg of these occurrences that buys or sells shares (#417).
+
+    Online quotes are fetched first for commodities with a quote source.
+    ``--share-price``/``--shares`` then price a leg of that symbol, over any stored
+    price; a leg still without one is asked for at a terminal. A leg nothing prices
+    stops the command, naming it.
+    """
+    if not occurrences:
+        return ()
+    request = DueQuotes(tuple(occurrences), as_of)
+    if getattr(args, "online_quotes", True):
+        from ..plugins.quotes import fetch_due_quotes
+        from . import quote_commands
+
+        needs, failures = fetch_due_quotes(book, request, quote_commands._fetcher())
+        for failure in failures:
+            print(f"{failure.symbol}: no online quote ({failure.reason})", file=sys.stderr)
+    else:
+        needs = book.due_quotes(request)
+    prices = _symbol_amounts(getattr(args, "share_price", None), "--share-price")
+    shares = _symbol_amounts(getattr(args, "shares", None), "--shares")
+    given: list[LegPrice] = []
+    missing: list[str] = []
+    for leg in needs.legs:
+        symbol = leg.mnemonic.upper()
+        # A price or shares given on the command line wins over a stored price.
+        if symbol in shares:
+            given.append(LegPrice(leg.schedule, leg.when, leg.account, shares=shares[symbol]))
+        elif symbol in prices:
+            given.append(LegPrice(leg.schedule, leg.when, leg.account, price=prices[symbol]))
+        elif leg.price is not None:
+            continue
+        elif sys.stdin.isatty() and not getattr(args, "json", False):
+            asked = _ask_share_price(leg)
+            if asked is not None:
+                given.append(asked)
+            else:
+                missing.append(f"{leg.mnemonic} for {leg.name} on {leg.when.isoformat()}")
+        else:
+            missing.append(f"{leg.mnemonic} for {leg.name} on {leg.when.isoformat()}")
+    if missing:
+        raise CommandError(
+            "no share price for "
+            + "; ".join(missing)
+            + ". Give --share-price SYMBOL=PRICE or --shares SYMBOL=COUNT"
+        )
+    return tuple(given)
 
 
 def _due_references(reviews, reference: str) -> list[tuple[str, date]]:
@@ -179,10 +278,12 @@ def cmd_due_review(args: argparse.Namespace) -> int:
                 for key in _due_references(reviews, reference):
                     decisions[key] = decision
         if decisions:
+            entering = [key for key, choice in decisions.items() if choice is DueDecision.POST]
             outcome = book.resolve_due(
                 ResolveDue(
                     tuple((handle, when, choice) for (handle, when), choice in decisions.items()),
                     as_of=as_of,
+                    prices=_share_prices(book, args, entering, as_of),
                 )
             )
             emit(
@@ -229,12 +330,18 @@ def cmd_scheduled_next(args: argparse.Namespace) -> int:
                 else f"{sched.name}: next {upcoming.when.isoformat()} {upcoming.amount.format()}",
             )
             return 0
+        entering = (
+            [(sched.handle, upcoming.when)]
+            if decision is DueDecision.POST and upcoming is not None
+            else []
+        )
         outcome = book.resolve_next(
             ResolveNext(
                 sched.handle,
                 decision,
                 when=upcoming.when if upcoming is not None else None,
                 as_of=as_of,
+                prices=_share_prices(book, args, entering, as_of),
             )
         )
         assert upcoming is not None
@@ -271,6 +378,18 @@ def cmd_scheduled(args: argparse.Namespace) -> int:
     if args.post:
         # Through the book server, so it also works while one holds the book (#358).
         with book_api(args, "w") as book:
+            # Online quotes first, so shares bought are priced; an occurrence
+            # nothing prices is left due for the review to ask about (#417).
+            if args.online_quotes:
+                from ..plugins.quotes import fetch_due_quotes
+                from . import quote_commands
+
+                due = book.due_occurrences(as_of)
+                fetch_due_quotes(
+                    book,
+                    DueQuotes(tuple((occ.schedule.handle, occ.when) for occ in due), as_of),
+                    quote_commands._fetcher(),
+                )
             posted = book.post_due(PostDue(as_of=as_of, only_automatic=not args.all)).posted
         emit(
             posted_due_json(PostedDue(posted)),
@@ -920,6 +1039,27 @@ def cmd_jars(args: argparse.Namespace) -> int:
         return 0
 
 
+def _add_share_price_options(command) -> None:
+    command.add_argument(
+        "--share-price",
+        action="append",
+        metavar="SYMBOL=PRICE",
+        help="price of a share a schedule buys or sells, when no quote has one (repeatable)",
+    )
+    command.add_argument(
+        "--shares",
+        action="append",
+        metavar="SYMBOL=COUNT",
+        help="shares a schedule buys or sells, when no quote prices them (repeatable)",
+    )
+    command.add_argument(
+        "--no-online-quotes",
+        dest="online_quotes",
+        action="store_false",
+        help="do not fetch online quotes for shares before entering",
+    )
+
+
 def register(add: AddCommand) -> None:
     """Add the plan subcommands."""
     sched = add("scheduled", "List due scheduled transactions, or post them")
@@ -927,6 +1067,12 @@ def register(add: AddCommand) -> None:
     sched.add_argument("--days", type=int, default=30, help="look this far ahead")
     sched.add_argument("--post", action="store_true", help="write due occurrences")
     sched.add_argument("--all", action="store_true", help="with --post, include manual schedules")
+    sched.add_argument(
+        "--no-online-quotes",
+        dest="online_quotes",
+        action="store_false",
+        help="with --post, do not fetch online quotes for shares first",
+    )
     add_server_options(sched)
     sched.set_defaults(func=cmd_scheduled)
 
@@ -941,6 +1087,7 @@ def register(add: AddCommand) -> None:
         "--skip", action="store_true", help="mark the next occurrence done without posting"
     )
     next_cmd.add_argument("--as-of", help="today, for testing (YYYY-MM-DD)")
+    _add_share_price_options(next_cmd)
     add_server_options(next_cmd)
     next_cmd.set_defaults(func=cmd_scheduled_next)
 
@@ -991,6 +1138,7 @@ def register(add: AddCommand) -> None:
         action="store_true",
         help="mark every due date (not reminders) as done without posting",
     )
+    _add_share_price_options(due_review)
     add_server_options(due_review)
     due_review.set_defaults(func=cmd_due_review)
 

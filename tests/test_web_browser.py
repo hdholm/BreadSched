@@ -2281,3 +2281,63 @@ def test_match_to_plan_counts_a_split_like_a_reconciliation(page, served):
     expect(matcher).to_contain_text("Matched")
     [leg] = [s for s in db.get_transaction(purchase.handle).splits if s.account == food.handle]
     assert sum((item.amount for item in leg.plan_allocations), Money(0)) == Money("40")
+
+
+def test_entering_a_schedule_that_buys_shares_asks_for_their_price(page, served):
+    # #417: the shares were entered as many as the dollar value.
+    from breadsched.gen.lib import (
+        Account,
+        AccountType,
+        Commodity,
+        Money,
+        PeriodType,
+        Recurrence,
+        ScheduledSplit,
+        ScheduledTransaction,
+    )
+
+    expect = sync_api.expect
+    db, _httpd = served
+    bank = next(account for account in db.iter_accounts() if account.atype.name == "BANK")
+    parent = db.get_account(bank.handle).parent
+    fund = Commodity(namespace="FUND", mnemonic="TDF2050", fullname="Target", fraction=1000)
+    today = date.today()
+    with db.transaction("Setup") as txn:
+        db.add_commodity(fund, txn)
+        k401 = Account(
+            name="Browser 401(k)",
+            atype=AccountType.RETIREMENT,
+            parent=parent,
+            commodity=fund.handle,
+        )
+        db.add_account(k401, txn)
+        db.add_scheduled(
+            ScheduledTransaction(
+                name="Browser payroll",
+                recurrence=Recurrence(PeriodType.MONTH, interval=1, start=today),
+                splits=[
+                    ScheduledSplit(k401.handle, Money("500.00")),
+                    ScheduledSplit(bank.handle, Money("-500.00")),
+                ],
+            ),
+            txn,
+        )
+
+    page.get_by_role("button", name="Scheduled", exact=True).first.click()
+    enter_next = page.get_by_role("button", name=re.compile("Enter next"))
+    row = page.locator("tr", has_text="Browser payroll", has=enter_next).first
+    row.get_by_role("button", name=re.compile("Enter next")).click()
+    dialog = page.get_by_role("dialog", name="Share prices")
+    expect(dialog).to_contain_text("TDF2050")
+    expect(dialog).to_contain_text("No price stored")
+    dialog.get_by_role("button", name="Enter").click()
+    expect(dialog).to_contain_text("Give a share price or the shares of TDF2050")
+    dialog.get_by_label(re.compile("Share price of TDF2050")).fill("40")
+    expect(dialog.get_by_label(re.compile("Shares of TDF2050"))).to_have_value("12.5")
+    dialog.get_by_role("button", name="Enter").click()
+    expect(dialog).to_have_count(0)
+    expect(page.get_by_text("Entered Browser payroll")).to_be_visible()
+
+    [entered] = [txn for txn in db.iter_transactions() if txn.description == "Browser payroll"]
+    leg = next(split for split in entered.splits if split.account == k401.handle)
+    assert (leg.value, leg.quantity) == (Money("500.00"), Money("12.5"))

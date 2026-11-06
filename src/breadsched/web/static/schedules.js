@@ -4,12 +4,107 @@
 // Why a due-review row is listed, beside its date (#352).
 const DUE_STAGE_NOTES = { overdue:"overdue", advance:"in advance", reminder:"reminder" };
 
+// Shares a schedule buys or sells are priced when it is entered (#417): online
+// quotes are fetched first; each such leg is then shown with its price and
+// shares to confirm, and one with no price must be given a share price or a
+// number of shares. Resolves to the prices to send, or null when cancelled.
+function shareText(decimal) {
+  // A plain decimal shown in the browser's number format.
+  return decimal == null ? "" : browserNumberFormat === "comma"
+    ? String(decimal).replace(".", ",") : String(decimal);
+}
+
+function decimalPair(decimal) {
+  // A plain decimal as the exact [numerator, denominator] the server reads.
+  const [whole, fraction = ""] = String(decimal).replace("-", "").split(".");
+  const sign = String(decimal).startsWith("-") ? -1 : 1;
+  return [sign * Number(whole + fraction || "0"), 10 ** fraction.length];
+}
+
+async function askSharePrices(occurrences) {
+  if (!occurrences.length) return [];
+  const found = await post("/api/due-review/quotes", { occurrences });
+  if (!found.legs.length) return [];
+  return new Promise((resolve) => {
+    const backdrop = el("div", { class:"detail-backdrop share-prices" });
+    const finish = (value) => { backdrop.remove(); resolve(value); };
+    const message = el("p", { class:"error", role:"alert" });
+    const rows = found.legs.map((leg) => {
+      const price = el("input", { class:"match-amount", inputmode:"decimal",
+        "aria-label":`Share price of ${leg.symbol} for ${leg.name} ${leg.date}`,
+        value:shareText(leg.price) });
+      const shares = el("input", { class:"match-amount", inputmode:"decimal",
+        "aria-label":`Shares of ${leg.symbol} for ${leg.name} ${leg.date}`,
+        value:shareText(leg.shares) });
+      const value = Math.abs(Number(leg.value));
+      // Either box fills the other: shares are the value over the price.
+      price.addEventListener("input", () => {
+        const typed = Number(matchAmount(price.value));
+        shares.value = typed > 0 ? shareText(Math.round(value / typed * 1e6) / 1e6) : "";
+        shares.dataset.typed = "";
+      });
+      shares.addEventListener("input", () => {
+        const typed = Number(matchAmount(shares.value));
+        price.value = typed > 0 ? shareText(Math.round(value / typed * 1e6) / 1e6) : "";
+        shares.dataset.typed = "yes";
+      });
+      const quote = leg.price
+        ? `${shareText(leg.price)} ${leg.currency} on ${leg.price_date} (${leg.price_source})`
+        : "No price stored";
+      return { leg, price, shares, row:el("tr", {},
+        el("td", {}, el("div", {}, `${leg.name} · ${leg.date}`),
+          el("div", { class:"note" }, leg.account_name)),
+        el("td", { class:"num" }, money(leg.value)),
+        el("td", {}, leg.symbol, el("div", { class:"note" }, quote)),
+        el("td", { class:"num" }, price),
+        el("td", { class:"num" }, shares)) };
+    });
+    const apply = () => {
+      const prices = [];
+      for (const { leg, price, shares } of rows) {
+        const typedShares = shares.dataset.typed === "yes" ? matchAmount(shares.value) : null;
+        const typedPrice = matchAmount(price.value);
+        if (typedShares) {
+          prices.push({ schedule:leg.schedule, date:leg.date, account:leg.account,
+            shares:decimalPair(typedShares) });
+        } else if (typedPrice && (!leg.price || Number(typedPrice) !== Number(leg.price))) {
+          prices.push({ schedule:leg.schedule, date:leg.date, account:leg.account,
+            price:decimalPair(typedPrice) });
+        } else if (!leg.price) {
+          message.textContent = `Give a share price or the shares of ${leg.symbol} for ${leg.name} ${leg.date}.`;
+          return;
+        }
+      }
+      finish(prices);
+    };
+    const failures = found.failures.map((item) =>
+      el("p", { class:"note" }, `${item.symbol}: no online quote (${item.reason}).`));
+    backdrop.append(el("section", { class:"detail-dialog wide", role:"dialog",
+      "aria-label":"Share prices" },
+      el("div", { class:"detail-heading" }, el("h2", {}, "Share prices")),
+      el("p", { class:"note" }, "Shares are the amount over the share price. A price you type is saved for that date."),
+      ...failures,
+      table(["Occurrence", { label:"Amount", num:true }, "Commodity",
+        { label:"Share price", num:true }, { label:"Shares", num:true }], rows.map((item) => item.row)),
+      message,
+      el("div", { class:"toolbar" },
+        el("button", { class:"action", type:"button", onclick:() => finish(null) }, "Cancel"),
+        el("button", { class:"action primary", type:"button", onclick:apply }, "Enter"))));
+    backdrop.addEventListener("keydown", (event) => { if (event.key === "Escape") finish(null); });
+    document.body.append(backdrop);
+    rows[0]?.price.focus();
+  });
+}
+
 // Enter or skip a schedule's next occurrence before it is due (#351).
 async function resolveNextOccurrence(s, decision) {
   if (decision === "skip"
       && !window.confirm(`Skip ${s.name} on ${s.next.date}? Nothing is posted for that date.`)) return;
   try {
-    await post("/api/scheduled/next", { schedule:s.handle, decision, date:s.next.date });
+    const prices = decision === "post"
+      ? await askSharePrices([{ schedule:s.handle, date:s.next.date }]) : [];
+    if (prices === null) return;
+    await post("/api/scheduled/next", { schedule:s.handle, decision, date:s.next.date, prices });
     say(decision === "skip" ? `Skipped ${s.name} on ${s.next.date}.`
       : `Entered ${s.name} for ${s.next.date}.`);
     render();
@@ -273,7 +368,11 @@ async function openDueReviewDialog() {
       .filter((item) => item.decision !== "defer");
     try {
       if (decisions.length) {
-        const outcome = await post("/api/due-review", { decisions });
+        const prices = await askSharePrices(decisions
+          .filter((item) => item.decision === "post")
+          .map(({ schedule, date }) => ({ schedule, date })));
+        if (prices === null) return;
+        const outcome = await post("/api/due-review", { decisions, prices });
         say(`Posted ${outcome.posted}, marked ${outcome.skipped} as done.`);
       }
       close();

@@ -609,6 +609,12 @@ transactions** lists it split by split; choose **Edit…** to change one in the
 transaction editor or **Delete** to remove it, then **Close**. See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
+When a date to post buys or sells shares, **Apply** first gets any online quotes it
+needs (in the background), then opens **Share prices**. Check each fund's share
+price and shares, and type either one where it is missing or different; typing one
+fills in the other. **Enter** posts them; **Cancel** posts nothing. See
+[Schedules that buy or sell shares](../USER_GUIDE.md#schedules-that-buy-or-sell-shares).
+
 ### Enter or skip the next occurrence
 
 Select a schedule in Scheduled and choose **Enter Next** to post its next
@@ -616,7 +622,8 @@ occurrence now, or **Skip Next** to mark it done without posting; hover either t
 see the date and amount. An entered transaction opens in **Posted transactions**,
 and **Edit → Undo** reverses either. In the schedule editor, **Enter in advance
 (days)** and **Remind in advance (days)** set how long before its date an
-occurrence joins the review; its rows say *(in advance)* or *(reminder)*. See
+occurrence joins the review; its rows say *(in advance)* or *(reminder)*. **Enter
+Next** for a schedule that buys shares asks for their price the same way. See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
 ## Plan and projection

@@ -189,6 +189,7 @@ _READ = {
     "undo_preview",
     "find_schedule",
     "due_review",
+    "due_quotes",
     "due_occurrences",
     "next_occurrence",
     "advance_days",
