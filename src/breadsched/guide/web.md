@@ -294,6 +294,13 @@ Dashboard. Choose each date's action, or one for all of a schedule's dates, then
 **Apply**. See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
+When a date to post, or **Enter next**, buys or sells shares, the server first
+fetches any online quotes it needs. A **Share prices** dialog then shows each
+fund's share price and shares; type either one where it is missing or different,
+then choose **Enter**. The browser asks `/api/due-review/quotes` and sends what you
+typed as `prices`. See
+[Schedules that buy or sell shares](../USER_GUIDE.md#schedules-that-buy-or-sell-shares).
+
 ### Enter or skip the next occurrence
 
 In Scheduled, a schedule that can still post shows **Enter next (date)** and **Skip

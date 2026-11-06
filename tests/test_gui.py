@@ -5831,6 +5831,124 @@ class TestDueReview:
             for dialog in opened:
                 dialog.destroy()
 
+    def test_shares_a_schedule_buys_are_asked_for_then_entered(
+        self, app, window, tmp_path, monkeypatch
+    ):
+        # #417: a 401(k) leg was entered as shares equal to its dollar value.
+        from decimal import Decimal
+
+        from breadsched.cli.main import main as cli
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.gen.lib import (
+            Account,
+            AccountType,
+            Commodity,
+            Money,
+            PeriodType,
+            Recurrence,
+            ScheduledSplit,
+            ScheduledTransaction,
+        )
+        from breadsched.gen.services import DueDecision
+        from breadsched.gen.services.quotes import FetchedQuote
+        from breadsched.gui.dialogs import share_prices
+        from breadsched.gui.dialogs.due_dialog import POST, DueDialog
+        from breadsched.gui.dialogs.posted_dialog import PostedTransactionsDialog
+        from breadsched.gui.dialogs.share_prices import SharePricesDialog
+
+        path = tmp_path / "shares.breadsched"
+        cli(["init", str(path)])
+        db = DbSQLite()
+        db.load(str(path))
+        accounts = {db.full_name(a): a.handle for a in db.iter_accounts()}
+        today = date.today()
+        fund = Commodity(namespace="FUND", mnemonic="TDF2050", fullname="Target", fraction=1000)
+        with db.transaction("401(k)") as txn:
+            db.add_commodity(fund, txn)
+            k401 = Account(
+                name="401(k)",
+                atype=AccountType.RETIREMENT,
+                parent=accounts["Assets"],
+                commodity=fund.handle,
+            )
+            db.add_account(k401, txn)
+            db.add_scheduled(
+                ScheduledTransaction(
+                    name="Payroll",
+                    recurrence=Recurrence(PeriodType.WEEK, start=today),
+                    splits=[
+                        ScheduledSplit(k401.handle, Money("500.00")),
+                        ScheduledSplit(accounts["Assets"], Money("-500.00")),
+                    ],
+                ),
+                txn,
+            )
+        db.close()
+        app.open_book(str(path))
+        db = app.db
+        [sched] = db.iter_scheduled()
+
+        def opened(kind):
+            return [w for w in Gtk.Window.list_toplevels() if isinstance(w, kind)]
+
+        from breadsched.api.local import book_server
+
+        reviews = book_server(db).due_review()
+        dialog = DueDialog(window, db, reviews)
+        try:
+            dialog.set_all(POST)
+            dialog._on_apply(None)
+            [asking] = opened(SharePricesDialog)
+            # No price stored: Enter asks for one and enters nothing.
+            assert asking.enter() is False
+            assert "TDF2050" in asking.message.get_text()
+            assert db.summary()["txn"] == 0
+            price, shares = asking.entries[0]
+            price.set_text("40")
+            assert shares.get_text() == "12.5"
+            shares.set_text("12.345")
+            assert asking.enter() is True
+            [posted] = db.iter_transactions()
+            leg = next(s for s in posted.splits if s.account == k401.handle)
+            assert (leg.value, leg.quantity) == (Money("500.00"), Money("12.345"))
+        finally:
+            for window_ in opened(SharePricesDialog) + opened(PostedTransactionsDialog):
+                window_.destroy()
+            dialog.destroy()
+
+        # The typed shares saved today's price: the next payday's shares use it.
+        [saved] = db.iter_prices()
+        assert saved.quote_date == today and saved.value.quantize(10000) == Money("40.5022")
+        # Without it, and with a quote source, Enter next fetches a quote first.
+        with db.transaction("Quote source") as txn:
+            db.remove_price(saved.handle, txn)
+            fund.quote_source = "tsp"
+            db.commit_commodity(fund, txn)
+
+        class Fetcher:
+            def fetch(self, requests, currency):
+                return [
+                    FetchedQuote(r.symbol, r.source, Decimal("50"), currency, today, "tsp.gov")
+                    for r in requests
+                ], []
+
+        monkeypatch.setattr(share_prices, "default_fetcher", Fetcher)
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        view.select_schedule(sched.handle)
+        try:
+            assert view.resolve_next(DueDecision.POST) is True
+            assert _spin(lambda: bool(opened(SharePricesDialog)))
+            [asking] = opened(SharePricesDialog)
+            assert asking.entries[0][1].get_text() == "10"
+            assert asking.enter() is True
+            entered = sorted(db.iter_transactions(), key=lambda t: t.post_date)[-1]
+            leg = next(s for s in entered.splits if s.account == k401.handle)
+            assert leg.quantity == Money(10)
+        finally:
+            for window_ in opened(SharePricesDialog) + opened(PostedTransactionsDialog):
+                window_.destroy()
+
     def test_rows_say_when_they_are_entered_or_reminded_in_advance(self, upcoming_book, window):
         # #352: the review lists occurrences within each schedule's days ahead.
         from breadsched.api.local import book_server

@@ -33,14 +33,17 @@ twice, and the whole batch is one undo step. What it posted then opens in
 
 from __future__ import annotations
 
+from datetime import date
+
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.services import DueDecision, DueItem, DueScheduleReview, ResolveDue
+from ...gen.services import DueDecision, DueItem, DueScheduleReview, LegPrice, ResolveDue
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.help import help_row
+from .share_prices import price_shares
 
 __all__ = ["DueDialog"]
 
@@ -252,21 +255,25 @@ class DueDialog(BoundedWindow):
             if chooser.get_selected() == choice
         ]
 
-    def apply(self) -> tuple[int, int] | None:
-        """Carry out the decisions. Returns (posted, skipped), or None if refused.
-
-        The handles of the transactions posted are kept in ``posted_transactions``.
-        """
-        decisions = tuple(
+    def decisions(self) -> tuple[tuple[str, date, DueDecision], ...]:
+        return tuple(
             (item.schedule, item.when, _DECISIONS[chooser.get_selected()])
             for item, chooser in zip(self.items, self.choosers, strict=True)
             if chooser.get_selected() != LATER
         )
+
+    def apply(self, prices: tuple[LegPrice, ...] = ()) -> tuple[int, int] | None:
+        """Carry out the decisions. Returns (posted, skipped), or None if refused.
+
+        ``prices`` are the share prices given for legs that buy shares (#417). The
+        handles of the transactions posted are kept in ``posted_transactions``.
+        """
+        decisions = self.decisions()
         self.posted_transactions: tuple[str, ...] = ()
         if not decisions:
             return 0, 0
         try:
-            outcome = self.book.resolve_due(ResolveDue(decisions, as_of=_today()))
+            outcome = self.book.resolve_due(ResolveDue(decisions, as_of=_today(), prices=prices))
         except ApiError as error:
             self.status.set_text(str(error))
             self.status.add_css_class("negative")
@@ -275,7 +282,16 @@ class DueDialog(BoundedWindow):
         return outcome.posted, outcome.skipped
 
     def _on_apply(self, _button) -> None:
-        outcome = self.apply()
+        """Price any shares the dates to post buy (#417), then carry out the decisions."""
+        entering = [
+            (handle, when)
+            for handle, when, decision in self.decisions()
+            if decision is DueDecision.POST
+        ]
+        self.share_pricing = price_shares(self, self.db, entering, self._finish, as_of=_today())
+
+    def _finish(self, prices: tuple[LegPrice, ...]) -> None:
+        outcome = self.apply(prices)
         if outcome is None:
             return
         posted, skipped = outcome

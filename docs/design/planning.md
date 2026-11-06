@@ -278,6 +278,24 @@ transaction editor) and **Delete** (`delete_transaction`), each an ordinary undo
 change after which the list rereads the book. The browser review still reports a
 count; showing what it posted is on the roadmap.
 
+A schedule stores each leg's value in the transaction currency, never a quantity
+(#417). Every posting path builds the ledger entry with
+`schedule.entered_transaction`, and `schedule.price_legs` gives each leg whose
+account holds another commodity its quantity. That quantity is the value over the
+latest direct quote on or before the date (else the inverse of one), rounded to the
+commodity's fraction. With no quote it raises `UnpricedLegError`: `resolve_due` and
+`resolve_next` refuse with `schedule.due.no_quote`, and `post_due` leaves that
+occurrence due. Interfaces call `due_quotes` (`DueQuotes` → `DueQuoteNeeds`) before
+entering. It names each such leg with its latest price and shares, and the
+`QuoteRequest`s worth fetching: a commodity with a quote source whose stored quote
+is older than the earlier of the occurrence date and today.
+`plugins.quotes.fetch_due_quotes` fetches those requests and stores them through
+`store_quotes`; GTK fetches them in a `BackgroundJob`. The interface then asks for
+a price or shares where none exists. `ResolveDue.prices` and `ResolveNext.prices`
+carry `LegPrice`s. Each is checked against a leg of an occurrence being entered,
+saved as a dated `breadsched` price by `schedule.record_leg_price` in the same
+database transaction, and, for typed shares, sets the quantity exactly.
+
 ## Payroll
 
 `engine.payroll` reads a paycheck from an ordinary schedule; there is no payroll

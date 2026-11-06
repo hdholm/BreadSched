@@ -342,6 +342,54 @@ def test_posting_due_without_a_review_alike(target, book):
     assert api.post_due(PostDue(as_of=october_7, only_automatic=False)).posted == ()
 
 
+def test_scheduled_shares_are_priced_alike(target, book):
+    """#417: which share legs need a price, then entering with a typed price."""
+    from breadsched.gen.lib import Account, AccountType, Commodity
+    from breadsched.gen.services import DueQuotes, LegPrice
+
+    db = target.db
+    fund = Commodity(namespace="FUND", mnemonic="TDF2050", fullname="Target 2050", fraction=1000)
+    with db.transaction("401(k)") as txn:
+        db.add_commodity(fund, txn)
+        account = Account(
+            name="401(k)", atype=AccountType.RETIREMENT, parent=book.assets, commodity=fund.handle
+        )
+        db.add_account(account, txn)
+        payroll = ScheduledTransaction(
+            name="Payroll",
+            recurrence=Recurrence(period=PeriodType.MONTH, interval=1, start=TODAY),
+            splits=[
+                ScheduledSplit(account.handle, Money("500.00")),
+                ScheduledSplit(book.checking, Money("-500.00")),
+            ],
+        )
+        db.add_scheduled(payroll, txn)
+
+    needs = target.api.due_quotes(DueQuotes(((payroll.handle, TODAY),), TODAY))
+    [leg] = needs.legs
+    assert (leg.mnemonic, leg.value, leg.price, leg.account) == (
+        "TDF2050",
+        Money("500.00"),
+        None,
+        account.handle,
+    )
+    assert needs.unpriced == (leg,) and needs.requests == () and needs.currency == "USD"
+
+    with pytest.raises(ApiError) as refused:
+        target.api.resolve_next(ResolveNext(payroll.handle, DueDecision.POST, TODAY, TODAY))
+    assert refused.value.code == "schedule.due.no_quote"
+
+    given = (LegPrice(payroll.handle, TODAY, account.handle, Money(25)),)
+    outcome = target.api.resolve_due(
+        ResolveDue(((payroll.handle, TODAY, DueDecision.POST),), TODAY, given)
+    )
+    [handle] = outcome.transactions
+    shares = next(s for s in db.get_transaction(handle).splits if s.account == account.handle)
+    assert shares.quantity == Money(20)
+    [price] = target.api.due_quotes(DueQuotes(((payroll.handle, TODAY),), TODAY)).legs
+    assert (price.price, price.price_date) == (Money(25), TODAY)
+
+
 def _fixed(book, name="Gym", **overrides):
     values = dict(
         name=name,

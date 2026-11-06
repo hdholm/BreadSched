@@ -30,6 +30,7 @@ from ...gen.services import (
 )
 from ...gen.services.schedule_editing import ScheduledPage
 from ...presentation import service_error_message
+from ..dialogs.share_prices import price_shares
 from ..gi_setup import Gio, Gtk, Pango
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
@@ -416,7 +417,11 @@ class ScheduledView(BaseView):
                 )
 
     def resolve_next(self, decision: DueDecision) -> bool:
-        """Enter or skip the selected schedule's next occurrence; False if refused."""
+        """Enter or skip the selected schedule's next occurrence; False if refused.
+
+        Entering first prices any shares the occurrence buys or sells (#417); while
+        their prices are asked for, it returns True and enters once they are given.
+        """
         sched = self._selected_schedule()
         if sched is None or self.db is None:
             return False
@@ -426,8 +431,25 @@ class ScheduledView(BaseView):
         if upcoming is None:
             self.status.set_text(service_error_message(ServiceError("schedule.next.none")))
             return False
+        if decision is DueDecision.SKIP:
+            return self._resolve_next(sched, upcoming, decision, ())
+        outcome: list[bool] = []
+        self.share_pricing = price_shares(
+            self.get_root(),
+            self.db,
+            [(sched.handle, upcoming.when)],
+            lambda prices: outcome.append(self._resolve_next(sched, upcoming, decision, prices)),
+        )
+        return outcome[0] if outcome else True
+
+    def _resolve_next(self, sched, upcoming, decision: DueDecision, prices) -> bool:
+        if self.db is None:
+            return False
+        book = book_server(self.db)
         try:
-            outcome = book.resolve_next(ResolveNext(sched.handle, decision, when=upcoming.when))
+            outcome = book.resolve_next(
+                ResolveNext(sched.handle, decision, when=upcoming.when, prices=prices)
+            )
         except ApiError as error:
             self.status.set_text(str(error))
             return False

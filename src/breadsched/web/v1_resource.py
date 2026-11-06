@@ -10,10 +10,13 @@ whose ``If-Match`` names an older revision, and streams change events.
 Resources so far, all under ``/api/v1``:
 
 * ``GET /book`` – the book's revision.
-* ``GET /due-review`` (``as_of``) and ``POST /due-review`` (``decisions``, ``as_of``);
+* ``GET /due-review`` (``as_of``) and ``POST /due-review`` (``decisions``, ``as_of``,
+  ``prices``); ``POST /due-review/quotes`` (``DueQuotes``) – the legs of occurrences
+  to enter that buy or sell shares, and the online quotes worth fetching (#417);
   ``GET /schedules/due`` (``as_of``, ``days``) – the occurrences already due.
 * ``GET /schedules/lookup`` (``reference``) – one schedule, as it is stored.
-* ``GET`` and ``POST /schedules/{handle}/next`` (``decision``, ``date``, ``as_of``).
+* ``GET`` and ``POST /schedules/{handle}/next`` (``decision``, ``date``, ``as_of``,
+  ``prices``).
 * ``GET`` and ``PATCH /schedules/{handle}/advance-days``.
 * ``DELETE /schedules/{handle}`` and ``POST /schedules/{handle}/duplicate`` (``name``).
 * ``POST /post-due`` (``as_of``, ``all``) – post what is due without a review.
@@ -224,7 +227,9 @@ from ..gen.lib.scenario import AssumptionPeriod
 from ..gen.services import (
     BalanceQuery,
     DueDecision,
+    DueQuotes,
     DuplicateSchedule,
+    LegPrice,
     PostDue,
     RegisterQuery,
     ResolveDue,
@@ -469,6 +474,7 @@ __all__ = [
     "due_review_get",
     "due_occurrences_get",
     "due_review_post",
+    "due_quotes_post",
     "next_get",
     "next_post",
     "post_due_post",
@@ -530,7 +536,7 @@ def due_review_get(api: Api, _path: Path, query: QueryParams) -> dict:
 
 
 def due_review_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:
-    _only(body, {"decisions", "as_of"})
+    _only(body, {"decisions", "as_of", "prices"})
     raw = body.get("decisions")
     if not isinstance(raw, list):
         raise ValueError("decisions must be a list")
@@ -545,8 +551,19 @@ def due_review_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:
                 DueDecision(item["decision"]),
             )
         )
-    request = ResolveDue(tuple(decisions), as_of=_optional_date(body, "as_of"))
+    request = ResolveDue(
+        tuple(decisions), as_of=_optional_date(body, "as_of"), prices=_leg_prices(body)
+    )
     return resolution_json(api.book.resolve_due(request))
+
+
+def _leg_prices(body: dict[str, Any]) -> tuple[LegPrice, ...]:
+    """The share prices or shares typed for legs with no quote (#417)."""
+    return from_data(tuple[LegPrice, ...], body.get("prices", []), "prices")
+
+
+def due_quotes_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:
+    return to_data(api.book.due_quotes(from_data(DueQuotes, body, "request")))
 
 
 def schedule_lookup(api: Api, _path: Path, query: QueryParams) -> dict:
@@ -562,7 +579,7 @@ def next_get(api: Api, path: Path, query: QueryParams) -> dict:
 
 
 def next_post(api: Api, path: Path, body: dict[str, Any]) -> dict:
-    _only(body, {"decision", "date", "as_of"})
+    _only(body, {"decision", "date", "as_of", "prices"})
     decision = body.get("decision")
     if decision not in ("post", "skip"):
         raise ValueError("decision must be post or skip")
@@ -571,6 +588,7 @@ def next_post(api: Api, path: Path, body: dict[str, Any]) -> dict:
         DueDecision(decision),
         when=_optional_date(body, "date"),
         as_of=_optional_date(body, "as_of"),
+        prices=_leg_prices(body),
     )
     return resolution_json(api.book.resolve_next(request))
 

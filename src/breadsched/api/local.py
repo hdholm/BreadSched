@@ -62,6 +62,8 @@ from ..gen.services import (
     DeleteAccount,
     DeleteSchedule,
     DeleteTransaction,
+    DueQuoteNeeds,
+    DueQuotes,
     DueResolution,
     DueScheduleReview,
     DuplicateSchedule,
@@ -97,6 +99,7 @@ from ..gen.services import (
     delete_account,
     delete_schedule,
     delete_transaction,
+    due_quotes,
     duplicate_schedule,
     editable_transaction,
     entry_input,
@@ -394,6 +397,9 @@ class LocalBookServer:
 
     def resolve_due(self, request: ResolveDue) -> DueResolution:
         return unwrap(resolve_due(self.db, request))
+
+    def due_quotes(self, request: DueQuotes) -> DueQuoteNeeds:
+        return due_quotes(self.db, request)
 
     def next_occurrence(self, schedule: str, as_of: date | None = None) -> NextOccurrence | None:
         return next_occurrence(self.db, schedule, as_of=as_of)

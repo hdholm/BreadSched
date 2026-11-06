@@ -243,6 +243,20 @@ due review returns (`schedules`, each date with its `stage`: `overdue`, `due`,
 and the new `transactions`. See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
+When a date to post buys or sells shares, online quotes are fetched first for
+funds that have a quote source; `--no-online-quotes` skips that. A fund still
+without a price is asked for at a terminal (a share price, or shares as `12.5 sh`).
+Otherwise give it with `--share-price SYMBOL=PRICE` or `--shares SYMBOL=COUNT`,
+or the command stops and names it:
+
+```bash
+breadsched due-review household.breadsched --post Payroll --shares TDF2050=12.345
+breadsched scheduled-next household.breadsched Payroll --enter --share-price TDF2050=40.50
+```
+
+`scheduled --post` fetches quotes first too, and leaves a date nothing prices due.
+See [Schedules that buy or sell shares](../USER_GUIDE.md#schedules-that-buy-or-sell-shares).
+
 ### Enter or skip the next occurrence
 
 ```bash

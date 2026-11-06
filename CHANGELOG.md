@@ -10,6 +10,37 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a321 - 2026-11-06
+
+Scheduled transactions that buy or sell shares price them when entered (#417).
+
+- **Shares from a price, not the dollar value.** A schedule keeps each leg's value,
+  so entering one that put $500.00 into a 401(k) fund recorded 500 shares. Every
+  posting path now builds the entry with `schedule.entered_transaction`. Each leg
+  whose account holds another commodity gets its quantity from the latest quote on
+  or before the date (direct, else inverse), rounded to the commodity's unit; a
+  foreign-currency leg uses the exchange rate.
+- **Fetch a quote, or ask for one.** Before entering, every interface asks the new
+  book operation `due_quotes` which legs buy or sell shares. It fetches online
+  quotes for those with a quote source and no recent price
+  (`plugins.quotes.fetch_due_quotes`; in GTK, in the background). It then shows
+  each leg's price and shares to confirm, and asks for a share price or a number
+  of shares where none exists:
+  - desktop: **Share prices**, from the due review and **Enter Next**;
+  - browser: the same dialog, through `/api/due-review/quotes`;
+  - command line: a terminal prompt, `--share-price SYMBOL=PRICE`,
+    `--shares SYMBOL=COUNT`, `--no-online-quotes`.
+
+  `ResolveDue.prices`/`ResolveNext.prices` (`LegPrice`) save a typed price, or the
+  one typed shares imply, as that date's price in the same undo step. Typed shares
+  set the quantity exactly.
+- **Nothing is entered unpriced.** With no price, entering is refused
+  (`schedule.due.no_quote`), and automatic posting (`post_due`, `scheduled --post`,
+  the browser's post-all) leaves that date due. A price for a leg or date not being
+  entered is refused (`schedule.due.price.*`). Over `/api/v1`, `POST
+  /due-review/quotes` is new, and `POST /due-review` and `POST /schedules/{h}/next`
+  accept `prices`.
+
 ## 0.2.0a320 - 2026-11-05
 
 - **The user directory stops rewriting its schema on every read.** A request to the

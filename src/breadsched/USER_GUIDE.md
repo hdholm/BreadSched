@@ -843,6 +843,27 @@ A schedule can also be reviewed before its date, as in GnuCash
 Both are kept from a GnuCash import. Each is from 0 to 999 days; anything else is
 refused and the schedule is left as it was.
 
+#### Schedules that buy or sell shares
+
+A schedule keeps what each leg is worth, not a number of shares: a payroll
+schedule that puts $500.00 into a 401(k) fund each payday buys a different number
+of shares each time. When an occurrence is entered, the fund leg's shares are its
+amount over the fund's latest price on or before that date, rounded to the fund's
+smallest unit. A leg in a foreign-currency account takes its amount from the
+exchange rate the same way.
+
+Before entering, BreadSched fetches an [online quote](#online-quotes) for each
+such fund that has a quote source and no price as recent as the occurrence. It
+then shows **Share prices**: each leg's amount, the price it will use (with its
+date and source), and the shares that buys. Type a different share price, or the
+number of shares the statement shows, to change it. A fund with no price at all
+needs one or the other before it can be entered. A price you type, or the price
+that typed shares imply, is saved as that date's price. It is saved in the same
+undo step as the transaction.
+
+A schedule set to post automatically fetches quotes first too. If nothing prices
+its shares, that date is left due, and the review asks for the price.
+
 In the desktop window, what was posted opens next in **Posted transactions**:
 each transaction with every split on its own line, so you can check the accounts
 and amounts. **Edit…** opens one in the transaction editor and **Delete** removes

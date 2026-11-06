@@ -1492,7 +1492,8 @@ class TestBookServerBoundaries:
             ),
             (
                 "gui/views/scheduled.py",
-                ("resolve_next", "_on_post_clicked"),
+                # resolve_next prices any shares first; _resolve_next writes (#417).
+                ("_resolve_next", "_on_post_clicked"),
             ),
             ("gui/dialogs/schedule_dialog.py", ("_on_save",)),
             ("gui/dialogs/account_dialog.py", ("_on_save", "_on_delete")),
