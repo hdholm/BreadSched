@@ -348,7 +348,7 @@ jobs:
         shell: bash
         run: |
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(a[0-9]+)?$ ]]
+          [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){3}$ ]]
           test "$TAG" = "v${VERSION}"
           test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$CANDIDATE_SHA"
 
