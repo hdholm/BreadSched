@@ -4,7 +4,7 @@
 # The Flatpak may use Documents directly; a book chosen anywhere else reaches it
 # through the document portal as /run/user/UID/doc/ID/NAME, a directory holding
 # only that file. This starts the real document portal, grants the installed app
-# an existing schema 6 book (as Open does) and a book that does not exist yet (as
+# an existing schema 13 book (as Open does) and a book that does not exist yet (as
 # Save does), and checks inside the sandbox that BreadSched creates, migrates,
 # writes, and verifies them, that the host sees each change in the real file,
 # and that the pre-migration backup lands in the app's data folder rather than
@@ -86,15 +86,15 @@ import sys
 report_path, old_book, new_book, app = sys.argv[1:]
 with open(report_path, encoding="utf-8") as source:
     report = json.load(source)
-assert report["migrated"] and report["schema_before"] == 6, report
+assert report["migrated"] and report["schema_before"] == 13, report
 backup = report["backup"]
 data = os.path.expanduser(f"~/.var/app/{app}/data/breadsched/beside-documents/")
 assert backup.startswith(data), backup
-assert backup.endswith("/old.breadsched.pre-migration-v6.bak"), backup
+assert backup.endswith("/old.breadsched.pre-migration-v13.bak"), backup
 assert os.path.isfile(backup), backup
 with sqlite3.connect(f"file:{backup}?mode=ro", uri=True) as raw:
     version = raw.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()
-assert version == ("6",), version
+assert version == ("13",), version
 with sqlite3.connect(f"file:{old_book}?mode=ro", uri=True) as raw:
     version = raw.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()
 # The current schema, as the migration reported it, so a new schema needs no edit here.

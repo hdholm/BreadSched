@@ -116,7 +116,7 @@ def cmd_restore(args: argparse.Namespace) -> int:
 
 
 def cmd_migrate(args: argparse.Namespace) -> int:
-    """Bring a book from an earlier alpha to the current schema, keeping a backup."""
+    """Bring a book from an earlier version to the current schema, keeping a backup."""
     from ..gen.db.sqlite import SCHEMA_VERSION, stored_schema_version
 
     path = Path(args.book)
@@ -240,7 +240,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 
 def _add_more_books(parser: argparse.ArgumentParser) -> None:
-    """Further books for the same host (decision 0004)."""
+    """Further books for the same host."""
     parser.add_argument(
         "more_books",
         nargs="*",
@@ -268,7 +268,7 @@ def _add_listener_options(parser: argparse.ArgumentParser) -> None:
 def _serve_book(args: argparse.Namespace, *, open_browser: bool, read_only: bool) -> int:
     """Hold the books and serve them on one address until Ctrl+C.
 
-    One host serves every book named (decision 0004); a request names the book it is
+    One host serves every book named; a request names the book it is
     for. A writable server publishes each book's address (``api.discovery``) so other
     commands for the same book connect to it instead of failing on the writer lock,
     and itself as the account's host, which a later ``serve`` joins rather than
@@ -360,8 +360,9 @@ HOST_CHECK_SECONDS = 1.0
 def _join_host(
     host: HostRecord, paths: list[str], args: argparse.Namespace, *, open_browser: bool
 ) -> bool:
-    """Have the account's running host serve ``paths`` until Ctrl+C or it stops
-    (decision 0004). False if it does not answer, so this command serves them itself."""
+    """Have the account's running host serve ``paths`` until Ctrl+C or it stops.
+
+    False if it does not answer, so this command serves them itself."""
     import time
 
     from ..api import ApiError
@@ -460,7 +461,7 @@ def register(add: AddCommand) -> None:
 
     migrate = add(
         "migrate",
-        "Bring a book from an earlier alpha to the current schema, keeping a verified backup",
+        "Bring a book from an earlier version to the current schema, keeping a verified backup",
     )
     migrate.set_defaults(func=cmd_migrate)
 

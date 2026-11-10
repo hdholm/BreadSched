@@ -17,44 +17,34 @@ native book can be opened or must be migrated; it is currently 14. A behavior-on
 release changes only the application version. A persistent representation change
 increments the data-format version and supplies an explicit migration.
 
-SQLite is the native persistence engine. The current application writes schema 14 and
-can migrate schemas 6 through 13 before decoding primary objects. Schema 14 keeps
-plan links by split (13→14: each transaction linked to an occurrence, by
-`planned_occurrence` or posted from a schedule, gains `plan_allocations` on its plan
-legs, in full, with its planned date and amount; the step checks no transaction was
-lost and every link names the occurrence it named; see planning); schema 13 keeps
-one note per transaction and account (12→13: a record's imported and BreadSched
-notes are joined, the imported text first, with `imported_notes_digest`
-fingerprinting it; see interoperability); schema 12 stores
-Dashboard group membership only on accounts (11→12: each account the dashboard
-configuration listed takes its first listed group, and the configuration keeps
-group names and kinds; see valuation and reporting); schema 11
-removed payees (10→11, see household workflows); schema 10 added the
-`savings_goal` table (9→10); schema 9 added the `receivable` table (8→9); schema 8 added the `payee` table (7→8); schema 7 added
-reconciliation sessions (6→7). An explicit sequential registry and durable ledger,
-transactional runner, verified pre-migration backup hook, and versioned fixture make
-that compatibility boundary testable. Migration infrastructure is a durable
-architectural capability even when an individual obsolete transformation is allowed
-to expire.
+SQLite is the native persistence engine. The application writes schema 14 and
+migrates schema 13 before decoding primary objects. The 13→14 step writes each
+whole-transaction plan link as split allocations: a transaction linked to an
+occurrence (by `planned_occurrence`, or posted from a schedule) gains
+`plan_allocations` on its plan legs, in full, with its planned date and amount. The
+step checks that no transaction was lost and that every link names the occurrence it
+named before (see [matching](matching.md)).
+
+An explicit sequential registry (`gen.db.migrations`), a durable migration ledger, a
+transactional runner, and a verified pre-migration backup make that boundary
+testable. A migration runs before ordinary decoding, fails atomically, preserves a
+verified backup, and leaves enough version evidence to diagnose or retry safely.
+There is no no-op format bump: the schema rises only for a real change of
+representation.
 
 Read-only opens never migrate. `breadsched migrate` opens a book writable once,
 which runs the migration and its pre-migration backup, and reports the old and new
 schema and the backup path; the Windows upgrade test uses it on the book made by
 the previous release.
 
-The supported migration window currently covers eight preceding data-format
-versions: the registry retains 6→7 through 13→14, so the application migrates
-schemas 6 through 13 and opens schema 14 directly. Versioned fixtures for schemas 6, 7, 8, and 9 prove each step;
-the 10→11, 11→12, 12→13, and 13→14 steps are proved by tests that rewrite a current book into the
-older form (`test_payee_removal.py`, `test_dedupe_schema12.py`, `test_notes_schema13.py`,
-`test_plan_allocations.py`).
-The window widens only when a real schema migration is needed; there is no no-op
-format bump. A migration must run before ordinary decoding, fail atomically, preserve
-a verified backup, and leave enough version evidence to diagnose or retry safely.
-The mechanism and supported migration steps are not removed merely because the
-application version advances. Stable releases may require a still wider promise.
-This native-book policy is independent of external GnuCash, QIF, OFX, and QFX import
-compatibility.
+The window starts at schema 13, the schema of the last alpha series. Books from the
+earlier alphas (schemas 6 through 12) are refused with a message naming the window;
+opening one once with the last 0.2.0 alpha brings it forward. From the first beta,
+a migration step is kept for at least as long as a release that wrote its source
+schema is supported. `tests/test_db.py` (`TestSchemaCompatibility`) holds the
+runner's guarantees on a schema-13 book and `tests/test_plan_allocations.py` the
+step itself. This native-book policy is independent of external GnuCash, QIF, OFX,
+and QFX import compatibility.
 
 ## Journaling and read snapshots
 
@@ -105,16 +95,16 @@ fails with an explicit read-only alternative; read-only opens remain allowed. A
 stale lock is reclaimed automatically only when it belongs to the same host and its
 recorded process no longer exists. Lock removal verifies the ownership token so one
 process cannot delete another writer's lock. The server holding a book publishes where to reach it, and a command for the same
-book connects to it instead of failing on the lock (#358; see
-[decision 0003](decisions/0003-book-server.md)). The lock itself is unchanged and
+book connects to it instead of failing on the lock (see
+[the book server](architecture.md#book-server)). The lock itself is unchanged and
 still admits one writer.
 
 ## Minimized transaction JSON
 
 A stored transaction leaves out each key
 whose value is the constant default that `Transaction.from_dict` and
-`Split.from_dict` read when the key is missing (`gen.db.compact`; decision
-[0001](decisions/0001-transaction-storage.md), re-evaluation).
+`Split.from_dict` read when the key is missing (`gen.db.compact`; the measurements are
+[below](#why-transactions-stay-json-with-a-derived-index)).
 - **What it saves:** about half the JSON per transaction, so books get smaller.
 - **Compatibility:** every version reads the result unchanged, and earlier full
   blobs keep working beside minimized ones.
@@ -132,14 +122,14 @@ the same SQL transaction, so a read-only snapshot sees exactly the revision of t
 generation it reads and every process agrees on it. It is written outside the undo
 records, so undoing a change moves the counter forward rather than back. Metadata
 written outside a database transaction (presentation settings) does not count. The
-book server's `ETag` and change events report this value (#357); see
-[decision 0003](decisions/0003-book-server.md). `tests/test_book_server.py`
+book server's `ETag` and change events report this value; see
+[the book server](architecture.md#book-server). `tests/test_book_server.py`
 covers reopening, undo, and a read-only snapshot.
 
 Undo shows what it would undo: `DbSQLite.undo_preview` (the book server's
 `undo_preview`, `POST /api/v1/undo/preview`, a POST because only the writer holds the
 undo history) names the step and counts its records by kind, so the desktop confirms
-a step of 200 or more changes first (#405).
+a step of 200 or more changes first.
 `undo(progress, announce=False)` replays such a step on a worker, reporting its
 progress, and `announce_undo` then raises its change signals on GTK's loop.
 
@@ -216,7 +206,7 @@ to write to the source. Hidden accounts follow a presentation
 rule only: new-entry choices omit them unless the desktop's **Show Hidden Accounts**
 is on, and an editor must retain and visibly identify a hidden account already
 referenced by an existing split. Hiding never disables an account: no service
-refuses one for a transaction, schedule, card payment, or loan (#397).
+refuses one for a transaction, schedule, card payment, or loan.
 
 Financial workflow records should not be stored as opaque metadata collections when
 they have their own identity and lifecycle. FSA claims are first-class primary
@@ -235,11 +225,47 @@ XDG `user-dirs.dirs` and common Windows OneDrive redirection. Because SQLite fil
 are unsafe as an only copy on many sync/network filesystems, known sync roots are
 detected and opening a book there emits a durability warning.
 
-## Decision: transactions stay JSON with a derived index
+## Why transactions stay JSON with a derived index
 
-Normalized transaction and split tables were measured against the current layout
-and not adopted: they made books 43% smaller but loading every transaction 1.5 to
-1.7 times slower. See
-[0001: Keep transactions as JSON with a derived split index](decisions/0001-transaction-storage.md)
-for the measurements, the reasons, and `scripts/storage_benchmark.py`, which
-repeats them.
+Each transaction is one JSON document, with a derived `split_index` table for any
+query that needs a split's account, date, value, or quantity. Normalized
+transaction and split tables (typed columns, foreign keys, CHECK constraints) were
+measured against this layout and not adopted.
+
+`scripts/storage_benchmark.py` writes the same synthetic 20-year household history
+(30,000 transactions, about 15% of them four- or five-split paychecks, across 60
+accounts) to each layout with the SQL the storage layer would use, checks that each
+returns every transaction exactly as written, and times each operation (best of
+seven runs; median of 50 single edits). With SQLite 3.45 and Python 3.11 on a 4-core
+Linux container:
+
+| measure | full JSON + split_index | normalized / full | minimized JSON / full |
+|---|---:|---:|---:|
+| file size (MiB) | 52.6 | 0.57 | 0.62 |
+| mean transaction JSON (bytes) | 992–997 | — | 0.51 |
+| bulk write (s) | 1.24–1.65 | 1.46–1.48 | 1.16–1.44 |
+| load every transaction (s) | 1.15–1.17 | 1.48–1.50 | 0.91–1.01 |
+| busiest register (s) | 0.86–0.94 | 1.23–1.39 | 0.72 |
+| account balance (ms) | 51–54 | 0.99–1.06 | 0.95–1.00 |
+| one edit commit (ms, median) | 1.57–1.81 | 1.08 | 0.87–1.25 |
+
+- **Normalized tables are slower where it matters.** Loading every transaction,
+  which Projection, Plan, reports, verification, and export do through
+  `iter_transactions`, is about 1.5 times slower: assembling each `Transaction` from
+  a row per split costs more in Python than decoding one JSON document. The book
+  server reads a fresh snapshot for each such request, so the cost would be paid per
+  request.
+- **They remove no complexity.** Normalizing would retire `split_index`
+  synchronization but add row assembly, a column-to-field mapping every model change
+  must update, a JSON column for the many fields not worth columns, and a one-way
+  migration. The derived index is written in the same database transaction as its
+  blob and checked by `storage_verification.split_index_issues`, so it cannot
+  silently diverge. One writer per book is SQLite's model either way.
+- **Minimized JSON takes most of the size gain** without a new layout, which is why
+  [it is what the storage layer writes](#minimized-transaction-json): files are
+  about 38% smaller, loading is no slower, registers are faster because half as much
+  JSON is decoded, and the same form is what the book API sends when a record
+  travels.
+
+Re-run the benchmark before revisiting this, for example if loading everything
+stops being on the hot path.

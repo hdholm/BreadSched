@@ -124,7 +124,7 @@ class PlannedEvent:
     actual_currency: str | None = None
     # Original currency when a report converted the expected values for display.
     converted_from: str | None = None
-    #: Every transaction counting toward this occurrence (decision 0005); the
+    #: Every transaction counting toward this occurrence; the
     #: ``actual_*`` fields above describe the first of them.
     actuals: tuple[OccurrenceActual, ...] = ()
     #: No more is expected: a commitment paid or matched as a whole, an estimate
@@ -138,7 +138,7 @@ class PlannedEvent:
     @property
     def matchable(self) -> bool:
         """Whether an actual may still be matched to it: any open occurrence, and an
-        estimate whose period has ended, for a late purchase (decision 0005)."""
+        estimate whose period has ended, for a late purchase."""
         return not self.closed or (self.placeholder and not self.closed_early)
 
     @property
@@ -217,7 +217,7 @@ class PlannedEvent:
 class MatchCandidate:
     """A deterministic possible resolution of a real transaction to a planned occurrence.
 
-    Ranked by decision 0005's rules, in order: the same category (an income or
+    Ranked by these rules, in order: the same category (an income or
     expense account the occurrence plans, or the same planning purpose on the same
     account), an estimate before a commitment, the actual's date within the
     occurrence's period, an amount that fits what remains of it (then the closer the
@@ -302,7 +302,7 @@ def _closed(
     applied: Money,
     today: date,
 ) -> bool:
-    """Whether an occurrence expects no more (decision 0005, section 2)."""
+    """Whether an occurrence expects no more (section 2)."""
     if when in schedule.closed_occurrences:
         return True
     if schedule.placeholder:
@@ -747,7 +747,7 @@ def actualize_transaction(
 
     The caller remains responsible for committing ``transaction``.  Snapshotting
     the expected amount means later edits to the schedule cannot rewrite history.
-    Its plan legs are allocated to the occurrence in full (decision 0005);
+    Its plan legs are allocated to the occurrence in full;
     ``class_of`` (:func:`plan_allocations.account_classes`) says which legs are on
     income and expense accounts.
     """
@@ -873,7 +873,7 @@ def match_candidates(
     *,
     window_days: int = 7,
 ) -> list[MatchCandidate]:
-    """Rank the open occurrences ``transaction`` could count toward (decision 0005).
+    """Rank the open occurrences ``transaction`` could count toward.
 
     A commitment is a candidate within ``window_days`` of its date; an estimate
     whose period holds the transaction's date, or within the window of its date.

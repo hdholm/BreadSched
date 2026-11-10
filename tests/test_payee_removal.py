@@ -14,8 +14,7 @@ from datetime import date
 
 import pytest
 
-from breadsched.gen.db.sqlite import SCHEMA_VERSION, DbSQLite
-from breadsched.gen.engine.categorization import RULES_KEY, load_rules, propose_categories
+from breadsched.gen.engine.categorization import RULES_KEY, propose_categories
 from breadsched.gen.engine.description_keys import match_key
 from breadsched.gen.lib import Transaction
 
@@ -81,51 +80,6 @@ def _downgrade(path, *, transaction: str, groceries: str, dining: str) -> None:
         raw.execute("UPDATE metadata SET value='10' WHERE key='schema_version'")
         raw.execute("DELETE FROM schema_migration")
         raw.execute("INSERT INTO schema_migration(version, applied_at) VALUES (10, 'test')")
-
-
-def test_a_schema_10_book_loses_payees_and_keeps_its_rules(tmp_path):
-    path = tmp_path / "payees.breadsched"
-    db = DbSQLite()
-    db.load(str(path))
-    from breadsched.gen.lib import Account, AccountType
-
-    with db.transaction("Setup") as txn:
-        root = Account(name="Root", atype=AccountType.ROOT)
-        db.add_account(root, txn)
-        cash = Account(name="Cash", atype=AccountType.CASH, parent=root.handle)
-        groceries = Account(name="Groceries", atype=AccountType.EXPENSE, parent=root.handle)
-        dining = Account(name="Dining", atype=AccountType.EXPENSE, parent=root.handle)
-        for account in (cash, groceries, dining):
-            db.add_account(account, txn)
-        spend = Transaction.simple(
-            date(2026, 9, 1), "CORNER GROCER #1234", groceries.handle, cash.handle, "10"
-        )
-        db.add_transaction(spend, txn)
-    db.close()
-    _downgrade(path, transaction=spend.handle, groceries=groceries.handle, dining=dining.handle)
-
-    migrated = DbSQLite()
-    migrated.load(str(path))
-    try:
-        assert migrated.get_metadata("schema_version") == SCHEMA_VERSION == 14
-        conn = migrated._require()
-        assert conn.execute("SELECT name FROM sqlite_master WHERE name='payee'").fetchone() is None
-        blob = conn.execute("SELECT blob FROM txn WHERE handle=?", (spend.handle,)).fetchone()[0]
-        assert "payee" not in json.loads(blob)
-        # The payee rule became one rule per key in its place; the payee with no
-        # keys matched nothing and leaves no rule; set_payee is gone.
-        assert [(rule.handle, rule.key, rule.category) for rule in load_rules(migrated)] == [
-            ("r1", "corner grocer", groceries.handle),
-            ("r1-1", "grocer outlet", groceries.handle),
-            ("r2", "cafe luna", dining.handle),
-        ]
-        stored = migrated.get_metadata(RULES_KEY)
-        assert all(set(rule) == {"handle", "category", "key"} for rule in stored)
-        assert migrated.verify_book() == []
-        assert migrated.integrity_problems() == []
-    finally:
-        migrated.close()
-    assert (tmp_path / "payees.breadsched.pre-migration-v10.bak").exists()
 
 
 def test_rules_match_only_descriptions(db, book):

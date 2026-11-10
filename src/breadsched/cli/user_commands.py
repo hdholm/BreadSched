@@ -1,4 +1,4 @@
-"""The book host's users, passwords, and device tokens (decision 0004).
+"""The book host's users, passwords, and device tokens.
 
 These act on this computer account's own user directory: the account that runs the
 host is its administrator and owns the file, so they need no password. That is also
@@ -133,7 +133,7 @@ def cmd_password(args: argparse.Namespace) -> int:
 
 def cmd_two_step(args: argparse.Namespace) -> int:
     """Turn this computer account's own two-step sign-in on or off, or say whether it
-    is on (decision 0004): needed only to sign in from another device."""
+    is on: needed only to sign in from another device."""
     directory = UserDirectory()
     user = directory.host_user()
     try:

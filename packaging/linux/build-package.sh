@@ -20,15 +20,13 @@ output=$(realpath -m "${3:?missing output directory}")
 root=$(cd "$(dirname "$0")/../.." && pwd)
 
 name=$(basename "$wheel")
-[[ "$name" =~ ^breadsched-([0-9]+\.[0-9]+\.[0-9]+)(a([0-9]+))?-py3-none-any\.whl$ ]] || {
+[[ "$name" =~ ^breadsched-([0-9]+(\.[0-9]+){3})-py3-none-any\.whl$ ]] || {
   echo "not a BreadSched wheel: $name" >&2
   exit 2
 }
-release=${BASH_REMATCH[1]}
-alpha=${BASH_REMATCH[3]}
-version=$release${alpha:+a$alpha}
-# A tilde sorts before the release itself in both dpkg and rpm: 0.2.0~a257 < 0.2.0.
-package_version=$release${alpha:+~a$alpha}
+# A calendar version (YYYY.M.D.PATCH) is already a valid dpkg and rpm version.
+version=${BASH_REMATCH[1]}
+package_version=$version
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

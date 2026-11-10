@@ -309,7 +309,7 @@ instead of printing it. Another machine's commands then use
 is refused for anything but this machine, since the token would cross the network
 unencrypted), and `--ca-file`,
 `--client-cert`, and `--client-key` when the proxy uses its own certificate
-authority or asks for a client certificate. See the design notes (decision 0003)
+authority or asks for a client certificate. See the design notes
 for a complete nginx configuration and the checks the proxy must keep.
 
 A command on another machine sends the files it names: `import`, `import-csv`, and
@@ -701,7 +701,7 @@ breadsched --version
 ```
 
 `breadsched --version` shows the application version and the native schema version.
-After upgrading to an alpha with a newer schema, read-only commands such as
+After upgrading to a version with a newer schema, read-only commands such as
 `verify` and `accounts` refuse an older book instead of changing it; run
 `breadsched migrate` once (or open the book in the desktop application) to bring it
 to the current schema. It first writes a verified backup next to the book, named

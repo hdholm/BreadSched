@@ -1,4 +1,4 @@
-"""What the security review of the shared book server found, kept fixed (decision 0004).
+"""What the security review of the shared book server found, kept fixed.
 
 Each test holds one finding of the review closed:
 

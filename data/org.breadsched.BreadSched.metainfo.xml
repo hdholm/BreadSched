@@ -17,7 +17,7 @@
       <li>Multi-year projections with inheriting scenarios</li>
       <li>GnuCash, QIF, and OFX import, with books stored locally in SQLite</li>
     </ul>
-    <p>BreadSched is alpha software. Keep independent backups of real books.</p>
+    <p>BreadSched is beta software. Keep independent backups of real books.</p>
   </description>
   <launchable type="desktop-id">org.breadsched.BreadSched.desktop</launchable>
   <url type="homepage">https://github.com/hdholm/BreadSched</url>

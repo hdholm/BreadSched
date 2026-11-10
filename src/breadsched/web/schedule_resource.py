@@ -81,7 +81,7 @@ def scheduled(api: Api, days: int = 60) -> dict:
                 "advance_days": item.advance_days,
                 "remind_days": item.remind_days,
                 "next": next_occurrence_json(view.next.get(item.handle)),
-                # The occurrence its Match window opens on (decision 0005).
+                # The occurrence its Match window opens on.
                 "current_occurrence": (
                     item.occurrence_key(current) if current is not None else None
                 ),

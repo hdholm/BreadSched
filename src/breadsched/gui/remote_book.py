@@ -1,4 +1,4 @@
-"""A book another process holds, used from GTK through its server (decision 0004).
+"""A book another process holds, used from GTK through its server.
 
 When the computer account's book host (``breadsched serve``, or
 another GTK window's sharing) already holds a book, GTK cannot open the file for

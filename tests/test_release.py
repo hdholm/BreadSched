@@ -68,9 +68,28 @@ def test_current_release_notes_are_valid(tmp_path: Path):
 
 
 def test_checked_in_release_notes_are_valid():
+    """Notes exist only for a version being released; each must describe it."""
     tag = f"v{__version__}"
+    notes = Path("docs/releases") / f"{tag}.md"
+    if notes.exists():
+        assert validate_release_notes(tag, notes) == []
+    assert [path.name for path in Path("docs/releases").glob("v0.*.md")] == []
 
-    assert validate_release_notes(tag, Path("docs/releases") / f"{tag}.md") == []
+
+def test_the_version_is_a_calendar_version_and_names_its_stage():
+    import re
+    from datetime import date
+
+    from breadsched import RELEASE_STAGE
+
+    match = re.fullmatch(
+        r"(20\d{2})\.([1-9]|1[0-2])\.([1-9]|[12]\d|3[01])\.(0|[1-9]\d*)", __version__
+    )
+    assert match, __version__
+    date(*(int(part) for part in match.groups()[:3]))
+    assert RELEASE_STAGE in {"beta", "stable"}
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    assert "from breadsched import RELEASE_STAGE" in workflow
 
 
 def test_release_notes_must_match_the_application_and_schema(tmp_path: Path):
@@ -206,7 +225,7 @@ def test_release_publisher_treats_artifacts_as_fixed_name_data(tmp_path: Path):
         lines.append(line[10:])
     script = "\n".join(lines)
 
-    version = "0.2.0a102"
+    version = "2026.11.10.0"
     tag = f"v{version}"
     root = tmp_path / "release-inputs"
     dist = root / "dist"
@@ -296,7 +315,7 @@ def test_release_publisher_treats_artifacts_as_fixed_name_data(tmp_path: Path):
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="release publish step runs on Linux")
-def test_release_workflow_marks_only_alpha_versions_as_prereleases():
+def test_release_workflow_marks_every_stage_but_stable_as_a_prerelease():
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     command = workflow.split("      - name: Publish release and verified artifacts", 1)[1]
     assert "VERSION: ${{ needs.prepare.outputs.version }}" in workflow
@@ -307,11 +326,14 @@ def test_release_workflow_marks_only_alpha_versions_as_prereleases():
             break
         lines.append(line[10:])
     shell = "\n".join(lines).replace("gh release create", "printf '%s\\n' gh release create")
-    for version, prerelease in (("0.2.0a100", True), ("0.2.0", False)):
+    assert "STAGE: ${{ needs.prepare.outputs.stage }}" in workflow
+    version = "2026.11.10.0"
+    for stage, prerelease in (("beta", True), ("stable", False)):
         result = subprocess.run(
             ["bash", "-c", shell],
             env={
                 "VERSION": version,
+                "STAGE": stage,
                 "TAG": f"v{version}",
                 "NOTES": "notes.md",
                 "GITHUB_REPOSITORY": "test/repo",

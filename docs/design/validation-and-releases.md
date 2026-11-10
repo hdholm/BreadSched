@@ -102,9 +102,7 @@ collection or startup into a traceback.
 
 BreadSched requires Python 3.11 or later (`requires-python`), and CI tests 3.11
 through 3.14 on Linux, macOS, and Windows; the Flatpak and Windows installer
-bundle their own interpreter. Python 3.10 support was dropped in 0.2.0a233
-(alpha software, and 3.10 reaches end of life in October 2026), which also removed
-the `tomli` fallback.
+bundle their own interpreter.
 
 **Flatpak.** The manifest builds the application into `/app` with the GNOME 49 SDK
 and grants Documents access (the default book location) and network access (the
@@ -164,10 +162,10 @@ Both formats install that one tree:
   `python3 >= 3.11`, `python3-gobject`, `python3-cairo`, and `gtk4`, and recommends
   `perl-Finance-Quote`.
 
-Package versions use `~` for alphas (`0.2.0~a257`) so that they sort before the
-release; file names keep the plain version. Running on the host rather than in a
+A calendar version is already a valid dpkg and rpm version, so packages carry it
+unchanged. Running on the host rather than in a
 sandbox is what lets these packages use an installed Finance::Quote
-([decision 0002](decisions/0002-dependencies-and-online-quotes.md)). CI builds and
+([Dependencies](architecture.md#dependencies)). CI builds and
 installs each in an `ubuntu:24.04` or `fedora:latest` container with the
 distribution's package manager. `smoke-test.sh` then checks both launchers'
 versions, a sample book's round trip, the GTK and cairo imports, the desktop files,
@@ -214,16 +212,17 @@ the script stops before compiling. Both installer jobs time out after 30 minutes
 
 ## Releases
 
-A release is selected explicitly by a checked-in `docs/releases/vVERSION.md`; an
-alpha version increment alone is not a release request, and a merge without new
-notes publishes nothing. After the full CI push run on `main` succeeds, a read-only
+Versions are calendar versions (`YYYY.M.D.PATCH`, without leading zeros, as PEP 440
+writes them), and `breadsched.RELEASE_STAGE` names the stage (`beta` or `stable`).
+A release is selected explicitly by a checked-in `docs/releases/vVERSION.md`; a
+merge without new notes publishes nothing. After the full CI push run on `main` succeeds, a read-only
 preparation job requires that exact tested commit still to be the tip of `main`,
 validates the notes against the application and schema constants
 (`versioning.version_summary()`, never a hard-coded window), builds and installs the
 wheel, and computes SHA-256 checksums. A separate write-capable job checks the
 tested identity again, validates the transferred artifact names and hashes as data
-without running them, and creates the annotated tag and GitHub release; PEP 440
-alphas also carry GitHub's pre-release flag. An existing tag must target the same
+without running them, and creates the annotated tag and GitHub release; every
+stage but `stable` carries GitHub's pre-release flag. An existing tag must target the same
 commit, and a version already tagged on an earlier commit selects nothing rather
 than failing. Every ordinary CI job has a read-only repository token.
 
@@ -232,8 +231,8 @@ than failing. Every ordinary CI job has a read-only repository token.
 Each document has one job: `README.md` orients and links; this document describes
 the implemented design; the packaged User Guide (`src/breadsched/USER_GUIDE.md` for
 rules, `src/breadsched/guide/` for each interface's steps) is the offline help;
-`ROADMAP.md` is the only list of unfinished work; `CHANGELOG.md` records completed
-changes concisely; tests, `docs/quality/`, and `docs/releases/` hold detailed
-evidence. `CONTRIBUTING.md` defines how each pull request reviews these documents.
+`ROADMAP.md` is the only list of unfinished work; `CHANGELOG.md` records what each
+release changed; tests and `docs/quality/` hold detailed evidence, and
+`docs/releases/` each release's notes. `CONTRIBUTING.md` defines how each pull request reviews these documents.
 `tests/test_documentation.py` checks local links and anchors in the top-level
 documents, and `tests/test_user_guide.py` checks the guide's links.

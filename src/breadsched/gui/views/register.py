@@ -678,7 +678,7 @@ class RegisterView(BaseView):
         return dialog
 
     def match_selected_to_plan(self, *_args):
-        """Open the Match window for the cursor's transaction (decision 0005).
+        """Open the Match window for the cursor's transaction.
 
         Typing not yet entered is saved first, as for making a schedule.
         """

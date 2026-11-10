@@ -9,7 +9,7 @@ async function showReview() {
     data = await get(`/api/review?transaction=${encodeURIComponent(state.review)}`);
   }
 
-  // Grouped by category, with a heading for each group (decision 0005).
+  // Grouped by category, with a heading for each group.
   const actualButtons = [];
   let group = null;
   for (const actual of data.actuals) {
@@ -27,7 +27,7 @@ async function showReview() {
   },
   el("strong", {}, `${actual.date}  ${actual.description}`),
   el("span", { class: "amount" }, money(actual.amount)),
-  // What it was for and where the money came from (decision 0005).
+  // What it was for and where the money came from.
   el("span", { class: "note review-accounts" },
     [(actual.categories || []).join(", "), (actual.funding || []).join(", ")]
       .filter(Boolean).join(" · ")),
@@ -179,7 +179,7 @@ async function showReview() {
           } catch (error) { say(error.message, "error"); }
         },
       }, "Mark unexpected"),
-      // Decision 0005: count each split, for part or all of its amount.
+      // Count each split, for part or all of its amount.
       el("button", {
         class: "action", type: "button",
         title: "Count each split, for part or all of its amount, toward a planned item, "

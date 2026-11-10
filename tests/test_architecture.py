@@ -1045,7 +1045,7 @@ class TestBookServerBoundaries:
     """Interfaces moved onto the book server reach the book only through it (#356)."""
 
     def test_every_operation_declares_its_permission(self):
-        """Decision 0004: each BookApi operation has exactly one permission, so a new
+        """Each BookApi operation has exactly one permission, so a new
         one cannot be served open."""
         from breadsched.api.permissions import OPERATIONS
         from breadsched.api.protocol import BookApi
@@ -1058,7 +1058,7 @@ class TestBookServerBoundaries:
         assert operations == set(OPERATIONS)
 
     def test_adapters_that_reach_the_book_file_check_the_role(self):
-        """Decision 0004: an adapter given the book file itself, not the guarded book,
+        """An adapter given the book file itself, not the guarded book,
         must check the request's role before it reads or keeps anything."""
         reaching = {
             module.name
@@ -1944,7 +1944,7 @@ class TestWebBoundaries:
         methods = [node.name for node in api.body if isinstance(node, ast.FunctionDef)]
         assert methods == ["__init__", "server", "book"]
         # Only the transport may reach the unguarded server; every resource goes through
-        # ``api.book``, which checks the caller's role (decision 0004).
+        # ``api.book``, which checks the caller's role.
         for module in (SRC / "web").glob("*.py"):
             if module.name in {"context.py", "transport.py"}:
                 continue
@@ -1975,7 +1975,7 @@ class TestWebBoundaries:
     def test_transport_keeps_one_writer_and_opens_file_reads_read_only(self):
         source = (SRC / "web/transport.py").read_text(encoding="utf-8")
         assert 'reader.load(path, mode="r")' in source
-        # One writer per book a host serves (decision 0004), each with one executor:
+        # One writer per book a host serves, each with one executor:
         # the transport's lock by default, or a host's own thread (GTK's main loop,
         # #359).
         assert "db=db," in source and "executor=executor or locked," in source

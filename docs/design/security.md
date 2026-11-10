@@ -19,7 +19,7 @@ the page moves it into ``X-BreadSched-Token`` request headers and removes it fro
 visible URL. Static assets do not need the token, but they still require a trusted
 Host.
 
-The versioned resources under `/api/v1` (#357) follow the same rules:
+The versioned resources under `/api/v1` follow the same rules:
 trusted Host and Origin, the per-server token on every request (including the
 change stream at `/api/v1/events`), and `application/json` for every write.
 `PATCH` is accepted only for `/api/v1` resources. A write with an `If-Match` naming
@@ -28,9 +28,9 @@ an older book revision is refused with 412 and changes nothing. The browser's
 it is for programmatic clients such as `breadsched.api.http_client`.
 
 A writable server publishes its address for other BreadSched processes of the same
-user (#358); they prove who they are with the account's device token, kept `0600` in
-its config folder, which the host's user directory knows only by its digest (decision
-0004):
+user; they prove who they are with the account's device token, kept `0600` in
+its config folder, which the host's user directory knows only by its digest
+([Users and access](users-and-access.md)):
 - **Where:** one record per book in the per-user runtime directory, never beside the
   book, since a book folder may be shared or synced. The file is `0600` in a `0700`
   directory on POSIX.
@@ -40,7 +40,7 @@ its config folder, which the host's user directory knows only by its digest (dec
 - **Explicit server:** `--server` takes its token from a file or the environment,
   never from the command line, where other users could read it in the process list.
 
-A device without a token signs in with a user name and password (decision 0004):
+A device without a token signs in with a user name and password:
 `scrypt` hashes, throttled attempts, and a session in an `HttpOnly`,
 `SameSite=Strict` cookie (`Secure` through the TLS proxy) that the existing Host,
 Origin, and content-type checks still guard. Optional two-step sign-in adds an RFC
@@ -51,7 +51,7 @@ which a backup of the host's settings must therefore protect; the command line w
 it and the recovery codes only to a new private file (`two-step on --setup-file`),
 never to its output. A temporary password must be changed
 before any other request is served. Each request is served in the caller's role in
-the book (owner, editor, viewer, or entry; decision 0004), checked before every book
+the book (owner, editor, viewer, or entry), checked before every book
 operation, and a user given no role there is refused. A server holding several books
 answers a request for the one its `X-BreadSched-Book` header names; `GET
 /api/v1/books` lists only those the caller has a role in, and someone the server does
@@ -62,9 +62,9 @@ ask the host to open a book by path or let one go; the host record that lets a l
 
 Reaching a book from another device goes only through a TLS reverse proxy on the
 same host, with authentication of its own; the server itself never listens beyond
-loopback. Decision 0003 documents the method, the checks the proxy must keep
+loopback. [Users and access](users-and-access.md#serving-through-a-tls-reverse-proxy-nginx) documents the method, the checks the proxy must keep
 (host, buffering, logging), an illustrative nginx configuration, and the server
-changes still open. For a proxy (#358):
+changes still open. For a proxy:
 - **Trusted origin:** `--trusted-origin https://host` adds that one origin to the
   loopback origins a page may write from. Only an `https://` origin with no path is
   accepted.
@@ -86,7 +86,7 @@ content security policy. JSON responses and documents are `no-store` with
 keep-alive, whether its caller may still read the book. Sign-in attempts are checked
 one at a time, so throttling and single-use codes hold for attempts sent together.
 The HTTP client sends a token in the clear only to loopback, and trusts a server
-record only for a loopback address. Decision 0004 records the security review these
+record only for a loopback address. [Users and access](users-and-access.md#hardening-rules) records the hardening rules these
 come from and the risks it accepted.
 
 GTK shares its open book only when the user turns on **Preferences → Sharing**. It

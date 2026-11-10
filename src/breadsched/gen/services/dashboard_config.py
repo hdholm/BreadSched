@@ -74,7 +74,7 @@ def save_dashboard_config(
     keep: Callable[[dict[str, Any]], None] | None = None,
 ) -> ServiceResult[DashboardConfig]:
     """Validate and store the Dashboard configuration and its accounts' groups: in the
-    book, or with ``keep`` as a person's own arrangement (decision 0004), changing
+    book, or with ``keep`` as a person's own arrangement, changing
     their ``stored`` one (else starting from the book's)."""
     config = DashboardConfig.load(db, stored)
     if request.groups is not None:

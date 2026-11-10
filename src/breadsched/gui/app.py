@@ -279,8 +279,8 @@ class BreadSchedApplication(Gtk.Application):
         """Close whatever is open and load ``path``, then tell the windows.
 
         A book the computer account's host already holds (``breadsched serve``, say)
-        is used through that host, as this account's own user and without a prompt
-        (decision 0004); any other is opened here.
+        is used through that host, as this account's own user and without a prompt;
+        any other is opened here.
         """
         if self.db is not None:
             # Views own signal handlers and deferred GLib callbacks tied to this

@@ -1,4 +1,4 @@
-"""Actuals count toward planned occurrences by split and amount (decision 0005, phase 1)."""
+"""Actuals count toward planned occurrences by split and amount."""
 
 from __future__ import annotations
 
@@ -397,7 +397,7 @@ def test_a_schema_13_book_writes_its_plan_links_as_allocations(tmp_path):
         migrated.close()
 
 
-# ------------------------------------------------------- ranking (phase 2)
+# ------------------------------------------------------- ranking
 
 
 def test_a_purchase_late_in_the_month_is_offered_its_estimate_first(db, book):

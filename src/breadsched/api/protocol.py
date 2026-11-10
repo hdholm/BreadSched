@@ -213,7 +213,7 @@ class Change:
     can_undo: bool = False
     can_redo: bool = False
     #: Who made the change, and who made the step left to undo, when a book server
-    #: made them for someone (decision 0004); None in process.
+    #: made them for someone; None in process.
     by: str | None = None
     undo_by: str | None = None
 
@@ -376,7 +376,7 @@ class BookApi(Protocol):
 
     def book_id(self) -> str | None:
         """The book's permanent id, by which its host keeps who may use it; made the
-        first time it is asked for in a writable book (decision 0004)."""
+        first time it is asked for in a writable book."""
         ...
 
     def book_counts(self) -> BookCounts:

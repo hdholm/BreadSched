@@ -125,7 +125,7 @@ def attachment_upload(
 
 def attachment_content(db: DbSQLite, transaction: str, location: str) -> tuple[bytes, str]:
     """The bytes and media type of one document the transaction lists."""
-    # Read from the book itself, so the role is checked here (decision 0004).
+    # Read from the book itself, so the role is checked here.
     require_permission(Permission.READ)
     stored = db.get_transaction(transaction)
     if stored is None:

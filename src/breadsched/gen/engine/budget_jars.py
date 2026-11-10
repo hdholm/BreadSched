@@ -24,7 +24,7 @@ every savings goal is a jar for its account.
   goal is drawn when it is closed (its earmark is released, usually because the
   money was spent).
 * **Lapsing.** An estimate is an allowance for its period, from its date to the
-  day before its next occurrence (decision 0005). The day after a period ends,
+  day before its next occurrence. The day after a period ends,
   whatever that period left is released (``lapsed``), and an overspent period is
   brought back to zero the same way, so nothing carries into the next period. What
   income has already set aside for later occurrences stays. A period that ends
@@ -103,7 +103,7 @@ class JarEvent:
     occurrence: str = ""
     transaction: str | None = None
     #: An actual that counts toward its occurrence as a whole draws the whole of
-    #: its legs; one that allocates part draws only that part (decision 0005).
+    #: its legs; one that allocates part draws only that part.
     whole: bool = True
 
 
@@ -200,7 +200,7 @@ def _jar_legs(splits: Iterable[PlannedSplit], accounts: dict[str, Account]) -> d
 
 def _actual_legs(item: OccurrenceActual, accounts: dict[str, Account]) -> dict[str, Money]:
     """What one actual draws from an occurrence's jars: its legs when it counts as a
-    whole, else only what it allocates (decision 0005)."""
+    whole, else only what it allocates."""
     if item.share == 1:
         legs = [PlannedSplit(split.account, split.value) for split in item.transaction.splits]
     else:

@@ -1,4 +1,4 @@
-"""People with roles in a served book, and a transaction for them to save (decision 0004)."""
+"""People with roles in a served book, and a transaction for them to save."""
 
 from __future__ import annotations
 
@@ -48,6 +48,6 @@ def new_transaction(db, client: HttpBookClient):
 
 
 def own_preference(db, key: str) -> object:
-    """What the computer account kept as its own ``key`` for the book (decision 0004)."""
+    """What the computer account kept as its own ``key`` for the book."""
     directory = UserDirectory()
     return directory.preference(directory.host_user(), db.get_metadata("book.id"), key)

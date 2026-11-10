@@ -5,7 +5,7 @@ Part of the [BreadSched design](../../DESIGN.md).
 ## GTK window, toolbar, and tabs
 
 The main window has no sidebar, which duplicated the View menu and took width from
-every view. The toolbar is arranged around the current view (#182, #361): actions
+every view. The toolbar is arranged around the current view: actions
 that work anywhere (`view_catalog.TOOLBAR`: undo, redo, new transaction, print;
 opening and importing a book are File-menu and start-screen commands), one toggle
 per other view (`view_catalog.CATEGORIES`), the current view's name in bold
@@ -28,7 +28,7 @@ View commands are declared once in `view_catalog.VIEW_ACTIONS`. Each becomes a
 **Actions** lists the current view's commands first, then the commands that work
 anywhere, then every other view's commands under **Other Views**, so each command
 has exactly one item; **Reports** lists every `report` action whichever view
-computes it (#336). An item that asks for more input ends in "…", and the one New
+computes it. An item that asks for more input ends in "…", and the one New
 Transaction command (`app.new-transaction`, Ctrl+T) starts in the shown register's
 account (`ViewManager.shown_register`). Toolbar icons are unique per command:
 `view_catalog.toolbar_icons()` lists them and only `SHARED_ICONS`
@@ -40,7 +40,7 @@ Buttons stay in a view only where their state depends on it (Review Due
 Transactions…, Save Base as Scenario…, Reconcile…) or where they act on a table's
 selected row.
 
-The reconcile window (`dialogs/reconciliation_dialog`, #362) is the one statement
+The reconcile window (`dialogs/reconciliation_dialog`) is the one statement
 dialog that is not modal: `ReconciliationDialog.present_for` keeps one per book and
 account and brings it forward, and the window follows `database-changed` (coalesced
 on idle) so a transaction entered or edited elsewhere appears in its Funds In and
@@ -52,22 +52,22 @@ update. Rows for `after_statement` candidates sit below an "After" heading with 
 gesture on each list claims a row click for `ReconciliationDialog.click_row` (a
 click on the check is left to the check). A plain click selects only that row,
 across both lists, and toggles its check. Ctrl and Shift select without checking.
-A double-click puts the check back and edits (#374, #375). Keyboard selection in
+A double-click puts the check back and edits. Keyboard selection in
 one list empties the other, so the edit and check commands act on the row in view.
 Each list has its own sort buttons (✓, Date, Description, Amount; the same one again
 reverses), and both GTK and the browser order rows with the shared
 `reconciliation.sort_candidates` (`CANDIDATE_SORTS`): size for amounts, checked
 first, ties in date order, and `after_statement` rows always last. The browser asks
-`GET /api/reconciliation?sort=…&descending=…` after saving its checks (#377).
+`GET /api/reconciliation?sort=…&descending=…` after saving its checks.
 The browser's reconcile table has an **Edit** per row that saves the checks and
 opens the row in the register with **Back to reconciliation**.
 
 GTK's **Track as Reimbursable…** saves the register's unsaved typing first and
 opens the dialog over the register's own window, never over another one that was
 active, such as the guide. Each refusal is an alert as well as the register's status
-line (#371).
+line.
 
-The FSA claims window (`dialogs/fsa_claims_dialog`, #366) is likewise not modal and
+The FSA claims window (`dialogs/fsa_claims_dialog`) is likewise not modal and
 one per book (`FsaClaimsDialog.present_for`): it is the application action
 `app.fsa-claims`, listed in every view's Actions menu (on the FSA Dashboard, as that
 view's own command and toolbar icon instead), and it refreshes its candidate
@@ -83,22 +83,22 @@ shown, so callers that address "the register" keep working. A pinned
 `ProjectionView` keeps its scenario and only recalculates when inherited Base
 assumptions change, while the unpinned Projection and Plan follow the selected
 scenario. Choosing a tab, a view icon, or a menu item leaves the keyboard in the
-shown view (`ViewManager._focus_view`, a register's cursor cell, #331); tab buttons
+shown view (`ViewManager._focus_view`, a register's cursor cell); tab buttons
 do not take focus on click. Ctrl+Page Up and Ctrl+Page Down step through the tabs.
 A tab can be dragged onto another to take its place, or moved one place with
 Ctrl+Shift+Page Up/Down (**View → Move Tab Left/Right**); `ViewManager.move_tab`
-reorders the bar and the remembered tabs keep the new order (#390).
+reorders the bar and the remembered tabs keep the new order.
 Ctrl+W closes the current one, and Ctrl+F (**Edit → Find in Register**) goes to the
 register's filter, which matches with `ledger.transaction_matches`, as the browser
 register's `filter` does: date, number, description, notes, tags, memos,
-accounts, and amounts as shown or typed (#382). Ctrl+Shift+F (**Edit → Find
+accounts, and amounts as shown or typed. Ctrl+Shift+F (**Edit → Find
 Transactions…**, `app.find-transactions`) opens `dialogs.find_dialog.FindDialog`,
 which searches every register through `engine.transaction_query` (see valuation and
 reporting) and opens a found split's register when a row is activated. Closing a register with unsaved typing asks first; opening another book
 closes every tab, because tabs name the old book's accounts. Each book's tabs are
 remembered in `views.ini` (section `open-tabs`, keyed by a digest of the book path)
 and restored, skipping deleted accounts and scenarios. Restoring draws only the chosen
-tab (#389): a view the window holds but does not show is attached to the book without
+tab: a view the window holds but does not show is attached to the book without
 being drawn (`BaseView.set_db` asks `ViewManager.defers_refresh`), and a register is
 created with its account set so it reads that account once. Twelve remembered tabs on
 a 12-year book took 31 s to open; they now take as long as one.
@@ -118,7 +118,7 @@ Registers read the same way: a full read is `book.register_view(account, None)` 
 row, with headings, the security held, and which accounts hold securities), which
 `RegisterSheet.apply_view` lays out, so restored and hidden register tabs are filled
 in the background and switching to one is immediate. A register a few saved
-transactions behind still rereads only those in place (#319). Account names come from
+transactions behind still rereads only those in place. Account names come from
 `book.accounts()`. Accounts reads one `book.chart(include_hidden=True)` (each account's
 value and quote evidence) and `book.balance_summary()` (cash, assets, liabilities, and
 net worth), off GTK's loop as well; its filters re-lay the tree from the chart already
@@ -139,7 +139,7 @@ fragment as on the full page, and **Full view** and **Quick entry** link the two
 
 ## Tables, dialogs, and bounded sizes
 
-Editors disclose progressively (#383): the fields most entries need come first, and
+Editors disclose progressively: the fields most entries need come first, and
 what is set once (defaults, planning classifications) or rarely (future changes) is
 a tab or a fold away, never removed. The desktop uses `widgets.form_pages`
 (`FormPages`, a notebook whose tab can carry a count, and `FormGrid` label/field
@@ -155,10 +155,10 @@ Every table except the register grid (below) is built with `_base.table_section(
 own column chooser (`column_menu`, which also moves columns, and
 `arrange_columns`, which keeps one expanding column, the last marked to expand,
 and remembers order and widths by title under `columns:<view id>`, the first column
-pinned first, #406) (never in the view toolbar, where identical icons could not be
+pinned first) (never in the view toolbar, where identical icons could not be
 told apart; the Dashboard hides its tables' choosers and lists the same columns,
 under the same `columns:<view id>` settings, on the Columns page of
-`dialogs.dashboard_dialog.DashboardDialog`, #381) above a scrolled `Gtk.ColumnView` carrying the `data-table` class, which
+`dialogs.dashboard_dialog.DashboardDialog`) above a scrolled `Gtk.ColumnView` carrying the `data-table` class, which
 stripes rows so they are distinguishable at rest. Numeric cells carry `numeric` for
 tabular figures and a small right padding. Tables never scroll sideways: a narrowing
 window gives each column between its minimum and natural width, text cells ellipsize,
@@ -169,10 +169,10 @@ GnuCash's look is not a goal.
 Scrollbars are always shown: `app.show_scrollbars()` turns GTK's
 `gtk-overlay-scrolling` setting off at start-up, where GTK has it, so a list longer
 than its window (the due review, for example) shows a permanent scrollbar rather
-than a thin indicator that appears only while scrolling (#318); the stylesheet
+than a thin indicator that appears only while scrolling; the stylesheet
 widens the slider to 10 pixels.
 
-Every dialog follows one set of conventions (#335). `widgets.bounded.BoundedWindow`
+Every dialog follows one set of conventions. `widgets.bounded.BoundedWindow`
 closes on Escape and makes its main button (the `suggested-action` button in its
 last row, or one named with `set_primary`) the default, so Enter in a one-line
 field activates it; a field whose Enter does its own job is marked with
@@ -183,7 +183,7 @@ Delete is a `widgets.confirm.delete_button`: styled `destructive-action`, it ask
 "Delete …?" with Cancel as the default before deleting, even where Ctrl+Z could
 restore it. The browser confirms every delete the same way.
 
-Window sizes are the user's, not a book's (#349): `widgets.window_sizes` keeps them
+Window sizes are the user's, not a book's: `widgets.window_sizes` keeps them
 in the view settings section `window-sizes` as `width,height[,maximized]`. The main
 window (`main`) restores its size and maximized state when created and records them
 on `close-request` and on `app.quit` (which closes windows without that signal); an
@@ -195,7 +195,7 @@ content keeps doing so until the user resizes it. `present` restores before
 can forget them all (`forget_sizes`).
 
 **Edit → Preferences…** (`app.preferences`, Ctrl+comma;
-`dialogs.preferences_dialog.PreferencesDialog`, #333) edits user settings that are
+`dialogs.preferences_dialog.PreferencesDialog`) edits user settings that are
 not part of a book: `general.last_book_path`, `register.double_line` and
 `register.banding` in the view settings, and the Alpha Vantage key through
 `plugins.quotes.save_alphavantage_key` (stored only if changed, so a key from the
@@ -204,7 +204,7 @@ activates the window's existing `win.dashboard-configure`, because the Dashboard
 horizons, sections, and groups belong to the book. The browser has no equivalent window; its guide's Preferences
 section says where each setting lives there.
 
-A modal dialog is never shown behind the window it blocks (#295), and never two at
+A modal dialog is never shown behind the window it blocks, and never two at
 once. The main window's own modal dialogs (alerts from `_report`, the GnuCash change
 review, the due review) go through `ViewManager.queue_modal`: each waits until the
 window is mapped and has drawn (`widgets.presented.when_presented`) and until the one
@@ -216,7 +216,7 @@ schema upgrade first shows a busy page naming the book and its schema
 (`ViewManager.show_busy`, text from `presentation.book_upgrade_progress`) on a
 presented window, then migrates. A remembered book that needs no upgrade opens the
 same way behind an **Opening** page (`presentation.book_opening_progress`), so a
-large book's start-up is visibly under way and the start screen never flashes (#389).
+large book's start-up is visibly under way and the start screen never flashes.
 That page is the start-up splash: it leads with the BreadSched logo, as the start
 screen (no book) and the About dialog do (`gui/widgets/brand.py`, which draws the
 packaged logo at a fixed width and adds the packaged icons to GTK's search path).
@@ -235,24 +235,24 @@ Windows must stay usable on small screens whatever the book holds:
   from `widgets.choice.bounded_dropdown`, whose button ellipsizes in the middle only
   when a choice is longer than 36 characters (GTK's default made the longest account
   path the minimum width). A list whose choices all fit shows them whole: its button
-  is as wide as the longest choice and the open list's rows are too (#327; GTK 4.22
+  is as wide as the longest choice and the open list's rows are too (GTK 4.22
   had shrunk such buttons to "Sc…oss" and wrapped "Keep" as "Ke-ep"). A list of
   `SEARCH_FROM` (8) or more choices can be searched: its popup has a search field
   matching anywhere in a choice (`StringFilterMatchMode.SUBSTRING`), so every
   account choice, including the register's account picker, filters as the
-  register's account cell does (#334). Such a list opens at least `LIST_MIN_HEIGHT`
+  register's account cell does. Such a list opens at least `LIST_MIN_HEIGHT`
   tall (the list's scrolled window inside the drop-down's popover), so it never shows
-  only two or three rows (#381). GTK 4.16 and later cannot unselect a drop-down, so a
+  only two or three rows. GTK 4.16 and later cannot unselect a drop-down, so a
   choice that may be left empty is a real item: a split row's account list ends with
   **Choose an account…**, which the row holding the rest of an unbalanced entry
-  shows (#395). Toolbar icons are ones current Adwaita still ships
+  shows. Toolbar icons are ones current Adwaita still ships
   (`TestMenusAndIcons`). View
   toolbars scroll, Dashboard cards wrap in a `Gtk.FlowBox`, and the main stacks are
   not homogeneous, so the window's minimum is the shown page's. The Dashboard's
   tables sit in a `widgets.wrap_box.WrapBox`: each line takes as many as fit at their
   natural widths and a section switched off takes no room, where a `Gtk.FlowBox`
   aligned them in columns, so one wide table kept the narrower ones below it from
-  sitting side by side (#397).
+  sitting side by side.
 - Every secondary window is a `widgets.bounded.BoundedWindow`, which opens at its
   natural size capped to 90% of the monitor, because a wrapping label's natural width
   is its whole text on one line.
@@ -277,8 +277,8 @@ unchanged view is therefore instant instead of recalculating it. A setting chang
 the transactions a commit names (`transaction-*` signals,
 `ledger.update_register`), which keeps rows and recomputes running balances in
 memory, and ignores the `database-changed` that follows them and any signal raised
-by its own save (`RegisterSheet.saving`). Before #319 one save read the account's
-ledger four times and rebuilt every built view, seconds on a long book. The main window detaches secondary windows before the book
+by its own save (`RegisterSheet.saving`). One save therefore reads the
+account's ledger once and rebuilds only the shown view. The main window detaches secondary windows before the book
 closes, so no callback reaches a replaced database. Register column headings are a
 shared engine mapping, so GTK and web name the same ledger directions.
 
@@ -289,7 +289,7 @@ must use the entry's account and currency and only visible, postable accounts, a
 the latest wins. The proposal carries accounts, values, memos, and the earlier
 transaction's notes (never reconcile state, source identity, planning purpose,
 investment activity, or claims), fills only fields the user has not touched (GTK's
-register and transaction editor take the notes only into empty notes, #363; the
+register and transaction editor take the notes only into empty notes; the
 browser's register has no notes cell for a new entry), names its source, and never
 writes. The web route is `GET /api/entry/suggest`.
 
@@ -315,16 +315,16 @@ parallel transaction models:
   `Gtk.ColumnView` with hosted editors showed). There is no column chooser or
   sorting: a register is always in ledger order. The account list under the
   transfer cell opens above the row when it would not fit below
-  (`match_list_placement`, #406). A cash register that a security moved through
+  (`match_list_placement`). A cash register that a security moved through
   shows `TRADE_COLUMNS` (Shares and Price for the security leg); a security's split
   line takes them, and with shares, price, and amount all filled a change waits on
-  `RegisterSheet.trade_question` for which other one to work out (#407).
+  `RegisterSheet.trade_question` for which other one to work out.
 - **Cells and keys.** Arriving in a cell selects all of its text, so typing or
-  Backspace replaces a proposed value and Left or Right goes to its start or end
-  (#332). Date (defaulting to the last date entered), Num, Description,
+  Backspace replaces a proposed value and Left or Right goes to its start or end.
+  Date (defaulting to the last date entered), Num, Description,
   Transfer (visible, postable accounts), R, and Increase/Decrease titled with the
   account's headings. Tab and Shift+Tab move in column order, Enter saves and moves
-  to the next transaction (past the saved one's notes and split lines, #325), Escape restores the transaction, Up/Down/Page Up/Page Down move the cursor
+  to the next transaction (past the saved one's notes and split lines), Escape restores the transaction, Up/Down/Page Up/Page Down move the cursor
   (saving the row being left; a refused save keeps it), and Ctrl+End/Home go to the
   blank row and the first row.
 - **Typing.** `engine/entry_input` holds the pure rules for dates (GnuCash's
@@ -343,25 +343,25 @@ parallel transaction models:
   best match, and the grid selects the added text so the next key replaces it; `:`
   accepts the segments shown and prefers a deeper account. The matches are listed
   in a `Gtk.ListBox` under the cell, which scrolls to keep the chosen one in view
-  as Up and Down move through it (#334). `quickfill_description` completes a new
+  as Up and Down move through it. `quickfill_description` completes a new
   entry's description from the register's earlier descriptions, most recent first;
   leaving the description then asks `suggest_entry` for the rest. The grid keeps the
   letters as typed, so a completion that stops matching gives back the typed case
-  rather than the earlier description's (#363). Tab from the transfer of a two-split
+  rather than the earlier description's. Tab from the transfer of a two-split
   entry whose transfer is an expense goes to the decrease (money-out) column, for
-  that one step only (`RegisterSheet._expense_hop`, #369; the browser does the same).
+  that one step only (`RegisterSheet._expense_hop`; the browser does the same).
 - **Commit.** Two balancing `TransactionSplitInput`s with a positive exact amount
   (direction from the cell typed in), or one per split line, go through
   `save_transaction` as one atomic change and one undo step. Fewer than two splits,
   an imbalance, an incomplete line, or a new entry with no split in the register's
   account is refused with the typed values kept and the cursor on the offending
   cell. An existing transaction may move out of the register's account entirely
-  (#364), in GTK and the browser alike; the message names where it went.
+ , in GTK and the browser alike; the message names where it went.
 - **Split lines.** A transaction of more than two splits opens with its split lines
   (memo, account, and amount each) and a trailing empty line; while they do not
   balance, that line shows the rest in the balancing column
   (`RegisterSheet.balancing_line`, display only) and takes it as its amount when
-  given an account or memo, as GnuCash's blank split does (#369), in GTK and the
+  given an account or memo, as GnuCash's blank split does, in GTK and the
   browser alike; there is no separate imbalance row any more; the Split button
   toggles them for a two-split one. Viewing the lines is not an edit. Collapsing is
   refused while more than two lines hold a split.
@@ -373,7 +373,7 @@ parallel transaction models:
   `services.toggle_cleared`, which flips only `n`↔`c`, refuses `y`/frozen/void,
   and in the same database change adds a newly cleared candidate to (or removes
   it from) the account's open statement.
-- **Securities (#323).** An account whose commodity is not a currency
+- **Securities.** An account whose commodity is not a currency
   (`ledger.security_of`) has GnuCash's stock-register columns: `SECURITY_COLUMNS`
   adds Shares and Price before the amounts and puts Shares Held
   (`RegisterRow.share_balance`, kept by `register` and `update_register`) in place
@@ -391,7 +391,7 @@ parallel transaction models:
   held and their market value with the quote's date and source, or "no quote" and
   the ledger amount, never an unquoted conversion. The transaction editor's
   splits show a Shares entry for a security's split.
-- **Transaction editor splits (#369).** Each `SplitEditor` row is a small register
+- **Transaction editor splits.** Each `SplitEditor` row is a small register
   line: account, memo, and increase/decrease entries named by
   `ledger.register_headings` for the row's own account, so no amount is typed
   signed (either entry may be arithmetic). A single blank row shows the balancing
@@ -408,18 +408,18 @@ parallel transaction models:
 - **Shading.** `RegisterSheet.ordinals` numbers each row's transaction, so
   `RegisterGrid.banded` can alternate by transaction (the default; a notes or split
   line shares its transaction's band), by line, or not at all. Preferences stores it
-  as `register.banding`. Before #325 the band followed the row index, so
-  Double Line gave every transaction the same shade.
+  as `register.banding`. The band follows the transaction, not the row index, so
+  Double Line still alternates.
 - **Enter and Cancel.** `RegisterGrid.enter` and `RegisterGrid.cancel` are the one
   path for the Enter and Escape keys, the register toolbar's **Enter** and **Cancel**
   buttons (which do not take focus), and the `register-enter` and `register-cancel`
-  view actions (#344, as GnuCash's register toolbar has them).
+  view actions (as GnuCash's register toolbar has them).
 - **Shared display settings.** Both are settings for every register, not toolbar
-  controls (#333): `views.register.apply_register_display()` redraws each live
+  controls: `views.register.apply_register_display()` redraws each live
   `RegisterView` (a `WeakSet`) after View → Double Line or Preferences → Save, and
   `BreadSchedApp.preferences_changed` updates each window's Double Line check.
 - **Focus.** Split does not take focus on click, and a display change redraws with
-  focus back in the cursor's cell, so typing continues (#325: after Double Line the
+  focus back in the cursor's cell, so typing continues (after Double Line the
   keys went to the button).
 - **Accounts anywhere.** `complete_account` lists, after the segment matches, every
   account whose full name holds text typed without a `:` (`groc` lists
@@ -479,7 +479,7 @@ fails on any link to a missing part or heading.
   reuses the guide window and keeps it transient for the asking dialog. The guide
   window has its own `Gtk.WindowGroup`, because a modal dialog's grab covers every
   window in its group and would otherwise leave the guide unresponsive until the
-  dialog closed (#314); it scrolls to the topic's heading once it is mapped, since
+  dialog closed; it scrolls to the topic's heading once it is mapped, since
   a text view not yet laid out cannot scroll. Browser views (`VIEW_HELP` in `app.js`) and sections
   (`helpHeading` in `core.js`) open `?view=Guide&help=<topic>` in a new tab, which
   reads `GET /api/guide?topic=` for the browser part and its `anchor`, so an open

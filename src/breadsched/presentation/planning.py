@@ -201,7 +201,7 @@ UNCATEGORIZED_REVIEW_GROUP = "No category"
 
 
 def review_groups(actuals: Sequence[_Pending]) -> list[tuple[str, list[_Pending]]]:
-    """Review's pending actuals grouped by category (decision 0005).
+    """Review's pending actuals grouped by category.
 
     Each actual goes under its first category (``PendingActual.categories``), so a
     month's grocery purchases are worked through together. Groups are in name

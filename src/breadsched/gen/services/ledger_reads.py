@@ -327,7 +327,7 @@ class OutlineLine:
 
 def account_outline(db: DbSQLite, include_hidden: bool = False) -> tuple[OutlineLine, ...]:
     """The account tree below the root, depth first, as the chart orders it but
-    without valuing anything: what choosing an account needs (decision 0004's entry
+    without valuing anything: what choosing an account needs (the entry
     role sees only this), and quick to read."""
     lines: list[OutlineLine] = []
 

@@ -30,10 +30,27 @@ Presentations: GTK4, web, CLI, print  gui/, web/, cli/, plugins/export/
 | Command-line parsing and text/JSON output | `cli/*_commands.py`, dispatched by `cli/main.py` | keep its own copy of a financial rule |
 | Report layout shared by GTK printing and the browser | `plugins/export/report_layout.py` | recompute values from the view |
 
-`gen/` is standard-library only. Adapters and presentations may use a third-party
-package once a decision record justifies it, and network-facing ones are optional
-extras ([decision 0002](decisions/0002-dependencies-and-online-quotes.md)).
-`tests/test_architecture.py` names what each layer may import.
+## Dependencies
+
+`gen/` (domain, storage, engines, and services) is standard-library only, which
+keeps the engines easy to audit and every package easy to build.
+`tests/test_architecture.py` enforces this for `gen/`, `cli/`, and `plugins/`, and
+names what each layer may import.
+
+Adapters (`plugins/`), the web server, the command line, and the GTK interface may
+add a third-party package where the maintenance is the hard part (a format that
+keeps changing, for example). Each addition records, where it is admitted in
+`test_architecture.py` and here:
+
+- the reason, and why the standard library is not enough;
+- its licence;
+- how it is packaged in the wheel, the Flatpak, the Windows installer, and the RPM
+  and DEB packages;
+- what happens when it is missing.
+
+A network-facing dependency is an optional extra, so the application works without
+it. Online quotes are the worked case: they need no Python package at all (see
+[Online quotes](valuation-and-reporting.md#online-quotes)).
 
 Background work: a Projection or other long calculation runs in a worker with its
 own read-only snapshot and hands an immutable result back to the GTK main loop;
@@ -195,8 +212,13 @@ handler is in the module that registers it.
 
 ## Book server
 
-`breadsched.api` is the book server of
-[decision 0003](decisions/0003-book-server.md).
+A *book server* owns one open book: its storage, undo history, and change
+notifications. The command line, the browser, and GTK reach a book only through one
+API, the `BookApi` protocol (`breadsched.api`), whether the server runs in their own
+process or is one that several interfaces share. That is what lets the browser, GTK,
+and a command use one book at once, gives every interface the same JSON, and keeps
+reads from bypassing the services.
+
 `LocalBookServer` wraps one open `DbSQLite` and implements the `BookApi` protocol
 over the application services. Requests and results are the services' typed
 dataclasses. A failure is an `ApiError`, the same class as the web's
@@ -205,8 +227,8 @@ turns the book's storage signals into numbered `Change` events for its
 subscribers. It imports nothing from the interfaces, and architecture tests check
 that.
 
-Scheduled transactions went through it first; decision 0003 records each area that
-has followed (accounts, the register, budgets, reports, and more):
+Every area goes through it (schedules, accounts, the register, budgets, reports, and
+more):
 
 - the command line's `due-review`, `scheduled-next`, `scheduled-advance`, and
   `scheduled --post`, through `open_book_api`;
@@ -231,7 +253,7 @@ Every browser resource now reaches the book through `Api.book`; only the HTTP
 transport's binary document route reads the book it serves, and
 `tests/test_architecture.py` checks that no resource reads `api.db`.
 
-The same operations are served as versioned resources under `/api/v1` (#357):
+The same operations are served as versioned resources under `/api/v1`:
 - **Handlers:** `web/v1_resource.py`, each calling `Api.book`.
 - **Routing:** `web.resources.V1_ROUTES` maps a method and a path pattern with
   `{handle}` segments to each handler. A known path with the wrong method answers
@@ -250,7 +272,7 @@ The same operations are served as versioned resources under `/api/v1` (#357):
 
 A writable `breadsched serve` or `breadsched web` publishes a server record
 (`api.discovery`; see [Security](security.md)) for each book it holds; one server may
-hold several (`api.host`, decision 0004), and a request names its book by id in
+hold several (`api.host`), and a request names its book by id in
 `X-BreadSched-Book`. `api.connect.open_book_api` gives a
 command an explicit `--server`, else the recorded server, else an in-process server.
 So `due-review`, `scheduled-next`, `scheduled-advance`, `scheduled`, `accounts`,
@@ -260,15 +282,14 @@ review commands, `import-review`, `sale-lots`, `tax-marks`, `quotes`, `quote-sou
 `rate`, `attachments`, `net-worth`, `net-worth-change`, `project`, `compare`,
 `holdings`, `realized-gains`, `tax-year`, `jars`, `dashboard`, `activity`,
 `gnucash-writeback`, `estimate suggest`, `find`, and `import-csv` work while another
-process holds the book
-(#358). `cli.common.book_api` and `add_server_options` give each such command the
+process holds the book. `cli.common.book_api` and `add_server_options` give each such command the
 connection and its `--server` and `--token-file` options. `tests/test_book_sharing.py`
 covers the record's life, stale records, the commands through a holding server, an
 explicit server, and `serve`.
 
 GTK reaches every book only through `api.local.book_server(db)`: the in-process
 server over the file it opened, or, for a book the account's host already holds,
-that host's book API (`gui.remote_book`, decision 0004), so the same views and
+that host's book API (`gui.remote_book`), so the same views and
 dialogs work on either.
 `gui.book_sharing` serves GTK's own book when **Preferences → Sharing** is on.
 `web.transport.serve` takes an executor that runs each writer request on the GTK

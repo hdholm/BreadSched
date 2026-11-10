@@ -1734,7 +1734,7 @@ def test_configure_dashboard_sets_sections_groups_and_columns(page, served):
 
     from breadsched.gen.engine.dashboard import DashboardConfig
 
-    # The page is the computer account's, so its own Dashboard (decision 0004).
+    # The page is the computer account's, so its own Dashboard.
     stored = DashboardConfig.load(db, own_preference(db, "dashboard"))
     assert stored.liquidity_days == 45
     assert stored.shows("bills") is False and stored.shows("reimbursables") is True
@@ -1890,7 +1890,7 @@ def test_quick_entry_saves_from_a_phone(phone, served):
 
 
 def test_a_device_without_a_token_signs_in_and_chooses_its_password(served):
-    """Decision 0004: a phone opening the page has no token; it signs in, changes a
+    """A phone opening the page has no token; it signs in, changes a
     temporary password, and then keeps a session cookie across reloads."""
     from breadsched.api.local import book_server
     from breadsched.api.users import UserDirectory
@@ -1929,7 +1929,7 @@ def test_a_device_without_a_token_signs_in_and_chooses_its_password(served):
 
 
 def test_an_entry_user_adds_transactions_from_a_phone_and_nothing_else(served):
-    """Decision 0004's entry role: quick entry works; the full view's book is refused."""
+    """The entry role: quick entry works; the full view's book is refused."""
     from breadsched.api.users import UserDirectory
 
     db, httpd = served
@@ -1972,7 +1972,7 @@ def test_an_entry_user_adds_transactions_from_a_phone_and_nothing_else(served):
 
 
 def test_a_person_chooses_among_the_books_a_host_shares_with_them(tmp_path):
-    """Decision 0004: one host serves several books; each person chooses among those
+    """One host serves several books; each person chooses among those
     shared with them, the page remembers the choice, and one shared book needs none."""
     from breadsched.api.users import UserDirectory
 
@@ -2043,7 +2043,7 @@ def test_a_person_chooses_among_the_books_a_host_shares_with_them(tmp_path):
 
 
 def test_a_person_turns_on_two_step_sign_in_and_signs_in_with_a_code(served):
-    """Decision 0004, phase 5: from the Account view a person sets up two-step sign-in
+    """From the Account view a person sets up two-step sign-in
     with their authenticator app, sees their recovery codes once, signs out, and then
     signs in with password and code."""
     import time as clock
@@ -2187,7 +2187,7 @@ def test_changing_a_reconciled_split_asks_first(page, served):
 
 
 def test_review_shows_what_an_actual_was_for_and_its_notes(page, served):
-    """Decision 0005: Review lists each actual with its categories, its funding
+    """Review lists each actual with its categories, its funding
     account, and its notes, and the selected actual's legs with their memos."""
     from breadsched.gen.lib import Money, Split, Transaction
 
@@ -2219,7 +2219,7 @@ def test_review_shows_what_an_actual_was_for_and_its_notes(page, served):
 
 
 def test_match_to_plan_counts_a_split_like_a_reconciliation(page, served):
-    """Decision 0005 phase 4: the browser's Match windows, from a schedule and from
+    """The browser's Match windows, from a schedule and from
     Review, write allocations through /api/v1."""
     from breadsched.gen.lib import (
         Money,

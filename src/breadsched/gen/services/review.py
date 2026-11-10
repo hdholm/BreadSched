@@ -160,7 +160,7 @@ class PendingActual:
     description: str
     #: The transaction's positive legs added up.
     amount: Money
-    #: What it was for: the full names of its plan legs' accounts (decision 0005).
+    #: What it was for: the full names of its plan legs' accounts.
     categories: tuple[str, ...] = ()
     #: The accounts on the other side: where the money came from or went.
     funding: tuple[str, ...] = ()

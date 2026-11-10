@@ -1,4 +1,4 @@
-"""Matching actuals to planned occurrences by split and amount (decision 0005).
+"""Matching actuals to planned occurrences by split and amount.
 
 The Match windows read an occurrence with what counts toward it and the splits that
 could (:func:`occurrence_matching`), or a transaction with each of its plan legs and

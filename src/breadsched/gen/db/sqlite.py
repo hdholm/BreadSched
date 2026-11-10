@@ -347,13 +347,14 @@ class DbSQLite(ChangeVerification):
 
         if version > SCHEMA_VERSION:
             raise DbError(
-                f"book uses unsupported newer schema {version}; this BreadSched "
-                f"alpha opens through schema {SCHEMA_VERSION}"
+                f"book uses unsupported newer schema {version}; this version of BreadSched "
+                f"opens through schema {SCHEMA_VERSION}"
             )
         if version < MIN_SUPPORTED_SCHEMA_VERSION:
             raise DbError(
-                f"book schema {version} predates the supported rolling window "
-                f"(schema {MIN_SUPPORTED_SCHEMA_VERSION})"
+                f"book schema {version} predates the supported window "
+                f"(schema {MIN_SUPPORTED_SCHEMA_VERSION}); open it once with "
+                "BreadSched 0.2.0a321, then again here"
             )
         if version < SCHEMA_VERSION:
             if self.readonly:
@@ -560,7 +561,7 @@ class DbSQLite(ChangeVerification):
                 self._accounts.pop(handle, None)
             return
 
-        # Transactions are stored minimized (decision 0001, #354); every reader
+        # Transactions are stored minimized (#354); every reader
         # restores the defaults, and _read hands back the full form.
         stored = minimize_transaction(data) if table == "txn" else data
         blob = json.dumps(stored, separators=(",", ":"))
@@ -968,7 +969,7 @@ class DbSQLite(ChangeVerification):
 
     def iter_plan_linked_transactions(self) -> Iterator[Transaction]:
         """Transactions that name a scheduled occurrence or schedule, or have a split
-        allocated to one (decision 0005), in ledger order.
+        allocated to one, in ledger order.
 
         Plan, Projection, and the Expense Explorer look these up on every build;
         filtering in SQL decodes only them instead of the whole ledger (#310).

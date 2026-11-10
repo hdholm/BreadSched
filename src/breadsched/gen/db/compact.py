@@ -1,6 +1,6 @@
 """Minimized transaction JSON: leave out what reading would supply anyway (#354).
 
-Decision 0001's re-evaluation measured a stored transaction at about half the size
+A benchmark (docs/design/storage.md) measured a stored transaction at about half the size
 when keys at their default value are left out, with loading no slower. A key is left
 out only when ``Transaction.from_dict`` or ``Split.from_dict`` already reads its
 absence as exactly that value with a constant ``.get`` default. So any version of

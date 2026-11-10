@@ -24,7 +24,7 @@ changing the native schema.
 ## Ownership on re-import
 
 BreadSched-owned planning state must not be destroyed by re-import. GnuCash is not
-the system of record (#393): an imported account's chart fields (name, parent,
+the system of record: an imported account's chart fields (name, parent,
 commodity, code, description, placeholder/hidden state, and commodity SCU) and its
 other GnuCash fields are editable in BreadSched, and the account keeps the values it
 was last imported with (`Account.imported_values`, `gen.lib.imported`). On a matching
@@ -44,8 +44,7 @@ type change is reported. If its accounting class conflicts with the retained
 BreadSched type, the conflict requires review rather than silently changing local
 semantics or display signs.
 
-Accounts and transactions each have one note, owned by BreadSched (#385,
-`gen.lib.notes`). The first import seeds it from GnuCash's `notes` slot, and
+Accounts and transactions each have one note, owned by BreadSched (`gen.lib.notes`). The first import seeds it from GnuCash's `notes` slot, and
 `imported_notes_digest` records a fingerprint of the GnuCash text it last
 reconciled with. A re-import then decides by who changed what: GnuCash text equal
 to the note needs nothing; GnuCash unchanged since the last import keeps the note;
@@ -53,12 +52,9 @@ a note still equal to what was imported takes GnuCash's new text; and when both
 changed, BreadSched's note is kept and the import warns with a count. Either way
 the digest moves to the new GnuCash text, so the same conflict is reported once.
 Write-back sends transaction notes (below), after which the next import finds equal
-text. Account notes are not written back. Before schema 13 the two texts were kept
-apart (a read-only `source_notes` refreshed on every import); the 12→13 migration
-and compatibility loading join them, GnuCash's first and BreadSched's after a blank
-line (once if equal), with the digest of the GnuCash text. A pre-0.2.0a204 account
-whose single note equals its retained typed `slot:notes` value is recognised as
-imported (digest set) rather than guessed.
+text. Account notes are not written back. A record read with the older pair of texts (a
+separate `source_notes`) is joined on loading, GnuCash's first and BreadSched's
+after a blank line (once if equal), with the digest of the GnuCash text.
 
 That ownership boundary is enforced at edit time as well as import time. GTK and
 CLI refuse changes to an imported account's source-controlled name, parent, code,
@@ -71,7 +67,7 @@ SQLite schema and exercises these rules together rather than only as isolated
 fields: nested STOCK/MUTUAL holdings with a security commodity and non-default
 precision; assets locally modeled as FSA; liabilities locally modeled as Loan;
 historical money-market, receivable, and payable types; an Asset account under an
-asset account named Receivables, imported as a local Receivable (#371); an unknown valid source
+asset account named Receivables, imported as a local Receivable; an unknown valid source
 type; hidden state; typed slots; hierarchy changes; and a second source refresh.
 Any expansion of imported-account editing must extend this matrix with the source
 form and the expected local/source ownership result.
@@ -79,7 +75,7 @@ form and the expected local/source ownership result.
 Imported-schedule editing follows the same rule. Any newly editable schedule shape
 must first be added to the generated native/SQLite/XML fidelity matrix, including a
 save/reload/source-refresh assertion; imported every-N-weeks, -months, and -years
-rules (#370) are in it, since the editors' "Every N <unit>" control reproduces them.
+rules are in it, since the editors' "Every N <unit>" control reproduces them.
 Presentation layers consume a shared
 editability decision; they do not independently infer that a source definition is
 safe from the number of splits or a familiar-looking recurrence label.

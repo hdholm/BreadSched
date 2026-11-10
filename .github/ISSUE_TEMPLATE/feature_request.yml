@@ -1,36 +1,21 @@
 name: Feature request
-description: A limited change to how BreadSched works. Broader plans live in ROADMAP.md.
+description: A change to how BreadSched works, or something it should do.
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: >-
-        Check ROADMAP.md first; broader features are planned there. Describe the
-        household situation with neutral names and arbitrary amounts, never real
-        financial data.
+        ROADMAP.md lists what is already planned. Describe the household situation
+        with neutral names and arbitrary amounts, never real financial data.
   - type: textarea
-    id: problem
+    id: request
     attributes:
       label: What you are trying to do
-      description: The financial task or situation, and what BreadSched does today.
+      description: >-
+        The financial task or situation, what BreadSched does today, and what would
+        help. Say which interface matters if only one does.
     validations:
       required: true
-  - type: textarea
-    id: proposal
-    attributes:
-      label: What would help
-    validations:
-      required: true
-  - type: dropdown
-    id: interface
-    attributes:
-      label: Interface
-      multiple: true
-      options:
-        - Desktop (GTK)
-        - Browser
-        - Command line
-        - Not interface-specific
   - type: checkboxes
     id: privacy
     attributes:

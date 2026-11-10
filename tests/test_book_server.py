@@ -1388,7 +1388,7 @@ def test_plan_review_alike(target, book):
     first, second = actual(date(2026, 10, 7), "1800.00"), actual(date(2026, 11, 9), "1850.00")
     assert [item.handle for item in api.review_queue()] == [first.handle, second.handle]
     assert api.review_queue()[0].amount == Money("1800.00")
-    # What it was for and where the money came from, over HTTP too (decision 0005).
+    # What it was for and where the money came from, over HTTP too.
     assert (api.review_queue()[0].categories, api.review_queue()[0].funding) == (
         ("Expenses:Rent",),
         ("Assets:Checking",),
@@ -1574,7 +1574,7 @@ def test_dashboard_settings_alike(target, book):
         ("Debt", (book.card,)),
     ]
     assert (saved.liquidity_days, saved.emergency_months) == (14, 36)
-    # Each person's own arrangement (decision 0004): the book's accounts keep theirs,
+    # Each person's own arrangement: the book's accounts keep theirs,
     # and the accounts as this caller reads them show this one.
     assert db.get_account(book.checking).group == ""
     assert api.account(book.checking).account.group == "Cash"
@@ -2280,7 +2280,7 @@ def test_plan_settings_are_kept_alike(target, book):
     )
     assert api.save_plan_settings(chosen) == chosen
     assert api.plan_settings(*defaults) == chosen
-    # Each person's own (decision 0004): the book itself is left as it was.
+    # Each person's own: the book itself is left as it was.
     assert PlanSettings.load(db, *defaults) == PlanSettings(*defaults)
     for refused_settings, code in (
         (PlanSettings(date(2026, 9, 1), date(2026, 8, 31)), "plan.end.before_start"),
@@ -3284,7 +3284,7 @@ def test_open_book_server_closes_the_book(tmp_path):
 
 
 def test_editors_previews_save_nothing_alike(target, book):
-    """GTK's editors check what a save would store through the server (decision 0004),
+    """GTK's editors check what a save would store through the server,
     so a book the host holds previews the same way; nothing is saved."""
     from breadsched.gen.services import transaction_currency
 
@@ -3340,7 +3340,7 @@ def test_editors_previews_save_nothing_alike(target, book):
 
 
 def test_matching_by_split_reads_and_writes_alike(target, book):
-    """Decision 0005 phase 3: the Match windows' reads and writes, the same in-process
+    """The Match windows' reads and writes, the same in-process
     and over HTTP, and a refusal over HTTP keeps its code."""
     from breadsched.gen.lib import Split
     from breadsched.gen.services.plan_matching import AllocateSplit, SplitNotPlanned

@@ -33,9 +33,22 @@ committing, or submitting work in this repository.
    and tests meaningful.
 6. Submit work through the pull-request workflow above, link the relevant issue,
    and state any unverified platform/runtime explicitly.
-7. For AI-assisted commits, place the human `Signed-off-by:` and `Assisted-by:`
-   lines adjacent in the terminal trailer block, with no blank line between them.
-   Before reporting a PR as validated, verify that `git interpret-trailers --parse`
+7. The human contributor remains the commit author and makes the DCO
+   certification; record it only when they have authorized it for that work. Name
+   yourself in an `Assisted-by:` trailer on every commit you materially wrote, for
+   example:
+
+   ```text
+   Signed-off-by: A. Contributor <contributor@example.com>
+   Assisted-by: Tool Name <tool@example.com>
+   ```
+
+   Use `Assisted-by:`, not `Co-authored-by:`: a tool makes no certification and
+   takes no authorship responsibility. Keep the two lines adjacent in the final
+   trailer block, with no blank line between them (one can make
+   `git interpret-trailers --parse` omit a trailer). Never put prompts, user
+   financial data, or credentials in a commit message or pull request. Before
+   reporting a PR as validated, verify that `git interpret-trailers --parse`
    returns both trailers, confirm the pushed commit message matches, and report
    every required CI check as successful or explicitly pending/failed.
 8. For a web response, keep typed query parsing in `web.resources`, the handler in
@@ -43,9 +56,9 @@ committing, or submitting work in this repository.
    book and its book server, `Api.book`), financial calculations in shared
    services/engines, and preserve the complete response and error contract with
    route-level tests. The web, the command line, and GTK reach a book only through
-   the book server (`breadsched.api`, decision 0003); the web and the command line
+   the book server (`breadsched.api`); the web and the command line
    serialize it with `breadsched.api.views`, and every new book operation declares
-   its permission in `api.permissions` (decision 0004).
+   its permission in `api.permissions`.
 9. For web financial writes, keep request parsing and response translation in a
    presentation adapter, and leave validation and the complete database write in
    the shared service. Test that rejected inputs preserve the stored object.

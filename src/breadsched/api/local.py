@@ -581,9 +581,9 @@ class LocalBookServer:
         return list(chart_of_accounts(self.db, as_of, include_hidden))
 
     def save_account(self, request: SaveAccount) -> SavedAccount:
-        """Save the account; its Dashboard group is the caller's own arrangement
-        (decision 0004), so the book keeps the group it had and the caller's
-        arrangement takes the one asked for."""
+        """Save the account; its Dashboard group is the caller's own arrangement, so
+        the book keeps the group it had and the caller's arrangement takes the one
+        asked for."""
         keep = self._keeper(DashboardConfig.KEY)
         if keep is None:
             return unwrap(save_account(self.db, request))
@@ -898,7 +898,7 @@ class LocalBookServer:
         return dashboard_config.default_dashboard_settings(self.db)
 
     def save_dashboard_settings(self, request: SaveDashboardConfig) -> DashboardSettings:
-        """The caller's own Dashboard (decision 0004), its groups' members with it; the
+        """The caller's own Dashboard, its groups' members with it; the
         book's only for a book without an id."""
         keep = self._keeper(DashboardConfig.KEY)
         if keep is not None:
@@ -917,7 +917,7 @@ class LocalBookServer:
 
     def _regrouped(self, records: Sequence[AccountRecord]) -> list[AccountRecord]:
         """``records`` with each account's Dashboard group the caller's own, where
-        they have arranged their own (decision 0004)."""
+        they have arranged their own."""
         stored = self._own_dashboard()
         if not isinstance(stored, dict):
             return list(records)
@@ -1033,7 +1033,7 @@ class LocalBookServer:
         )
 
     def save_plan_settings(self, settings: PlanSettings) -> PlanSettings:
-        """The caller's own Plan view (decision 0004); the book's only for a book
+        """The caller's own Plan view; the book's only for a book
         without an id, which no one else can be given."""
         keep = self._keeper(PlanSettings.KEY)
         if keep is not None:
@@ -1380,7 +1380,7 @@ class LocalBookServer:
 
 class HeldElsewhere(Protocol):
     """A book another process holds, reached through that process's server (GTK's
-    ``RemoteBook``, decision 0004)."""
+    ``RemoteBook``)."""
 
     book_api: BookApi
 

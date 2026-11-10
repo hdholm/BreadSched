@@ -1,6 +1,6 @@
 """Preferences → Users: the people and devices that may use this computer's books.
 
-Decision 0004. GTK runs as the computer account, which is the host's administrator
+GTK runs as the computer account, which is the host's administrator
 and owns its user directory, so this window works on that directory directly. Used
 alone, it says so and offers only what is needed to use a book from another
 device: a password for yourself, or a token for a device or script.
@@ -43,7 +43,7 @@ class UsersDialog(BoundedWindow):
         super().__init__(title="Users and devices", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
         self.directory = directory if directory is not None else UserDirectory()
-        #: The open book, whose sharing this window also shows (decision 0004).
+        #: The open book, whose sharing this window also shows.
         self.book_id = book_id
         self.book_name = book_name
         self.set_default_size(560, -1)

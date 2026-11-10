@@ -128,7 +128,7 @@ class ResolutionView(BaseView):
         self.unexpected_button = Gtk.Button(label="Mark unexpected")
         self.unexpected_button.connect("clicked", self._on_unexpected)
         buttons.append(self.unexpected_button)
-        # Decision 0005: match each split, for part or all of its amount.
+        # Match each split, for part or all of its amount.
         self.split_button = Gtk.Button(label="Match by Split…")
         self.split_button.set_tooltip_text(
             "Count each split, for part or all of its amount, toward a planned item, "
@@ -233,7 +233,7 @@ class ResolutionView(BaseView):
         amount_label.add_css_class("numeric")
         amount_label.add_css_class("dim")
         box.append(amount_label)
-        # What it was for, where the money came from, and its notes (decision 0005).
+        # What it was for, where the money came from, and its notes.
         accounts = " · ".join(
             part
             for part in (", ".join(transaction.categories), ", ".join(transaction.funding))

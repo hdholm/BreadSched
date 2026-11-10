@@ -26,7 +26,7 @@ __all__ = [
     "verify_book",
 ]
 
-#: The book's permanent id, by which a host keeps who may use it (decision 0004).
+#: The book's permanent id, by which a host keeps who may use it.
 BOOK_ID_KEY = "book.id"
 
 

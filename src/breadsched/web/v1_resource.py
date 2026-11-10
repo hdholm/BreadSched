@@ -97,7 +97,7 @@ Resources so far, all under ``/api/v1``:
   (``occurrence``), ``/unexpected``, and ``/claim``; ``GET /plan/occurrences``
   (``start``, ``end``) and ``/plan/occurrences/lookup`` (``key``);
   ``GET /transactions/{handle}/plan-matches`` (``window_days``).
-* Matching by split (decision 0005): ``GET /plan/matching`` (``occurrence``) – an
+* Matching by split: ``GET /plan/matching`` (``occurrence``) – an
   occurrence's figures, allocations, and candidate splits;
   ``GET /transactions/{handle}/matching`` – each plan leg and its occurrences;
   ``POST /transactions/{handle}/splits/{split}/allocations`` (``occurrence``,
@@ -149,7 +149,7 @@ Resources so far, all under ``/api/v1``:
 * ``GET /net-worth`` (``start``, ``end``, ``period``, ``today``) and
   ``GET /net-worth/change`` (``start``, ``end``, ``today``).
 * ``GET /book/counts`` – how many accounts and transactions the book holds;
-  ``GET /book/id`` – its permanent id (decision 0004).
+  ``GET /book/id`` – its permanent id.
 * ``GET /book/summary`` – the book's counts, cash, net worth, and scenarios;
   ``GET /book/verification`` – its physical and logical checks.
 * ``GET /entry/notes`` (``description``, ``memos``, ``exclude``) – earlier notes or memos

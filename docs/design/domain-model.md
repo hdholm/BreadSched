@@ -31,12 +31,12 @@ commodities become comparable only after an explicit dated conversion has return
 a new amount in the reporting currency. The ledger's balances are only in this form
 (`ledger.balance_amount`, `balance_recursive_amount`, `totals_by_class_amount`,
 `net_worth_amount`, `cash_on_hand_amount`); a caller that wants the scalar reads
-`.value` and so sees which commodity it is dropping (#338).
+`.value` and so sees which commodity it is dropping.
 
 A BreadSched record that points at the ledger (an FSA claim's payments, refunds,
 reimbursements, and repayments; a receivable's expenses and reimbursements) holds a
 `lib.split_link.SplitLink`, a transaction handle and a split handle, stored as
-`{"transaction": ..., "split": ...}`. One type serves both records (#338).
+`{"transaction": ..., "split": ...}`. One type serves both records.
 
 Text becomes `Money` only at a boundary that knows its format. The core
 constructor accepts one unambiguous numeric syntax; GTK and web entry go through the
@@ -100,7 +100,7 @@ modelled correctly as a generic asset: FSA availability follows elections and
 claims, while Escrow recognizes expense when funded and suppresses duplicate
 expense recognition when disbursed.
 
-An account's type-specific settings are grouped into small records (#339):
+An account's type-specific settings are grouped into small records:
 `Account.card` (`CardTerms`: paid in full, usual payment, payment day, paying
 account), `Account.liability` (`LiabilityTerms`: annual interest, the linked asset),
 `Account.fsa` (`FsaPlan`: funding years, dependent care), `Account.investment`
@@ -171,7 +171,7 @@ quantity, the result depends on the account's commodity:
 An unchanged value keeps its stored quantity, so imported GnuCash detail
 survives an edit that does not touch the amount.
 
-The registers make the quantity visible and editable (#323): in an account holding
+The registers make the quantity visible and editable: in an account holding
 a security (`ledger.security_of`), each row shows its shares, the price
 `value / quantity` implies (`entry_input.trade_price`, six places), and the running
 share balance (`RegisterRow.share_balance`), and an entry sends its shares as the

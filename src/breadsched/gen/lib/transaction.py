@@ -154,7 +154,7 @@ class LotPick:
 
 @dataclass(frozen=True, slots=True)
 class PlanAllocation:
-    """A split's claim on one planned occurrence, for an amount (decision 0005).
+    """A split's claim on one planned occurrence, for an amount.
 
     ``amount`` is in the split's own sign and its transaction's currency, never more
     than the split's value. ``planned_for`` and ``planned_amount`` are the
@@ -194,7 +194,7 @@ class PlanAllocation:
 def fitting_allocations(
     allocations: Iterable[PlanAllocation], value: Money
 ) -> list[PlanAllocation]:
-    """``allocations`` cut to fit a split of ``value``, in order (decision 0005).
+    """``allocations`` cut to fit a split of ``value``, in order.
 
     An allocation is in its split's sign and never more than its value: one of the
     other sign is dropped, and the last that would pass the value is cut to what is
@@ -255,9 +255,9 @@ class Split:
     ) -> None:
         self.handle = handle or create_handle()
         #: The planned occurrences this split counts toward, each for an amount
-        #: (decision 0005). Empty when it counts toward none.
+        #:. Empty when it counts toward none.
         self.plan_allocations: list[PlanAllocation] = list(plan_allocations)
-        #: Chosen as needing no plan (decision 0005): taken out of what still needs
+        #: Chosen as needing no plan: taken out of what still needs
         #: matching, as *unexpected* is for a whole transaction.
         self.not_planned = not_planned
         #: For a sale of shares: the lots it sells, instead of the account's

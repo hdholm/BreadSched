@@ -1,4 +1,4 @@
-"""Transactions are stored minimized and read back exactly (decision 0001, #354).
+"""Transactions are stored minimized and read back exactly (#354).
 
 A stored transaction leaves out each key whose value is what reading supplies when
 the key is missing. The defaults are pinned in ``gen.db.compact``; these tests fail

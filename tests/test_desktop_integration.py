@@ -107,7 +107,7 @@ def test_ci_uses_books_outside_documents_through_the_real_document_portal():
 
     assert "xdg-desktop-portal fuse3 dbus" in workflow
     assert "dbus-run-session -- bash scripts/flatpak_portal_check.sh" in workflow
-    assert "tests/fixtures/native/schema-6.sql" in workflow
+    assert "tests/fixtures/native/schema-13.sql" in workflow
     # The real document portal grants the installed app one existing book (Open)
     # and one that does not exist yet (Save).
     assert "/usr/libexec/xdg-document-portal --replace" in check

@@ -1,4 +1,4 @@
-"""Which actuals count toward which planned occurrence, and for how much (decision 0005).
+"""Which actuals count toward which planned occurrence, and for how much.
 
 A split counts toward an occurrence through its ``plan_allocations``. This module
 reads them back by occurrence and writes the one kind of allocation earlier

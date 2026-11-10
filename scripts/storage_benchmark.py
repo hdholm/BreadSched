@@ -11,7 +11,7 @@ supply when the key is missing is left out. Both are written and read with the
 same plain SQL the storage layer would use, so the figures compare the layouts and
 not the surrounding undo journal or verification, which either layout needs. Each
 operation reports the best of ``--repeat`` runs. Results go to standard output as
-a Markdown table; ``docs/design/decisions/0001-transaction-storage.md`` records
+a Markdown table; ``docs/design/storage.md`` records
 the measured decision.
 """
 

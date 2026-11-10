@@ -1,4 +1,4 @@
-"""The Match windows' one write: allocate by split and amount (decision 0005, phase 3)."""
+"""The Match windows' one write: allocate by split and amount."""
 
 from __future__ import annotations
 
