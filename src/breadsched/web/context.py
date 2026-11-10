@@ -36,7 +36,7 @@ class Api:
     @property
     def book(self) -> LocalBookServer:
         """The book server over :attr:`db`; adapters moved onto it use only this. Every
-        operation is checked against the role of the user asking (decision 0004)."""
+        operation is checked against the role of the user asking."""
         if self._book is None:
             self._book = cast(LocalBookServer, GuardedBook(self.server))
         return self._book

@@ -1,28 +1,32 @@
 # BreadSched Household Financial Manager roadmap
 
 This file is the **authoritative source for unfinished BreadSched feature work**.
-Completed milestones are retained in [`CHANGELOG.md`](CHANGELOG.md).
+What each release delivered is in [`CHANGELOG.md`](CHANGELOG.md).
 
-Published releases are listed on the repository's GitHub Releases page; each
-carries GitHub pre-release metadata as well as versioned notes and verified
-artifacts. A version is released only when `main` carries its release notes; a
-merge without new notes publishes nothing.
+Published releases are listed on the repository's GitHub Releases page, each with
+its notes and verified artifacts. A version is released only when `main` carries
+its release notes; a merge without new notes publishes nothing.
 
 ## Before the first Beta
 
-Every item planned for this stage is delivered; see `CHANGELOG.md` through
-0.2.0a273. New defects and requests found before the first Beta are added here.
-
+- **Import a date range or chosen accounts.** Limit an import to dates and
+  accounts, defaulting to the dates since the last import.
+- **Breadlets.** Plug-ins, as Gramps has gramplets, for Dashboard items, text and
+  graphic reports, and import and export, with today's reports, Dashboard sections,
+  importers, and exporters as the default ones, and charts in reports.
+- **The Dashboard as the main interface:** a pinned first tab, with a chart of cash
+  flow over its cash-flow period.
+- **Simplification review:** less complexity in the design and less to learn in the
+  interfaces, with the jar metaphor used consistently.
+- **Website:** a GitHub Pages site with a financial walk-through, graphics, and the
+  documentation; the README revised to match.
 - **Book-server requests over HTTP sometimes go unanswered on Windows CI.** A test
   request to the local server occasionally gets no status line within its timeout
-  (30 s), most often the first write after a refused request; seen on Windows 3.11–3.14
-  under pytest-xdist, on main and in pull requests, and never elsewhere. Holding the
-  port exclusively (0.2.0a315) did not end it. Every refusal reads its body first, and
-  each test has its own user directory. The likeliest cause was the user directory's
-  SQLite file running its whole schema script, a write with a journal file made and
-  removed, on every one of the several connections a request makes; since 0.2.0a320
-  it runs only while a table is missing. Keep this item until the Windows jobs stay
-  clean; if they do not, reproduce on Windows.
+  (30 s), most often the first write after a refused request; seen only on Windows
+  under pytest-xdist. The server holds its port exclusively, every refusal reads its
+  body first, each test has its own user directory, and the user directory runs its
+  schema script only while a table is missing. Keep this item until the Windows jobs
+  stay clean; if they do not, reproduce on Windows.
 
 ## At the first Beta
 
@@ -30,7 +34,7 @@ Every item planned for this stage is delivered; see `CHANGELOG.md` through
   launchers through a hardware-backed signing service (Azure Artifact Signing
   under the maintainer's name, or SignPath Foundation's free open-source program;
   the choice is still being evaluated), verify the signatures in CI, and compute
-  `SHA256SUMS` over the signed files. Alphas stay unsigned.
+  `SHA256SUMS` over the signed files.
 - **Submit the Flatpak to Flathub** (the maintainer's account and review; releases
   already attach a tested bundle). Keep wheel and source releases available.
 - **Documentation site.** Evolve the packaged Markdown user guide (an overview and
@@ -49,10 +53,7 @@ The rest of this file is unscheduled and comes after the first Beta.
 
 ### Architecture
 
-- **Book server follow-ups.** The book server (decisions
-  [0003](docs/design/decisions/0003-book-server.md) and
-  [0004](docs/design/decisions/0004-users-and-access.md)) is on `main` since
-  0.2.0a308. Still to come: long operations (imports, quote fetches, projections)
+- **Book server follow-ups.** Long operations (imports, quote fetches, projections)
   as jobs with progress and cancellation once a client is another process (a
   projection over a host shows its result without progress), and Expense Explorer
   reusing its own result for a cell's detail over a host rather than asking the host

@@ -658,7 +658,7 @@ class PlanView(BaseView):
         self.reimbursable_note.set_visible(bool(reimbursable))
         unmatched = activity.unresolved_actual_count
         self.review_actuals_button.set_sensitive(unmatched > 0)
-        # Decision 0005: how many actuals in the range still need matching.
+        # How many actuals in the range still need matching.
         self.review_actuals_button.set_label(
             f"Resolve actuals ({unmatched})…" if unmatched else "Resolve actuals…"
         )

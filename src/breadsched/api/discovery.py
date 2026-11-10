@@ -2,10 +2,10 @@
 
 A server started for a writable book (``breadsched serve`` or
 ``breadsched web``) publishes a *server record*: the book, the server's address, the
-id requests name the book by there (a host may serve several, decision 0004), and
+id requests name the book by there (a host may serve several), and
 the process that holds the book's writer lock. It carries no token: a program of the
 same computer account proves who it is with that account's device token
-(``api.users``, decision 0004). Another interface opening
+(``api.users``). Another interface opening
 the same book reads the record and connects to that server instead of failing on
 the lock.
 
@@ -69,14 +69,14 @@ class ServerRecord:
     host: str
     #: The token of the writer lock the server holds.
     lock: str
-    #: The id a request names the book by, on a host serving several (decision 0004).
+    #: The id a request names the book by, on a host serving several.
     book_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
 class HostRecord:
     """The computer account's running book host, which other books may join
-    (decision 0004: one host per computer account)."""
+    (one host per computer account)."""
 
     url: str
     pid: int

@@ -53,7 +53,7 @@ def open_book_api(
     if record is not None:
         # The same computer account: its device token says who it is, and lets the
         # server read files named here, as imports by path and the GnuCash write-back
-        # need (#358, decision 0004).
+        # need (#358).
         yield HttpBookClient(
             record.url, device_token(), host_files=True, book_id=record.book_id or None
         )

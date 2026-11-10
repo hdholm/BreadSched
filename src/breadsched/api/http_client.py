@@ -266,7 +266,7 @@ class HttpBookClient:
             raise ValueError("certificates are only used with an https:// server")
         if parsed.scheme == "http" and parsed.hostname not in LOOPBACK:
             # The token would cross the network in the clear; another computer is
-            # reached only through the TLS proxy (decision 0003).
+            # reached only through the TLS proxy.
             raise ValueError("a book server on another computer is reached over https://")
         self.host = parsed.hostname
         self.port = parsed.port or (443 if parsed.scheme == "https" else 80)
@@ -276,9 +276,9 @@ class HttpBookClient:
         #: sends a file's bytes instead (#358).
         self.local_token = local_token
         #: The token itself may name files on the server's computer: the computer
-        #: account's own device token (decision 0004).
+        #: account's own device token.
         self.host_files = host_files or bool(local_token)
-        #: The book this client uses on a host that holds several (decision 0004);
+        #: The book this client uses on a host that holds several;
         #: None for the only one it holds.
         self.chosen_book = book_id
         #: Files already sent, by (path, modification time, size): the server's copy.
@@ -371,7 +371,7 @@ class HttpBookClient:
     def host_open(self, path: str) -> str:
         """Ask the computer account's host to serve the book at ``path`` (on its
         computer); the id requests name it by. Only the account's own commands there
-        may (decision 0004)."""
+        may."""
         return str(self._call("POST", "/host/books", body={"path": path})["id"])
 
     def host_close(self, book_id: str) -> None:

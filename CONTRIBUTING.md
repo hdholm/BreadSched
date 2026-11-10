@@ -2,10 +2,9 @@
 
 BreadSched manages financial records and projections, so changes should favor
 correctness, explainability, and preservation of user data over convenience.
-These expectations apply to every contribution, including patches generated with
-an AI assistant.
+These expectations apply to every contribution.
 
-## Developer Certificate of Origin and assisted work
+## Developer Certificate of Origin
 
 Every commit contributed through a pull request must carry a `Signed-off-by:`
 trailer certifying the [Developer Certificate of Origin, version 1.1](https://developercertificate.org/).
@@ -15,26 +14,12 @@ after applying the repository's `.mailmap`. Create it with `git commit --signoff
 history. A sign-off is a contributor certification, not a substitute for reviewing
 the patch.
 
-The human contributor remains the commit author and is responsible for checking
-financial behavior, tests, licensing, privacy, and source provenance even when an AI
-tool helped. Any commit materially assisted by an AI coding, writing, or review tool
-must also identify the tool in an `Assisted-by:` trailer, for example:
-
-```text
-Signed-off-by: A. Contributor <contributor@example.com>
-Assisted-by: OpenAI Codex <codex@openai.com>
-```
-
-Keep these two lines adjacent in the final trailer block: a blank line between
-them can cause `git interpret-trailers --parse` to omit one. Verify both parsed
-trailers and the pushed commit message before describing a PR as validated.
-
-Use `Assisted-by:`, not `Co-authored-by:`, for an AI tool: the tool does not make the
-DCO certification or take authorship responsibility. Name each materially used tool;
-do not add an `Assisted-by:` trailer for ordinary editor completion or formatting.
-Maintainers may ask how generated work was validated, but contributors must not put
-prompts, user financial data, credentials, or other sensitive material in commit
-messages or pull requests.
+You are the author of what you submit and are responsible for its financial
+behavior, tests, licensing, privacy, and source provenance, whatever tools helped
+write it. If a tool wrote a material part of a commit, name it in an `Assisted-by:`
+trailer directly below the sign-off (not `Co-authored-by:`; a tool makes no
+certification). [`AGENTS.md`](AGENTS.md) has the instructions for coding agents.
+Never put user financial data or credentials in a commit message or pull request.
 
 ## Development principles
 
@@ -57,8 +42,8 @@ messages or pull requests.
   Scenario schedule changes require that same assertion against the saved scenario,
   including its override list.
 - Keep `gen/` (domain, storage, engines, services) standard-library only. A
-  third-party package may be used in an adapter or presentation only after a
-  decision record under `docs/design/decisions/` gives its reason, licence,
+  third-party package may be used in an adapter or presentation only once
+  [the design](docs/design/architecture.md#dependencies) records its reason, licence,
   packaging (wheel, Flatpak, Windows, RPM, DEB), and behavior when it is missing;
   make network-facing packages optional extras and add each package to the
   architecture test's allowlist for that layer only.
@@ -76,10 +61,8 @@ messages or pull requests.
   remove what it delivered (narrowing a bullet to what remains) rather than
   appending status to it, and record the delivered outcome in
   [`CHANGELOG.md`](CHANGELOG.md).
-- Record each changelog entry under a `## VERSION - YYYY-MM-DD` heading for the
-  application version that ships it, newest first. A pull request that advances
-  the version adds that heading; one that does not adds its entry to the next
-  version's section, creating the heading with the version it will ship in.
+- Record each changelog entry under `## Unreleased`, newest first. Preparing a
+  release renames that heading to the release's version.
 - Keep documentation roles distinct:
   - `README.md` is the product/developer entry point, not a place for feature
     walkthroughs (those belong in the User Guide);
@@ -92,11 +75,9 @@ messages or pull requests.
     architecture, ownership, invariants, and rationale, not development history or
     future work; put a topic in the part that owns it;
   - `ROADMAP.md` is the only future-work list; and
-  - `CHANGELOG.md` records completed changes concisely. Recent versions keep their
-    full entries; older versions are condensed to one line each that names their
-    outcomes and links `docs/releases/`, keeping schema, compatibility, security,
-    and financial-correction notes. Condense further when the recent section grows
-    past about twenty versions.
+  - `CHANGELOG.md` records what each release changed for its users, concisely,
+    with schema, compatibility, security, and financial-correction notes. It starts
+    at the first beta.
   Every pull request reviews these documents and records a disposition for each,
   as described in [Document review](#document-review).
 
@@ -111,10 +92,10 @@ as a new executable example, packaged file, or cross-document link. Never write 
 test that asserts preferred wording, and never edit a test file only to satisfy a
 rule.
 
-Build the complete tests even when the environment at hand cannot run them. A
-sandbox without internet access, a CI runner without a display or a desktop
-library, or a host without Perl is a reason to gate a test, never to leave it
-unwritten, weaken its assertions, or replace it with only a mocked double. Keep
+Write the complete tests even when the machine at hand cannot run them. No
+internet access, no display or desktop library, or no Perl is a reason to gate a
+test, never to leave it unwritten, weaken its assertions, or replace it with only a
+mocked double. Keep
 the fast, deterministic tests that fake the outside world, and also write the tests
 that exercise the real thing: live services, the real external tool, the installed
 package. Gate each with a marker or a skip whose reason names the missing
@@ -200,9 +181,8 @@ Before opening or updating a pull request:
 1. Start from the 'main' branch on GitHub.
 2. Make one coherent change at a time. Review every major document and record its
    disposition in the pull-request description, as described in
-   [Document review](#document-review). Advance the application version when
-   a commit changes code or runtime behavior; documentation-only commits do not
-   require a version change.
+   [Document review](#document-review). The application version changes only when
+   a release is prepared (see [Releases](#releases)).
 3. Add or update focused tests for changed behavior (see
    [Tests are part of the change](#tests-are-part-of-the-change)).
 4. Run `git diff --check` while developing and `git show --check` on the final
@@ -217,9 +197,8 @@ Before opening or updating a pull request:
    PyGObject APIs without type stubs cannot be fully checked by mypy.
 8. Preserve a single coherent commit where practical and verify its parent and
    tree before publication.
-9. Verify every commit has the required DCO sign-off and add `Assisted-by:`
-   whenever an AI tool materially contributed. Parse both adjacent trailers with
-   `git interpret-trailers --parse` and check the remote commit message.
+9. Verify every commit has the required DCO sign-off
+   (`git interpret-trailers --parse`).
 10. Push a named feature branch and open a pull request against `main` or the exact
    preceding branch in a documented stack. Record scope, tests, version, related
    issues, and dependency/merge order in the description.
@@ -245,9 +224,8 @@ A disposition is one of:
 A document must be changed when the pull request makes it inaccurate or
 incomplete: new or changed user behavior needs its rules in the User Guide overview
 and its steps in each affected interface part; architecture, invariants, and
-decisions need `DESIGN.md`; delivered roadmap outcomes leave `ROADMAP.md`; every
-code or runtime change needs a `CHANGELOG.md` entry (and a version and release notes
-as described below); a changed workflow or instruction needs `CONTRIBUTING.md` or
+their reasons need `DESIGN.md`; delivered roadmap outcomes leave `ROADMAP.md`; every
+change a user would notice needs a `CHANGELOG.md` entry; a changed workflow or instruction needs `CONTRIBUTING.md` or
 `AGENTS.md`. Otherwise "reviewed; no change needed" is the right answer: do not add
 status sentences, restate implementation history, or make content-free edits just
 to touch a document. A no-change disposition is still a review, not a blanket
@@ -258,27 +236,33 @@ Examples:
 - **Runtime feature** (for example a new Dashboard card): User Guide overview and
   the desktop and web parts updated; the command-line part "reviewed; no change
   needed — no command-line behavior changed"; `DESIGN.md` updated if it adds or
-  changes architecture; `CHANGELOG.md`, version, and release notes updated;
+  changes architecture; `CHANGELOG.md` updated;
   `ROADMAP.md` updated if it delivers a listed outcome; `README.md` "reviewed; no
   change needed" unless it changes what the README promises.
 - **Internal refactor** with no behavior change: `DESIGN.md` updated if module
   ownership or boundaries moved; the User Guide and its parts "reviewed; no change
-  needed — no user-visible behavior changed"; `CHANGELOG.md` and the version
-  updated because code changed.
+  needed — no user-visible behavior changed"; `CHANGELOG.md` "reviewed; no change
+  needed" for the same reason.
 - **CI or packaging change**: `CONTRIBUTING.md` or `DESIGN.md` updated where they
   describe the changed workflow; User Guide install steps updated only if what
   users download or run changed.
 - **Documentation-only correction**: the corrected document updated; the others
-  "reviewed; no change needed" unless they repeat the corrected claim; no version
-  change; existing documentation checks run.
+  "reviewed; no change needed" unless they repeat the corrected claim; existing
+  documentation checks run.
 
 Report any verification gap (a platform or runtime not run locally) in the
 pull-request description.
 
 ## Releases
 
-Releases are opt-in, not automatic for every merge or alpha increment. To select a
-tested application version for release, add `docs/releases/vVERSION.md` using the
+Versions are calendar versions, `YYYY.M.D.PATCH`: the day the release was prepared,
+without leading zeros (as PEP 440 writes them), and a patch number that counts fixes
+to that release. `breadsched.RELEASE_STAGE` says whether it is a `beta` or `stable`
+release; a beta is published as a GitHub pre-release.
+
+Releases are opt-in, not automatic for every merge. To prepare one, set
+`__version__` in `src/breadsched/__init__.py`, rename the changelog's `## Unreleased`
+heading to that version, and add `docs/releases/vVERSION.md` using the
 exact application version and the required compatibility, upgrade/rollback, and
 verified-artifact headings enforced by `scripts/check_release_notes.py`. A merge to
 `main` whose version has no notes, or whose version is already tagged at an earlier
@@ -298,8 +282,7 @@ uninstalled on Windows from the same commit by the workflow's
 must resolve to the same commit; an existing release is never overwritten. A
 later `main` commit that keeps an already-tagged version, such as a
 documentation-only or CI change, is reported as not selected rather than
-failing the release run; advance the application version to select a new
-release.
+failing the release run; set a new version to select a new release.
 
 ## Static and style hygiene
 

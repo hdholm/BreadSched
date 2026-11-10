@@ -466,8 +466,8 @@ def test_charts_print_beside_their_tables(db, book):
 
 
 def test_an_estimates_earlier_periods_lapse_and_a_bills_carry_in(db, book):
-    """What an estimate's period leaves, over or under, lapses the day after it ends
-    (decision 0005); a level counts every earlier fill, draw, and lapse."""
+    """What an estimate's period leaves, over or under, lapses the day after it
+    ends; a level counts every earlier fill, draw, and lapse."""
     _pay(db, book)
     groceries = _schedule(
         db,

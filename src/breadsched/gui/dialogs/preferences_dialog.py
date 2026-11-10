@@ -18,7 +18,7 @@ over toolbars:
 * **Sharing** – let other BreadSched commands use the open book through this window
   (``general.share_book``, #359).
 * **Users** – **Users and devices…**: your password, the other people who may use
-  this computer's books, and your devices (decision 0004). Used alone,
+  this computer's books, and your devices. Used alone,
   nothing here needs changing.
 
 **Save** writes them all; **Cancel** (or Escape) changes nothing.
@@ -218,7 +218,7 @@ class PreferencesDialog(BoundedWindow):
         )
 
     def _on_users(self, _button) -> UsersDialog:
-        # With a book open, the window also says who may use it (decision 0004).
+        # With a book open, the window also says who may use it.
         db = getattr(self.application, "db", None)
         book_id = book_server(db).book_id() if db is not None else None
         path = getattr(self.application, "book_path", "") or ""

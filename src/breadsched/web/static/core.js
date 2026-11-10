@@ -79,7 +79,7 @@ const apiToken = params.get("token") || "";
 // Only the page the server opens on its own computer is given the local token,
 // which lets it name files there; a page reached through a proxy sends files instead.
 const localToken = params.get("local") || "";
-// The book this page uses, on a host that serves several (decision 0004). Unlike the
+// The book this page uses, on a host that serves several. Unlike the
 // tokens it is no secret, so it stays in the address and a reload keeps it.
 let bookId = params.get("book") || "";
 const keepBookInAddress = () => history.replaceState(null, "",
@@ -123,7 +123,7 @@ async function post(path, body) {
   return payload;
 }
 
-// Who is signed in (decision 0004). A page opened by BreadSched on its own computer
+// Who is signed in. A page opened by BreadSched on its own computer
 // carries a token; any other signs in once and keeps a session cookie, which script
 // cannot read. A temporary password is changed before anything else.
 async function signedIn() {
@@ -162,7 +162,7 @@ async function signedIn() {
 }
 
 // Signed in, and with a book: the only one this person may use here, the one the
-// address names, or the one they choose (decision 0004). Answers that book, and how
+// address names, or the one they choose. Answers that book, and how
 // many there were to choose from.
 async function ready() {
   await signedIn();

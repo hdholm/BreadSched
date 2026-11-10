@@ -62,7 +62,7 @@ class UndoPreview:
 @contextmanager
 def authored_by(name: str | None) -> Iterator[None]:
     """Name ``name`` as who makes the changes inside the block (in this thread): a
-    book server serving someone (decision 0004). None, in process, names no one."""
+    book server serving someone. None, in process, names no one."""
     token = _AUTHOR.set(name)
     try:
         yield
@@ -103,7 +103,7 @@ class DbTxn:
         #: (table, handle, before, after) with ``None`` meaning absent.
         self.records: list[tuple[str, str, dict | None, dict | None]] = []
         self.timestamp: float = 0.0
-        #: Who made the change, when a book server made it for someone (decision 0004).
+        #: Who made the change, when a book server made it for someone.
         self.author: str | None = _AUTHOR.get()
 
     def add(self, table: str, handle: str, before: dict | None, after: dict | None) -> None:

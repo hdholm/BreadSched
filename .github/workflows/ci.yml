@@ -434,7 +434,7 @@ jobs:
         run: |
           set -euo pipefail
           outside=$(mktemp -d "$HOME/outside-documents.XXXXXX")
-          python3 - "$outside/old.breadsched" tests/fixtures/native/schema-6.sql <<'PY'
+          python3 - "$outside/old.breadsched" tests/fixtures/native/schema-13.sql <<'PY'
           import sqlite3
           import sys
 

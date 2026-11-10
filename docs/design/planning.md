@@ -83,7 +83,7 @@ an actual to an FSA claim validate stable identities before owning their respect
 atomic transaction, schedule, or claim write. Expected stale-state failures use
 stable codes and field paths; candidate ranking remains read-only engine logic.
 
-`planning.match_candidates` ranks by decision 0005's rules (phase 2), recorded on each
+`planning.match_candidates` ranks by the [matching rules](matching.md#candidates-ranked-by-category-first), recorded on each
 `MatchCandidate`: `same_category` (an income or expense account the occurrence plans,
 or the same planning purpose on the same account), then estimates before commitments,
 `in_period` (an estimate's period, `planning.period_end`, holds the date; a
@@ -102,7 +102,7 @@ category with `presentation.review_groups` (each actual under its first category
 groups in name order with *No category* last, each oldest first); `/api/review` and
 `breadsched review --json` carry each actual's `group`.
 
-`services.plan_matching` owns the Match windows' writes (phase 3): `allocate` sets,
+`services.plan_matching` owns the Match windows' writes: `allocate` sets,
 changes, or (amount zero) removes what one split counts toward one occurrence, by
 default all that is left of the split; `mark_split_not_planned` sets
 `Split.not_planned` and clears the split's allocations; `close_occurrence` and
@@ -141,7 +141,7 @@ When an actual resolves a planned occurrence, BreadSched preserves the original
 occurrence identity, planned date, and expected value so later schedule changes do
 not rewrite historical variance.
 
-Since schema 14 that link is kept by split (decision 0005, phase 1):
+That link is kept by split:
 `Split.plan_allocations` names each occurrence a split counts toward, for an amount,
 with the planned date and expected amount at matching. `engine.plan_allocations`
 reads them back by occurrence (`occurrence_actuals`) and writes the whole-transaction
@@ -256,14 +256,14 @@ Due and missed occurrences are decided through `gen.services.due_review`. It lis
 review date, plus each schedule's occurrences within its `advance_days` (*enter in
 advance*, GnuCash's `advanceCreateDays`/`adv_creation`) or `remind_days` (*remind in
 advance*, `advanceRemindDays`/`adv_notify`), each tagged with a `ReviewStage`
-(`overdue`, `due`, `advance`, `reminder`) (#352). It excludes plan-only estimates,
+(`overdue`, `due`, `advance`, `reminder`). It excludes plan-only estimates,
 disabled schedules, and unusable imported definitions. `post_due` posts an automatic
 schedule's occurrences up to its `advance_days` ahead, never a reminder; bulk
 choices in the `due-review` command likewise leave reminders. The schedule service
 refuses either day count outside 0–999. `resolve_next` enters or skips the one
 occurrence `schedule.next_pending` returns (the first after `last_posted` not
 already skipped or posted, however far ahead), refusing a stale date, a deferral,
-or a schedule with nothing left, through the same write as `resolve_due` (#351). A decision names only a schedule handle, a date, and post, skip, or
+or a schedule with nothing left, through the same write as `resolve_due`. A decision names only a schedule handle, a date, and post, skip, or
 defer. `resolve_due` recomputes the currently due set immediately before writing
 and refuses a whole batch that names a date no longer due, a missing schedule, or
 the same date twice, so a stale GTK window, browser page, or script cannot post an
@@ -272,14 +272,13 @@ commit in one database transaction and one undo step; defer writes nothing. GTK'
 due dialog, the web review panel, and the `due-review` command are adapters over this
 service; the older unreviewed post-all helpers remain for callers that explicitly
 post automatic schedules. `DueResolution.transactions` names what was posted, and
-GTK opens it in `dialogs/posted_dialog.PostedTransactionsDialog` (#328): every split
+GTK opens it in `dialogs/posted_dialog.PostedTransactionsDialog`: every split
 on its own line under its account's register heading, with **Edit…** (the full
 transaction editor) and **Delete** (`delete_transaction`), each an ordinary undoable
 change after which the list rereads the book. The browser review still reports a
 count; showing what it posted is on the roadmap.
 
-A schedule stores each leg's value in the transaction currency, never a quantity
-(#417). Every posting path builds the ledger entry with
+A schedule stores each leg's value in the transaction currency, never a quantity. Every posting path builds the ledger entry with
 `schedule.entered_transaction`, and `schedule.price_legs` gives each leg whose
 account holds another commodity its quantity. That quantity is the value over the
 latest direct quote on or before the date (else the inverse of one), rounded to the
@@ -666,7 +665,7 @@ the whole amount fills on the cycle's first day. The occurrence's planned draw i
 its planned date, and the actual draw is the matched transaction's legs in that
 account on its posting date (`planning.scheduled_events`). Every other posting to a
 jar account in the jar's currency, from the account's first cycle start, is an
-actual draw too (`_unmatched_draws`, #312), so a bundle's actual equals the Plan's
+actual draw too (`_unmatched_draws`), so a bundle's actual equals the Plan's
 category actual for that account: it joins the account's only jar, or its only
 estimate, and otherwise a `JarKind.UNMATCHED` "Unmatched spending" jar with no fills.
 A matched transaction's leg is drawn once, by its occurrence. Occurrences up to
@@ -681,7 +680,7 @@ occurrence's money stays in the jar until matched or skipped. An estimate's peri
 runs from its date to the day before its next occurrence (or through its end date
 when it is the last), and `_lapses` adds a `lapsed` event the day after it ends:
 the jar's level then less the fills already made for later occurrences, so a
-leftover or an overspend never carries forward (decision 0005). Periods ending
+leftover or an overspend never carries forward. Periods ending
 after today lapse what they would hold with no more spending, as later levels
 assume; `JarPeriod.lapsed` totals them. A goal's level is its earmark. Jars bundle by account and currency, and totals never add
 currencies together. `report_layout.budget_jars_layout` prints the report; the GTK

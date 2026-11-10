@@ -361,7 +361,7 @@ class TestItServes:
             "ok": True,
             "application_version": __version__,
             "native_schema_version": 14,
-            "supported_schema_versions": {"minimum": 6, "maximum": 14},
+            "supported_schema_versions": {"minimum": 13, "maximum": 14},
             "sqlite": [],
             "issues": [],
         }
@@ -958,7 +958,7 @@ class TestItServes:
         status, payload = client.get("/api/scheduled")
         assert status == 200
         assert set(payload) == {"definitions", "accounts", "upcoming"}
-        # Decision 0005: each schedule names the occurrence its Match window opens on.
+        # Each schedule names the occurrence its Match window opens on.
         db = client.database
         for item in payload["definitions"]:
             schedule = db.get_scheduled(item["handle"])
@@ -4561,7 +4561,7 @@ class TestReviewApi:
         assert Money(candidate["expected_amount"]) == Money("1800.00")
         assert Money(candidate["amount_variance"]) == Money("25.00")
         assert candidate["date_variance_days"] == 1
-        # Decision 0005: what each actual was for, where the money came from, and
+        # What each actual was for, where the money came from, and
         # how the candidate ranked.
         [row] = payload["actuals"]
         assert (row["categories"], row["funding"], row["notes"]) == (

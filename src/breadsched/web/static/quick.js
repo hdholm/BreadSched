@@ -41,7 +41,7 @@ function accountSelect(name, label, groups, chosen) {
 
 async function showQuick() {
   const view = document.getElementById("view");
-  // The account tree without values: all an entry-only user may see (decision 0004).
+  // The account tree without values: all an entry-only user may see.
   const outline = await get("/api/v1/account-outline");
   const all = outline.lines.map((line) => ({
     handle: line.account.handle, full_name: line.full_name, class: line.class,

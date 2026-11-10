@@ -51,8 +51,7 @@ currency (so Projection reports it as unconverted), and is left out of totals.
 `valuation.quote_evidence` produces the one evidence line (security quote date and
 source, then the exchange quote's date, source, and inverse path, or the missing
 rate) shared by the GTK and web Accounts views, CLI `accounts`, Dashboard group
-members, and a security register's footer (`presentation.register_share_summary`,
-#323), so no surface implies a conversion that was not performed. Foreign-exchange graphs,
+members, and a security register's footer (`presentation.register_share_summary`), so no surface implies a conversion that was not performed. Foreign-exchange graphs,
 automatic quote retrieval, and projected market prices are separate concerns and must not be approximated by treating monetary amounts as
 prices or quantities.
 
@@ -155,6 +154,17 @@ amounts; quote selection still uses the latest applicable reporting-currency pri
 
 ### Online quotes
 
+No Python library matches Finance::Quote's breadth, and GnuCash users usually have
+it installed, so BreadSched fetches three sources itself with the standard library
+(`tsp`, `currency` from the ECB, and `alphavantage`) and passes any other source
+name to an installed Finance::Quote, run as `perl` with a small JSON script. The
+Flatpak has no permission to run host commands, so there only the three native
+sources work. A source that changes format breaks only its own commodities, with a
+reason shown for each. Unit tests fake every download and the Perl run; the live
+tests (`tests/test_online_quotes_live.py`, marked `network`) run weekly in the *Live
+quote sources* workflow, so a provider's change is caught without blocking pull
+requests.
+
 `gen/services/quotes.update_quotes` asks the fetcher passed to it for every
 commodity whose `quote_source` is set, except the reporting currency. It stores each
 answer as a `CommodityPrice` whose `source` is `Online: <origin>` (`tsp.gov`, `ECB`,
@@ -164,7 +174,7 @@ currency, date, and source is updated in place. A quote in a currency the book
 lacks, or with no positive price, is reported and not stored. ECB rates are crossed
 through the euro into the reporting currency and rounded to 10 decimal places. The
 network code lives in `plugins/quotes` (see
-[decision 0002](decisions/0002-dependencies-and-online-quotes.md)). The GTK
+[Dependencies](architecture.md#dependencies)). The GTK
 **Online Quotes** dialog fetches in a `BackgroundJob` worker that never touches the
 book and stores the answers on the main thread through `quotes.Prefetched`; the web
 adapter (`web/quote_resource.py`) and the CLI fetch and store in one call. The Alpha
@@ -177,7 +187,7 @@ runs Perl once to print Finance::Quote's version and `Finance::Quote->new->sourc
 `quote_source_choices` puts BreadSched's own `NATIVE_SOURCES` first, and
 `quote_source_warning` explains a source that will not fetch here (not a known
 method, or Finance::Quote unavailable). A source is stored even then: the warning is
-advice, since Finance::Quote may be installed later (#317). The GTK dialog asks in a
+advice, since Finance::Quote may be installed later. The GTK dialog asks in a
 `BackgroundJob` (it used to run Perl on the main thread when opening), offers the
 choices from a popover beside each source, and keeps its status in the footer
 outside the scrolled form; `/api/quotes` returns `sources` for a `<datalist>` and
@@ -269,9 +279,9 @@ card text are capped and wrap, because an ellipsized GTK label still requests it
 natural width.
 
 Dashboard group membership is stored once, as each account's `Account.group`
-(#337, schema 12). The book's `dashboard` metadata (`DashboardConfig`) keeps only
+(schema 12). The book's `dashboard` metadata (`DashboardConfig`) keeps only
 the groups' names and kinds, in order, the horizons, and which of
-`dashboard.SECTIONS` show (#381: `sections`, read with `DashboardConfig.shows`; a
+`dashboard.SECTIONS` show (`sections`, read with `DashboardConfig.shows`; a
 section not stored takes `DEFAULT_SECTIONS`, every one but pending reimbursables);
 `DashboardConfig.load`
 fills each `GroupConfig.accounts` from the accounts (a group named only on accounts
@@ -281,7 +291,7 @@ change. Both editors save through `services.save_dashboard_config`, which refuse
 blank or repeated group name, an unknown kind or account, and an account in two
 groups, leaving the book unchanged; it also refuses a section name it does not
 know. `resolve_groups` therefore merges nothing: the configuration it is given is
-complete. With the book server's users (decision 0004) this is the book's own
+complete. With the book server's users this is the book's own
 arrangement, where each person starts: a person's saved arrangement is kept with them,
 members included (`DashboardConfig.serialize_personal`, and `load(db, stored)`), and
 the server never changes the book's. The book holds what the household decides (horizons, sections, groups);
@@ -399,10 +409,9 @@ The service checks merchant and detail totals against the Plan cell before retur
 Every explanation comes from the Plan's own activity buckets
 (`plan_detail.category_period_detail` over `plan.report.activity.periods[i]`),
 with the accounts, the matched actuals (`planning.linked_actuals`), and the
-reporting converter read once per query and shared. Before #310 each category's
-actual-to-date in the partial period rebuilt the whole activity report and each
-matched actual rescanned the ledger, about a hundred ledger decodes per query on
-a household book; a core test now bounds the decodes and a performance test bounds
+reporting converter read once per query and shared. Without that sharing each category's
+actual-to-date in the partial period would rebuild the whole activity report and
+each matched actual rescan the ledger; a core test bounds the decodes and a performance test bounds
 the time. `expense_drilldown(db, explorer, account, period)` explains one more
 cell of an explorer already calculated, without a new Plan, so changing the
 selection costs one category. `DbSQLite.iter_plan_linked_transactions` filters
@@ -413,7 +422,7 @@ GTK's Explorer dialog and the web Plan explorer use the same read-only service.
 The GTK dialog calculates in a `BackgroundJob` on its own read-only connection
 (file books), showing a spinner with **Cancel** (which closes it), and lays its
 choices out in a two-column grid with a minimum width each and **Print…**/**Close**
-in a bottom row, so no choice is squeezed to a few characters (#311).
+in a bottom row, so no choice is squeezed to a few characters.
 The web API exposes its typed values and one selected category cell; presentation
 code draws comparison and trend charts without calculating financial totals.
 Web printing includes the applied explorer state with the Plan page. GTK prints
@@ -513,8 +522,7 @@ dialog's Change buttons, `html_report.net_worth_change_report`, and
 `gen.engine.transaction_query` is the one search behind the desktop's **Find
 Transactions** window (`dialogs.find_dialog`), the browser's Find view
 (`GET /api/find`, `web/find_resource.py`), and `breadsched find`
-(`cli/find_commands.py`). Issue #382 asked for it to be the basis of a report
-generator.
+(`cli/find_commands.py`). It is the basis of the Transaction Detail report.
 
 - **Rows.** `run_query` returns `QueryRow`s, and each row is a split.
   - Transaction-level criteria choose transactions: text (via
@@ -529,7 +537,7 @@ generator.
   each tag), description, or notes, carry signed totals keyed by currency mnemonic.
   `TransactionQuery.subtotals` nests them in the order given (`QueryGroup.children`,
   `depth`; `group_by` is the one-level form, and `levels` reads either), each group
-  totalling its own rows (#408). The grand total counts each split once. Amounts are
+  totalling its own rows. The grand total counts each split once. Amounts are
   never converted between currencies.
 - **Report.** `report_layout.transaction_detail_layout` prints a result with its
   nested headings and subtotals; the desktop's **Reports → Transaction Detail…**

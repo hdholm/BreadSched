@@ -121,7 +121,7 @@ class DashboardConfig:
 
     Stored in the book rather than in user settings, because it names accounts:
     carrying it between books would silently point at the wrong ones. A person's own
-    arrangement of one book (decision 0004) is kept apart, with its members, by
+    arrangement of one book is kept apart, with its members, by
     :meth:`serialize_personal`, and read back by :meth:`load` given ``stored``.
     """
 

@@ -174,7 +174,7 @@ def cmd_review(args: argparse.Namespace) -> int:
     from ..presentation import REVIEW_ACTION_HELP, review_groups
 
     with book_api(args, "r") as book:
-        # Grouped by category (decision 0005), each group oldest first.
+        # Grouped by category, each group oldest first.
         grouped = review_groups(book.review_queue())
         group_of = {item.handle: name for name, members in grouped for item in members}
         pending = [item for _name, members in grouped for item in members]
@@ -666,7 +666,7 @@ def cmd_plan_unresolved(args: argparse.Namespace) -> int:
 
 def cmd_plan_matches(args: argparse.Namespace) -> int:
     """Show the open occurrences one actual could count toward, best first, with what
-    remains of each (decision 0005)."""
+    remains of each."""
     with book_api(args, "r") as book:
         transaction = book.find_transaction(args.transaction)
         candidates = book.match_candidates(transaction.handle, args.window_days)
@@ -730,7 +730,7 @@ def _matching_lines(view) -> str:
 
 
 def cmd_plan_allocate(args: argparse.Namespace) -> int:
-    """Count part or all of one split toward a planned occurrence (decision 0005)."""
+    """Count part or all of one split toward a planned occurrence."""
     from ..gen.services.plan_matching import AllocateSplit
 
     reference, _, chosen = args.transaction.partition(":")
@@ -757,7 +757,7 @@ def cmd_plan_allocate(args: argparse.Namespace) -> int:
 
 
 def cmd_plan_close(args: argparse.Namespace) -> int:
-    """Close a planned occurrence early, or reopen it (decision 0005)."""
+    """Close a planned occurrence early, or reopen it."""
     with book_api(args, "w") as book:
         if args.reopen:
             view = book.reopen_occurrence(args.occurrence)

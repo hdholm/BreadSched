@@ -1,4 +1,4 @@
-"""The people a book host serves, and how they prove who they are (decision 0004).
+"""The people a book host serves, and how they prove who they are.
 
 A *book host* (every book server one computer account runs) keeps
 one user directory, ``users.sqlite`` in the account's data folder, never in a book:
@@ -15,11 +15,11 @@ a book file may be copied or synced and must not carry anyone's credentials.
   to a random token), with when they were made and last used. A *device* token lasts
   until it is revoked; a *session* from signing in ends after
   :data:`SESSION_DAYS` without use, and when its user's password changes.
-- **Personal preferences** (decision 0004, phase 4) are kept per user and book:
+- **Personal preferences** are kept per user and book:
   each person's own view of shared data (the Plan's period and range, say), never
   in the book. :func:`acting_for` names the user a request is served for; in process
   it is the computer account.
-- **Two-step sign-in** (optional, per user; decision 0004, phase 5) asks, after the
+- **Two-step sign-in** (optional, per user) asks, after the
   password, for a code from an authenticator app (RFC 6238: SHA-1, six digits, 30
   seconds, one step either side, never the same step twice) or one of ten single-use
   recovery codes, kept only as digests.
@@ -848,7 +848,7 @@ def acting_for(directory: UserDirectory | None, user: User | None) -> Iterator[N
     preferences ``directory`` keeps; None for the computer account, in process."""
     token = _ACTING.set((directory, user) if directory is not None and user else None)
     try:
-        # The changes they make are theirs (decision 0004: undo names each step's user).
+        # The changes they make are theirs (undo names each step's user).
         with authored_by(user.display_name or user.name if user else None):
             yield
     finally:

@@ -301,7 +301,7 @@ header a.action { text-decoration: none; }
 .quick-recent li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0;
   border-bottom: 1px solid var(--line); }
 
-/* Signing in and choosing a password (decision 0004). */
+/* Signing in and choosing a password. */
 .account-form { display: grid; gap: 0.75rem; max-width: 22rem; margin: 2rem auto; }
 .account-form label { display: grid; gap: 0.25rem; }
 .book-choice { max-width: 26rem; margin: 2rem auto; }

@@ -240,10 +240,10 @@ def _spin(done, seconds: float = 10.0) -> bool:
 
 
 def _old_book(directory: Path) -> Path:
-    """A schema 6 book, which opening must upgrade."""
+    """A book of the oldest supported schema, which opening must upgrade."""
     import sqlite3
 
-    fixture = Path(__file__).parent / "fixtures" / "native" / "schema-6.sql"
+    fixture = Path(__file__).parent / "fixtures" / "native" / "schema-13.sql"
     book = directory / "old.breadsched"
     with sqlite3.connect(book) as raw:
         raw.executescript(fixture.read_text(encoding="utf-8"))
@@ -298,7 +298,7 @@ class TestDialogsStayInFront:
 
         assert seen["mapped"] is True and seen["page"] == "busy"
         assert seen["text"].startswith("Upgrading old.breadsched from an earlier")
-        assert "(schema 6)" in seen["text"]
+        assert "(schema 13)" in seen["text"]
         assert window.stack.get_visible_child_name() != "busy"
         [(parent_mapped, message)] = alerts
         assert parent_mapped and "upgraded to the current format" in message
@@ -3905,7 +3905,7 @@ class TestScheduleEntry:
         assert selection is not None
         assert selection.get_selected_item() is not None
         assert view.edit_button.get_sensitive() is True
-        # Decision 0005: Match… opens the selected schedule's current occurrence.
+        # Match… opens the selected schedule's current occurrence.
         from breadsched.gui.dialogs.match_dialog import OccurrenceMatchWindow
 
         assert view.match_button.get_sensitive() is True
@@ -4700,7 +4700,7 @@ class TestDerivedPlanView:
         view = window._views["plan"]
         assert view.review_actuals_button.get_sensitive() is True
         assert "actuals to review" in view.summary.get_text()
-        # Decision 0005: the button says how many actuals still need matching.
+        # The button says how many actuals still need matching.
         assert view.review_actuals_button.get_label().startswith("Resolve actuals (")
 
         view.review_actuals_button.emit("clicked")
@@ -4724,7 +4724,7 @@ class TestDerivedPlanView:
         assert len(quarterly.activity.periods) < len(monthly.activity.periods)
 
     def test_applied_controls_are_kept_as_this_persons_own(self, app, window, populated_book):
-        """Decision 0004: the Plan view is the computer account's own, for this book;
+        """The Plan view is the computer account's own, for this book;
         the book itself keeps none."""
         from breadsched.api.users import UserDirectory
 
@@ -5104,7 +5104,7 @@ class TestDerivedPlanView:
             assert any(
                 db.full_name(expense) in name and "Market estimate" in name for name in names
             )
-            # Decision 0005: each scheduled jar opens its current occurrence's window.
+            # Each scheduled jar opens its current occurrence's window.
             assert dialog.match_buttons
             from breadsched.gui.dialogs.match_dialog import OccurrenceMatchWindow
 
@@ -6330,7 +6330,7 @@ class TestResolutionView:
         assert all(txn.handle != actual_handle for txn in book_server(app.db).review_queue())
 
     def test_the_queue_and_summary_show_accounts_and_notes(self, app, window, populated_book):
-        """Decision 0005: an actual shows what it was for, where the money came from,
+        """An actual shows what it was for, where the money came from,
         its legs with their memos, and its notes."""
         from breadsched.gen.db.sqlite import DbSQLite
 
@@ -6713,7 +6713,7 @@ class TestDashboardView:
         dialog.liquidity_spin.set_value(45)
         assert dialog.save() is True
         dialog.destroy()
-        # The computer account's own Dashboard (decision 0004); the book keeps its own.
+        # The computer account's own Dashboard; the book keeps its own.
         stored = DashboardConfig.load(app.db, own_preference(app.db, "dashboard"))
         assert (stored.emergency_months, stored.liquidity_days) == (12, 45)
         book = DashboardConfig.load(app.db)
@@ -7192,7 +7192,7 @@ class TestAccountEditor:
         book_group = account.group
         dialog.group_entry.set_text("Cash")
         dialog._on_save(None)
-        # The Dashboard group is the computer account's own (decision 0004).
+        # The Dashboard group is the computer account's own.
         from breadsched.api.local import book_server
 
         assert book_server(app.db).account(account.handle).account.group == "Cash"
@@ -9868,7 +9868,7 @@ class TestReceivablesDialog:
     def test_the_match_windows_allocate_by_split_and_close_an_occurrence(
         self, app, window, populated_book
     ):
-        """Decision 0005 phase 3: Actions → Match to Plan… from the register, and the
+        """Actions → Match to Plan… from the register, and the
         window from an occurrence, write allocations through the book server."""
         from breadsched.gen.lib import (
             Money,
@@ -11328,7 +11328,7 @@ class TestNativePrinting:
 
         from breadsched.presentation import book_open_notice
 
-        fixture = Path(__file__).parent / "fixtures" / "native" / "schema-6.sql"
+        fixture = Path(__file__).parent / "fixtures" / "native" / "schema-13.sql"
         from breadsched.gen.utils.user_paths import data_directory
 
         runtime = tmp_path / "runtime"
@@ -11349,7 +11349,7 @@ class TestNativePrinting:
 
         backup = data_directory() / "beside-documents" / "9c1e"
         [notice] = reported
-        assert f"saved at {backup / 'old.breadsched.pre-migration-v6.bak'}" in notice
+        assert f"saved at {backup / 'old.breadsched.pre-migration-v13.bak'}" in notice
         assert "Keep books in Documents" in notice
         reported.clear()
         app.open_book(str(book))
@@ -11634,7 +11634,7 @@ class TestPreferences:
         assert window.lookup_action("double-line").get_state().get_boolean() is True
 
     def test_users_are_out_of_the_way_until_wanted(self, app, window):
-        """Decision 0004: alone, Preferences says "Only you"; Users and devices manages
+        """Alone, Preferences says "Only you"; Users and devices manages
         your password, other people, and your devices."""
         from breadsched.api.users import UserDirectory
         from breadsched.gui.dialogs.users_dialog import UsersDialog
@@ -11689,7 +11689,7 @@ class TestPreferences:
         dialog.close()
 
     def test_the_open_book_is_shared_from_users_and_devices(self, app, window, populated_book):
-        """Decision 0004: with a book open, Users and devices says who may use it and in
+        """With a book open, Users and devices says who may use it and in
         which role, and gives, changes, and takes away access."""
         from breadsched.api.local import book_server
         from breadsched.api.users import UserDirectory
@@ -11717,7 +11717,7 @@ class TestPreferences:
         dialog.close()
 
     def test_two_step_sign_in_is_turned_on_and_off_from_users_and_devices(self, app, window):
-        """Decision 0004, phase 5: the secret for an authenticator app, its first code,
+        """The secret for an authenticator app, its first code,
         the recovery codes shown once; and an administrator's reset for a lost phone."""
         import time
 
@@ -12338,7 +12338,7 @@ class TestFindTransactions:
 
 
 class TestABookTheHostHolds:
-    """Decision 0004: a book the computer account's host already holds opens in GTK
+    """A book the computer account's host already holds opens in GTK
     through that host, as the account's own user, and works as if opened here."""
 
     @pytest.fixture
@@ -12505,7 +12505,7 @@ class TestIssue397:
         app.activate_action("request-feature", None)
         problem, feature = opened
         assert problem.startswith("https://github.com/hdholm/BreadSched/issues/new?")
-        assert "template=bug_report.yml" in problem and "version=" in problem
+        assert "template=bug_report.yml" in problem and "details=BreadSched+" in problem
         assert "template=feature_request.yml" in feature
 
     def test_the_reconcile_windows_editor_blocks_only_that_window(

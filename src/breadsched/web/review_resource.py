@@ -47,7 +47,7 @@ def review_fsa_options(detail: ReviewDetail) -> dict:
 
 def review(api: Api, transaction_handle: str | None = None) -> dict:
     """Unresolved actuals and candidate plan occurrences for Review."""
-    # Grouped by category (decision 0005), each group oldest first.
+    # Grouped by category, each group oldest first.
     actuals = [
         {
             "handle": item.handle,

@@ -30,7 +30,7 @@ REVIEW_ACTION_HELP = {
 
 
 def book_upgrade_progress(path: str, schema: int) -> str:
-    """What to show while a book from an earlier alpha is being upgraded.
+    """What to show while a book from an earlier version is being upgraded.
 
     The upgrade backs the book up, verifies the copy, and migrates every row, so a
     large book takes seconds; saying so keeps the wait from looking like a hang.

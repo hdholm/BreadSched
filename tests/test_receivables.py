@@ -10,13 +10,10 @@ never stored.
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import date
-from pathlib import Path
 
 import pytest
 
-from breadsched.gen.db.sqlite import DbSQLite
 from breadsched.gen.engine.receivables import ReceivableStatus, receivable_summary
 from breadsched.gen.lib import Money, Transaction
 from breadsched.gen.services.receivables import (
@@ -264,32 +261,6 @@ def test_deleting_a_linked_transaction_is_refused(db, book):
     # The refused write leaves both the transaction and the receivable intact.
     assert db.get_transaction(txn) is not None
     assert db.get_receivable(receivable.handle) is not None
-
-
-def test_schema_8_book_migrates_to_receivables(tmp_path):
-    path = tmp_path / "schema-8.breadsched"
-    sql = (Path(__file__).parent / "fixtures" / "native" / "schema-8.sql").read_text()
-    with sqlite3.connect(path) as raw:
-        raw.executescript(sql)
-
-    db = DbSQLite()
-    db.load(str(path))
-    try:
-        assert db.get_metadata("schema_version") == 14
-        assert db.get_metadata("fixture_marker") == "schema-8"
-        assert list(db.iter_receivables()) == []
-        saved = save_receivable(db, SaveReceivable(date(2026, 9, 1), "Acme Insurance"))
-        assert saved.ok
-        assert [
-            row[0]
-            for row in db._require().execute(
-                "SELECT version FROM schema_migration ORDER BY version"
-            )
-        ] == [7, 8, 9, 10, 11, 12, 13, 14]
-        assert db.integrity_problems() == []
-    finally:
-        db.close()
-    assert (tmp_path / "schema-8.breadsched.pre-migration-v8.bak").exists()
 
 
 def test_cli_adds_links_and_resolves(tmp_path, capsys):

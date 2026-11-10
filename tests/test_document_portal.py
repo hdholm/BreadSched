@@ -16,13 +16,12 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from older_book import make_oldest_book  # noqa: E402
 
 from breadsched.gen.db.sqlite import DbSQLite, is_portal_book, migration_backup_path
 from breadsched.gen.engine import attachments
 from breadsched.gen.utils.user_paths import companion_path, data_directory, portal_document_id
 from breadsched.presentation import book_open_notice
-
-FIXTURE = Path(__file__).parent / "fixtures" / "native" / "schema-6.sql"
 
 
 @pytest.fixture
@@ -59,24 +58,22 @@ def test_companions_of_an_ordinary_book_stay_beside_it(tmp_path, portal):
 
 def test_a_migration_backup_of_a_portal_book_goes_to_the_data_folder(portal):
     document, companions = portal
-    book = document / "schema-6.breadsched"
-    with sqlite3.connect(book) as raw:
-        raw.executescript(FIXTURE.read_text())
+    book = make_oldest_book(document / "older.breadsched")
 
     db = DbSQLite()
     db.load(str(book))
     try:
         assert db.get_metadata("schema_version") == 14
-        expected = companions / "schema-6.breadsched.pre-migration-v6.bak"
+        expected = companions / "older.breadsched.pre-migration-v13.bak"
         assert db.migration_backup == str(expected)
     finally:
         db.close()
     assert expected.is_file()
     # Only the book itself is left in the portal directory.
-    assert sorted(item.name for item in document.iterdir()) == ["schema-6.breadsched"]
+    assert sorted(item.name for item in document.iterdir()) == ["older.breadsched"]
     with sqlite3.connect(expected) as raw:
         row = raw.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()
-    assert row == ("6",)
+    assert row == ("13",)
 
 
 def test_restoring_over_a_portal_book_keeps_the_old_book_in_the_data_folder(tmp_path, portal):

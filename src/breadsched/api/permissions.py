@@ -1,4 +1,4 @@
-"""What each role in a book may do, and the guard that enforces it (decision 0004).
+"""What each role in a book may do, and the guard that enforces it.
 
 Every :class:`~breadsched.api.protocol.BookApi` operation declares
 one permission, and an architecture test keeps the table complete, so a new
@@ -278,7 +278,7 @@ _READ = {
     "find",
     "attachment_report",
     "plan_settings",
-    # Each person's own Plan view and Dashboard (decision 0004): whoever reads may
+    # Each person's own Plan view and Dashboard: whoever reads may
     # keep theirs.
     "save_plan_settings",
     "save_dashboard_settings",

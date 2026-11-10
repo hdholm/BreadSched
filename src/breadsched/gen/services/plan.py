@@ -164,7 +164,7 @@ def query_plan(
     db: DbSQLite, request: PlanQuery, saved: object = None
 ) -> ServiceResult[PlanQueryResult]:
     """Validate selection state and calculate the primary and comparison reports.
-    ``use_saved`` restores ``saved`` (a person's own view, decision 0004), else the
+    ``use_saved`` restores ``saved`` (a person's own view), else the
     book's."""
     today = request.today or date.today()
     minimum, maximum_month = _bounds(db, today)
@@ -295,7 +295,7 @@ def save_plan_settings(
     keep: Callable[[dict[str, object]], None] | None = None,
 ) -> ServiceResult[PlanSettings]:
     """Remember the Plan presentation GTK and the browser both restore: with ``keep``
-    (a person's own preferences, decision 0004) or else in the book."""
+    (a person's own preferences) or else in the book."""
     errors = []
     if settings.end < settings.start:
         errors.append(ServiceError("plan.end.before_start", ("end",)))

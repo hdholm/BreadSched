@@ -1,4 +1,4 @@
-"""Decision 0004, phase 1: the book host knows who a request comes from."""
+"""The book host knows who a request comes from."""
 
 from __future__ import annotations
 
@@ -484,7 +484,7 @@ def test_the_routes_that_reach_the_book_file_check_the_role_too(hosted):
 
 
 def test_each_person_keeps_their_own_plan_view(hosted):
-    """Decision 0004: display choices are personal. A viewer may keep theirs, and
+    """Display choices are personal. A viewer may keep theirs, and
     neither person's choice changes the other's or the book."""
     from breadsched.gen.engine.activity import PlanMeasure, PlanSettings, ReportingPeriod
 
@@ -519,7 +519,7 @@ def test_each_person_keeps_their_own_plan_view(hosted):
 
 
 def test_each_person_arranges_their_own_dashboard(hosted):
-    """Decision 0004: the whole Dashboard configuration is personal, its groups'
+    """The whole Dashboard configuration is personal, its groups'
     members included; the book's arrangement is where anyone starts."""
 
     from breadsched.gen.lib import AccountType
@@ -570,7 +570,7 @@ def test_each_person_arranges_their_own_dashboard(hosted):
 
 
 def test_each_change_and_undo_step_names_who_made_it(hosted):
-    """Decision 0004: a change made for someone names them, and so does the undo step
+    """A change made for someone names them, and so does the undo step
     it leaves; an editor or owner may undo anyone's."""
     import queue
 
@@ -663,7 +663,7 @@ def test_the_share_command_grants_changes_and_removes_roles(tmp_path, capsys, mo
     assert "had no role" in capsys.readouterr().err
 
 
-# ------------------------------------------------------------ two-step sign-in (phase 5)
+# ------------------------------------------------------------ two-step sign-in
 
 
 def test_totp_codes_follow_rfc_6238():

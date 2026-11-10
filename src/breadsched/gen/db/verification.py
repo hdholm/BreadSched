@@ -305,7 +305,7 @@ def _verify_prices(state: _VerificationState) -> list[BookIssue]:
 def _verify_transactions(state: _VerificationState) -> list[BookIssue]:
     issues: list[BookIssue] = []
     occurrence_owners: dict[str, str] = {}
-    # Many purchases fill one estimate (decision 0005); only a commitment has one actual.
+    # Many purchases fill one estimate; only a commitment has one actual.
     estimates = {
         f"scheduled:{schedule.handle}:"
         for schedule in state.db.iter_scheduled()

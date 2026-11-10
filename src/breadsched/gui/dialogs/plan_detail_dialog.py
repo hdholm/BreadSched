@@ -154,7 +154,7 @@ class PlanDetailDialog(BoundedWindow):
             rows,
             numeric_start=5,
         )
-        # Decision 0005: match actuals to a scheduled occurrence by split and amount.
+        # Match actuals to a scheduled occurrence by split and amount.
         scheduled = [
             item for item in detail.planned_events if item.occurrence.startswith("scheduled:")
         ]

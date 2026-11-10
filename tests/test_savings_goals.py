@@ -214,44 +214,6 @@ def test_goal_account_cannot_be_deleted_from_under_a_goal(db, book):
     assert db.get_account(book.savings) is not None
 
 
-def test_schema_9_book_migrates_to_savings_goals(tmp_path):
-    import sqlite3
-    from pathlib import Path
-
-    from breadsched.gen.db.sqlite import DbSQLite
-
-    path = tmp_path / "schema-9.breadsched"
-    sql = (Path(__file__).parent / "fixtures" / "native" / "schema-9.sql").read_text()
-    with sqlite3.connect(path) as raw:
-        raw.executescript(sql)
-    db = DbSQLite()
-    db.load(str(path))
-    try:
-        assert db.get_metadata("schema_version") == 14
-        assert db.get_metadata("fixture_marker") == "schema-9"
-        assert list(db.iter_savings_goals()) == []
-        goal = SavingsGoal(
-            name="Trip",
-            account="fixture-account",
-            target_amount=Money(500),
-            start_date=date(2026, 9, 1),
-            target_date=date(2027, 6, 1),
-        )
-        with db.transaction("Goal") as txn:
-            db.add_savings_goal(goal, txn)
-        assert db.get_savings_goal(goal.handle).serialize() == goal.serialize()
-        assert [
-            row[0]
-            for row in db._require().execute(
-                "SELECT version FROM schema_migration ORDER BY version"
-            )
-        ] == [7, 8, 9, 10, 11, 12, 13, 14]
-        assert db.integrity_problems() == []
-    finally:
-        db.close()
-    assert (tmp_path / "schema-9.breadsched.pre-migration-v9.bak").exists()
-
-
 def test_cli_adds_funds_lists_and_closes_goals(tmp_path, capsys):
     import json
 
@@ -301,15 +263,13 @@ def test_dashboard_printout_shows_what_goals_set_aside(db, book):
 
 def test_cli_migrate_brings_an_older_book_to_the_current_schema(tmp_path, capsys):
     import json
-    import sqlite3
     from pathlib import Path
+
+    from older_book import make_oldest_book
 
     from breadsched.cli.main import main
 
-    path = tmp_path / "old.breadsched"
-    sql = (Path(__file__).parent / "fixtures" / "native" / "schema-9.sql").read_text()
-    with sqlite3.connect(path) as raw:
-        raw.executescript(sql)
+    path = make_oldest_book(tmp_path / "old.breadsched")
     # A read-only command cannot migrate, and says how to.
     assert main(["verify", str(path)]) != 0
     assert main(["accounts", str(path)]) != 0
@@ -317,10 +277,10 @@ def test_cli_migrate_brings_an_older_book_to_the_current_schema(tmp_path, capsys
     assert main(["migrate", str(path), "--json"]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result == {
-        "schema_before": 9,
+        "schema_before": 13,
         "schema": 14,
         "migrated": True,
-        "backup": f"{path}.pre-migration-v9.bak",
+        "backup": f"{path}.pre-migration-v13.bak",
     }
     assert Path(result["backup"]).exists()
     assert main(["verify", str(path)]) == 0

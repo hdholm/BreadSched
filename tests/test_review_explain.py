@@ -148,7 +148,7 @@ def test_the_command_line_lists_candidates_with_their_reasons(db, book, tmp_path
     out = capsys.readouterr().out
     assert "Close match: 2026-05-07 Electric (expected 180.00)" in out
     assert "    - Same amount" in out
-    # What it was for and where the money came from (decision 0005).
+    # What it was for and where the money came from.
     assert "  Expenses:Utilities · Assets:Checking" in out
     # Grouped by category, each group with its count.
     assert "== Expenses:Utilities (1) ==" in out

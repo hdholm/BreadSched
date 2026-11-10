@@ -12,12 +12,8 @@ exact on that key, never fuzzy, so every match names the key that produced it.
 Categorization rules, expected-reimbursement proposals, and entry autocomplete all
 compare descriptions through it. Imports never rewrite a description.
 
-Schema 11 removed the payees of earlier alphas (a `payee` table and
-`Transaction.payee`). The 10→11 migration turns each rule that matched a payee into
-one rule per description key that payee claimed, in the same position (the first
-keeps the rule's handle, later ones add `-1`, `-2`, …), so it keeps matching what it
-matched; a payee with no keys matched nothing and leaves no rule. It drops every
-rule's `set_payee`, removes `payee` from transaction JSON, and drops the table.
+A transaction's description is its only name, as in GnuCash; there is no separate
+payee record.
 
 ## Categorization rules
 
@@ -135,7 +131,7 @@ parse input and call that service; `presentation.reimbursement_override_text` wo
 each change.
 
 `services/receivables.py` validates every write: linked splits must be in
-expense-class accounts or in the receivable's own Receivable account (#378), expense
+expense-class accounts or in the receivable's own Receivable account, expense
 links positive and reimbursement links negative, and no split linked twice. The database refuses to delete a transaction a receivable
 links to (`receivable.missing_transaction`), as it does for FSA claims, and a
 GnuCash re-import that would delete one is reported instead.
@@ -152,7 +148,7 @@ the reclassification transactions that put it there, planned by
 | Write-off | expense +amount, receivable −amount (`ReceivableWriteOff.account`, else the largest expense split's account) | write-off date |
 | Dispute | nothing | — |
 
-A *direct* receivable (#378, `ReceivableSummary.direct`) is one whose cost splits are
+A *direct* receivable (`ReceivableSummary.direct`) is one whose cost splits are
 charges in its Receivable account itself, as an employer's cost charged to
 Assets:Receivables:Employer is: it posts no tracking transaction, is owed in full
 (`receivable.expected_amount.below_direct_charge` otherwise), and its write-off must
@@ -242,14 +238,14 @@ recomputes paid, refunded, reimbursed, repaid, remaining, and status. FSA reimbu
 need no reclassification because the money is already in the FSA asset, which is not
 cash-like.
 
-- **One way to link the ledger (#340).** Claims and receivables hold the same
+- **One way to link the ledger.** Claims and receivables hold the same
   `SplitLink` and check links through `engine.split_links`: `resolve_link` and
   `sum_links`, `missing_link` (each record's `….link.transaction|split.not_found`),
   one error base (`LinkError`, of which `FsaClaimError` and `ReceivableError` are the
   two kinds), and `owned_postings` with `refuse_owned_posting`. A receivable's
   reclassification transactions are rewritten from the receivable, so a claim
   refuses them (`claim.split.owned_posting`, as receivables already did) and
-  `attachment_roles` offers them no role; before #340 a claim could take one's
+  `attachment_roles` offers them no role, so a claim cannot take one's
   expense credit as a provider refund. A claim is not stored as a receivable: its
   FSA reimbursements are FSA-asset splits rather than credits to the expense, its
   amount comes from the EOB, and its allocations are per funding year, so it keeps
@@ -278,7 +274,7 @@ cash-like.
   claim's payment and its allocation's reimbursement; `direct_refund` links a provider
   refund to the FSA card as both a refund and a repayment, so the claim nets to what
   was actually used. Suggestions rank these ahead of single roles for the same
-  transaction. A claim save applies the same pairing (`_pair_direct_links`, #366): a
+  transaction. A claim save applies the same pairing (`_pair_direct_links`): a
   linked payment whose transaction has exactly one FSA outflow links it as the
   reimbursement (in the year the claim already draws on from that account, else the
   one year covering the service date, else `claim.attachment.funding_year.required`),
@@ -303,7 +299,7 @@ cash-like.
   `claim_alerts`. `ClaimLine.open_year` says whether a claim's benefit year can
   still be claimed, and `ClaimReport.dashboard_lines` (every open-year claim plus
   older ones still open or needing attention) is what the GTK and web FSA
-  Dashboards list (#366).
+  Dashboards list.
 
 The GTK claims dialog, the web claim editor (`web/fsa_claim_resource.py`), and
 `breadsched claims` only parse input and render these results.
@@ -321,14 +317,14 @@ reconciled or frozen splits through the statement date, including a later-dated 
 an earlier statement reconciled (`reconciliation.reconciled_balance`, also shown before
 a statement starts). Every non-void, unreconciled or cleared split is a candidate; a
 split dated after the statement is marked `after_statement`, in case its date is
-wrong, and never starts checked, while Cleared candidates through the date do (#362).
+wrong, and never starts checked, while Cleared candidates through the date do.
 Each candidate records its direction (`funds_in`, a debit), and the summary totals the
 checked Funds In and Funds Out separately for a GnuCash-style two-column window.
 `sort_candidates` orders candidates for display only (date, description, size, or
-checked first; later-dated entries last), so a missing entry is easier to find (#377).
+checked first; later-dated entries last), so a missing entry is easier to find.
 `add_statement_entry` posts a missing statement line, such as interest, as one
 undoable change: the transaction, its Cleared mark, its place in the open
-statement's checks, and the account's remembered line (#403):
+statement's checks, and the account's remembered line:
 `reconciliation.remember_line` keeps the last five distinct (description, other
 account) pairs in book metadata (`reconcile.lines:<account>`), most recent first, and
 `ReconciliationView.remembered_lines` offers them again without amounts.

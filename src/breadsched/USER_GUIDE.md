@@ -49,8 +49,8 @@ The desktop application also requires a GTK 4 runtime and PyGObject supplied by
 your operating system; see [Start the desktop application](guide/desktop.md#start-the-desktop-application).
 The command line and the browser interface work without GTK.
 
-When downloading a packaged alpha, choose the GitHub release marked
-**Pre-release**, read its versioned notes, and compare the downloaded wheel or
+When downloading a packaged beta, choose the GitHub release marked
+**Pre-release**, read its notes, and compare the downloaded wheel or
 source archive against the release's `SHA256SUMS` before installing it.
 Release artifacts are built from the tested main commit with read-only repository
 access, then published after their names and checksums are verified. The loopback
@@ -1811,9 +1811,8 @@ A GnuCash schedule keeps the date of the last occurrence GnuCash entered (by
 **Since Last Run** or **Create transactions**), and each transaction it entered names
 its schedule. BreadSched imports both, so an occurrence GnuCash already entered is
 neither due nor upcoming again, and the Plan shows it matched by that transaction.
-These transactions are settled history and never appear in Review. A book imported
-before version 0.2.0a311 lacked both; importing the GnuCash book again adds them
-without changing anything you set in BreadSched. An occurrence you entered by hand
+These transactions are settled history and never appear in Review. Importing the GnuCash book again adds any that are
+missing without changing anything you set in BreadSched. An occurrence you entered by hand
 in GnuCash, without its schedule, is not linked to it, as in GnuCash, where Since
 Last Run would still offer it.
 
@@ -1852,9 +1851,7 @@ each period rather than recording the same activity in both.
   GnuCash's notes; after that it is yours. A re-import brings GnuCash's new notes
   only while you have not edited the note in BreadSched. If you both changed it,
   BreadSched keeps your note and the import summary says how many notes it kept.
-  Write-back sends transaction notes to GnuCash (next section). Books from before
-  version 0.2.0a301 kept GnuCash's notes apart from BreadSched's; opening one joins
-  them, GnuCash's text first, then a blank line and yours.
+  Write-back sends transaction notes to GnuCash (next section).
 - Do not post schedules or add transactions in BreadSched for activity you also
   record in GnuCash, unless you write them back (next section). BreadSched-created
   transactions are otherwise never written to GnuCash and are never removed by
@@ -2080,9 +2077,7 @@ are ever proposed, so a category you chose yourself is never replaced, and a
 transaction split across several placeholder lines is left for you. Nothing changes
 until you accept, and accepting is one undo step.
 
-A transaction's description is its only name, as in GnuCash. BreadSched 0.2.0a250
-removed the separate payees of earlier alphas; opening an older book converts each
-rule that matched a payee into rules for that payee's descriptions.
+A transaction's description is its only name, as in GnuCash.
 
 ## Print, export, and inspect
 
@@ -2110,8 +2105,8 @@ Verify diagnostics. Regularly:
 - when needed, **restore** a backup as a new book: the backup is verified and
   written to a different path, never over the open live book.
 
-After you upgrade to a version with a newer native schema, a book from an earlier
-alpha is migrated the first time it is opened for writing: the desktop and browser
+After you upgrade to a version with a newer native schema, a book from the previous
+schema is migrated the first time it is opened for writing: the desktop and browser
 do this when they open it, and on the command line `breadsched migrate` does it. A
 verified backup of the old book is written next to it first (for a book the
 Flatpak reaches only through the file chooser, in BreadSched's data folder; see

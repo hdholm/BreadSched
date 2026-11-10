@@ -15,7 +15,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Installer = (Resolve-Path $Installer).Path
 $name = Split-Path -Leaf $Installer
-if ($name -notmatch '^BreadSched-[0-9]+\.[0-9]+\.[0-9]+(a[0-9]+)?-setup\.exe$') {
+if ($name -notmatch '^BreadSched-[0-9]+(\.[0-9]+){3}-setup\.exe$') {
     throw "unexpected installer name $name"
 }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null

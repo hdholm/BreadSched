@@ -1,4 +1,4 @@
-// Verify, the packaged user guide, and your own account (decision 0004).
+// Verify, the packaged user guide, and your own account.
 
 async function showVerify() {
   const data = await get("/api/verify");

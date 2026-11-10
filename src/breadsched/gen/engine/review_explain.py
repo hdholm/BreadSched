@@ -81,7 +81,7 @@ def explain_candidate(
 ) -> CandidateExplanation:
     """The reasons ``candidate`` is offered for ``transaction`` and how close it is.
 
-    The reasons follow the ranking (decision 0005): the category, whether it is an
+    The reasons follow the ranking: the category, whether it is an
     estimate, its period, what remains of it, the funding account, and the words
     in common.
     """

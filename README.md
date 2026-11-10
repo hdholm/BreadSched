@@ -52,15 +52,15 @@ rhyme for a name.
   features.  GitHub issues are used to track bugs and more limited feature
   requests; never attach a real financial book or statement to one. Report
   security problems privately as [`SECURITY.md`](SECURITY.md) describes.
-- [`CHANGELOG.md`](CHANGELOG.md) records completed changes by version; older
-  versions are condensed and link their release notes.
+- [`CHANGELOG.md`](CHANGELOG.md) records what each release changed, from the
+  first beta.
 - [`DESIGN.md`](DESIGN.md) explains the current architecture and design
   rationale for anyone who wants to dig into the code, with a part for each
   topic under `docs/design/`.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) defines the development and pull-request
   workflow.
 
-Alpha releases provide a wheel, source archive, a per-user Windows installer
+Releases provide a wheel, source archive, a per-user Windows installer
 with its own Python and GTK runtime (`BreadSched-<version>-setup.exe`, built
 and tested on Windows from the released commit; not yet code-signed), a Linux
 Flatpak bundle (`BreadSched-<version>.flatpak`, built and installed from the

@@ -291,7 +291,7 @@ class TestInit:
         code, out = run(capsys, "--version")
         assert code == 0 and out.startswith("breadsched ")
         assert "native schema 14" in out
-        assert "supports 6–14" in out
+        assert "supports 13–14" in out
 
 
 class TestPostingAndReading:
@@ -845,7 +845,7 @@ class TestPlanningAndProjection:
 
         matches = run_json(capsys, "plan-matches", book_path, posted["handle"])
         assert matches[0]["occurrence"]["key"] == occurrence
-        # What remains of it, and how it ranked (decision 0005).
+        # What remains of it, and how it ranked.
         assert {"remaining_amount", "same_category", "in_period", "fits"} <= set(matches[0])
 
         run(capsys, "plan-reject", book_path, posted["handle"], occurrence)
@@ -1182,7 +1182,7 @@ class TestVerify:
 
         assert payload["application_version"] == __version__
         assert payload["native_schema_version"] == 14
-        assert payload["supported_schema_versions"] == {"minimum": 6, "maximum": 14}
+        assert payload["supported_schema_versions"] == {"minimum": 13, "maximum": 14}
 
     def test_verify_json_reports_logical_damage(self, tmp_path, capsys):
         import json

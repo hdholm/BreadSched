@@ -21,8 +21,8 @@ to every issue and pull request; see `CONTRIBUTING.md`.
 
 ## Supported versions
 
-BreadSched is alpha software. Fixes are made on `main` and released in the next
-alpha; earlier alphas are not patched.
+BreadSched is beta software. Fixes are made on `main` and released in the next
+version; earlier versions are not patched.
 
 ## Scope
 

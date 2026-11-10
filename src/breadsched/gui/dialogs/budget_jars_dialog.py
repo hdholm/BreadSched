@@ -157,7 +157,7 @@ class BudgetJarsDialog(BoundedWindow):
                 if key is None:
                     box.append(title)
                 else:
-                    # Decision 0005: match the jar's current occurrence.
+                    # Match the jar's current occurrence.
                     heading = Gtk.Box(spacing=8)
                     title.set_hexpand(True)
                     heading.append(title)

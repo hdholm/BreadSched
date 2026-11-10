@@ -1,4 +1,4 @@
-"""Decision 0004, phase 3: one book host serves several books on one address."""
+"""One book host serves several books on one address."""
 
 from __future__ import annotations
 
@@ -307,7 +307,7 @@ def test_a_second_serve_joins_the_running_host_until_it_stops(tmp_path, monkeypa
 
 
 def test_a_persons_dashboard_belongs_to_one_book(host):
-    """Decision 0004: a Dashboard arrangement is the person's own for one book (by the
+    """A Dashboard arrangement is the person's own for one book (by the
     book's id), since each book's accounts and purpose differ."""
     from breadsched.gen.services import DashboardGroupInput, SaveDashboardConfig
 

@@ -6,11 +6,18 @@ import platform
 from typing import TypedDict
 from urllib.parse import urlencode
 
-from . import __version__
+from . import RELEASE_STAGE, __version__
 from .gen.db.migrations import MIN_SUPPORTED_SCHEMA_VERSION
 from .gen.db.sqlite import SCHEMA_VERSION
 
-__all__ = ["ISSUES_URL", "VersionDetails", "issue_url", "version_details", "version_summary"]
+__all__ = [
+    "ISSUES_URL",
+    "VersionDetails",
+    "issue_details",
+    "issue_url",
+    "version_details",
+    "version_summary",
+]
 
 
 class SchemaWindow(TypedDict):
@@ -49,15 +56,33 @@ def version_summary(program: str = "breadsched") -> str:
 ISSUES_URL = "https://github.com/hdholm/BreadSched/issues"
 
 
+def issue_details(interface: str = "Desktop (GTK)") -> str:
+    """What a bug report needs about this installation, as the form's text."""
+    import os
+    import sys
+
+    installed = (
+        "Flatpak"
+        if os.environ.get("FLATPAK_ID")
+        else "Windows installer or pip"
+        if sys.platform == "win32"
+        else "package, pip, or source"
+    )
+    return "\n".join(
+        (
+            f"{version_summary('BreadSched')} [{RELEASE_STAGE}]",
+            f"Interface: {interface}",
+            f"Platform: {platform.system()} {platform.release()}".rstrip(),
+            f"Python: {platform.python_version()}",
+            f"Installed from: {installed}",
+        )
+    )
+
+
 def issue_url(kind: str = "bug", *, interface: str = "Desktop (GTK)") -> str:
     """The GitHub form for a new bug report (``bug``) or feature request
-    (``feature``), with this version and platform already filled in (#397)."""
+    (``feature``); a bug report has this version and system already filled in."""
     if kind == "feature":
         return f"{ISSUES_URL}/new?" + urlencode({"template": "feature_request.yml"})
-    fields = {
-        "template": "bug_report.yml",
-        "version": __version__,
-        "interface": interface,
-        "platform": f"{platform.system()} {platform.release()}".strip(),
-    }
+    fields = {"template": "bug_report.yml", "details": issue_details(interface)}
     return f"{ISSUES_URL}/new?" + urlencode(fields)

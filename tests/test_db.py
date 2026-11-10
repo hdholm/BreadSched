@@ -515,42 +515,50 @@ class TestSchemaCompatibility:
         assert reopened.get_metadata("schema_version") == 14
         reopened.close()
 
-    @pytest.mark.parametrize("version", [3, 4, 5])
+    @pytest.mark.parametrize("version", [6, 11, 12])
     @pytest.mark.parametrize("mode", ["r", "w"])
     def test_older_alpha_schemas_are_rejected(self, tmp_path, version, mode):
         path = tmp_path / f"schema-{version}.breadsched"
         self._book_with_schema(path, version)
 
         db = DbSQLite()
-        message = f"schema {version} predates the supported rolling window"
+        message = f"schema {version} predates the supported window"
         with pytest.raises(DbError, match=message):
             db.load(str(path), mode=mode)
         assert not db.is_open
 
-    def test_read_only_schema_6_requires_a_writable_migration(self, tmp_path):
-        path = self._schema_6_fixture(tmp_path)
+    def test_a_read_only_older_book_requires_a_writable_migration(self, tmp_path):
+        path = self._schema_13_book(tmp_path)
         db = DbSQLite()
         with pytest.raises(DbError, match="open it writable once"):
             db.load(str(path), mode="r")
-        assert not (tmp_path / "schema-6.breadsched.pre-migration-v6.bak").exists()
+        assert not (tmp_path / "older.breadsched.pre-migration-v13.bak").exists()
 
     @staticmethod
-    def _schema_6_fixture(tmp_path: Path) -> Path:
-        path = tmp_path / "schema-6.breadsched"
-        sql = (Path(__file__).parent / "fixtures" / "native" / "schema-6.sql").read_text()
+    def _schema_13_book(tmp_path: Path) -> Path:
+        """A book as the last schema-13 alpha left it: the oldest that still opens."""
+        path = tmp_path / "older.breadsched"
+        db = DbSQLite()
+        db.load(str(path))
+        with db.transaction("Fixture") as txn:
+            db.add_account(Account(name="Fixture Checking", atype=AccountType.BANK), txn)
+            db.set_metadata("fixture_marker", "schema-13", txn)
+        db.close()
         with sqlite3.connect(path) as raw:
-            raw.executescript(sql)
+            raw.execute("UPDATE metadata SET value='13' WHERE key='schema_version'")
+            raw.execute("DELETE FROM schema_migration")
+            raw.execute("INSERT INTO schema_migration(version, applied_at) VALUES (13, 'test')")
         return path
 
     def test_the_stored_schema_is_read_without_changing_the_book(self, tmp_path):
-        """Interfaces announce an upgrade before it starts (#295)."""
+        """Interfaces announce an upgrade before it starts."""
         from breadsched.gen.db.sqlite import stored_schema_version
 
-        path = self._schema_6_fixture(tmp_path)
+        path = self._schema_13_book(tmp_path)
         before = path.read_bytes()
-        assert stored_schema_version(path) == 6
+        assert stored_schema_version(path) == 13
         assert path.read_bytes() == before
-        assert not Path(str(path) + ".pre-migration-v6.bak").exists()
+        assert not Path(str(path) + ".pre-migration-v13.bak").exists()
         DbSQLite().load(str(path))
         assert stored_schema_version(str(path)) == 14
 
@@ -577,40 +585,34 @@ class TestSchemaCompatibility:
             "Upgrading house.breadsched "
         )
 
-    def test_schema_6_fixture_migrates_with_backup_and_version_evidence(self, tmp_path):
-        path = self._schema_6_fixture(tmp_path)
+    def test_an_older_book_migrates_with_backup_and_version_evidence(self, tmp_path):
+        path = self._schema_13_book(tmp_path)
         db = DbSQLite()
         db.load(str(path))
         assert db.get_metadata("schema_version") == 14
-        assert db.get_metadata("fixture_marker") == "schema-6"
-        assert db.get_account("fixture-account").name == "Fixture Checking"
+        assert db.get_metadata("fixture_marker") == "schema-13"
+        assert [account.name for account in db.iter_accounts()] == ["Fixture Checking"]
         assert [
             row[0]
             for row in db._require().execute(
                 "SELECT version FROM schema_migration ORDER BY version"
             )
-        ] == [6, 7, 8, 9, 10, 11, 12, 13, 14]
+        ] == [13, 14]
         assert db.integrity_problems() == []
         db.close()
 
-        backup = tmp_path / "schema-6.breadsched.pre-migration-v6.bak"
+        backup = tmp_path / "older.breadsched.pre-migration-v13.bak"
         assert backup.exists()
         with sqlite3.connect(backup) as raw:
             assert raw.execute(
                 "SELECT value FROM metadata WHERE key='schema_version'"
-            ).fetchone() == ("6",)
-            assert (
-                raw.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='reconciliation'"
-                ).fetchone()
-                is None
-            )
+            ).fetchone() == ("13",)
 
     def test_failed_migration_rolls_back_but_preserves_backup(self, tmp_path, monkeypatch):
         from breadsched.gen.db import sqlite as sqlite_backend
         from breadsched.gen.db.migrations import Migration
 
-        path = self._schema_6_fixture(tmp_path)
+        path = self._schema_13_book(tmp_path)
 
         def fail_halfway(conn):
             conn.execute("CREATE TABLE must_roll_back(value TEXT)")
@@ -618,8 +620,8 @@ class TestSchemaCompatibility:
 
         monkeypatch.setitem(
             sqlite_backend.MIGRATIONS,
-            6,
-            Migration(6, 7, "failing test migration", fail_halfway),
+            13,
+            Migration(13, 14, "failing test migration", fail_halfway),
         )
         db = DbSQLite()
         with pytest.raises(RuntimeError, match="simulated migration failure"):
@@ -629,7 +631,7 @@ class TestSchemaCompatibility:
         with sqlite3.connect(path) as raw:
             assert raw.execute(
                 "SELECT value FROM metadata WHERE key='schema_version'"
-            ).fetchone() == ("6",)
+            ).fetchone() == ("13",)
             assert (
                 raw.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='must_roll_back'"
@@ -638,8 +640,8 @@ class TestSchemaCompatibility:
             )
             assert raw.execute(
                 "SELECT version FROM schema_migration ORDER BY version"
-            ).fetchall() == [(6,)]
-        assert (tmp_path / "schema-6.breadsched.pre-migration-v6.bak").exists()
+            ).fetchall() == [(13,)]
+        assert (tmp_path / "older.breadsched.pre-migration-v13.bak").exists()
 
     def test_a_newer_schema_is_rejected(self, tmp_path):
         path = tmp_path / "future.breadsched"

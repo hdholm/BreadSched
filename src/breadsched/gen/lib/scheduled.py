@@ -381,7 +381,7 @@ class ScheduledTransaction(PrimaryObject):
         #: again. Recorded per date rather than by moving ``last_posted``, because
         #: skipping March must not also dismiss February.
         self.skipped: list[date] = sorted(set(skipped or []))
-        #: Occurrences closed early (decision 0005): what is left of them is no
+        #: Occurrences closed early: what is left of them is no
         #: longer expected, though what was matched to them still counts.
         self.closed_occurrences: list[date] = []
         #: Exact importer-owned recurrence representation when the source cannot be
@@ -590,7 +590,7 @@ class ScheduledTransaction(PrimaryObject):
             self.skipped.append(when)
 
     def current_occurrence(self, today: date) -> date | None:
-        """The occurrence a Match window opens on (decision 0005): the latest on or
+        """The occurrence a Match window opens on: the latest on or
         before ``today`` that was not skipped, else the next one."""
         start = self.recurrence.start or today
         since = max(start, today - timedelta(days=400))

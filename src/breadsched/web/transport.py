@@ -99,12 +99,12 @@ STATIC_ASSETS = {
     "apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
     **{name: (name, "application/javascript; charset=utf-8") for name in SCRIPTS},
 }
-#: The browser's session cookie (decision 0004).
+#: The browser's session cookie.
 SESSION_COOKIE = "breadsched_session"
 ACCOUNT_SESSION = "/api/v1/session"
 ACCOUNT_ME = "/api/v1/me"
 ACCOUNT_PASSWORD = "/api/v1/me/password"
-#: The books this host holds that the caller may use (decision 0004).
+#: The books this host holds that the caller may use.
 ACCOUNT_BOOKS = "/api/v1/books"
 #: Turning one's own two-step sign-in on (start, then confirm with a code) and off.
 ACCOUNT_TWO_STEP = "/api/v1/me/two-step"
@@ -124,7 +124,7 @@ ACCOUNT_PATHS = frozenset(
     }
 )
 #: Another command of the computer account asking the host to serve a book, or to let
-#: it go (decision 0004: one host per account).
+#: it go (one host per account).
 HOST_BOOKS = "/api/v1/host/books"
 
 
@@ -188,7 +188,7 @@ class Handler(BaseHTTPRequestHandler):
     trusted_origins: frozenset[str] = frozenset()
     #: The second token that marks a request from a program on this computer.
     local_token: str = ""
-    #: The host's users and device tokens (decision 0004).
+    #: The host's users and device tokens.
     users: UserDirectory | None = None
 
     _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -345,7 +345,7 @@ class Handler(BaseHTTPRequestHandler):
             # Only someone the host knows learns that the book they named is not here.
             self._why = refused
             return False
-        # A user given no role in this book may not use it at all (decision 0004).
+        # A user given no role in this book may not use it at all.
         return self._role() != "none"
 
     def _refuse(self) -> None:
@@ -377,7 +377,7 @@ class Handler(BaseHTTPRequestHandler):
             return "none"
 
     def _acting_user(self) -> User | None:
-        """The user whose personal preferences serve this request (decision 0004)."""
+        """The user whose personal preferences serve this request."""
         caller = self._caller()
         return caller.user if caller is not None and caller.user.id else None
 
@@ -395,7 +395,7 @@ class Handler(BaseHTTPRequestHandler):
         return morsel.value if morsel is not None else ""
 
     def _caller(self) -> Caller | None:
-        """Who the request comes from (decision 0004): this server's own token (or its
+        """Who the request comes from: this server's own token (or its
         local token) is the computer account's user; any other token must be a device
         token or session the host issued. None for anyone else."""
         supplied = self._supplied_token()
@@ -658,9 +658,10 @@ class Handler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------- signing in
 
     def _account(self, method: str) -> None:
-        """Sign in or out, say who is signed in, or change one's own password
-        (decision 0004). These are answered before the caller is known, or while a
-        temporary password still has to be changed."""
+        """Sign in or out, say who is signed in, or change one's own password.
+
+        These are answered before the caller is known, or while a temporary
+        password still has to be changed."""
         path = urlparse(self.path).path
         write = method != "GET"
         if (
@@ -799,7 +800,7 @@ class Handler(BaseHTTPRequestHandler):
         return sorted(usable, key=lambda book: (book.name.casefold(), book.id))
 
     def _two_step(self, caller: Caller, path: str, body: dict[str, Any]) -> None:
-        """One's own two-step sign-in (decision 0004): start (the secret for the app),
+        """One's own two-step sign-in: start (the secret for the app),
         confirm with a first code (the recovery codes, shown once), or turn it off
         with one's password."""
         assert self.users is not None
@@ -819,7 +820,7 @@ class Handler(BaseHTTPRequestHandler):
     def _sign_in(self, body: dict[str, Any]) -> None:
         assert self.users is not None
         # Behind the proxy every request comes from loopback; the proxy names the
-        # client in X-Real-IP (decision 0003's nginx configuration).
+        # client in X-Real-IP (see the nginx configuration in docs/design/users-and-access.md).
         client = self.headers.get("X-Real-IP") or self.client_address[0]
         signed = self.users.sign_in(
             str(body.get("name", "")),
@@ -1300,7 +1301,7 @@ def _file_of(db: DbSQLite) -> str:
 def _hosted(db: DbSQLite, executor: Executor | None, users: UserDirectory | None) -> _Book:
     api_object = Api(db)
     # The book's permanent id, made now in a writable book; the host lists the book
-    # under it, and grants name it (decision 0004).
+    # under it, and grants name it.
     book_id = api_object.server.book_id()
     if users is not None and book_id and db.path and db.path != ":memory:":
         try:
@@ -1334,7 +1335,7 @@ def build_handler(
 ) -> type[Handler]:
     """Bind each book's serialized writer and short-lived read snapshots to a handler.
 
-    ``db`` is one book or several (decision 0004): a request names the one it is for.
+    ``db`` is one book or several: a request names the one it is for.
     Each book's writer work runs under its own lock in the request's thread unless
     ``executor`` runs it elsewhere (GTK runs it on its main loop, #359).
     """

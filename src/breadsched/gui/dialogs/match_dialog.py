@@ -1,4 +1,4 @@
-"""The Match windows: match actuals to plans by split and amount (decision 0005).
+"""The Match windows: match actuals to plans by split and amount.
 
 Matching works like reconciling a statement. **From a planned occurrence**, the
 window shows its expected, applied, and remaining amounts and, below, the splits in

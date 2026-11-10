@@ -1,5 +1,5 @@
 // Match to Plan: match actuals to planned occurrences by split and amount, as a
-// statement is reconciled (decision 0005). Both windows write through /api/v1.
+// statement is reconciled. Both windows write through /api/v1.
 
 async function postV1(path, body) {
   // The book server's own JSON, with no browser-only fields added.

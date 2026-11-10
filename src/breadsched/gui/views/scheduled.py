@@ -140,7 +140,7 @@ class ScheduledView(BaseView):
         self.skip_next_button.connect("clicked", lambda *_: self.resolve_next(DueDecision.SKIP))
         bar.append(self.skip_next_button)
 
-        # Decision 0005: the Match window on the schedule's current occurrence.
+        # The Match window on the schedule's current occurrence.
         self.match_button = Gtk.Button(label="Match…")
         self.match_button.set_tooltip_text(
             "Choose the splits that count toward its current occurrence, as in a reconciliation"
@@ -826,7 +826,7 @@ class UpcomingView(BaseView):
         self.refresh()
 
     def match_selected(self):
-        """Open the Match window on the selected upcoming occurrence (decision 0005)."""
+        """Open the Match window on the selected upcoming occurrence."""
         from ..dialogs.match_dialog import OccurrenceMatchWindow
 
         selection = self.upcoming_view.get_model()

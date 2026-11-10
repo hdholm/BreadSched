@@ -60,7 +60,7 @@ def pytest_configure(config):
 @pytest.fixture(autouse=True)
 def isolate_user_directory(tmp_path_factory):
     """Keep the book host's users, this account's device token, and the host and
-    server records out of the real data, config, and runtime folders (decision 0004):
+    server records out of the real data, config, and runtime folders:
     each test has its own, so tests run side by side never join each other's host. A
     patch of its own, so a test's ``monkeypatch`` is still undone before its other
     fixtures close."""

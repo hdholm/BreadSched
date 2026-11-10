@@ -1,4 +1,4 @@
-"""The storage benchmark behind decision 0001 compares layouts that read back exactly.
+"""The storage benchmark compares layouts that read back exactly.
 
 ``scripts/storage_benchmark.py`` asserts that every layout returns each transaction
 as written; this runs it on a small book so a layout that stops round-tripping, or a
