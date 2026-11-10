@@ -2025,6 +2025,7 @@ class TestGroupMembershipIsStoredOnce:
             "income": True,
             "reimbursables": False,
             "goals": True,
+            "cash_flow": True,
         }
         result = save_dashboard_config(
             db, SaveDashboardConfig(sections={"bills": False, "reimbursables": True})

@@ -32,6 +32,8 @@ def dashboard_report(
         "missing_quotes": list(board.missing_quotes),
         "liquid_missing_quotes": list(board.liquid_missing_quotes),
         # Withheld totals with each excluded balance and how to include it (#236).
+        # Cash on hand over the liquidity period; shown when it has anything dated.
+        "cash_flow_chart": board.cash_flow_chart(book.reporting_currency()).as_dict(),
         "completeness": board.completeness.as_dict(),
         "liquid_completeness": board.liquid_completeness.as_dict(),
         "coverage_notes": list(board.coverage_notes),

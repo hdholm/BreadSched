@@ -25,5 +25,12 @@ Preparing the first beta.
   reconciling older transactions in GnuCash, choose **All dates** (`--since all`).
   Transactions outside the limit are left as they are and are never taken for
   deleted.
+- **The Dashboard is the main view.** On the desktop its tab is pinned first and a
+  book always opens on it, with the tabs you had open behind it. Before, a book
+  reopened on whichever tab you last used.
+- **Cash-flow chart on the Dashboard.** A line of the cash you will have on hand
+  each day of the liquidity period, from the same bills and pay that *Needed*
+  counts, with the lowest day marked. It is on the desktop, in the browser, and in
+  the printed Dashboard, and **Configure Dashboard** can hide it.
 - **Reporting a problem.** Help → Report a Problem fills in the version and system
   for you, and the issue forms ask for less: what happened, in your own words.

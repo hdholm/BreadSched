@@ -109,7 +109,8 @@ def test_dashboard_tables_have_rows_and_group_totals_are_amounts(page):
     )
     assert bodies and all(item["loose"] == 0 for item in bodies)
     assert sum(item["rows"] for item in bodies) >= 3  # two bills and one income
-    first_bill = page.locator("tbody tr").first.locator("td")
+    # The cash-flow chart's own table of values comes first; skip to the bills.
+    first_bill = page.locator("tbody tr", has_text="Sample").first.locator("td")
     assert first_bill.count() == 9
     assert "Sample" in first_bill.nth(0).inner_text()
 
@@ -2379,3 +2380,14 @@ def test_the_import_form_limits_an_import_by_date(page, served, tmp_path):
     )
     imported = {txn.description for txn in db.iter_transactions()}
     assert "Limited March" in imported and "Limited January" not in imported
+
+
+def test_the_dashboard_draws_its_cash_flow_chart(page, served):
+    # Cash on hand over the liquidity period, from the sample book's bills and pay.
+    expect = sync_api.expect
+    page.get_by_role("button", name="Dashboard", exact=True).first.click()
+    heading = page.get_by_role("heading", name=re.compile(r"Cash flow over the next \d+ days"))
+    expect(heading).to_be_visible()
+    chart = page.locator("svg[role=img]").first
+    expect(chart).to_be_visible()
+    assert chart.locator("path").count() >= 1

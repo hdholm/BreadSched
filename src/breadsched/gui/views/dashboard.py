@@ -23,6 +23,7 @@ from ...gen.engine import receivables
 from ...gen.lib.money import Money
 from ...presentation import goal_status_text
 from ..gi_setup import Gio, Gtk, Pango
+from ..widgets.model_chart import ModelChartView  # noqa: E402
 from ..widgets.wrap_box import WrapBox
 from ._base import BaseView, Row, column, sorted_model, table_section
 
@@ -83,6 +84,15 @@ class DashboardView(BaseView):
         self.cards.set_max_children_per_line(12)
         self.cards.set_valign(Gtk.Align.START)
         content.append(self.cards)
+
+        # Cash on hand over the liquidity period, under the figures it explains.
+        self.cash_flow_chart = ModelChartView(height=200)
+        self.cash_flow_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self.cash_flow_heading = Gtk.Label(xalign=0)
+        self.cash_flow_heading.add_css_class("total-row")
+        self.cash_flow_section.append(self.cash_flow_heading)
+        self.cash_flow_section.append(self.cash_flow_chart)
+        content.append(self.cash_flow_section)
 
         # Groups, bills, and income are separate sections, each sized to its own
         # columns rather than stretched to the window; they sit side by side when
@@ -387,6 +397,11 @@ class DashboardView(BaseView):
             Gtk.SingleSelection(model=sorted_model(self.reimbursables_view, reimbursable_store))
         )
         shows = self.config.shows
+        chart = self.board.cash_flow_chart(book_server(self.db).reporting_currency())
+        self.cash_flow_chart.set_model(chart)
+        self.cash_flow_heading.set_text(chart.title)
+        # Nothing dated in the period draws nothing, so the section takes no room.
+        self.cash_flow_section.set_visible(shows("cash_flow") and not chart.empty)
         self.bills_section.set_visible(shows("bills"))
         self.income_section.set_visible(shows("income"))
         self.reimbursables_section.set_visible(shows("reimbursables"))

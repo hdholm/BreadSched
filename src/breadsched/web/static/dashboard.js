@@ -475,6 +475,10 @@ async function showDashboard() {
         !== JSON.stringify(data.completeness?.excluded)
       ? completenessDetails(data.liquid_completeness, "Liquid cash") : null,
     ...(data.coverage_notes || []).map((note) => el("p", { class: "note" }, note)), controls,
+    ...(shows("cash_flow")
+      && data.cash_flow_chart.series.some((series) => series.values.some((value) => value !== null))
+      ? [el("h2", {}, data.cash_flow_chart.title),
+        modelChart(data.cash_flow_chart, { collapseTable: true })] : []),
     ...(shows("groups") ? [el("h2", {}, "Balances"), groupCards] : []),
     ...(bills.some((item) => item.days_until <= 0) || income.some((item) => item.days_until <= 0)
       ? [el("div", { class:"toolbar" }, el("button", { class:"action", type:"button",

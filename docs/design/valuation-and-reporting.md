@@ -259,6 +259,15 @@ the pending cash flow behind liquidity) and never imports `dashboard`, which
 re-exports `BillRow`, `MissedGroup`, `group_missed`, and `DAYS_PER_MONTH` for its
 callers.
 
+`Dashboard.cash_flow_chart` is cash on hand, day by day, over the liquidity period
+(by the week when the period is longer than 62 days). It starts at liquid cash less
+every overdue bill, adds each dated scheduled income, and subtracts each bill on its
+date: the same bills and income, on the same dates, that `required_liquid` counts,
+so the chart and *Needed* cannot disagree. The lowest day is marked. It is one of
+`dashboard.SECTIONS` (`cash_flow`), drawn by the GTK view (`ModelChartView`), the
+browser (`modelChart`), and the printed report, and left out where nothing is dated
+inside the period. `tests/test_dashboard_cash_flow.py` holds these rules.
+
 Dashboard totals never depend on groups. Net worth, Assets, and Debts are always the
 whole-book reporting-currency valuation of every asset and liability account
 (`valuation.aggregate_value`), and Liquid is always every non-placeholder cash-like

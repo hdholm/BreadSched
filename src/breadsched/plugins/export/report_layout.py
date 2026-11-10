@@ -252,6 +252,14 @@ def _completeness(coverage: Completeness, what: str) -> tuple[Paragraph, ...]:
 # -------------------------------------------------------------- Dashboard
 
 
+def _cash_flow_blocks(board: Dashboard) -> tuple[Block, ...]:
+    """The Dashboard's cash-flow chart, under its heading, when it has anything."""
+    chart = board.cash_flow_chart()
+    if chart.empty:
+        return ()
+    return (Heading(chart.title), ModelChart(chart))
+
+
 def dashboard_layout(board: Dashboard, *, book_name: str = "") -> ReportDocument:
     """The currently built Dashboard."""
     summary = board.summary()
@@ -411,6 +419,7 @@ def dashboard_layout(board: Dashboard, *, book_name: str = "") -> ReportDocument
     shows = board.config.shows
     blocks: list[Block] = [
         Cards(tuple(cards)),
+        *(_cash_flow_blocks(board) if shows("cash_flow") else ()),
         *((Heading("Balances"), balances) if shows("groups") else ()),
         *_notes(board.coverage_notes),
         *_completeness(board.completeness, "Net worth"),

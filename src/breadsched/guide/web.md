@@ -33,7 +33,10 @@ the first tab carries on; this is the browser's counterpart of the desktop's
 scenario tabs. Reloading a tab needs the address the server printed at start-up,
 because the page removes its access token from the address bar.
 
-On the Dashboard, **Configure Dashboard…** sets the horizons, sections, groups, and
+On the Dashboard, the cash-flow chart sits under the summary figures; hover a point
+for the day's amount, and open **Chart values** below it for the exact figures. See
+[Dashboard and near-term cash](../USER_GUIDE.md#dashboard-and-near-term-cash).
+**Configure Dashboard…** sets the horizons, sections, groups, and
 columns (see [Configure the Dashboard](#configure-the-dashboard)). Expand a
 missed-schedule row to see each missed date and amount. When savings goals have set
 money aside, a **Set aside for goals** tile shows the total (see
