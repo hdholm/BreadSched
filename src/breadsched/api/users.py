@@ -80,6 +80,8 @@ __all__ = [
 _TOKEN_BYTES = 32
 #: A session ends after this many days without use.
 SESSION_DAYS = 30
+#: How often a token's use is written down; a session's expiry moves as often.
+USE_NOTED_EVERY = timedelta(minutes=1)
 #: The shortest password accepted.
 MIN_PASSWORD_LENGTH = 10
 #: Failures allowed before signing in must wait.
@@ -528,21 +530,28 @@ class UserDirectory:
         with self._connect() as connection:
             row = connection.execute(
                 f"SELECT {', '.join('u.' + c for c in _USER_COLUMNS.split(', '))},"
-                " t.id, t.host_files, t.kind, t.expires"
+                " t.id, t.host_files, t.kind, t.expires, t.last_used"
                 " FROM tokens t JOIN users u ON u.id = t.user_id WHERE t.digest = ?",
                 (_digest(token),),
             ).fetchone()
             if row is None:
                 return None
-            token_id, host_files, kind, expires = row[7:]
+            token_id, host_files, kind, expires, last_used = row[7:]
             if expires is not None and datetime.fromisoformat(expires) <= moment:
                 connection.execute("DELETE FROM tokens WHERE id = ?", (token_id,))
                 return None
-            renewed = _text(moment + timedelta(days=SESSION_DAYS)) if kind == "session" else None
-            connection.execute(
-                "UPDATE tokens SET last_used = ?, expires = COALESCE(?, expires) WHERE id = ?",
-                (_text(moment), renewed, token_id),
-            )
+            # Noting the use is a write, and every request asks who its caller is:
+            # requests arriving together would each wait for the others' write lock.
+            # A use is therefore noted at most once in USE_NOTED_EVERY, which leaves
+            # an ordinary request reading only.
+            if last_used is None or moment - datetime.fromisoformat(last_used) >= USE_NOTED_EVERY:
+                renewed = (
+                    _text(moment + timedelta(days=SESSION_DAYS)) if kind == "session" else None
+                )
+                connection.execute(
+                    "UPDATE tokens SET last_used = ?, expires = COALESCE(?, expires) WHERE id = ?",
+                    (_text(moment), renewed, token_id),
+                )
         return Caller(self._user(row[:7]), bool(host_files))
 
     def tokens(self, user: User) -> tuple[DeviceToken, ...]:

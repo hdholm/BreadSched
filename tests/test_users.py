@@ -858,3 +858,38 @@ def test_the_directory_runs_its_schema_only_while_a_table_is_missing(tmp_path, m
     directory.users()
     directory.users()
     assert runs() == 2
+
+
+def test_a_tokens_use_is_written_down_at_most_once_a_minute(tmp_path):
+    """Every request asks who its caller is. Writing the use down each time made
+    requests arriving together wait for one another's write lock (a request on
+    Windows CI was answered after its caller's 30 seconds had run out), so within
+    a minute of the last note a request only reads."""
+    import sqlite3
+    from datetime import datetime, timedelta, timezone
+
+    from breadsched.api import users
+
+    directory = users.UserDirectory(tmp_path / "users.sqlite")
+    token = directory.issue_token(directory.host_user(), "Laptop")
+
+    def noted() -> str | None:
+        with sqlite3.connect(directory.path) as raw:
+            return raw.execute("SELECT last_used FROM tokens").fetchone()[0]
+
+    def changes(moment) -> int:
+        with sqlite3.connect(directory.path) as raw:
+            before = raw.execute("PRAGMA data_version").fetchone()[0]
+            assert directory.authenticate(token, now=moment) is not None
+            return raw.execute("PRAGMA data_version").fetchone()[0] - before
+
+    start = datetime(2026, 11, 10, 12, 0, tzinfo=timezone.utc)
+    assert noted() is None
+    assert changes(start) == 1  # the first use is noted
+    first = noted()
+    assert first is not None
+    # Within the minute nothing is written, however many requests arrive.
+    assert [changes(start + timedelta(seconds=s)) for s in (1, 20, 59)] == [0, 0, 0]
+    assert noted() == first
+    assert changes(start + users.USE_NOTED_EVERY) == 1
+    assert noted() != first

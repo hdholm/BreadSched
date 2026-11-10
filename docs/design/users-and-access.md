@@ -158,6 +158,9 @@ stored for the one user.
   kept `0600` as `device-token` in the account's config folder, and replaced if the
   host no longer knows it. It may name files on the host. Tokens are kept only as
   their SHA-256 digests, with when they were made and last used, and can be revoked.
+  A use is written down at most once a minute (`USE_NOTED_EVERY`): every request
+  asks who its caller is, and a write each time made requests arriving together wait
+  for one another's lock.
 - **The server** answers a request for the user its token belongs to: its own
   per-process token (and the local token of the page it opens) is the computer
   account; any other token must be one the directory issued. A token from another

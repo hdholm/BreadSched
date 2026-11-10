@@ -21,10 +21,13 @@ its release notes; a merge without new notes publishes nothing.
 - **Book-server requests over HTTP sometimes go unanswered on Windows CI.** A test
   request to the local server occasionally gets no status line within its timeout
   (30 s), most often the first write after a refused request; seen only on Windows
-  under pytest-xdist. The server holds its port exclusively, every refusal reads its
-  body first, each test has its own user directory, and the user directory runs its
-  schema script only while a table is missing. Keep this item until the Windows jobs
-  stay clean; if they do not, reproduce on Windows.
+  under pytest-xdist. A log showed the server answering after the client had given
+  up, so the request waits inside the server. The server holds its port exclusively,
+  every refusal reads its body first, each test has its own user directory, the user
+  directory runs its schema script only while a table is missing, and a token's use is
+  written down at most once a minute, so an ordinary request no longer takes a write
+  lock on the user directory. Keep this item until the Windows jobs stay clean; if
+  they do not, time each step of a request on Windows.
 
 ## At the first Beta
 
