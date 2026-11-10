@@ -33,6 +33,7 @@ from ..gi_setup import Gio, GLib, Gtk, Pango
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import attach_date_keys, read_date
 from ..widgets.help import help_row
 
 __all__ = ["ImportDialog"]
@@ -97,7 +98,7 @@ class ImportDialog(BoundedWindow):
         chooser_row.append(self.choose_button)
         box.append(chooser_row)
 
-        self.detected_label = Gtk.Label(xalign=0)
+        self.detected_label = Gtk.Label(xalign=0, wrap=True)
         box.append(self.detected_label)
 
         self.format_box = Gtk.Box(spacing=8)
@@ -112,17 +113,56 @@ class ImportDialog(BoundedWindow):
         self.format_box.set_visible(False)
         box.append(self.format_box)
 
+        # Which transactions to take: a date range, and optionally chosen accounts.
+        # The first date starts at the day this file was last imported.
+        limit_row = Gtk.Box(spacing=8)
+        limit_row.append(Gtk.Label(label="Transactions dated from"))
+        self.since_entry = attach_date_keys(Gtk.Entry(width_chars=11))
+        self.since_entry.set_placeholder_text("any date")
+        self.since_entry.set_tooltip_text(
+            "The first date to import; empty for every date. It starts at the day this "
+            "file was last imported."
+        )
+        limit_row.append(self.since_entry)
+        limit_row.append(Gtk.Label(label="through"))
+        self.until_entry = attach_date_keys(Gtk.Entry(width_chars=11))
+        self.until_entry.set_placeholder_text("any date")
+        self.until_entry.set_tooltip_text("The last date to import; empty for every date")
+        limit_row.append(self.until_entry)
+        all_dates = Gtk.Button(label="All dates")
+        all_dates.set_tooltip_text("Compare every transaction in the file with the book")
+        all_dates.connect("clicked", lambda _b: self.set_limit(None, None))
+        limit_row.append(all_dates)
+        self.accounts_button = Gtk.MenuButton(label="All accounts")
+        self.accounts_button.set_tooltip_text(
+            "Import only transactions in the chosen accounts, or accounts below them"
+        )
+        #: Handle -> check button, for each account already in the book.
+        self.account_checks: dict[str, Gtk.CheckButton] = {}
+        self._build_account_choices()
+        limit_row.append(self.accounts_button)
+        box.append(limit_row)
+
         self.scheduled_check = Gtk.CheckButton(
             label="Import scheduled transactions when supported", active=True
         )
-        box.append(self.scheduled_check)
 
         self.duplicates_check = Gtk.CheckButton(label="Include possible duplicates")
         self.duplicates_check.set_tooltip_text(
             "A QIF or OFX row matching a transaction already in the account on the same date "
             "for the same amount is otherwise held back"
         )
-        box.append(self.duplicates_check)
+        # Held-back rows are from an earlier import, so asking for them compares
+        # every date again.
+        self.duplicates_check.connect(
+            "toggled",
+            lambda check: check.get_active() and self.since_entry.set_text(""),
+        )
+        # Side by side, so the dialog still fits a small screen.
+        checks = Gtk.Box(spacing=18)
+        checks.append(self.scheduled_check)
+        checks.append(self.duplicates_check)
+        box.append(checks)
 
         self.debug_check = Gtk.CheckButton(
             label="Write a detailed log next to the file being imported"
@@ -188,6 +228,50 @@ class ImportDialog(BoundedWindow):
             return
         self.set_source(file.get_path())
 
+    def _build_account_choices(self) -> None:
+        listing = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(listing, f"set_margin_{side}")(8)
+        try:
+            records = book_server(self.db).accounts()
+        except ApiError:
+            records = []
+        for record in records:
+            if record.account.parent is None:
+                continue  # the root stands for every account, which is no choice
+            check = Gtk.CheckButton(label=record.full_name)
+            check.connect("toggled", lambda _c: self._show_account_choice())
+            self.account_checks[record.account.handle] = check
+            listing.append(check)
+        scroller = Gtk.ScrolledWindow(child=listing)
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_min_content_height(min(320, 30 * max(1, len(self.account_checks))))
+        scroller.set_min_content_width(320)
+        self.accounts_button.set_popover(Gtk.Popover(child=scroller))
+        # A new book has no accounts to choose until its first import.
+        self.accounts_button.set_sensitive(bool(self.account_checks))
+
+    def chosen_accounts(self) -> tuple[str, ...]:
+        return tuple(handle for handle, check in self.account_checks.items() if check.get_active())
+
+    def _show_account_choice(self) -> None:
+        count = len(self.chosen_accounts())
+        self.accounts_button.set_label(
+            "All accounts" if not count else f"{count} account{'' if count == 1 else 's'}"
+        )
+
+    def set_limit(self, since, until) -> None:
+        """Show the first and last dates to import; ``None`` leaves one open."""
+        self.since_entry.set_text(since.isoformat() if since is not None else "")
+        self.until_entry.set_text(until.isoformat() if until is not None else "")
+
+    def _limit_dates(self):
+        """The dates typed, as ``(since, until)``; raises ``ValueError`` on a bad one."""
+        return tuple(
+            read_date(entry) if entry.get_text().strip() else None
+            for entry in (self.since_entry, self.until_entry)
+        )
+
     def set_source(self, path: str) -> None:
         """Point the dialog at a file, sniff it, and clear any previous outcome.
 
@@ -200,10 +284,23 @@ class ImportDialog(BoundedWindow):
         self.path_label.set_text(path)
         self.path_label.remove_css_class("dim")
         self._clear_result()
+        try:
+            last = book_server(self.db).import_start_date(path)
+        except ApiError:
+            last = None
+        # Asking for held-back duplicates compares every date (see the check box).
+        self.set_limit(None if self.duplicates_check.get_active() else last, None)
+        # Said beside the detected format, so the dialog needs no more height.
+        last_import_note = (
+            f" · last imported {last.isoformat()}, so the import starts there "
+            "(All dates compares earlier transactions too)"
+            if last is not None
+            else ""
+        )
 
         plugin = PluginManager.instance().for_file(path, IMPORTER)
         self.detected_label.set_text(
-            f"Detected: {plugin.name}" if plugin is not None else "Not recognised"
+            f"Detected: {plugin.name}{last_import_note}" if plugin is not None else "Not recognised"
         )
         if plugin is None:
             self.detected_label.add_css_class("negative")
@@ -256,6 +353,12 @@ class ImportDialog(BoundedWindow):
         path = self.path
         plugin = self._plugin
         self._clear_result()
+        try:
+            since, until = self._limit_dates()
+        except ValueError as error:
+            self.result_view.set_text(f"Check the dates to import: {error}")
+            return
+        accounts = self.chosen_accounts()
         self.import_button.set_sensitive(False)
         self.choose_button.set_sensitive(False)
         self.scheduled_check.set_sensitive(False)
@@ -296,6 +399,9 @@ class ImportDialog(BoundedWindow):
                             include_duplicates=include_duplicates,
                             number_format=number_format,
                             date_format=date_format,
+                            since=since,
+                            until=until,
+                            accounts=accounts,
                             notify=False,
                             progress=lambda stage, done, total: report((stage, done, total)),
                         ),

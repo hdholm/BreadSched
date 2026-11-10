@@ -1450,6 +1450,10 @@ class HttpBookClient:
             from_data(ImportResult, found["result"], "result"),
         )
 
+    def import_start_date(self, source: str) -> date | None:
+        found = self._call("GET", "/imports/start-date", {"source": source})["date"]
+        return date.fromisoformat(found) if found else None
+
     def import_source(self) -> str | None:
         return self._call("GET", "/imports/source")["source"]
 

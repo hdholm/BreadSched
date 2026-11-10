@@ -2137,6 +2137,40 @@ class TestDialogs:
         assert dialog.path == str(Path(gnucash_sqlite_path.path).resolve())
         assert dialog.import_button.get_sensitive() is True
 
+    def test_the_import_dialog_starts_at_the_last_import_and_limits_by_account(
+        self, app, window, populated_book, gnucash_sqlite_path
+    ):
+        # A file imported before starts at that day; dates and accounts narrow it.
+        from breadsched.gui.dialogs.import_dialog import ImportDialog
+
+        app.open_book(populated_book)
+        before = len(list(app.db.iter_transactions()))
+        dialog = ImportDialog(window, app.db)
+        try:
+            assert dialog.since_entry.get_text() == date.today().isoformat()
+            assert "last imported" in dialog.detected_label.get_text()
+            assert dialog.accounts_button.get_label() == "All accounts"
+            checking = app.db.get_account_by_name("Assets:Checking Account")
+            dialog.account_checks[checking.handle].set_active(True)
+            assert dialog.accounts_button.get_label() == "1 account"
+            assert dialog.chosen_accounts() == (checking.handle,)
+
+            dialog.since_entry.set_text("not a date")
+            dialog._on_import(None)
+            assert "Check the dates" in dialog.result_view.get_text()
+
+            dialog.set_limit(None, None)
+            assert dialog.since_entry.get_text() == ""
+            dialog.until_entry.set_text("1999-12-31")
+            dialog._on_import(None)
+            assert dialog.wait_for_background()
+            assert _spin(lambda: "Limited to transactions" in dialog.result_view.get_text())
+            text = dialog.result_view.get_text()
+            assert "dated through 1999-12-31 in 1 chosen account" in text
+            assert len(list(app.db.iter_transactions())) == before
+        finally:
+            dialog.destroy()
+
     def test_hidden_accounts_are_only_offered_when_an_edited_split_uses_them(
         self, app, window, populated_book
     ):
@@ -5593,7 +5627,7 @@ class TestImportReview:
                 "WHERE tx_guid=? AND account_guid=?",
                 (handles["Payroll deposit"], source.ids.salary),
             )
-        cli(["import", str(path), source.path, "--no-infer"])
+        cli(["import", str(path), source.path, "--no-infer", "--since", "all"])
         app.open_book(str(path))
         return app, handles
 
@@ -5634,11 +5668,11 @@ class TestImportReview:
                 "SELECT guid FROM transactions WHERE description='Rent'"
             ).fetchone()[0]
             gnucash.execute("UPDATE splits SET reconcile_state='y' WHERE tx_guid=?", (guid,))
-        cli(["import", str(path), source.path, "--no-infer"])
+        cli(["import", str(path), source.path, "--no-infer", "--since", "all"])
         with sqlite3.connect(source.path) as gnucash:
             gnucash.execute("DELETE FROM splits WHERE tx_guid=?", (guid,))
             gnucash.execute("DELETE FROM transactions WHERE guid=?", (guid,))
-        cli(["import", str(path), source.path, "--no-infer"])
+        cli(["import", str(path), source.path, "--no-infer", "--since", "all"])
         app.open_book(str(path))
 
         dialog, [change] = self._dialog(app, window)

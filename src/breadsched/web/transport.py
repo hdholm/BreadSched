@@ -1055,6 +1055,10 @@ class Handler(BaseHTTPRequestHandler):
             duplicates = query.text("include_duplicates") or "0"
             if duplicates not in {"0", "1"}:
                 raise QueryError("query.invalid", ("include_duplicates",))
+            # Which transactions to take, as the import form sends them.
+            since = query.text("since") or "last"
+            until = query.text("until") or ""
+            accounts = tuple(item for item in (query.text("accounts") or "").split(",") if item)
             query.finish()
         except QueryError as exc:
             self._discard_body(MAX_UPLOAD_BODY)
@@ -1082,6 +1086,9 @@ class Handler(BaseHTTPRequestHandler):
                     number_format=number_format,
                     date_format=date_format,
                     include_duplicates=duplicates == "1",
+                    since=since,
+                    until=until,
+                    accounts=accounts,
                 )
             )
             self._json(200, result)

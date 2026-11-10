@@ -364,6 +364,18 @@ breadsched import household.breadsched accounts.gnucash
 breadsched import household.breadsched statement.qfx
 ```
 
+```bash
+breadsched import household.breadsched accounts.gnucash --since all
+breadsched import household.breadsched accounts.gnucash --since 2026-10-01 --until 2026-10-31
+breadsched import household.breadsched accounts.gnucash --account "Assets:Checking"
+```
+
+A file imported before starts at the day it was last imported; `--since all`
+compares every date, and `--since DATE` and `--until DATE` give a range. `--account`
+(repeatable) takes only transactions in that account or one below it. JSON output
+has `limited_to` and `transactions_outside`. See
+[Import a date range or chosen accounts](../USER_GUIDE.md#import-a-date-range-or-chosen-accounts).
+
 GnuCash, QIF, and OFX/QFX files are detected from their contents; `--format`
 chooses the importer when detection cannot. QIF and OFX/QFX decimal and date
 conventions are inferred from the whole file; when a file is too ambiguous for that,

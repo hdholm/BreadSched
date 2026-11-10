@@ -153,6 +153,32 @@ transaction referenced by either is retained and reported as a conflict instead 
 creating a dangling reference. Moving or renaming the same GnuCash book does not
 reset its stable inventory when its root GUID is available.
 
+## Limited imports
+
+An import can keep to a date range and to chosen accounts (`ImportBook.since`,
+`until`, `accounts`, and `since_last_import`). The service resolves these into one
+`gen.plug.ImportLimit` (a chosen account stands for the accounts below it) and runs
+the importer inside `limited_import`. Every importer writes through
+`ImportSink.transaction`, which reads the limit once and applies it there, so
+GnuCash, QIF, and OFX behave alike without each knowing about it.
+
+A transaction outside the limit is still *observed* before it is passed over. That
+is what keeps deletion mirroring correct: the set of source transactions seen is
+complete, so a transaction is removed only when the source really no longer has it,
+and one whose date moved out of the range is not taken for deleted. It is counted
+in `ImportResult.transactions_outside`, and `limited_to` says the limit in words.
+Accounts, commodities, prices, and schedules are always imported in full.
+
+`remember_import_source` records the day of each successful import by source path,
+and by file name for an upload kept under another folder. `since_last_import`
+starts there when no first date is given; the interfaces ask for that by default.
+It is not applied with `include_duplicates`, which asks again for rows an earlier
+import held back whatever their dates. A GnuCash source carries no modification
+time, so an edit to an earlier-dated transaction is seen only by an import of all
+dates; every interface offers that in one step and the guide says when to use it.
+`tests/test_import_limit.py` holds these rules for the service, the command line,
+the browser route, and the HTTP client.
+
 ## Locally reconciled imported transactions
 
 A statement reconciled in BreadSched is a durable local assertion about imported

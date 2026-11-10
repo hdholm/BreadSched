@@ -1008,6 +1008,11 @@ class BookApi(Protocol):
         request's ``progress`` hears how far it has got; over HTTP it is not sent."""
         ...
 
+    def import_start_date(self, source: str) -> date | None:
+        """The day ``source`` was last imported, where its next import starts by
+        default; ``None`` when it was never imported."""
+        ...
+
     def import_source(self) -> str | None:
         """The file this book was last imported from, to offer again."""
         ...

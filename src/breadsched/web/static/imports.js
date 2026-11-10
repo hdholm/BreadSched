@@ -235,17 +235,36 @@ async function showImport() {
     el("option", { value:"day-first" }, "Day first (DD/MM)"));
   const result = el("pre", { class:"note" });
   const duplicates = el("input", { type:"checkbox" });
+  // Which transactions to take: dates, and optionally chosen accounts. With no
+  // first date, an import starts at the day the file was last imported.
+  const sinceLast = el("input", { type:"checkbox", "aria-label":"Start at the last import" });
+  sinceLast.checked = true;
+  const since = el("input", { type:"date", "aria-label":"First date to import" });
+  const until = el("input", { type:"date", "aria-label":"Last date to import" });
+  since.addEventListener("input", () => { if (since.value) sinceLast.checked = false; });
+  duplicates.addEventListener("change", () => { if (duplicates.checked) sinceLast.checked = false; });
+  if (!state.accounts.length) state.accounts = await get("/api/accounts");
+  const accounts = el("select", { multiple:"multiple", size:"5",
+    "aria-label":"Accounts to import", title:"Hold Ctrl or Cmd to choose several; none means every account" },
+    ...state.accounts.map((account) => el("option", { value:account.handle }, account.full_name)));
+  const limits = () => ({
+    since: since.value || (sinceLast.checked ? "last" : "all"),
+    until: until.value,
+    accounts: [...accounts.selectedOptions].map((option) => option.value),
+  });
   const form = el("form", { class:"entry", onsubmit: async (event) => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.target).entries());
     data.include_scheduled = true;
     data.include_duplicates = duplicates.checked;
+    Object.assign(data, limits());
     try {
       let response;
       if (file.files.length) {
         const query = new URLSearchParams({ filename:file.files[0].name,
           number_format:data.number_format, date_format:data.date_format,
-          include_duplicates:duplicates.checked ? "1" : "0" });
+          include_duplicates:duplicates.checked ? "1" : "0",
+          since:data.since, until:data.until, accounts:data.accounts.join(",") });
         const upload = await fetch(`/api/import/upload?${query}`, {
           method:"POST", headers:{ ...apiHeaders(), "Content-Type":"application/octet-stream" },
           body:file.files[0],
@@ -273,6 +292,14 @@ async function showImport() {
     el("label", {}, "Or enter a path visible to BreadSched", path),
     el("label", {}, "Number format", numberFormat),
     el("label", {}, "QIF date order", dateFormat),
+    el("label", { title:"Without a first date, the import starts at the day this file was "
+      + "last imported; earlier transactions are left as they are" },
+      el("span", {}, defaults.last_imported
+        ? `Start at the last import (${defaults.last_imported}) `
+        : "Start at the last import "), sinceLast),
+    el("label", {}, "From", since),
+    el("label", {}, "Through", until),
+    el("label", {}, "Only these accounts", accounts),
     el("label", { title:"A QIF or OFX row matching a transaction already in the account on the "
       + "same date for the same amount is otherwise held back" },
       el("span", {}, "Include possible duplicates "), duplicates),

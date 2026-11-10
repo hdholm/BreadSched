@@ -9,8 +9,6 @@ its release notes; a merge without new notes publishes nothing.
 
 ## Before the first Beta
 
-- **Import a date range or chosen accounts.** Limit an import to dates and
-  accounts, defaulting to the dates since the last import.
 - **Breadlets.** Plug-ins, as Gramps has gramplets, for Dashboard items, text and
   graphic reports, and import and export, with today's reports, Dashboard sections,
   importers, and exporters as the default ones, and charts in reports.

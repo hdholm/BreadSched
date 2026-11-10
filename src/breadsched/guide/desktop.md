@@ -815,6 +815,13 @@ cancellation; a cancelled import writes nothing. After an import, BreadSched say
 how many reimbursement proposals are waiting. **Include possible duplicates** also
 imports QIF and OFX rows otherwise held back as possible duplicates.
 
+**Transactions dated from … through …** limits the import to those dates; leave
+either empty for no limit on that side. For a file imported before, the first date
+starts at the day you last imported it, and the line under the file name says so.
+**All dates** clears both. The accounts button (**All accounts**) opens a list of
+the book's accounts; tick the ones to import. See
+[Import a date range or chosen accounts](../USER_GUIDE.md#import-a-date-range-or-chosen-accounts).
+
 ### Import a CSV statement
 
 Choose **File → Import CSV Statement…** and choose the file; BreadSched reads its
