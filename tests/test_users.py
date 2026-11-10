@@ -866,7 +866,7 @@ def test_a_tokens_use_is_written_down_at_most_once_a_minute(tmp_path):
     Windows CI was answered after its caller's 30 seconds had run out), so within
     a minute of the last note a request only reads."""
     import sqlite3
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from breadsched.api import users
 
@@ -883,7 +883,7 @@ def test_a_tokens_use_is_written_down_at_most_once_a_minute(tmp_path):
             assert directory.authenticate(token, now=moment) is not None
             return raw.execute("PRAGMA data_version").fetchone()[0] - before
 
-    start = datetime(2026, 11, 10, 12, 0, tzinfo=timezone.utc)
+    start = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
     assert noted() is None
     assert changes(start) == 1  # the first use is noted
     first = noted()
