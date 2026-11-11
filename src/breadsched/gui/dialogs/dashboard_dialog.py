@@ -149,30 +149,32 @@ class DashboardDialog(BoundedWindow):
             grid.attach(Gtk.Label(label=unit, xalign=0), 2, row, 1, 1)
         page.append(grid)
 
-        # The Dashboard's own sections, with its breadlets beside them, so the page
-        # stays short enough for a laptop screen.
+        # Every item the Dashboard can show is a dashboard breadlet: its own items
+        # first, in the order shown, and any others beside them, so the page stays
+        # short enough for a laptop screen.
         columns = Gtk.Grid(column_spacing=32, row_spacing=4)
-        columns.attach(self._heading("Sections"), 0, 0, 1, 1)
+        columns.attach(self._heading("Shown on the Dashboard"), 0, 0, 1, 1)
         self.section_checks: dict[str, Gtk.CheckButton] = {}
-        for row, (name, title) in enumerate(SECTIONS.items(), start=1):
-            check = Gtk.CheckButton(label=title)
-            check.set_active(self.config.sections[name])
-            self.section_checks[name] = check
-            columns.attach(check, 0, row, 1, 1)
-        if self.config.breadlets:
-            columns.attach(self._heading("Breadlets"), 1, 0, 1, 1)
-        for row, item in enumerate(self.config.breadlets, start=1):
+        own = [item for item in self.config.breadlets if item.id in SECTIONS]
+        others = [item for item in self.config.breadlets if item.id not in SECTIONS]
+        if others:
+            columns.attach(self._heading("More breadlets"), 2, 0, 1, 1)
+        # The Dashboard's own items fill two columns; any others take a third.
+        half = (len(own) + 1) // 2
+        placed = [(index // half, index % half + 1, item) for index, item in enumerate(own)]
+        placed += [(2, row, item) for row, item in enumerate(others, start=1)]
+        for column, row, item in placed:
             check = Gtk.CheckButton(label=item.name, valign=Gtk.Align.START)
             check.set_tooltip_text(item.description)
             check.set_active(item.shown)
             self.section_checks[item.key] = check
-            columns.attach(check, 1, row, 1, 1)
+            columns.attach(check, column, row, 1, 1)
         page.append(columns)
         page.append(
             Gtk.Label(
                 label=(
-                    "The summary cards are always shown. Pending reimbursables lists "
-                    "each reimbursable expense still owed, as Pending bills lists bills."
+                    "Pending reimbursables lists each reimbursable expense still owed, as "
+                    "Pending bills lists bills; it is off until you turn it on."
                 ),
                 xalign=0,
                 wrap=True,

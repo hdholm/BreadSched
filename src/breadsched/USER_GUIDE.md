@@ -1002,8 +1002,7 @@ you turn it on.
 ([desktop](guide/desktop.md#configure-the-dashboard),
 [browser](guide/web.md#configure-the-dashboard)): the two horizons (how many days of
 bills cash must cover, and how many months of outgoings the emergency fund should
-last), which sections show (the cash-flow chart, account groups, pending bills, expected
-income, pending reimbursables, and savings goals), the groups and their accounts, and each table's
+last), which items show (the summary figures, the cash-flow chart, account groups, pending bills, expected income, pending reimbursables (off until you turn it on), FSA claims needing attention, and savings goals), the groups and their accounts, and each table's
 columns. All of it is each person's own: when a book is shared with other people,
 each arranges the Dashboard as it makes sense to them, starting from the book's
 arrangement, and an account's **Dashboard group** set while editing the account is
@@ -1257,8 +1256,12 @@ The shipped report breadlets, in the spirit of HomeBank's charts:
 - **Net worth over time**, **Budget jars**, **Tax year** and **Realized gains** are
   the reports of those names, reached the same way.
 
-Two dashboard breadlets show on the Dashboard below its own sections until you turn
-them off in Configure Dashboard: **Spending this month**, as a ring, and **Income and
+Every item on the Dashboard is a dashboard breadlet: its own sections (the summary
+figures, the cash-flow chart, account groups, pending bills, expected income, pending
+reimbursables, FSA claims needing attention, and savings goals) and any other. A
+row or figure on it opens what it is (a bill's schedule, a card's payment settings,
+the savings goals), and its tables sort by any column. Two more show below them until
+you turn them off in Configure Dashboard: **Spending this month**, as a ring, and **Income and
 spending** for the last six months. A range that starts before the book's first month
 starts with that month. Foreign-currency activity without an exchange rate for its
 date is left out of both, and the report says so.

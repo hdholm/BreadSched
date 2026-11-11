@@ -32,6 +32,15 @@ Preparing the first beta.
   each day of the liquidity period, from the same bills and pay that *Needed*
   counts, with the lowest day marked. It is on the desktop, in the browser, and in
   the printed Dashboard, and **Configure Dashboard** can hide it.
+- **The Dashboard is made of breadlets.** Every item on it, from the summary figures
+  and the cash-flow chart to the bills, income, groups, reimbursables, FSA claims and
+  goals, is a dashboard breadlet, shown, hidden and ordered the same way as any
+  other, and drawn alike on the desktop, in the browser and on paper. Their rows and
+  figures open what they are (a bill's schedule, the savings goals, the net worth
+  history), their tables sort by any column, and the summary figures can now be
+  hidden too. A group lists its accounts with their balances under it. In the
+  browser, the net worth history moved from the bottom of the Dashboard to
+  **Reports**; the **Net worth** figure opens it.
 - **Reports in one place.** On the desktop every report opens in its own tab of one
   **Reports** window, so several can be open side by side; the **Reports** menu
   lists each report once. The Expense Explorer is a report now, in the browser too

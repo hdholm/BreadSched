@@ -258,7 +258,7 @@ def test_dashboard_printout_shows_what_goals_set_aside(db, book):
     _goal(db, book)
     html = dashboard_report(dashboard.build(db, as_of=date(2026, 6, 15)))
     assert "In goal jars" in html and "600.00" in html
-    assert "<h2>Savings goals</h2>" in html and "New roof" in html and "saving" in html
+    assert "<h2>Savings goals (1)</h2>" in html and "New roof" in html and "saving" in html
 
 
 def test_cli_migrate_brings_an_older_book_to_the_current_schema(tmp_path, capsys):

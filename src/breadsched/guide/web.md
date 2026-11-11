@@ -45,14 +45,19 @@ On the Dashboard, the cash-flow chart sits under the summary figures; hover a po
 for the day's amount, and open **Chart values** below it for the exact figures. See
 [Dashboard and near-term cash](../USER_GUIDE.md#dashboard-and-near-term-cash).
 **Configure Dashboard…** sets the horizons, sections, groups, and
-columns (see [Configure the Dashboard](#configure-the-dashboard)). Expand a
-missed-schedule row to see each missed date and amount. When savings goals have set
-money aside, an **In goal jars** tile shows the total (see
-[Savings goals](../USER_GUIDE.md#savings-goals)).
+columns (see [Configure the Dashboard](#configure-the-dashboard)). Everything on the
+Dashboard is a dashboard breadlet (see [Reports and breadlets](#reports-and-breadlets)):
+a bill's or income's name opens its schedule (or a card payment's register); a
+missed-schedule row lists each missed date and amount under its range; the **Net
+worth**, **Reimbursements due**, **FSA claims needing attention**, and **In goal jars**
+figures open what they count; and a column heading sorts its table. When something
+is due, **Review due transactions…** is above the bills (see
+[Savings goals](../USER_GUIDE.md#savings-goals) for goal jars).
 
 ### Net worth history
 
-**Net worth history** is the last section of the Dashboard page. **Group by**
+**Net worth history** is a report: choose the Dashboard's **Net worth** figure, or
+**Net Worth History** on **Reports**. **Group by**
 switches between months, quarters, and years. Two charts show assets, debts, and
 net worth, and net worth's composition by group, each with its exact values under
 **Chart values**; expanding a period lists its group values. Choose a period's **Change** (or **Explain**) to list the
@@ -73,10 +78,8 @@ shared with keeps theirs:
 
 - **Horizons**: **Liquid for** so many days of bills, and how many months of
   outgoings the **Emergency fund covers**.
-- **Sections**: Account groups, Pending bills, Expected income, Pending
-  reimbursables (off until you turn it on), and Savings goals, then the Dashboard's
-  breadlets (see [Reports and breadlets](#reports-and-breadlets)). The summary cards
-  always show.
+- **Sections**: The summary figures, the cash-flow chart, account groups, pending bills, expected income, pending reimbursables (off until you turn it on), FSA claims needing attention, and savings goals, then any other dashboard
+  breadlets (see [Reports and breadlets](#reports-and-breadlets)).
 - **Groups**: each group's name, kind, and accounts. A group lists only its own
   accounts, each with a **×** to remove it; type part of a name in **Add an
   account…**, choose it from the list, and choose **Add**. An account is in at most
@@ -147,9 +150,9 @@ share of a ring), **Income and spending** (income beside spending for each perio
 and what was left over), **Net worth over time**, **Budget jars**, **Tax year**,
 and **Realized gains**. **Print** prints the report shown.
 
-The **Dashboard** shows dashboard breadlets below its own sections, **Spending this
-month** and **Income and spending** for the last six months, until you turn them off
-under **Sections** in **Configure Dashboard…**. An add-on that fails to load is named
+The **Dashboard** is made of dashboard breadlets: its own sections, then **Spending
+this month** and **Income and spending** for the last six months, until you turn them
+off under **Sections** in **Configure Dashboard…**. An add-on that fails to load is named
 above the report.
 
 ## Online quotes

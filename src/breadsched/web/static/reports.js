@@ -1,42 +1,97 @@
 // Reports: report breadlets, their options, and a document drawn from report_document_json.
 
 // One block of a breadlet's document. A chart's exact values are the table block
-// after it, so a chart is drawn without its own table.
-function documentBlock(block) {
+// after it, so a chart is drawn without its own table. With onLink, a card or row
+// that links somewhere opens it, and an actions block is a row of buttons; a table
+// with a key sorts by its column headers and shows only the columns the person kept
+// (hiddenColumns(key) lists the hidden ones; the first column always shows).
+function documentBlock(block, { onLink = null, hiddenColumns = null } = {}) {
+  const follow = (link) => () => onLink && onLink(link);
   if (block.type === "heading") return el("h2", {}, block.text);
   if (block.type === "paragraph") {
     if (block.bullet) return el("ul", {}, el("li", {}, block.text));
     return el("p", { class: block.warning ? "note neg" : "note" }, block.text);
   }
   if (block.type === "cards") {
-    return el("div", { class: "cards" }, ...block.items.map((card) =>
-      el("div", { class: "card" }, el("div", { class: "label" }, card.label),
-        el("div", { class: card.alarm ? "value neg" : "value" }, card.value))));
+    return el("div", { class: "cards" }, ...block.items.map((card) => {
+      const body = [el("div", { class: "label" }, card.label),
+        el("div", { class: card.alarm ? "value neg" : "value" }, card.value)];
+      return card.link && onLink
+        ? el("button", { type: "button", class: "card card-link", onclick: follow(card.link),
+          title: `Open ${card.label}` }, ...body)
+        : el("div", { class: "card" }, ...body);
+    }));
+  }
+  if (block.type === "actions") {
+    return el("div", { class: "toolbar" }, ...block.items.map((item) =>
+      el("button", { class: "action", type: "button", onclick: follow(item.link) }, item.label)));
   }
   if (block.type === "chart") return modelChart(block.model, { withTable: false });
   if (!block.rows.length) return el("p", { class: "note" }, block.empty);
-  const columns = block.columns.map((column) => ({ label: column.label, num: column.numeric }));
+  const hidden = new Set(block.key && hiddenColumns ? hiddenColumns(block.key) : []);
+  const keep = block.columns.map((column, index) => index === 0 || !hidden.has(column.label));
   const styles = { heading: "total-row", section: "total-row", total: "total-row", grand: "total-row" };
-  return table(columns, block.rows.map((row) => el("tr", { class: styles[row.style] || null },
-    ...row.cells.map((cell, index) => {
-      const numeric = cell.numeric || (columns[index] && columns[index].num);
-      const kind = numeric ? (cell.negative ? "num neg" : "num") : null;
-      const attrs = { class: kind, title: cell.hint || null,
-        colspan: cell.span > 1 ? cell.span : null,
-        style: cell.indent ? `padding-left: ${0.5 + cell.indent}em` : null };
-      const note = cell.note
-        ? [cell.below ? el("br") : " ", el("span", { class: "note" }, cell.note)] : [];
-      return el("td", attrs, cell.text, ...note);
-    }))));
+  const cellNode = (cell, index, row) => {
+    const numeric = cell.numeric || (block.columns[index] && block.columns[index].numeric);
+    const kind = numeric ? (cell.negative ? "num neg" : "num") : null;
+    const attrs = { class: kind, title: cell.hint || null,
+      colspan: cell.span > 1 ? cell.span : null,
+      style: cell.indent ? `padding-left: ${0.5 + cell.indent}em` : null };
+    const note = cell.note
+      ? [cell.below ? el("br") : " ", el("span", { class: "note" }, cell.note)] : [];
+    // A row that links somewhere opens it from its first cell.
+    const text = index === 0 && row.link && onLink
+      ? el("button", { type: "button", class: "link-button", onclick: follow(row.link) }, cell.text)
+      : cell.text;
+    return el("td", attrs, text, ...note);
+  };
+  const rowNode = (row) => el("tr", { class: styles[row.style] || null },
+    ...row.cells.map((cell, index) => keep[index] === false ? null : cellNode(cell, index, row)));
+  const headers = block.columns.filter((_c, index) => keep[index])
+    .map((column) => ({ label: column.label, num: column.numeric }));
+  const drawn = table(headers, block.rows.map(rowNode));
+  if (block.key) {
+    // Sortable: a header click orders the rows by that column (again reverses it).
+    const shown = block.columns.map((_c, index) => index).filter((index) => keep[index]);
+    let sorted = { column: null, ascending: true };
+    drawn.querySelectorAll("th").forEach((th, position) => {
+      th.classList.add("sortable");
+      th.tabIndex = 0;
+      const sort = () => {
+        const index = shown[position];
+        sorted = { column: index, ascending: sorted.column === index ? !sorted.ascending : true };
+        const value = (row) => {
+          const cell = row.cells[index] || { text: "" };
+          if (cell.sort !== null && cell.sort !== undefined) return cell.sort;
+          const number = Number(String(cell.text).replaceAll(",", "").replace(/^\((.*)\)$/, "-$1"));
+          return cell.numeric && !Number.isNaN(number) ? number : String(cell.text).toLowerCase();
+        };
+        const rows = [...block.rows].sort((a, b) => {
+          const [x, y] = [value(a), value(b)];
+          const order = typeof x === typeof y ? (x > y) - (x < y) : String(x).localeCompare(String(y));
+          return sorted.ascending ? order : -order;
+        });
+        drawn.querySelector("tbody").replaceChildren(...rows.map(rowNode));
+        drawn.querySelectorAll("th").forEach((other) => other.removeAttribute("aria-sort"));
+        th.setAttribute("aria-sort", sorted.ascending ? "ascending" : "descending");
+      };
+      th.addEventListener("click", sort);
+      th.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); sort(); }
+      });
+    });
+    drawn.dataset.table = block.key;
+  }
+  return drawn;
 }
 
-function renderDocument(doc, { titled = true } = {}) {
+function renderDocument(doc, { titled = true, onLink = null, hiddenColumns = null } = {}) {
   const parts = titled
     ? [el("h2", { class: "document-title" }, doc.title),
       doc.subtitle ? el("p", { class: "note" }, doc.subtitle) : null]
     : [];
   for (const section of doc.sections) {
-    for (const block of section.blocks) parts.push(documentBlock(block));
+    for (const block of section.blocks) parts.push(documentBlock(block, { onLink, hiddenColumns }));
   }
   return el("div", { class: "breadlet-document", "data-kind": doc.kind }, ...parts);
 }
@@ -171,18 +226,4 @@ async function showReports() {
     ...problems, output);
   choose().catch(fail);
   return page;
-}
-
-// The Dashboard's breadlets: each shown one drawn below the Dashboard's own sections.
-async function dashboardBreadlets(shown) {
-  const parts = await Promise.all(shown.map(async (item) => {
-    try {
-      const found = await runBreadlet("dashboard", item.id);
-      return el("section", { class: "dashboard-breadlet", "data-breadlet": item.id },
-        renderDocument(found.document, { titled: false }));
-    } catch (error) {
-      return el("p", { class: "note neg" }, `${item.name}: ${error.message}`);
-    }
-  }));
-  return parts;
 }

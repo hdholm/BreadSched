@@ -119,7 +119,8 @@ def test_dashboard_tables_have_rows_and_group_totals_are_amounts(page):
     assert first_bill.count() == 9
     assert "Sample" in first_bill.nth(0).inner_text()
 
-    totals = page.locator(".balance-group dd").all_inner_texts()
+    # The groups' totals are amounts in the Balances table.
+    totals = page.locator(".dashboard-groups td.num").all_inner_texts()
     assert totals and not any("NaN" in value for value in totals)
     assert page.locator("text=NaN").count() == 0
 
@@ -610,8 +611,17 @@ def test_a_proposed_reimbursement_is_accepted_on_the_page(page, served):
     assert len(db.get_receivable(receivable.handle).reimbursements) == 1
 
 
+def _report(page, key: str) -> None:
+    """Open one report on the Reports page."""
+    _nav(page, "Reports")
+    page.get_by_label("Report").select_option(key)
+
+
 def test_dashboard_shows_net_worth_history_and_regroups_it(page):
     page.wait_for_selector("text=Pending bills")
+    # The Dashboard's Net worth figure opens the history, a report.
+    page.locator(".card-link", has_text="Net worth").click()
+    page.wait_for_function("() => document.body.dataset.view === 'Reports'")
     page.wait_for_selector("h2:has-text('Net worth history')")
     rows = page.locator(".net-worth-points tbody tr")
     assert rows.count() >= 1
@@ -636,6 +646,7 @@ def test_dashboard_shows_net_worth_history_and_regroups_it(page):
 
 
 def test_dashboard_explains_a_net_worth_change_and_downloads_it(page):
+    _report(page, "net-worth")
     page.wait_for_selector("h2:has-text('Net worth history')")
     page.locator(".net-worth-explain").last.click()
     section = page.locator(".net-worth-change")
@@ -1075,13 +1086,13 @@ def test_a_withheld_net_worth_names_what_it_leaves_out(page, served):
     page.wait_for_selector("text=Pending bills")
     _nav(page, "Accounts")
     _nav(page, "Dashboard")
-    summary = page.locator("details.completeness-details summary").first
+    summary = page.locator(".dashboard-summary p.neg").first
     summary.wait_for()
-    assert summary.inner_text() == "Net worth: Unavailable: 1 amount lacks a quote"
-    summary.click()
-    detail = page.locator("details.completeness-details li").first.inner_text()
+    assert summary.inner_text() == "Net worth: Unavailable: 1 amount lacks a quote."
+    detail = page.locator(".dashboard-summary p.neg").nth(1).inner_text()
     assert detail.startswith("Assets:Euro cash 25.00 EUR")
     assert detail.endswith("no exchange rate")
+    _report(page, "net-worth")
     page.wait_for_selector("h2:has-text('Net worth history')")
     # The withheld point is left out of the charts, which say so, never drawn as zero.
     page.wait_for_selector(".net-worth-history .chart-partial-note")
@@ -1712,8 +1723,8 @@ def test_configure_dashboard_sets_sections_groups_and_columns(page, served):
     dialog.locator("input[name=section-bills]").uncheck()
     dialog.locator("input[name=section-reimbursables]").check()
     # Expected income: hide Frequency (index 3) for this browser only.
-    dialog.locator("input[name=column-income-3]").uncheck()
-    assert dialog.locator("input[name=column-income-0]").is_disabled()
+    dialog.locator("input[name=column-dashboard-income-3]").uncheck()
+    assert dialog.locator("input[name=column-dashboard-income-0]").is_disabled()
 
     # A new group takes an account typed into its searchable picker.
     dialog.get_by_role("button", name="Add group").click()
@@ -2417,11 +2428,29 @@ def test_the_dashboard_draws_its_breadlets(page, served):
     _nav(page, "Dashboard")
     breadlets = page.locator(".dashboard-breadlet")
     expect(breadlets.first).to_be_visible()
+    # Every Dashboard item is a breadlet's document, its own sections first; a
+    # section with nothing to show (no goals, no claims, reimbursables off) is left out.
     assert [item.get_attribute("data-breadlet") for item in breadlets.all()] == [
+        "summary",
+        "cash_flow",
+        "groups",
+        "bills",
+        "income",
         "recent-income-and-spending",
         "spending-this-month",
     ]
     expect(page.get_by_role("heading", name="Income and spending, last six months")).to_be_visible()
+    # A bill's name opens its schedule; a header click sorts the table.
+    bills = page.locator(".dashboard-bills table")
+    bills.locator("th", has_text="Amount").click()
+    expect(bills.locator("th", has_text="Amount")).to_have_attribute("aria-sort", "ascending")
+    amounts = [
+        float(text.replace(",", ""))
+        for text in bills.locator("tbody tr td:nth-child(5)").all_inner_texts()
+    ]
+    assert amounts == sorted(amounts)
+    bills.locator("tbody .link-button").first.click()
+    expect(page.locator(".detail-dialog form")).to_be_visible()
 
 
 def test_the_navigation_groups_views_into_menus(page):

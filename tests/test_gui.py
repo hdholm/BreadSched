@@ -555,12 +555,17 @@ class TestDashboardIsHome:
         assert window.tabs[0] == ("dashboard", "Dashboard")
         assert window._tabs[0].pinned and window._current_tab() is window._tabs[0]
         view = window._views["dashboard"]
-        chart = view.cash_flow_chart.model
+        from breadsched.gui.widgets.model_chart import ModelChartView
+
+        cash_flow = view.section("cash_flow")
+        [chart_view] = [w for w in _descendants(cash_flow) if isinstance(w, ModelChartView)]
+        chart = chart_view.model
         assert chart is not None and chart.key == "dashboard-cash-flow"
-        # The sample book has bills and pay inside the period, so the chart shows.
+        # The sample book has bills and pay inside the period, so the chart shows,
+        # under its title, as wide as the window above the other sections.
         assert not chart.empty
-        assert view.cash_flow_section.get_visible() is True
-        assert view.cash_flow_heading.get_text() == chart.title
+        assert chart.title in cash_flow.text()
+        assert cash_flow.get_parent() is view.full_width
 
         # Hiding its section in Configure Dashboard hides the chart.
         from breadsched.api.local import book_server
@@ -570,7 +575,7 @@ class TestDashboardIsHome:
             SaveDashboardConfig(sections={"cash_flow": False})
         )
         view.refresh()
-        assert view.cash_flow_section.get_visible() is False
+        assert view.section("cash_flow") is None
 
     def test_the_dashboard_draws_its_breadlets_until_they_are_hidden(self, app, window, tmp_path):
         from breadsched.api.local import book_server
@@ -581,15 +586,13 @@ class TestDashboardIsHome:
         create_sample_book(path, as_of=date.today())
         app.open_book(str(path))
         view = window._views["dashboard"]
-        shown = [child.get_name() for child in _children(view.breadlets_box)]
-        assert shown == [
-            "breadlet-recent-income-and-spending",
-            "breadlet-spending-this-month",
+        # Every item is a breadlet, the Dashboard's own sections first, in order.
+        assert view.shown_sections()[:2] == ["summary", "cash_flow"]
+        assert view.shown_sections()[-2:] == [
+            "recent-income-and-spending",
+            "spending-this-month",
         ]
-        assert [item.title for item in view.breadlet_documents] == [
-            "Income and spending",
-            "Spending this month",
-        ]
+        assert view.section("bills").get_name() == "breadlet-bills"
         # Printing the Dashboard prints its breadlets after its own sections.
         printed = view.printable_report()
         assert "Income and spending, last six months" in printed.text()
@@ -598,9 +601,8 @@ class TestDashboardIsHome:
             SaveDashboardConfig(sections={"breadlet:spending-this-month": False})
         )
         view.refresh()
-        assert [child.get_name() for child in _children(view.breadlets_box)] == [
-            "breadlet-recent-income-and-spending"
-        ]
+        assert "spending-this-month" not in view.shown_sections()
+        assert "recent-income-and-spending" in view.shown_sections()
 
     def test_configure_dashboard_lists_the_breadlets_beside_the_sections(
         self, app, window, populated_book
@@ -6648,7 +6650,8 @@ class TestDashboardView:
         assert view.cards.get_first_child() is not None
 
     def test_the_group_table_is_rendered(self, view):
-        assert view.groups.get_first_child() is not None
+        groups = view.section("groups")
+        assert groups is not None and "Balances" in groups.text()
 
     def test_fsa_information_is_not_embedded_in_the_general_dashboard(self, view):
         assert not hasattr(view, "fsa_grid")
@@ -6862,17 +6865,30 @@ class TestDashboardView:
             dialog.destroy()
 
     def test_bills_and_income_have_separate_lists(self, view):
-        bills = view.bills_view.get_model()
-        income = view.income_view.get_model()
+        bills = view.table("dashboard").get_model()
+        income = view.table("dashboard-income").get_model()
         # Rows are the presentation lists, with each schedule's missed dates grouped.
         assert bills.get_n_items() == len(view.board.display_bills)
         assert income.get_n_items() == len(view.board.display_incomes)
 
     def test_the_bills_columns_sort_and_resize(self, view):
-        columns = view.bills_view.get_columns()
+        bills = view.table("dashboard")
+        columns = bills.get_columns()
         assert columns.get_n_items() >= 8
         for index in range(columns.get_n_items()):
             assert columns.get_item(index).get_resizable() is True
+            assert columns.get_item(index).get_sorter() is not None
+        # Sorting by Amount orders the rows by the amount, not its text.
+        if bills.get_model().get_n_items() > 1:
+            amount = next(
+                columns.get_item(i)
+                for i in range(columns.get_n_items())
+                if columns.get_item(i).get_title() == "Amount"
+            )
+            bills.sort_by_column(amount, Gtk.SortType.ASCENDING)
+            model = bills.get_model()
+            values = [model.get_item(i).row.cells[4].sort for i in range(model.get_n_items())]
+            assert values == sorted(values)
 
     def _configure(self, view, app):
         from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
@@ -6909,27 +6925,27 @@ class TestDashboardView:
         assert view.board.emergency_fund > before
 
     def test_sections_are_shown_and_hidden_from_configure_dashboard(self, view, app):
-        assert view.bills_section.get_visible() is True
+        assert "bills" in view.shown_sections()
         # Pending reimbursables is off until chosen.
-        assert view.reimbursables_section.get_visible() is False
+        assert "reimbursables" not in view.shown_sections()
         dialog = self._configure(view, app)
         dialog.section_checks["bills"].set_active(False)
         dialog.section_checks["reimbursables"].set_active(True)
         assert dialog.save() is True
         dialog.destroy()
         view.refresh()
-        assert view.bills_section.get_visible() is False
-        assert view.reimbursables_section.get_visible() is True
+        assert "bills" not in view.shown_sections()
+        assert "reimbursables" in view.shown_sections()
 
     def test_columns_are_chosen_in_configure_dashboard_and_remembered_per_user(self, view, app):
         # Each table's heading no longer carries a column menu of its own.
-        assert view.bills_section.chooser.get_visible() is False
+        assert view.section("bills").table_sections["dashboard"].chooser.get_visible() is False
         dialog = self._configure(view, app)
         [frequency] = [
             check for check in dialog.column_checks["dashboard"] if check.get_label() == "Frequency"
         ]
         frequency.set_active(False)
-        columns = view.bills_view.get_columns()
+        columns = view.table("dashboard").get_columns()
         shown = {
             columns.get_item(i).get_title(): columns.get_item(i).get_visible()
             for i in range(columns.get_n_items())
@@ -7027,19 +7043,12 @@ class TestDashboardView:
         assert view.board.report_summary()["net_worth"] == Money("109950.00")
         [note] = view.board.coverage_notes
         assert note.startswith("Card payments not set up")
-        shown = []
-        child = view.cards.get_first_child()
-        while child is not None:
-            stack = [child]
-            while stack:
-                widget = stack.pop()
-                if isinstance(widget, Gtk.Label):
-                    shown.append(widget.get_text())
-                inner = widget.get_first_child()
-                while inner is not None:
-                    stack.append(inner)
-                    inner = inner.get_next_sibling()
-            child = child.get_next_sibling()
+        # The note is part of the summary, under its figures.
+        shown = [
+            widget.get_text()
+            for widget in _descendants(view.section("summary"))
+            if isinstance(widget, Gtk.Label)
+        ]
         assert note in shown
 
     def test_dashboard_card_shows_what_savings_goals_set_aside(self, app, window, tmp_path):
@@ -7226,24 +7235,24 @@ class TestDashboardView:
         app.open_book(str(path))
         window.show_category("dashboard")
         view = window._views["dashboard"]
-        assert not view.goals_section.get_visible()
+        # With no goals the section has nothing to show and takes no room.
+        assert view.section("goals") is None
         handle, _name = goal_accounts(app.db)[0]
         save_savings_goal(
             app.db,
             SaveSavingsGoal("Roof", handle, Money(900), today.replace(year=today.year + 1), today),
         )
         view.refresh()
-        assert view.goals_section.get_visible()
-        model = view.goals_view.get_model()
+        model = view.table("dashboard-goals").get_model()
         assert model.get_n_items() == 1
-        assert model.get_item(0).payload.goal.name == "Roof"
+        row = model.get_item(0).row
+        assert row.cells[0].text == "Roof" and row.link == "goals"
 
     def test_missed_occurrences_render_as_one_row_per_schedule(self, app, window, tmp_path):
         from datetime import timedelta
 
         from breadsched.gen.engine.dashboard import MissedGroup
         from breadsched.gen.sample_book import create_sample_book
-        from breadsched.gui.views.dashboard import _due_date
 
         start = (date.today().replace(day=1) - timedelta(days=100)).replace(day=15)
         path = tmp_path / "missed.breadsched"
@@ -7251,19 +7260,22 @@ class TestDashboardView:
         app.open_book(str(path))
         window.show_category("dashboard")
         view = window._views["dashboard"]
-        model = view.bills_view.get_model()
-        shown = [model.get_item(index).payload for index in range(model.get_n_items())]
-        groups = [item for item in shown if isinstance(item, MissedGroup)]
-        assert groups, shown
+        groups = [item for item in view.board.display_bills if isinstance(item, MissedGroup)]
+        assert groups
         rent = next(item for item in groups if item.name == "Sample rent")
-        # One row for the missed dates; an occurrence due today is pending and
-        # keeps a row of its own.
-        rent_rows = [item for item in shown if item.name == "Sample rent"]
-        assert [item for item in rent_rows if isinstance(item, MissedGroup)] == [rent]
-        assert all(item.next_due >= date.today() for item in rent_rows if item is not rent)
-        assert view._due_in(rent).startswith(f"{rent.count} missed, ")
-        assert _due_date(rent) == f"{rent.next_due.isoformat()} to {rent.last_due.isoformat()}"
         assert rent.frequency == "every month"
+        model = view.table("dashboard").get_model()
+        rows = [model.get_item(index).row for index in range(model.get_n_items())]
+        rent_rows = [row for row in rows if row.cells[0].text == "Sample rent"]
+        # One row for the missed dates (each listed below the range); an occurrence
+        # due today is pending and keeps a row of its own.
+        missed = [row for row in rent_rows if "missed" in row.cells[2].text]
+        assert len(missed) == 1
+        [row] = missed
+        assert row.cells[1].text == f"{rent.next_due.isoformat()} to {rent.last_due.isoformat()}"
+        assert row.cells[2].text.startswith(f"{rent.count} missed, ")
+        assert row.cells[1].note.count(", ") == rent.count - 1
+        assert row.link.startswith("schedule:")
 
     def test_imported_first_view_discloses_missing_cash_quote(
         self, app, window, tmp_path, gnucash_sqlite_path
@@ -7618,7 +7630,13 @@ class TestDashboardBillsLinkToSchedules:
         if not view.board.bills:
             pytest.skip("this book has no bills to open")
 
-        view._on_bill_activated(view.bills_view, 0)
+        bills = view.table("dashboard")
+        row = next(
+            index
+            for index in range(bills.get_model().get_n_items())
+            if bills.get_model().get_item(index).row.link.startswith("schedule:")
+        )
+        bills.emit("activate", row)
         assert window.stack.get_visible_child_name() == "scheduled"
 
     def test_the_dashboard_uses_plan_schedules(self, app, window, populated_book):
@@ -8423,7 +8441,7 @@ class TestDashboardWidth:
         app.open_book(populated_book)
         window.show_category("dashboard")
         view = window._views["dashboard"]
-        view._render_groups()
+        view.redraw()
         _minimum, baseline = view.measure(Gtk.Orientation.HORIZONTAL, -1)[:2]
 
         combined = "; ".join(
@@ -8434,15 +8452,14 @@ class TestDashboardWidth:
             GroupResult(name="Everything", kind="asset", total=Money(0), note=combined)
         )
         view.board.coverage_notes = (*view.board.coverage_notes, combined)
-        view._render_groups()
-        view._render_cards()
+        view.redraw()
         _minimum, natural = view.measure(Gtk.Orientation.HORIZONTAL, -1)[:2]
 
         # Before the fix the 30-account note alone asked for ~29,000 pixels.
         assert natural - baseline < 1000
         name = next(
             child
-            for child in _children(view.groups)
+            for child in _descendants(view.section("groups"))
             if isinstance(child, Gtk.Label) and child.get_text().startswith("Everything")
         )
         assert combined in (name.get_tooltip_text() or "")
@@ -8465,10 +8482,10 @@ class TestDashboardWidth:
                 members=members,
             )
         )
-        view._render_groups()
+        view.redraw()
         name = next(
             child
-            for child in _children(view.groups)
+            for child in _descendants(view.section("groups"))
             if isinstance(child, Gtk.Label) and child.get_text().startswith("Everything")
         )
         assert name.get_text() == "Everything"
@@ -8833,8 +8850,8 @@ class TestChromeCleanup:
         window.show_category("accounts")
         # The register draws its own banded ledger grid instead.
         assert window._views["register"].grid.area.has_css_class("register-grid")
-        assert window._views["dashboard"].bills_view.has_css_class("data-table")
-        assert window._views["dashboard"].income_view.has_css_class("data-table")
+        assert window._views["dashboard"].table("dashboard").has_css_class("data-table")
+        assert window._views["dashboard"].table("dashboard-income").has_css_class("data-table")
         assert window._views["scheduled"].definitions_view.has_css_class("data-table")
         assert window._views["scheduled"].estimates_view.has_css_class("data-table")
         assert window._views["upcoming"].upcoming_view.has_css_class("data-table")
@@ -8920,15 +8937,16 @@ class TestTableSections:
         app.open_book(populated_book)
         window.show_category("dashboard")
         view = window._views["dashboard"]
-        sections = (view.groups_section, view.bills_section, view.income_section)
+        sections = (view.section("groups"), view.section("bills"), view.section("income"))
         for section in sections:
             assert section.get_hexpand() is False
             assert section.get_halign() == Gtk.Align.START
-        assert view.bills_section.heading.get_text() == "Pending bills"
-        assert view.income_section.heading.get_text() == "Expected income"
-        assert view.bills_view in set(_descendants(view.bills_section))
-        assert view.income_view in set(_descendants(view.income_section))
-        assert view.groups in set(_descendants(view.groups_section))
+        bills = view.section("bills").table_sections["dashboard"]
+        income = view.section("income").table_sections["dashboard-income"]
+        assert bills.heading.get_text().startswith("Pending bills (")
+        assert income.heading.get_text().startswith("Expected income (")
+        assert view.table("dashboard") in set(_descendants(view.section("bills")))
+        assert view.table("dashboard-income") in set(_descendants(view.section("income")))
 
 
 class TestTablesShrink:

@@ -18,7 +18,7 @@ from breadsched.api.views import report_document_json
 from breadsched.cli.main import main as cli
 from breadsched.gen.db.sqlite import DbSQLite
 from breadsched.gen.engine.chart_model import PIE, ChartModel, ChartSeries
-from breadsched.gen.engine.dashboard import BREADLET_PREFIX
+from breadsched.gen.engine.dashboard import BREADLET_PREFIX, SECTIONS
 from breadsched.gen.lib.money import Money
 from breadsched.gen.plug import (
     DASHBOARD,
@@ -88,9 +88,19 @@ class TestRegistry:
             "tax-year",
             "realized-gains",
         } == {plugin.id for plugin in manager.by_category(REPORT)}
-        assert {"spending-this-month", "recent-income-and-spending"} == {
-            plugin.id for plugin in manager.by_category(DASHBOARD)
-        }
+        # The Dashboard's own sections are dashboard breadlets too.
+        assert {
+            "summary",
+            "cash_flow",
+            "groups",
+            "bills",
+            "income",
+            "reimbursables",
+            "claims",
+            "goals",
+            "spending-this-month",
+            "recent-income-and-spending",
+        } == {plugin.id for plugin in manager.by_category(DASHBOARD)}
         assert all(plugin.source == "built in" for plugin in manager.all())
 
     def test_a_breadlet_describes_its_options_with_todays_defaults(self):
@@ -314,14 +324,24 @@ class TestDashboardBreadlets:
         try:
             server = book_server(db)
             shown = {item.id: item.shown for item in server.dashboard_settings().breadlets}
-            assert shown == {"recent-income-and-spending": True, "spending-this-month": True}
+            assert shown == {
+                **{name: name != "reimbursables" for name in SECTIONS},
+                "recent-income-and-spending": True,
+                "spending-this-month": True,
+            }
             key = f"{BREADLET_PREFIX}spending-this-month"
             saved = server.save_dashboard_settings(SaveDashboardConfig(sections={key: False}))
             assert {item.id: item.shown for item in saved.breadlets}["spending-this-month"] is False
-            assert {item.id: item.shown for item in server.dashboard_settings().breadlets} == {
-                "recent-income-and-spending": True,
-                "spending-this-month": False,
-            }
+            again = {item.id: item.shown for item in server.dashboard_settings().breadlets}
+            assert (again["recent-income-and-spending"], again["spending-this-month"]) == (
+                True,
+                False,
+            )
+            # A section of the Dashboard is hidden under its own name.
+            server.save_dashboard_settings(SaveDashboardConfig(sections={"bills": False}))
+            assert {item.id: item.shown for item in server.dashboard_settings().breadlets}[
+                "bills"
+            ] is False
         finally:
             db.close()
 
@@ -407,6 +427,7 @@ class TestWeb:
             == "Spending this month"
         )
         assert [item["id"] for item in board["config"]["breadlets"]] == [
+            *SECTIONS,
             "recent-income-and-spending",
             "spending-this-month",
         ]
@@ -465,3 +486,61 @@ class TestCommandLine:
         assert cli(args) == 2
         assert "start: From must be a date (YYYY-MM-DD)." in capsys.readouterr().err
         assert cli(["report", str(sample_path), "nope"]) == 2
+
+
+class TestDashboardSections:
+    """The Dashboard's own sections are dashboard breadlets with links and keys."""
+
+    def test_each_section_is_a_breadlet_sharing_one_dashboard(self, book):
+        from breadsched.plugins.breadlets.dashboard import sharing
+
+        calls = []
+        real = book.dashboard
+
+        class Counting:
+            def __getattr__(self, name):
+                return getattr(book, name)
+
+            def dashboard(self, *args, **kwargs):
+                calls.append(args)
+                return real(*args, **kwargs)
+
+        shared = sharing(Counting())
+        manager = _manager()
+        for name in SECTIONS:
+            document = manager.get(DASHBOARD, name).produce(shared, {}, TODAY)
+            assert document.sections[0].name == name
+        assert len(calls) == 1
+
+    def test_bill_rows_link_to_their_schedules_and_due_items_offer_review(self, book):
+        from breadsched.plugins.export.report_layout import Actions, Table
+
+        document = _manager().get(DASHBOARD, "bills").produce(book, {}, TODAY)
+        blocks = document.sections[0].blocks
+        [table] = [block for block in blocks if isinstance(block, Table)]
+        assert table.key == "dashboard" and table.title == "Pending bills"
+        assert table.rows and all(row.link.startswith("schedule:") for row in table.rows)
+        # Due-in sorts by days, amounts by value, not by their text.
+        assert all(isinstance(row.cells[2].sort, int) for row in table.rows)
+        assert all(isinstance(row.cells[4].sort, float) for row in table.rows)
+        due = [block for block in blocks if isinstance(block, Actions)]
+        if due:
+            assert due[0].items[0].link == "due-review"
+
+    def test_summary_figures_link_to_what_they_count(self, book):
+        from breadsched.plugins.export.report_layout import Cards
+
+        document = _manager().get(DASHBOARD, "summary").produce(book, {}, TODAY)
+        [cards] = [block for block in document.sections[0].blocks if isinstance(block, Cards)]
+        assert {card.label: card.link for card in cards.items}["Net worth"] == "report:net-worth"
+
+    def test_links_actions_and_keys_reach_the_json(self, book):
+        document = _manager().get(DASHBOARD, "bills").produce(book, {}, TODAY)
+        data = report_document_json(document)
+        table = next(block for block in data["sections"][0]["blocks"] if block["type"] == "table")
+        assert table["key"] == "dashboard"
+        assert table["rows"][0]["link"].startswith("schedule:")
+        assert "sort" in table["rows"][0]["cells"][0]
+        # Printing draws neither links nor commands.
+        html = render_html(document)
+        assert "Review due transactions" not in html and "schedule:" not in html

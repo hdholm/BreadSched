@@ -286,6 +286,10 @@ def _run_dashboard_income(book: Any, _options: Mapping[str, Any], today: date) -
 
 def register(manager: PluginManager) -> None:
     """Register the shipped report and dashboard breadlets."""
+    from .dashboard import register as register_dashboard
+
+    # The Dashboard's own sections come first: the Dashboard shows them in order.
+    register_dashboard(manager)
     year = BreadletOption(
         "year", "Year", INTEGER, "", minimum=1900, maximum=9999, help="Blank is the latest year."
     )

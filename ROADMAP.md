@@ -9,10 +9,9 @@ its release notes; a merge without new notes publishes nothing.
 
 ## Before the first Beta
 
-- **More breadlets.** The Dashboard's own sections are still native widgets and the
-  Plan, Projection and Expense Explorer reports are reached only from their views;
-  make each a breadlet once its document can carry what its screen lets you click
-  (opening a bill, choosing a cell).
+- **More breadlets.** The Plan, Projection and Expense Explorer are still their own
+  screens: make each a report breadlet once a document can carry what their screens
+  let you choose (a scenario, a category cell, a period).
 - **Simplification review:** less complexity in the design and less to learn in the
   interfaces, with the jar metaphor used consistently.
 - **Book-server requests over HTTP sometimes go unanswered on Windows CI.** A test

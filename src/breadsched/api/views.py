@@ -764,7 +764,7 @@ def reconciliation_view_from_json(payload: dict[str, Any]) -> ReconciliationView
 
 
 def _block_json(block: Any) -> dict[str, Any]:
-    from ..plugins.export.report_layout import Cards, Heading, ModelChart, Paragraph
+    from ..plugins.export.report_layout import Actions, Cards, Heading, ModelChart, Paragraph
 
     if isinstance(block, Heading):
         return {"type": "heading", "text": block.text}
@@ -779,14 +779,21 @@ def _block_json(block: Any) -> dict[str, Any]:
         return {
             "type": "cards",
             "items": [
-                {"label": card.label, "value": card.value, "alarm": card.alarm}
+                {"label": card.label, "value": card.value, "alarm": card.alarm, "link": card.link}
                 for card in block.items
             ],
         }
     if isinstance(block, ModelChart):
         return {"type": "chart", "model": block.model.as_dict()}
+    if isinstance(block, Actions):
+        return {
+            "type": "actions",
+            "items": [{"label": item.label, "link": item.link} for item in block.items],
+        }
     return {
         "type": "table",
+        "key": block.key,
+        "title": block.title,
         "columns": [{"label": column.label, "numeric": column.numeric} for column in block.columns],
         "rows": [
             {
@@ -801,9 +808,11 @@ def _block_json(block: Any) -> dict[str, Any]:
                         "below": cell.below,
                         "hint": cell.hint,
                         "span": cell.span,
+                        "sort": cell.sort,
                     }
                     for cell in row.cells
                 ],
+                "link": row.link,
             }
             for row in block.rows
         ],

@@ -78,15 +78,17 @@ __all__ = [
 #: The kinds a Dashboard group can be, in the order editors list them.
 GROUP_KINDS = ("liquid", "retirement", "asset", "property", "liability")
 
-#: The Dashboard's sections below its summary cards, in the order they are shown,
-#: with their headings (#381).
+#: The Dashboard's own items, in the order they are shown, with their names (#381).
+#: Each is a dashboard breadlet of the same id (``plugins.breadlets.dashboard``).
 SECTIONS = {
+    "summary": "Summary figures",
+    "cash_flow": "Cash flow chart",
     "groups": "Account groups",
     "bills": "Pending bills",
     "income": "Expected income",
     "reimbursables": "Pending reimbursables",
+    "claims": "FSA claims needing attention",
     "goals": "Savings goals",
-    "cash_flow": "Cash flow chart",
 }
 #: Sections shown until the household chooses otherwise: every one but the list of
 #: pending reimbursables, which their own card already totals.

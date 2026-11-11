@@ -79,15 +79,47 @@ says so, as the Expense Explorer does.
 
 ## Dashboard items
 
-The Dashboard's own sections (cards, groups, bills, income, reimbursables, goals,
-cash flow) stay native: they are interactive (open a bill, review due items) in ways
-a document is not. Dashboard breadlets are shown below them. Whether each is shown is
-kept with the sections, under the key `breadlet:<id>` (`engine.dashboard.BREADLET_PREFIX`),
-so one switch list in Configure Dashboard covers both; a breadlet the household has
-not chosen for takes its `shown_by_default`. Saving an unknown breadlet key is
-refused like an unknown section, and `DashboardSettings.breadlets` lists each
-dashboard breadlet with whether it is shown. Printing the Dashboard appends the
-shown breadlets' documents.
+Everything on the Dashboard is a dashboard breadlet. Its own sections are
+registered by `plugins/breadlets/dashboard.py`, one per `dashboard.SECTIONS` entry
+and with the same id: the summary figures, the cash-flow chart, account groups,
+pending bills, expected income, pending reimbursables, FSA claims needing attention,
+and savings goals. Each draws its section from `report_layout.dashboard_section_blocks`,
+the same blocks the printed Dashboard (`dashboard_layout`) is made of, so screen and
+print cannot disagree. Other dashboard breadlets (the shipped spending ring and
+income-and-spending bars, and any add-on's) follow them.
+
+Whether each is shown is kept with the Dashboard's configuration: a section under
+its own name, any other breadlet under `breadlet:<id>`
+(`dashboard_config.breadlet_key`); one the household has not chosen for takes its
+`shown_by_default` (every section but pending reimbursables). Saving an unknown key
+is refused. `DashboardSettings.breadlets` lists every dashboard breadlet in the order
+shown, which is the one list Configure Dashboard offers in GTK and the browser.
+Running them together, an interface wraps the book in `breadlets.dashboard.sharing`,
+so they share one `book.dashboard()` (and the browser's `/api/dashboard` sends every
+shown breadlet's document at once, calculated with the horizons asked for).
+
+## What a document can do on screen
+
+The Dashboard's sections needed more than a printable document, and every report
+gets the same abilities:
+
+- **Links.** A `Card` or `TableRow` may carry a `link`: `schedule:<handle>`,
+  `register:<account>`, `account:<account>` (a card's payment behaviour),
+  `due-review`, `goals`, `receivables`, `fsa-claims`, or `report:<key>`
+  (`report_layout.LINK_KINDS`). GTK follows one in `DashboardView.follow` (a row is
+  activated by double-click or Enter, a card by a click or Enter), the browser in
+  `followDashboardLink` (a row's first cell is a link button). Printing ignores them.
+- **Actions.** An `Actions` block is a row of commands, such as **Review due
+  transactions…** above the bills when something is due; printing leaves it out.
+- **Interactive tables.** A `Table` with a `key` is sortable by every column (a
+  cell's `sort` value, else its number or text) and lets the person choose its
+  columns, remembered under that key: in GTK a `Gtk.ColumnView` in a `table_section`
+  with the same column settings as every other table, in the browser a sortable
+  table whose hidden columns are kept per browser. The Dashboard's bills, income,
+  reimbursables and goals use the keys their tables always had (`dashboard`,
+  `dashboard-income`, ...), so Configure Dashboard's Columns page still lists them.
+- A missed schedule's dates are its due cell's note, below the range, on every
+  screen and on paper.
 
 ## Charts drawn as a ring
 

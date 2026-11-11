@@ -2020,12 +2020,14 @@ class TestGroupMembershipIsStoredOnce:
 
         fresh = DashboardConfig.load(db)
         assert {name: fresh.shows(name) for name in SECTIONS} == {
+            "summary": True,
+            "cash_flow": True,
             "groups": True,
             "bills": True,
             "income": True,
             "reimbursables": False,
+            "claims": True,
             "goals": True,
-            "cash_flow": True,
         }
         result = save_dashboard_config(
             db, SaveDashboardConfig(sections={"bills": False, "reimbursables": True})

@@ -29,6 +29,7 @@ from .contracts import ServiceError, ServiceResult
 
 __all__ = [
     "DashboardBreadlet",
+    "breadlet_key",
     "DashboardGroup",
     "DashboardGroupInput",
     "DashboardSettings",
@@ -126,9 +127,21 @@ def save_dashboard_config(
 
 
 def _dashboard_breadlets():
+    """Every dashboard breadlet in the order the Dashboard shows them: its own
+    sections first, as ``SECTIONS`` lists them, then the others by name."""
     from ..plug import DASHBOARD, PluginManager
 
-    return PluginManager.instance().by_category(DASHBOARD)
+    order = list(SECTIONS)
+    return sorted(
+        PluginManager.instance().by_category(DASHBOARD),
+        key=lambda plugin: (order.index(plugin.id) if plugin.id in SECTIONS else len(order),),
+    )
+
+
+def breadlet_key(breadlet_id: str) -> str:
+    """Where a dashboard breadlet's choice is kept: a section's own name, or the
+    breadlet prefix and its id."""
+    return breadlet_id if breadlet_id in SECTIONS else f"{BREADLET_PREFIX}{breadlet_id}"
 
 
 def _known_section(name: str) -> bool:
@@ -153,7 +166,7 @@ class DashboardBreadlet:
     @property
     def key(self) -> str:
         """Its name among the Dashboard's sections, for ``SaveDashboardConfig``."""
-        return f"{BREADLET_PREFIX}{self.id}"
+        return breadlet_key(self.id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,7 +208,7 @@ def settings_of(config: DashboardConfig) -> DashboardSettings:
                 plugin.id,
                 plugin.name,
                 plugin.description,
-                config.shows(f"{BREADLET_PREFIX}{plugin.id}", plugin.shown_by_default),
+                config.shows(breadlet_key(plugin.id), plugin.shown_by_default),
             )
             for plugin in _dashboard_breadlets()
         ),

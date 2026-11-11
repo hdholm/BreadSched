@@ -22,6 +22,7 @@ from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer
 from ...gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ...gen.services.plan import PlanGoalMilestone
 from .report_layout import (
+    Actions,
     Cards,
     Cell,
     Heading,
@@ -218,6 +219,8 @@ def _block_html(block) -> str:
         return _cards([(card.label, card.value, card.alarm) for card in block.items])
     if isinstance(block, ModelChart):
         return model_chart_svg(block.model)
+    if isinstance(block, Actions):
+        return ""  # commands are for the screen
     return _table_html(block)
 
 

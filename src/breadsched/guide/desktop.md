@@ -155,12 +155,17 @@ you choose its account; it goes again if you balance the others yourself.
 Categorization rules and reimbursable expenses open from **Actions →
 Categorization Rules…** and **Actions → Reimbursable Expenses…**.
 
-On the Dashboard, account groups, pending bills, and expected income are separate
-sections, each as wide as its own columns; they sit side by side when the window has
-room and stack when it does not. A long group line is shortened with "…"; hover over
-it to read it and the accounts it covers. Activate a missed-schedule row to open its
-schedule. When savings goals have set money aside, an **In goal jars** card
-shows the total (see [Savings goals](../USER_GUIDE.md#savings-goals)).
+Everything on the Dashboard is a dashboard breadlet (see
+[Reports and breadlets](#reports-and-breadlets)): the summary figures and the
+cash-flow chart across the top, then account groups, pending bills, expected income,
+and the rest as separate sections, each as wide as its own columns; they sit side by
+side when the window has room and stack when it does not. A long line wraps; hover
+over a group to read the accounts it covers, which are listed under it with their
+balances. Activate a bill or income row (double-click or Enter) to open its schedule,
+or a card payment's account; choose the **Net worth**, **Reimbursements due**, **FSA
+claims needing attention**, or **In goal jars** card to open what it counts. Click a
+column heading to sort a table. When something is due, **Review due transactions…**
+is above the bills. A section with nothing to show takes no room.
 
 ### Net worth history
 
@@ -247,11 +252,10 @@ everything the Dashboard can be told, on three pages. All of it is your own
 arrangement of this book: anyone else it is shared with keeps theirs.
 
 - **General**: the two horizons, **Liquid for** so many days of bills and how many
-  months of outgoings the **Emergency fund covers**, and which sections show:
-  Account groups, Pending bills, Expected income, Pending reimbursables (off until
-  you turn it on), and Savings goals, then the Dashboard's breadlets (see
-  [Reports and breadlets](#reports-and-breadlets)). The summary cards always show
-  and name the horizons they were judged against.
+  months of outgoings the **Emergency fund covers**, and what is **Shown on the
+  Dashboard**: the summary figures, the cash-flow chart, account groups, pending bills, expected income, pending reimbursables (off until you turn it on), FSA claims needing attention, and savings goals, then any other dashboard breadlets (see
+  [Reports and breadlets](#reports-and-breadlets)). The summary figures name the
+  horizons they were judged against.
 - **Groups**: each group's name (a `:` nests one group in another), its kind, and
   its accounts. A group lists only its own accounts, each with a remove button;
   **Add an account…** is a searchable list (type part of a name) and **Add** puts
@@ -332,7 +336,7 @@ one; **Print…** prints it. The charted reports are:
 breadlets too (that is how the browser and the command line reach them); here each
 opens with its full controls.
 
-The Dashboard shows dashboard breadlets below its own sections: **Spending this
+The Dashboard is made of dashboard breadlets: its own sections, then **Spending this
 month** and **Income and spending** for the last six months, until you turn them off
 in **Configure Dashboard**. An add-on installed as a Python package adds its own
 breadlets; one that fails to load is named at the top of its report.

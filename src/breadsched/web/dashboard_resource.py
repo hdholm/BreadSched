@@ -22,8 +22,11 @@ def dashboard_report(
     board = book.dashboard(None, liquidity_days, emergency_months)
     config = board.config
     breadlets = settings_of(config).breadlets
+    documents = _documents(book, board, breadlets)
 
     return {
+        # Every shown dashboard breadlet's document, in order: the Dashboard draws these.
+        "documents": documents,
         "summary": _plain(board.report_summary()),
         "unavailable_reasons": {
             key: board.unavailable_reason(key)
@@ -50,10 +53,7 @@ def dashboard_report(
             "emergency_months": config.emergency_months,
             # The Dashboard's own sections, then its breadlets, under one switch each.
             "sections": _sections(config),
-            "section_titles": {
-                **engine.SECTIONS,
-                **{item.key: item.name for item in breadlets},
-            },
+            "section_titles": {item.key: item.name for item in breadlets},
             "breadlets": [
                 {"id": item.id, "key": item.key, "name": item.name, "shown": item.shown}
                 for item in breadlets
@@ -256,12 +256,35 @@ def dashboard_config_save(api: Api, payload: dict) -> dict:
     }
 
 
+def _documents(book: BookApi, board, breadlets) -> list[dict]:
+    """Each shown dashboard breadlet's document, sharing ``board``; a breadlet that
+    fails is reported in its place rather than failing the Dashboard."""
+    from datetime import date
+
+    from ..api.contract import ApiError
+    from ..api.views import report_document_json
+    from ..gen.plug import DASHBOARD, PluginManager
+    from ..plugins.breadlets.dashboard import sharing
+
+    shared = sharing(book, board)
+    manager = PluginManager.instance()
+    found = []
+    for item in breadlets:
+        plugin = manager.get(DASHBOARD, item.id)
+        if not item.shown or plugin is None:
+            continue
+        try:
+            document = report_document_json(plugin.produce(shared, {}, board.as_of or date.today()))
+        except ApiError as error:
+            found.append({"id": item.id, "name": item.name, "error": str(error)})
+            continue
+        found.append({"id": item.id, "name": item.name, "document": document})
+    return found
+
+
 def _sections(config: engine.DashboardConfig) -> dict[str, bool]:
     """Whether each of the Dashboard's sections, then each of its breadlets, is shown."""
-    return {
-        **{name: config.shows(name) for name in engine.SECTIONS},
-        **{item.key: item.shown for item in settings_of(config).breadlets},
-    }
+    return {item.key: item.shown for item in settings_of(config).breadlets}
 
 
 def group_json(group: engine.GroupConfig | DashboardGroup) -> dict:

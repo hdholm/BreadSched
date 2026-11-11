@@ -338,3 +338,11 @@ tr.find-group th { font-weight: 600; text-align: left; }
 .match-leg { margin: 8px 0; padding: 10px 12px; }
 .match-allocation { gap: 8px; align-items: center; }
 .review-group { margin: 10px 0 4px; font-size: 0.95em; }
+.card-link { text-align: left; cursor: pointer; font: inherit; color: inherit; }
+.card-link:hover { border-color: var(--accent); }
+.link-button { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer;
+  font: inherit; text-align: left; }
+.link-button:hover { text-decoration: underline; }
+th.sortable { cursor: pointer; }
+th[aria-sort=ascending]::after { content: " ▲"; font-size: 10px; }
+th[aria-sort=descending]::after { content: " ▼"; font-size: 10px; }
