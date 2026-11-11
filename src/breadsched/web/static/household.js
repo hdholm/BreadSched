@@ -168,7 +168,7 @@ async function showReimbursables() {
     return el("div", {},
       el("div", { class:"toolbar" }, el("strong", {}, "In scenario"), picker, amount, when,
         el("button", { class:"action", type:"button",
-          title:"Leave both fields empty to expect what the receivable says",
+          title:"Leave both fields empty to expect what the reimbursable expense says",
           onclick:run(async () => {
             const changed = await post("/api/receivable/scenario", {
               scenario:picker.value, receivable:selected.handle,
@@ -178,7 +178,7 @@ async function showReimbursables() {
           }) }, "Apply to scenario")),
       el("p", { class:"note" }, changes.length
         ? `Scenario changes: ${changes.map((item) => item.text).join("; ")}`
-        : "Every scenario expects what this receivable says."));
+        : "Every scenario expects what this reimbursable expense says."));
   };
   const payer = field("payer", { placeholder:"Acme Insurance",
     value:selected?.payer || "", "aria-label":"Payer" });
@@ -217,7 +217,7 @@ async function showReimbursables() {
     data.account_note ? el("p", { class:"note" }, data.account_note) : null,
     el("div", { class:"toolbar" },
       el("button", { class:"action primary", type:"submit" },
-        selected ? "Save changes" : "Add receivable"),
+        selected ? "Save changes" : "Add reimbursable expense"),
       selected ? el("button", { class:"action", type:"button", onclick:() => {
         state.receivableOpen = null; refresh();
       } }, "New") : null));
@@ -360,9 +360,9 @@ async function showReimbursables() {
             + "Its transactions are unchanged.")) return;
           await post("/api/receivable/delete", { handle:selected.handle });
           state.receivableOpen = null;
-          say("Deleted the receivable; its transactions are unchanged.");
+          say("Deleted the reimbursable expense; its transactions are unchanged.");
           await refresh();
-        }) }, "Delete receivable")));
+        }) }, "Delete reimbursable expense")));
   }
 
   return el("div", {},

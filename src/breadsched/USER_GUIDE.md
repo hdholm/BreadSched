@@ -967,10 +967,11 @@ no payment day or payment schedule is not part of Needed within 30 days; the
 Dashboard says so in a “Card payments not set up” note until you configure the
 card's payment behavior (see [Credit-card payments](#credit-card-payments)).
 
-Dashboard keeps expected income and committed bills separate. **Hold now** is the
-portion of current cash reserved for a bill. It accrues on actual income dates in
-proportion to the income received during that bill cycle. If there is no identified
-income before the due date, the full bill is protected.
+Dashboard keeps expected income and committed bills separate. Each bill is a
+[jar](#jars-how-the-pieces-fit-together), and **In the jar** is what of current cash
+is already in it. A bill's jar fills on actual income dates in proportion to the
+income received during that bill cycle. If there is no identified income before the
+due date, the jar holds the full bill.
 
 When a schedule has missed two or more dates, Dashboard shows it once: the missed
 date range and count, the total, and how often it recurs (for example “every
@@ -985,9 +986,9 @@ being counted twice.
 
 **In goal jars** shows what your [savings goals](#savings-goals) have set
 aside so far, and a **Savings goals** table lists each goal's target date, target,
-amount set aside, what remains, and status. Available leaves it out, exactly like a bill's reserve. If a goal's
+amount set aside, what remains, and status. Available leaves it out, exactly as it leaves out what is in bills' jars. If a goal's
 money is kept in a non-cash account (a brokerage account, say), only the part not
-yet moved there is held from Available, and the card says how much that is.
+yet moved there is kept out of Available, and the card says how much that is.
 
 **Reimbursements due** shows what payers still owe you on
 [reimbursable expenses](#reimbursable-expenses), with the part that is disputed or
@@ -1164,14 +1165,14 @@ show the whole payment. These details follow the chosen scenario; Base uses the
 book's saved Base assumptions. This is a read-only explanation and does not change
 the selected Plan or ledger.
 
-### Explore expenses
+### Expense Explorer
 
 Expense Explorer uses the applied Plan horizon, **Group by** period (month,
 quarter, or year), and scenario; changing them changes the periods and planned
 amounts it shows. Actuals are recorded transactions, with the same treatment of
 refunds and other special flows as Plan. Remaining uses only actuals posted through
 the as-of date. Open it from Plan
-([desktop](guide/desktop.md#explore-expenses), [browser](guide/web.md#explore-expenses)).
+([desktop](guide/desktop.md#expense-explorer), [browser](guide/web.md#expense-explorer)).
 
 - **Spending over time** charts every period in the applied Plan range three ways:
   total plan (blue) against actual (orange), actual stacked by your top-level
@@ -1643,7 +1644,7 @@ you record, never an expense.
 
 The target date is a milestone: nothing is spent then, and the whole target stays
 set aside. When you have used the money (say, after buying the roof), close the goal
-to release its earmark. You can reopen a closed goal. Only goals in the reporting
+to release its jar. You can reopen a closed goal. Only goals in the reporting
 currency are supported, held in an asset account.
 
 Goals are pinned: every scenario carries every open goal. A scenario can change a
@@ -1680,7 +1681,7 @@ left. Money moved into a goal's account is a transfer, never an expense.
 
 ### Reimbursable expenses
 
-A receivable tracks an expense you paid out of pocket and what an insurer,
+A reimbursable expense tracks what you paid out of pocket and what an insurer,
 employer, or other payer is expected to send back, without ever rewriting the
 expense or counting the reimbursement as new income
 ([desktop](guide/desktop.md#reimbursable-expenses),
@@ -1708,7 +1709,7 @@ check as a credit to the same expense, like a refund (Checking +120,
 Expenses:Medical −120), and link it. If the insurer pays less than you hoped, the
 rest is simply your expense: write it off and it returns to Expenses:Medical.
 
-**As a charge to a receivable from the start.** Use this when the cost was never
+**As a charge to a reimbursable expense from the start.** Use this when the cost was never
 yours: a hotel your employer will repay, something you bought for a friend. You
 record the charge straight to a Receivable account and never touch an expense:
 
@@ -1723,46 +1724,46 @@ and a status; BreadSched posts nothing, because the money is already where it
 belongs. The payback credits the same receivable account: if it comes on your
 paycheck, give the paycheck a line for it, such as Checking +100 and
 Assets:Receivables:Employer −100, rather than counting it as salary. Link that
-credit (BreadSched proposes it) and the receivable is settled. Such a charge is
+credit (BreadSched proposes it) and the reimbursable expense is settled. Such a charge is
 owed in full; if the payer will not cover part of it, write that part off and
 choose the expense account it becomes, since there is no expense to return it to.
 
 Either way, what is owed sits in an account of type **Receivable**, which counts
 toward net worth but never toward liquidity, Available, or the emergency fund,
-because you cannot spend it yet. Money back is never income. One receivable can
+because you cannot spend it yet. Money back is never income. One reimbursable expense can
 gather several charges, say every cost on one expense report, when they are repaid
-together; a single payback links to one receivable.
+together; a single payback links to one reimbursable expense.
 
 #### How BreadSched holds what is owed
 
 What the payer still owes is held in a **Receivable** account. When you track an
 expense, BreadSched moves the amount expected back (or the whole expense, if you
-gave no expected amount) out of the expense account and into the receivable
+gave no expected amount) out of the expense account and into the reimbursable expense
 account. So your spending shows only what you will really bear, and your net worth
 includes what is owed. Liquidity, Available, and the emergency fund never count it,
 because you cannot spend it yet. Money back moves it out of the receivable account
 again; money back beyond what was owed stays a refund in the expense account. A
 write-off returns the unpaid balance to the expense. A dispute posts nothing.
 BreadSched keeps these moving transactions itself and recomputes them whenever the
-receivable or a linked transaction changes, including after an import; they are
+reimbursable expense or a linked transaction changes, including after an import; they are
 marked in their notes, and editing or deleting one as a transaction, or linking one
-to a receivable or an FSA claim, is refused (change the receivable instead). You can choose the receivable account, which must have the
+to a reimbursable expense or an FSA claim, is refused (change the reimbursable expense instead). You can choose the receivable account, which must have the
 **Receivable** type: an Asset account cannot hold one, because its balance would count
 as money you can spend. By default BreadSched uses, or creates, a "Reimbursements
 Receivable" account under Assets for the expense's currency. An imported GnuCash
-receivable is used only when you choose it.
+reimbursable expense is used only when you choose it.
 
 When money comes back, record it as a credit to the same expense account, as an
-ordinary refund, and link it to the receivable. BreadSched proposes such a credit
-for one open receivable only if all of these hold:
+ordinary refund, and link it to the reimbursable expense. BreadSched proposes such a credit
+for one open reimbursable expense only if all of these hold:
 
-- it is in the same account as the expense, or in the receivable's own account
+- it is in the same account as the expense, or in the reimbursable expense's own account
   (such as a paycheck line repaying a charge recorded there);
 - it is in the same currency as the expense;
 - it is dated on or after the expense;
 - it is no more than what is still owed.
 
-If a credit could belong to more than one receivable, it is proposed only when the
+If a credit could belong to more than one reimbursable expense, it is proposed only when the
 payer's name appears in its description. Nothing is linked until you accept. After
 an import, and when you reconcile the account a deposit landed in, BreadSched tells
 you how many such credits are waiting for review.
@@ -1772,39 +1773,39 @@ never stored: open, then partially reimbursed once some money is back, disputed
 while a balance remains and a dispute is recorded, written off once you record
 giving up on the remainder (even after a partial reimbursement), or settled once the
 linked reimbursements cover what is owed (the expected amount, or the whole
-expense). Unlinking, disputes, and deleting a receivable never change your linked
-transactions. If an expense you track is also on an FSA claim, the receivable shows
+expense). Unlinking, disputes, and deleting a reimbursable expense never change your linked
+transactions. If an expense you track is also on an FSA claim, the reimbursable expense shows
 a warning, so the same cost is not expected back twice.
 
 When an insurer pays part of a bill and the FSA pays the rest, link the two instead:
-on the FSA claim, choose the receivable as the payer that covers part. The claim and
-the receivable then show one allocation of the bill: what the payer pays (the
+on the FSA claim, choose the reimbursable expense as the payer that covers part. The claim and
+the reimbursable expense then show one allocation of the bill: what the payer pays (the
 expected amount, or what it actually paid once that is more), what the FSA covers,
 and what is left for you. The FSA share stays zero until you enter the claim's EOB
 responsibility, and never exceeds what the payer leaves. If the payer and the EOB
 together come to more than was paid (say the insurer paid more than expected), the
 claim shows **Needs review**. Nothing is refused or rewritten; adjust the expected
 amount or the EOB, or write off the difference. The link is made only on the claim,
-never guessed, and changes no transactions; deleting the receivable removes it.
+never guessed, and changes no transactions; deleting the reimbursable expense removes it.
 
 A GnuCash re-import that
-would delete a transaction a receivable depends on is refused, the same protection
+would delete a transaction a reimbursable expense depends on is refused, the same protection
 FSA claims already have.
 
-Give a receivable an **expected by** date and the Plan and Projection expect the
+Give a reimbursable expense an **expected by** date and the Plan and Projection expect the
 money on that date: what is still owed moves from the receivable account into the
 cash account that paid the expense (or, for a card, the account the card is paid
 from), so projected cash rises only from the day it is due, and net worth is
 unchanged. It is an expectation, never posted; the real reimbursement, once linked,
-replaces it. For a charge recorded straight to a receivable, a scenario that expects
-less leaves the rest owed rather than turning it into an expense. A disputed receivable, one whose expected date has passed, and one
+replaces it. For a charge recorded straight to a reimbursable expense, a scenario that expects
+less leaves the rest owed rather than turning it into an expense. A disputed reimbursable expense, one whose expected date has passed, and one
 settled or written off are not counted on, so a doubtful reimbursement never shows
 as spendable cash.
 
 The Plan's Actual figures for an expense category are your net household cost: what
 you bear after reimbursements, and after what is still expected back. Under
 **Reimbursable expenses: gross and net cost**, the Plan lists each category whose
-cost a receivable changed in the range, with its gross cost (what was spent),
+cost a reimbursable expense changed in the range, with its gross cost (what was spent),
 what was reimbursed or is still expected back, and the net household cost. A
 reimbursement is never counted twice: money back only replaces what was already
 expected. A write-off stays part of the net cost; when one falls in a later range
@@ -1823,7 +1824,7 @@ whole amount. Under **Reimbursable expenses: gross and net cost**, each Projecti
 (and the printed Projection) lists every reimbursement expected in its range with
 the gross cost, anything already reimbursed or written off, what the scenario
 expects back and when, and the net household cost. Change a scenario's
-expectation from the receivable's **In scenario** row in the
+expectation from the reimbursable expense's **In scenario** row in the
 [desktop](guide/desktop.md#reimbursable-expenses) or
 [browser](guide/web.md#reimbursable-expenses), or with
 `receivables --scenario NAME --expect RECEIVABLE` on the
@@ -2003,7 +2004,7 @@ A transaction deleted in GnuCash is held the same way when any of its splits is
 reconciled, whether you reconciled it in GnuCash or in BreadSched. Its row says
 **Deleted in GnuCash**, and the choices read **Keep the transaction** (not asked
 again while GnuCash still lacks it), **Delete it here too**, and **Decide later**.
-Deleting is refused while a BreadSched reconciliation, FSA claim, or receivable
+Deleting is refused while a BreadSched reconciliation, FSA claim, or reimbursable expense
 refers to the transaction; the row names what still uses it. An unreconciled
 transaction deleted in GnuCash is still removed on re-import, as before.
 

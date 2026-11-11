@@ -143,7 +143,7 @@ class ReceivablesDialog(BoundedWindow):
         self.account_note.add_css_class("dim")
         form.attach(self.account_note, 1, 7, 1, 1)
         actions = Gtk.Box(spacing=8)
-        self.save_button = Gtk.Button(label="Add receivable")
+        self.save_button = Gtk.Button(label="Add reimbursable expense")
         self.save_button.add_css_class("suggested-action")
         self.save_button.connect("clicked", lambda _b: self.save())
         new_button = Gtk.Button(label="New")
@@ -256,7 +256,7 @@ class ReceivablesDialog(BoundedWindow):
         self.scenario_date.set_tooltip_text("When the payer pays in that scenario")
         self.scenario_button = Gtk.Button(label="Apply to scenario")
         self.scenario_button.set_tooltip_text(
-            "Leave both fields empty to expect what the receivable says"
+            "Leave both fields empty to expect what the reimbursable expense says"
         )
         self.scenario_button.connect("clicked", lambda _b: self.apply_scenario())
         for widget in (
@@ -498,7 +498,7 @@ class ReceivablesDialog(BoundedWindow):
         self.scenario_changes.set_text(
             "Scenario changes: " + "; ".join(changes)
             if changes
-            else "Every scenario expects what this receivable says."
+            else "Every scenario expects what this reimbursable expense says."
             if self._scenarios
             else "Save a scenario to plan for a payer paying less, nothing, or later."
         )
@@ -558,7 +558,7 @@ class ReceivablesDialog(BoundedWindow):
         self.write_off_date.set_text(today)
         self.write_off_reason.set_text("")
         self._fill_accounts(receivable.account if receivable else None)
-        self.save_button.set_label("Save changes" if receivable else "Add receivable")
+        self.save_button.set_label("Save changes" if receivable else "Add reimbursable expense")
         if receivable is not None:
             self.pending_expense = None
         self._refresh_detail()
@@ -652,7 +652,7 @@ class ReceivablesDialog(BoundedWindow):
         self._message(
             reimbursement_override_text(changed.name, override) + "."
             if override is not None
-            else f"{changed.name} expects what the receivable says.",
+            else f"{changed.name} expects what the reimbursable expense says.",
             False,
         )
         return True
@@ -668,7 +668,7 @@ class ReceivablesDialog(BoundedWindow):
             return False
         self.edit(None)
         self.refresh()
-        self._message("Deleted the receivable; its transactions are unchanged.", False)
+        self._message("Deleted the reimbursable expense; its transactions are unchanged.", False)
         return True
 
     def link(self, role: str) -> bool:

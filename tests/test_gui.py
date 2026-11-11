@@ -661,13 +661,35 @@ class TestBreadletReports:
         finally:
             dialog.destroy()
 
-    def test_the_reports_menu_opens_it(self, app, window, populated_book):
-        app.open_book(populated_book)
-        dialog = app.on_breadlet_reports()
-        try:
-            assert dialog.get_title() == "Breadlet Reports" and dialog.breadlets
-        finally:
-            dialog.destroy()
+    def test_reports_open_side_by_side_in_tabs_and_close(self, app, window, tmp_path):
+        from breadsched.gen.sample_book import create_sample_book
+
+        path = tmp_path / "sample.breadsched"
+        create_sample_book(path, as_of=date.today())
+        app.open_book(str(path))
+        app.activate_action("open-report", GLib.Variant.new_string("spending-by-category"))
+        app.activate_action("open-report", GLib.Variant.new_string("expense-explorer"))
+        app.activate_action("open-report", GLib.Variant.new_string("tax-year"))
+        reports = window.reports_window
+        assert [tab.label for tab in reports.tabs] == [
+            "Spending by category",
+            "Expense Explorer",
+            "Tax Year",
+        ]
+        assert reports.notebook.get_n_pages() == 3
+        assert reports.current is reports.tabs[-1]
+        # A breadlet's tab shows only that report: its chooser is hidden.
+        spending = reports.tabs[0].report
+        assert spending.choice.get_visible() is False and spending.view.document is not None
+        # The report's own Close button closes its tab, and the tab's close button too.
+        reports.tabs[-1].report.close()
+        assert [tab.label for tab in reports.tabs] == ["Spending by category", "Expense Explorer"]
+        reports.close_tab(reports.tabs[0])
+        assert [tab.label for tab in reports.tabs] == ["Expense Explorer"]
+        assert reports.notebook.get_n_pages() == 1
+        # Opening another book closes the reports, which read the old one.
+        app.open_book(str(path))
+        assert window.reports_window is None
 
 
 class TestEveryViewBuilds:
@@ -8083,6 +8105,20 @@ def _action_names(widget, found=None):
     return found
 
 
+def _menu_targets(menu, action_name):
+    """The string targets of each item in ``menu`` (and its sections) for one action."""
+    targets = []
+    for index in range(menu.get_n_items()):
+        action = menu.get_item_attribute_value(index, "action", None)
+        if action is not None and action.get_string() == action_name:
+            targets.append(menu.get_item_attribute_value(index, "target", None).get_string())
+        for link_name in ("section", "submenu"):
+            linked = menu.get_item_link(index, link_name)
+            if linked is not None:
+                targets.extend(_menu_targets(linked, action_name))
+    return targets
+
+
 def _menu_actions(menu):
     actions = []
     for index in range(menu.get_n_items()):
@@ -8982,7 +9018,7 @@ class TestViewActions:
             (
                 "plan",
                 ["new-scenario", "manage-scenarios", "explore-expenses"],
-                ["New scenario…", "Manage scenarios…", "Explore expenses…"],
+                ["New scenario…", "Manage scenarios…", "Expense Explorer…"],
             ),
             ("projection", ["compare", "export", "open-tab"], ["Compare with…"]),
             ("register", ["reconcile", "new-tab"], []),
@@ -9015,10 +9051,13 @@ class TestViewActions:
     def test_every_view_action_is_in_a_menu_and_registered(self, app, window):
         from breadsched.gui.viewmanager import VIEW_ACTIONS, view_action_name
 
+        # A report is listed on the Reports menu by its key (app.open-report), which
+        # opens the same report its view's action does; every other command by name.
         expected = {
             f"win.{view_action_name(key, item)}"
             for key, actions in VIEW_ACTIONS.items()
             for item in actions
+            if not item.report
         }
         found = set()
 
@@ -9036,6 +9075,10 @@ class TestViewActions:
         assert expected <= found
         for name in expected:
             assert window.lookup_action(name[4:]) is not None
+        for key, actions in VIEW_ACTIONS.items():
+            for item in actions:
+                if item.report:
+                    assert window.lookup_action(view_action_name(key, item)) is not None
 
     def test_view_actions_are_disabled_without_a_book(self, window):
         assert window.lookup_action("accounts-new-account").get_enabled() is False
@@ -9887,7 +9930,7 @@ class TestReceivablesDialog:
             dialog.edit(receivable.handle)
             assert dialog.scenario_button.get_sensitive()
             assert dialog.scenario_changes.get_text() == (
-                "Every scenario expects what this receivable says."
+                "Every scenario expects what this reimbursable expense says."
             )
             dialog.scenario_amount.set_text("-5")
             assert dialog.apply_scenario() is False
@@ -9907,7 +9950,7 @@ class TestReceivablesDialog:
             dialog.scenario_date.set_text("")
             assert dialog.apply_scenario() is True
             assert db.get_scenario(scenario.handle).reimbursement_overrides == {}
-            assert dialog.status.get_text() == "Careful expects what the receivable says."
+            assert dialog.status.get_text() == "Careful expects what the reimbursable expense says."
         finally:
             dialog.destroy()
 
@@ -12020,18 +12063,32 @@ class TestMenusAndIcons:
             "win.plan-explore-expenses",
             "win.plan-budget-jars",
         } == reports
+        menu = _submenu(app, "_Reports")
+        # Each report opens by its key in the Reports window, each once; a report
+        # breadlet that is one of the interactive reports is not listed twice.
+        keys = _menu_targets(menu, "app.open-report")
+        assert keys == [
+            "expense-explorer",
+            "budget-jars",
+            "net-worth",
+            "holdings",
+            "realized-gains",
+            "tax-year",
+            "income-and-spending",
+            "spending-by-category",
+        ]
         # #408: Transaction Detail is the Find window as a report, an app action.
-        assert set(_menu_actions(_submenu(app, "_Reports"))) == reports | {
+        assert set(_menu_actions(menu)) == {
+            "app.open-report",
             "app.transaction-detail",
-            "app.breadlet-reports",
+            "app.reports",
         }
         assert not reports & set(_menu_actions(_submenu(app, "_Actions")))
         app.open_book(populated_book)
         window.show_category("dashboard")
         window.lookup_action("accounts-realized-gains").activate(None)
-        assert _spin(
-            lambda: any(w.get_title() == "Realized Gains" for w in Gtk.Window.list_toplevels())
-        )
+        reports_window = window.reports_window
+        assert [tab.label for tab in reports_window.tabs] == ["Realized Gains"]
 
     def test_one_new_transaction_command_starts_in_the_shown_register(
         self, app, window, populated_book

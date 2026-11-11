@@ -91,7 +91,7 @@ async function showFsaDashboard() {
 const DASHBOARD_TABLES = {
   bills: { title:"Pending bills", headers:["Item", "Due", "Due in", "Frequency",
     { label:"Amount", num:true }, { label:"Monthly", num:true },
-    { label:"Hold now", num:true }, { label:"Annual", num:true }, "Kind"] },
+    { label:"In the jar", num:true }, { label:"Annual", num:true }, "Kind"] },
   income: { title:"Expected income", headers:["Item", "Due", "Due in", "Frequency",
     { label:"Amount", num:true }, { label:"Monthly", num:true },
     { label:"Annual", num:true }] },
@@ -392,7 +392,7 @@ async function showDashboard() {
     Number(s.goals_set_aside) > 0
       ? tile("In goal jars", money(s.goals_set_aside)
           + (Number(s.goals_held) !== Number(s.goals_set_aside)
-            ? ` (${money(s.goals_held)} held from spendable cash)` : ""))
+            ? ` (${money(s.goals_held)} of it kept out of Available)` : ""))
       : null);
 
   const controls = el("div", { class: "toolbar" },

@@ -32,6 +32,19 @@ Preparing the first beta.
   each day of the liquidity period, from the same bills and pay that *Needed*
   counts, with the lowest day marked. It is on the desktop, in the browser, and in
   the printed Dashboard, and **Configure Dashboard** can hide it.
+- **Reports in one place.** On the desktop every report opens in its own tab of one
+  **Reports** window, so several can be open side by side; the **Reports** menu
+  lists each report once. The Expense Explorer is a report now, in the browser too
+  (**Plan** keeps an **Expense Explorer…** button that opens it with the Plan's
+  range). It is called the Expense Explorer everywhere.
+- **Grouped browser navigation.** The browser's bar holds **Dashboard**,
+  **Reports**, and five menus (**Ledger**, **Schedule**, **Planning**, **Benefits**,
+  **Book**) instead of nineteen buttons.
+- **The same words everywhere.** A bill's jar on the Dashboard is **In the jar**
+  (it was *Hold now*), what goal jars hold beyond spendable cash is *kept out of
+  Available*, and each item on the Reimbursable Expenses page is a *reimbursable
+  expense* (it was sometimes called a *receivable*; the account type keeps that
+  name).
 - **Savings goals speak of jars.** A goal's money is what is *in the jar*; **Add to
   jar** puts extra money in (it was *Allocate*), the Dashboard card is **In goal
   jars** (it was *Set aside for goals*), and a goal that has its whole target is
@@ -42,7 +55,7 @@ Preparing the first beta.
   and carries the whole user guide, this changelog, and the roadmap.
 - **Breadlets: reports and Dashboard items as plug-ins.** Reports, Dashboard items,
   importers and exporters are now *breadlets*, listed and run the same way on the
-  desktop (**Reports → Breadlet Reports…**), in the browser (**Reports**), and on the
+  desktop (the **Reports** menu), in the browser (**Reports**), and on the
   command line (`breadsched breadlets`, `breadsched report`). New charted reports:
   **Spending by category**, a ring of where the money went, and **Income and
   spending**, each period's income beside its spending. Net worth over time, Budget

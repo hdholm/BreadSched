@@ -29,6 +29,18 @@ nav button {
 }
 nav button:hover { color: var(--ink); }
 nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+nav { flex-wrap: wrap; }
+.nav-group-wrap { position: relative; }
+.nav-group::after { content: " ▾"; font-size: 11px; }
+.nav-menu {
+  position: absolute; top: 100%; left: 0; z-index: 20; min-width: 190px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 12%); padding: 4px 0; display: flex; flex-direction: column;
+}
+.nav-menu[hidden] { display: none; }
+.nav-menu button { text-align: left; border-bottom: 0; padding: 8px 14px; }
+.nav-menu button.active { border-bottom: 0; background: var(--bg); }
+@media print { #nav { display: none; } }
 #book { margin-left: auto; color: var(--dim); font-size: 12px; }
 main { padding: 16px; max-width: 1400px; margin: 0 auto; }
 .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }

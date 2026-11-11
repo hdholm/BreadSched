@@ -12,7 +12,8 @@ one registry (`gen/plug`, `PluginManager`):
 | `dashboard` | builds a small report the Dashboard shows below its own sections | the same signature as a report |
 
 Every interface lists and reaches them the same way: Reports and the Dashboard in
-GTK (`gui/dialogs/breadlets_dialog.py`, `gui/views/dashboard.py`), the browser
+GTK (a tab of the Reports window, `gui/dialogs/breadlets_dialog.py` with
+`fixed=True`, and `gui/views/dashboard.py`), the browser
 (`web/breadlet_resource.py`, `/api/breadlets` and `/api/breadlet`, drawn by
 `web/static/reports.js`), and the command line (`breadsched breadlets`,
 `breadsched report`).

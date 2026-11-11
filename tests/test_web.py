@@ -2708,7 +2708,7 @@ class TestPlanApi:
     def test_page_exposes_plan_not_the_legacy_budget_view(self, client):
         _status, body, _headers = page_scripts(client)
         page = body.decode()
-        assert '"Scheduled", "Payroll", "Plan", "Review", "Projection"' in page
+        assert '["Planning", ["Plan", "Projection", "Savings Goals"]]' in page
         assert "async function showPlan" in page
         assert "async function showBudget" not in page
 
@@ -4544,7 +4544,9 @@ class TestDashboardApi:
         page = body.decode()
         assert ': "Dashboard"' in page
         assert 'launchParams.get("view")' in page
-        assert '"Dashboard", "FSA Dashboard", "Accounts"' in page
+        # The Dashboard is the first entry of the navigation, and the page it opens on.
+        assert 'const NAV_GROUPS = [\n  ["Dashboard"],' in page
+        assert '["Benefits", ["FSA Dashboard", "Reimbursable Expenses"]]' in page
         assert "async function showDashboard" in page
         assert "async function showFsaDashboard" in page
         assert "openDashboardConfigEditor" in page
@@ -4656,10 +4658,11 @@ class TestReviewApi:
         _status, review = review_client.get("/api/review")
         assert review["actuals"] == []
 
-    def test_page_exposes_review_between_plan_and_projection(self, client):
+    def test_page_exposes_review_with_the_schedule(self, client):
         _status, body, _headers = page_scripts(client)
         page = body.decode()
-        assert '"Plan", "Review", "Projection"' in page
+        # Review resolves scheduled and due activity, so it is in the Schedule menu.
+        assert '["Schedule", ["Scheduled", "Payroll", "Review"]]' in page
         assert "async function showReview" in page
 
 

@@ -419,6 +419,12 @@ class ViewManager(Gtk.ApplicationWindow):
 
     def book_closing(self) -> None:
         """Detach from the current book before its database connection is closed."""
+        reports = getattr(self, "reports_window", None)
+        if reports is not None:
+            # Its reports read the book being closed.
+            reports.close_all()
+            reports.destroy()
+            self.reports_window = None
         self._detach_views()
 
     def _on_close_request(self, *_args) -> bool:

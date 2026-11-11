@@ -83,7 +83,7 @@ HELP_TOPICS: dict[str, str] = {
     "due-review": "Review due transactions",
     "payroll": "Paychecks and pay changes",
     "plan": "Plan and projection",
-    "expenses": "Explore expenses",
+    "expenses": "Expense Explorer",
     "net-worth": "Net worth history",
     "rules": "Categorization rules",
     "reimbursables": "Reimbursable expenses",

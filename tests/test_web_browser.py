@@ -65,17 +65,26 @@ def page(served):
         assert errors == []
 
 
+def _nav(page, view: str) -> None:
+    """Choose ``view`` from the navigation: open its group's menu first, if it has one."""
+    page.wait_for_selector("#nav button")
+    group = page.locator(f'#nav .nav-group-wrap:has([data-view="{view}"]) .nav-group')
+    if group.count():
+        group.click()
+    page.locator(f'#nav [data-view="{view}"]').click()
+
+
 def test_every_view_loads_from_its_area_script(page):
     """Each navigation button renders its view; none reports a load failure."""
     page.wait_for_selector("#nav button")
-    names = page.locator("#nav button").all_inner_texts()
+    names = page.locator("#nav [data-view]").evaluate_all(
+        "(buttons) => buttons.map((button) => button.dataset.view)"
+    )
     assert len(names) >= 15
+    # Seven entries in the bar: the rest are in its groups' menus.
+    assert page.locator("#nav > *").count() == 7
     for name in names:
-        page.evaluate(
-            "(name) => [...document.querySelectorAll('#nav button')]"
-            ".find((button) => button.textContent === name).click()",
-            name,
-        )
+        _nav(page, name)
         page.wait_for_function(
             "(name) => document.body.dataset.view === name"
             " && document.getElementById('view').textContent.trim() !== 'Loading…'",
@@ -87,11 +96,7 @@ def test_every_view_loads_from_its_area_script(page):
 
 def test_verify_reports_the_book_and_runs_again(page):
     """The Verify page used to fail with "main is not defined" before showing a result."""
-    page.wait_for_selector("#nav button")
-    page.evaluate(
-        "() => [...document.querySelectorAll('#nav button')]"
-        ".find((button) => button.textContent === 'Verify').click()"
-    )
+    _nav(page, "Verify")
     page.wait_for_selector("text=No problems found")
     page.get_by_role("button", name="Verify again").click()
     page.wait_for_selector("text=No problems found")
@@ -128,7 +133,7 @@ def test_csv_statement_maps_previews_and_imports(page, served, tmp_path):
         encoding="utf-8",
     )
     before = len(list(db.iter_transactions()))
-    page.get_by_role("button", name="Import", exact=True).first.click()
+    _nav(page, "Import")
     page.wait_for_selector("text=CSV statement")
     panel = page.locator("div.panel:has(h2:text('CSV statement'))")
 
@@ -154,7 +159,7 @@ def test_csv_split_columns_preview_and_import(page, served, tmp_path):
         "2026-09-01,Warehouse,-30.00,Expenses:Groceries,-20.00,Expenses:Utilities,-10.00\n",
         encoding="utf-8",
     )
-    page.get_by_role("button", name="Import", exact=True).first.click()
+    _nav(page, "Import")
     page.wait_for_selector("text=CSV statement")
     panel = page.locator("div.panel:has(h2:text('CSV statement'))")
     panel.locator("input[type=file]").set_input_files(str(statement))
@@ -177,7 +182,7 @@ def test_csv_split_columns_preview_and_import(page, served, tmp_path):
 
 
 def test_help_opens_the_workflow_section_of_the_guide_in_a_new_tab(page):
-    page.get_by_role("button", name="Import", exact=True).first.click()
+    _nav(page, "Import")
     page.wait_for_selector("text=CSV statement")
     panel = page.locator("div.panel:has(h2:text('CSV statement'))")
     with page.context.expect_page() as opened:
@@ -201,7 +206,7 @@ def test_rules_view_adds_a_rule_and_accepts_its_proposal(page, served, tmp_path)
     imported = import_csv(db, CsvImportRequest(str(path), checking.handle, mapping))
     [row] = imported.value.preview.rows
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Rules", exact=True).first.click()
+    _nav(page, "Rules")
     page.wait_for_selector("text=No rules yet.")
 
     page.fill("input[name=description]", "City Power")
@@ -222,7 +227,7 @@ def test_payroll_view_fills_a_template_creates_a_paycheck_and_previews_a_raise(p
 
     db, _httpd = served
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Payroll", exact=True).first.click()
+    _nav(page, "Payroll")
     page.wait_for_selector("text=Sample wages")
     page.get_by_role("button", name="Fill from paycheck").click()
     page.wait_for_selector("text=Filled the template from the paycheck")
@@ -250,7 +255,7 @@ def test_payroll_view_fills_a_template_creates_a_paycheck_and_previews_a_raise(p
 
 def _open_register(page):
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Register", exact=True).first.click()
+    _nav(page, "Register")
     page.wait_for_selector("tr.entry-row input[aria-label='New transaction description']")
 
 
@@ -488,7 +493,7 @@ def test_a_register_expense_becomes_a_reimbursable(page, served):
 
     db, _httpd = served
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Register", exact=True).first.click()
+    _nav(page, "Register")
     page.wait_for_selector("tr.entry-row")
     account = page.locator("select").first.input_value()
     expense = next(
@@ -501,13 +506,13 @@ def test_a_register_expense_becomes_a_reimbursable(page, served):
     )
     with db.transaction("Browser fixture") as txn:
         db.add_transaction(visit, txn)
-    page.get_by_role("button", name="Register", exact=True).first.click()
+    _nav(page, "Register")
     page.locator("tr:has-text('Browser dentist')").get_by_role(
         "button", name="Reimbursable…"
     ).click()
     page.wait_for_selector("text=Saving links the")
     page.fill("input[aria-label='Payer']", "Dental plan")
-    page.get_by_role("button", name="Add receivable").click()
+    page.get_by_role("button", name="Add reimbursable expense").click()
     page.wait_for_selector("text=The expense is linked.")
 
     [receivable] = list(db.iter_receivables())
@@ -562,7 +567,7 @@ def test_an_open_receivable_shows_its_fsa_allocation(page, served):
     ).ok
 
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Reimbursable Expenses", exact=True).first.click()
+    _nav(page, "Reimbursable Expenses")
     page.locator("tr:has-text('Acme Insurance')").get_by_role("button", name="Open").click()
     page.wait_for_selector("text=Acme Insurance pays 60.00")
     assert page.locator("text=until the EOB is entered").count() == 1
@@ -598,7 +603,7 @@ def test_a_proposed_reimbursement_is_accepted_on_the_page(page, served):
     attach_expense_split(db, receivable.handle, visit.handle, cost.handle)
 
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Reimbursable Expenses", exact=True).first.click()
+    _nav(page, "Reimbursable Expenses")
     page.wait_for_selector("text=Proposed reimbursements")
     page.get_by_role("button", name="Accept selected").click()
     page.wait_for_selector("text=Linked 1 reimbursement(s)")
@@ -651,7 +656,11 @@ def test_dashboard_explains_a_net_worth_change_and_downloads_it(page):
 
 def test_expense_explorer_shows_spending_over_time_and_selects_a_period(page):
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Plan", exact=True).first.click()
+    _nav(page, "Plan")
+    # The Expense Explorer is a report: the Plan's button opens it under Reports.
+    page.get_by_role("button", name="Expense Explorer…", exact=True).click()
+    page.wait_for_function("() => document.body.dataset.view === 'Reports'")
+    assert page.get_by_label("Report").evaluate("(node) => node.value") == "expense-explorer"
     page.wait_for_selector("h3:has-text('Spending over time')")
     periods = page.locator(".spending-over-time .spending-periods tbody tr")
     assert periods.count() >= 2
@@ -742,7 +751,7 @@ def test_the_import_page_writes_ticked_changes_back_to_gnucash(page, served, gnu
         db.commit_transaction(rent, txn)
 
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Import", exact=True).first.click()
+    _nav(page, "Import")
     page.wait_for_selector("h2:has-text('Write changes to GnuCash')")
     panel = page.locator(".writeback")
     panel.get_by_label("Rent via browser", exact=False).check()
@@ -758,7 +767,7 @@ def test_the_import_page_writes_ticked_changes_back_to_gnucash(page, served, gnu
 
 def test_the_guide_page_switches_parts_and_follows_links(page):
     page.wait_for_selector("text=Pending bills")
-    page.locator("#nav").get_by_role("button", name="Guide", exact=True).click()
+    _nav(page, "Guide")
     page.wait_for_selector("article.guide h2:has-text('BreadSched User Guide')")
     page.get_by_role("tab", name="Command line").click()
     page.wait_for_selector("article.guide h2:has-text('Command-line guide')")
@@ -806,7 +815,7 @@ def test_goals_page_adds_funds_and_closes_a_goal(page, served):
     db, _httpd = served
     today = date.today()
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Savings Goals", exact=True).first.click()
+    _nav(page, "Savings Goals")
     page.wait_for_selector("text=No savings goals yet.")
     form = page.locator("form.goal-form")
     form.locator("input[name=name]").fill("Roof")
@@ -822,11 +831,11 @@ def test_goals_page_adds_funds_and_closes_a_goal(page, served):
     page.wait_for_selector("text=Added 150 to the Roof jar.")
     assert db.get_savings_goal(goal.handle).allocated(today).to_decimal() == 150
 
-    page.get_by_role("button", name="Dashboard", exact=True).first.click()
+    _nav(page, "Dashboard")
     page.wait_for_selector("h2:has-text('Savings goals (1)')")
     assert "Roof" in page.locator(".dashboard-goals").inner_text()
 
-    page.get_by_role("button", name="Savings Goals", exact=True).first.click()
+    _nav(page, "Savings Goals")
     page.wait_for_selector("text=In goal jars")
     # The goal's set-aside is charted under what is still to save toward its target.
     chart = page.locator(".savings-goals figure.model-chart[data-key='goals']")
@@ -852,7 +861,7 @@ def test_goals_page_changes_a_goal_in_a_scenario_and_projection_shows_it(page, s
         db.add_scenario(scenario, txn)
     page.goto(f"http://127.0.0.1:{httpd.server_port}/?goals#token={httpd.token}")
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Savings Goals", exact=True).first.click()
+    _nav(page, "Savings Goals")
     page.wait_for_selector("text=Scenario changes")
     page.get_by_role("button", name="Edit", exact=True).first.click()
     overrides = page.locator("form.goal-override")
@@ -863,7 +872,7 @@ def test_goals_page_changes_a_goal_in_a_scenario_and_projection_shows_it(page, s
     assert db.get_scenario(scenario.handle).goal_overrides[goal.handle].target_amount == Money(4000)
     assert "Lean: target 4,000.00" in page.locator("td.goal-changes").first.inner_text()
 
-    page.get_by_role("button", name="Projection", exact=True).first.click()
+    _nav(page, "Projection")
     page.wait_for_selector(".projection-goals")
     assert "Goal Car" in page.locator(".projection-goals").inner_text()
 
@@ -940,7 +949,7 @@ def test_projection_shows_how_each_balance_reconciles(page, served):
 
 def test_a_register_opens_in_its_own_browser_tab(page, served):
     db, httpd = served
-    page.get_by_role("button", name="Register", exact=True).first.click()
+    _nav(page, "Register")
     page.wait_for_selector("text=Open in new tab")
     account = page.evaluate("() => state.account")
     with page.context.expect_page() as opened:
@@ -984,7 +993,7 @@ def test_fsa_claims_needing_attention_show_on_both_dashboards(page, served):
         )
     page.goto(f"http://127.0.0.1:{httpd.server_port}/?claims#token={httpd.token}")
     page.wait_for_selector("text=FSA claims needing attention")
-    page.get_by_role("button", name="FSA Dashboard", exact=True).first.click()
+    _nav(page, "FSA Dashboard")
     page.wait_for_selector("text=2 claims need attention.")
     assert page.locator("text=No EOB entered 45 days after the service").count() == 2
     page.locator("select[name=claims_by]").select_option("provider")
@@ -1021,7 +1030,7 @@ def test_a_claim_is_closed_and_reopened_in_the_claims_editor(page, served):
     )
     fsa_claims.save_claim(db, claim)
     page.goto(f"http://127.0.0.1:{httpd.server_port}/?claims#token={httpd.token}")
-    page.get_by_role("button", name="FSA Dashboard", exact=True).first.click()
+    _nav(page, "FSA Dashboard")
     page.get_by_role("button", name="Manage FSA claims…").click()
     page.wait_for_selector("h2:text('FSA claims')")
     page.get_by_label("Why close").fill("Not worth appealing")
@@ -1064,8 +1073,8 @@ def test_a_withheld_net_worth_names_what_it_leaves_out(page, served):
 
     # Leave and return so the Dashboard is fetched again with the new account.
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Accounts", exact=True).first.click()
-    page.get_by_role("button", name="Dashboard", exact=True).first.click()
+    _nav(page, "Accounts")
+    _nav(page, "Dashboard")
     summary = page.locator("details.completeness-details summary").first
     summary.wait_for()
     assert summary.inner_text() == "Net worth: Unavailable: 1 amount lacks a quote"
@@ -1097,7 +1106,7 @@ def test_a_scenario_drawdown_is_added_from_manage_scenarios(page, served):
     sources, targets = drawdown_accounts(db)
     page.goto(f"http://127.0.0.1:{httpd.server_port}/#token={httpd.token}")
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Plan", exact=True).first.click()
+    _nav(page, "Plan")
     page.get_by_role("button", name="Manage scenarios…").click()
     page.wait_for_selector("h2:has-text('Manage scenarios')")
     page.locator(".toolbar select").first.select_option(label="Retire early")
@@ -1153,9 +1162,9 @@ def test_a_scenario_expects_less_of_a_reimbursement(page, served):
     assert attach_expense_split(db, receivable.handle, visit.handle, cost.handle).ok
 
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Reimbursable Expenses", exact=True).first.click()
+    _nav(page, "Reimbursable Expenses")
     page.get_by_role("button", name="Open", exact=True).first.click()
-    page.wait_for_selector("text=Every scenario expects what this receivable says.")
+    page.wait_for_selector("text=Every scenario expects what this reimbursable expense says.")
     page.fill("input[aria-label='Amount expected in scenario']", "40")
     page.locator("select[aria-label='Scenario']").select_option(label="Careful")
     page.get_by_role("button", name="Apply to scenario").click()
@@ -1190,7 +1199,7 @@ def test_online_quotes_choose_a_source_and_fetch(page, served, monkeypatch, tmp_
         db.add_commodity(Commodity(namespace="TSP", mnemonic="G", fullname="G Fund"), txn)
 
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Accounts", exact=True).first.click()
+    _nav(page, "Accounts")
     page.get_by_role("button", name="Online quotes…").click()
     source = page.locator("[aria-label='Quote source for G']")
     source.fill("tsp")
@@ -1234,7 +1243,7 @@ def test_a_sale_names_its_lots_and_the_gains_report_prints_alone(page, served):
             trades.append(trade)
 
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Accounts", exact=True).first.click()
+    _nav(page, "Accounts")
     page.get_by_role("button", name="Holdings and cost basis…").click()
     page.locator("details.holding summary").first.click()
     page.get_by_role("button", name="Choose the lots sold on 2026-02-01").click()
@@ -1271,7 +1280,7 @@ def test_the_tax_year_marks_accounts_and_tags_and_prints_alone(page, served):
         db.add_transaction(gift, txn)
 
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Accounts", exact=True).first.click()
+    _nav(page, "Accounts")
     page.get_by_role("button", name="Tax year…").click()
     dialog = page.locator(".tax-dialog")
     dialog.wait_for()
@@ -1331,7 +1340,7 @@ def test_budget_jars_open_from_the_plan_and_print_alone(page, served):
         db.add_scheduled(estimate, txn)
 
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Plan", exact=True).first.click()
+    _nav(page, "Plan")
     page.get_by_role("button", name="Budget jars…").click()
     dialog = page.locator(".jars-dialog")
     dialog.wait_for()
@@ -1356,7 +1365,7 @@ def test_budget_jars_open_from_the_plan_and_print_alone(page, served):
 
 def test_the_projection_chart_is_the_shared_line_chart_with_its_values(page):
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Projection", exact=True).first.click()
+    _nav(page, "Projection")
     figure = page.locator(".model-chart").first
     figure.wait_for()
     assert "Projected cash, investments, and net worth" in figure.locator("figcaption").inner_text()
@@ -1495,7 +1504,7 @@ def test_deleting_a_rule_asks_first(page, served):
 
     db, _httpd = served
     page.wait_for_selector("text=Pending bills")
-    page.get_by_role("button", name="Rules", exact=True).first.click()
+    _nav(page, "Rules")
     page.wait_for_selector("text=No rules yet.")
     page.fill("input[name=description]", "Corner Store")
     page.get_by_role("button", name="Add rule").click()
@@ -1609,11 +1618,7 @@ def test_a_schedule_repeats_every_n_units_with_a_calculated_amount(page, served)
     from breadsched.gen.lib import Money
 
     db, _httpd = served
-    page.wait_for_selector("#nav button")
-    page.evaluate(
-        "() => [...document.querySelectorAll('#nav button')]"
-        ".find((button) => button.textContent === 'Scheduled').click()"
-    )
+    _nav(page, "Scheduled")
     page.get_by_role("button", name="New scheduled…").click()
     form = page.locator(".detail-dialog form")
     form.locator("input[name=name]").fill("Every four weeks")
@@ -1746,11 +1751,7 @@ def test_configure_dashboard_sets_sections_groups_and_columns(page, served):
 
 def test_the_schedule_editor_folds_away_what_most_schedules_do_not_need(page, served):
     """#383: splits, future changes, and defaults are folded; their summary counts."""
-    page.wait_for_selector("#nav button")
-    page.evaluate(
-        "() => [...document.querySelectorAll('#nav button')]"
-        ".find((button) => button.textContent === 'Scheduled').click()"
-    )
+    _nav(page, "Scheduled")
     page.get_by_role("button", name="New scheduled…").click()
     form = page.locator(".detail-dialog form")
     form.locator("input[name=name]").wait_for()
@@ -2073,7 +2074,7 @@ def test_a_person_turns_on_two_step_sign_in_and_signs_in_with_a_code(served):
         view.fill("input[name=name]", "alice")
         view.fill("input[name=password]", "alices-own-password")
         view.click("button:has-text('Sign in')")
-        view.locator("#nav").get_by_role("button", name="Account", exact=True).click()
+        _nav(view, "Account")
         view.wait_for_selector("text=Signed in as Alice (alice).")
         view.get_by_role("button", name="Turn on two-step sign-in").click()
         secret = view.locator(".two-step-secret").inner_text()
@@ -2100,7 +2101,7 @@ def test_a_person_turns_on_two_step_sign_in_and_signs_in_with_a_code(served):
         # The code used to turn it on cannot be used again; the next one can.
         view.fill("input[name=code]", code(secret, 1))
         view.click("button:has-text('Sign in')")
-        view.locator("#nav").get_by_role("button", name="Account", exact=True).wait_for()
+        view.locator('#nav [data-group="Book"]').wait_for()
         assert errors == []
         browser.close()
 
@@ -2108,11 +2109,7 @@ def test_a_person_turns_on_two_step_sign_in_and_signs_in_with_a_code(served):
 def test_the_schedule_editors_upcoming_list_follows_its_future_changes(page, served):
     """Upcoming began at the schedule's first date and ignored seasonal months."""
     db, _httpd = served
-    page.wait_for_selector("#nav button")
-    page.evaluate(
-        "() => [...document.querySelectorAll('#nav button')]"
-        ".find((button) => button.textContent === 'Scheduled').click()"
-    )
+    _nav(page, "Scheduled")
     page.get_by_role("button", name="New scheduled…").click()
     form = page.locator(".detail-dialog form")
     form.locator("input[name=name]").wait_for()
@@ -2204,7 +2201,7 @@ def test_review_shows_what_an_actual_was_for_and_its_notes(page, served):
     with db.transaction("Unresolved actual") as txn:
         db.add_transaction(actual, txn)
 
-    page.get_by_role("button", name="Review", exact=True).first.click()
+    _nav(page, "Review")
     button = page.locator("button", has_text="Corner market")
     button.click()
     expect(button.locator(".review-accounts")).to_have_text(
@@ -2253,7 +2250,7 @@ def test_match_to_plan_counts_a_split_like_a_reconciliation(page, served):
         db.add_transaction(purchase, txn)
     key = estimate.occurrence_key(today.replace(day=1))
 
-    page.get_by_role("button", name="Scheduled", exact=True).first.click()
+    _nav(page, "Scheduled")
     row = page.locator("tr", has_text="Browser groceries").first
     row.get_by_role("button", name="Match…").click()
     dialog = page.locator(".match-dialog")
@@ -2271,7 +2268,7 @@ def test_match_to_plan_counts_a_split_like_a_reconciliation(page, served):
     dialog.get_by_role("button", name="Done").click()
 
     # From Review: the rest of the split counts as well.
-    page.get_by_role("button", name="Review", exact=True).first.click()
+    _nav(page, "Review")
     page.locator("button", has_text="Browser market").click()
     page.get_by_role("button", name="Match by split…").click()
     matcher = page.locator(".match-dialog")
@@ -2323,7 +2320,7 @@ def test_entering_a_schedule_that_buys_shares_asks_for_their_price(page, served)
             txn,
         )
 
-    page.get_by_role("button", name="Scheduled", exact=True).first.click()
+    _nav(page, "Scheduled")
     enter_next = page.get_by_role("button", name=re.compile("Enter next"))
     row = page.locator("tr", has_text="Browser payroll", has=enter_next).first
     row.get_by_role("button", name=re.compile("Enter next")).click()
@@ -2366,7 +2363,7 @@ def test_the_import_form_limits_an_import_by_date(page, served, tmp_path):
         ],
     )
 
-    page.get_by_role("button", name="Import", exact=True).first.click()
+    _nav(page, "Import")
     expect(page.get_by_label("Start at the last import")).to_be_checked()
     form = page.locator("form.entry", has=page.locator('input[name="path"]'))
     # The file is chosen from the browser, as a page on another device must.
@@ -2384,7 +2381,7 @@ def test_the_import_form_limits_an_import_by_date(page, served, tmp_path):
 def test_the_dashboard_draws_its_cash_flow_chart(page, served):
     # Cash on hand over the liquidity period, from the sample book's bills and pay.
     expect = sync_api.expect
-    page.get_by_role("button", name="Dashboard", exact=True).first.click()
+    _nav(page, "Dashboard")
     heading = page.get_by_role("heading", name=re.compile(r"Cash flow over the next \d+ days"))
     expect(heading).to_be_visible()
     chart = page.locator("svg[role=img]").first
@@ -2396,7 +2393,7 @@ def test_reports_run_a_breadlet_with_its_options_and_draw_its_ring(page, served)
     """Reports lists the report breadlets; a run draws the ring and its exact table."""
     expect = sync_api.expect
     page.wait_for_selector("#nav button")
-    page.get_by_role("button", name="Reports", exact=True).click()
+    _nav(page, "Reports")
     picker = page.get_by_label("Report")
     expect(picker).to_be_visible()
     picker.select_option("spending-by-category")
@@ -2417,7 +2414,7 @@ def test_reports_run_a_breadlet_with_its_options_and_draw_its_ring(page, served)
 
 def test_the_dashboard_draws_its_breadlets(page, served):
     expect = sync_api.expect
-    page.get_by_role("button", name="Dashboard", exact=True).first.click()
+    _nav(page, "Dashboard")
     breadlets = page.locator(".dashboard-breadlet")
     expect(breadlets.first).to_be_visible()
     assert [item.get_attribute("data-breadlet") for item in breadlets.all()] == [
@@ -2425,3 +2422,28 @@ def test_the_dashboard_draws_its_breadlets(page, served):
         "spending-this-month",
     ]
     expect(page.get_by_role("heading", name="Income and spending, last six months")).to_be_visible()
+
+
+def test_the_navigation_groups_views_into_menus(page):
+    """The bar shows each group once; its menu lists its views and closes on a choice."""
+    expect = sync_api.expect
+    page.wait_for_selector("#nav button")
+    ledger = page.locator('#nav [data-group="Ledger"]')
+    menu = page.locator("#nav .nav-group-wrap:has([data-group=Ledger]) .nav-menu")
+    expect(menu).to_be_hidden()
+    ledger.click()
+    expect(ledger).to_have_attribute("aria-expanded", "true")
+    assert menu.locator("button").all_inner_texts() == [
+        "Accounts",
+        "Register",
+        "Find",
+        "Enter",
+        "Import",
+        "Rules",
+    ]
+    page.keyboard.press("Escape")
+    expect(menu).to_be_hidden()
+    _nav(page, "Register")
+    expect(menu).to_be_hidden()
+    # The group names the view it holds while one of its views is shown.
+    expect(ledger).to_have_text("Ledger: Register")

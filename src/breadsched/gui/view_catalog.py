@@ -214,7 +214,7 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
         ),
         ViewAction(
             "explore-expenses",
-            "_Explore Expenses…",
+            "_Expense Explorer…",
             "_open_expense_explorer",
             "system-search-symbolic",
             True,

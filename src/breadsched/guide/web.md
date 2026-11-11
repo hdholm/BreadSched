@@ -17,9 +17,17 @@ GTK. To create a book first, use the [command line](cli.md#create-and-inspect-bo
 
 ## Find your way around
 
-The navigation bar offers the work areas (**Dashboard**, **FSA Dashboard**,
-**Accounts**, **Register**, **Scheduled**, **Plan**, **Review**, **Projection**) and
-**Enter**, **Import**, **Rules**, **Reimbursable Expenses**, **Savings Goals**, **Verify**, and **Guide**. **Guide** shows this guide: choose the overview or the desktop, browser,
+The navigation bar has **Dashboard** and **Reports**, and five menus that group the
+other pages; choose one to open it, and choose a page in it:
+
+- **Ledger**: **Accounts**, **Register**, **Find**, **Enter**, **Import**, and **Rules**.
+- **Schedule**: **Scheduled**, **Payroll**, and **Review**.
+- **Planning**: **Plan**, **Projection**, and **Savings Goals**.
+- **Benefits**: **FSA Dashboard** and **Reimbursable Expenses**.
+- **Book**: **Account** (your sign-in and password), **Verify**, and **Guide**.
+
+A menu's name shows the page you are on while it is one of its pages (for example
+**Ledger: Register**); **Escape** or a click elsewhere closes it. **Guide** shows this guide: choose the overview or the desktop, browser,
 or command-line part, and a link to another part opens it there. **Help** on
 **Scheduled**, **Payroll**, **Plan**, **Projection**, **Import**, **Rules**, **Reimbursable Expenses**, and **Savings Goals**, and in the CSV statement, write-back,
 reconciliation, due review, held GnuCash changes, Expense Explorer, and net worth
@@ -378,7 +386,7 @@ either a fixed yearly amount (optionally rising with expense inflation) or a yea
 share of the balance in percent. **Edit** and **Remove** change or delete a drawdown;
 a refused entry explains why and changes nothing.
 
-### Explore expenses
+### Expense Explorer
 
 Apply the Plan controls first, then scroll to **Expense Explorer** on the Plan page,
 below the cash outlook. Choose a period in any **Spending over time** or **Income
@@ -388,7 +396,7 @@ that period's dated income), use **Sort by** to order the category rows, and cho
 a **Category trend**. Each chart's exact values are under its **Chart values**
 toggle. The page also shows the selected category's Plan, Period actual, and Period variance beneath the
 merchant table. **Carry prior periods** turns rollover on. See
-[Explore expenses](../USER_GUIDE.md#explore-expenses).
+[Expense Explorer](../USER_GUIDE.md#expense-explorer).
 
 ## Savings goals
 
@@ -409,24 +417,24 @@ section, and **Plan** lists goals reaching their target in its range. See
 
 ## Reimbursable expenses
 
-Choose **Reimbursable…** on a register row to start a receivable from that expense,
+Choose **Reimbursable…** on a register row to track that expense as reimbursable,
 or from a charge recorded straight to a Receivable account (then **Held in** starts
 at that account), or open **Reimbursable Expenses** to list, open, link, dispute, and
-write off receivables. A write-off's **Write off into** chooses the expense it
+write off reimbursable expenses. A write-off's **Write off into** chooses the expense it
 becomes; a charge recorded to a Receivable account must name one. See [Two ways to
 record a reimbursable cost](../USER_GUIDE.md#two-ways-to-record-a-reimbursable-cost).
 **Held in** chooses the receivable account (the default is one per currency). It
 lists only accounts whose type is **Receivable**; the note under it names any account
-that looks like a receivable but is not offered (an **Asset** account named for
+that looks like a receivable account but is not offered (an **Asset** account named for
 receivables, or a placeholder). To use such an account, change its type to
 **Receivable** when editing the account.
 **Proposed reimbursements** lists credits that clearly belong to one open
-receivable, checked, including a credit to the receivable account itself such as a
+reimbursable expense, checked, including a credit to the receivable account itself such as a
 paycheck line; choose **Accept selected** to link them. A warning appears when
-a linked expense is also on an FSA claim, and the open receivable shows what is
+a linked expense is also on an FSA claim, and the open reimbursable expense shows what is
 owed and the account holding it.
 
-**Plan** lists each expense category a receivable changed under **Reimbursable
+**Plan** lists each expense category a reimbursable expense changed under **Reimbursable
 expenses: gross and net cost**, and a Plan cell's detail shows its gross cost and
 what was reimbursed or expected back below the Plan, Actual, and Variance cards.
 
@@ -458,15 +466,15 @@ In the FSA claim editor, a changed EOB is kept in the claim's history with the
 with the reason typed beside it, and lists its history.
 
 When the FSA pays what the insurer does not, open the FSA claim editor, choose the
-receivable under **Payer covers part**, and save the claim. The claim list and the
-receivable then show what the payer, the FSA, and you each pay, and **Needs
+reimbursable expense under **Payer covers part**, and save the claim. The claim list and the
+reimbursable expense then show what the payer, the FSA, and you each pay, and **Needs
 review** when that comes to more than was paid. See
 [Reimbursable expenses](../USER_GUIDE.md#reimbursable-expenses).
 
 To plan for the payer paying less, nothing, or later in one saved scenario, open the
-receivable and use the **In scenario** row: choose the scenario, enter the amount
+reimbursable expense and use the **In scenario** row: choose the scenario, enter the amount
 expected back (0 for nothing) and the date, and choose **Apply to scenario**. Leave
-both empty to expect what the receivable says again. The line below lists every
+both empty to expect what the reimbursable expense says again. The line below lists every
 scenario's change, and that scenario's Projection shows the gross and net cost (see
 [Reimbursable expenses](../USER_GUIDE.md#reimbursable-expenses)).
 

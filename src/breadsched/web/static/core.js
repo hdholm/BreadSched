@@ -1,6 +1,16 @@
 // Page state, DOM and number helpers, and the authenticated JSON API calls.
 
-const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Find", "Scheduled", "Payroll", "Plan", "Review", "Projection", "Reports", "Enter", "Import", "Rules", "Reimbursable Expenses", "Savings Goals", "Verify", "Guide", "Account"];
+// The navigation: a view on its own, or a named group of views shown as a menu.
+const NAV_GROUPS = [
+  ["Dashboard"],
+  ["Ledger", ["Accounts", "Register", "Find", "Enter", "Import", "Rules"]],
+  ["Schedule", ["Scheduled", "Payroll", "Review"]],
+  ["Planning", ["Plan", "Projection", "Savings Goals"]],
+  ["Reports"],
+  ["Benefits", ["FSA Dashboard", "Reimbursable Expenses"]],
+  ["Book", ["Account", "Verify", "Guide"]],
+];
+const VIEWS = NAV_GROUPS.flatMap(([name, views]) => views || [name]);
 const launchParams = new URLSearchParams(window.location.search);
 let current = VIEWS.includes(launchParams.get("view")) ? launchParams.get("view") : "Dashboard";
 let state = {

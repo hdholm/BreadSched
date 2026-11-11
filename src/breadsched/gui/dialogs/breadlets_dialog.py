@@ -34,6 +34,7 @@ class BreadletReportsDialog(BoundedWindow):
         breadlet: str | None = None,
         *,
         today: date | None = None,
+        fixed: bool = False,
     ) -> None:
         super().__init__(title="Breadlet Reports", transient_for=parent)
         self.db = db
@@ -86,6 +87,11 @@ class BreadletReportsDialog(BoundedWindow):
         ids = [plugin.id for plugin in self.breadlets]
         if breadlet in ids:
             self.choice.set_selected(ids.index(breadlet))
+            if fixed:
+                # A tab of the Reports window shows one report; its tab names it.
+                self.choice.set_visible(False)
+                chooser.get_first_child().set_visible(False)
+                self.set_title(self.breadlets[ids.index(breadlet)].name)
         self.choice.connect("notify::selected", lambda *_: self.choose())
         if self.breadlets:
             self.choose()

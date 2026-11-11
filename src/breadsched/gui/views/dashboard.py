@@ -154,7 +154,7 @@ class DashboardView(BaseView):
         )
         self.bills_view.append_column(
             column(
-                "Hold now",
+                "In the jar",
                 lambda b: b.held.format(),
                 sort_key=lambda b: b.held.to_decimal(),
                 numeric=True,
@@ -539,7 +539,7 @@ class DashboardView(BaseView):
         if set_aside > 0:
             text = set_aside.format()
             if held != set_aside:
-                text += f" ({held.format()} held from spendable cash)"
+                text += f" ({held.format()} of it kept out of Available)"
             self.cards.append(_card("In goal jars", text, False))
         for note in board.coverage_notes:
             self.cards.append(_card("Coverage", note, False))
@@ -681,9 +681,9 @@ class DashboardView(BaseView):
     def _open_net_worth_history(self, _button) -> None:
         if self.db is None:
             return
-        from ..dialogs.net_worth_history_dialog import NetWorthHistoryDialog
+        from ..reports_window import open_report
 
-        NetWorthHistoryDialog(self.get_root(), self.db).present()
+        open_report(self.get_root(), self.db, "net-worth")
 
 
 #: Widest a group name (with its note) may ask to be before it ellipsizes.

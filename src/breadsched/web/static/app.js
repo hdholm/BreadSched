@@ -19,6 +19,48 @@ const VIEW_HELP = {
 
 function switchTo(name) { current = name; render(); }
 
+// The navigation bar: each group is a button that opens its menu of views; a menu
+// closes when a view is chosen, on Escape, or on a click elsewhere.
+function closeNavMenus(except = null) {
+  for (const menu of document.querySelectorAll("#nav .nav-menu")) {
+    if (menu === except) continue;
+    menu.hidden = true;
+    menu.previousElementSibling.setAttribute("aria-expanded", "false");
+  }
+}
+
+function renderNav() {
+  const nav = document.getElementById("nav");
+  const item = (name) => el("button", {
+    type: "button", "data-view": name, class: name === current ? "active" : null,
+    "aria-current": name === current ? "page" : null,
+    onclick: () => { closeNavMenus(); switchTo(name); },
+  }, name);
+  nav.replaceChildren(...NAV_GROUPS.map(([name, views]) => {
+    if (!views) return item(name);
+    const menu = el("div", { class: "nav-menu", role: "menu", hidden: "" }, ...views.map(item));
+    const toggle = el("button", {
+      type: "button", class: views.includes(current) ? "nav-group active" : "nav-group",
+      "data-group": name, "aria-haspopup": "true", "aria-expanded": "false",
+      onclick: () => {
+        const opening = menu.hidden;
+        closeNavMenus(menu);
+        menu.hidden = !opening;
+        toggle.setAttribute("aria-expanded", String(opening));
+        if (opening) menu.querySelector("button").focus();
+      },
+    }, views.includes(current) ? `${name}: ${current}` : name);
+    return el("div", { class: "nav-group-wrap" }, toggle, menu);
+  }));
+}
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest("#nav .nav-group-wrap")) closeNavMenus();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeNavMenus();
+});
+
 // Open a view in another browser tab, which keeps its own place and scenario.
 // The API token travels in the fragment, which the new page removes on load.
 function openInNewTab(view, extra = {}) {
@@ -34,10 +76,7 @@ let renderGeneration = 0;
 
 async function render() {
   const generation = ++renderGeneration;
-  const nav = document.getElementById("nav");
-  nav.replaceChildren(...VIEWS.map((name) => el("button", {
-    class: name === current ? "active" : null, onclick: () => switchTo(name),
-  }, name)));
+  renderNav();
   const view = document.getElementById("view");
   document.body.dataset.view = current;
   document.getElementById("print-title").textContent = current;

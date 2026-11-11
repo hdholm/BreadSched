@@ -105,7 +105,7 @@ class PlanView(BaseView):
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
         bar.append(spacer)
-        # New scenario, Manage scenarios, and Explore expenses are toolbar icons.
+        # New scenario, Manage scenarios, and Expense Explorer are toolbar icons.
         bar.append(Gtk.Label(label="Scenario"))
         self.scenario = bounded_dropdown()
         self.scenario.connect("notify::selected", self._on_scenario_changed)
@@ -666,30 +666,20 @@ class PlanView(BaseView):
         self._render()
 
     def _open_budget_jars(self, _button) -> None:
+        """Budget Jars over this Plan's range and grouping, in the Reports window."""
         if self.db is None:
             return
-        from ..dialogs.budget_jars_dialog import BudgetJarsDialog
+        from ..reports_window import open_report
 
-        BudgetJarsDialog(
-            self.get_root(), self.db, self._start_date, self._end_date, self._grouping()
-        ).present()
+        open_report(self.get_root(), self.db, "budget-jars")
 
     def _open_expense_explorer(self, _button) -> None:
+        """The Expense Explorer for this Plan's range, grouping and scenario, in a report tab."""
         if self.db is None:
             return
-        from ..dialogs.expense_explorer_dialog import ExpenseExplorerDialog
+        from ..reports_window import open_report
 
-        ExpenseExplorerDialog(
-            self.get_root(),
-            self.db,
-            PlanQuery(
-                start=self._start_date,
-                end=self._end_date,
-                period=self._grouping(),
-                scenario=self._scenario_handle,
-                baseline=baseline_scenario(self.manager, self.db),
-            ),
-        ).present()
+        open_report(self.get_root(), self.db, "expense-explorer")
 
     def printable_report(self):
         """The applied Plan state, not un-applied control edits, laid out."""

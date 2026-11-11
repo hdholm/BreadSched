@@ -245,7 +245,7 @@ def receivable_scenario(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
         "text": (
             reimbursement_override_text(scenario.name, override)
             if override is not None
-            else f"{scenario.name} expects what the receivable says"
+            else f"{scenario.name} expects what the reimbursable expense says"
         ),
     }
 
