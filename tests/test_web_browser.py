@@ -797,8 +797,8 @@ def test_dashboard_shows_what_savings_goals_set_aside(page, served):
     ).value
     assert allocate_to_goal(db, AllocateToGoal(goal.handle, Money(250), today)).ok
     page.goto(f"http://127.0.0.1:{httpd.server_port}/?goals#token={httpd.token}")
-    page.wait_for_selector("text=Set aside for goals")
-    tile = page.locator(".card", has_text="Set aside for goals")
+    page.wait_for_selector("text=In goal jars")
+    tile = page.locator(".card", has_text="In goal jars")
     assert "250" in tile.inner_text()
 
 
@@ -817,9 +817,9 @@ def test_goals_page_adds_funds_and_closes_a_goal(page, served):
     [goal] = list(db.iter_savings_goals())
     assert goal.name == "Roof" and goal.target_amount.to_decimal() == 900
 
-    page.get_by_label("Amount to allocate to Roof").fill("150")
-    page.get_by_role("button", name="Allocate", exact=True).click()
-    page.wait_for_selector("text=Allocated 150 to Roof.")
+    page.get_by_label("Amount to add to the Roof jar").fill("150")
+    page.get_by_role("button", name="Add to jar", exact=True).click()
+    page.wait_for_selector("text=Added 150 to the Roof jar.")
     assert db.get_savings_goal(goal.handle).allocated(today).to_decimal() == 150
 
     page.get_by_role("button", name="Dashboard", exact=True).first.click()
@@ -827,7 +827,7 @@ def test_goals_page_adds_funds_and_closes_a_goal(page, served):
     assert "Roof" in page.locator(".dashboard-goals").inner_text()
 
     page.get_by_role("button", name="Savings Goals", exact=True).first.click()
-    page.wait_for_selector("text=Set aside for goals")
+    page.wait_for_selector("text=In goal jars")
     # The goal's set-aside is charted under what is still to save toward its target.
     chart = page.locator(".savings-goals figure.model-chart[data-key='goals']")
     assert chart.count() == 1

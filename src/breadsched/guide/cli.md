@@ -604,7 +604,7 @@ breadsched goals book.breadsched --override "New roof" --scenario Lean \
 ```
 
 The list shows each goal's account, target date, target, what is set aside, what
-remains, and its status: **saving**, **fully set aside**, **starts** a later date, or
+remains, and its status: **saving**, **jar full**, **starts** a later date, or
 **closed**. **saving (spread by day: no income scheduled)** means no income is
 scheduled before the target date, so the gap is spread by day. Below the table are the total
 set aside and the part held from spendable cash. A goal is named by its exact name

@@ -294,7 +294,7 @@ every scheduled estimate (such as groceries) is a jar, and so is every
    income's share of the cycle's income, so the whole amount is ready on the due
    date. Income that was scheduled but never arrived fills nothing; future income is
    expected to. A goal fills the same way from its start date to its target date,
-   plus any extra money you allocate to it. A goal stays a shadow sub-account: the
+   plus any extra money you add to its jar. A goal stays a shadow sub-account: the
    money really sits in the goal's account, and the jar says how much of it is
    spoken for.
 2. **Actual transactions draw the jars.** When Review (or posting a due item)
@@ -983,7 +983,7 @@ balance and usual payment. Scheduled card purchases remain planning expenses but
 not become immediate cash bills, preventing a purchase and its later payment from
 being counted twice.
 
-**Set aside for goals** shows what your [savings goals](#savings-goals) have set
+**In goal jars** shows what your [savings goals](#savings-goals) have set
 aside so far, and a **Savings goals** table lists each goal's target date, target,
 amount set aside, what remains, and status. Available leaves it out, exactly like a bill's reserve. If a goal's
 money is kept in a non-cash account (a brokerage account, say), only the part not
@@ -1632,11 +1632,11 @@ The goal list is charted too: one column per open goal, labelled with its target
 month, with what is set aside stacked under what is still to save, so each column
 reaches the goal's target.
 
-You can allocate extra money to a goal at any time, for example a bonus. It is set
+You can add extra money to a goal's jar at any time, for example a bonus. It is set
 aside in full on its date, and later income spreads only what is still missing.
 Allocations cannot add up to more than the target.
 
-What is set aside is an earmark, not the whole account. One savings account can
+What a goal's jar holds is a claim on part of its account, not the whole account. One savings account can
 hold money for several goals and for other purposes, and a goal never creates or
 changes transactions. Moving money into the goal's account is an ordinary transfer
 you record, never an expense.

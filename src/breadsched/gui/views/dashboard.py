@@ -237,7 +237,7 @@ class DashboardView(BaseView):
         )
         for title, value in (
             ("Target", lambda g: g.target),
-            ("Set aside", lambda g: g.set_aside),
+            ("In the jar", lambda g: g.set_aside),
             ("Remaining", lambda g: g.remaining),
         ):
             self.goals_view.append_column(
@@ -540,7 +540,7 @@ class DashboardView(BaseView):
             text = set_aside.format()
             if held != set_aside:
                 text += f" ({held.format()} held from spendable cash)"
-            self.cards.append(_card("Set aside for goals", text, False))
+            self.cards.append(_card("In goal jars", text, False))
         for note in board.coverage_notes:
             self.cards.append(_card("Coverage", note, False))
         # What each withheld total leaves out and how to include it (#236).

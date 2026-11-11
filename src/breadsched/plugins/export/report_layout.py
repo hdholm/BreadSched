@@ -318,7 +318,7 @@ def dashboard_layout(board: Dashboard, *, book_name: str = "") -> ReportDocument
         goals_value = money_text(summary["goals_set_aside"])
         if summary["goals_held"] != summary["goals_set_aside"]:
             goals_value += f" ({money_text(summary['goals_held'])} held from spendable cash)"
-        cards.append(Card("Set aside for goals", goals_value))
+        cards.append(Card("In goal jars", goals_value))
 
     group_rows = []
     for group in board.groups:
@@ -479,7 +479,7 @@ def dashboard_layout(board: Dashboard, *, book_name: str = "") -> ReportDocument
         blocks += [
             Heading("Savings goals"),
             Table(
-                _columns("Goal", "Target date", "#Target", "#Set aside", "#Remaining", "Status"),
+                _columns("Goal", "Target date", "#Target", "#In the jar", "#Remaining", "Status"),
                 tuple(
                     TableRow(
                         (

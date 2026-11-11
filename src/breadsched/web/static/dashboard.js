@@ -98,7 +98,7 @@ const DASHBOARD_TABLES = {
   reimbursables: { title:"Pending reimbursables", headers:["Expense", "Payer", "Incurred",
     "Expected", { label:"Still owed", num:true }, "Status"] },
   goals: { title:"Savings goals", headers:["Goal", "Target date", { label:"Target", num:true },
-    { label:"Set aside", num:true }, { label:"Remaining", num:true }, "Status"] },
+    { label:"In the jar", num:true }, { label:"Remaining", num:true }, "Status"] },
 };
 
 function dashboardHiddenColumns(id) {
@@ -388,9 +388,9 @@ async function showDashboard() {
     Number(s.fsa_claims_attention) > 0
       ? tile("FSA claims needing attention", String(s.fsa_claims_attention), true)
       : null,
-    // Savings-goal earmarks are held from Available like bill reserves.
+    // What goal jars hold is kept from Available, as bills' jars are.
     Number(s.goals_set_aside) > 0
-      ? tile("Set aside for goals", money(s.goals_set_aside)
+      ? tile("In goal jars", money(s.goals_set_aside)
           + (Number(s.goals_held) !== Number(s.goals_set_aside)
             ? ` (${money(s.goals_held)} held from spendable cash)` : ""))
       : null);

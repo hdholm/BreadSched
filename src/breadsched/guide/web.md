@@ -39,7 +39,7 @@ for the day's amount, and open **Chart values** below it for the exact figures. 
 **Configure Dashboard…** sets the horizons, sections, groups, and
 columns (see [Configure the Dashboard](#configure-the-dashboard)). Expand a
 missed-schedule row to see each missed date and amount. When savings goals have set
-money aside, a **Set aside for goals** tile shows the total (see
+money aside, an **In goal jars** tile shows the total (see
 [Savings goals](../USER_GUIDE.md#savings-goals)).
 
 ### Net worth history
@@ -395,7 +395,7 @@ merchant table. **Carry prior periods** turns rollover on. See
 **Savings Goals** lists each goal's account, target date, target, what is set aside, what
 remains, and its status. Fill in the form below the list and choose **Add goal**;
 **Edit** loads a goal into the form for **Save changes**. Enter an amount beside a
-goal and choose **Allocate** to set extra money aside today. **Close** releases a
+goal and choose **Add to jar** to set extra money aside today. **Close** releases a
 goal's money, **Reopen** undoes that, and **Delete** removes the goal. **Show closed
 goals** includes closed goals. The Dashboard lists each open goal under **Savings
 goals**; choose a goal's name to open **Savings Goals**. After **Edit**, the form below the

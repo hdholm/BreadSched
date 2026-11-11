@@ -71,7 +71,7 @@ async function showGoals() {
     el("button", { class:"action", type:"submit" }, "Apply to scenario"));
   const rows = data.goals.map((goal) => {
     const amount = el("input", { inputmode:"decimal", placeholder:"Amount", size:"8",
-      "aria-label":`Amount to allocate to ${goal.name}` });
+      "aria-label":`Amount to add to the ${goal.name} jar` });
     const closed = goal.status === "closed";
     return el("tr", {},
       el("td", {}, goal.name), el("td", {}, goal.account_name), el("td", {}, goal.target_date),
@@ -95,9 +95,9 @@ async function showGoals() {
         closed ? null : amount,
         closed ? null : el("button", { class:"action", type:"button", onclick:run(async () => {
           await post("/api/savings-goal/allocate", { handle:goal.handle, amount:amount.value });
-          say(`Allocated ${amount.value} to ${goal.name}.`);
+          say(`Added ${amount.value} to the ${goal.name} jar.`);
           await refresh();
-        }) }, "Allocate"),
+        }) }, "Add to jar"),
         el("button", { class:"action", type:"button", onclick:run(async () => {
           await post(closed ? "/api/savings-goal/reopen" : "/api/savings-goal/close",
             { handle:goal.handle });
@@ -114,7 +114,7 @@ async function showGoals() {
   const toggle = el("input", { type:"checkbox", checked:state.goalsShowClosed ? "checked" : null,
     onchange:(event) => { state.goalsShowClosed = event.target.checked; refresh(); } });
   const totals = data.goals.length
-    ? `Set aside for goals: ${money(data.set_aside)}`
+    ? `In goal jars: ${money(data.set_aside)}`
       + (Number(data.held) !== Number(data.set_aside)
         ? `; held from spendable cash: ${money(data.held)}` : "")
     : "";
@@ -122,14 +122,14 @@ async function showGoals() {
     el("p", { class:"note" },
       "From its start date, each income received sets aside a share of what a goal still "
       + "needs, so the whole target is set aside by its target date. Extra money you "
-      + "allocate is set aside in full. Goal money is held out of the Dashboard's Available, "
-      + "like a bill's reserve; nothing is spent on the target date. Close a goal to release "
+      + "add to its jar is set aside in full. What the jar holds is kept out of the Dashboard's "
+      + "Available, as a bill's jar is; nothing is spent on the target date. Close a goal to release "
       + "its money."),
     el("div", { class:"panel panel-pad-16" }, el("h2", {}, "Savings goals"),
       el("label", {}, toggle, " Show closed goals"),
       data.goals.length
         ? table(["Goal", "Held in", "Target date", { label:"Target", num:true },
-          { label:"Set aside", num:true }, { label:"Remaining", num:true }, "Status",
+          { label:"In the jar", num:true }, { label:"Remaining", num:true }, "Status",
           "Scenario changes", ""], rows)
         : el("p", { class:"note" }, "No savings goals yet."),
       totals ? el("p", { class:"note" }, totals) : null,

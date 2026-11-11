@@ -747,7 +747,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
             *(
                 [
                     [
-                        "Set aside for goals",
+                        "In goal jars",
                         summary["goals_set_aside"].format()
                         + (
                             f" ({summary['goals_held'].format()} held from spendable cash)"

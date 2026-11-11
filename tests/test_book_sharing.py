@@ -296,7 +296,7 @@ def test_goals_work_through_the_server_holding_the_book(running, book_path, caps
     assert (
         main(["goals", path, "--allocate", "holiday", "--amount", "50", "--on", "2026-03-15"]) == 0
     )
-    assert "Allocated 50 to Holiday" in capsys.readouterr().out
+    assert "Added 50 to the Holiday jar" in capsys.readouterr().out
     assert main(["goals", path, "--as-of", "2026-03-15", "--json"]) == 0
     [goal] = json.loads(capsys.readouterr().out)["goals"]
     assert (goal["account_name"], goal["allocated"]) == ("Assets:Savings", "50.00")

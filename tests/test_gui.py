@@ -7061,7 +7061,7 @@ class TestDashboardView:
                 label = label.get_next_sibling()
             shown.append(texts)
             child = child.get_next_sibling()
-        [card] = [texts for texts in shown if texts[0] == "Set aside for goals"]
+        [card] = [texts for texts in shown if texts[0] == "In goal jars"]
         assert card[1] == view.board.goals_set_aside.format()
 
     def test_savings_goals_dialog_adds_funds_closes_and_rejects_bad_edits(

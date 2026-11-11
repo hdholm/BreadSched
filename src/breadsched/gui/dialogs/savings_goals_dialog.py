@@ -59,8 +59,9 @@ class SavingsGoalsDialog(BoundedWindow):
                 label=(
                     "From its start date, each income received sets aside a share of what a "
                     "goal still needs, so the whole target is set aside by its target date. "
-                    "Extra money you allocate is set aside in full. Goal money is held out of "
-                    "the Dashboard's Available, like a bill's reserve; nothing is spent on the "
+                    "Extra money you add to a goal's jar is set aside in full. What the jar "
+                    "holds is kept out of the Dashboard's Available, as a bill's jar is; "
+                    "nothing is spent on the "
                     "target date. Close a goal to release its money."
                 ),
                 xalign=0,
@@ -112,11 +113,11 @@ class SavingsGoalsDialog(BoundedWindow):
         box.append(form)
 
         allocate = Gtk.Box(spacing=8)
-        allocate.append(Gtk.Label(label="Allocate extra"))
+        allocate.append(Gtk.Label(label="Add extra money"))
         self.allocate_amount = Gtk.Entry(placeholder_text="Amount")
         self.allocate_date = attach_date_keys(Gtk.Entry(text=self.today.isoformat()))
         self.allocate_memo = Gtk.Entry(placeholder_text="Memo", hexpand=True)
-        self.allocate_button = Gtk.Button(label="Allocate to goal")
+        self.allocate_button = Gtk.Button(label="Add to jar")
         self.allocate_button.connect("clicked", lambda _b: self.allocate())
         for widget in (
             self.allocate_amount,
@@ -204,7 +205,7 @@ class SavingsGoalsDialog(BoundedWindow):
             "Held in",
             "Target date",
             "Target",
-            "Set aside",
+            "In the jar",
             "Remaining",
             "Status",
             "Scenario changes",
@@ -255,7 +256,7 @@ class SavingsGoalsDialog(BoundedWindow):
         self.chart.set_model(model)
         self.chart.set_visible(not model.empty)
         if report is not None and goals:
-            text = f"Set aside for goals: {report.set_aside.format()}"
+            text = f"In goal jars: {report.set_aside.format()}"
             if report.held != report.set_aside:
                 text += f"; held from spendable cash: {report.held.format()}"
             self.totals.set_text(text)
@@ -328,12 +329,12 @@ class SavingsGoalsDialog(BoundedWindow):
     def allocate(self) -> SavingsGoal | None:
         """Set extra money aside for the goal being edited."""
         if self.editing is None:
-            self._message("Choose a goal to allocate to.", True)
+            self._message("Choose a goal to add money to.", True)
             return None
         try:
             request = AllocateToGoal(
                 self.editing,
-                self._money(self.allocate_amount, "amount to allocate"),
+                self._money(self.allocate_amount, "amount to add"),
                 self._date(self.allocate_date, "allocation date"),
                 self.allocate_memo.get_text().strip(),
             )
@@ -348,7 +349,7 @@ class SavingsGoalsDialog(BoundedWindow):
         self.allocate_amount.set_text("")
         self.allocate_memo.set_text("")
         self.refresh()
-        self._message(f"Allocated {request.amount.format()} to {goal.name}.", False)
+        self._message(f"Added {request.amount.format()} to the {goal.name} jar.", False)
         return goal
 
     def apply_override(self) -> bool:

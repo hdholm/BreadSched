@@ -121,7 +121,7 @@ def cmd_goals(args: argparse.Namespace) -> int:
             goal = book.allocate_to_goal(
                 AllocateToGoal(target, Money(args.amount), on, args.memo or "")
             )
-            emit({"handle": goal.handle}, args, f"Allocated {args.amount} to {goal.name}")
+            emit({"handle": goal.handle}, args, f"Added {args.amount} to the {goal.name} jar")
             return 0
         if args.close:
             goal = book.close_savings_goal(book.find_savings_goal(args.close).handle, on)
@@ -156,7 +156,7 @@ def cmd_goals(args: argparse.Namespace) -> int:
             ["goal", "account", "by", "target", "set aside", "remaining", "status"],
             right={3, 4, 5},
         )
-        + f"\nSet aside for goals: {report.set_aside.format()}; "
+        + f"\nIn goal jars: {report.set_aside.format()}; "
         f"held from spendable cash: {report.held.format()}"
         if rows
         else "No savings goals."
