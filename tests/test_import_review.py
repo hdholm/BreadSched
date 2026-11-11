@@ -321,7 +321,8 @@ def test_cli_lists_and_resolves_held_changes(capsys, tmp_path, gnucash_sqlite_pa
         rent.handle,
     )
     capsys.readouterr()
-    assert main(["import", book, source.path, "--no-infer", "--json"]) == 0
+    # The edit is to an earlier-dated transaction, so every date is compared.
+    assert main(["import", book, source.path, "--no-infer", "--since", "all", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["transactions_held"] == 1
 
     assert main(["import-review", book, "--json"]) == 0

@@ -2341,3 +2341,41 @@ def test_entering_a_schedule_that_buys_shares_asks_for_their_price(page, served)
     [entered] = [txn for txn in db.iter_transactions() if txn.description == "Browser payroll"]
     leg = next(split for split in entered.splits if split.account == k401.handle)
     assert (leg.value, leg.quantity) == (Money("500.00"), Money("12.5"))
+
+
+def test_the_import_form_limits_an_import_by_date(page, served, tmp_path):
+    # An import starts at the last one by default; a first date narrows it.
+    from gnucash_fixtures import create_book
+
+    expect = sync_api.expect
+    db, _httpd = served
+    source = create_book(
+        tmp_path / "limited.gnucash",
+        [
+            ("root", "Root Account", "ROOT", None, 0),
+            ("bank", "Limited checking", "BANK", "root", 0),
+            ("food", "Limited groceries", "EXPENSE", "root", 0),
+        ],
+        [
+            (
+                date(2026, 1, 10),
+                "Limited January",
+                [("food", 500, 100, ""), ("bank", -500, 100, "")],
+            ),
+            (date(2026, 3, 10), "Limited March", [("food", 600, 100, ""), ("bank", -600, 100, "")]),
+        ],
+    )
+
+    page.get_by_role("button", name="Import", exact=True).first.click()
+    expect(page.get_by_label("Start at the last import")).to_be_checked()
+    form = page.locator("form.entry", has=page.locator('input[name="path"]'))
+    # The file is chosen from the browser, as a page on another device must.
+    form.locator("input[type=file]").set_input_files(str(source.path))
+    page.get_by_label("First date to import").fill("2026-03-01")
+    expect(page.get_by_label("Start at the last import")).not_to_be_checked()
+    form.get_by_role("button", name="Import", exact=True).click()
+    expect(page.locator("pre.note").first).to_contain_text(
+        "Limited to transactions dated 2026-03-01 and later"
+    )
+    imported = {txn.description for txn in db.iter_transactions()}
+    assert "Limited March" in imported and "Limited January" not in imported

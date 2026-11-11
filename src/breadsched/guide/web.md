@@ -469,6 +469,13 @@ separate sources. Import options and warning details are shared with the path-ba
 workflow. **Include possible duplicates** also imports QIF and OFX rows otherwise held back
 as possible duplicates.
 
+**Start at the last import** is ticked to begin at the day the file was last
+imported; untick it to compare every date, or give **From** and **Through** dates.
+**Only these accounts** takes transactions in the accounts you select (hold Ctrl or
+Cmd for several). The browser sends these as `since` (`last`, `all`, or a date),
+`until`, and `accounts`. See
+[Import a date range or chosen accounts](../USER_GUIDE.md#import-a-date-range-or-chosen-accounts).
+
 ### Import a CSV statement
 
 In **Import**, use the **CSV statement** section. Choose the file from the browser

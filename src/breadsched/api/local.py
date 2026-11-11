@@ -956,6 +956,9 @@ class LocalBookServer:
     def upload_import_file(self, filename: str, content: bytes) -> str:
         return str(unwrap(upload_service.store_import_upload(self.db, filename, content)).path)
 
+    def import_start_date(self, source: str) -> date | None:
+        return import_service.import_start_date(self.db, source)
+
     def import_source(self) -> str | None:
         return remembered_import_source(self.db)
 

@@ -1791,6 +1791,37 @@ such as an import first says what it undoes (the step's name and how many
 transactions, accounts, and other records it removes or puts back) and asks, then
 shows its progress.
 
+### Import a date range or chosen accounts
+
+An import of a GnuCash, QIF, or OFX/QFX file can be limited to the transactions
+you want:
+
+- **Dates.** Give the first date, the last date, or both. A transaction dated
+  outside them is not imported.
+- **Accounts.** Choose accounts already in the book. Only transactions with a split
+  in one of them, or in an account below one, are imported. A new book has no
+  accounts to choose until its first import.
+
+A file you have imported before **starts at the day you last imported it**, so a
+regular import brings in only what is new and finishes sooner. A file imported for
+the first time takes every date. Choose **All dates** (`--since all` on the command
+line) to compare everything again.
+
+What is outside the limit is left exactly as the book has it:
+
+- it is not added, and a change made to it in GnuCash is not brought in;
+- it is never mistaken for a transaction deleted in GnuCash. A transaction you did
+  delete in GnuCash is still removed here, whatever its date.
+
+So after editing or reconciling **older** transactions in GnuCash, import with all
+dates. The summary says what the import was limited to and how many transactions in
+the file it left alone.
+
+Accounts, securities, prices, and scheduled transactions are always imported in
+full. Asking to include possible duplicates compares every date, since the rows
+held back came from an earlier import. A CSV statement has no date limit: its
+preview already marks the rows imported before.
+
 Every import ends with a summary. **Skipped records by reason** gives one line per
 reason, most frequent first, with how many records it stopped and the first few of
 them, for example *4 x only one split, with no value (for example "Coffee",

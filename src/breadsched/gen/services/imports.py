@@ -4,11 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from ..db.sqlite import DbSQLite
-from ..plug import IMPORTER, PluginManager, remember_import_source
+from ..plug import (
+    IMPORTER,
+    ImportLimit,
+    PluginManager,
+    last_import_date,
+    limited_import,
+    remember_import_source,
+)
 from .contracts import ServiceError, ServiceResult
 from .receivables import sync_all_receivables
 
@@ -30,6 +38,15 @@ class ImportBook:
     include_duplicates: bool = False
     notify: bool = True
     progress: ImportProgress | None = None
+    #: Take only transactions dated from ``since`` through ``until``.
+    since: date | None = None
+    until: date | None = None
+    #: With no ``since``, start at the day this source was last imported (every date
+    #: for a source never imported before, or with ``include_duplicates``).
+    since_last_import: bool = False
+    #: Take only transactions with a split in one of these accounts (handles) or an
+    #: account below one; empty for every account.
+    accounts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +55,36 @@ class ImportedBook:
     format_id: str
     format_name: str
     result: ImportResult
+
+
+def import_start_date(db: DbSQLite, source: str) -> date | None:
+    """The day ``source`` was last imported: where a new import starts by default."""
+    return last_import_date(db, source.strip()) if source.strip() else None
+
+
+def _limit(db: DbSQLite, request: ImportBook, source: Path) -> ImportLimit | ServiceError:
+    since = request.since
+    # Including possible duplicates asks again for rows an earlier import held back,
+    # whatever their dates, so it never starts at the last import.
+    if since is None and request.since_last_import and not request.include_duplicates:
+        since = last_import_date(db, source)
+    if since is not None and request.until is not None and request.until < since:
+        return ServiceError("import.dates.reversed", ("until",))
+    chosen: set[str] = set()
+    for handle in request.accounts:
+        if db.get_account(handle) is None:
+            return ServiceError("import.account.not_found", ("accounts",))
+        chosen.add(handle)
+    if chosen:
+        # A chosen account stands for the accounts below it too.
+        parents = {account.handle: account.parent for account in db.iter_accounts()}
+        for handle, parent in parents.items():
+            while parent is not None:
+                if parent in chosen:
+                    chosen.add(handle)
+                    break
+                parent = parents.get(parent)
+    return ImportLimit(since, request.until, frozenset(chosen))
 
 
 def import_book(db: DbSQLite, request: ImportBook) -> ServiceResult[ImportedBook]:
@@ -81,7 +128,11 @@ def import_book(db: DbSQLite, request: ImportBook) -> ServiceResult[ImportedBook
     if plugin.id == "qif":
         kwargs["date_format"] = request.date_format
 
-    result = cast("ImportResult", plugin.run(db, str(source), **kwargs))
+    limit = _limit(db, request, source)
+    if isinstance(limit, ServiceError):
+        return ServiceResult.failure(limit)
+    with limited_import(limit):
+        result = cast("ImportResult", plugin.run(db, str(source), **kwargs))
     # An import can change a linked expense directly; keep receivable accounts true.
     sync_all_receivables(db)
     remembered = remember_import_source(db, source)

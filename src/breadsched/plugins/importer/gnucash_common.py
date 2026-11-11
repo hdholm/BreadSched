@@ -46,6 +46,7 @@ from ...gen.lib.transaction import (
     Transaction,
     UnbalancedError,
 )
+from ...gen.plug import current_import_limit
 from ...gen.utils.logs import get_logger
 
 LOG = get_logger(__name__)
@@ -119,6 +120,11 @@ class ImportResult:
     transactions_held: int = 0
     #: Locally reconciled transactions whose unchanged source version the user kept.
     transactions_kept: int = 0
+    #: Source transactions left alone because they are outside the dates or
+    #: accounts the import was limited to.
+    transactions_outside: int = 0
+    #: That limit in words (``dated 2026-11-01 and later``), or empty.
+    limited_to: str = ""
     #: Existing transfer sides completed by an accepted statement row.
     transactions_linked: int = 0
     #: Second register copies of a transfer already imported from the same file.
@@ -356,6 +362,11 @@ class ImportResult:
     def detail(self, limit: int = 20) -> str:
         """A multi-line report: the summary, why things were skipped, then warnings."""
         lines = [self.describe()]
+        if self.limited_to:
+            lines.append(
+                f"Limited to transactions {self.limited_to}: "
+                f"{self.transactions_outside} other(s) in the source were left as they are"
+            )
         if self.possible_duplicates:
             lines.append(
                 f"Possible duplicates: {self.possible_duplicates} held back; import "
@@ -540,6 +551,10 @@ class ImportSink:
         self.db = db
         self.txn = txn
         self.result = result
+        #: The dates and accounts this import keeps to, if it was limited.
+        self.limit = current_import_limit()
+        if self.limit:
+            result.limited_to = self.limit.describe()
         self._known_accounts: set[str] = {a.handle for a in db.iter_accounts()}
         self._commodities: dict[str, str] = {}  # "NAMESPACE:MNEMONIC" -> handle
         self._commodity_guids: dict[str, str] = {}  # source GUID -> destination handle
@@ -963,7 +978,14 @@ class ImportSink:
         Nothing raises: an exception would abort the enclosing batch and roll back
         every transaction imported so far.
         """
+        # Seen even when outside the limit, so it is never taken for deleted.
         self.result.observe("transaction", guid)
+        if self.limit and not self.limit.takes(
+            post_date,
+            [self.resolve(self._remap.get(raw["account"], raw["account"])) for raw in splits],
+        ):
+            self.result.transactions_outside += 1
+            return None
         existing = self.db.get_transaction(guid)
         txn_obj = Transaction(
             handle=guid,

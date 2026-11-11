@@ -137,7 +137,8 @@ Resources so far, all under ``/api/v1``:
 * ``POST /imports/csv/inspect`` (``InspectCsv``), ``/imports/csv/preview`` and
   ``/imports/csv`` (``CsvImportRequest``), and ``/imports`` (``ImportBook``) – a statement
   or book file, by a path the server can read; ``GET /imports/source`` – the file last
-  imported from.
+  imported from; ``GET /imports/start-date`` (``source``) – the day it was last
+  imported, where its next import starts by default.
 * ``POST /plan/cell`` (``PlanCellQuery``) – one Plan cell's planned occurrences beside
   the actual transactions; it reads only.
 * ``POST /find`` (``TransactionQuery``) – splits across the book that match, grouped,
@@ -337,6 +338,7 @@ __all__ = [
     "csv_preview_v1",
     "csv_import_v1",
     "import_book_v1",
+    "import_start_date_get",
     "import_source_get",
     "scenario_events_get",
     "scenario_schedule_fixed_post",
@@ -1874,6 +1876,12 @@ def import_book_v1(api: Api, _path: Path, body: dict[str, Any]) -> dict:
     if request.progress is not None:
         raise ValueError("progress is heard in process only")
     return to_data(api.book.import_book(request))
+
+
+def import_start_date_get(api: Api, _path: Path, query: QueryParams) -> dict:
+    source = query.text("source", required=True) or ""
+    query.finish()
+    return {"date": api.book.import_start_date(source)}
 
 
 def import_source_get(api: Api, _path: Path, query: QueryParams) -> dict:

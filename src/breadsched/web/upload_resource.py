@@ -19,6 +19,9 @@ def import_upload(
     number_format: str = "auto",
     date_format: str = "auto",
     include_duplicates: bool = False,
+    since: str = "last",
+    until: str = "",
+    accounts: tuple[str, ...] = (),
 ) -> dict:
     """Import a selected file; reuse its path for later uploads of the same name."""
     # The file is kept beside the book before the import itself is asked for.
@@ -40,6 +43,9 @@ def import_upload(
                 "number_format": number_format,
                 "date_format": date_format,
                 "include_duplicates": include_duplicates,
+                "since": since,
+                "until": until,
+                "accounts": list(accounts),
             },
         )
     except Exception:

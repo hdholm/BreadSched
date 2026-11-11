@@ -25,12 +25,14 @@ from .common import (
     add_server_options,
     book_api,
     emit,
+    parse_date,
     table,
 )
 
 
 def cmd_import(args: argparse.Namespace) -> int:
     """Through the book server (#358), so it works while another process holds the book."""
+    since = None if args.since in ("last", "all") else parse_date(args.since)
     with book_api(args, "w") as book:
         result = book.import_book(
             ImportBook(
@@ -38,6 +40,10 @@ def cmd_import(args: argparse.Namespace) -> int:
                 format=args.format,
                 include_scheduled=not args.no_scheduled,
                 include_duplicates=args.include_duplicates,
+                since=since,
+                until=parse_date(args.until),
+                since_last_import=args.since == "last",
+                accounts=tuple(book.find_account(name).handle for name in args.account or ()),
             )
         ).result
         result.log_path = str(args.log_file) if args.log_file else None
@@ -58,6 +64,8 @@ def cmd_import(args: argparse.Namespace) -> int:
             "transactions_refreshed": result.transactions_refreshed,
             "transactions_unchanged": result.transactions_unchanged,
             "transactions_removed": result.transactions_removed,
+            "transactions_outside": result.transactions_outside,
+            "limited_to": result.limited_to,
             "transactions_retained": result.transactions_retained,
             "transactions_held": result.transactions_held,
             "transactions_kept": result.transactions_kept,
@@ -427,6 +435,21 @@ def register(add: AddCommand) -> None:
     imp.add_argument("--format", help="force an importer instead of detecting one")
     imp.add_argument("--no-scheduled", action="store_true", help="skip scheduled transactions")
     imp.add_argument("--max-warnings", type=int, default=10)
+    imp.add_argument(
+        "--since",
+        default="last",
+        metavar="DATE|last|all",
+        help="import transactions dated from this day (YYYY-MM-DD); 'last' (the default) "
+        "starts at the day this source was last imported, and 'all' takes every date",
+    )
+    imp.add_argument("--until", metavar="DATE", help="import transactions dated through this day")
+    imp.add_argument(
+        "--account",
+        action="append",
+        metavar="NAME",
+        help="import only transactions in this account or one below it (repeatable); "
+        "the account must already be in the book",
+    )
     imp.add_argument(
         "--include-duplicates",
         action="store_true",

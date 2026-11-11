@@ -429,6 +429,8 @@ _SERVICE_MESSAGES = {
         "A scheduled leg buys or sells shares that have no price on or before its date; "
         "enter a price or get online quotes, then enter it again"
     ),
+    "import.dates.reversed": "The last date to import is before the first",
+    "import.account.not_found": "An account chosen for the import no longer exists",
     "import.review.duplicate": "Decide each held GnuCash change only once",
     "import.review.not_pending": "That GnuCash change is no longer awaiting review",
     "import.review.missing": "The reconciled transaction no longer exists",

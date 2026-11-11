@@ -3301,7 +3301,7 @@ class TestImportReview:
                 (payroll.handle,),
             )
 
-        status, imported = client.post("/api/import", {"path": str(source)})
+        status, imported = client.post("/api/import", {"path": str(source), "since": "all"})
         assert status == 200 and imported["held"] == 2
         _status, listed = client.get("/api/import/review")
         by_handle = {item["transaction"]: item for item in listed["changes"]}
