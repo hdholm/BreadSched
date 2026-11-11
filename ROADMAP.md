@@ -7,13 +7,11 @@ Published releases are listed on the repository's GitHub Releases page, each wit
 its notes and verified artifacts. A version is released only when `main` carries
 its release notes; a merge without new notes publishes nothing.
 
-## Before the first Beta
+## Next
 
 - **More breadlets.** The Plan, Projection and Expense Explorer are still their own
   screens: make each a report breadlet once a document can carry what their screens
   let you choose (a scenario, a category cell, a period).
-- **Simplification review:** less complexity in the design and less to learn in the
-  interfaces, with the jar metaphor used consistently.
 - **Book-server requests over HTTP sometimes go unanswered on Windows CI.** A test
   request to the local server occasionally gets no status line within its timeout
   (30 s), most often the first write after a refused request; seen only on Windows
@@ -25,9 +23,9 @@ its release notes; a merge without new notes publishes nothing.
   lock on the user directory. Keep this item until the Windows jobs stay clean; if
   they do not, time each step of a request on Windows.
 
-## At the first Beta
+## Soon after the first Beta
 
-- **Signed builds** from the first Beta. Sign `setup.exe` and the installed
+- **Signed builds.** The first beta is unsigned. Sign `setup.exe` and the installed
   launchers through a hardware-backed signing service (Azure Artifact Signing
   under the maintainer's name, or SignPath Foundation's free open-source program;
   the choice is still being evaluated), verify the signatures in CI, and compute
