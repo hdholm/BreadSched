@@ -38,6 +38,9 @@ a real book, statement, or screenshot of real accounts.
 
 ### Install and download
 
+The website, <https://hdholm.github.io/BreadSched/>, links each release's downloads
+and has a plain-language introduction to household money for anyone new to it.
+
 From a BreadSched source checkout, install the application and its development
 dependencies with:
 

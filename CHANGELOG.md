@@ -32,6 +32,9 @@ Preparing the first beta.
   each day of the liquidity period, from the same bills and pay that *Needed*
   counts, with the lowest day marked. It is on the desktop, in the browser, and in
   the printed Dashboard, and **Configure Dashboard** can hide it.
+- **A website.** <https://hdholm.github.io/BreadSched/> walks through BreadSched one
+  optional step at a time, with pictures, explains money basics in plain language,
+  and carries the whole user guide, this changelog, and the roadmap.
 - **Breadlets: reports and Dashboard items as plug-ins.** Reports, Dashboard items,
   importers and exporters are now *breadlets*, listed and run the same way on the
   desktop (**Reports → Breadlet Reports…**), in the browser (**Reports**), and on the

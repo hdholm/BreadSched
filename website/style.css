@@ -1,0 +1,115 @@
+/* BreadSched website: one stylesheet for the landing pages and the built guide. */
+:root {
+  --bg: #fbfaf7;
+  --panel: #ffffff;
+  --ink: #1d1c1a;
+  --dim: #5f5d58;
+  --line: #e3e1da;
+  --accent: #2a78d6;
+  --accent-ink: #ffffff;
+  --crust: #b5651d;
+  --crust-soft: #f6eadc;
+  --good: #1baf7a;
+  --code: #f2f1ec;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #4a3aa7;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #171716; --panel: #1f1f1d; --ink: #f2f1ec; --dim: #b4b2ab; --line: #34332f;
+    --accent: #5a9cf0; --crust: #e0a060; --crust-soft: #3a2c1f; --code: #2a2a27;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #171716; --panel: #1f1f1d; --ink: #f2f1ec; --dim: #b4b2ab; --line: #34332f;
+  --accent: #5a9cf0; --crust: #e0a060; --crust-soft: #3a2c1f; --code: #2a2a27;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+a { color: var(--accent); }
+img { max-width: 100%; height: auto; }
+code, pre { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 0.9em; }
+code { background: var(--code); padding: 0.1em 0.35em; border-radius: 4px; }
+pre { background: var(--code); padding: 12px 14px; border-radius: 8px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+header.site {
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 2;
+}
+@media (max-width: 640px) { header.site { position: static; } }
+header.site .wrap { display: flex; align-items: center; gap: 20px; min-height: 60px; flex-wrap: wrap; }
+header.site .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--ink); text-decoration: none; }
+header.site .brand img { width: 32px; height: 32px; }
+header.site nav { display: flex; gap: 16px; flex-wrap: wrap; font-size: 15px; }
+header.site nav a { color: var(--dim); text-decoration: none; }
+header.site nav a:hover, header.site nav a[aria-current] { color: var(--accent); }
+
+.hero { padding: 56px 0 32px; }
+.hero h1 { font-size: clamp(32px, 6vw, 52px); line-height: 1.1; margin: 0 0 16px; letter-spacing: -0.02em; }
+.hero p.lead { font-size: 20px; color: var(--dim); max-width: 46em; margin: 0 0 24px; }
+.buttons { display: flex; gap: 12px; flex-wrap: wrap; }
+.button {
+  display: inline-block; padding: 10px 18px; border-radius: 8px; text-decoration: none;
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-weight: 600;
+}
+.button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.shot { border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgb(0 0 0 / 8%); display: block; }
+figure { margin: 0; }
+figcaption { color: var(--dim); font-size: 14px; margin-top: 8px; }
+
+section.band { padding: 40px 0; border-top: 1px solid var(--line); }
+section.band h2 { font-size: 30px; margin: 0 0 8px; letter-spacing: -0.01em; }
+section.band > .wrap > p.lead { color: var(--dim); max-width: 46em; margin-top: 0; }
+
+/* The five stages: a path down the page, one step per stage. */
+ol.path { list-style: none; padding: 0; margin: 32px 0 0; counter-reset: stage; }
+ol.path > li {
+  counter-increment: stage; position: relative; padding: 0 0 40px 64px;
+  border-left: 3px solid var(--line); margin-left: 22px;
+}
+ol.path > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+ol.path > li::before {
+  content: counter(stage); position: absolute; left: -24px; top: -2px;
+  width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--crust); color: #fff; font-weight: 700; font-size: 20px;
+}
+.stage { display: grid; grid-template-columns: 1fr; gap: 20px; align-items: start; }
+@media (min-width: 860px) { .stage { grid-template-columns: 1.05fr 1fr; } }
+.stage h3 { margin: 4px 0 6px; font-size: 22px; }
+.stage .when { color: var(--crust); font-weight: 600; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; }
+.stage ul { padding-left: 20px; }
+.stage .more { font-size: 15px; }
+
+.cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-top: 20px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+.card h3 { margin: 0 0 6px; font-size: 18px; }
+.card p { margin: 0; color: var(--dim); font-size: 15px; }
+
+.note { background: var(--crust-soft); border-left: 4px solid var(--crust); padding: 12px 16px; border-radius: 6px; }
+
+footer.site { border-top: 1px solid var(--line); padding: 24px 0 40px; color: var(--dim); font-size: 14px; }
+
+/* Article pages: money basics and the built guide. */
+.doc { display: grid; gap: 32px; grid-template-columns: 1fr; padding: 32px 0 48px; }
+@media (min-width: 960px) { .doc { grid-template-columns: 230px minmax(0, 1fr); } }
+.doc aside nav { position: sticky; top: 80px; font-size: 15px; }
+.doc aside nav a { display: block; color: var(--dim); text-decoration: none; padding: 3px 0; }
+.doc aside nav a[aria-current] { color: var(--accent); font-weight: 600; }
+article { max-width: 46em; min-width: 0; }
+article h1 { font-size: 36px; line-height: 1.15; margin-top: 0; }
+article h2 { margin-top: 40px; padding-top: 8px; border-top: 1px solid var(--line); }
+article h3 { margin-top: 28px; }
+article table { border-collapse: collapse; display: block; overflow-x: auto; margin: 16px 0; font-size: 15px; }
+article th, article td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+article th { background: var(--code); }
+article blockquote { margin: 16px 0; padding: 4px 16px; border-left: 4px solid var(--line); color: var(--dim); }
+article :target { scroll-margin-top: 80px; }

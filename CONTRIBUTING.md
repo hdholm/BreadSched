@@ -72,6 +72,11 @@ Never put user financial data or credentials in a commit message or pull request
 - Keep documentation roles distinct:
   - `README.md` is the product/developer entry point, not a place for feature
     walkthroughs (those belong in the User Guide);
+  - `website/` holds the website's own pages (the staged walk-through and money
+    basics); the site renders the User Guide, changelog and roadmap rather than
+    copying them, so keep a feature's description in the guide. Rerun
+    `scripts/site_screenshots.py` when an interface changes enough that its
+    pictures would mislead;
   - `src/breadsched/USER_GUIDE.md` is the packaged user guide's interface-neutral
     overview, and `src/breadsched/guide/desktop.md`, `guide/web.md`, and
     `guide/cli.md` give each interface's steps. Put what a feature does and its
