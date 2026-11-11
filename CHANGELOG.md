@@ -8,7 +8,10 @@ GitHub releases.
 
 ## Unreleased
 
-Preparing the first beta.
+## 2026.11.11.0
+
+The first beta. It is published as a GitHub pre-release; its Windows installer and
+Linux packages are not yet code-signed, so check them against `SHA256SUMS`.
 
 - **Calendar versions.** A version is now the day its release was prepared,
   `YYYY.M.D.PATCH` (for example `2026.11.10.0`), with the stage (`beta` or `stable`)
