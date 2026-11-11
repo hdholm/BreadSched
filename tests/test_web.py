@@ -3992,6 +3992,7 @@ class TestDashboardApi:
         assert status == 200
         assert set(payload) == {
             "summary",
+            "cash_flow_chart",
             "config",
             "groups",
             "bills",
@@ -4474,6 +4475,7 @@ class TestDashboardApi:
             "income": True,
             "reimbursables": False,
             "goals": True,
+            "cash_flow": True,
         }
         assert before["config"]["section_titles"]["reimbursables"] == "Pending reimbursables"
         assert before["reimbursables"] == []

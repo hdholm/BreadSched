@@ -921,6 +921,19 @@ creates one formula schedule and can record the opening liability
 
 ## Dashboard and near-term cash
 
+The Dashboard is where a book opens. On the desktop it is always the first tab and
+cannot be closed or moved; in the browser it is the first view.
+
+**Cash flow over the next N days** charts the cash you will have on hand each day
+of the liquidity period (the N in *Needed within N days*). The line starts at
+today's liquid cash, less any bill already overdue, then steps down on the date of
+each bill and up on each scheduled pay. Its lowest day is marked, which is the day
+to watch: if the line goes below zero, a bill falls due before the money to pay it
+arrives. It uses the same bills and pay that *Needed* counts, so the two agree. A
+period longer than about two months is drawn by the week. The chart is not shown
+when nothing is scheduled inside the period, and **Configure Dashboard** can hide
+it.
+
 Net worth, Assets, and Debts always cover every asset and liability account in the
 book, and Liquid always covers every cash-like account, each valued in the reporting
 currency as of the Dashboard date; a missing quote makes the affected figure
@@ -982,8 +995,8 @@ you turn it on.
 ([desktop](guide/desktop.md#configure-the-dashboard),
 [browser](guide/web.md#configure-the-dashboard)): the two horizons (how many days of
 bills cash must cover, and how many months of outgoings the emergency fund should
-last), which sections show (account groups, pending bills, expected income, pending
-reimbursables, and savings goals), the groups and their accounts, and each table's
+last), which sections show (the cash-flow chart, account groups, pending bills, expected
+income, pending reimbursables, and savings goals), the groups and their accounts, and each table's
 columns. All of it is each person's own: when a book is shared with other people,
 each arranges the Dashboard as it makes sense to them, starting from the book's
 arrangement, and an account's **Dashboard group** set while editing the account is

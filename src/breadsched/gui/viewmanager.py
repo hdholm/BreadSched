@@ -56,6 +56,8 @@ from .widgets.window_sizes import remember_size, restore_size
 # The catalog is re-exported for callers that import it from the window.
 #: The views whose toolbar shows the book's account and transaction counts (#361).
 SUMMARY_VIEWS = frozenset({"dashboard", "accounts"})
+#: The view a book opens on; its tab is pinned first.
+HOME_VIEW = "dashboard"
 
 __all__ = [
     "CATEGORIES",
@@ -452,13 +454,16 @@ class ViewManager(Gtk.ApplicationWindow):
         self.category_action.set_enabled(True)
         for action in self.view_actions.values():
             action.set_enabled(True)
-        # The remembered tabs, with the chosen one drawn; else the Dashboard.
-        if not self._restore_tabs():
-            self._restoring_tabs = True
-            try:
-                self.show_category(CATEGORIES[0][0])
-            finally:
-                self._restoring_tabs = False
+        # The remembered tabs come back behind the Dashboard, which is pinned first
+        # and is where a book opens; the others are drawn when chosen.
+        self._restore_tabs()
+        self._restoring_tabs = True
+        try:
+            self._pin_home()
+            self.show_category(HOME_VIEW)
+        finally:
+            self._restoring_tabs = False
+        self._remember_tabs()
         self._queue_prefill()
         if self._prompt_due_on_open:
             self._schedule_due_prompt()
@@ -1035,15 +1040,28 @@ class ViewManager(Gtk.ApplicationWindow):
         return next((tab for tab in self._tabs if tab.key == key and tab.view is view), None)
 
     def _add_tab(self, key: str, view) -> _Tab:
-        """A tab for ``view`` (or the view ``key``) at the end of the bar, not chosen."""
+        """A tab for ``view`` (or the view ``key``) at the end of the bar, not chosen.
+
+        The Dashboard's tab is the exception: it is pinned first and cannot be
+        closed or moved, since the Dashboard is where a book opens.
+        """
         tab = _Tab(key, view, self._tab_title(key, view))
         tab.button.connect("clicked", lambda *_a: self._on_tab_clicked(tab))
-        tab.close.connect("clicked", lambda *_a: self.close_tab(tab))
-        self._make_draggable(tab)
-        self._tabs.append(tab)
-        self.tab_bar.append(tab.widget)
+        if key == HOME_VIEW and view is None:
+            tab.pin()
+            self._tabs.insert(0, tab)
+            self.tab_bar.prepend(tab.widget)
+        else:
+            tab.close.connect("clicked", lambda *_a: self.close_tab(tab))
+            self._make_draggable(tab)
+            self._tabs.append(tab)
+            self.tab_bar.append(tab.widget)
         self.tab_scroll.set_visible(True)
         return tab
+
+    def _pin_home(self) -> _Tab:
+        """The pinned Dashboard tab, made if this book's tabs do not have it yet."""
+        return self._tab_for(HOME_VIEW, None) or self._add_tab(HOME_VIEW, None)
 
     def _select_tab(self, key: str, view) -> None:
         """Mark the tab for what is shown, opening one if needed."""
@@ -1093,9 +1111,11 @@ class ViewManager(Gtk.ApplicationWindow):
 
     def move_tab(self, tab: _Tab, index: int) -> None:
         """Put ``tab`` at ``index`` in the tab bar and remember the new order (#390)."""
-        if tab not in self._tabs:
+        if tab not in self._tabs or tab.pinned:
             return
-        index = max(0, min(index, len(self._tabs) - 1))
+        # Nothing goes before the pinned Dashboard tab.
+        first = 1 if self._tabs[0].pinned else 0
+        index = max(first, min(index, len(self._tabs) - 1))
         if self._tabs.index(tab) == index:
             return
         self._tabs.remove(tab)
@@ -1123,6 +1143,8 @@ class ViewManager(Gtk.ApplicationWindow):
         dragged = next((tab for tab in self._tabs if str(id(tab)) == value), None)
         if dragged is None or dragged is onto or onto not in self._tabs:
             return False
+        if onto.pinned:
+            return False  # nothing goes before the Dashboard
         self.move_tab(dragged, self._tabs.index(onto))
         return True
 
@@ -1172,7 +1194,10 @@ class ViewManager(Gtk.ApplicationWindow):
         return [(tab.key, tab.title) for tab in self._tabs]
 
     def close_tab(self, tab: _Tab) -> None:
-        """Close a tab; a register with a half-typed entry asks first."""
+        """Close a tab; a register with a half-typed entry asks first. The pinned
+        Dashboard tab stays."""
+        if tab.pinned:
+            return
         register = tab.register
         if register is not None and register.has_unsaved():
             register.confirm_leave(lambda: self._remove_and_follow(tab))
@@ -1240,8 +1265,8 @@ class ViewManager(Gtk.ApplicationWindow):
     def _restore_tabs(self) -> bool:
         """Reopen the tabs this book had; anything since deleted is skipped.
 
-        Only the chosen tab is drawn; the rest are drawn when chosen, or in the
-        background (#389). Returns whether any tab came back.
+        None is drawn here: the book opens on the Dashboard, and each of these is
+        drawn when chosen, or in the background. Returns whether any tab came back.
         """
         place = self._tab_settings()
         if place is None or self.db is None:
@@ -1250,7 +1275,6 @@ class ViewManager(Gtk.ApplicationWindow):
         try:
             stored = json.loads(settings.get(TAB_SECTION, key) or "{}")
             entries = [list(entry) for entry in stored.get("tabs", [])]
-            current = int(stored.get("current", 0))
         except (TypeError, ValueError, AttributeError):
             return False
         known = {item for item, _label, _icon in CATEGORIES}
@@ -1259,10 +1283,7 @@ class ViewManager(Gtk.ApplicationWindow):
         try:
             for entry in entries:
                 opened.append(self._reopen_tab(entry, known))
-            wanted = opened[current] if 0 <= current < len(opened) else None
             restored = [tab for tab in opened if tab is not None]
-            if restored:
-                self._on_tab_clicked(wanted or restored[-1])
         finally:
             self._restoring_tabs = False
         if restored:
@@ -1347,6 +1368,8 @@ class _Tab:
         self.view = view
         self.title = title
         self.current = False
+        #: The Dashboard's tab: first, and neither closed nor moved.
+        self.pinned = False
         self.widget = Gtk.Box(spacing=0)
         self.widget.add_css_class("linked")
         self.button = Gtk.Button(label=title)
@@ -1361,6 +1384,12 @@ class _Tab:
         self.close.set_tooltip_text(f"Close {title}")
         self.widget.append(self.button)
         self.widget.append(self.close)
+
+    def pin(self) -> None:
+        self.pinned = True
+        self.close.set_visible(False)
+        self.widget.add_css_class("pinned-tab")
+        self.button.set_tooltip_text(f"{self.title} (always the first tab)")
 
     @property
     def register(self):

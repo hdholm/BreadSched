@@ -76,6 +76,11 @@ link list pins the linked splits above a candidate list filtered by search text 
 by range (60 days around the service date, the claim's benefit year, or all) and
 capped at `SHOWN_LIMIT` rows.
 
+The Dashboard is where a book opens and its tab is pinned first
+(`viewmanager.HOME_VIEW`, `_Tab.pinned`): it has no close button, cannot be moved,
+and nothing can be put before it. It is the one place that answers "where do I
+stand" without choosing anything, so every other view is a step away from it.
+
 Below the toolbar, a tab bar lists each open view, one tab per open register, and
 one per pinned scenario Projection (`ViewManager._tabs`). Register tabs are
 `RegisterView`s in their own stack, and `_views["register"]` always names the one
@@ -97,11 +102,12 @@ which searches every register through `engine.transaction_query` (see valuation 
 reporting) and opens a found split's register when a row is activated. Closing a register with unsaved typing asks first; opening another book
 closes every tab, because tabs name the old book's accounts. Each book's tabs are
 remembered in `views.ini` (section `open-tabs`, keyed by a digest of the book path)
-and restored, skipping deleted accounts and scenarios. Restoring draws only the chosen
-tab: a view the window holds but does not show is attached to the book without
-being drawn (`BaseView.set_db` asks `ViewManager.defers_refresh`), and a register is
-created with its account set so it reads that account once. Twelve remembered tabs on
-a 12-year book took 31 s to open; they now take as long as one.
+and restored behind the Dashboard, skipping deleted accounts and scenarios. Only the
+Dashboard is drawn on opening: a view the window holds but does not show is attached
+to the book without being drawn (`BaseView.set_db` asks
+`ViewManager.defers_refresh`), and a register is created with its account set so it
+reads that account once. Opening a book therefore takes as long as drawing one view,
+however many tabs it remembers.
 
 Slow views are calculated off GTK's loop. `gui.background.
 SnapshotReader` is one worker thread per open book that runs book-server reads against

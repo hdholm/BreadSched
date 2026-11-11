@@ -12,8 +12,6 @@ its release notes; a merge without new notes publishes nothing.
 - **Breadlets.** Plug-ins, as Gramps has gramplets, for Dashboard items, text and
   graphic reports, and import and export, with today's reports, Dashboard sections,
   importers, and exporters as the default ones, and charts in reports.
-- **The Dashboard as the main interface:** a pinned first tab, with a chart of cash
-  flow over its cash-flow period.
 - **Simplification review:** less complexity in the design and less to learn in the
   interfaces, with the jar metaphor used consistently.
 - **Website:** a GitHub Pages site with a financial walk-through, graphics, and the

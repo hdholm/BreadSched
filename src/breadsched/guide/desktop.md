@@ -189,10 +189,11 @@ Dialogs work the same way throughout: **Escape** closes one as its **Cancel** or
 **Close** button does, **Enter** in a one-line field chooses its main button (such as
 **Save**), and **Help** opens this guide at its section. Every **Delete** asks first.
 
-Every view you open, and the register of every account you open, gets a tab in the
-bar below the toolbar. Choosing a tab puts the keyboard in what it shows (in a
+A book opens on the **Dashboard**, whose tab is always first and has no × to close
+it. The other tabs you had open come back behind it. Every view you open, and the
+register of every account you open, gets a tab in the bar below the toolbar. Choosing a tab puts the keyboard in what it shows (in a
 register, the cell under the cursor). **Ctrl+Page Up** and **Ctrl+Page Down** move
-between tabs. Drag a tab onto another to put it in that place, or move the current
+between tabs. Drag a tab onto another to put it in that place (nothing goes before the Dashboard), or move the current
 tab one place with **Ctrl+Shift+Page Up** and **Ctrl+Shift+Page Down** (**View → Move
 Tab Left** and **Move Tab Right**). **Ctrl+W** closes the current one, and **Ctrl+F** (**Edit → Find in
 Register**) goes to the register's filter, which keeps the transactions whose date,

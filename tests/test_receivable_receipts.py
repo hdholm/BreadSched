@@ -82,11 +82,9 @@ def test_projected_cash_rises_by_the_receipt_only_from_its_date(db, book):
     receivable = next(iter(db.iter_receivables()))
     assert mark_disputed(db, receivable.handle, TODAY, "Denied pending appeal").ok
     disputed = projection.project(db, scenario)
-    due_month = next(
-        i
-        for i, row in enumerate(counted.rows)
-        if row.month <= DUE <= row.month.replace(day=28) + timedelta(days=4)
-    )
+    # The row of the receipt's own month (a window past the 28th once took the
+    # first of the next month for this one).
+    due_month = next(i for i, row in enumerate(counted.rows) if row.month == DUE.replace(day=1))
     assert counted.rows[due_month].cash_close - disputed.rows[due_month].cash_close == Money(
         "150.00"
     )

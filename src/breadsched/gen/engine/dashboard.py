@@ -41,6 +41,7 @@ from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
 from . import fsa, fsa_claim_report, ledger, receivables, savings_goals, schedule, valuation
+from .chart_model import LINE, ChartMarker, ChartModel, ChartSeries
 from .completeness import Completeness, Policy, combine
 from .currency import reporting_currency_handle, reporting_fraction
 from .dashboard_bills import (
@@ -84,6 +85,7 @@ SECTIONS = {
     "income": "Expected income",
     "reimbursables": "Pending reimbursables",
     "goals": "Savings goals",
+    "cash_flow": "Cash flow chart",
 }
 #: Sections shown until the household chooses otherwise: every one but the list of
 #: pending reimbursables, which their own card already totals.
@@ -594,6 +596,56 @@ class Dashboard:
         return sum(
             (amount for when, amount in self._income_events if self.as_of <= when <= through),
             Money(0),
+        )
+
+    def cash_flow_chart(self, currency: str = "") -> ChartModel:
+        """Cash on hand, day by day, over the liquidity period.
+
+        It starts at today's liquid cash less every overdue bill, then adds each
+        scheduled income and subtracts each bill on its date: the same bills and
+        income, on the same dates, that :attr:`required_liquid` counts, so the chart
+        and the *Needed* figure agree. The lowest day is marked. With nothing dated
+        inside the period the chart is empty.
+        """
+        days = max(1, self.config.liquidity_days)
+        # A long period is drawn by the week, so the line stays readable.
+        step = 1 if days <= 62 else 7
+        horizon = self.as_of + timedelta(days=days)
+        changes: dict[date, Money] = {}
+        balance = self.liquid
+        for bill in self.bills:
+            if bill.next_due < self.as_of:
+                balance = balance - bill.amount
+            elif bill.next_due <= horizon:
+                changes[bill.next_due] = changes.get(bill.next_due, Money(0)) - bill.amount
+        for when, amount in self._income_events:
+            if self.as_of <= when <= horizon:
+                changes[when] = changes.get(when, Money(0)) + amount
+        categories: list[str] = []
+        values: list[Money | None] = []
+        day = self.as_of
+        while day <= horizon:
+            for offset in range(step):
+                balance = balance + changes.get(day + timedelta(days=offset), Money(0))
+            categories.append(day.isoformat())
+            values.append(balance.quantize(self.fraction))
+            day = day + timedelta(days=step)
+        if not changes:
+            values = [None] * len(values)
+        markers: tuple[ChartMarker, ...] = ()
+        if changes:
+            amounts = [value for value in values if value is not None]
+            lowest = values.index(min(amounts))
+            if lowest:
+                markers = (ChartMarker(lowest, f"Lowest: {min(amounts).format()}"),)
+        return ChartModel(
+            key="dashboard-cash-flow",
+            title=f"Cash flow over the next {days} days",
+            kind=LINE,
+            categories=tuple(categories),
+            series=(ChartSeries("cash", "Cash on hand", tuple(values), 1),),
+            currency=currency,
+            markers=markers,
         )
 
     @property

@@ -533,10 +533,44 @@ class TestOpeningABook:
         assert window.stack.get_visible_child_name() == CATEGORIES[0][0]
         window.show_category("plan")
         app.open_book(populated_book)
-        # A book opens on whatever is first in CATEGORIES, then returns to the tab
-        # it had selected; both are shown again, not left as stale pages.
-        assert window.stack.get_visible_child_name() == "plan"
+        # A book opens on the Dashboard, its pinned first tab; the Plan tab comes
+        # back behind it on the reopened book, not left as a stale page.
+        assert window.stack.get_visible_child_name() == "dashboard"
+        assert ("plan", "Plan") in window.tabs
         assert window._views["plan"].db is app.db
+
+
+class TestDashboardIsHome:
+    """The Dashboard is where a book opens: pinned first, with its cash-flow chart."""
+
+    def test_a_book_opens_on_the_pinned_dashboard_with_its_cash_flow_chart(
+        self, app, window, tmp_path
+    ):
+        from breadsched.gen.sample_book import create_sample_book
+
+        path = tmp_path / "sample.breadsched"
+        create_sample_book(path, as_of=date.today())
+        app.open_book(str(path))
+
+        assert window.tabs[0] == ("dashboard", "Dashboard")
+        assert window._tabs[0].pinned and window._current_tab() is window._tabs[0]
+        view = window._views["dashboard"]
+        chart = view.cash_flow_chart.model
+        assert chart is not None and chart.key == "dashboard-cash-flow"
+        # The sample book has bills and pay inside the period, so the chart shows.
+        assert not chart.empty
+        assert view.cash_flow_section.get_visible() is True
+        assert view.cash_flow_heading.get_text() == chart.title
+
+        # Hiding its section in Configure Dashboard hides the chart.
+        from breadsched.api.local import book_server
+        from breadsched.gen.services import SaveDashboardConfig
+
+        book_server(app.db).save_dashboard_settings(
+            SaveDashboardConfig(sections={"cash_flow": False})
+        )
+        view.refresh()
+        assert view.cash_flow_section.get_visible() is False
 
 
 class TestEveryViewBuilds:
@@ -10923,10 +10957,13 @@ class TestTabs:
         window.open_register(checking)
         window.open_register(card)
         window.open_projection_tab(handle)
-        window.close_tab(window._tabs[0])  # the Dashboard
-        window._on_tab_clicked(window._tabs[1])
+        # The Dashboard is pinned first: it cannot be closed.
+        window.close_tab(window._tabs[0])
+        assert window._tabs[0].pinned and window._tabs[0].close.get_visible() is False
+        window._on_tab_clicked(window._tabs[2])
         expected = list(window.tabs)
         assert expected == [
+            ("dashboard", "Dashboard"),
             ("plan", "Plan"),
             ("register", "Checking Account"),
             ("register", "Credit Card"),
@@ -10938,8 +10975,9 @@ class TestTabs:
         assert window.tabs == [("dashboard", "Dashboard")]
         app.open_book(populated_book)
         assert window.tabs == expected
-        assert [tab.current for tab in window._tabs] == [False, True, False, False]
-        assert window._views["register"].account_handle == checking
+        # Every tab is back, and the book opens on the Dashboard.
+        assert [tab.current for tab in window._tabs] == [True, False, False, False, False]
+        assert window.stack.get_visible_child_name() == "dashboard"
         # Tabs for what was since deleted are skipped, not reopened empty.
         app.open_book(str(other))
         app.open_book(populated_book)
@@ -10947,7 +10985,7 @@ class TestTabs:
             app.db.remove_scenario(handle, txn)
         app.open_book(str(other))
         app.open_book(populated_book)
-        assert window.tabs == expected[:3]
+        assert window.tabs == expected[:4]
 
     def test_tabs_reorder_by_drag_or_keyboard_and_stay_reordered(
         self, app, window, populated_book, tmp_path
@@ -10964,23 +11002,28 @@ class TestTabs:
         accels = app.get_accels_for_action
         assert accels("win.move-tab-left") == ["<Shift><Control>Page_Up"]
         assert accels("win.move-tab-right") == ["<Shift><Control>Page_Down"]
-        # The current tab (Credit Card) moves left, and stops at the first place.
+        # The current tab (Credit Card) moves left, and stops beside the Dashboard,
+        # which stays first.
         for _ in range(5):
             window.activate_action("win.move-tab-left", None)
         assert [title for _key, title in window.tabs] == [
-            "Credit Card",
             "Dashboard",
+            "Credit Card",
             "Plan",
             "Checking Account",
         ]
         window.activate_action("win.move-tab-right", None)
-        assert window.tabs[1] == ("register", "Credit Card")
+        assert window.tabs[2] == ("register", "Credit Card")
         # A drop onto another tab puts the dragged one in its place.
-        dashboard, card_tab, plan, checking_tab = window._tabs
+        dashboard, plan, card_tab, checking_tab = window._tabs
         assert window._on_tab_drop(plan, str(id(checking_tab))) is True
-        assert window._tabs == [dashboard, card_tab, checking_tab, plan]
+        assert window._tabs == [dashboard, checking_tab, plan, card_tab]
         assert window._on_tab_drop(plan, str(id(plan))) is False
         assert window._on_tab_drop(plan, "not a tab") is False
+        # Nothing is dropped before the Dashboard, and it does not move.
+        assert window._on_tab_drop(dashboard, str(id(plan))) is False
+        window.move_tab(dashboard, 3)
+        assert window._tabs[0] is dashboard
         # The bar shows the same order the list holds.
         shown = []
         child = window.tab_bar.get_first_child()
@@ -10988,7 +11031,7 @@ class TestTabs:
             shown.append(child)
             child = child.get_next_sibling()
         assert shown == [tab.widget for tab in window._tabs]
-        for tab in window._tabs:
+        for tab in window._tabs[1:]:
             controllers = tab.widget.observe_controllers()
             kinds = {type(controllers.get_item(i)) for i in range(controllers.get_n_items())}
             assert {Gtk.DragSource, Gtk.DropTarget} <= kinds
@@ -11030,8 +11073,8 @@ class TestTabs:
         monkeypatch.setattr(register_sheet.RegisterSheet, "__init__", counting)
         app.open_book(populated_book)
         assert window.tabs == expected
-        # Scheduled was chosen; the registers wait, unread, until chosen.
-        assert window._current_tab().key == "scheduled"
+        # The book opens on the Dashboard; the registers wait, unread, until chosen.
+        assert window._current_tab().key == "dashboard"
         assert loads == []
         registers = [tab.view for tab in window._tabs if tab.key == "register"]
         assert [view.sheet for view in registers] == [None, None]
@@ -11065,7 +11108,7 @@ class TestTabs:
             '{"tabs":[["nonsense"],["register","gone"],["accounts"]],"current":7}',
         )
         app.open_book(populated_book)
-        assert window.tabs == [("accounts", "Accounts")]
+        assert window.tabs == [("dashboard", "Dashboard"), ("accounts", "Accounts")]
 
 
 class TestNativePrinting:
