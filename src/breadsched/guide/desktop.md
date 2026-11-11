@@ -245,8 +245,9 @@ arrangement of this book: anyone else it is shared with keeps theirs.
 - **General**: the two horizons, **Liquid for** so many days of bills and how many
   months of outgoings the **Emergency fund covers**, and which sections show:
   Account groups, Pending bills, Expected income, Pending reimbursables (off until
-  you turn it on), and Savings goals. The summary cards always show and name the
-  horizons they were judged against.
+  you turn it on), and Savings goals, then the Dashboard's breadlets (see
+  [Reports and breadlets](#reports-and-breadlets)). The summary cards always show
+  and name the horizons they were judged against.
 - **Groups**: each group's name (a `:` nests one group in another), its kind, and
   its accounts. A group lists only its own accounts, each with a remove button;
   **Add an account…** is a searchable list (type part of a name) and **Add** puts
@@ -307,6 +308,27 @@ range and starts with its Group by, which you can change. It lists all jars by
 period, then each account; open an account to see its charts (planned against
 actual, and jar levels against their targets; hover over a column for its amount)
 and each jar. **Print…** prints the report with its charts. See [Budget jars](../USER_GUIDE.md#budget-jars).
+
+## Reports and breadlets
+
+Reports, Dashboard items, importers and exporters are all *breadlets*: small
+plug-ins that read the book through the same book server every interface uses.
+**Reports → Breadlet Reports…** lists every report breadlet: choose one, set its
+options (a date range, how to group it, a year), and choose **Run**. The report
+draws its charts and the exact table behind each one; **Print…** prints it. The
+shipped ones are:
+
+- **Spending by category**: where the money went, each top-level expense category
+  as its share of a ring (the eighth and later are one *Other* slice).
+- **Income and spending**: income beside spending for each month, quarter or year,
+  and what was left over.
+- **Net worth over time**, **Budget jars**, **Tax year**, and **Realized gains**:
+  the same reports as their own windows, with fewer controls.
+
+The Dashboard shows dashboard breadlets below its own sections: **Spending this
+month** and **Income and spending** for the last six months, until you turn them off
+in **Configure Dashboard**. An add-on installed as a Python package adds its own
+breadlets; one that fails to load is named at the top of **Breadlet Reports**.
 
 ## Online quotes
 

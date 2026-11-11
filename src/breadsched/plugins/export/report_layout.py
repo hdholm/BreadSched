@@ -1466,7 +1466,27 @@ def chart_blocks(model: ChartModel) -> tuple[Block, ...]:
 
 def chart_table(model: ChartModel) -> Table:
     """The exact values behind ``model``, one row per category."""
-    from ...gen.engine.chart_model import SHARE
+    from ...gen.engine.chart_model import PIE, SHARE
+
+    if model.kind == PIE:
+        values = model.series[0].values if model.series else ()
+
+        def share(index: int) -> Cell:
+            found = model.slice_share(index)
+            return Cell("—" if found is None else f"{found:.1f}%", numeric=True)
+
+        return Table(
+            _columns("Category", "#Amount", "#Share"),
+            tuple(
+                TableRow((Cell(category), _amount(values[index]), share(index)))
+                for index, category in enumerate(model.categories)
+            )
+            + (
+                (TableRow((Cell("Total"), _amount(model.totals[0]), Cell("")), "total"),)
+                if model.totals
+                else ()
+            ),
+        )
 
     def cell(series: int, category: int) -> Cell:
         if model.kind != SHARE:

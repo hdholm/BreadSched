@@ -1,6 +1,6 @@
 // Page state, DOM and number helpers, and the authenticated JSON API calls.
 
-const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Find", "Scheduled", "Payroll", "Plan", "Review", "Projection", "Enter", "Import", "Rules", "Reimbursable Expenses", "Savings Goals", "Verify", "Guide", "Account"];
+const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Find", "Scheduled", "Payroll", "Plan", "Review", "Projection", "Reports", "Enter", "Import", "Rules", "Reimbursable Expenses", "Savings Goals", "Verify", "Guide", "Account"];
 const launchParams = new URLSearchParams(window.location.search);
 let current = VIEWS.includes(launchParams.get("view")) ? launchParams.get("view") : "Dashboard";
 let state = {
@@ -311,10 +311,77 @@ function chartPlotted(model) {
   }));
 }
 
-function modelChart(model, { collapseTable = false, selected = null, onSelect = null } = {}) {
+function pieChart(model, { collapseTable = false, withTable = true } = {}) {
+  // A donut (presentation.charts.chart_pie_layout): each slice is its value's share of
+  // the whole the engine reported, titled with its exact amount, and a table beside it.
+  const whole = model.totals && model.totals.length ? model.totals[0] : null;
+  const values = model.series.length ? model.series[0].values : [];
+  const share = (index) => {
+    const value = values[index];
+    return value === null || whole === null || Number(value) <= 0 || Number(whole) <= 0
+      ? null : 100 * Number(value) / Number(whole);
+  };
+  const slices = model.categories.map((_c, index) => ({ index, share: share(index) }))
+    .filter((item) => item.share !== null);
+  if (!slices.length) return null;
+  const width = 900, height = 280;
+  const outer = Math.min(height - 24, (width - 32) * 0.45) / 2;
+  const inner = outer * (1 - 0.42);
+  const cx = 16 + outer, cy = height / 2;
+  const point = (radius, angle) =>
+    `${(cx + radius * Math.sin(angle)).toFixed(2)},${(cy - radius * Math.cos(angle)).toFixed(2)}`;
+  const currency = model.currency ? ` ${model.currency}` : "";
+  const label = model.currency ? `${model.title} (${model.currency})` : model.title;
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": label });
+  let angle = 0;
+  const legendX = 16 + 2 * outer + 24;
+  const firstRow = cy - (slices.length * 20) / 2 + 15;
+  slices.forEach((item, row) => {
+    const start = angle, end = angle + 2 * Math.PI * item.share / 100;
+    angle = end;
+    const colour = `var(--series-${item.index % 8 + 1})`;
+    const tip = `${model.categories[item.index]}: ${money(values[item.index])}${currency}`
+      + ` (${item.share.toFixed(1)}%)`;
+    let shape;
+    if (end - start >= 2 * Math.PI - 1e-9) {
+      shape = svgEl("circle", { cx, cy, r: (outer + inner) / 2, fill: "none", stroke: colour,
+        "stroke-width": outer - inner });
+    } else {
+      const large = end - start > Math.PI ? 1 : 0;
+      shape = svgEl("path", { class: "chart-slice", fill: colour,
+        d: `M${point(outer, start)}A${outer},${outer} 0 ${large} 1 ${point(outer, end)}`
+          + `L${point(inner, end)}A${inner},${inner} 0 ${large} 0 ${point(inner, start)}Z` });
+    }
+    shape.append(svgEl("title", {}, tip));
+    svg.append(shape);
+    const y = firstRow + 20 * row;
+    const legend = svgEl("g", { class: "chart-legend" });
+    legend.append(svgEl("rect", { x: legendX, y: y - 10, width: 12, height: 12, rx: 2, fill: colour }));
+    legend.append(svgEl("text", { x: legendX + 18, y },
+      `${model.categories[item.index]}  ${item.share.toFixed(0)}%`));
+    svg.append(legend);
+  });
+  const valuesTable = table(["", { label: "Amount", num: true }, { label: "Share", num: true }],
+    [...model.categories.map((category, index) => {
+      const found = share(index);
+      return el("tr", {}, el("td", {}, category),
+        el("td", { class: cls(values[index]) }, values[index] === null ? "—" : money(values[index])),
+        el("td", { class: "num" }, found === null ? "—" : `${found.toFixed(1)}%`));
+    }), ...(whole === null ? [] : [el("tr", { class: "total" }, el("td", {}, "Total"),
+      el("td", { class: cls(whole) }, money(whole)), el("td", {}, ""))])]);
+  return el("figure", { class: "model-chart", "data-key": model.key },
+    el("figcaption", { class: "note" }, label), svg,
+    !withTable ? null : collapseTable
+      ? el("details", { class: "chart-values" }, el("summary", {}, "Chart values"), valuesTable)
+      : valuesTable);
+}
+
+function modelChart(model, { collapseTable = false, selected = null, onSelect = null,
+  withTable = true } = {}) {
   // An engine chart in its own form (presentation.charts), with exact values on hover
   // and a table beside it. With onSelect, each category is a button that picks it.
   if (!model) return null;
+  if (model.kind === "pie") return pieChart(model, { collapseTable, withTable });
   const stacked = model.kind === "stacked" || model.kind === "share";
   const lines = model.kind === "line";
   const plotted = stacked ? chartPlotted(model) : null;
@@ -496,7 +563,7 @@ function modelChart(model, { collapseTable = false, selected = null, onSelect = 
   return el("figure", { class: "model-chart", "data-key": model.key },
     el("figcaption", { class: "note" }, label), svg,
     model.partial_note ? el("p", { class: "note neg chart-partial-note" }, model.partial_note) : null,
-    collapseTable
+    !withTable ? null : collapseTable
       ? el("details", { class: "chart-values" }, el("summary", {}, "Chart values"), valuesTable)
       : valuesTable);
 }

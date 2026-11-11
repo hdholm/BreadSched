@@ -758,3 +758,84 @@ def reconciliation_view_from_json(payload: dict[str, Any]) -> ReconciliationView
             for item in payload.get("remembered_lines", ())
         ),
     )
+
+
+# ---------------------------------------------------------------- breadlets
+
+
+def _block_json(block: Any) -> dict[str, Any]:
+    from ..plugins.export.report_layout import Cards, Heading, ModelChart, Paragraph
+
+    if isinstance(block, Heading):
+        return {"type": "heading", "text": block.text}
+    if isinstance(block, Paragraph):
+        return {
+            "type": "paragraph",
+            "text": block.text,
+            "warning": block.warning,
+            "bullet": block.bullet,
+        }
+    if isinstance(block, Cards):
+        return {
+            "type": "cards",
+            "items": [
+                {"label": card.label, "value": card.value, "alarm": card.alarm}
+                for card in block.items
+            ],
+        }
+    if isinstance(block, ModelChart):
+        return {"type": "chart", "model": block.model.as_dict()}
+    return {
+        "type": "table",
+        "columns": [{"label": column.label, "numeric": column.numeric} for column in block.columns],
+        "rows": [
+            {
+                "style": row.style,
+                "cells": [
+                    {
+                        "text": cell.text,
+                        "numeric": cell.numeric,
+                        "negative": cell.negative,
+                        "indent": cell.indent,
+                        "note": cell.note,
+                        "below": cell.below,
+                        "hint": cell.hint,
+                        "span": cell.span,
+                    }
+                    for cell in row.cells
+                ],
+            }
+            for row in block.rows
+        ],
+        "empty": block.empty,
+    }
+
+
+def report_document_json(document: Any) -> dict[str, Any]:
+    """A breadlet's (or any report's) document: each block tagged with its ``type``.
+
+    A chart's exact-value table is the table block that follows it, so a renderer
+    draws only the chart for a ``chart`` block.
+    """
+    return {
+        "title": document.title,
+        "subtitle": document.subtitle,
+        "kind": document.kind,
+        "optional_label": document.optional_label,
+        "sections": [
+            {
+                "name": section.name,
+                "optional": section.optional,
+                "blocks": [_block_json(block) for block in section.blocks],
+            }
+            for section in document.sections
+        ],
+    }
+
+
+def breadlets_json(plugins: Any, today: date, problems: Any = ()) -> dict[str, Any]:
+    """Every breadlet an interface lists, with its options, and add-ons that failed."""
+    return {
+        "breadlets": [plugin.describe(today) for plugin in plugins],
+        "problems": [{"name": item.name, "reason": item.reason} for item in problems],
+    }

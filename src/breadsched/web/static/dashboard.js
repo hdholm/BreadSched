@@ -506,5 +506,6 @@ async function showDashboard() {
               goal.target_date, money(goal.target), money(goal.set_aside),
               money(goal.remaining), goal.status_text])))]
       : []),
+    ...(await dashboardBreadlets((data.config.breadlets || []).filter((item) => item.shown))),
     await netWorthHistory());
 }

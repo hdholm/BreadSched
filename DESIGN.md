@@ -20,12 +20,13 @@ Contents:
 5. [Dated planning and scenarios](docs/design/planning.md)
 6. [Commitments, estimates, goals, and matching](docs/design/matching.md)
 7. [Valuation and reporting](docs/design/valuation-and-reporting.md)
-8. [Household workflows](docs/design/household-workflows.md)
-9. [Interoperability and source ownership](docs/design/interoperability.md)
-10. [User interfaces](docs/design/user-interfaces.md)
-11. [Security](docs/design/security.md)
-12. [Users and access](docs/design/users-and-access.md)
-13. [Validation, packaging, and releases](docs/design/validation-and-releases.md)
+8. [Breadlets: reports, Dashboard items, and file formats as plug-ins](docs/design/breadlets.md)
+9. [Household workflows](docs/design/household-workflows.md)
+10. [Interoperability and source ownership](docs/design/interoperability.md)
+11. [User interfaces](docs/design/user-interfaces.md)
+12. [Security](docs/design/security.md)
+13. [Users and access](docs/design/users-and-access.md)
+14. [Validation, packaging, and releases](docs/design/validation-and-releases.md)
 
 ## Product boundary
 

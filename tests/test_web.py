@@ -4476,6 +4476,9 @@ class TestDashboardApi:
             "reimbursables": False,
             "goals": True,
             "cash_flow": True,
+            # The shipped dashboard breadlets, shown until the household hides them.
+            "breadlet:recent-income-and-spending": True,
+            "breadlet:spending-this-month": True,
         }
         assert before["config"]["section_titles"]["reimbursables"] == "Pending reimbursables"
         assert before["reimbursables"] == []

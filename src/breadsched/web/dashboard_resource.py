@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from ..gen.engine import dashboard as engine
 from ..gen.services import DashboardGroupInput, SaveDashboardConfig
-from ..gen.services.dashboard_config import DashboardGroup
+from ..gen.services.dashboard_config import DashboardGroup, settings_of
 from .savings_goal_resource import goal_json
 
 if TYPE_CHECKING:
@@ -21,6 +21,7 @@ def dashboard_report(
     """Serialize the book server's Dashboard for the web presentation."""
     board = book.dashboard(None, liquidity_days, emergency_months)
     config = board.config
+    breadlets = settings_of(config).breadlets
 
     return {
         "summary": _plain(board.report_summary()),
@@ -47,8 +48,16 @@ def dashboard_report(
         "config": {
             "liquidity_days": config.liquidity_days,
             "emergency_months": config.emergency_months,
-            "sections": {name: config.shows(name) for name in engine.SECTIONS},
-            "section_titles": dict(engine.SECTIONS),
+            # The Dashboard's own sections, then its breadlets, under one switch each.
+            "sections": _sections(config),
+            "section_titles": {
+                **engine.SECTIONS,
+                **{item.key: item.name for item in breadlets},
+            },
+            "breadlets": [
+                {"id": item.id, "key": item.key, "name": item.name, "shown": item.shown}
+                for item in breadlets
+            ],
             "groups": [group_json(group) for group in config.groups],
             "accounts": [
                 {"handle": record.account.handle, "name": record.full_name}
@@ -243,7 +252,15 @@ def dashboard_config_save(api: Api, payload: dict) -> dict:
         "groups": [group_json(group) for group in config.groups],
         "liquidity_days": config.liquidity_days,
         "emergency_months": config.emergency_months,
-        "sections": dict(config.sections),
+        "sections": {**config.sections, **{item.key: item.shown for item in config.breadlets}},
+    }
+
+
+def _sections(config: engine.DashboardConfig) -> dict[str, bool]:
+    """Whether each of the Dashboard's sections, then each of its breadlets, is shown."""
+    return {
+        **{name: config.shows(name) for name in engine.SECTIONS},
+        **{item.key: item.shown for item in settings_of(config).breadlets},
     }
 
 

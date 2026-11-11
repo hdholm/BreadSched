@@ -18,7 +18,6 @@ from ..gen.lib import (
     Account,
     AccountType,
 )
-from ..gen.plug import EXPORTER, IMPORTER, PluginManager
 from ..gen.sample_book import create_sample_book
 from .common import (
     AddCommand,
@@ -421,20 +420,6 @@ def cmd_gui(args: argparse.Namespace) -> int:
     return launch([args.book] if args.book else [])
 
 
-def cmd_plugins(args: argparse.Namespace) -> int:
-    manager = PluginManager.instance()
-    rows = []
-    for category in (IMPORTER, EXPORTER):
-        for plugin in manager.by_category(category):
-            rows.append([plugin.category, plugin.id, plugin.name, plugin.description])
-    emit(
-        [{"category": r[0], "id": r[1], "name": r[2]} for r in rows],
-        args,
-        table(rows, ["category", "id", "name", "description"]),
-    )
-    return 0
-
-
 def register(add: AddCommand) -> None:
     """Add the book subcommands."""
     init = add("init", "Create a new book with a starter chart of accounts")
@@ -516,6 +501,3 @@ def register(add: AddCommand) -> None:
     gui = add("gui", "Open the graphical interface", needs_book=False)
     gui.add_argument("book", nargs="?", help="book to open on start-up")
     gui.set_defaults(func=cmd_gui)
-
-    plugins = add("plugins", "List registered importers and exporters", needs_book=False)
-    plugins.set_defaults(func=cmd_plugins)

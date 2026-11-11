@@ -66,7 +66,8 @@ shared with keeps theirs:
 - **Horizons**: **Liquid for** so many days of bills, and how many months of
   outgoings the **Emergency fund covers**.
 - **Sections**: Account groups, Pending bills, Expected income, Pending
-  reimbursables (off until you turn it on), and Savings goals. The summary cards
+  reimbursables (off until you turn it on), and Savings goals, then the Dashboard's
+  breadlets (see [Reports and breadlets](#reports-and-breadlets)). The summary cards
   always show.
 - **Groups**: each group's name, kind, and accounts. A group lists only its own
   accounts, each with a **×** to remove it; type part of a name in **Add an
@@ -125,6 +126,23 @@ targets, each with its table; hover over a column for its amount), with **Each j
 to open them one by one (`/api/budget-jars`).
 Change **Group by** in the dialog; **Print** prints just the report. See
 [Budget jars](../USER_GUIDE.md#budget-jars).
+
+## Reports and breadlets
+
+Reports, Dashboard items, importers and exporters are all *breadlets*: small
+plug-ins that read the book through the same book server the desktop and command
+line use. **Reports** lists every report breadlet: choose one, set its options (a
+date range, how to group it, a year), and choose **Run**. Each chart has the table
+of its exact values below it; hover over a slice or column for its amount. The
+shipped reports are **Spending by category** (each top-level expense category as a
+share of a ring), **Income and spending** (income beside spending for each period,
+and what was left over), **Net worth over time**, **Budget jars**, **Tax year**,
+and **Realized gains**. **Print** prints the report shown.
+
+The **Dashboard** shows dashboard breadlets below its own sections, **Spending this
+month** and **Income and spending** for the last six months, until you turn them off
+under **Sections** in **Configure Dashboard…**. An add-on that fails to load is named
+above the report.
 
 ## Online quotes
 

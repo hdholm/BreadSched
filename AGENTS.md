@@ -58,7 +58,8 @@ committing, or submitting work in this repository.
    route-level tests. The web, the command line, and GTK reach a book only through
    the book server (`breadsched.api`); the web and the command line
    serialize it with `breadsched.api.views`, and every new book operation declares
-   its permission in `api.permissions`.
+   its permission in `api.permissions`. A report or Dashboard breadlet is not a book operation:
+   it reads through the book server it is given and declares no permission of its own.
 9. For web financial writes, keep request parsing and response translation in a
    presentation adapter, and leave validation and the complete database write in
    the shared service. Test that rejected inputs preserve the stored object.

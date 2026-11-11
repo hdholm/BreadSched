@@ -139,6 +139,24 @@ through `--end` (or `--as-of`), then the opening and closing net worth, the post
 total, and the market and exchange-rate changes that reconcile them. `--csv` writes
 the same rows and totals.
 
+## Reports and breadlets
+
+Reports, Dashboard items, importers and exporters are all *breadlets*. `breadlets`
+lists them with the options each report takes; `report` runs one on a book:
+
+```bash
+breadsched breadlets --kind report
+breadsched report household.breadsched spending-by-category \
+    --option start=2026-01-01 --option end=2026-03-31 --html spending.html
+```
+
+Each `--option KEY=VALUE` sets one option; the rest take their defaults, counted
+from today or `--as-of`. The report prints as text, as `--json` (the same document
+the browser draws: headings, notes, charts with their exact values, and tables), and
+with `--html FILE` also as a printable page with its charts. `--kind dashboard` runs a
+Dashboard breadlet. An add-on breadlet package that failed to load is named at the
+end of `breadlets`. See [Reports and breadlets](../USER_GUIDE.md#reports-and-breadlets).
+
 ## Exchange rates
 
 ```bash

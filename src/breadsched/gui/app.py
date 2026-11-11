@@ -226,6 +226,7 @@ class BreadSchedApplication(Gtk.Application):
             ("savings-goals", self.on_savings_goals, None),
             ("find-transactions", self.on_find_transactions, "<Control><Shift>f"),
             ("transaction-detail", self.on_transaction_detail, None),
+            ("breadlet-reports", self.on_breadlet_reports, None),
             ("fsa-claims", self.on_fsa_claims, None),
             ("gnucash-writeback", self.on_gnucash_writeback, None),
             ("open-default", self.on_open_default, None),
@@ -263,6 +264,7 @@ class BreadSchedApplication(Gtk.Application):
             "savings-goals",
             "find-transactions",
             "transaction-detail",
+            "breadlet-reports",
             "fsa-claims",
             "gnucash-writeback",
             "export",
@@ -312,6 +314,7 @@ class BreadSchedApplication(Gtk.Application):
             "savings-goals",
             "find-transactions",
             "transaction-detail",
+            "breadlet-reports",
             "fsa-claims",
             "gnucash-writeback",
             "export",
@@ -575,6 +578,16 @@ class BreadSchedApplication(Gtk.Application):
     def on_transaction_detail(self, *_args):
         """Reports → Transaction Detail: the Find window as a printable report (#408)."""
         return self.on_find_transactions(report=True)
+
+    def on_breadlet_reports(self, *_args):
+        """Reports → Breadlet Reports: every report breadlet, with its options."""
+        from .dialogs.breadlets_dialog import BreadletReportsDialog
+
+        if self.db is None:
+            return None
+        dialog = BreadletReportsDialog(self.get_active_window(), self.db)
+        dialog.present()
+        return dialog
 
     def on_savings_goals(self, *_args):
         """Open savings goals: add, fund, close, and review their progress."""
@@ -998,6 +1011,8 @@ def build_menu_model(actions_menu: ActionsMenu | None = None) -> Gio.Menu:
                 reports_menu.append(item.label, f"win.{view_action_name(key, item)}")
     # The Find window, as a report of transactions with nested subtotals (#408).
     reports_menu.append("Transaction _Detail…", "app.transaction-detail")
+    # Charts and reports from breadlets, the shipped ones and any add-on's.
+    reports_menu.append("_Breadlet Reports…", "app.breadlet-reports")
     menubar.append_submenu("_Reports", reports_menu)
 
     help_menu = Gio.Menu()

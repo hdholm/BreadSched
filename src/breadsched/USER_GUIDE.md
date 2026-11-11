@@ -358,6 +358,9 @@ The desktop application and the browser offer the same work areas:
 - **Plan** compares dated planned and actual activity over a selected horizon.
 - **Review** resolves actual activity and supports related review queues.
 - **Projection** calculates future state under Base or saved scenarios.
+- **Reports** runs report breadlets: charts of where the money went, income beside
+  spending, net worth over time, and the budget jars, tax year and realized gains
+  reports.
 
 Categorization rules, reimbursable expenses, imports, and this guide have their own
 screens. How to reach each one is in the
@@ -1227,6 +1230,41 @@ bridge. A prior unavailable currency period blocks later carry with “Prior per
 unavailable”; future periods never provide a carry. Turning it off returns each
 period to its own remaining amount. This view choice does not change transactions,
 schedules, or saved Plan settings.
+
+## Reports and breadlets
+
+A *breadlet* is a small plug-in that shows or moves a book's information: a report,
+an item on the Dashboard, an importer, or an exporter. Every report breadlet reads
+the book through the same book server as the rest of BreadSched, so it shows
+exactly what your role in the book allows, and it describes its output once (its
+headings, notes, charts and tables) for the desktop, the browser, the command line
+and printing to draw alike. A chart is never the only place a number appears: the
+table of its exact values is beside it.
+
+The shipped report breadlets, in the spirit of HomeBank's charts:
+
+- **Spending by category** shows where the money went in a range: each top-level
+  expense category as its share of a ring, the largest seven named and the rest one
+  *Other* slice. A category whose refunds exceed its spending is left out of the
+  ring, and the net total is noted below it.
+- **Income and spending** puts each month's (or quarter's, or year's) income beside
+  its spending, with what was left over. Both are actual posted amounts, so a period
+  still under way shows only what has happened so far.
+- **Net worth over time**, **Budget jars**, **Tax year** and **Realized gains** are
+  the reports of those names, reached the same way.
+
+Two dashboard breadlets show on the Dashboard below its own sections until you turn
+them off in Configure Dashboard: **Spending this month**, as a ring, and **Income and
+spending** for the last six months. A range that starts before the book's first month
+starts with that month. Foreign-currency activity without an exchange rate for its
+date is left out of both, and the report says so.
+
+An add-on breadlet is a Python package installed beside BreadSched that registers
+its breadlets under the `breadsched.breadlets` entry point. BreadSched never loads a
+breadlet from a data folder or a downloaded file. How to reach Reports is in the
+[Desktop guide](guide/desktop.md#reports-and-breadlets), the
+[Browser guide](guide/web.md#reports-and-breadlets) and the
+[Command-line guide](guide/cli.md#reports-and-breadlets).
 
 ## Projection and scenarios
 

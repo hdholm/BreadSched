@@ -23,6 +23,7 @@ from ...gen.engine import receivables
 from ...gen.lib.money import Money
 from ...presentation import goal_status_text
 from ..gi_setup import Gio, Gtk, Pango
+from ..widgets.document_view import DocumentView
 from ..widgets.model_chart import ModelChartView  # noqa: E402
 from ..widgets.wrap_box import WrapBox
 from ._base import BaseView, Row, column, sorted_model, table_section
@@ -298,6 +299,13 @@ class DashboardView(BaseView):
         )
         self._add_section(self.reimbursables_section)
 
+        # The Dashboard's breadlets, each drawn from its document below the sections.
+        self.breadlets_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self.breadlets_box.add_css_class("dashboard-breadlets")
+        content.append(self.breadlets_box)
+        #: The documents the shown breadlets made, in order, for printing.
+        self.breadlet_documents: list = []
+
         # Columns are chosen in Configure Dashboard (#381), not in each heading.
         for section in self._tables_sections():
             section.chooser.set_visible(False)
@@ -406,14 +414,48 @@ class DashboardView(BaseView):
         self.income_section.set_visible(shows("income"))
         self.reimbursables_section.set_visible(shows("reimbursables"))
         self.goals_section.set_visible(shows("goals") and bool(self.board.goals))
+        self._render_breadlets()
+
+    def _render_breadlets(self) -> None:
+        """Run each shown dashboard breadlet on the book and draw its document."""
+        from ...gen.plug import DASHBOARD, PluginManager
+        from ...gen.services.dashboard_config import settings_of
+
+        while (child := self.breadlets_box.get_first_child()) is not None:
+            self.breadlets_box.remove(child)
+        self.breadlet_documents = []
+        if self.db is None or self.config is None:
+            return
+        manager = PluginManager.instance()
+        book = book_server(self.db)
+        for item in settings_of(self.config).breadlets:
+            plugin = manager.get(DASHBOARD, item.id)
+            if not item.shown or plugin is None:
+                continue
+            try:
+                document = plugin.produce(book, {}, self._today())
+            except ApiError as error:
+                failed = Gtk.Label(label=f"{item.name}: {error}", xalign=0, wrap=True)
+                failed.add_css_class("error")
+                self.breadlets_box.append(failed)
+                continue
+            self.breadlet_documents.append(document)
+            view = DocumentView(titled=False)
+            view.show_document(document)
+            view.set_name(f"breadlet-{item.id}")
+            self.breadlets_box.append(view)
 
     def printable_report(self):
-        """The currently rendered Dashboard, laid out for printing."""
+        """The currently rendered Dashboard, its breadlets included, laid out for printing."""
         if self.board is None:
             return None
+        from dataclasses import replace
+
         from ...plugins.export.report_layout import dashboard_layout
 
-        return dashboard_layout(self.board, book_name=self.book_name())
+        document = dashboard_layout(self.board, book_name=self.book_name())
+        extra = tuple(section for item in self.breadlet_documents for section in item.sections)
+        return replace(document, sections=document.sections + extra)
 
     def printable_html(self) -> str | None:
         """The same report as a web page, for printing from a browser."""

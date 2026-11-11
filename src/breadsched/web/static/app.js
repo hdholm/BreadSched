@@ -3,7 +3,7 @@
 const RENDERERS = {
   Dashboard: showDashboard, Accounts: showAccounts, Register: showRegister, Find: showFind, Scheduled: showScheduled, Payroll: showPayroll,
   "FSA Dashboard": showFsaDashboard, Plan: showPlan, Scenarios: showScenarios,
-  Review: showReview, Projection: showProjection, Enter: showEntry, Import: showImport,
+  Review: showReview, Projection: showProjection, Reports: showReports, Enter: showEntry, Import: showImport,
   Rules: showRules, "Reimbursable Expenses": showReimbursables, "Savings Goals": showGoals,
   Verify: showVerify,
   Guide: showGuide,
@@ -14,7 +14,7 @@ const RENDERERS = {
 const VIEW_HELP = {
   Scheduled: "scheduled", Payroll: "payroll", Plan: "plan", Projection: "plan",
   Import: "import", Rules: "rules", "Reimbursable Expenses": "reimbursables",
-  "Savings Goals": "goals", Find: "find",
+  "Savings Goals": "goals", Find: "find", Reports: "reports",
 };
 
 function switchTo(name) { current = name; render(); }

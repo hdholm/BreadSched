@@ -149,13 +149,25 @@ class DashboardDialog(BoundedWindow):
             grid.attach(Gtk.Label(label=unit, xalign=0), 2, row, 1, 1)
         page.append(grid)
 
-        page.append(self._heading("Sections"))
+        # The Dashboard's own sections, with its breadlets beside them, so the page
+        # stays short enough for a laptop screen.
+        columns = Gtk.Grid(column_spacing=32, row_spacing=4)
+        columns.attach(self._heading("Sections"), 0, 0, 1, 1)
         self.section_checks: dict[str, Gtk.CheckButton] = {}
-        for name, title in SECTIONS.items():
+        for row, (name, title) in enumerate(SECTIONS.items(), start=1):
             check = Gtk.CheckButton(label=title)
             check.set_active(self.config.sections[name])
             self.section_checks[name] = check
-            page.append(check)
+            columns.attach(check, 0, row, 1, 1)
+        if self.config.breadlets:
+            columns.attach(self._heading("Breadlets"), 1, 0, 1, 1)
+        for row, item in enumerate(self.config.breadlets, start=1):
+            check = Gtk.CheckButton(label=item.name, valign=Gtk.Align.START)
+            check.set_tooltip_text(item.description)
+            check.set_active(item.shown)
+            self.section_checks[item.key] = check
+            columns.attach(check, 1, row, 1, 1)
+        page.append(columns)
         page.append(
             Gtk.Label(
                 label=(

@@ -56,6 +56,12 @@ Never put user financial data or credentials in a commit message or pull request
   cannot safely reproduce a structure, expose it read-only rather than silently
   normalizing or discarding it.
 - Maintain GTK/web parity when a feature is intended to exist on both surfaces.
+- Add a report, a Dashboard item, or a file format as a breadlet registered in
+  `gen/plug` (shipped ones in `plugins/breadlets`, `plugins/importer`,
+  `plugins/export`), so every interface lists it. A report or Dashboard breadlet
+  reads only through the book server it is given and returns a `ReportDocument`
+  with each chart's exact values beside it; see
+  [Breadlets](docs/design/breadlets.md).
 - Treat the repository's [`ROADMAP.md`](ROADMAP.md) as the canonical backlog of
   unfinished work. When a pull request delivers part or all of a roadmap outcome,
   remove what it delivered (narrowing a bullet to what remains) rather than

@@ -142,6 +142,7 @@ class TestLayering:
             "getpass",
             "gzip",
             "hashlib",
+            "importlib",
             "hmac",
             "html",
             "http",

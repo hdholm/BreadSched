@@ -32,5 +32,20 @@ Preparing the first beta.
   each day of the liquidity period, from the same bills and pay that *Needed*
   counts, with the lowest day marked. It is on the desktop, in the browser, and in
   the printed Dashboard, and **Configure Dashboard** can hide it.
+- **Breadlets: reports and Dashboard items as plug-ins.** Reports, Dashboard items,
+  importers and exporters are now *breadlets*, listed and run the same way on the
+  desktop (**Reports → Breadlet Reports…**), in the browser (**Reports**), and on the
+  command line (`breadsched breadlets`, `breadsched report`). New charted reports:
+  **Spending by category**, a ring of where the money went, and **Income and
+  spending**, each period's income beside its spending. Net worth over time, Budget
+  jars, Tax year and Realized gains are reached there too. Every chart has the
+  table of its exact values beside it. `breadsched plugins` is now
+  `breadsched breadlets`.
+- **Spending and income on the Dashboard.** Two Dashboard breadlets, **Spending this
+  month** and **Income and spending** for the last six months, show below the
+  Dashboard's sections; **Configure Dashboard** can hide them.
+- **Add-on breadlets.** A Python package installed beside BreadSched can add its
+  own breadlets; one that fails to load is named rather than stopping the
+  application.
 - **Reporting a problem.** Help → Report a Problem fills in the version and system
   for you, and the issue forms ask for less: what happened, in your own words.

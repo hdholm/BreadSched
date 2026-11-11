@@ -572,6 +572,103 @@ class TestDashboardIsHome:
         view.refresh()
         assert view.cash_flow_section.get_visible() is False
 
+    def test_the_dashboard_draws_its_breadlets_until_they_are_hidden(self, app, window, tmp_path):
+        from breadsched.api.local import book_server
+        from breadsched.gen.sample_book import create_sample_book
+        from breadsched.gen.services import SaveDashboardConfig
+
+        path = tmp_path / "sample.breadsched"
+        create_sample_book(path, as_of=date.today())
+        app.open_book(str(path))
+        view = window._views["dashboard"]
+        shown = [child.get_name() for child in _children(view.breadlets_box)]
+        assert shown == [
+            "breadlet-recent-income-and-spending",
+            "breadlet-spending-this-month",
+        ]
+        assert [item.title for item in view.breadlet_documents] == [
+            "Income and spending",
+            "Spending this month",
+        ]
+        # Printing the Dashboard prints its breadlets after its own sections.
+        printed = view.printable_report()
+        assert "Income and spending, last six months" in printed.text()
+
+        book_server(app.db).save_dashboard_settings(
+            SaveDashboardConfig(sections={"breadlet:spending-this-month": False})
+        )
+        view.refresh()
+        assert [child.get_name() for child in _children(view.breadlets_box)] == [
+            "breadlet-recent-income-and-spending"
+        ]
+
+    def test_configure_dashboard_lists_the_breadlets_beside_the_sections(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+
+        app.open_book(populated_book)
+        dialog = DashboardDialog(window, app.db)
+        try:
+            check = dialog.section_checks["breadlet:spending-this-month"]
+            assert check.get_label() == "Spending this month" and check.get_active()
+        finally:
+            dialog.destroy()
+
+
+class TestBreadletReports:
+    """Reports → Breadlet Reports: a report breadlet's options, document and print."""
+
+    def test_a_report_runs_with_its_options_and_prints(self, app, window, tmp_path, monkeypatch):
+        from breadsched.gen.sample_book import create_sample_book
+        from breadsched.gui import printing
+        from breadsched.gui.dialogs.breadlets_dialog import BreadletReportsDialog
+        from breadsched.gui.widgets.model_chart import ModelChartView
+
+        path = tmp_path / "sample.breadsched"
+        create_sample_book(path, as_of=date(2026, 3, 15))
+        app.open_book(str(path))
+        printed = []
+        monkeypatch.setattr(printing, "print_document", lambda parent, doc: printed.append(doc))
+        dialog = BreadletReportsDialog(
+            window, app.db, "spending-by-category", today=date(2026, 3, 15)
+        )
+        try:
+            assert dialog.breadlet.id == "spending-by-category"
+            assert dialog.given() == {"start": "2026-03-01", "end": "2026-03-31"}
+            dialog.inputs["start"].set_text("2026-02-01")
+            assert dialog.run()
+            assert dialog.view.document.subtitle == "2026-02-01 through 2026-03-31"
+            assert "Housing | 1,450.00 | 74.4%" in dialog.view.text()
+            charts = [
+                child for child in _children(dialog.view) if isinstance(child, ModelChartView)
+            ]
+            assert [chart.model.kind for chart in charts] == ["pie"]
+            dialog.print_report()
+            assert [item.kind for item in printed] == ["spending-by-category"]
+
+            # A refused option is said, and the report shown stays.
+            dialog.inputs["end"].set_text("2026-01-01")
+            assert not dialog.run()
+            assert dialog.message.get_text() == "The end date is before the start date."
+            assert dialog.view.document.kind == "spending-by-category"
+
+            # Choosing another report shows its options and runs it.
+            ids = [plugin.id for plugin in dialog.breadlets]
+            dialog.choice.set_selected(ids.index("income-and-spending"))
+            assert set(dialog.inputs) == {"start", "end", "period"}
+            assert dialog.view.document.kind == "income-and-spending"
+        finally:
+            dialog.destroy()
+
+    def test_the_reports_menu_opens_it(self, app, window, populated_book):
+        app.open_book(populated_book)
+        dialog = app.on_breadlet_reports()
+        try:
+            assert dialog.get_title() == "Breadlet Reports" and dialog.breadlets
+        finally:
+            dialog.destroy()
+
 
 class TestEveryViewBuilds:
     @pytest.mark.parametrize("category", CATEGORY_KEYS)
@@ -11924,7 +12021,10 @@ class TestMenusAndIcons:
             "win.plan-budget-jars",
         } == reports
         # #408: Transaction Detail is the Find window as a report, an app action.
-        assert set(_menu_actions(_submenu(app, "_Reports"))) == reports | {"app.transaction-detail"}
+        assert set(_menu_actions(_submenu(app, "_Reports"))) == reports | {
+            "app.transaction-detail",
+            "app.breadlet-reports",
+        }
         assert not reports & set(_menu_actions(_submenu(app, "_Actions")))
         app.open_book(populated_book)
         window.show_category("dashboard")

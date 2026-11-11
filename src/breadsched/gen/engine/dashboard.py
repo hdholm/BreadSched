@@ -53,6 +53,7 @@ from .dashboard_bills import (
 )
 
 __all__ = [
+    "BREADLET_PREFIX",
     "DEFAULT_SECTIONS",
     "SECTIONS",
     "reimbursable_order",
@@ -90,6 +91,9 @@ SECTIONS = {
 #: Sections shown until the household chooses otherwise: every one but the list of
 #: pending reimbursables, which their own card already totals.
 DEFAULT_SECTIONS = {name: name != "reimbursables" for name in SECTIONS}
+#: A dashboard breadlet is shown or hidden under this prefix and its id, beside the
+#: Dashboard's own sections.
+BREADLET_PREFIX = "breadlet:"
 
 
 @dataclass
@@ -140,9 +144,11 @@ class DashboardConfig:
     #: Which of ``SECTIONS`` are shown (#381); a section not named takes its default.
     sections: dict[str, bool] = field(default_factory=lambda: dict(DEFAULT_SECTIONS))
 
-    def shows(self, section: str) -> bool:
-        """Whether ``section`` (a key of ``SECTIONS``) is shown."""
-        return self.sections.get(section, DEFAULT_SECTIONS[section])
+    def shows(self, section: str, default: bool = False) -> bool:
+        """Whether ``section`` is shown: a key of ``SECTIONS``, or a dashboard
+        breadlet's key (``BREADLET_PREFIX`` and its id), which is ``default`` until
+        the household chooses."""
+        return self.sections.get(section, DEFAULT_SECTIONS.get(section, default))
 
     def serialize(self) -> dict[str, Any]:
         return {
@@ -151,7 +157,10 @@ class DashboardConfig:
             "emergency_months": self.emergency_months,
             "reserve": [self.reserve.numerator, self.reserve.denominator],
             "minimum_bill": [self.minimum_bill.numerator, self.minimum_bill.denominator],
-            "sections": {name: self.shows(name) for name in SECTIONS},
+            "sections": {
+                **{name: self.shows(name) for name in SECTIONS},
+                **{k: v for k, v in self.sections.items() if k.startswith(BREADLET_PREFIX)},
+            },
         }
 
     @classmethod
@@ -161,7 +170,13 @@ class DashboardConfig:
         stored = data.get("sections")
         sections = dict(DEFAULT_SECTIONS)
         if isinstance(stored, dict):
-            sections.update({k: bool(v) for k, v in stored.items() if k in SECTIONS})
+            sections.update(
+                {
+                    k: bool(v)
+                    for k, v in stored.items()
+                    if k in SECTIONS or (isinstance(k, str) and k.startswith(BREADLET_PREFIX))
+                }
+            )
         return cls(
             groups=[GroupConfig.from_dict(g) for g in data.get("groups", [])],
             liquidity_days=data.get("liquidity_days", 30),

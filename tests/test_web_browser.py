@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import re
 import threading
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -952,7 +952,6 @@ def test_a_register_opens_in_its_own_browser_tab(page, served):
 
 
 def test_fsa_claims_needing_attention_show_on_both_dashboards(page, served):
-    from datetime import timedelta
 
     from breadsched.gen.engine import fsa_claims
     from breadsched.gen.lib import (
@@ -2391,3 +2390,38 @@ def test_the_dashboard_draws_its_cash_flow_chart(page, served):
     chart = page.locator("svg[role=img]").first
     expect(chart).to_be_visible()
     assert chart.locator("path").count() >= 1
+
+
+def test_reports_run_a_breadlet_with_its_options_and_draw_its_ring(page, served):
+    """Reports lists the report breadlets; a run draws the ring and its exact table."""
+    expect = sync_api.expect
+    page.wait_for_selector("#nav button")
+    page.get_by_role("button", name="Reports", exact=True).click()
+    picker = page.get_by_label("Report")
+    expect(picker).to_be_visible()
+    picker.select_option("spending-by-category")
+    # The sample book's spending is in the month before the one it was made in.
+    first = date.today().replace(day=1)
+    previous = (first - timedelta(days=1)).replace(day=1)
+    page.locator(".breadlet-options input[name=start]").fill(previous.isoformat())
+    page.get_by_role("button", name="Run", exact=True).click()
+    document = page.locator(".breadlet-document")
+    expect(document.locator("h2.document-title")).to_have_text("Spending by category")
+    ring = document.locator("svg[role=img] path.chart-slice")
+    expect(ring.first).to_be_visible()
+    assert ring.count() == 3
+    rows = document.locator("table tbody tr")
+    expect(rows.first).to_contain_text("Housing")
+    assert "1,450.00" in rows.first.inner_text()
+
+
+def test_the_dashboard_draws_its_breadlets(page, served):
+    expect = sync_api.expect
+    page.get_by_role("button", name="Dashboard", exact=True).first.click()
+    breadlets = page.locator(".dashboard-breadlet")
+    expect(breadlets.first).to_be_visible()
+    assert [item.get_attribute("data-breadlet") for item in breadlets.all()] == [
+        "recent-income-and-spending",
+        "spending-this-month",
+    ]
+    expect(page.get_by_role("heading", name="Income and spending, last six months")).to_be_visible()

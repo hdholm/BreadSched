@@ -29,6 +29,7 @@ Presentations: GTK4, web, CLI, print  gui/, web/, cli/, plugins/export/
 | HTTP authentication, framing, limits, static files | `web/transport.py` | import financial engines |
 | Command-line parsing and text/JSON output | `cli/*_commands.py`, dispatched by `cli/main.py` | keep its own copy of a financial rule |
 | Report layout shared by GTK printing and the browser | `plugins/export/report_layout.py` | recompute values from the view |
+| Report and Dashboard breadlets (registry, options, add-ons) | `gen/plug`, `plugins/breadlets`; see [Breadlets](breadlets.md) | reach the book except through the book server, or write |
 
 ## Dependencies
 

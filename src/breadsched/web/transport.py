@@ -80,6 +80,7 @@ SCRIPTS = (
     "review.js",
     "matching.js",
     "projection.js",
+    "reports.js",
     "household.js",
     "book.js",
     "dashboard.js",

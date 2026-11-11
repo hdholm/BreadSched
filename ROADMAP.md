@@ -9,9 +9,10 @@ its release notes; a merge without new notes publishes nothing.
 
 ## Before the first Beta
 
-- **Breadlets.** Plug-ins, as Gramps has gramplets, for Dashboard items, text and
-  graphic reports, and import and export, with today's reports, Dashboard sections,
-  importers, and exporters as the default ones, and charts in reports.
+- **More breadlets.** The Dashboard's own sections are still native widgets and the
+  Plan, Projection and Expense Explorer reports are reached only from their views;
+  make each a breadlet once its document can carry what its screen lets you click
+  (opening a bill, choosing a cell).
 - **Simplification review:** less complexity in the design and less to learn in the
   interfaces, with the jar metaphor used consistently.
 - **Website:** a GitHub Pages site with a financial walk-through, graphics, and the
