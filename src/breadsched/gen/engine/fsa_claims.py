@@ -386,7 +386,7 @@ def save_claim(
             raise FsaClaimError(
                 "claim.receivable.taken",
                 ("receivable",),
-                "another FSA claim already covers the rest of this receivable",
+                "another FSA claim already covers the rest of this reimbursable expense",
             )
     _check_links(db, claim)
     for allocation in claim.allocations:

@@ -91,8 +91,10 @@ _SERVICE_MESSAGES = {
         "That is BreadSched's own receivable reclassification; link the original "
         "transaction instead"
     ),
-    "claim.receivable.not_found": "The linked receivable no longer exists",
-    "claim.receivable.taken": "Another FSA claim already covers the rest of this receivable",
+    "claim.receivable.not_found": "The linked reimbursable expense no longer exists",
+    "claim.receivable.taken": (
+        "Another FSA claim already covers the rest of this reimbursable expense"
+    ),
     "claim.allocation.account.invalid": "A claim allocation must use an FSA account",
     "claim.allocation.year.not_found": "The selected FSA funding year no longer exists",
     "claim.allocation.target.negative": "An FSA allocation target cannot be negative",
@@ -348,11 +350,11 @@ _SERVICE_MESSAGES = {
     ),
     "savings_goal.close.before_start": "A goal cannot close before it starts",
     "receivable.payer.required": "Enter who owes this reimbursement",
-    "receivable.not_found": "That receivable no longer exists",
+    "receivable.not_found": "That reimbursable expense no longer exists",
     "inference.confidence.invalid": "The confidence must be between 0 and 1",
     "receivable.costs.range.invalid": "The costs range must not end before it starts",
     "receivable.reference.ambiguous": (
-        "That matches more than one receivable; use more of its handle"
+        "That matches more than one reimbursable expense; use more of its handle"
     ),
     "receivable.expected_amount.negative": "The expected amount must not be negative",
     "receivable.transaction.not_found": "That transaction no longer exists",
@@ -362,22 +364,22 @@ _SERVICE_MESSAGES = {
     ),
     "receivable.split.not_a_cost": "Choose a split that records money spent, not received",
     "receivable.split.not_a_credit": "Choose a split that records money credited back",
-    "receivable.split.duplicate": "That split is already linked to this receivable",
+    "receivable.split.duplicate": "That split is already linked to this reimbursable expense",
     "receivable.split.other_account": (
         "That split is in another receivable account; a receivable is held in one account"
     ),
     "receivable.split.mixed_kinds": (
-        "A receivable's costs are either expenses or charges recorded to its receivable "
+        "A reimbursable expense's costs are either expenses or charges recorded to its receivable "
         "account, not both; track the other kind as a receivable of its own"
     ),
     "receivable.expected_amount.below_direct_charge": (
         "A charge recorded to a receivable account is owed in full; write off the part "
         "the payer will not pay instead"
     ),
-    "receivable.link.not_found": "That split is not linked to this receivable",
+    "receivable.link.not_found": "That split is not linked to this reimbursable expense",
     "receivable.write_off.amount_not_positive": "The write-off amount must be positive",
     "receivable.write_off.account_required": (
-        "Choose the expense account the written-off amount becomes: this receivable has "
+        "Choose the expense account the written-off amount becomes: this reimbursable expense has "
         "no expense of its own"
     ),
     "receivable.write_off.account_not_expense": "Choose an expense account for the write-off",
@@ -439,7 +441,7 @@ _SERVICE_MESSAGES = {
     ),
     "import.review.unbalanced": "The GnuCash version does not balance",
     "import.review.deletion_referenced": (
-        "A reconciliation, FSA claim, or receivable still uses this transaction; "
+        "A reconciliation, FSA claim, or reimbursable expense still uses this transaction; "
         "remove that link before applying the GnuCash deletion"
     ),
     "review.transaction.not_found": "The transaction no longer exists",

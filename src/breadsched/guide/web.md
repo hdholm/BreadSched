@@ -17,9 +17,17 @@ GTK. To create a book first, use the [command line](cli.md#create-and-inspect-bo
 
 ## Find your way around
 
-The navigation bar offers the work areas (**Dashboard**, **FSA Dashboard**,
-**Accounts**, **Register**, **Scheduled**, **Plan**, **Review**, **Projection**) and
-**Enter**, **Import**, **Rules**, **Reimbursable Expenses**, **Savings Goals**, **Verify**, and **Guide**. **Guide** shows this guide: choose the overview or the desktop, browser,
+The navigation bar has **Dashboard** and **Reports**, and five menus that group the
+other pages; choose one to open it, and choose a page in it:
+
+- **Ledger**: **Accounts**, **Register**, **Find**, **Enter**, **Import**, and **Rules**.
+- **Schedule**: **Scheduled**, **Payroll**, and **Review**.
+- **Planning**: **Plan**, **Projection**, and **Savings Goals**.
+- **Benefits**: **FSA Dashboard** and **Reimbursable Expenses**.
+- **Book**: **Account** (your sign-in and password), **Verify**, and **Guide**.
+
+A menu's name shows the page you are on while it is one of its pages (for example
+**Ledger: Register**); **Escape** or a click elsewhere closes it. **Guide** shows this guide: choose the overview or the desktop, browser,
 or command-line part, and a link to another part opens it there. **Help** on
 **Scheduled**, **Payroll**, **Plan**, **Projection**, **Import**, **Rules**, **Reimbursable Expenses**, and **Savings Goals**, and in the CSV statement, write-back,
 reconciliation, due review, held GnuCash changes, Expense Explorer, and net worth
@@ -37,14 +45,19 @@ On the Dashboard, the cash-flow chart sits under the summary figures; hover a po
 for the day's amount, and open **Chart values** below it for the exact figures. See
 [Dashboard and near-term cash](../USER_GUIDE.md#dashboard-and-near-term-cash).
 **Configure Dashboard…** sets the horizons, sections, groups, and
-columns (see [Configure the Dashboard](#configure-the-dashboard)). Expand a
-missed-schedule row to see each missed date and amount. When savings goals have set
-money aside, a **Set aside for goals** tile shows the total (see
-[Savings goals](../USER_GUIDE.md#savings-goals)).
+columns (see [Configure the Dashboard](#configure-the-dashboard)). Everything on the
+Dashboard is a dashboard breadlet (see [Reports and breadlets](#reports-and-breadlets)):
+a bill's or income's name opens its schedule (or a card payment's register); a
+missed-schedule row lists each missed date and amount under its range; the **Net
+worth**, **Reimbursements due**, **FSA claims needing attention**, and **In goal jars**
+figures open what they count; and a column heading sorts its table. When something
+is due, **Review due transactions…** is above the bills (see
+[Savings goals](../USER_GUIDE.md#savings-goals) for goal jars).
 
 ### Net worth history
 
-**Net worth history** is the last section of the Dashboard page. **Group by**
+**Net worth history** is a report: choose the Dashboard's **Net worth** figure, or
+**Net Worth History** on **Reports**. **Group by**
 switches between months, quarters, and years. Two charts show assets, debts, and
 net worth, and net worth's composition by group, each with its exact values under
 **Chart values**; expanding a period lists its group values. Choose a period's **Change** (or **Explain**) to list the
@@ -65,9 +78,8 @@ shared with keeps theirs:
 
 - **Horizons**: **Liquid for** so many days of bills, and how many months of
   outgoings the **Emergency fund covers**.
-- **Sections**: Account groups, Pending bills, Expected income, Pending
-  reimbursables (off until you turn it on), and Savings goals. The summary cards
-  always show.
+- **Sections**: The summary figures, the cash-flow chart, account groups, pending bills, expected income, pending reimbursables (off until you turn it on), FSA claims needing attention, and savings goals, then any other dashboard
+  breadlets (see [Reports and breadlets](#reports-and-breadlets)).
 - **Groups**: each group's name, kind, and accounts. A group lists only its own
   accounts, each with a **×** to remove it; type part of a name in **Add an
   account…**, choose it from the list, and choose **Add**. An account is in at most
@@ -125,6 +137,23 @@ targets, each with its table; hover over a column for its amount), with **Each j
 to open them one by one (`/api/budget-jars`).
 Change **Group by** in the dialog; **Print** prints just the report. See
 [Budget jars](../USER_GUIDE.md#budget-jars).
+
+## Reports and breadlets
+
+Reports, Dashboard items, importers and exporters are all *breadlets*: small
+plug-ins that read the book through the same book server the desktop and command
+line use. **Reports** lists every report breadlet: choose one, set its options (a
+date range, how to group it, a year), and choose **Run**. Each chart has the table
+of its exact values below it; hover over a slice or column for its amount. The
+shipped reports are **Spending by category** (each top-level expense category as a
+share of a ring), **Income and spending** (income beside spending for each period,
+and what was left over), **Net worth over time**, **Budget jars**, **Tax year**,
+and **Realized gains**. **Print** prints the report shown.
+
+The **Dashboard** is made of dashboard breadlets: its own sections, then **Spending
+this month** and **Income and spending** for the last six months, until you turn them
+off under **Sections** in **Configure Dashboard…**. An add-on that fails to load is named
+above the report.
 
 ## Online quotes
 
@@ -360,7 +389,7 @@ either a fixed yearly amount (optionally rising with expense inflation) or a yea
 share of the balance in percent. **Edit** and **Remove** change or delete a drawdown;
 a refused entry explains why and changes nothing.
 
-### Explore expenses
+### Expense Explorer
 
 Apply the Plan controls first, then scroll to **Expense Explorer** on the Plan page,
 below the cash outlook. Choose a period in any **Spending over time** or **Income
@@ -370,14 +399,14 @@ that period's dated income), use **Sort by** to order the category rows, and cho
 a **Category trend**. Each chart's exact values are under its **Chart values**
 toggle. The page also shows the selected category's Plan, Period actual, and Period variance beneath the
 merchant table. **Carry prior periods** turns rollover on. See
-[Explore expenses](../USER_GUIDE.md#explore-expenses).
+[Expense Explorer](../USER_GUIDE.md#expense-explorer).
 
 ## Savings goals
 
 **Savings Goals** lists each goal's account, target date, target, what is set aside, what
 remains, and its status. Fill in the form below the list and choose **Add goal**;
 **Edit** loads a goal into the form for **Save changes**. Enter an amount beside a
-goal and choose **Allocate** to set extra money aside today. **Close** releases a
+goal and choose **Add to jar** to set extra money aside today. **Close** releases a
 goal's money, **Reopen** undoes that, and **Delete** removes the goal. **Show closed
 goals** includes closed goals. The Dashboard lists each open goal under **Savings
 goals**; choose a goal's name to open **Savings Goals**. After **Edit**, the form below the
@@ -391,24 +420,24 @@ section, and **Plan** lists goals reaching their target in its range. See
 
 ## Reimbursable expenses
 
-Choose **Reimbursable…** on a register row to start a receivable from that expense,
+Choose **Reimbursable…** on a register row to track that expense as reimbursable,
 or from a charge recorded straight to a Receivable account (then **Held in** starts
 at that account), or open **Reimbursable Expenses** to list, open, link, dispute, and
-write off receivables. A write-off's **Write off into** chooses the expense it
+write off reimbursable expenses. A write-off's **Write off into** chooses the expense it
 becomes; a charge recorded to a Receivable account must name one. See [Two ways to
 record a reimbursable cost](../USER_GUIDE.md#two-ways-to-record-a-reimbursable-cost).
 **Held in** chooses the receivable account (the default is one per currency). It
 lists only accounts whose type is **Receivable**; the note under it names any account
-that looks like a receivable but is not offered (an **Asset** account named for
+that looks like a receivable account but is not offered (an **Asset** account named for
 receivables, or a placeholder). To use such an account, change its type to
 **Receivable** when editing the account.
 **Proposed reimbursements** lists credits that clearly belong to one open
-receivable, checked, including a credit to the receivable account itself such as a
+reimbursable expense, checked, including a credit to the receivable account itself such as a
 paycheck line; choose **Accept selected** to link them. A warning appears when
-a linked expense is also on an FSA claim, and the open receivable shows what is
+a linked expense is also on an FSA claim, and the open reimbursable expense shows what is
 owed and the account holding it.
 
-**Plan** lists each expense category a receivable changed under **Reimbursable
+**Plan** lists each expense category a reimbursable expense changed under **Reimbursable
 expenses: gross and net cost**, and a Plan cell's detail shows its gross cost and
 what was reimbursed or expected back below the Plan, Actual, and Variance cards.
 
@@ -440,15 +469,15 @@ In the FSA claim editor, a changed EOB is kept in the claim's history with the
 with the reason typed beside it, and lists its history.
 
 When the FSA pays what the insurer does not, open the FSA claim editor, choose the
-receivable under **Payer covers part**, and save the claim. The claim list and the
-receivable then show what the payer, the FSA, and you each pay, and **Needs
+reimbursable expense under **Payer covers part**, and save the claim. The claim list and the
+reimbursable expense then show what the payer, the FSA, and you each pay, and **Needs
 review** when that comes to more than was paid. See
 [Reimbursable expenses](../USER_GUIDE.md#reimbursable-expenses).
 
 To plan for the payer paying less, nothing, or later in one saved scenario, open the
-receivable and use the **In scenario** row: choose the scenario, enter the amount
+reimbursable expense and use the **In scenario** row: choose the scenario, enter the amount
 expected back (0 for nothing) and the date, and choose **Apply to scenario**. Leave
-both empty to expect what the receivable says again. The line below lists every
+both empty to expect what the reimbursable expense says again. The line below lists every
 scenario's change, and that scenario's Projection shows the gross and net cost (see
 [Reimbursable expenses](../USER_GUIDE.md#reimbursable-expenses)).
 

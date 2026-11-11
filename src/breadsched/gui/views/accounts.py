@@ -336,23 +336,23 @@ class AccountTreeView(BaseView):
     def _on_holdings(self, _button) -> None:
         if self.db is None:
             return
-        from ..dialogs.holdings_dialog import HoldingsDialog
+        from ..reports_window import open_report
 
-        HoldingsDialog(self.get_root(), self.db).present()
+        open_report(self.get_root(), self.db, "holdings")
 
     def _on_realized_gains(self, _button) -> None:
         if self.db is None:
             return
-        from ..dialogs.realized_gains_dialog import RealizedGainsDialog
+        from ..reports_window import open_report
 
-        RealizedGainsDialog(self.get_root(), self.db).present()
+        open_report(self.get_root(), self.db, "realized-gains")
 
     def _on_tax_year(self, _button) -> None:
         if self.db is None:
             return
-        from ..dialogs.tax_year_dialog import TaxYearDialog
+        from ..reports_window import open_report
 
-        TaxYearDialog(self.get_root(), self.db).present()
+        open_report(self.get_root(), self.db, "tax-year")
 
     def _on_exchange_rate(self, _button) -> None:
         if self.db is None:

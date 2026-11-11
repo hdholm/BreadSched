@@ -13,3 +13,4 @@ mutants/
 *.breadsched
 *.breadsched-wal
 *.breadsched-shm
+_site/

@@ -22,6 +22,7 @@ __all__ = [
     "BARS",
     "COLUMN_KINDS",
     "LINE",
+    "PIE",
     "SHARE",
     "STACKED",
     "ChartMarker",
@@ -37,6 +38,10 @@ LINE = "line"
 STACKED = "stacked"
 #: STACKED, each value drawn as its share of the category's reported total.
 SHARE = "share"
+#: One ring (a donut): each category is a slice of the single series, sized by its
+#: share of ``totals[0]``, the whole the engine reported. Each slice takes colour slot
+#: ``index + 1``, so a pie has at most eight categories (fold the rest into "Other").
+PIE = "pie"
 #: The forms drawn as columns rather than lines.
 COLUMN_KINDS = frozenset({BARS, STACKED, SHARE})
 
@@ -116,3 +121,14 @@ class ChartModel:
         if value is None or total is None or not total or total < Money(0):
             return None
         return float(value / total) * 100
+
+    def slice_share(self, category: int) -> float | None:
+        """A pie slice's percentage of the whole, or None when it is not drawn.
+
+        A slice is drawn only for a positive value of a positive whole.
+        """
+        value = self.series[0].values[category] if self.series else None
+        whole = self.totals[0] if self.totals else None
+        if value is None or whole is None or value <= Money(0) or whole <= Money(0):
+            return None
+        return float(value / whole) * 100

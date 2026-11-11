@@ -65,6 +65,10 @@ __all__ = [
     "chart_blocks",
     "chart_table",
     "ModelChart",
+    "Action",
+    "Actions",
+    "LINK_KINDS",
+    "dashboard_section_blocks",
     "signed_money_text",
 ]
 
@@ -74,11 +78,43 @@ __all__ = [
 
 @dataclass(frozen=True)
 class Card:
-    """One summary figure; ``alarm`` marks a value that needs attention."""
+    """One summary figure; ``alarm`` marks a value that needs attention.
+
+    ``link`` is where choosing it goes on screen (see ``LINK_KINDS``)."""
 
     label: str
     value: str
     alarm: bool = False
+    link: str = ""
+
+
+#: What a document's links may name, as ``kind`` or ``kind:handle``. Each interface
+#: follows them its own way (a register, a dialog, a page); printing ignores them.
+LINK_KINDS = {
+    "schedule": "open the scheduled transaction",
+    "register": "open the account's register",
+    "account": "edit the account (its payment behaviour, for a card)",
+    "due-review": "review the due transactions",
+    "goals": "open savings goals",
+    "receivables": "open reimbursable expenses",
+    "fsa-claims": "open the FSA claims",
+    "report": "open a report by its key",
+}
+
+
+@dataclass(frozen=True)
+class Action:
+    """A command shown with a document on screen, such as Review due transactions."""
+
+    label: str
+    link: str
+
+
+@dataclass(frozen=True)
+class Actions:
+    """Commands shown together; printing leaves them out."""
+
+    items: tuple[Action, ...]
 
 
 @dataclass(frozen=True)
@@ -123,6 +159,8 @@ class Cell:
     below: bool = False
     hint: str = ""
     span: int = 1
+    #: What the column sorts by on screen (a number or text); the text when None.
+    sort: str | float | None = None
 
 
 @dataclass(frozen=True)
@@ -134,6 +172,8 @@ class TableRow:
 
     cells: tuple[Cell, ...]
     style: str = ""
+    #: Where choosing the row goes on screen (see ``LINK_KINDS``).
+    link: str = ""
 
 
 @dataclass(frozen=True)
@@ -142,6 +182,11 @@ class Table:
     rows: tuple[TableRow, ...]
     #: Shown instead of the table when it has no rows.
     empty: str = ""
+    #: A stable name for an interactive table: on screen its columns sort and the
+    #: person chooses which show, remembered under this name. "" is a plain table.
+    key: str = ""
+    #: The table's name in a column chooser.
+    title: str = ""
 
 
 @dataclass(frozen=True)
@@ -151,7 +196,7 @@ class ModelChart:
     model: ChartModel
 
 
-Block = Heading | Paragraph | Cards | Table | ModelChart
+Block = Heading | Paragraph | Cards | Table | ModelChart | Actions
 
 
 @dataclass(frozen=True)
@@ -197,6 +242,8 @@ def _block_text(block: Block) -> list[str]:
         return [f"{card.label} {card.value}" for card in block.items]
     if isinstance(block, ModelChart):
         return [block.model.title, *(series.name for series in block.model.series)]
+    if isinstance(block, Actions):
+        return []
     if not block.rows:
         return [block.empty]
     lines = [" | ".join(column.label for column in block.columns)]
@@ -252,16 +299,19 @@ def _completeness(coverage: Completeness, what: str) -> tuple[Paragraph, ...]:
 # -------------------------------------------------------------- Dashboard
 
 
-def _cash_flow_blocks(board: Dashboard) -> tuple[Block, ...]:
+def _cash_flow_blocks(board: Dashboard, currency: str = "") -> tuple[Block, ...]:
     """The Dashboard's cash-flow chart, under its heading, when it has anything."""
-    chart = board.cash_flow_chart()
+    chart = board.cash_flow_chart(currency)
     if chart.empty:
         return ()
     return (Heading(chart.title), ModelChart(chart))
 
 
-def dashboard_layout(board: Dashboard, *, book_name: str = "") -> ReportDocument:
-    """The currently built Dashboard."""
+def _money_sort(value: Money | None) -> float | None:
+    return float(value.to_decimal()) if value is not None else None
+
+
+def _summary_blocks(board: Dashboard) -> tuple[Block, ...]:
     summary = board.summary()
     report = board.report_summary()
 
@@ -271,7 +321,7 @@ def dashboard_layout(board: Dashboard, *, book_name: str = "") -> ReportDocument
         return money_text(value)
 
     cards = [
-        Card("Net worth", visible("net_worth", summary["net_worth"])),
+        Card("Net worth", visible("net_worth", summary["net_worth"]), link="report:net-worth"),
         Card("Liquid", visible("liquid", summary["liquid"])),
         Card(
             f"Needed in {board.config.liquidity_days} days",
@@ -309,118 +359,30 @@ def dashboard_layout(board: Dashboard, *, book_name: str = "") -> ReportDocument
         owed = money_text(summary["receivables_owed"])
         if summary["receivables_attention"] > 0:
             owed += f" ({money_text(summary['receivables_attention'])} disputed or overdue)"
-        cards.append(Card("Reimbursements due", owed, summary["receivables_attention"] > 0))
+        cards.append(
+            Card(
+                "Reimbursements due",
+                owed,
+                summary["receivables_attention"] > 0,
+                link="receivables",
+            )
+        )
     if summary["fsa_claims_attention"]:
         cards.append(
-            Card("FSA claims needing attention", str(summary["fsa_claims_attention"]), True)
+            Card(
+                "FSA claims needing attention",
+                str(summary["fsa_claims_attention"]),
+                True,
+                link="fsa-claims",
+            )
         )
     if summary["goals_set_aside"] > 0:
         goals_value = money_text(summary["goals_set_aside"])
         if summary["goals_held"] != summary["goals_set_aside"]:
-            goals_value += f" ({money_text(summary['goals_held'])} held from spendable cash)"
-        cards.append(Card("Set aside for goals", goals_value))
-
-    group_rows = []
-    for group in board.groups:
-        ratio = (
-            f"{group.report_loan_to_value:.1%}" if group.report_loan_to_value is not None else ""
-        )
-        group_rows.append(
-            TableRow(
-                (
-                    Cell(
-                        group.name,
-                        indent=group.depth,
-                        note=f"— {group.note}" if group.note else "",
-                        hint=group.path,
-                    ),
-                    _amount(group.report_value),
-                    _amount(group.report_debt),
-                    _amount(
-                        group.report_equity
-                        if group.report_equity is not None
-                        else group.report_total
-                    ),
-                    Cell(ratio, numeric=True),
-                    _text(group.loan_end or ""),
-                ),
-                "heading" if group.heading else "",
-            )
-        )
-    balances = Table(
-        _columns("Group", "#Value", "#Owed", "#Equity / total", "#LTV", "Loan end"),
-        tuple(group_rows),
-        empty="No Dashboard groups are configured.",
-    )
-
-    def due_cells(item) -> tuple[Cell, Cell]:
-        days = item.days_until(board.as_of)
-        due_in = f"{-days} days overdue" if days < 0 else "today" if days == 0 else f"{days} days"
-        if isinstance(item, MissedGroup):
-            # Printed pages cannot expand on demand, so the missed dates are listed.
-            dates = ", ".join(
-                f"{when.isoformat()} {money_text(amount)}" for when, amount in item.occurrences
-            )
-            return (
-                Cell(
-                    f"{item.next_due.isoformat()} to {item.last_due.isoformat()}",
-                    note=dates,
-                    below=True,
-                ),
-                Cell(f"{item.count} missed, {due_in}"),
-            )
-        return Cell(item.next_due.isoformat()), Cell(due_in)
-
-    bills = Table(
-        _columns(
-            "Item",
-            "Due",
-            "Due in",
-            "Frequency",
-            "#Amount",
-            "#Monthly",
-            "#Hold now",
-            "#Annual",
-            "Kind",
-        ),
-        tuple(
-            TableRow(
-                (
-                    _text(item.name),
-                    *due_cells(item),
-                    _text(item.frequency),
-                    _amount(item.amount),
-                    _amount(None if item.generated else item.monthly),
-                    _amount(None if item.income else item.held),
-                    _amount(None if item.generated else item.annual),
-                    _text("Account payment" if item.generated else "Committed"),
-                )
-            )
-            for item in board.display_bills
-        ),
-    )
-    income = Table(
-        _columns("Item", "Due", "Due in", "Frequency", "#Amount", "#Monthly", "#Annual"),
-        tuple(
-            TableRow(
-                (
-                    _text(item.name),
-                    *due_cells(item),
-                    _text(item.frequency),
-                    _amount(item.amount),
-                    _amount(item.monthly),
-                    _amount(item.annual),
-                )
-            )
-            for item in board.display_incomes
-        ),
-    )
-    # The sections Configure Dashboard shows are the ones printed (#381).
-    shows = board.config.shows
-    blocks: list[Block] = [
+            goals_value += f" ({money_text(summary['goals_held'])} of it kept out of Available)"
+        cards.append(Card("In goal jars", goals_value, link="goals"))
+    return (
         Cards(tuple(cards)),
-        *(_cash_flow_blocks(board) if shows("cash_flow") else ()),
-        *((Heading("Balances"), balances) if shows("groups") else ()),
         *_notes(board.coverage_notes),
         *_completeness(board.completeness, "Net worth"),
         *(
@@ -428,75 +390,288 @@ def dashboard_layout(board: Dashboard, *, book_name: str = "") -> ReportDocument
             if board.liquid_completeness.excluded != board.completeness.excluded
             else ()
         ),
-        *((Heading("Pending bills"), bills) if shows("bills") else ()),
-        *((Heading("Expected income"), income) if shows("income") else ()),
-    ]
-    if shows("reimbursables"):
-        blocks += [
-            Heading("Pending reimbursables"),
-            Table(
-                _columns("Expense", "Payer", "Incurred", "Expected", "#Still owed", "Status"),
-                tuple(
-                    TableRow(
-                        (
-                            _text(item.receivable.description or item.receivable.payer),
-                            _text(item.receivable.payer),
-                            _text(item.receivable.incurred_date.isoformat()),
-                            _text(
-                                item.receivable.expected_cash_date.isoformat()
-                                if item.receivable.expected_cash_date
-                                else "—"
-                            ),
-                            _amount(item.remaining),
-                            _text(item.status.label),
-                        )
-                    )
-                    for item in board.reimbursables
+    )
+
+
+def _groups_blocks(board: Dashboard) -> tuple[Block, ...]:
+    rows = []
+    for group in board.groups:
+        ratio = group.report_loan_to_value
+        total = group.report_equity if group.report_equity is not None else group.report_total
+        hint = "\n".join(
+            [
+                group.path or group.name,
+                *([group.note] if group.note else []),
+                *group.members,
+                *group.completeness.detail(),
+            ]
+        )
+        rows.append(
+            TableRow(
+                (
+                    Cell(
+                        group.name,
+                        indent=group.depth,
+                        note=f"— {group.note}" if group.note else "",
+                        hint=hint,
+                    ),
+                    _amount(group.report_value),
+                    _amount(group.report_debt),
+                    _amount(total),
+                    Cell(f"{ratio:.1%}" if ratio is not None else "", numeric=True),
+                    _text(group.loan_end or ""),
                 ),
-                empty="No reimbursable expenses are owed.",
-            ),
-        ]
-    if board.claim_alerts:
-        blocks += [
-            Heading("FSA claims needing attention"),
-            Table(
-                _columns("Service date", "Provider", "Status", "#Remaining", "Needs attention"),
-                tuple(
-                    TableRow(
-                        (
-                            Cell(line.summary.claim.service_date.isoformat()),
-                            Cell(line.summary.claim.provider),
-                            Cell(line.summary.status.label),
-                            _amount(line.summary.remaining_reimbursable),
-                            Cell("\n".join(item.text for item in line.attention)),
-                        )
+                "heading" if group.heading else "",
+            )
+        )
+        # Each account in the group, under it, with its own balance.
+        for account in group.accounts:
+            rows.append(
+                TableRow(
+                    (
+                        Cell(
+                            account.name,
+                            indent=group.depth + 1,
+                            hint="\n".join([account.note, *account.members]).strip(),
+                        ),
+                        _amount(account.total),
+                        _text(""),
+                        _text(""),
+                        _text(""),
+                        _text(""),
                     )
-                    for line in board.claim_alerts
-                ),
+                )
+            )
+    return (
+        Heading("Balances"),
+        Table(
+            _columns("Group", "#Value", "#Owed", "#Equity / total", "#LTV", "Loan end"),
+            tuple(rows),
+            empty="No Dashboard groups are configured.",
+        ),
+    )
+
+
+def _due_cells(board: Dashboard, item) -> tuple[Cell, Cell]:
+    days = item.days_until(board.as_of)
+    due_in = f"{-days} days overdue" if days < 0 else "today" if days == 0 else f"{days} days"
+    if isinstance(item, MissedGroup):
+        # Every missed date and amount, below the range (printing cannot expand).
+        dates = ", ".join(
+            f"{when.isoformat()} {money_text(amount)}" for when, amount in item.occurrences
+        )
+        return (
+            Cell(
+                f"{item.next_due.isoformat()} to {item.last_due.isoformat()}",
+                note=dates,
+                below=True,
+                sort=item.next_due.isoformat(),
             ),
-        ]
-    if board.goals and shows("goals"):
-        blocks += [
-            Heading("Savings goals"),
-            Table(
-                _columns("Goal", "Target date", "#Target", "#Set aside", "#Remaining", "Status"),
-                tuple(
-                    TableRow(
-                        (
-                            _text(item.goal.name),
-                            _text(item.goal.target_date.isoformat()),
-                            _amount(item.target),
-                            _amount(item.set_aside),
-                            _amount(item.remaining),
-                            _text(goal_status_text(item)),
-                        )
-                    )
-                    for item in board.goals
+            Cell(f"{item.count} missed, {due_in}", sort=days),
+        )
+    return Cell(item.next_due.isoformat()), Cell(due_in, sort=days)
+
+
+def _item_link(item) -> str:
+    """A bill or income row goes to its schedule, else its account."""
+    if item.schedule is not None:
+        return f"schedule:{item.schedule.handle}"
+    if item.account is None:
+        return ""
+    # A card's payment row is generated from the card: its behaviour is the account's.
+    return f"account:{item.account}" if item.generated else f"register:{item.account}"
+
+
+def _money_cell(value: Money | None) -> Cell:
+    cell = _amount(value)
+    return Cell(cell.text, numeric=True, negative=cell.negative, sort=_money_sort(value))
+
+
+def _due_actions(board: Dashboard) -> tuple[Block, ...]:
+    due = any(
+        item.days_until(board.as_of) <= 0 for item in (*board.display_bills, *board.display_incomes)
+    )
+    return (Actions((Action("Review due transactions…", "due-review"),)),) if due else ()
+
+
+def _bills_blocks(board: Dashboard) -> tuple[Block, ...]:
+    bills = board.display_bills
+    table = Table(
+        _columns(
+            "Item",
+            "Due",
+            "Due in",
+            "Frequency",
+            "#Amount",
+            "#Monthly",
+            "#In the jar",
+            "#Annual",
+            "Kind",
+        ),
+        tuple(
+            TableRow(
+                (
+                    _text(item.name),
+                    *_due_cells(board, item),
+                    _text(item.frequency),
+                    _money_cell(item.amount),
+                    _money_cell(None if item.generated else item.monthly),
+                    _money_cell(None if item.income else item.held),
+                    _money_cell(None if item.generated else item.annual),
+                    _text("Account payment" if item.generated else "Committed"),
                 ),
+                link=_item_link(item),
+            )
+            for item in bills
+        ),
+        empty="No bills are pending.",
+        key="dashboard",
+        title="Pending bills",
+    )
+    return (*_due_actions(board), Heading(f"Pending bills ({len(bills)})"), table)
+
+
+def _income_blocks(board: Dashboard) -> tuple[Block, ...]:
+    incomes = board.display_incomes
+    table = Table(
+        _columns("Item", "Due", "Due in", "Frequency", "#Amount", "#Monthly", "#Annual"),
+        tuple(
+            TableRow(
+                (
+                    _text(item.name),
+                    *_due_cells(board, item),
+                    _text(item.frequency),
+                    _money_cell(item.amount),
+                    _money_cell(item.monthly),
+                    _money_cell(item.annual),
+                ),
+                link=_item_link(item),
+            )
+            for item in incomes
+        ),
+        empty="No income is expected.",
+        key="dashboard-income",
+        title="Expected income",
+    )
+    return (Heading(f"Expected income ({len(incomes)})"), table)
+
+
+def _reimbursables_blocks(board: Dashboard) -> tuple[Block, ...]:
+    items = board.reimbursables
+    table = Table(
+        _columns("Expense", "Payer", "Incurred", "Expected", "#Still owed", "Status"),
+        tuple(
+            TableRow(
+                (
+                    _text(item.receivable.description or item.receivable.payer),
+                    _text(item.receivable.payer),
+                    _text(item.receivable.incurred_date.isoformat()),
+                    _text(
+                        item.receivable.expected_cash_date.isoformat()
+                        if item.receivable.expected_cash_date
+                        else "—"
+                    ),
+                    _money_cell(item.remaining),
+                    _text(item.status.label),
+                ),
+                link="receivables",
+            )
+            for item in items
+        ),
+        empty="No reimbursable expenses are owed.",
+        key="dashboard-reimbursables",
+        title="Pending reimbursables",
+    )
+    return (Heading(f"Pending reimbursables ({len(items)})"), table)
+
+
+def _claims_blocks(board: Dashboard) -> tuple[Block, ...]:
+    if not board.claim_alerts:
+        return ()
+    return (
+        Heading("FSA claims needing attention"),
+        Table(
+            _columns("Service date", "Provider", "Status", "#Remaining", "Needs attention"),
+            tuple(
+                TableRow(
+                    (
+                        Cell(line.summary.claim.service_date.isoformat()),
+                        Cell(line.summary.claim.provider),
+                        Cell(line.summary.status.label),
+                        _money_cell(line.summary.remaining_reimbursable),
+                        Cell("\n".join(item.text for item in line.attention)),
+                    ),
+                    link="fsa-claims",
+                )
+                for line in board.claim_alerts
             ),
-        ]
+        ),
+    )
+
+
+def _goals_blocks(board: Dashboard) -> tuple[Block, ...]:
+    if not board.goals:
+        return ()
+    return (
+        Heading(f"Savings goals ({len(board.goals)})"),
+        Table(
+            _columns("Goal", "Target date", "#Target", "#In the jar", "#Remaining", "Status"),
+            tuple(
+                TableRow(
+                    (
+                        _text(item.goal.name),
+                        _text(item.goal.target_date.isoformat()),
+                        _money_cell(item.target),
+                        _money_cell(item.set_aside),
+                        _money_cell(item.remaining),
+                        _text(goal_status_text(item)),
+                    ),
+                    link="goals",
+                )
+                for item in board.goals
+            ),
+            key="dashboard-goals",
+            title="Savings goals",
+        ),
+    )
+
+
+#: Each Dashboard section's blocks, by the section's name (``dashboard.SECTIONS``).
+DASHBOARD_SECTION_BLOCKS = {
+    "summary": _summary_blocks,
+    "cash_flow": _cash_flow_blocks,
+    "groups": _groups_blocks,
+    "bills": _bills_blocks,
+    "income": _income_blocks,
+    "reimbursables": _reimbursables_blocks,
+    "claims": _claims_blocks,
+    "goals": _goals_blocks,
+}
+
+
+def dashboard_section_blocks(board: Dashboard, name: str, currency: str = "") -> tuple[Block, ...]:
+    """One Dashboard section, as the screen and the printed Dashboard show it;
+    ``currency`` labels the cash-flow chart."""
+    if name == "cash_flow":
+        return _cash_flow_blocks(board, currency)
+    return DASHBOARD_SECTION_BLOCKS[name](board)
+
+
+def dashboard_layout(
+    board: Dashboard,
+    *,
+    book_name: str = "",
+    extra: tuple[Section, ...] = (),
+    currency: str = "",
+) -> ReportDocument:
+    """The Dashboard as shown: each section Configure Dashboard shows (#381), in order,
+    then ``extra`` (the shown sections of other dashboard breadlets)."""
+    blocks: list[Block] = []
+    for name in DASHBOARD_SECTION_BLOCKS:
+        if board.config.shows(name):
+            blocks.extend(dashboard_section_blocks(board, name, currency))
     subtitle = f"{book_name + ' · ' if book_name else ''}As at {board.as_of.isoformat()}"
-    return ReportDocument("Dashboard", subtitle, (Section(tuple(blocks)),), kind="dashboard")
+    return ReportDocument("Dashboard", subtitle, (Section(tuple(blocks)), *extra), kind="dashboard")
 
 
 # ------------------------------------------------------------------- Plan
@@ -1466,7 +1641,27 @@ def chart_blocks(model: ChartModel) -> tuple[Block, ...]:
 
 def chart_table(model: ChartModel) -> Table:
     """The exact values behind ``model``, one row per category."""
-    from ...gen.engine.chart_model import SHARE
+    from ...gen.engine.chart_model import PIE, SHARE
+
+    if model.kind == PIE:
+        values = model.series[0].values if model.series else ()
+
+        def share(index: int) -> Cell:
+            found = model.slice_share(index)
+            return Cell("—" if found is None else f"{found:.1f}%", numeric=True)
+
+        return Table(
+            _columns("Category", "#Amount", "#Share"),
+            tuple(
+                TableRow((Cell(category), _amount(values[index]), share(index)))
+                for index, category in enumerate(model.categories)
+            )
+            + (
+                (TableRow((Cell("Total"), _amount(model.totals[0]), Cell("")), "total"),)
+                if model.totals
+                else ()
+            ),
+        )
 
     def cell(series: int, category: int) -> Cell:
         if model.kind != SHARE:

@@ -551,9 +551,9 @@ class TestImport:
         junk.write_text("hello")
         assert main(["import", book_path, str(junk)]) == 2
 
-    def test_plugins_are_listed(self, capsys):
-        rows = run_json(capsys, "plugins")
-        assert {"gnucash-sqlite", "gnucash-xml"} <= {r["id"] for r in rows}
+    def test_importers_are_listed_among_the_breadlets(self, capsys):
+        listed = run_json(capsys, "breadlets", "--kind", "importer")
+        assert {"gnucash-sqlite", "gnucash-xml"} <= {r["id"] for r in listed["breadlets"]}
 
 
 class TestPlanningAndProjection:

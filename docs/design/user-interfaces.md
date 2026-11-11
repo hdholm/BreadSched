@@ -27,8 +27,20 @@ View commands are declared once in `view_catalog.VIEW_ACTIONS`. Each becomes a
 `report` on **Reports**), and appears in the toolbar only while its view is current.
 **Actions** lists the current view's commands first, then the commands that work
 anywhere, then every other view's commands under **Other Views**, so each command
-has exactly one item; **Reports** lists every `report` action whichever view
-computes it. An item that asks for more input ends in "…", and the one New
+has exactly one item. A `report` action is not on **Actions**: the **Reports** menu
+lists every report once from `gui/reports_window.report_specs()` (the interactive
+reports, then each report breadlet that is not one of them) as `app.open-report`
+with the report's key, and a view's `report` action opens the same key.
+
+**The Reports window** (`gui/reports_window.py`, one per main window, closed when
+the book is) shows each open report in its own closable, reorderable notebook tab,
+so reports can be compared. A report is still built as its own window (its class,
+tests and printing are unchanged); `ReportsWindow.adopt` moves that window's content
+into a tab and keeps the window as the tab's controller. A window never shown is not
+sent `close-request`, so closing a tab, or the report's own **Close**, sends it before
+the tab goes, letting a report stop its background work. The Expense Explorer and
+Budget Jars take the Plan view's range, grouping and scenario when the Plan is open
+(`_plan_context`), else the Plan's defaults. An item that asks for more input ends in "…", and the one New
 Transaction command (`app.new-transaction`, Ctrl+T) starts in the shown register's
 account (`ViewManager.shown_register`). Toolbar icons are unique per command:
 `view_catalog.toolbar_icons()` lists them and only `SHARED_ICONS`
@@ -451,6 +463,18 @@ parallel transaction models:
 
 The full editor remains the place for complex metadata; the row's editor icon hands
 its contents to `TransactionDialog.prefill`.
+
+## Web navigation
+
+The browser's bar is `NAV_GROUPS` in `core.js`: **Dashboard** and **Reports** on
+their own, and menus for the rest (**Ledger**, **Schedule**, **Planning**,
+**Benefits**, **Book**), so nineteen pages take seven places. A group's button
+names the page shown (**Ledger: Register**) and has `aria-expanded`; its menu
+closes on a choice, **Escape**, or a click elsewhere. `VIEWS` is derived from the
+groups, so a page is added in one place. The **Reports** page lists the interactive
+reports (Expense Explorer, Budget Jars, Net Worth History, Holdings, Realized Gains,
+Tax Year) and then every other report breadlet; the Plan's **Expense Explorer…**
+opens it there with the Plan's range.
 
 ## Web tables
 

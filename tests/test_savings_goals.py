@@ -240,9 +240,9 @@ def test_cli_adds_funds_lists_and_closes_goals(tmp_path, capsys):
     assert Money(goal["set_aside"]) + Money(goal["remaining"]) == Money(1200)
     assert Money(report["held"]) == Money(goal["set_aside"])
     assert main(["goals", path, "--as-of", "2026-09-15"]) == 0
-    assert "Set aside for goals" in capsys.readouterr().out
+    assert "In goal jars" in capsys.readouterr().out
     assert main(["dashboard", path, "--as-of", "2026-09-15"]) == 0
-    assert "Set aside for goals" in capsys.readouterr().out
+    assert "In goal jars" in capsys.readouterr().out
     assert main(["goals", path, "--close", "Vacation", "--on", "2026-09-16"]) == 0
     capsys.readouterr()
     assert main(["goals", path, "--as-of", "2026-09-20"]) == 0
@@ -257,8 +257,8 @@ def test_dashboard_printout_shows_what_goals_set_aside(db, book):
     _monthly_pay(db, book, last_posted=date(2026, 6, 1))
     _goal(db, book)
     html = dashboard_report(dashboard.build(db, as_of=date(2026, 6, 15)))
-    assert "Set aside for goals" in html and "600.00" in html
-    assert "<h2>Savings goals</h2>" in html and "New roof" in html and "saving" in html
+    assert "In goal jars" in html and "600.00" in html
+    assert "<h2>Savings goals (1)</h2>" in html and "New roof" in html and "saving" in html
 
 
 def test_cli_migrate_brings_an_older_book_to_the_current_schema(tmp_path, capsys):
@@ -630,7 +630,7 @@ def test_goals_chart_stacks_set_aside_under_what_is_still_to_save(db, book):
     assert (chart.kind, chart.currency) == (STACKED, "USD")
     # The closed goal is left out; the label carries the target month.
     assert chart.categories == (f"{roof.name} (Dec 2026)",)
-    assert [series.name for series in chart.series] == ["Set aside", "Still to save"]
+    assert [series.name for series in chart.series] == ["In the jar", "Still to save"]
     assert chart.series[0].values == (Money(600),)
     assert chart.series[1].values == (Money(600),)
     assert chart.totals == (Money(1200),)

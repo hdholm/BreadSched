@@ -1,4 +1,4 @@
-// The Plan view, its Expense Explorer, and Plan detail.
+// The Plan view and Plan detail, and the Expense Explorer report the Reports page shows.
 
 function expenseBars(items, periodIndex) {
   const max = Math.max(1, ...items.flatMap((item) => [
@@ -513,9 +513,16 @@ async function showPlan() {
       el("button", { class: "action", type: "button",
         onclick: () => openBudgetJars(data.controls.from, data.controls.through,
           data.controls.period).catch((error) => say(error.message, "error")) },
-      "Budget jars…")),
+      "Budget jars…"),
+      // The Expense Explorer is a report: it opens under Reports with this Plan's range.
+      el("button", { class: "action", type: "button", onclick: () => {
+        state.report = "expense-explorer";
+        state.reportRange = { from: currentPlan.from, through: currentPlan.through,
+          period: currentPlan.period, scenario: currentPlan.scenario || null };
+        switchTo("Reports");
+      } }, "Expense Explorer…")),
     el("h2", { class: "plan-summary-heading" }, "Cash outlook"),
-    summaryTable, await expenseExplorerPanel(currentPlan), detailSection);
+    summaryTable, detailSection);
 }
 
 async function openPlanDetail(

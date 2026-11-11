@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..plugins.export.report_layout import (
+    Actions,
     Cards,
     Cell,
     Heading,
@@ -221,6 +222,8 @@ class ReportPrinter:
             return self._cards(block)
         if isinstance(block, ModelChart):
             return [self._model_chart(block)]
+        if isinstance(block, Actions):
+            return []  # commands are for the screen
         return self._table(block)
 
     def _cards(self, block: Cards) -> list[_Item]:

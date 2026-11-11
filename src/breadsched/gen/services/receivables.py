@@ -460,7 +460,7 @@ def delete_receivable(db: DbSQLite, handle: str) -> ServiceResult[str]:
     receivable = db.get_receivable(handle)
     if receivable is None:
         return ServiceResult.failure(ServiceError("receivable.not_found", ("handle",)))
-    with db.transaction(f"Delete receivable {receivable.payer}") as txn:
+    with db.transaction(f"Delete reimbursable expense {receivable.payer}") as txn:
         for claim in list(db.iter_fsa_claims()):
             if claim.receivable == handle:
                 claim.receivable = None

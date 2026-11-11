@@ -28,6 +28,7 @@ from .attachment_resource import (
 )
 from .autocomplete_resource import entry_suggestion
 from .book_resource import summary, verify
+from .breadlet_resource import breadlets, run_breadlet
 from .csv_import_resource import csv_import, csv_inspect, csv_preview
 from .currency_quote_resource import save_currency_quote
 from .dashboard_resource import dashboard_config_save, dashboard_report
@@ -579,6 +580,8 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/plan/detail": _plan_detail,
     "/api/expense-explorer": _expense_explorer,
     "/api/net-worth-history": net_worth_history,
+    "/api/breadlets": breadlets,
+    "/api/breadlet": run_breadlet,
     "/api/holdings": holdings,
     "/api/holdings/sale-lots": sale_lots_view,
     "/api/realized-gains": realized_gains_report,

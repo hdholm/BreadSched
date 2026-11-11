@@ -139,6 +139,24 @@ through `--end` (or `--as-of`), then the opening and closing net worth, the post
 total, and the market and exchange-rate changes that reconcile them. `--csv` writes
 the same rows and totals.
 
+## Reports and breadlets
+
+Reports, Dashboard items, importers and exporters are all *breadlets*. `breadlets`
+lists them with the options each report takes; `report` runs one on a book:
+
+```bash
+breadsched breadlets --kind report
+breadsched report household.breadsched spending-by-category \
+    --option start=2026-01-01 --option end=2026-03-31 --html spending.html
+```
+
+Each `--option KEY=VALUE` sets one option; the rest take their defaults, counted
+from today or `--as-of`. The report prints as text, as `--json` (the same document
+the browser draws: headings, notes, charts with their exact values, and tables), and
+with `--html FILE` also as a printable page with its charts. `--kind dashboard` runs a
+Dashboard breadlet. An add-on breadlet package that failed to load is named at the
+end of `breadlets`. See [Reports and breadlets](../USER_GUIDE.md#reports-and-breadlets).
+
 ## Exchange rates
 
 ```bash
@@ -518,15 +536,15 @@ Receivable account; without it BreadSched uses the default for the expense's
 currency. A charge recorded straight to a Receivable account (an employer's cost on
 your card, say) is attached with `--attach-expense` too, and its payback, a credit
 to that account such as a paycheck line, with `--attach-reimbursement`; such a
-receivable is held in that account and owed in full, and its `--write-off` needs
+reimbursable expense is held in that account and owed in full, and its `--write-off` needs
 `--into` an expense account (see [Two ways to record a reimbursable
 cost](../USER_GUIDE.md#two-ways-to-record-a-reimbursable-cost)). The list shows what is owed, the account, and any FSA-claim overlap, and
 warns under the table when an expense is also on an FSA claim. When an FSA claim
-covers the rest of a receivable's bill (linked on the claim in the desktop or
+covers the rest of a reimbursable expense's bill (linked on the claim in the desktop or
 browser), a line under the table shows what the payer, the FSA, and you each pay,
 and `--json` lists it under `shared_costs`.
 
-`--costs START END` lists each expense category a receivable changed between two
+`--costs START END` lists each expense category a reimbursable expense changed between two
 dates with its gross cost, the amount reimbursed or expected back, and the net
 household cost, the figures the Plan shows (`--json` gives `gross`,
 `reimbursable`, and `net`). See
@@ -586,10 +604,10 @@ breadsched goals book.breadsched --override "New roof" --scenario Lean \
 ```
 
 The list shows each goal's account, target date, target, what is set aside, what
-remains, and its status: **saving**, **fully set aside**, **starts** a later date, or
+remains, and its status: **saving**, **jar full**, **starts** a later date, or
 **closed**. **saving (spread by day: no income scheduled)** means no income is
 scheduled before the target date, so the gap is spread by day. Below the table are the total
-set aside and the part held from spendable cash. A goal is named by its exact name
+in goal jars and the part of it kept out of Available. A goal is named by its exact name
 or a unique handle prefix. `breadsched dashboard` shows the same total as **Set
 aside for goals**. `--override` changes a goal in one saved scenario; with neither
 `--target`, `--by`, `--buy-on`, nor `--leave-out`, it clears the change. `--buy-on`

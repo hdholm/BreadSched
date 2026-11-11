@@ -9,13 +9,11 @@ its release notes; a merge without new notes publishes nothing.
 
 ## Before the first Beta
 
-- **Breadlets.** Plug-ins, as Gramps has gramplets, for Dashboard items, text and
-  graphic reports, and import and export, with today's reports, Dashboard sections,
-  importers, and exporters as the default ones, and charts in reports.
+- **More breadlets.** The Plan, Projection and Expense Explorer are still their own
+  screens: make each a report breadlet once a document can carry what their screens
+  let you choose (a scenario, a category cell, a period).
 - **Simplification review:** less complexity in the design and less to learn in the
   interfaces, with the jar metaphor used consistently.
-- **Website:** a GitHub Pages site with a financial walk-through, graphics, and the
-  documentation; the README revised to match.
 - **Book-server requests over HTTP sometimes go unanswered on Windows CI.** A test
   request to the local server occasionally gets no status line within its timeout
   (30 s), most often the first write after a refused request; seen only on Windows

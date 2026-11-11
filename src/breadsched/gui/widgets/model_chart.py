@@ -17,14 +17,16 @@ from collections.abc import Callable
 
 import cairo
 
-from ...gen.engine.chart_model import COLUMN_KINDS, LINE, ChartModel
+from ...gen.engine.chart_model import COLUMN_KINDS, LINE, PIE, ChartModel
 from ...presentation import (
     ChartBarLayout,
     ChartLineLayout,
+    ChartPieLayout,
     chart_bar_layout,
     chart_chrome,
     chart_label_indices,
     chart_line_layout,
+    chart_pie_layout,
     chart_series_colour,
     chart_tick_label,
 )
@@ -209,6 +211,36 @@ def paint_lines(
     return layout
 
 
+def paint_pie(cr, model: ChartModel, width: float, height: float, *, dark: bool = False):
+    """Draw ``model`` as a donut with its legend (name and share) beside it."""
+    layout = chart_pie_layout(model, 16.0, 12.0, max(width - 32.0, 1.0), max(height - 24.0, 1.0))
+    cr.select_font_face("Sans")
+    cr.set_font_size(12)
+    surface = _rgb(chart_chrome("surface", dark=dark))
+    for item in layout.slices:
+        cr.set_source_rgb(*_rgb(chart_series_colour(item.slot, dark=dark)))
+        start, end = item.start - math.pi / 2, item.end - math.pi / 2
+        cr.new_path()
+        cr.arc(layout.cx, layout.cy, layout.outer, start, end)
+        cr.arc_negative(layout.cx, layout.cy, layout.inner, end, start)
+        cr.close_path()
+        cr.fill_preserve()
+        if len(layout.slices) > 1:
+            # A hairline of the surface between slices keeps neighbours apart.
+            cr.set_source_rgb(*surface)
+            cr.set_line_width(2)
+            cr.stroke()
+        cr.new_path()
+    for item, y in zip(layout.slices, layout.legend_ys, strict=True):
+        cr.set_source_rgb(*_rgb(chart_series_colour(item.slot, dark=dark)))
+        cr.rectangle(layout.legend_x, y - 10, 12, 12)
+        cr.fill()
+        cr.set_source_rgb(*_rgb(chart_chrome("ink", dark=dark)))
+        cr.move_to(layout.legend_x + 18, y)
+        cr.show_text(f"{model.categories[item.category]}  {item.share:.0f}%")
+    return layout
+
+
 def paint_chart(
     cr,
     model: ChartModel,
@@ -217,8 +249,10 @@ def paint_chart(
     *,
     dark: bool = False,
     selected: int | None = None,
-) -> ChartBarLayout | ChartLineLayout:
+):
     """Draw ``model`` in its own form, shading the ``selected`` category if any."""
+    if model.kind == PIE:
+        return paint_pie(cr, model, width, height, dark=dark)
     if model.kind in COLUMN_KINDS:
         return paint_bars(cr, model, width, height, dark=dark, selected=selected)
     return paint_lines(cr, model, width, height, dark=dark, selected=selected)
@@ -236,7 +270,7 @@ class ModelChartView(Gtk.DrawingArea):
     ) -> None:
         super().__init__()
         self.model = model
-        self.layout: ChartBarLayout | ChartLineLayout | None = None
+        self.layout: ChartBarLayout | ChartLineLayout | ChartPieLayout | None = None
         #: The shaded category, when the chart picks one for the rest of a screen.
         self.selected: int | None = None
         self.on_select = on_select
@@ -265,7 +299,7 @@ class ModelChartView(Gtk.DrawingArea):
 
     def category_at(self, x: float) -> int | None:
         """The category whose band contains ``x``, if any."""
-        if self.layout is None:
+        if self.layout is None or isinstance(self.layout, ChartPieLayout):
             return None
         for index, (start, extent) in enumerate(self.layout.bands):
             if start <= x < start + extent:
@@ -306,6 +340,12 @@ class ModelChartView(Gtk.DrawingArea):
         if self.model is None or self.layout is None:
             return None
         currency = f" {self.model.currency}" if self.model.currency else ""
+        if isinstance(self.layout, ChartPieLayout):
+            item = self.layout.slice_at(x, y)
+            if item is None:
+                return None
+            name = self.model.categories[item.category]
+            return f"{name}: {self._amount(0, item.category)}{currency} ({item.share:.1f}%)"
         if isinstance(self.layout, ChartBarLayout):
             for bar in self.layout.bars:
                 if (

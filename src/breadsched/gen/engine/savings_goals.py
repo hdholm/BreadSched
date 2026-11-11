@@ -204,7 +204,7 @@ def goals_chart(progress: Iterable[GoalProgress], currency: str = "") -> ChartMo
         STACKED,
         tuple(f"{item.goal.name} ({item.goal.target_date:%b %Y})" for item in shown),
         (
-            ChartSeries("set_aside", "Set aside", tuple(item.set_aside for item in shown), 1),
+            ChartSeries("set_aside", "In the jar", tuple(item.set_aside for item in shown), 1),
             ChartSeries("remaining", "Still to save", tuple(item.remaining for item in shown), 2),
         ),
         currency,

@@ -9,18 +9,20 @@ that layout as HTML, and the desktop's native printing draws the same layout.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from html import escape
 
 from ...gen.engine.activity import PlanMeasure
 from ...gen.engine.category_report import CategoryReport
-from ...gen.engine.chart_model import COLUMN_KINDS, LINE, ChartModel
+from ...gen.engine.chart_model import COLUMN_KINDS, LINE, PIE, ChartModel
 from ...gen.engine.dashboard import Dashboard
 from ...gen.engine.projection_result import Projection
 from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer
 from ...gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ...gen.services.plan import PlanGoalMilestone
 from .report_layout import (
+    Actions,
     Cards,
     Cell,
     Heading,
@@ -217,6 +219,8 @@ def _block_html(block) -> str:
         return _cards([(card.label, card.value, card.alarm) for card in block.items])
     if isinstance(block, ModelChart):
         return model_chart_svg(block.model)
+    if isinstance(block, Actions):
+        return ""  # commands are for the screen
     return _table_html(block)
 
 
@@ -286,6 +290,8 @@ def model_chart_svg(model: ChartModel, *, dark: bool = False) -> str:
 
     width, height = 1000, 300
     left, top, right, bottom = 84, 40, 16, 40
+    if model.kind == PIE:
+        return _pie_chart_svg(model, width, height, dark)
     if model.kind == LINE:
         return _line_chart_svg(model, width, height, (left, top, right, bottom), dark)
     layout = chart_bar_layout(model, left, top, width - left - right, height - top - bottom)
@@ -376,6 +382,56 @@ def _svg(model: ChartModel, width: int, height: int, parts: list[str]) -> str:
 
 def _amount_text(value) -> str:
     return value.format(parens_negative=True) if value is not None else "—"
+
+
+def _arc(cx: float, cy: float, radius: float, angle: float) -> str:
+    return f"{cx + radius * math.sin(angle):.2f},{cy - radius * math.cos(angle):.2f}"
+
+
+def _pie_chart_svg(model: ChartModel, width: int, height: int, dark: bool) -> str:
+    """A donut, each slice titled with its exact amount and share, with a legend."""
+    from ...presentation import chart_chrome, chart_pie_layout, chart_series_colour
+
+    layout = chart_pie_layout(model, 24, 16, width - 48, height - 32)
+    ink, surface = chart_chrome("ink", dark=dark), chart_chrome("surface", dark=dark)
+    parts: list[str] = []
+    for item in layout.slices:
+        name = model.categories[item.category]
+        tip = f"{name}: {_amount_text(model.series[0].values[item.category])}"
+        tip = f"{tip} {model.currency}".strip() + f" ({item.share:.1f}%)"
+        colour = chart_series_colour(item.slot, dark=dark)
+        if item.end - item.start >= 2 * math.pi - 1e-9:
+            # A whole ring cannot be one arc: draw it as two circles.
+            shape = (
+                f'<circle cx="{layout.cx:.2f}" cy="{layout.cy:.2f}" '
+                f'r="{(layout.outer + layout.inner) / 2:.2f}" fill="none" stroke="{colour}" '
+                f'stroke-width="{layout.outer - layout.inner:.2f}">'
+            )
+            parts.append(f"{shape}<title>{escape(tip)}</title></circle>")
+            continue
+        large = 1 if item.end - item.start > math.pi else 0
+        cx, cy = layout.cx, layout.cy
+        path = (
+            f"M{_arc(cx, cy, layout.outer, item.start)}"
+            f"A{layout.outer:.2f},{layout.outer:.2f} 0 {large} 1 "
+            f"{_arc(cx, cy, layout.outer, item.end)}"
+            f"L{_arc(cx, cy, layout.inner, item.end)}"
+            f"A{layout.inner:.2f},{layout.inner:.2f} 0 {large} 0 "
+            f"{_arc(cx, cy, layout.inner, item.start)}Z"
+        )
+        parts.append(
+            f'<path d="{path}" fill="{colour}" stroke="{surface}" stroke-width="2">'
+            f"<title>{escape(tip)}</title></path>"
+        )
+    for item, y in zip(layout.slices, layout.legend_ys, strict=True):
+        colour = chart_series_colour(item.slot, dark=dark)
+        parts.append(
+            f'<rect x="{layout.legend_x:.1f}" y="{y - 10:.1f}" width="12" height="12" rx="2" '
+            f'fill="{colour}"/><text x="{layout.legend_x + 18:.1f}" y="{y:.1f}" '
+            f'font-size="12" fill="{ink}">{escape(model.categories[item.category])} '
+            f"{item.share:.0f}%</text>"
+        )
+    return _svg(model, width, height, parts)
 
 
 def _line_chart_svg(

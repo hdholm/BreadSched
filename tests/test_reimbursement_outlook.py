@@ -295,5 +295,5 @@ def test_web_route_changes_and_lists_a_scenario_expectation(db, book):
     ]
 
     cleared = receivable_scenario(api, {**request, "amount": ""})
-    assert cleared["text"] == "Careful expects what the receivable says"
+    assert cleared["text"] == "Careful expects what the reimbursable expense says"
     assert receivables(api, QueryParams(""))["receivables"][0]["scenario_changes"] == []

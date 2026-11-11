@@ -2708,7 +2708,7 @@ class TestPlanApi:
     def test_page_exposes_plan_not_the_legacy_budget_view(self, client):
         _status, body, _headers = page_scripts(client)
         page = body.decode()
-        assert '"Scheduled", "Payroll", "Plan", "Review", "Projection"' in page
+        assert '["Planning", ["Plan", "Projection", "Savings Goals"]]' in page
         assert "async function showPlan" in page
         assert "async function showBudget" not in page
 
@@ -3991,6 +3991,7 @@ class TestDashboardApi:
         status, payload = client.get("/api/dashboard")
         assert status == 200
         assert set(payload) == {
+            "documents",
             "summary",
             "cash_flow_chart",
             "config",
@@ -4011,6 +4012,26 @@ class TestDashboardApi:
         assert payload["completeness"]["status"] == "complete"
         assert payload["goals"] == []
         assert payload["unavailable_reasons"]["months_covered"] == "No committed outgoings"
+        # Every item drawn is a dashboard breadlet's document, the shown ones in order;
+        # one with nothing to show (no goals, no claims) still answers, empty.
+        assert [item["id"] for item in payload["documents"]] == [
+            "summary",
+            "cash_flow",
+            "groups",
+            "bills",
+            "income",
+            "claims",
+            "goals",
+            "recent-income-and-spending",
+            "spending-this-month",
+        ]
+        bills = next(item for item in payload["documents"] if item["id"] == "bills")
+        table = next(
+            block
+            for block in bills["document"]["sections"][0]["blocks"]
+            if block["type"] == "table"
+        )
+        assert table["key"] == "dashboard" and table["title"] == "Pending bills"
 
     def test_missing_group_quote_suppresses_position_and_preserves_bills(self, client):
         from breadsched.gen.engine import dashboard
@@ -4469,13 +4490,19 @@ class TestDashboardApi:
     def test_sections_round_trip_and_alone_keep_the_groups(self, client):
         """Configure Dashboard's sections are the book's (#381)."""
         _status, before = client.get("/api/dashboard")
+        # Every Dashboard item is a breadlet, its own sections first, in order.
         assert before["config"]["sections"] == {
+            "summary": True,
+            "cash_flow": True,
             "groups": True,
             "bills": True,
             "income": True,
             "reimbursables": False,
+            "claims": True,
             "goals": True,
-            "cash_flow": True,
+            # The shipped dashboard breadlets, shown until the household hides them.
+            "breadlet:recent-income-and-spending": True,
+            "breadlet:spending-this-month": True,
         }
         assert before["config"]["section_titles"]["reimbursables"] == "Pending reimbursables"
         assert before["reimbursables"] == []
@@ -4541,7 +4568,10 @@ class TestDashboardApi:
         page = body.decode()
         assert ': "Dashboard"' in page
         assert 'launchParams.get("view")' in page
-        assert '"Dashboard", "FSA Dashboard", "Accounts"' in page
+        # The Dashboard is the first entry of the navigation, and the page it opens on.
+        assert "const NAV_GROUPS = [" in page
+        assert page.index('["Dashboard"],') - page.index("const NAV_GROUPS = [") < 30
+        assert '["Benefits", ["FSA Dashboard", "Reimbursable Expenses"]]' in page
         assert "async function showDashboard" in page
         assert "async function showFsaDashboard" in page
         assert "openDashboardConfigEditor" in page
@@ -4653,10 +4683,11 @@ class TestReviewApi:
         _status, review = review_client.get("/api/review")
         assert review["actuals"] == []
 
-    def test_page_exposes_review_between_plan_and_projection(self, client):
+    def test_page_exposes_review_with_the_schedule(self, client):
         _status, body, _headers = page_scripts(client)
         page = body.decode()
-        assert '"Plan", "Review", "Projection"' in page
+        # Review resolves scheduled and due activity, so it is in the Schedule menu.
+        assert '["Schedule", ["Scheduled", "Payroll", "Review"]]' in page
         assert "async function showReview" in page
 
 
@@ -5342,7 +5373,8 @@ class TestScenarioEventWebParity:
         style = body.decode()
         assert ".plan-table th:first-child, .plan-table td:first-child" in style
         assert "max-height: calc(100vh - 310px)" in style
-        assert 'class:"balance-groups"' in script
+        # Dashboard groups are a document table, its rows indented by depth.
+        assert "function documentBlock" in script and "followDashboardLink" in script
         assert '"Add estimate…"' in script
         assert '"Alter baseline…"' in script
         assert '"Suppress baseline…"' in script

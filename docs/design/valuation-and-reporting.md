@@ -595,7 +595,8 @@ colours, never a series colour. Budget jars is the first report charted this way
 per account, planned against actual draws by period (slots 1 and 2) and each jar's
 level beside its target (slots 3 and 4).
 
-A model's `kind` is `BARS`, `LINE`, `STACKED`, or `SHARE`. A line chart may carry `ChartMarker`s (a
+A model's `kind` is `BARS`, `LINE`, `STACKED`, `SHARE`, or `PIE` (a ring; see
+[Breadlets](breadlets.md#charts-drawn-as-a-ring)). A line chart may carry `ChartMarker`s (a
 labelled vertical rule at one category) and `partial_from`, the first category whose
 values leave something out, shaded with `partial_note` beside it.
 `chart_line_layout` places lines edge to edge; `chart_label_indices` keeps a long

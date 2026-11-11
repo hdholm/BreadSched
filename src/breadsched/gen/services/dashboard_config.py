@@ -15,6 +15,7 @@ from typing import Any
 
 from ..db.sqlite import DbSQLite
 from ..engine.dashboard import (
+    BREADLET_PREFIX,
     GROUP_KINDS,
     SECTIONS,
     Dashboard,
@@ -27,6 +28,8 @@ from ..lib.money import Money
 from .contracts import ServiceError, ServiceResult
 
 __all__ = [
+    "DashboardBreadlet",
+    "breadlet_key",
     "DashboardGroup",
     "DashboardGroupInput",
     "DashboardSettings",
@@ -109,7 +112,7 @@ def save_dashboard_config(
             return ServiceResult.failure(*errors)
         config.groups = groups
     if request.sections is not None:
-        if any(name not in SECTIONS for name in request.sections):
+        if any(not _known_section(name) for name in request.sections):
             return ServiceResult.failure(ServiceError("dashboard.section.invalid", ("sections",)))
         config.sections = {**config.sections, **{k: bool(v) for k, v in request.sections.items()}}
     if request.liquidity_days is not None:
@@ -121,6 +124,49 @@ def save_dashboard_config(
     else:
         keep(config.serialize_personal())
     return ServiceResult.success(config)
+
+
+def _dashboard_breadlets():
+    """Every dashboard breadlet in the order the Dashboard shows them: its own
+    sections first, as ``SECTIONS`` lists them, then the others by name."""
+    from ..plug import DASHBOARD, PluginManager
+
+    order = list(SECTIONS)
+    return sorted(
+        PluginManager.instance().by_category(DASHBOARD),
+        key=lambda plugin: (order.index(plugin.id) if plugin.id in SECTIONS else len(order),),
+    )
+
+
+def breadlet_key(breadlet_id: str) -> str:
+    """Where a dashboard breadlet's choice is kept: a section's own name, or the
+    breadlet prefix and its id."""
+    return breadlet_id if breadlet_id in SECTIONS else f"{BREADLET_PREFIX}{breadlet_id}"
+
+
+def _known_section(name: str) -> bool:
+    if name in SECTIONS:
+        return True
+    from ..plug import DASHBOARD, PluginManager
+
+    return name.startswith(BREADLET_PREFIX) and (
+        PluginManager.instance().get(DASHBOARD, name[len(BREADLET_PREFIX) :]) is not None
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class DashboardBreadlet:
+    """A dashboard breadlet the Dashboard can show, and whether it does."""
+
+    id: str
+    name: str
+    description: str
+    shown: bool
+
+    @property
+    def key(self) -> str:
+        """Its name among the Dashboard's sections, for ``SaveDashboardConfig``."""
+        return breadlet_key(self.id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +189,8 @@ class DashboardSettings:
     minimum_bill: Money
     #: Which of ``SECTIONS`` the Dashboard shows (#381).
     sections: dict[str, bool] = field(default_factory=dict)
+    #: Every dashboard breadlet, in the order the Dashboard shows them below its sections.
+    breadlets: tuple[DashboardBreadlet, ...] = ()
 
 
 def settings_of(config: DashboardConfig) -> DashboardSettings:
@@ -155,6 +203,15 @@ def settings_of(config: DashboardConfig) -> DashboardSettings:
         config.reserve,
         config.minimum_bill,
         {name: config.shows(name) for name in SECTIONS},
+        tuple(
+            DashboardBreadlet(
+                plugin.id,
+                plugin.name,
+                plugin.description,
+                config.shows(breadlet_key(plugin.id), plugin.shown_by_default),
+            )
+            for plugin in _dashboard_breadlets()
+        ),
     )
 
 

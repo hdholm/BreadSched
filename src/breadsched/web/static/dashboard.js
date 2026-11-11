@@ -89,16 +89,17 @@ async function showFsaDashboard() {
 // Which columns show is each browser's own choice (localStorage), never the book's,
 // as the desktop keeps it in each user's settings; the first column always shows.
 const DASHBOARD_TABLES = {
-  bills: { title:"Pending bills", headers:["Item", "Due", "Due in", "Frequency",
+  dashboard: { title:"Pending bills", headers:["Item", "Due", "Due in", "Frequency",
     { label:"Amount", num:true }, { label:"Monthly", num:true },
-    { label:"Hold now", num:true }, { label:"Annual", num:true }, "Kind"] },
-  income: { title:"Expected income", headers:["Item", "Due", "Due in", "Frequency",
+    { label:"In the jar", num:true }, { label:"Annual", num:true }, "Kind"] },
+  "dashboard-income": { title:"Expected income", headers:["Item", "Due", "Due in", "Frequency",
     { label:"Amount", num:true }, { label:"Monthly", num:true },
     { label:"Annual", num:true }] },
-  reimbursables: { title:"Pending reimbursables", headers:["Expense", "Payer", "Incurred",
-    "Expected", { label:"Still owed", num:true }, "Status"] },
-  goals: { title:"Savings goals", headers:["Goal", "Target date", { label:"Target", num:true },
-    { label:"Set aside", num:true }, { label:"Remaining", num:true }, "Status"] },
+  "dashboard-reimbursables": { title:"Pending reimbursables", headers:["Expense", "Payer",
+    "Incurred", "Expected", { label:"Still owed", num:true }, "Status"] },
+  "dashboard-goals": { title:"Savings goals", headers:["Goal", "Target date",
+    { label:"Target", num:true }, { label:"In the jar", num:true },
+    { label:"Remaining", num:true }, "Status"] },
 };
 
 function dashboardHiddenColumns(id) {
@@ -114,13 +115,6 @@ function setDashboardHiddenColumns(id, hidden) {
 }
 
 // A Dashboard table showing only its chosen columns.
-function dashboardTable(id, rows) {
-  const headers = DASHBOARD_TABLES[id].headers;
-  const hidden = new Set(dashboardHiddenColumns(id));
-  const keep = headers.map((header, index) => index === 0 || !hidden.has(header.label ?? header));
-  return table(headers.filter((_h, index) => keep[index]),
-    rows.map((row) => row.filter((_cell, index) => keep[index])));
-}
 
 function openDashboardConfigEditor(config) {
   const backdrop = el("div", { class:"detail-backdrop" });
@@ -350,161 +344,45 @@ async function netWorthChange(point, slot) {
       total("Change", data.change)])));
 }
 
-// The dashboard: what is owned and owed, the liquidity verdict, and the bills.
-// The two horizons are the household's judgement, not the program's; they are set,
-// with the sections, groups, and columns, in Configure Dashboard (#381).
+// The dashboard: every item on it is a dashboard breadlet's document (the summary
+// figures, the cash-flow chart, groups, bills, income, reimbursables, FSA claims,
+// goals, and any other the household shows), sent together with /api/dashboard.
+// Their rows and cards link to what they are; followDashboardLink opens it. The two
+// horizons, the items shown, the groups, and the columns are set in Configure
+// Dashboard (#381).
 async function showDashboard() {
   const data = await get("/api/dashboard");
-  const s = data.summary;
-  const shows = (section) => data.config.sections[section];
-
-  const short = s.emergency_shortfall !== null && Number(s.emergency_shortfall) > 0;
-  const dashboardMoney = (field) => s[field] === null
-    ? data.unavailable_reasons[field] : money(s[field]);
-  const tile = (label, value, alarm) => el("div", { class: "card" },
-    el("div", { class: "label" }, label),
-    el("div", { class: alarm ? "value neg" : "value" }, value));
-
-  const cards = el("div", { class: "cards" },
-    tile("Net worth", dashboardMoney("net_worth")),
-    tile("Liquid", dashboardMoney("liquid")),
-    tile(`Needed in ${data.config.liquidity_days} days`, money(s.required_liquid)),
-    tile("Available", dashboardMoney("available"), s.available !== null && Number(s.available) < 0),
-    tile(`Emergency fund (${data.config.emergency_months} mo)`, dashboardMoney("emergency_fund")),
-    tile("Committed emergency outgoings / mo", money(s.emergency_monthly_outgoings)),
-    tile("Including estimates / mo", money(s.emergency_monthly_outgoings_with_estimates)),
-    tile("Months covered", s.months_covered === null
-      ? data.unavailable_reasons.months_covered : s.months_covered,
-         s.months_covered !== null && Number(s.months_covered) < Number(data.config.emergency_months)),
-    short ? tile("Short of the fund", dashboardMoney("emergency_shortfall"), true) : null,
-    // Owed back on reimbursable expenses: net worth, never liquidity (#170).
-    Number(s.receivables_owed) > 0
-      ? tile("Reimbursements due", money(s.receivables_owed)
-          + (Number(s.receivables_attention) > 0
-            ? ` (${money(s.receivables_attention)} disputed or overdue)` : ""),
-        Number(s.receivables_attention) > 0)
-      : null,
-    // Claims with something left to do; details on the FSA Dashboard.
-    Number(s.fsa_claims_attention) > 0
-      ? tile("FSA claims needing attention", String(s.fsa_claims_attention), true)
-      : null,
-    // Savings-goal earmarks are held from Available like bill reserves.
-    Number(s.goals_set_aside) > 0
-      ? tile("Set aside for goals", money(s.goals_set_aside)
-          + (Number(s.goals_held) !== Number(s.goals_set_aside)
-            ? ` (${money(s.goals_held)} held from spendable cash)` : ""))
-      : null);
-
   const controls = el("div", { class: "toolbar" },
     el("button", { class:"action", type:"button",
       onclick:()=>openDashboardConfigEditor(data.config) }, "Configure Dashboard…"));
+  const items = (data.documents || []).map((item) => {
+    if (item.error) return el("p", { class: "note neg" }, `${item.name}: ${item.error}`);
+    const drawn = renderDocument(item.document, { titled: false, onLink: followDashboardLink,
+      hiddenColumns: dashboardHiddenColumns });
+    if (!drawn.children.length) return null;
+    drawn.classList.add("dashboard-breadlet", `dashboard-${item.id.replaceAll("_", "-")}`);
+    drawn.dataset.breadlet = item.id;
+    return drawn;
+  });
+  return el("div", { class: "dashboard" }, controls, ...items);
+}
 
-  const groupCards = el("div", { class:"balance-groups" }, data.groups.map((g) =>
-    el("div", {
-      class:`balance-group ${depthClass("tree-depth", g.depth)} ${g.heading ? "group-heading" : ""}`,
-      title:[g.path, ...(g.members || [])].join("\n"),
-    }, el("h3",{},g.name), g.note ? el("p", {class:"note"}, g.note) : null,
-    completenessFlag(g.completeness), el("dl",{},
-      g.value === null ? null : [el("dt",{},"Value"),el("dd",{},money(g.value))],
-      g.debt === null ? null : [el("dt",{},"Owed"),el("dd",{},money(g.debt))],
-      el("dt",{},g.equity === null ? "Total" : "Equity"),
-      el("dd",{},(g.equity === null ? g.total : g.equity) === null
-        ? "Unavailable" : money(g.equity === null ? g.total : g.equity)),
-      g.loan_to_value === null ? null : [el("dt",{},"LTV"),el("dd",{},(g.loan_to_value*100).toFixed(1)+"%")
-      ], g.loan_end === null ? null : [el("dt",{},"Loan end"),el("dd",{},g.loan_end)
-      ], ...(g.accounts || []).map((account) => [
-        el("dt", {}, account.name),
-        el("dd", { title:account.note || "" },
-          account.balance === null ? "Unavailable" : money(account.balance)),
-      ])))));
-
-  const activatePending = async (item) => {
-    if (item.schedule) {
+// Open what a Dashboard row or card names (report_layout.LINK_KINDS).
+async function followDashboardLink(link) {
+  const [kind, target] = [link.split(":")[0], link.split(":").slice(1).join(":")];
+  try {
+    if (kind === "schedule") {
       const schedules = await get("/api/scheduled?days=90");
-      const source = schedules.definitions.find((entry)=>entry.handle === item.schedule);
+      const source = schedules.definitions.find((entry) => entry.handle === target);
       if (source?.simple) openScheduledEditor(schedules, source);
       else switchTo("Scheduled");
-    } else if (item.account) {
-      state.account = item.account;
+    } else if (kind === "register" || kind === "account") {
+      state.account = target;
       switchTo("Register");
-    }
-  };
-  // Missed occurrences of one schedule arrive grouped: one row with the date
-  // range, count, and total, and the individual dates available on demand.
-  const itemCell = (item) => item.missed
-    ? el("details", {},
-        el("summary", { ondblclick:()=>activatePending(item), title:"Double-click to view" },
-          item.name),
-        el("ul", {}, ...item.occurrences.map((entry) =>
-          el("li", {}, `${entry.date}: ${money(entry.amount)}`))))
-    : el("span", { ondblclick:()=>activatePending(item), title:"Double-click to view" },
-        item.name);
-  const dueCell = (item) => item.missed
-    ? `${item.next_due} to ${item.last_due}` : item.next_due;
-  const dueIn = (item) => {
-    const late = item.days_until < 0 ? `${-item.days_until} days overdue`
-      : (item.days_until === 0 ? "today" : `${item.days_until} days`);
-    return item.missed ? `${item.missed} missed, ${late}` : late;
-  };
-  const bills = data.display_bills || [];
-  const income = data.display_income || [];
-  const billRows = bills.map((item) => [
-    itemCell(item), dueCell(item), dueIn(item), item.frequency,
-    money(item.amount), item.generated ? "" : money(item.monthly),
-    money(item.hold), item.generated ? "" : money(item.annual),
-    item.generated ? "Account payment" : "Committed",
-  ]);
-  const incomeRows = income.map((item) => [
-    itemCell(item), dueCell(item), dueIn(item), item.frequency,
-    money(item.amount), money(item.monthly), money(item.annual),
-  ]);
-  const reimbursables = data.reimbursables || [];
-  const reimbursableRows = reimbursables.map((item) => [
-    el("button", { class:"action", type:"button", onclick:()=>switchTo("Reimbursable Expenses") },
-      item.description || item.payer || "Reimbursable expense"),
-    item.payer, item.incurred,
-    item.expected === null ? "—" : (item.overdue ? `${item.expected} (overdue)` : item.expected),
-    el("span", { class:item.attention ? "neg" : null }, money(item.remaining)),
-    item.status_label,
-  ]);
-
-  return el("div", {}, cards,
-    completenessDetails(data.completeness, "Net worth"),
-    data.liquid_completeness?.status !== "complete"
-      && JSON.stringify(data.liquid_completeness?.excluded)
-        !== JSON.stringify(data.completeness?.excluded)
-      ? completenessDetails(data.liquid_completeness, "Liquid cash") : null,
-    ...(data.coverage_notes || []).map((note) => el("p", { class: "note" }, note)), controls,
-    ...(shows("cash_flow")
-      && data.cash_flow_chart.series.some((series) => series.values.some((value) => value !== null))
-      ? [el("h2", {}, data.cash_flow_chart.title),
-        modelChart(data.cash_flow_chart, { collapseTable: true })] : []),
-    ...(shows("groups") ? [el("h2", {}, "Balances"), groupCards] : []),
-    ...(bills.some((item) => item.days_until <= 0) || income.some((item) => item.days_until <= 0)
-      ? [el("div", { class:"toolbar" }, el("button", { class:"action", type:"button",
-          onclick:() => openDueReviewDialog().catch((error) => say(error.message, "error")) },
-          "Review due transactions…"))]
-      : []),
-    ...(shows("bills")
-      ? [el("h2", {}, `Pending bills (${bills.length})`), dashboardTable("bills", billRows)]
-      : []),
-    ...(shows("income")
-      ? [el("h2", {}, `Expected income (${income.length})`), dashboardTable("income", incomeRows)]
-      : []),
-    ...(shows("reimbursables")
-      ? [el("h2", {}, `Pending reimbursables (${reimbursables.length})`),
-        el("div", { class: "dashboard-reimbursables" },
-          dashboardTable("reimbursables", reimbursableRows))]
-      : []),
-    ...(shows("goals") && (data.goals || []).length
-      ? [el("h2", {}, `Savings goals (${data.goals.length})`),
-        el("div", { class: "dashboard-goals" },
-          dashboardTable("goals",
-            data.goals.map((goal) => [
-              el("button", { class: "action", type: "button", onclick: () => switchTo("Savings Goals") },
-                goal.name),
-              goal.target_date, money(goal.target), money(goal.set_aside),
-              money(goal.remaining), goal.status_text])))]
-      : []),
-    await netWorthHistory());
+    } else if (kind === "due-review") await openDueReviewDialog();
+    else if (kind === "goals") switchTo("Savings Goals");
+    else if (kind === "receivables") switchTo("Reimbursable Expenses");
+    else if (kind === "fsa-claims") switchTo("FSA Dashboard");
+    else if (kind === "report") { state.report = target; switchTo("Reports"); }
+  } catch (error) { say(error.message, "error"); }
 }

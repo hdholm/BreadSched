@@ -34,11 +34,14 @@ __all__ = [
     "ChartBar",
     "ChartBarLayout",
     "ChartLineLayout",
+    "ChartPieLayout",
+    "ChartSlice",
     "chart_bar_layout",
     "chart_label_indices",
     "chart_line_layout",
     "chart_chrome",
     "chart_nice_ticks",
+    "chart_pie_layout",
     "chart_series_colour",
     "chart_tick_label",
 ]
@@ -362,3 +365,86 @@ def _line_bands(
 ) -> tuple[tuple[float, float], ...]:
     edges = [left, *((a + b) / 2 for a, b in zip(xs, xs[1:], strict=False)), left + width]
     return tuple((edges[index], edges[index + 1] - edges[index]) for index in range(len(xs)))
+
+
+# ------------------------------------------------------------------ pie (donut)
+
+#: The ring's thickness as a share of its outer radius.
+_PIE_RING = 0.42
+#: Height of one legend row beside the ring.
+_PIE_LEGEND_ROW = 20.0
+
+
+@dataclass(frozen=True, slots=True)
+class ChartSlice:
+    category: int
+    #: Angles in radians, clockwise from twelve o'clock (y grows downward).
+    start: float
+    end: float
+    #: The slice's percentage of the whole.
+    share: float
+    slot: int
+
+    def point(self, cx: float, cy: float, radius: float, angle: float) -> tuple[float, float]:
+        return (cx + radius * math.sin(angle), cy - radius * math.cos(angle))
+
+
+@dataclass(frozen=True, slots=True)
+class ChartPieLayout:
+    slices: tuple[ChartSlice, ...]
+    cx: float
+    cy: float
+    outer: float
+    inner: float
+    #: The left x of the legend, and the baseline y of each slice's legend row.
+    legend_x: float
+    legend_ys: tuple[float, ...]
+
+    def slice_at(self, x: float, y: float) -> ChartSlice | None:
+        """The slice under ``(x, y)``: on the ring, or on its legend row."""
+        dx, dy = x - self.cx, y - self.cy
+        distance = math.hypot(dx, dy)
+        if self.inner <= distance <= self.outer:
+            angle = math.atan2(dx, -dy) % (2 * math.pi)
+            for item in self.slices:
+                if item.start <= angle < item.end:
+                    return item
+        if x >= self.legend_x:
+            for item, row in zip(self.slices, self.legend_ys, strict=True):
+                if row - _PIE_LEGEND_ROW + 5 <= y <= row + 5:
+                    return item
+        return None
+
+
+def chart_pie_layout(
+    model: ChartModel, left: float, top: float, width: float, height: float
+) -> ChartPieLayout:
+    """A donut in the left of the area with its legend to the right.
+
+    Each slice is its value's share of the whole the engine reported
+    (``ChartModel.slice_share``); a slice with no share is left out, so slices of
+    an incomplete whole leave the rest of the ring empty rather than stretch.
+    """
+    diameter = max(min(height, width * 0.45), 1.0)
+    outer = diameter / 2
+    cx, cy = left + outer, top + height / 2
+    slices: list[ChartSlice] = []
+    angle = 0.0
+    for index in range(len(model.categories)):
+        share = model.slice_share(index)
+        if share is None:
+            continue
+        sweep = 2 * math.pi * share / 100
+        slices.append(ChartSlice(index, angle, angle + sweep, share, index % 8 + 1))
+        angle += sweep
+    rows = len(slices)
+    first = cy - (rows * _PIE_LEGEND_ROW) / 2 + _PIE_LEGEND_ROW - 5
+    return ChartPieLayout(
+        tuple(slices),
+        cx,
+        cy,
+        outer,
+        outer * (1 - _PIE_RING),
+        left + diameter + 24,
+        tuple(first + _PIE_LEGEND_ROW * row for row in range(rows)),
+    )

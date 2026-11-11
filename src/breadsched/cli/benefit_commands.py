@@ -121,7 +121,7 @@ def cmd_goals(args: argparse.Namespace) -> int:
             goal = book.allocate_to_goal(
                 AllocateToGoal(target, Money(args.amount), on, args.memo or "")
             )
-            emit({"handle": goal.handle}, args, f"Allocated {args.amount} to {goal.name}")
+            emit({"handle": goal.handle}, args, f"Added {args.amount} to the {goal.name} jar")
             return 0
         if args.close:
             goal = book.close_savings_goal(book.find_savings_goal(args.close).handle, on)
@@ -153,11 +153,11 @@ def cmd_goals(args: argparse.Namespace) -> int:
     text = (
         table(
             rows,
-            ["goal", "account", "by", "target", "set aside", "remaining", "status"],
+            ["goal", "account", "by", "target", "in the jar", "remaining", "status"],
             right={3, 4, 5},
         )
-        + f"\nSet aside for goals: {report.set_aside.format()}; "
-        f"held from spendable cash: {report.held.format()}"
+        + f"\nIn goal jars: {report.set_aside.format()}; "
+        f"kept out of Available: {report.held.format()}"
         if rows
         else "No savings goals."
     )
@@ -516,7 +516,7 @@ def _scenario_expectation(book: BookApi, args: argparse.Namespace) -> int:
         args,
         f"{changed.name}: {receivable.payer} "
         + (
-            "reimbursement expected as the receivable says"
+            "reimbursement expected as the reimbursable expense says"
             if change is None
             else ", ".join(
                 part
@@ -746,7 +746,7 @@ def cmd_receivables(args: argparse.Namespace) -> int:
                 for cost in shared[item.receivable.handle]
             )
             if summaries
-            else "No receivables yet. Add one with --add PAYER --incurred DATE.",
+            else "No reimbursable expenses yet. Add one with --add PAYER --incurred DATE.",
         )
         return 0
 
@@ -857,7 +857,7 @@ def register(add: AddCommand) -> None:
     )
     receivables_cmd.add_argument("--note", help="dispute note")
     receivables_cmd.add_argument(
-        "--clear-dispute", metavar="RECEIVABLE", help="withdraw a receivable's dispute"
+        "--clear-dispute", metavar="RECEIVABLE", help="withdraw a reimbursable expense's dispute"
     )
     receivables_cmd.add_argument(
         "--write-off",
@@ -890,7 +890,7 @@ def register(add: AddCommand) -> None:
         "--expect",
         metavar="RECEIVABLE",
         help="in --scenario, expect --amount back (0 for nothing) on --on DATE; with "
-        "neither, the scenario expects what the receivable says",
+        "neither, the scenario expects what the reimbursable expense says",
     )
     receivables_cmd.add_argument("--scenario", metavar="NAME", help="saved scenario for --expect")
     add_server_options(receivables_cmd)
@@ -898,7 +898,7 @@ def register(add: AddCommand) -> None:
 
     goals_cmd = add(
         "goals",
-        "List savings goals and what each has set aside, or add, fund, or close one",
+        "List savings goals and what each jar holds, or add, fund, or close one",
     )
     goals_cmd.add_argument("--add", metavar="NAME", help="create a savings goal")
     goals_cmd.add_argument("--account", metavar="ACCOUNT", help="asset account holding the money")
@@ -911,7 +911,9 @@ def register(add: AddCommand) -> None:
     goals_cmd.add_argument("--allocate", metavar="GOAL", help="set extra money aside (--amount)")
     goals_cmd.add_argument("--amount", help="amount to allocate")
     goals_cmd.add_argument("--memo", help="note for the allocation")
-    goals_cmd.add_argument("--close", metavar="GOAL", help="release a goal's earmark (--on)")
+    goals_cmd.add_argument(
+        "--close", metavar="GOAL", help="close a goal and release its jar (--on)"
+    )
     goals_cmd.add_argument("--reopen", metavar="GOAL", help="reopen a closed goal")
     goals_cmd.add_argument("--delete", metavar="GOAL", help="delete a savings goal")
     goals_cmd.add_argument("--on", metavar="DATE", help="date of an allocation or closing")

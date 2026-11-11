@@ -236,3 +236,17 @@ release changed; tests and `docs/quality/` hold detailed evidence, and
 `docs/releases/` each release's notes. `CONTRIBUTING.md` defines how each pull request reviews these documents.
 `tests/test_documentation.py` checks local links and anchors in the top-level
 documents, and `tests/test_user_guide.py` checks the guide's links.
+
+The website is the same documents for someone deciding whether to use BreadSched:
+hand-written pages in `website/` (the staged "use what you want" walk-through,
+`money-basics.md`, the stylesheet, and screenshots of the browser interface on the
+synthetic sample book from `scripts/site_screenshots.py`) and the User Guide, the
+changelog and the roadmap rendered by `scripts/build_site.py`. The builder is
+standard-library Python: it renders the Markdown subset the guide uses, gives
+headings GitHub's anchors (`user_guide.heading_slug`, numbered when repeated), turns
+links between the guide's parts into links between pages, and sends links to any
+other repository file to GitHub, so the site never has a second copy of a document
+to keep current. The pages load no script and nothing from another site. The
+`Website` workflow builds and deploys it with GitHub Pages when any of its sources
+change on `main`; `tests/test_site.py` builds it and checks every page, link and
+anchor.

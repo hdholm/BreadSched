@@ -22,6 +22,7 @@ from ..gen.utils import logs
 from . import (
     benefit_commands,
     book_commands,
+    breadlet_commands,
     categorization_commands,
     find_commands,
     import_commands,
@@ -51,6 +52,7 @@ COMMAND_MODULES = (
     projection_commands,
     investment_commands,
     tax_commands,
+    breadlet_commands,
     quote_commands,
     user_commands,
 )

@@ -4,31 +4,33 @@
 
 # BreadSched Household Financial Manager
 
-BreadSched is a household finance application for tracking income and expenses,
-planning cash flow from dated financial events, and projecting household finances
-under saved assumptions and alternate scenarios.
+BreadSched is a free household finance application for your own computer. **Use
+what you want:** start by keeping your bank and credit-card accounts straight
+(importing the history you already have), then see the cash you will have each day
+ahead, then budget with jars, then learn where the money goes from charted reports,
+then plan years ahead with mortgages, savings goals, FSA claims, and retirement
+projections. Every step is optional, and each builds on what you already entered.
 
-GTK4 is the primary/reference interface and Linux is the primary native desktop
-target. There is a web interface that uses the same data, planning rules, and
-financial engines. Every interface reaches a book through one book server, so a
-book held by `breadsched serve` (or shared from the desktop) can be used at once by
-the desktop, the command line, and browsers, including a phone or tablet through a
-TLS reverse proxy, by family members each signed in with their own role.
+The website, **<https://hdholm.github.io/BreadSched/>**, walks through those steps
+with pictures, has a plain-language [money basics](website/money-basics.md) page,
+and carries the whole user guide.
 
-BreadSched is intended over time to cover the household-finance workflows for
-which a user might otherwise rely on GnuCash, KMyMoney, HomeBank, ActualBudget,
-beancount, Firefly III, or Quicken Classic, without reproducing business
-accounting features. GnuCash compatibility remains a strict requirement while
-BreadSched's standalone household feature set matures.
+GTK4 is the reference desktop interface (Linux and Windows); a browser interface
+(phones too) and a command line work on the same book. Every interface reaches a
+book through one book server, so a book held by `breadsched serve` (or shared from
+the desktop) can be used at once by the desktop, the command line, and browsers,
+including through a TLS reverse proxy, by family members each signed in with their
+own role.
 
-This is **Alpha** software, barely above proof-of-concept and includes a lot
-of not yet fully reviewed AI coding.  You are welcome and encouraged to use it,
-play with it, suggest improvements, and provide feedback.  But you rely on it
-at some peril. Backward data compatibility is only maintained for a **very**
-limited time.  While there are no known serious bugs as of this writing I am
-certain there are many unknown bugs. If you are using it at all you are strongly
-encouraged to let me know, or at least follow releases closely or you may not
-be able to read your data with a new version.
+BreadSched covers the household-finance workflows for which a person might
+otherwise use GnuCash, KMyMoney, HomeBank, ActualBudget, beancount, Firefly III, or
+Quicken Classic, without business accounting. It keeps working beside GnuCash:
+GnuCash books import again whenever you like, and changes can be written back.
+
+BreadSched is **beta** software: used daily, but new. Keep backups (it makes one
+before every upgrade of a book), read each release's notes, and please report what
+you find. A book written by one release opens in the releases after it; the
+[changelog](CHANGELOG.md) says when an older book first needs an intermediate one.
 
 ## Why the name BreadSched?
 
@@ -41,6 +43,10 @@ rhyme for a name.
 
 ## Documentation
 
+- The [website](https://hdholm.github.io/BreadSched/) is built from `website/` and
+  the user guide by `scripts/build_site.py` and published by the Pages workflow;
+  `scripts/site_screenshots.py` refreshes its pictures from the synthetic sample
+  book.
 - [`src/breadsched/USER_GUIDE.md`](src/breadsched/USER_GUIDE.md) is the user
   guide's overview, with a part for each interface:
   [desktop](src/breadsched/guide/desktop.md),
@@ -121,8 +127,8 @@ GnuCash; a book backup does not include that folder.
 
 ## Project status
 
-BreadSched is under active development and is not yet a complete replacement
-for a stable financial management program. GnuCash import is essentially
+BreadSched is in beta: its features are in daily use, but it is new, so keep
+independent backups. GnuCash import is essentially
 one-way; changes reach a GnuCash book (SQLite or XML) only through an explicit,
 previewed write-back. If you keep using GnuCash, follow the User Guide's
 [side-by-side guidance](src/breadsched/USER_GUIDE.md#keep-gnucash-and-breadsched-side-by-side)
@@ -131,9 +137,6 @@ reconcile in BreadSched and holds GnuCash changes to those transactions for a
 batched review. When a release changes the native book format, opening a book
 for writing migrates it after writing a verified backup beside it; earlier
 builds cannot open the migrated book, so restore that backup to roll back.
-The current hardening phase prioritizes financial correctness, storage
-integrity, importer preservation, security, and realistic-book performance
-before another broad feature-expansion cycle.
 
 See [`ROADMAP.md`](ROADMAP.md) for the authoritative work plan.
 

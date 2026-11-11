@@ -489,7 +489,7 @@ def planned_postings(db: DbSQLite, receivable: Receivable) -> list[Transaction]:
         raise ReceivableError(
             "receivable.split.mixed_kinds",
             ("split",),
-            "a receivable's costs are all expenses or all direct charges",
+            "a reimbursable expense's costs are all expenses or all direct charges",
         )
     direct = kinds == {True}
     expense_total = Money(0)

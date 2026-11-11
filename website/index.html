@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BreadSched — household money, one step at a time</title>
+<meta name="description" content="A free household finance application: track your bank and card accounts, see your cash flow ahead, budget with jars, and understand where the money goes. Use only what you need.">
+<link rel="icon" href="images/favicon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <a class="brand" href="index.html"><img src="images/favicon.png" alt="">BreadSched</a>
+  <nav>
+    <a href="index.html" aria-current="page">Home</a>
+    <a href="money-basics.html">Money basics</a>
+    <a href="guide/overview.html">User guide</a>
+    <a href="#download">Download</a>
+    <a href="https://github.com/hdholm/BreadSched">Source</a>
+  </nav>
+</div></header>
+
+<main>
+<section class="hero"><div class="wrap">
+  <h1>Use what you want.<br>Your money, one step at a time.</h1>
+  <p class="lead">BreadSched is a free, open-source household finance application for
+  your computer. Start by keeping your bank and credit-card accounts straight. When
+  you are ready, see the cash you will have next week, then budget, then learn where
+  the money goes, then plan years ahead. Every step is optional, and none of them
+  needs the next.</p>
+  <div class="buttons">
+    <a class="button primary" href="#download">Download</a>
+    <a class="button" href="money-basics.html">New to budgeting? Start here</a>
+    <a class="button" href="guide/overview.html">Read the guide</a>
+  </div>
+</div></section>
+
+<section class="band"><div class="wrap">
+  <h2>Five steps, take as many as you like</h2>
+  <p class="lead">Most money software asks you to set everything up before it helps.
+  BreadSched is useful from the first account, and each later step builds on what you
+  already entered, so nothing is wasted if you stop.</p>
+  <ol class="path">
+    <li><div class="stage">
+      <div>
+        <div class="when">Day one</div>
+        <h3>Keep your bank and card accounts straight</h3>
+        <p>Add a checking account and a credit card, or bring your history with you:
+        BreadSched imports GnuCash books, Quicken QIF, bank OFX/QFX downloads and CSV
+        statements, and a later import picks up where the last one stopped.</p>
+        <ul>
+          <li>A register for each account that reads like your statement, with
+          shortcuts for dates and amounts and arithmetic in the amount column.</li>
+          <li>Reconcile against the statement so you know the balance is right.</li>
+          <li>Rules that categorize imported transactions the way you would.</li>
+        </ul>
+        <p class="more"><a href="guide/overview.html#accounts">Accounts</a> ·
+        <a href="guide/overview.html#transactions-and-registers">Registers</a> ·
+        <a href="guide/overview.html#import-and-gnucash-interoperability">Importing</a></p>
+      </div>
+      <figure><img class="shot" src="images/register.png" alt="A checking account register with dated transactions and a running balance" loading="lazy" width="1200" height="760"></figure>
+    </div></li>
+
+    <li><div class="stage">
+      <div>
+        <div class="when">When you want fewer surprises</div>
+        <h3>See the cash you will have</h3>
+        <p>Enter the things that happen on a date: rent, the car payment, each
+        paycheck. The Dashboard then shows the cash you will have on hand each day of
+        the coming month, marks the lowest day, and tells you what is due before you
+        are paid again.</p>
+        <ul>
+          <li>Scheduled bills and pay, with paycheck splits for taxes and savings.</li>
+          <li>A review of what came due, so nothing is entered twice or forgotten.</li>
+          <li>Credit-card payments and loans that follow their own rules.</li>
+        </ul>
+        <p class="more"><a href="guide/overview.html#dashboard-and-near-term-cash">The Dashboard</a> ·
+        <a href="guide/overview.html#scheduled-activity">Scheduled activity</a></p>
+      </div>
+      <figure><img class="shot" src="images/dashboard.png" alt="The Dashboard: summary cards and a line of cash on hand over the next 30 days" loading="lazy" width="1200" height="760"></figure>
+    </div></li>
+
+    <li><div class="stage">
+      <div>
+        <div class="when">When you want a budget</div>
+        <h3>Budget with jars</h3>
+        <p>Groceries and fuel do not arrive on a date, but you can still plan for them.
+        An <em>estimate</em> says roughly how much a category takes and how often.
+        Each bill, estimate and savings goal is a <em>jar</em>: every paycheck fills it
+        a little, and spending draws it down. The Plan compares what you planned with
+        what actually happened, month by month.</p>
+        <ul>
+          <li>Estimates suggested from your own history.</li>
+          <li>Planned against actual for any range, by month, quarter or year.</li>
+          <li>Budget jars that show what each one holds today.</li>
+        </ul>
+        <p class="more"><a href="guide/overview.html#jars-how-the-pieces-fit-together">Jars</a> ·
+        <a href="guide/overview.html#plan">The Plan</a> ·
+        <a href="money-basics.html#budgeting-with-jars">Why jars work</a></p>
+      </div>
+      <figure><img class="shot" src="images/plan.png" alt="The Plan: categories by month with planned and actual amounts" loading="lazy" width="1200" height="760"></figure>
+    </div></li>
+
+    <li><div class="stage">
+      <div>
+        <div class="when">When you want to understand</div>
+        <h3>See where the money goes</h3>
+        <p>Reports turn the record into pictures: a ring of where the money went,
+        income beside spending each month, net worth over time. Every chart has the
+        exact numbers beside it, and every report prints.</p>
+        <ul>
+          <li>Spending by category, income and spending, net worth over time.</li>
+          <li>Explore any category down to the merchants and transactions in it.</li>
+          <li>Tax-year totals and realized gains for investments.</li>
+        </ul>
+        <p class="more"><a href="guide/overview.html#reports-and-breadlets">Reports</a> ·
+        <a href="guide/overview.html#expense-explorer">Expense Explorer</a></p>
+      </div>
+      <figure><img class="shot" src="images/reports.png" alt="Spending by category as a ring chart with its table of amounts" loading="lazy" width="1200" height="760"></figure>
+    </div></li>
+
+    <li><div class="stage">
+      <div>
+        <div class="when">When you want to plan ahead</div>
+        <h3>Everything else, when you need it</h3>
+        <p>The same book grows with you. Project your finances years ahead and compare
+        what-if scenarios: a new job, an extra mortgage payment, retiring early.</p>
+        <ul>
+          <li>Mortgages and loans with their escrow and amortization.</li>
+          <li>Savings goals that set money aside toward a date.</li>
+          <li>FSA claims and benefit years, and reimbursable expenses.</li>
+          <li>Investments at market value, cost basis and lots, retirement drawdown.</li>
+        </ul>
+        <p class="more"><a href="guide/overview.html#projection-and-scenarios">Projection and scenarios</a> ·
+        <a href="guide/overview.html#special-household-workflows">Household workflows</a></p>
+      </div>
+      <figure><img class="shot" src="images/projection.png" alt="A projection of cash, investments and net worth by month" loading="lazy" width="1200" height="760"></figure>
+    </div></li>
+  </ol>
+</div></section>
+
+<section class="band"><div class="wrap">
+  <h2>Yours, and your household's</h2>
+  <div class="cards">
+    <div class="card"><h3>On your computer</h3><p>A book is one file you keep. No
+    account to sign up for, no bank passwords handed to a service, no subscription.</p></div>
+    <div class="card"><h3>Desktop, browser, command line</h3><p>The Linux and Windows
+    desktop app, a browser interface (phones too), and a command line all work on the
+    same book.</p></div>
+    <div class="card"><h3>Shared with your household</h3><p>Share a book with family
+    members, each signed in with their own role: owner, editor, viewer, or entry only.</p></div>
+    <div class="card"><h3>Side by side with GnuCash</h3><p>Keep using GnuCash for the
+    ledger if you like: BreadSched imports it again whenever you want, and can write
+    your changes back.</p></div>
+    <div class="card"><h3>Exact money</h3><p>Every amount is exact (no rounding drift),
+    every transaction balances, and foreign currencies are never silently added
+    together.</p></div>
+    <div class="card"><h3>Free software</h3><p>Open source under the GNU AGPL. Add your own
+    reports and Dashboard items as <a href="guide/overview.html#reports-and-breadlets">breadlets</a>.</p></div>
+  </div>
+</div></section>
+
+<section class="band" id="download"><div class="wrap">
+  <h2>Download</h2>
+  <p class="lead">BreadSched is in <strong>beta</strong>: it is used every day, but keep
+  backups (it makes them for you) and read each release's notes.</p>
+  <div class="cards">
+    <div class="card"><h3>Windows</h3><p>A per-user installer with everything it needs
+    included: <code>BreadSched-&lt;version&gt;-setup.exe</code>.</p></div>
+    <div class="card"><h3>Linux</h3><p>A Flatpak bundle, or Debian/Ubuntu and Fedora
+    packages.</p></div>
+    <div class="card"><h3>Python</h3><p>Each release's wheel installs with <code>pip</code>
+    (Python 3.11 or later); the desktop also needs GTK 4 and PyGObject.</p></div>
+  </div>
+  <p class="buttons" style="margin-top:20px">
+    <a class="button primary" href="https://github.com/hdholm/BreadSched/releases">All releases</a>
+    <a class="button" href="guide/overview.html#install-and-download">Installing, step by step</a>
+  </p>
+  <p class="note">Try it without your own data first: <code>breadsched sample
+  sample.breadsched</code> makes a book of a made-up household to open and explore.</p>
+</div></section>
+</main>
+
+<footer class="site"><div class="wrap">
+  BreadSched is free software. <a href="https://github.com/hdholm/BreadSched">Source code</a> ·
+  <a href="https://github.com/hdholm/BreadSched/issues">Report a problem</a> ·
+  <a href="guide/changelog.html">What's new</a>
+</div></footer>
+</body>
+</html>

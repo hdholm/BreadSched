@@ -1,37 +1,44 @@
-"""The dashboard: the view a book opens on.
+"""The dashboard: the view a book opens on, drawn entirely from dashboard breadlets.
 
-Three bands, in the order the questions get asked. What is owned and owed, as
-group totals with equity and loan-to-value where a property is paired with its
-mortgage. Then the verdict — liquid, spoken for, available, and how many months
-the emergency fund would last. Then separate pending-bill and expected-income
-lists, sortable and
-scrollable, with recurring flows normalised to monthly and annual figures so a
-quarterly fee and a fortnightly one can be compared at a glance.
+Every item on the Dashboard is a dashboard breadlet (``plugins.breadlets``): the
+summary figures, the cash-flow chart, the account groups, pending bills, expected
+income, pending reimbursables, FSA claims needing attention, savings goals, and any
+other (shipped or installed) the household shows. Each returns a document this view
+draws with :class:`DocumentView`; their rows and cards link to what they are (a
+schedule, an account, the savings goals...), which :meth:`DashboardView.follow`
+opens, and their tables sort and choose columns like every other table.
 
-Everything it can be told lives in **Configure Dashboard** (#381): the two
-horizons (how much must stay liquid, and how long the fund should last), which
-sections show, the account groups, and each table's columns. The cards name the
-horizons they were judged against, so the numbers stay in sight.
+Everything the Dashboard can be told lives in **Configure Dashboard** (#381): the two
+horizons, which items show, the account groups, and each table's columns. The
+breadlets share one Dashboard calculation per refresh (``breadlets.dashboard.sharing``).
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from ...api import ApiError
 from ...api.local import book_server
 from ...gen.engine import dashboard as engine
-from ...gen.engine import receivables
-from ...gen.lib.money import Money
-from ...presentation import goal_status_text
-from ..gi_setup import Gio, Gtk, Pango
-from ..widgets.model_chart import ModelChartView  # noqa: E402
+from ...gen.plug import DASHBOARD, PluginManager
+from ...plugins.breadlets.dashboard import sharing
+from ..gi_setup import Gtk
+from ..widgets.document_view import DocumentView
 from ..widgets.wrap_box import WrapBox
-from ._base import BaseView, Row, column, sorted_model, table_section
+from ._base import BaseView
 
 __all__ = ["DashboardView"]
 
+#: Items as wide as the window, above the side-by-side sections.
+_FULL_WIDTH = ("summary", "cash_flow")
+#: Upper bounds for a table section's natural size; beyond them the table scrolls
+#: inside its section instead of widening the window (#140, #152).
+_SECTION_MAX_WIDTH = 900
+_SECTION_MAX_HEIGHT = 420
+
 
 class DashboardView(BaseView):
-    """Balances, the liquidity verdict, pending bills, and expected income."""
+    """The Dashboard's breadlets, in the order Configure Dashboard keeps."""
 
     PRINTABLE = True
 
@@ -53,6 +60,10 @@ class DashboardView(BaseView):
         super().__init__(manager)
         self.config: engine.DashboardConfig | None = None
         self.board: engine.Dashboard | None = None
+        #: Each shown breadlet's view, by breadlet id, in the order shown.
+        self.documents: dict[str, DocumentView] = {}
+        #: The documents the shown breadlets made, in order, for printing.
+        self.breadlet_documents: list = []
         self._build()
 
     # ------------------------------------------------------------------ layout
@@ -61,291 +72,28 @@ class DashboardView(BaseView):
         bar = Gtk.Box(spacing=8)
         for side in ("top", "bottom", "start", "end"):
             getattr(bar, f"set_margin_{side}")(8)
-
         title = Gtk.Label(label="Dashboard", xalign=0)
         title.add_css_class("category-title")
         title.set_hexpand(True)
         bar.append(title)
-
-        # Configure Dashboard is a toolbar icon and Actions menu item (#156); the
-        # horizons moved into it from here (#381).
+        # Configure Dashboard is a toolbar icon and Actions menu item (#156).
         self._bar = bar
         self.append_toolbar(bar)
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         for side in ("start", "end", "bottom"):
             getattr(content, f"set_margin_{side}")(12)
-        # Cards wrap onto more rows on a narrow window instead of widening it.
-        self.cards = Gtk.FlowBox()
-        self.cards.set_selection_mode(Gtk.SelectionMode.NONE)
-        self.cards.set_homogeneous(False)
-        self.cards.set_column_spacing(14)
-        self.cards.set_row_spacing(10)
-        self.cards.set_max_children_per_line(12)
-        self.cards.set_valign(Gtk.Align.START)
-        content.append(self.cards)
-
-        # Cash on hand over the liquidity period, under the figures it explains.
-        self.cash_flow_chart = ModelChartView(height=200)
-        self.cash_flow_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        self.cash_flow_heading = Gtk.Label(xalign=0)
-        self.cash_flow_heading.add_css_class("total-row")
-        self.cash_flow_section.append(self.cash_flow_heading)
-        self.cash_flow_section.append(self.cash_flow_chart)
-        content.append(self.cash_flow_section)
-
-        # Groups, bills, and income are separate sections, each sized to its own
-        # columns rather than stretched to the window; they sit side by side when
-        # the window has room and stack when it does not (#152).
-        # A line holds as many as fit, so a narrow section floats up beside
-        # another under a wide one, and a section not shown takes no room (#397).
+        self.full_width = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        content.append(self.full_width)
+        # The other items sit side by side when the window has room and stack when it
+        # does not (#152); one not shown takes no room (#397).
         self.sections = WrapBox(column_spacing=24, row_spacing=12)
         self.sections.set_valign(Gtk.Align.START)
         content.append(self.sections)
-
-        self.groups = Gtk.Grid(column_spacing=18, row_spacing=3)
-        self.groups_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        self.groups_section.add_css_class("table-section")
-        groups_heading = Gtk.Label(label="Account groups", xalign=0)
-        groups_heading.add_css_class("total-row")
-        self.groups_section.append(groups_heading)
-        self.groups_section.append(self.groups)
-        self._add_section(self.groups_section)
-
         outer = Gtk.ScrolledWindow(child=content)
         outer.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         outer.set_vexpand(True)
         self.append(outer)
-
-        self.bills_view = Gtk.ColumnView()
-        self.bills_view.add_css_class("data-table")
-        self.bills_view.set_show_row_separators(True)
-        # A bill is a scheduled transaction seen from another angle; activating a
-        # row goes to the thing itself rather than making the user find it.
-        self.bills_view.connect("activate", self._on_bill_activated)
-        self.bills_view.append_column(
-            column("Item", lambda b: b.name, expand=True, sort_key=lambda b: b.name)
-        )
-        self.bills_view.append_column(column("Due", _due_date, sort_key=lambda b: b.next_due))
-        self.bills_view.append_column(
-            column("Due in", self._due_in, sort_key=lambda b: b.days_until(self._today()))
-        )
-        # The schedule's own words, not a decimal month count: "every 3 months"
-        # is what the user set, and 3.0000 reads as though it were the truth.
-        self.bills_view.append_column(
-            column("Frequency", lambda b: b.frequency, sort_key=lambda b: b.cycle_months)
-        )
-        self.bills_view.append_column(
-            column(
-                "Amount",
-                lambda b: b.amount.format(),
-                sort_key=lambda b: b.amount.to_decimal(),
-                numeric=True,
-            )
-        )
-        self.bills_view.append_column(
-            column(
-                "Monthly",
-                lambda b: "" if b.generated else b.monthly.format(),
-                sort_key=lambda b: b.monthly.to_decimal(),
-                numeric=True,
-            )
-        )
-        self.bills_view.append_column(
-            column(
-                "Hold now",
-                lambda b: b.held.format(),
-                sort_key=lambda b: b.held.to_decimal(),
-                numeric=True,
-            )
-        )
-        self.bills_view.append_column(
-            column(
-                "Annual",
-                lambda b: "" if b.generated else b.annual.format(),
-                sort_key=lambda b: b.annual.to_decimal(),
-                numeric=True,
-            )
-        )
-        self.bills_view.append_column(
-            column(
-                "Kind",
-                lambda b: "Account payment" if b.generated else "Committed",
-            )
-        )
-        self.bills_section = table_section(
-            self.bills_view, "dashboard", self._settings(), title="Pending bills"
-        )
-        self._add_section(self.bills_section)
-
-        self.income_view = Gtk.ColumnView()
-        self.income_view.add_css_class("data-table")
-        self.income_view.set_show_row_separators(True)
-        self.income_view.connect("activate", self._on_bill_activated)
-        self.income_view.append_column(
-            column("Item", lambda item: item.name, expand=True, sort_key=lambda item: item.name)
-        )
-        self.income_view.append_column(
-            column("Due", _due_date, sort_key=lambda item: item.next_due)
-        )
-        self.income_view.append_column(
-            column(
-                "Due in",
-                self._due_in,
-                sort_key=lambda item: item.days_until(self._today()),
-            )
-        )
-        self.income_view.append_column(
-            column(
-                "Frequency", lambda item: item.frequency, sort_key=lambda item: item.cycle_months
-            )
-        )
-        self.income_view.append_column(
-            column(
-                "Amount",
-                lambda item: item.amount.format(),
-                sort_key=lambda item: item.amount.to_decimal(),
-                numeric=True,
-            )
-        )
-        self.income_view.append_column(
-            column("Monthly", lambda item: item.monthly.format(), numeric=True)
-        )
-        self.income_view.append_column(
-            column("Annual", lambda item: item.annual.format(), numeric=True)
-        )
-        self.income_section = table_section(
-            self.income_view, "dashboard-income", self._settings(), title="Expected income"
-        )
-        self._add_section(self.income_section)
-
-        # One row per savings goal; activating one opens the goal editor.
-        self.goals_view = Gtk.ColumnView()
-        self.goals_view.add_css_class("data-table")
-        self.goals_view.set_show_row_separators(True)
-        self.goals_view.connect("activate", self._on_goal_activated)
-        self.goals_view.append_column(
-            column("Goal", lambda g: g.goal.name, expand=True, sort_key=lambda g: g.goal.name)
-        )
-        self.goals_view.append_column(
-            column(
-                "Target date",
-                lambda g: g.goal.target_date.isoformat(),
-                sort_key=lambda g: g.goal.target_date,
-            )
-        )
-        for title, value in (
-            ("Target", lambda g: g.target),
-            ("Set aside", lambda g: g.set_aside),
-            ("Remaining", lambda g: g.remaining),
-        ):
-            self.goals_view.append_column(
-                column(
-                    title,
-                    lambda g, value=value: value(g).format(),
-                    sort_key=lambda g, value=value: value(g).to_decimal(),
-                    numeric=True,
-                )
-            )
-        self.goals_view.append_column(column("Status", goal_status_text))
-        self.goals_section = table_section(
-            self.goals_view, "dashboard-goals", self._settings(), title="Savings goals"
-        )
-        self._add_section(self.goals_section)
-
-        # Each reimbursable expense still owed, as the bills are listed (#381).
-        self.reimbursables_view = Gtk.ColumnView()
-        self.reimbursables_view.add_css_class("data-table")
-        self.reimbursables_view.set_show_row_separators(True)
-        self.reimbursables_view.connect("activate", self._on_reimbursable_activated)
-        self.reimbursables_view.append_column(
-            column(
-                "Expense",
-                lambda s: s.receivable.description or s.receivable.payer or "Reimbursable expense",
-                expand=True,
-                sort_key=lambda s: s.receivable.description,
-            )
-        )
-        self.reimbursables_view.append_column(
-            column("Payer", lambda s: s.receivable.payer, sort_key=lambda s: s.receivable.payer)
-        )
-        self.reimbursables_view.append_column(
-            column(
-                "Incurred",
-                lambda s: s.receivable.incurred_date.isoformat(),
-                sort_key=lambda s: s.receivable.incurred_date,
-            )
-        )
-        self.reimbursables_view.append_column(
-            column("Expected", self._expected_text, sort_key=engine.reimbursable_order)
-        )
-        self.reimbursables_view.append_column(
-            column(
-                "Still owed",
-                lambda s: s.remaining.format(),
-                sort_key=lambda s: s.remaining.to_decimal(),
-                numeric=True,
-            )
-        )
-        self.reimbursables_view.append_column(
-            column("Status", lambda s: s.status.label, sort_key=lambda s: s.status.label)
-        )
-        self.reimbursables_section = table_section(
-            self.reimbursables_view,
-            "dashboard-reimbursables",
-            self._settings(),
-            title="Pending reimbursables",
-        )
-        self._add_section(self.reimbursables_section)
-
-        # Columns are chosen in Configure Dashboard (#381), not in each heading.
-        for section in self._tables_sections():
-            section.chooser.set_visible(False)
-
-    def _tables_sections(self) -> tuple[Gtk.Box, ...]:
-        return (
-            self.bills_section,
-            self.income_section,
-            self.reimbursables_section,
-            self.goals_section,
-        )
-
-    def column_tables(self) -> tuple[tuple[str, str, Gtk.ColumnView], ...]:
-        """The Dashboard's tables as Configure Dashboard lists their columns."""
-        return (
-            ("Pending bills", "dashboard", self.bills_view),
-            ("Expected income", "dashboard-income", self.income_view),
-            ("Pending reimbursables", "dashboard-reimbursables", self.reimbursables_view),
-            ("Savings goals", "dashboard-goals", self.goals_view),
-        )
-
-    def _expected_text(self, summary: receivables.ReceivableSummary) -> str:
-        expected = summary.receivable.expected_cash_date
-        if expected is None:
-            return "—"
-        if expected < self._today():
-            return f"{expected.isoformat()} (overdue)"
-        return expected.isoformat()
-
-    def _on_reimbursable_activated(self, _view, _position) -> None:
-        self.manager.get_application().on_receivables(parent=self.get_root())
-
-    def _on_goal_activated(self, _view, _position) -> None:
-        self.manager.get_application().on_savings_goals()
-
-    def _add_section(self, section: Gtk.Box) -> None:
-        """Size a section to its content, bounded so no row can widen the window."""
-        section.add_css_class("dashboard-section")
-        section.set_halign(Gtk.Align.START)
-        section.set_valign(Gtk.Align.START)
-        section.set_hexpand(False)
-        scroller = getattr(section, "scroller", None)
-        if scroller is not None:
-            scroller.set_propagate_natural_width(True)
-            scroller.set_propagate_natural_height(True)
-            scroller.set_max_content_width(_SECTION_MAX_WIDTH)
-            scroller.set_max_content_height(_SECTION_MAX_HEIGHT)
-        self.sections.append(section)
 
     def _settings(self):
         return getattr(self.manager.get_application(), "view_settings", None)
@@ -355,65 +103,121 @@ class DashboardView(BaseView):
 
         return self.board.as_of if self.board else date.today()
 
-    def _due_in(self, bill) -> str:
-        days = bill.days_until(self._today())
-        if days < 0:
-            late = f"{-days} days overdue"
-            # A schedule's missed dates are one grouped row; its count leads.
-            return f"{bill.count} missed, {late}" if isinstance(bill, engine.MissedGroup) else late
-        return "today" if days == 0 else f"{days} days"
-
     # ------------------------------------------------------------------- model
 
     def refresh(self) -> None:
         if self.db is None:
             return
-        self.board = book_server(self.db).dashboard()
+        book = sharing(book_server(self.db))
+        self.board = book.dashboard()
         self.config = self.board.config
+        self._render(book)
 
-        self._render_cards()
-        self._render_groups()
+    def redraw(self) -> None:
+        """Draw the Dashboard again from the board already calculated."""
+        if self.db is not None and self.board is not None:
+            self._render(sharing(book_server(self.db), self.board))
 
-        store = Gio.ListStore.new(Row)
-        for item in self.board.display_bills:
-            store.append(Row(item))
-        self.bills_view.set_model(Gtk.SingleSelection(model=sorted_model(self.bills_view, store)))
-        income_store = Gio.ListStore.new(Row)
-        for item in self.board.display_incomes:
-            income_store.append(Row(item))
-        self.income_view.set_model(
-            Gtk.SingleSelection(model=sorted_model(self.income_view, income_store))
-        )
-        goal_store = Gio.ListStore.new(Row)
-        for goal in self.board.goals:
-            goal_store.append(Row(goal))
-        self.goals_view.set_model(
-            Gtk.SingleSelection(model=sorted_model(self.goals_view, goal_store))
-        )
-        reimbursable_store = Gio.ListStore.new(Row)
-        for summary in self.board.reimbursables:
-            reimbursable_store.append(Row(summary))
-        self.reimbursables_view.set_model(
-            Gtk.SingleSelection(model=sorted_model(self.reimbursables_view, reimbursable_store))
-        )
-        shows = self.config.shows
-        chart = self.board.cash_flow_chart(book_server(self.db).reporting_currency())
-        self.cash_flow_chart.set_model(chart)
-        self.cash_flow_heading.set_text(chart.title)
-        # Nothing dated in the period draws nothing, so the section takes no room.
-        self.cash_flow_section.set_visible(shows("cash_flow") and not chart.empty)
-        self.bills_section.set_visible(shows("bills"))
-        self.income_section.set_visible(shows("income"))
-        self.reimbursables_section.set_visible(shows("reimbursables"))
-        self.goals_section.set_visible(shows("goals") and bool(self.board.goals))
+    def _shown(self):
+        from ...gen.services.dashboard_config import settings_of
+
+        assert self.config is not None
+        manager = PluginManager.instance()
+        for item in settings_of(self.config).breadlets:
+            plugin = manager.get(DASHBOARD, item.id)
+            if item.shown and plugin is not None:
+                yield item, plugin
+
+    def _render(self, book) -> None:
+        for container in (self.full_width, self.sections):
+            while (child := container.get_first_child()) is not None:
+                container.remove(child)
+        self.documents = {}
+        self.breadlet_documents = []
+        for item, plugin in self._shown():
+            try:
+                document = plugin.produce(book, {}, self._today())
+            except ApiError as error:
+                failed = Gtk.Label(label=f"{item.name}: {error}", xalign=0, wrap=True)
+                failed.add_css_class("error")
+                self.sections.append(failed)
+                continue
+            view = DocumentView(titled=False, on_link=self.follow, settings=self._settings())
+            view.set_name(f"breadlet-{item.id}")
+            view.show_document(document)
+            if not view.get_first_child():
+                continue  # a section with nothing to show takes no room
+            self.documents[item.id] = view
+            self.breadlet_documents.append((item.id, document))
+            if item.id in _FULL_WIDTH:
+                self.full_width.append(view)
+            else:
+                self._add_section(view)
+
+    def _add_section(self, view: DocumentView) -> None:
+        """Size a section to its content, bounded so no row can widen the window."""
+        view.add_css_class("dashboard-section")
+        view.set_halign(Gtk.Align.START)
+        view.set_valign(Gtk.Align.START)
+        view.set_hexpand(False)
+        for section in view.table_sections.values():
+            # Columns are chosen in Configure Dashboard (#381), not in each heading.
+            section.chooser.set_visible(False)
+            section.scroller.set_propagate_natural_width(True)
+            section.scroller.set_propagate_natural_height(True)
+            section.scroller.set_max_content_width(_SECTION_MAX_WIDTH)
+            section.scroller.set_max_content_height(_SECTION_MAX_HEIGHT)
+        self.sections.append(view)
+
+    # ------------------------------------------------------------------ access
+
+    def shown_sections(self) -> list[str]:
+        """The ids of the breadlets shown, in order."""
+        return list(self.documents)
+
+    def table(self, key: str) -> Gtk.ColumnView | None:
+        """The interactive table shown under ``key`` (such as ``dashboard`` for bills)."""
+        for view in self.documents.values():
+            if key in view.tables:
+                return view.tables[key]
+        return None
+
+    def section(self, breadlet: str) -> DocumentView | None:
+        """The shown view of one Dashboard item, by its breadlet id."""
+        return self.documents.get(breadlet)
+
+    @property
+    def cards(self) -> Gtk.FlowBox | None:
+        """The summary figures' cards, when shown."""
+        summary = self.documents.get("summary")
+        return summary.card_rows[0] if summary is not None and summary.card_rows else None
+
+    def column_tables(self) -> tuple[tuple[str, str, Gtk.ColumnView], ...]:
+        """The Dashboard's tables as Configure Dashboard lists their columns."""
+        found = []
+        for view in self.documents.values():
+            for key, table in view.tables.items():
+                section = view.table_sections[key]
+                found.append((section.heading.get_text().split(" (")[0], key, table))
+        return tuple(found)
+
+    # ----------------------------------------------------------------- printing
 
     def printable_report(self):
-        """The currently rendered Dashboard, laid out for printing."""
+        """The Dashboard as shown: its sections, then its other breadlets."""
         if self.board is None:
             return None
         from ...plugins.export.report_layout import dashboard_layout
 
-        return dashboard_layout(self.board, book_name=self.book_name())
+        currency = book_server(self.db).reporting_currency() if self.db is not None else ""
+        document = dashboard_layout(self.board, book_name=self.book_name(), currency=currency)
+        extra = tuple(
+            section
+            for key, item in self.breadlet_documents
+            if key not in engine.SECTIONS
+            for section in item.sections
+        )
+        return replace(document, sections=document.sections + extra)
 
     def printable_html(self) -> str | None:
         """The same report as a web page, for printing from a browser."""
@@ -422,172 +226,21 @@ class DashboardView(BaseView):
         document = self.printable_report()
         return render_html(document) if document is not None else None
 
-    def _render_cards(self) -> None:
-        _empty(self.cards)
-        board = self.board
-        assert board is not None
-        summary = board.summary()
-        report = board.report_summary()
-        missing_fields = {key for key, value in report.items() if value is None}
-        shortfall = summary["emergency_shortfall"]
-
-        cards = [
-            ("Net worth", summary["net_worth"], False),
-            ("Liquid", summary["liquid"], False),
-            (f"Needed in {board.config.liquidity_days} days", summary["required_liquid"], False),
-            ("Available", summary["available"], summary["available"] < 0),
-            (
-                f"Emergency fund ({board.config.emergency_months} mo)",
-                summary["emergency_fund"],
-                False,
-            ),
-            (
-                "Committed emergency outgoings / mo",
-                summary["emergency_monthly_outgoings"],
-                False,
-            ),
-            (
-                "Including estimates / mo",
-                summary["emergency_monthly_outgoings_with_estimates"],
-                False,
-            ),
-        ]
-        for label, amount, alarm in cards:
-            field = {"Net worth": "net_worth", "Liquid": "liquid", "Available": "available"}.get(
-                label
-            )
-            rendered = (
-                board.unavailable_reason(field)
-                if field in missing_fields
-                else amount.format(parens_negative=True)
-            )
-            if label.startswith("Emergency fund") and "emergency_fund" in missing_fields:
-                rendered = board.unavailable_reason("emergency_fund")
-            self.cards.append(
-                _card(label, rendered, alarm if field not in missing_fields else False)
-            )
-
-        months = summary["months_covered"]
-        self.cards.append(
-            _card(
-                "Months covered",
-                f"{months:g}"
-                if "months_covered" not in missing_fields
-                else board.unavailable_reason("months_covered"),
-                months < board.config.emergency_months and "months_covered" not in missing_fields,
-            )
-        )
-        if shortfall > 0 and "emergency_shortfall" not in missing_fields:
-            self.cards.append(_card("Short of the fund", shortfall.format(), True))
-        owed, attention = summary["receivables_owed"], summary["receivables_attention"]
-        if owed > 0:
-            text = owed.format()
-            if attention > 0:
-                text += f" ({attention.format()} disputed or overdue)"
-            self.cards.append(_card("Reimbursements due", text, attention > 0))
-        if summary["fsa_claims_attention"]:
-            self.cards.append(
-                _card(
-                    "FSA claims needing attention",
-                    f"{summary['fsa_claims_attention']} — see the FSA Dashboard",
-                    True,
-                )
-            )
-        set_aside, held = summary["goals_set_aside"], summary["goals_held"]
-        if set_aside > 0:
-            text = set_aside.format()
-            if held != set_aside:
-                text += f" ({held.format()} held from spendable cash)"
-            self.cards.append(_card("Set aside for goals", text, False))
-        for note in board.coverage_notes:
-            self.cards.append(_card("Coverage", note, False))
-        # What each withheld total leaves out and how to include it (#236).
-        for caption, coverage in (
-            ("Net worth withheld", board.completeness),
-            ("Liquid cash withheld", board.liquid_completeness),
-        ):
-            if coverage.complete or (
-                coverage is board.liquid_completeness
-                and coverage.excluded == board.completeness.excluded
-            ):
-                continue
-            self.cards.append(_card(caption, "\n".join(coverage.detail()), True))
-
-    def _render_groups(self) -> None:
-        _empty(self.groups)
-        board = self.board
-        assert board is not None
-        self.groups_section.set_visible(board.config.shows("groups") and bool(board.groups))
-
-        headings = ("Group", "Value", "Owed", "Equity / total", "LTV", "Loan end")
-        for position, heading in enumerate(headings):
-            label = Gtk.Label(label=heading, xalign=1 if position else 0)
-            label.add_css_class("summary-label")
-            self.groups.attach(label, position, 0, 1, 1)
-
-        for index, group in enumerate(board.groups, start=1):
-            label = group.name
-            if group.note:
-                label = f"{label} — {group.note}"
-            name = Gtk.Label(label=label, xalign=0)
-            name.set_margin_start(group.depth * 18)
-            if group.heading:
-                name.add_css_class("total-row")
-            # A combined group's note joins every account's quote details. An
-            # ellipsized label still asks for its full natural width, so cap it
-            # (issue #140) and keep the whole text in the tooltip.
-            name.set_ellipsize(Pango.EllipsizeMode.END)
-            name.set_max_width_chars(_GROUP_LABEL_CHARS)
-            # The row names the group and its own valuation note; the tooltip lists
-            # every account it covers, one per line (#150).
-            tooltip = [group.path if group.path else group.name]
-            if group.note:
-                tooltip.append(group.note)
-            tooltip.extend(group.members)
-            tooltip.extend(group.completeness.detail())
-            name.set_tooltip_text("\n".join(tooltip))
-            self.groups.attach(name, 0, index, 1, 1)
-            self.groups.attach(_amount(group.report_value), 1, index, 1, 1)
-            self.groups.attach(_amount(group.report_debt), 2, index, 1, 1)
-            self.groups.attach(
-                _amount(
-                    group.report_equity if group.report_equity is not None else group.report_total
-                ),
-                3,
-                index,
-                1,
-                1,
-            )
-            ratio = group.report_loan_to_value
-            self.groups.attach(
-                Gtk.Label(label=f"{ratio:.1%}" if ratio is not None else "", xalign=1),
-                4,
-                index,
-                1,
-                1,
-            )
-            self.groups.attach(
-                Gtk.Label(label=str(group.loan_end or ""), xalign=1),
-                5,
-                index,
-                1,
-                1,
-            )
-
     # ----------------------------------------------------------------- actions
 
-    def _on_bill_activated(self, view, position: int) -> None:
-        selection = view.get_model()
-        item = selection.get_item(position)
-        if item is None:
+    def follow(self, link: str) -> None:
+        """Open what a Dashboard row or card names (``report_layout.LINK_KINDS``)."""
+        if self.db is None or not link:
             return
-        bill = item.payload if hasattr(item, "payload") else item
-        schedule = getattr(bill, "schedule", None)
-        if schedule is not None:
-            self.manager.open_schedule(schedule.handle)
-        elif bill.generated and bill.account is not None and self.db is not None:
+        kind, _, target = link.partition(":")
+        app = self.manager.get_application()
+        if kind == "schedule":
+            self.manager.open_schedule(target)
+        elif kind == "register":
+            self.manager.open_register(target)
+        elif kind == "account":
             try:
-                account = book_server(self.db).account(bill.account).account
+                account = book_server(self.db).account(target).account
             except ApiError:
                 return
             from ..dialogs.account_dialog import AccountDialog
@@ -595,35 +248,18 @@ class DashboardView(BaseView):
             dialog = AccountDialog(self.get_root(), self.db, account=account)
             dialog.connect("close-request", self.refresh_on_close)
             dialog.present()
-        elif bill.account is not None:
-            self.manager.open_register(bill.account)
+        elif kind == "due-review":
+            app.on_post_scheduled()
+        elif kind == "goals":
+            app.on_savings_goals()
+        elif kind == "receivables":
+            app.on_receivables(parent=self.get_root())
+        elif kind == "fsa-claims":
+            app.on_fsa_claims()
+        elif kind == "report":
+            from ..reports_window import open_report
 
-    def _on_setting_changed(self, *_args) -> None:
-        if self._updating or self.db is None or self.config is None:
-            return
-        # Saved on the book, not in user settings: these name a household's own
-        # circumstances, and carrying them to another book would mislead. The
-        # service rereads the groups, so a group changed since this view was
-        # drawn is kept as stored.
-        from ...api import ApiError
-        from ...gen.services import SaveDashboardConfig
-
-        request = SaveDashboardConfig(
-            liquidity_days=int(self.liquidity_spin.get_value()),
-            emergency_months=int(self.emergency_spin.get_value()),
-        )
-        try:
-            saved = book_server(self.db).save_dashboard_settings(request)
-        except ApiError:
-            saved = None
-        if saved is not None:
-            # The shown board reads its horizons from this object, so it answers
-            # at once; the refresh below rereads the rest.
-            self.config.liquidity_days = saved.liquidity_days
-            self.config.emergency_months = saved.emergency_months
-        # Rebuilt on the idle: this runs inside the spin button's own event, and
-        # refresh() replaces the widgets around it.
-        self.schedule_refresh()
+            open_report(self.get_root(), self.db, target)
 
     def _on_configure(self, _button) -> None:
         if self.db is None:
@@ -639,58 +275,6 @@ class DashboardView(BaseView):
     def _open_net_worth_history(self, _button) -> None:
         if self.db is None:
             return
-        from ..dialogs.net_worth_history_dialog import NetWorthHistoryDialog
+        from ..reports_window import open_report
 
-        NetWorthHistoryDialog(self.get_root(), self.db).present()
-
-
-#: Widest a group name (with its note) may ask to be before it ellipsizes.
-_GROUP_LABEL_CHARS = 60
-#: Widest a headline card's text may ask to be before it wraps.
-_CARD_TEXT_CHARS = 40
-#: Upper bounds for a bills or income section's natural size; beyond them the
-#: table scrolls inside its section instead of widening the window (#140, #152).
-_SECTION_MAX_WIDTH = 900
-_SECTION_MAX_HEIGHT = 420
-
-
-def _empty(container: Gtk.Widget) -> None:
-    child = container.get_first_child()
-    while child is not None:
-        container.remove(child)
-        child = container.get_first_child()
-
-
-def _amount(value: Money | None) -> Gtk.Label:
-    label = Gtk.Label(
-        label=value.format(parens_negative=True) if value is not None else "", xalign=1
-    )
-    label.add_css_class("numeric")
-    if value is not None and value < 0:
-        label.add_css_class("negative")
-    return label
-
-
-def _card(caption: str, value: str, alarm: bool) -> Gtk.Widget:
-    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-    box.add_css_class("card")
-    label = Gtk.Label(label=caption, xalign=0)
-    label.add_css_class("summary-label")
-    amount = Gtk.Label(label=value, xalign=0)
-    # Coverage notes can be long; wrap them instead of widening the window (#140).
-    amount.set_wrap(True)
-    amount.set_max_width_chars(_CARD_TEXT_CHARS)
-    amount.add_css_class("summary-value")
-    amount.add_css_class("numeric")
-    if alarm or value.startswith(("(", "-")):
-        amount.add_css_class("negative")
-    box.append(label)
-    box.append(amount)
-    return box
-
-
-def _due_date(item) -> str:
-    """A due date, or the missed date range of a grouped schedule."""
-    if isinstance(item, engine.MissedGroup):
-        return f"{item.next_due.isoformat()} to {item.last_due.isoformat()}"
-    return item.next_due.isoformat()
+        open_report(self.get_root(), self.db, "net-worth")

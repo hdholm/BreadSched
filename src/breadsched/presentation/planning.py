@@ -28,7 +28,7 @@ def goal_status_text(progress: GoalProgress) -> str:
     if progress.status == "not started":
         return f"starts {progress.goal.start_date.isoformat()}"
     if progress.status == "reached":
-        return "fully set aside"
+        return "jar full"
     if progress.basis == "time":
         return "saving (spread by day: no income scheduled)"
     return "saving"

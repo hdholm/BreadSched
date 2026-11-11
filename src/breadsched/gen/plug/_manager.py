@@ -1,23 +1,36 @@
-"""Plugin registry.
+"""The breadlet registry.
 
-Gramps' approach, trimmed to what this application needs: plugins declare
-themselves with metadata, the manager holds the registry, and callers ask for a
-capability rather than importing a module directly.  The payoff is that adding a
-new file format means dropping in a module and registering it -- the import dialog,
-the CLI and the tests all pick it up with no edits.
+Gramps' approach, trimmed to what this application needs: breadlets (plug-ins)
+declare themselves with metadata, the manager holds the registry, and callers ask
+for a capability rather than importing a module directly. Adding a file format, a
+report or a Dashboard item means registering one more breadlet: the interfaces, the
+command line and the tests all pick it up with no edits. ``_breadlets`` describes
+the report and dashboard kinds and their options.
 
 Registration is by callable, not by scanning ``.gpr.py`` files off disk, because a
 registry that executes arbitrary files found in a data directory is a liability for
-an application whose whole job is reading other people's financial documents.
+an application whose whole job is reading other people's financial documents. An
+add-on is an installed Python package naming an entry point instead.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
-__all__ = ["Plugin", "PluginManager", "IMPORTER", "EXPORTER", "REPORT", "register_builtins"]
+from ._breadlets import DASHBOARD, BreadletOption, LoadProblem, load_installed, resolve_options
+
+__all__ = [
+    "DASHBOARD",
+    "EXPORTER",
+    "IMPORTER",
+    "REPORT",
+    "Plugin",
+    "PluginManager",
+    "register_builtins",
+]
 
 IMPORTER = "importer"
 EXPORTER = "exporter"
@@ -38,6 +51,32 @@ class Plugin:
     #: Called with a path; returns True if this plugin can read it.
     sniff: Callable[[str], bool] | None = None
     version: str = "1.0"
+    #: A report or dashboard breadlet's settings; ``run(book, options)`` gets them typed.
+    options: tuple[BreadletOption, ...] = ()
+    #: Where it came from: "built in", or the installed package's entry point.
+    source: str = "built in"
+    #: A dashboard breadlet shown until the household hides it.
+    shown_by_default: bool = False
+
+    def resolve(self, given: Mapping[str, str], today: date) -> dict[str, object]:
+        """This breadlet's options from text; see ``resolve_options``."""
+        return resolve_options(self.options, given, today)
+
+    def produce(self, book: Any, given: Mapping[str, str], today: date) -> Any:
+        """Run a report or dashboard breadlet on ``book`` with the option text given."""
+        return self.run(book, self.resolve(given, today), today)
+
+    def describe(self, today: date) -> dict[str, object]:
+        """What an interface needs to list this breadlet and build its options form."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "kind": self.category,
+            "description": self.description,
+            "source": self.source,
+            "shown_by_default": self.shown_by_default,
+            "options": [option.as_dict(today) for option in self.options],
+        }
 
     def __repr__(self) -> str:
         return f"<Plugin {self.category}:{self.id}>"
@@ -50,13 +89,20 @@ class PluginManager:
 
     def __init__(self) -> None:
         self._plugins: dict[str, Plugin] = {}
+        #: Installed breadlet packages that failed to load.
+        self.problems: list[LoadProblem] = []
 
     @classmethod
     def instance(cls) -> PluginManager:
         if cls._instance is None:
-            cls._instance = cls()
-            register_builtins(cls._instance)
+            manager = cls()
+            register_builtins(manager)
+            manager.problems = load_installed(manager)
+            cls._instance = manager
         return cls._instance
+
+    def all(self) -> list[Plugin]:
+        return list(self._plugins.values())
 
     def register(self, plugin: Plugin) -> Plugin:
         self._plugins[f"{plugin.category}:{plugin.id}"] = plugin
@@ -161,3 +207,11 @@ def register_builtins(manager: PluginManager) -> None:
             extensions=[".csv"],
         )
     )
+    _register_report_breadlets(manager)
+
+
+def _register_report_breadlets(manager: PluginManager) -> None:
+    """The report and dashboard breadlets shipped with the application."""
+    from ...plugins.breadlets import register
+
+    register(manager)
