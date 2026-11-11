@@ -4569,7 +4569,8 @@ class TestDashboardApi:
         assert ': "Dashboard"' in page
         assert 'launchParams.get("view")' in page
         # The Dashboard is the first entry of the navigation, and the page it opens on.
-        assert 'const NAV_GROUPS = [\n  ["Dashboard"],' in page
+        assert "const NAV_GROUPS = [" in page
+        assert page.index('["Dashboard"],') - page.index("const NAV_GROUPS = [") < 30
         assert '["Benefits", ["FSA Dashboard", "Reimbursable Expenses"]]' in page
         assert "async function showDashboard" in page
         assert "async function showFsaDashboard" in page

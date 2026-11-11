@@ -47,11 +47,12 @@ def test_every_page_is_built(site):
 
 def test_every_internal_link_and_anchor_resolves(site):
     ids = {
-        page: set(re.findall(r'id="([^"]+)"', page.read_text())) for page in site.rglob("*.html")
+        page: set(re.findall(r'id="([^"]+)"', page.read_text(encoding="utf-8")))
+        for page in site.rglob("*.html")
     }
     broken = []
     for page in ids:
-        for ref in re.findall(r'(?:href|src)="([^"]+)"', page.read_text()):
+        for ref in re.findall(r'(?:href|src)="([^"]+)"', page.read_text(encoding="utf-8")):
             if re.match(r"^[a-z]+:", ref):
                 continue
             path, _, anchor = ref.partition("#")
@@ -65,22 +66,22 @@ def test_every_internal_link_and_anchor_resolves(site):
 
 def test_the_pages_load_nothing_from_elsewhere(site):
     for page in site.rglob("*.html"):
-        text = page.read_text()
+        text = page.read_text(encoding="utf-8")
         assert "<script" not in text, page
         assert not re.search(r'<link[^>]+href="https?:', text), page
 
 
 def test_the_guide_links_its_parts_to_one_another_and_other_files_to_github(site):
-    overview = (site / "guide/overview.html").read_text()
+    overview = (site / "guide/overview.html").read_text(encoding="utf-8")
     assert 'href="../guide/desktop.html#reports-and-breadlets"' in overview
-    desktop = (site / "guide/desktop.html").read_text()
+    desktop = (site / "guide/desktop.html").read_text(encoding="utf-8")
     assert 'href="../guide/overview.html#' in desktop and "USER_GUIDE.md" not in desktop
-    changelog = (site / "guide/changelog.html").read_text()
+    changelog = (site / "guide/changelog.html").read_text(encoding="utf-8")
     assert 'href="https://github.com/hdholm/BreadSched/blob/main/DESIGN.md"' in changelog
 
 
 def test_the_five_stages_each_have_a_picture(site):
-    index = (site / "index.html").read_text()
+    index = (site / "index.html").read_text(encoding="utf-8")
     assert index.count('<li><div class="stage">') == 5
     for name in re.findall(r'src="images/([a-z]+\.png)"', index):
         assert (site / "images" / name).is_file(), name
