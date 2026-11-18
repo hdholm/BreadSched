@@ -31,7 +31,8 @@ dev = [
     # otherwise pass on the machine that wrote them and fail on the next one.
     "pytest-randomly>=3.15",
     "ruff>=0.4",
-    "mypy>=1.8",
+    # The oldest mypy that passes both `make typecheck` and `make typecheck-extended`.
+    "mypy>=1.18.1",
     "build>=1.2",
 ]
 
