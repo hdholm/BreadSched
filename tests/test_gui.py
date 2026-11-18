@@ -3462,6 +3462,72 @@ class TestScheduledDetail:
         assert view._splits_summary(ScheduledTransaction(name="empty")) == "(no splits)"
 
 
+class TestScheduledKeepsTheSelection:
+    """Editing a schedule leaves it selected, not the list's first row."""
+
+    @pytest.fixture
+    def view(self, app, window, tmp_path):
+        from breadsched.gen.sample_book import create_sample_book
+
+        path = tmp_path / "sample.breadsched"
+        create_sample_book(path, as_of=date.today())
+        app.open_book(str(path))
+        window.show_category("scheduled")
+        return window._views["scheduled"]
+
+    @staticmethod
+    def _select(table, name: str) -> int:
+        from breadsched.gui.views._base import unwrap
+
+        selection = table.get_model()
+        for index in range(selection.get_n_items()):
+            row = selection.get_item(index)
+            if row.get_depth() == 0 and unwrap(row).name == name:
+                selection.set_selected(index)
+                return index
+        raise AssertionError(name)
+
+    @staticmethod
+    def _selected_name(view) -> str:
+        return view._selected_item().name
+
+    def test_closing_the_editor_keeps_the_edited_schedule_selected(self, view):
+        from breadsched.gui.views._base import unwrap
+
+        table = view.definitions_view
+        selection = table.get_model()
+        rows = [selection.get_item(i) for i in range(selection.get_n_items())]
+        last = [unwrap(row).name for row in rows if row.get_depth() == 0][-1]
+        assert self._select(table, last) > 0
+        view._on_edit_clicked(None)
+        dialogs = [w for w in Gtk.Window.list_toplevels() if type(w).__name__ == "ScheduleDialog"]
+        assert dialogs
+        dialogs[-1].close()
+        assert _spin(lambda: not dialogs[-1].get_visible(), 2)
+        assert self._selected_name(view) == last
+        assert view._active_selection is table.get_model()
+
+    def test_one_row_is_selected_across_both_tables(self, view):
+        """The commands act on the row that shows as selected, whichever table."""
+        commitments, estimates = view.definitions_view.get_model(), view.estimates_view.get_model()
+        assert commitments.get_selected() == 0
+        assert estimates.get_selected() == Gtk.INVALID_LIST_POSITION
+        self._select(view.estimates_view, "Sample groceries plan")
+        assert commitments.get_selected() == Gtk.INVALID_LIST_POSITION
+        assert self._selected_name(view) == "Sample groceries plan"
+        self._select(view.definitions_view, "Sample rent")
+        assert estimates.get_selected() == Gtk.INVALID_LIST_POSITION
+        assert self._selected_name(view) == "Sample rent"
+
+    def test_any_refresh_keeps_an_estimate_selected(self, view):
+        table = view.estimates_view
+        self._select(table, "Sample groceries plan")
+        view.refresh()
+        assert self._selected_name(view) == "Sample groceries plan"
+        assert view._active_selection is table.get_model()
+        assert view.edit_button.get_sensitive()
+
+
 class TestScheduleEntry:
     """Item 6: scheduled transactions must be enterable."""
 

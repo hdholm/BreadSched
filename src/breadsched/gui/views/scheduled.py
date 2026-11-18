@@ -279,21 +279,28 @@ class ScheduledView(BaseView):
     def refresh(self) -> None:
         if self.db is None:
             return
+        # Drawing the tables again would leave the first row selected; the schedule
+        # that was selected (just edited, entered, or skipped, say) stays selected.
+        kept = self._kept_handle()
         self._page = book_server(self.db).scheduled_page()
         schedules = list(self._page.schedules)
         account_payments = list(self._page.payments)
         commitments = [item for item in schedules if not item.placeholder]
+        self._active_selection = None
         self._set_definitions_model(self.definitions_view, [*commitments, *account_payments], True)
         self._set_definitions_model(
             self.estimates_view,
             [item for item in schedules if item.placeholder],
             False,
         )
-        # Gtk.SingleSelection auto-selects the first row before our notify handler
-        # is connected.  Synchronize action sensitivity and expansion explicitly so
-        # the visibly selected row is also the application's selected row.
+        # The first commitment starts selected; synchronize action sensitivity and
+        # expansion explicitly so the visibly selected row is also the application's
+        # selected row. One row is selected across both tables, so the commands
+        # always act on the row that shows as selected.
         selection = self.definitions_view.get_model()
         self._on_selected(selection, None)
+        if kept is not None:
+            self.select_schedule(kept)
 
         estimates = sum(1 for s in schedules if s.placeholder)
         self.status.set_text(
@@ -301,18 +308,34 @@ class ScheduledView(BaseView):
             f"{estimates} estimate(s); {len(account_payments)} account-linked payment(s)"
         )
 
-    def _set_definitions_model(self, view, items, autoselect: bool) -> None:
+    def _set_definitions_model(self, view, items, first: bool) -> None:
         definitions = Gio.ListStore.new(Row)
         for item in items:
             definitions.append(Row(item))
         tree = Gtk.TreeListModel.new(definitions, False, False, self._split_children)
         selection = Gtk.SingleSelection(model=sorted_model(view, tree))
-        selection.set_autoselect(autoselect)
+        # A selection made with a model selects its first row; only the first table
+        # keeps it (``first``), and neither selects a row by itself again, so a row
+        # chosen in one table can clear the other's.
+        selection.set_autoselect(False)
+        if not first:
+            selection.set_selected(Gtk.INVALID_LIST_POSITION)
         selection.connect("notify::selected", self._on_selected)
         view.set_model(selection)
 
+    def _kept_handle(self) -> str | None:
+        """The handle of the schedule (or card payment) selected now, if any; a
+        selected split keeps its schedule."""
+        selection = self._active_selection
+        selected = selection.get_selected_item() if selection is not None else None
+        payload = unwrap(selected) if selected is not None else None
+        if isinstance(payload, ScheduleSplitRow):
+            payload = payload.schedule
+        return getattr(payload, "handle", None)
+
     def select_schedule(self, handle: str) -> None:
-        """Select and expand one schedule, arriving from another view."""
+        """Select, expand, and scroll to one schedule: arriving from another view, or
+        keeping the one selected when the tables are drawn again."""
         for view in (self.definitions_view, self.estimates_view):
             selection = view.get_model()
             if selection is None:
@@ -320,10 +343,13 @@ class ScheduledView(BaseView):
             for index in range(selection.get_n_items()):
                 row = selection.get_item(index)
                 payload = unwrap(row)
-                if getattr(payload, "handle", None) == handle:
+                if getattr(payload, "handle", None) == handle and not _is_split(payload):
                     selection.set_selected(index)
+                    self._on_selected(selection, None)
                     if hasattr(row, "set_expanded"):
                         row.set_expanded(True)
+                    # In view, rather than left wherever the redrawn list starts.
+                    view.scroll_to(index, None, Gtk.ListScrollFlags.NONE, None)
                     return
 
     def _split_children(self, item):
@@ -365,8 +391,15 @@ class ScheduledView(BaseView):
     def _on_selected(self, selection, _param) -> None:
         if selection is None:
             return
-        self._active_selection = selection
         position = selection.get_selected()
+        if position == Gtk.INVALID_LIST_POSITION and selection is not self._active_selection:
+            return  # the other table letting go of its row
+        self._active_selection = selection
+        if position != Gtk.INVALID_LIST_POSITION:
+            for view in (self.definitions_view, self.estimates_view):
+                other = view.get_model()
+                if other is not None and other is not selection:
+                    other.set_selected(Gtk.INVALID_LIST_POSITION)
         model = selection.get_model()
         for index in range(model.get_n_items()):
             tree_row = model.get_item(index)
