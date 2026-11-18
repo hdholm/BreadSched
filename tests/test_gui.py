@@ -3510,6 +3510,9 @@ class TestScheduledKeepsTheSelection:
     def test_one_row_is_selected_across_both_tables(self, view):
         """The commands act on the row that shows as selected, whichever table."""
         commitments, estimates = view.definitions_view.get_model(), view.estimates_view.get_model()
+        # Newer GTK (4.20, say) keeps a row selected unless the selection can be
+        # unselected; GTK 4.14 clears it either way.
+        assert commitments.get_can_unselect() and estimates.get_can_unselect()
         assert commitments.get_selected() == 0
         assert estimates.get_selected() == Gtk.INVALID_LIST_POSITION
         self._select(view.estimates_view, "Sample groceries plan")

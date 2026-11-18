@@ -316,8 +316,10 @@ class ScheduledView(BaseView):
         selection = Gtk.SingleSelection(model=sorted_model(view, tree))
         # A selection made with a model selects its first row; only the first table
         # keeps it (``first``), and neither selects a row by itself again, so a row
-        # chosen in one table can clear the other's.
+        # chosen in one table can clear the other's. Newer GTK (4.20, say) ignores
+        # clearing a selection that cannot be unselected, so both tables can be.
         selection.set_autoselect(False)
+        selection.set_can_unselect(True)
         if not first:
             selection.set_selected(Gtk.INVALID_LIST_POSITION)
         selection.connect("notify::selected", self._on_selected)
