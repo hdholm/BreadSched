@@ -271,13 +271,24 @@ without leading zeros (as PEP 440 writes them), and a patch number that counts f
 to that release. `breadsched.RELEASE_STAGE` says whether it is a `beta` or `stable`
 release; a beta is published as a GitHub pre-release.
 
-Releases are opt-in, not automatic for every merge. To prepare one, set
-`__version__` in `src/breadsched/__init__.py`, rename the changelog's `## Unreleased`
-heading to that version, and add `docs/releases/vVERSION.md` using the
-exact application version and the required compatibility, upgrade/rollback, and
-verified-artifact headings enforced by `scripts/check_release_notes.py`. A merge to
-`main` whose version has no notes, or whose version is already tagged at an earlier
-commit, runs the release workflow but publishes nothing.
+Releases are opt-in, not automatic for every merge. To prepare one:
+
+1. set `__version__` in `src/breadsched/__init__.py`;
+2. move the changelog's `## Unreleased` entries under a heading for that version,
+   keeping an empty `## Unreleased` above it;
+3. add `docs/releases/vVERSION.md` using the exact application version and the
+   required compatibility, upgrade/rollback, and verified-artifact headings enforced
+   by `scripts/check_release_notes.py`;
+4. add the version, newest first, to the `<releases>` of
+   `data/org.breadsched.BreadSched.metainfo.xml`, which software centres show
+   (`tests/test_desktop_integration.py` holds it to the version, the stage, and the
+   notes); and
+5. refresh the website's pictures with `scripts/site_screenshots.py` when the
+   interface they show has changed.
+
+A merge to `main` whose version has no notes, or whose version is already tagged at
+an earlier commit, runs the release workflow but publishes nothing. Merging the
+release also republishes the website, whose guide pages include the changelog.
 
 After that notes file reaches `main`, the release workflow waits for the
 complete CI push run to succeed and verifies that the tested commit is still
@@ -286,14 +297,21 @@ the installed wheel's `breadsched --version` line equals the one
 `breadsched.versioning.version_summary()` gives for the tested source (so the
 check follows the native schema; it must never hard-code a schema window),
 creates an annotated tag on that exact commit, publishes the human-reviewed
-notes, and attaches the wheel, source distribution, the Windows installer
-(built, installed over the newest published installer, exercised, and
-uninstalled on Windows from the same commit by the workflow's
-`windows-installer` job), and `SHA256SUMS` covering all three. An existing tag
-must resolve to the same commit; an existing release is never overwritten. A
-later `main` commit that keeps an already-tagged version, such as a
-documentation-only or CI change, is reported as not selected rather than
-failing the release run; set a new version to select a new release.
+notes, and attaches:
+
+- the wheel and source distribution;
+- the Windows installer, built, installed over the newest published installer,
+  exercised, and uninstalled on Windows from the same commit by the workflow's
+  `windows-installer` job;
+- the Flatpak bundle, built and installed in its sandbox (`flatpak-bundle`);
+- the Debian/Ubuntu and Fedora packages, built and installed on their
+  distributions (`linux-packages`); and
+- `SHA256SUMS` covering all of them.
+
+An existing tag must resolve to the same commit; an existing release is never
+overwritten. A later `main` commit that keeps an already-tagged version, such as a
+documentation-only or CI change, is reported as not selected rather than failing
+the release run; set a new version to select a new release.
 
 ## Static and style hygiene
 

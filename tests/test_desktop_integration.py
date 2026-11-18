@@ -48,6 +48,34 @@ def test_desktop_entry_launches_the_installed_gtk_command_with_the_app_icon():
     assert "Finance;" in entry["Categories"]
 
 
+def test_metainfo_lists_every_release_newest_first_with_its_notes():
+    """Software centres show the metainfo's releases, so the newest is this version,
+    in the stage it is released at, and each listed release has its notes."""
+    from datetime import date
+
+    from breadsched import RELEASE_STAGE, __version__
+
+    releases = ET.parse(METAINFO).getroot().find("releases")
+    assert releases is not None
+    listed = releases.findall("release")
+    versions = [str(item.get("version")) for item in listed]
+
+    def key(version: str) -> tuple[int, ...]:
+        return tuple(int(part) for part in version.split("."))
+
+    assert versions[0] == __version__
+    assert versions == sorted(set(versions), key=key, reverse=True)
+    assert listed[0].get("type") == ("development" if RELEASE_STAGE == "beta" else "stable")
+    for item, version in zip(listed, versions, strict=True):
+        year, month, day, _patch = key(version)
+        # A calendar version names the day it was prepared; a patch may ship later.
+        assert date.fromisoformat(str(item.get("date"))) >= date(year, month, day)
+        assert item.findtext("url") == (
+            f"https://github.com/hdholm/BreadSched/releases/tag/v{version}"
+        )
+        assert (ROOT / "docs" / "releases" / f"v{version}.md").is_file(), version
+
+
 def test_metainfo_names_the_application_and_its_desktop_entry():
     component = ET.parse(METAINFO).getroot()
 

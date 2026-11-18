@@ -25,7 +25,7 @@ its release notes; a merge without new notes publishes nothing.
 
 ## Soon after the first Beta
 
-- **Signed builds.** The first beta is unsigned. Sign `setup.exe` and the installed
+- **Signed builds.** The betas so far are unsigned. Sign `setup.exe` and the installed
   launchers through a hardware-backed signing service (Azure Artifact Signing
   under the maintainer's name, or SignPath Foundation's free open-source program;
   the choice is still being evaluated), verify the signatures in CI, and compute

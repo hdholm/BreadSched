@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "website" / "images"
 
-#: (file stem, navigation button, optional step run on the page before the picture)
+#: (file stem, view as the navigation names it, optional step run before the picture)
 SHOTS = (
     ("dashboard", "Dashboard", None),
     ("register", "Register", None),
@@ -51,13 +51,19 @@ def main() -> int:
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch()
                 page = browser.new_page(
-                    viewport={"width": 1200, "height": 760}, device_scale_factor=1
+                    viewport={"width": 1280, "height": 810}, device_scale_factor=1
                 )
                 page.goto(f"http://127.0.0.1:{httpd.server_port}/#token={httpd.token}")
                 page.wait_for_selector("#nav button")
                 OUT.mkdir(parents=True, exist_ok=True)
                 for stem, view, step in SHOTS:
-                    page.get_by_role("button", name=view, exact=True).first.click()
+                    # A view in one of the navigation's menus is chosen from that menu.
+                    group = page.locator(
+                        f'#nav .nav-group-wrap:has([data-view="{view}"]) .nav-group'
+                    )
+                    if group.count():
+                        group.click()
+                    page.locator(f'#nav [data-view="{view}"]').click()
                     page.wait_for_function(
                         "(name) => document.body.dataset.view === name"
                         " && document.getElementById('view').textContent.trim() !== 'Loading…'",

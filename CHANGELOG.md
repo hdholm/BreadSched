@@ -8,6 +8,12 @@ GitHub releases.
 
 ## Unreleased
 
+## 2026.11.18.0
+
+The second beta, published as a GitHub pre-release; its Windows installer and Linux
+packages are still not code-signed, so check them against `SHA256SUMS`. Books are
+unchanged (native schema 14), so it opens every book the first beta does.
+
 - **Arrange the Dashboard.** Each Dashboard item is now a tile on a grid four
   columns wide, and **Arrange Dashboard** (desktop) or **Arrange** (browser) places
   and sizes them: drag an item by its title to move it, drag its corner to make it

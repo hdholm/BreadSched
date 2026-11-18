@@ -107,8 +107,9 @@ bundle their own interpreter.
 **Flatpak.** The manifest builds the application into `/app` with the GNOME 49 SDK
 and grants Documents access (the default book location) and network access (the
 loopback web interface). Desktop integration files under `data/` are named by the
-application id: a desktop entry launching `breadsched-gtk`, AppStream metainfo, and
-a scalable icon that the GTK application also sets as its window icon. The icon and
+application id: a desktop entry launching `breadsched-gtk`, AppStream metainfo
+(listing every release, newest first, the newest being the application version),
+and a scalable icon that the GTK application also sets as its window icon. The icon and
 the logo are made from the artwork in `data/brand` by `scripts/brand_assets.py`
 (needs Pillow): the scalable icon carries the 512-pixel image, and the package
 itself carries the hicolor sizes, the logo, and the browser's favicon and home-screen
