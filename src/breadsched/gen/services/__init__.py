@@ -58,6 +58,7 @@ from .dashboard_config import (
     EMERGENCY_MONTHS_RANGE,
     LIQUIDITY_DAYS_RANGE,
     DashboardGroupInput,
+    DashboardTileInput,
     SaveDashboardConfig,
     save_dashboard_config,
 )
@@ -279,6 +280,7 @@ __all__ = [
     "find_schedule",
     "set_advance_days",
     "DashboardGroupInput",
+    "DashboardTileInput",
     "EMERGENCY_MONTHS_RANGE",
     "LIQUIDITY_DAYS_RANGE",
     "SaveDashboardConfig",

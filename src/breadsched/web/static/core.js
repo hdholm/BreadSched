@@ -321,7 +321,8 @@ function chartPlotted(model) {
   }));
 }
 
-function pieChart(model, { collapseTable = false, withTable = true } = {}) {
+function pieChart(model, { collapseTable = false, withTable = true, width = 900,
+  height = 280 } = {}) {
   // A donut (presentation.charts.chart_pie_layout): each slice is its value's share of
   // the whole the engine reported, titled with its exact amount, and a table beside it.
   const whole = model.totals && model.totals.length ? model.totals[0] : null;
@@ -334,7 +335,6 @@ function pieChart(model, { collapseTable = false, withTable = true } = {}) {
   const slices = model.categories.map((_c, index) => ({ index, share: share(index) }))
     .filter((item) => item.share !== null);
   if (!slices.length) return null;
-  const width = 900, height = 280;
   const outer = Math.min(height - 24, (width - 32) * 0.45) / 2;
   const inner = outer * (1 - 0.42);
   const cx = 16 + outer, cy = height / 2;
@@ -387,11 +387,13 @@ function pieChart(model, { collapseTable = false, withTable = true } = {}) {
 }
 
 function modelChart(model, { collapseTable = false, selected = null, onSelect = null,
-  withTable = true } = {}) {
+  withTable = true, width = 900, height = 280 } = {}) {
   // An engine chart in its own form (presentation.charts), with exact values on hover
   // and a table beside it. With onSelect, each category is a button that picks it.
+  // Drawn ``width`` by ``height`` and scaled to the page's width; the Dashboard draws
+  // a chart again at its tile's own size, so its text stays legible (fitCharts).
   if (!model) return null;
-  if (model.kind === "pie") return pieChart(model, { collapseTable, withTable });
+  if (model.kind === "pie") return pieChart(model, { collapseTable, withTable, width, height });
   const stacked = model.kind === "stacked" || model.kind === "share";
   const lines = model.kind === "line";
   const plotted = stacked ? chartPlotted(model) : null;
@@ -403,7 +405,7 @@ function modelChart(model, { collapseTable = false, selected = null, onSelect = 
       .filter((value) => value !== null && (lines || Number(value) !== 0))
       .map(Number);
   if (!model.categories.length || !values.some((value) => value !== 0)) return null;
-  const width = 900, height = 280, left = 78, top = 34, right = 12, bottom = 30;
+  const left = 78, top = 34, right = 12, bottom = 30;
   const plotWidth = width - left - right, plotHeight = height - top - bottom;
   const ticks = chartTicks(Math.min(...values), Math.max(...values));
   const low = ticks[0], high = ticks[ticks.length - 1];
@@ -535,7 +537,9 @@ function modelChart(model, { collapseTable = false, selected = null, onSelect = 
       svg.append(hit);
     });
   }
-  for (const index of chartLabelIndices(count)) {
+  // As many category labels as fit, about one per 90 units of width.
+  for (const index of chartLabelIndices(count, Math.max(2, Math.min(8,
+    Math.floor((width - left - right) / 90))))) {
     // A line's end points sit on the plot's edges: keep their labels inside.
     const anchor = !lines || (index > 0 && index < count - 1) ? "middle"
       : index === 0 ? "start" : "end";

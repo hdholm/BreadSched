@@ -6,8 +6,9 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from ..gen.engine import dashboard as engine
-from ..gen.services import DashboardGroupInput, SaveDashboardConfig
-from ..gen.services.dashboard_config import DashboardGroup, settings_of
+from ..gen.engine import dashboard_grid
+from ..gen.services import DashboardGroupInput, DashboardTileInput, SaveDashboardConfig
+from ..gen.services.dashboard_config import DashboardGroup, default_layout, settings_of
 from .savings_goal_resource import goal_json
 
 if TYPE_CHECKING:
@@ -54,9 +55,13 @@ def dashboard_report(
             # The Dashboard's own sections, then its breadlets, under one switch each.
             "sections": _sections(config),
             "section_titles": {item.key: item.name for item in breadlets},
-            "breadlets": [
-                {"id": item.id, "key": item.key, "name": item.name, "shown": item.shown}
-                for item in breadlets
+            # Every item in the order arranged, with its size on the grid.
+            "breadlets": [_breadlet_json(item) for item in breadlets],
+            "grid": _grid_json(),
+            # Every item in its own place and size, for putting the layout back.
+            "defaults": [
+                {"key": tile.key, "width": tile.width, "height": tile.height}
+                for tile in default_layout()
             ],
             "groups": [group_json(group) for group in config.groups],
             "accounts": [
@@ -208,12 +213,55 @@ def _plain(values: Mapping[str, object]) -> dict[str, str | None]:
     return out
 
 
+def _breadlet_json(item) -> dict:
+    """One Dashboard item, whether it is shown, and its size."""
+    return {
+        "id": item.id,
+        "key": item.key,
+        "name": item.name,
+        "description": item.description,
+        "shown": item.shown,
+        "width": item.width,
+        "height": item.height,
+    }
+
+
+def _grid_json() -> dict:
+    """The grid Dashboard items are arranged on (``engine.dashboard_grid``)."""
+    return {
+        "columns": dashboard_grid.COLUMNS,
+        "max_rows": dashboard_grid.MAX_ROWS,
+        "row_height": dashboard_grid.ROW_HEIGHT,
+    }
+
+
+def _layout(raw: object) -> tuple[DashboardTileInput, ...]:
+    """The items' order and sizes as sent: a list of ``{key, width, height}``."""
+    if not isinstance(raw, list):
+        raise ValueError("dashboard layout must be a list")
+    tiles = []
+    for item in raw:
+        if not isinstance(item, dict) or not isinstance(item.get("key"), str):
+            raise ValueError("each dashboard layout item must be an object with a key")
+        width, height = item.get("width"), item.get("height")
+        if (
+            not isinstance(width, int)
+            or not isinstance(height, int)
+            or isinstance(width, bool)
+            or isinstance(height, bool)
+        ):
+            raise ValueError("a dashboard layout item's width and height must be whole numbers")
+        tiles.append(DashboardTileInput(item["key"], width, height))
+    return tuple(tiles)
+
+
 def dashboard_config_save(api: Api, payload: dict) -> dict:
-    """Save the same settings Configure Dashboard edits in GTK (#381).
+    """Save the same settings Configure Dashboard and arranging the Dashboard edit
+    in GTK (#381).
 
     Parsing stays here; validation and the write (each account's group plus the
-    stored names, kinds, horizons, and sections) are ``save_dashboard_config``'s
-    (#337). A key left out keeps what is stored.
+    stored names, kinds, horizons, sections, and layout) are
+    ``save_dashboard_config``'s (#337). A key left out keeps what is stored.
     """
     sections = payload.get("sections")
     if sections is not None and (
@@ -246,6 +294,7 @@ def dashboard_config_save(api: Api, payload: dict) -> dict:
                 int(payload["emergency_months"]) if "emergency_months" in payload else None
             ),
             sections={str(k): v for k, v in sections.items()} if sections is not None else None,
+            layout=_layout(payload["layout"]) if "layout" in payload else None,
         ),
     )
     return {
@@ -253,6 +302,7 @@ def dashboard_config_save(api: Api, payload: dict) -> dict:
         "liquidity_days": config.liquidity_days,
         "emergency_months": config.emergency_months,
         "sections": {**config.sections, **{item.key: item.shown for item in config.breadlets}},
+        "breadlets": [_breadlet_json(item) for item in config.breadlets],
     }
 
 

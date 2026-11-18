@@ -125,7 +125,8 @@ Resources so far, all under ``/api/v1``:
 * ``GET /dashboard`` (``as_of``, ``liquidity_days``, ``emergency_months``) – the
   Dashboard computed once, over other horizons without saving them.
 * ``GET`` and ``PATCH /dashboard/settings`` (``SaveDashboardConfig``) – the
-  Dashboard's groups, with their members, and its horizons;
+  Dashboard's groups, with their members, its horizons, the items it shows, and
+  each item's place and size on its grid (``layout``);
   ``GET /dashboard/settings/defaults`` – the ones a new book starts with.
 * ``GET /schedules/view`` (``days``) – every saved definition with its editor view and
   next occurrence, card payments, upcoming occurrences, and account choices;

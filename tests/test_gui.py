@@ -562,10 +562,10 @@ class TestDashboardIsHome:
         chart = chart_view.model
         assert chart is not None and chart.key == "dashboard-cash-flow"
         # The sample book has bills and pay inside the period, so the chart shows,
-        # under its title, as wide as the window above the other sections.
+        # under its title, as wide as the Dashboard below the summary figures.
         assert not chart.empty
         assert chart.title in cash_flow.text()
-        assert cash_flow.get_parent() is view.full_width
+        assert view.placement("cash_flow") == (0, 2, 4, 2)
 
         # Hiding its section in Configure Dashboard hides the chart.
         from breadsched.api.local import book_server
@@ -616,6 +616,130 @@ class TestDashboardIsHome:
             assert check.get_label() == "Spending this month" and check.get_active()
         finally:
             dialog.destroy()
+
+
+class TestArrangeDashboard:
+    """Arrange Dashboard: move, resize, hide and add items on the Dashboard's grid."""
+
+    @pytest.fixture
+    def view(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("dashboard")
+        return window._views["dashboard"]
+
+    @staticmethod
+    def _saved(app):
+        from user_fixtures import own_preference
+
+        from breadsched.gen.services.dashboard_config import dashboard_settings
+
+        return dashboard_settings(app.db, own_preference(app.db, "dashboard"))
+
+    def test_arrange_is_a_toolbar_action_and_shows_each_tiles_controls(self, view, window):
+        from breadsched.gui.view_catalog import VIEW_ACTIONS
+
+        arrange = next(item for item in VIEW_ACTIONS["dashboard"] if item.name == "arrange")
+        assert arrange.toolbar and arrange.handler == "_on_arrange"
+        assert view.arrange_bar.get_visible() is False
+        window.lookup_action("dashboard-arrange").activate(None)
+        assert view.arranging and view.arrange_bar.get_visible()
+        tile = view.tiles["bills"]
+        assert "arranging" in tile.get_css_classes()
+        assert int(tile.width_spin.get_value()) == 2 and int(tile.height_spin.get_value()) == 3
+        # While arranging, a row or card opens nothing.
+        opened = []
+        view.manager.open_schedule = opened.append
+        view.follow("schedule:x")
+        assert opened == []
+        # The same action finishes arranging.
+        window.lookup_action("dashboard-arrange").activate(None)
+        assert not view.arranging and view.arrange_bar.get_visible() is False
+
+    def test_items_move_resize_and_are_saved_as_ones_own(self, view, app):
+        view.start_arranging()
+        groups = view.placement("groups")
+        view.move("bills", -1)  # before Account groups
+        assert view.placement("bills")[:2] == groups[:2]
+        # Dropping an item on the right half of another puts it after that one.
+        tile = view.tiles["income"]
+        assert view._on_drop(None, "goals", tile.get_width() + 1, 0, tile) is True
+        keys = [item.key for item in view.items if item.shown]
+        assert keys.index("goals") == keys.index("income") + 1
+        assert view._on_drop(None, "nothing", 0, 0, tile) is False
+        # The spin buttons and the corner both resize; the grid bounds them.
+        view.tiles["bills"].width_spin.set_value(4)
+        assert view.placement("bills")[2] == 4
+        view.resize("bills", height=99)
+        assert view.placement("bills")[3] == 8
+        assert int(view.tiles["bills"].height_spin.get_value()) == 8
+        view._resizing = (4, 8, 200.0)
+        view._on_resize_update(None, -2 * (200 + 12), -3 * (120 + 12), "bills")
+        assert view.placement("bills")[2:] == (2, 5)
+
+        assert view.finish_arranging() is True
+        saved = self._saved(app)
+        bills = next(item for item in saved.breadlets if item.key == "bills")
+        assert (bills.width, bills.height) == (2, 5)
+        order = [item.key for item in saved.breadlets]
+        assert order.index("bills") < order.index("groups")
+        # The book's own Dashboard is unchanged; the view draws the saved one.
+        from breadsched.gen.services.dashboard_config import dashboard_settings
+
+        assert dashboard_settings(app.db).breadlets[3].key == "bills"
+        assert view.placement("bills")[2:] == (2, 5)
+
+    def test_hiding_and_adding_items_and_cancelling(self, view, app):
+        view.start_arranging()
+        view.show_item("income", False)
+        assert "income" not in view.shown_sections()
+        names = [child.get_label() for child in _children(view.add_list)]
+        assert "Expected income" in names and "Pending reimbursables" in names
+        [add] = [
+            child
+            for child in _children(view.add_list)
+            if child.get_label() == "Pending reimbursables"
+        ]
+        add.emit("clicked")
+        assert view.shown_sections()[-1] == "reimbursables"
+        view.cancel_arranging()
+        assert "income" in view.shown_sections()
+        assert "reimbursables" not in view.shown_sections()
+        assert self._saved(app).breadlets[0].key == "summary"
+
+        view.start_arranging()
+        view.show_item("income", False)
+        view.resize("summary", width=1)
+        assert view.finish_arranging() is True
+        assert "income" not in view.shown_sections()
+        view.start_arranging()
+        view.reset_layout()
+        assert view.placement("summary")[2] == 4
+        assert view.finish_arranging() is True
+        # Putting the layout back keeps a hidden item hidden.
+        assert "income" not in view.shown_sections()
+        assert self._saved(app).breadlets[0].width == 4
+
+    def test_a_refused_arrangement_is_kept_on_screen_with_the_reason(self, view, monkeypatch):
+        from dataclasses import replace
+
+        view.start_arranging()
+        view.items[0] = replace(view.items[0], width=9)
+        assert view.finish_arranging() is False
+        assert "1 to 4 columns" in view.arrange_status.get_text()
+        assert view.arranging
+
+    def test_a_narrow_window_stacks_the_same_items_in_one_column(self, view):
+        adjustment = view.outer.get_hadjustment()
+        adjustment.set_page_size(400)
+        view._on_width(adjustment)
+        assert view.columns == 1
+        rows = [view.placement(key) for key in ("summary", "groups", "bills")]
+        assert all(place[0] == 0 and place[2] == 1 for place in rows)
+        assert rows[0][1] < rows[1][1] < rows[2][1]
+        adjustment.set_page_size(1400)
+        view._on_width(adjustment)
+        assert view.columns == 4
+        assert view.placement("summary")[2] == 4
 
 
 class TestBreadletReports:
@@ -8937,10 +9061,12 @@ class TestTableSections:
         app.open_book(populated_book)
         window.show_category("dashboard")
         view = window._views["dashboard"]
-        sections = (view.section("groups"), view.section("bills"), view.section("income"))
-        for section in sections:
-            assert section.get_hexpand() is False
-            assert section.get_halign() == Gtk.Align.START
+        # Each item is its own tile on the Dashboard's grid: groups and bills side by
+        # side at their own sizes, income below, none of them stretched over another.
+        _column, row, *size = view.placement("groups")
+        assert size == [2, 3]
+        assert view.placement("bills") == (2, row, 2, 3)
+        assert view.placement("income")[1] == row + 3
         bills = view.section("bills").table_sections["dashboard"]
         income = view.section("income").table_sections["dashboard-income"]
         assert bills.heading.get_text().startswith("Pending bills (")
@@ -9023,7 +9149,11 @@ class TestViewActions:
         window.show_category("register")
         assert tools() == ["win.register-reconcile", "win.register-new-tab"]
         window.show_category("dashboard")
-        assert tools() == ["win.dashboard-configure", "win.dashboard-net-worth-history"]
+        assert tools() == [
+            "win.dashboard-configure",
+            "win.dashboard-arrange",
+            "win.dashboard-net-worth-history",
+        ]
 
     @pytest.mark.parametrize(
         ("key", "icons", "gone"),
@@ -12779,27 +12909,6 @@ class TestIssue397:
         finally:
             editor.destroy()
             reconcile.destroy()
-
-    def test_dashboard_sections_wrap_beside_each_other(self, app):
-        from breadsched.gui.widgets.wrap_box import WrapBox
-
-        box = WrapBox(column_spacing=10, row_spacing=5)
-        wide, narrow, hidden, other = (Gtk.Box() for _ in range(4))
-        for child, width in ((wide, 700), (narrow, 300), (hidden, 300), (other, 300)):
-            child.set_size_request(width, 40)
-            box.append(child)
-        hidden.set_visible(False)
-        # 800 wide: the wide one alone, then the two narrow ones side by side, and
-        # the hidden one takes no room.
-        assert box.measure(Gtk.Orientation.VERTICAL, 800)[0] == 40 + 5 + 40
-        lines = box._lines(800)
-        assert [[child for child, _ in line] for line in lines] == [[wide], [narrow, other]]
-        # Narrow enough, each sits on its own line.
-        assert [[child for child, _ in line] for line in box._lines(500)] == [
-            [wide],
-            [narrow],
-            [other],
-        ]
 
     def test_the_fsa_dashboard_reads_off_the_main_loop(self, app, window, populated_book):
         from breadsched.api.local import book_server

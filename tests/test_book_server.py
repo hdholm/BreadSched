@@ -1554,7 +1554,11 @@ def test_exchange_rates_alike(target, book):
 
 
 def test_dashboard_settings_alike(target, book):
-    from breadsched.gen.services import DashboardGroupInput, SaveDashboardConfig
+    from breadsched.gen.services import (
+        DashboardGroupInput,
+        DashboardTileInput,
+        SaveDashboardConfig,
+    )
 
     api, db = target.api, target.db
     first = api.dashboard_settings()
@@ -1599,6 +1603,22 @@ def test_dashboard_settings_alike(target, book):
         assert refused.value.status == 400
     assert (repr(db.get_metadata("dashboard")), db.get_account(book.card).group) == before
     assert api.dashboard_settings() == shown
+
+    # The items' places and sizes travel the same way, and a bad one changes nothing.
+    arranged = api.save_dashboard_settings(
+        SaveDashboardConfig(layout=(DashboardTileInput("goals", 1, 3),))
+    )
+    assert (arranged.breadlets[0].key, arranged.breadlets[0].width) == ("goals", 1)
+    assert arranged.columns == 4 and arranged.groups == shown.groups
+    assert [item.key for item in api.dashboard_settings().breadlets] == [
+        item.key for item in arranged.breadlets
+    ]
+    with pytest.raises(ApiError) as refused:
+        api.save_dashboard_settings(
+            SaveDashboardConfig(layout=(DashboardTileInput("goals", 7, 3),))
+        )
+    assert (refused.value.status, refused.value.code) == (400, "dashboard.layout.size.invalid")
+    assert api.dashboard_settings() == arranged
 
 
 def test_find_reads_alike(target, book):

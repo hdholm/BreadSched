@@ -26,7 +26,12 @@ function documentBlock(block, { onLink = null, hiddenColumns = null } = {}) {
     return el("div", { class: "toolbar" }, ...block.items.map((item) =>
       el("button", { class: "action", type: "button", onclick: follow(item.link) }, item.label)));
   }
-  if (block.type === "chart") return modelChart(block.model, { withTable: false });
+  if (block.type === "chart") {
+    const figure = modelChart(block.model, { withTable: false });
+    // Kept so the Dashboard can draw it again to fit its tile (fitCharts).
+    if (figure) figure.chartModel = block.model;
+    return figure;
+  }
   if (!block.rows.length) return el("p", { class: "note" }, block.empty);
   const hidden = new Set(block.key && hiddenColumns ? hiddenColumns(block.key) : []);
   const keep = block.columns.map((column, index) => index === 0 || !hidden.has(column.label));

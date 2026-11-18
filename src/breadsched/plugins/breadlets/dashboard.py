@@ -35,6 +35,20 @@ _DESCRIPTIONS = {
 }
 
 
+#: Each section's width in columns and height in rows until the household resizes it:
+#: the figures and the chart across the Dashboard, the lists side by side below.
+_SIZES = {
+    "summary": (4, 2),
+    "cash_flow": (4, 2),
+    "groups": (2, 3),
+    "bills": (2, 3),
+    "income": (2, 2),
+    "reimbursables": (2, 2),
+    "claims": (2, 2),
+    "goals": (2, 2),
+}
+
+
 class _Sharing:
     """A book whose Dashboard and reporting currency are read once."""
 
@@ -92,5 +106,6 @@ def register(manager: PluginManager) -> None:
                 _section(name),
                 _DESCRIPTIONS[name],
                 shown_by_default=DEFAULT_SECTIONS[name],
+                size=_SIZES[name],
             )
         )

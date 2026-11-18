@@ -10,7 +10,7 @@ words and numbers. Layouts never query the database or recalculate.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import zip_longest
 
@@ -637,7 +637,9 @@ def _goals_blocks(board: Dashboard) -> tuple[Block, ...]:
 
 
 #: Each Dashboard section's blocks, by the section's name (``dashboard.SECTIONS``).
-DASHBOARD_SECTION_BLOCKS = {
+#: Typed so that every mypy the project supports sees one callable type here, not
+#: the bare ``function`` older ones join these signatures to.
+DASHBOARD_SECTION_BLOCKS: dict[str, Callable[[Dashboard], tuple[Block, ...]]] = {
     "summary": _summary_blocks,
     "cash_flow": _cash_flow_blocks,
     "groups": _groups_blocks,

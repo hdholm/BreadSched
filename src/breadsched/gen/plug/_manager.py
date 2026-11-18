@@ -57,6 +57,10 @@ class Plugin:
     source: str = "built in"
     #: A dashboard breadlet shown until the household hides it.
     shown_by_default: bool = False
+    #: A dashboard breadlet's width in columns and height in rows on the Dashboard's
+    #: grid (``engine.dashboard_grid``) until the household resizes it; None for
+    #: the grid's default.
+    size: tuple[int, int] | None = None
 
     def resolve(self, given: Mapping[str, str], today: date) -> dict[str, object]:
         """This breadlet's options from text; see ``resolve_options``."""
@@ -75,6 +79,7 @@ class Plugin:
             "description": self.description,
             "source": self.source,
             "shown_by_default": self.shown_by_default,
+            "size": list(self.size) if self.size else None,
             "options": [option.as_dict(today) for option in self.options],
         }
 

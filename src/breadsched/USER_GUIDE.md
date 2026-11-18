@@ -1010,6 +1010,16 @@ your own too. The columns are kept in each browser. The command
 line's `breadsched dashboard` and the printed Dashboard show the sections chosen
 there.
 
+**Arrange** places and sizes the items
+([desktop](guide/desktop.md#arrange-the-dashboard),
+[browser](guide/web.md#arrange-the-dashboard)). Each item is a tile on a grid four
+columns wide: drag it by its title to move it, drag its corner to make it wider or
+taller (up to four columns and eight rows), hide it, or add a hidden one back. A
+small item fills a gap a larger one leaves, an item with more than its tile holds
+scrolls inside it, and a narrow window or a phone stacks the same items in the same
+order. The arrangement is your own, like the rest of these settings, and the
+printed Dashboard follows its order.
+
 Dashboard groups accept account-style paths such as `Investments:Plan A`. Generated
 headings total their children without double-counting account subtrees. Link an
 asset and loan to show equity, loan-to-value, and a bounded repayment date together.

@@ -4515,6 +4515,62 @@ class TestDashboardApi:
         # Saving sections alone leaves the groups as they were.
         assert after["config"]["groups"] == before["config"]["groups"]
 
+    def test_the_layout_round_trips_and_orders_the_documents(self, client):
+        """Arranging the Dashboard: each item's place and size on its grid."""
+        _status, before = client.get("/api/dashboard")
+        assert before["config"]["grid"] == {"columns": 4, "max_rows": 8, "row_height": 120}
+        first = before["config"]["breadlets"][0]
+        assert {key: first[key] for key in ("key", "width", "height", "shown")} == {
+            "key": "summary",
+            "width": 4,
+            "height": 2,
+            "shown": True,
+        }
+        status, saved = client.post(
+            "/api/dashboard/config",
+            {
+                "layout": [
+                    {"key": "breadlet:spending-this-month", "width": 1, "height": 4},
+                    {"key": "summary", "width": 3, "height": 1},
+                ]
+            },
+        )
+        assert status == 200
+        assert [(item["key"], item["width"]) for item in saved["breadlets"][:3]] == [
+            ("breadlet:spending-this-month", 1),
+            ("summary", 3),
+            ("cash_flow", 4),
+        ]
+        _status, after = client.get("/api/dashboard")
+        assert after["config"]["breadlets"] == saved["breadlets"]
+        # The documents come in the order arranged.
+        assert [item["id"] for item in after["documents"]][:2] == [
+            "spending-this-month",
+            "summary",
+        ]
+        assert after["config"]["groups"] == before["config"]["groups"]
+
+    @pytest.mark.parametrize(
+        ("layout", "code"),
+        [
+            ([{"key": "summary", "width": 9, "height": 1}], "dashboard.layout.size.invalid"),
+            ([{"key": "cards", "width": 1, "height": 1}], "dashboard.layout.key.invalid"),
+            ([{"key": "summary", "width": True, "height": 1}], None),
+            ([{"key": "summary", "width": "2", "height": 1}], None),
+            ({"summary": [1, 1]}, None),
+            (["summary"], None),
+        ],
+    )
+    def test_a_rejected_layout_leaves_the_settings_as_they_were(self, client, layout, code):
+        _status, before = client.get("/api/dashboard")
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/dashboard/config", {"layout": layout, "liquidity_days": 9})
+        assert caught.value.code == 400
+        if code is not None:
+            assert json.loads(caught.value.read())["code"] == code
+        _status, after = client.get("/api/dashboard")
+        assert after["config"] == before["config"]
+
     @pytest.mark.parametrize(
         ("sections", "code"),
         [({"cards": False}, "dashboard.section.invalid"), ({"bills": "no"}, None)],

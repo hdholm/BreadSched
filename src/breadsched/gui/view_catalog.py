@@ -83,6 +83,13 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             toolbar=True,
         ),
         ViewAction(
+            "arrange",
+            "_Arrange Dashboard",
+            "_on_arrange",
+            "view-app-grid-symbolic",
+            toolbar=True,
+        ),
+        ViewAction(
             "net-worth-history",
             "Net Worth _History…",
             "_open_net_worth_history",

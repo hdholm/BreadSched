@@ -8,6 +8,17 @@ GitHub releases.
 
 ## Unreleased
 
+- **Arrange the Dashboard.** Each Dashboard item is now a tile on a grid four
+  columns wide, and **Arrange Dashboard** (desktop) or **Arrange** (browser) places
+  and sizes them: drag an item by its title to move it, drag its corner to make it
+  1 to 4 columns wide and 1 to 8 rows tall (or use its arrows and size controls from
+  the keyboard), hide it, add a hidden one back, or reset the layout. Items pack from
+  the top left so a small one fills a gap, a long one scrolls inside its tile, a
+  chart is drawn at its tile's size, and a narrow window or a phone stacks the same
+  items in the same order. The arrangement is saved with your own Dashboard
+  settings, the printed Dashboard follows its order, and a dashboard breadlet can
+  name the size it starts at.
+
 ## 2026.11.11.0
 
 The first beta. It is published as a GitHub pre-release; its Windows installer and
