@@ -3522,6 +3522,20 @@ class TestScheduledKeepsTheSelection:
         assert estimates.get_selected() == Gtk.INVALID_LIST_POSITION
         assert self._selected_name(view) == "Sample rent"
 
+    def test_a_table_too_old_to_scroll_to_a_row_still_selects_it(self, view, monkeypatch):
+        """ColumnView.scroll_to is GTK 4.12 and later; before it, selecting a
+        schedule selects it without scrolling."""
+        from breadsched.gui.views import _base, scheduled
+
+        assert _base.scroll_to_row(object(), 0) is False
+        monkeypatch.setattr(scheduled, "scroll_to_row", lambda *_args: False)
+        index = self._select(view.estimates_view, "Sample groceries plan")
+        handle = view._selected_item().handle
+        self._select(view.definitions_view, "Sample rent")
+        view.select_schedule(handle)
+        assert view.estimates_view.get_model().get_selected() == index
+        assert self._selected_name(view) == "Sample groceries plan"
+
     def test_any_refresh_keeps_an_estimate_selected(self, view):
         table = view.estimates_view
         self._select(table, "Sample groceries plan")

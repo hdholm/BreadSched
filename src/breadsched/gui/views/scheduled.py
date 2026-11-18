@@ -35,7 +35,16 @@ from ..gi_setup import Gio, Gtk, Pango
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ._base import BaseView, Row, _compare_by, column, sorted_model, table_section, unwrap
+from ._base import (
+    BaseView,
+    Row,
+    _compare_by,
+    column,
+    scroll_to_row,
+    sorted_model,
+    table_section,
+    unwrap,
+)
 
 __all__ = ["ScheduledView", "UpcomingView", "ScheduleSplitRow"]
 
@@ -351,7 +360,7 @@ class ScheduledView(BaseView):
                     if hasattr(row, "set_expanded"):
                         row.set_expanded(True)
                     # In view, rather than left wherever the redrawn list starts.
-                    view.scroll_to(index, None, Gtk.ListScrollFlags.NONE, None)
+                    scroll_to_row(view, index)
                     return
 
     def _split_children(self, item):
