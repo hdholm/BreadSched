@@ -1125,6 +1125,9 @@ def _assert_choices_whole(root):
             continue
         labels = [w for w in _descendants(dropdown) if isinstance(w, Gtk.Label) and w.get_mapped()]
         assert labels, choices
+        # A mapped label has no width until the window's first layout, which a busy
+        # machine may not have reached yet: wait for it rather than for a fixed time.
+        assert _spin(lambda labels=labels: all(label.get_width() > 0 for label in labels))
         for label in labels:
             assert label.get_ellipsize() == Pango.EllipsizeMode.NONE, label.get_label()
             layout = label.create_pango_layout(label.get_label())
