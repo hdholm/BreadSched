@@ -35,7 +35,7 @@ from ..gi_setup import Gio, Gtk, Pango
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ._base import BaseView, Row, column, sorted_model, table_section, unwrap
+from ._base import BaseView, Row, _compare_by, column, sorted_model, table_section, unwrap
 
 __all__ = ["ScheduledView", "UpcomingView", "ScheduleSplitRow"]
 
@@ -77,6 +77,11 @@ class ScheduleSplitRow:
 
 def _is_split(item) -> bool:
     return isinstance(item, ScheduleSplitRow)
+
+
+def _name_key(item) -> str:
+    """What the Name column sorts by: a split's account, else the schedule's name."""
+    return (item.account_name if _is_split(item) else item.name).casefold()
 
 
 def _kind_of(item) -> str:
@@ -264,6 +269,9 @@ class ScheduledView(BaseView):
         col = Gtk.ColumnViewColumn(title="Name", factory=factory)
         col.set_expand(True)
         col.set_resizable(True)
+        # Like every other column, its heading sorts (#427): schedules by name, and
+        # a schedule's splits, beneath it, by account.
+        col.set_sorter(Gtk.CustomSorter.new(_compare_by(_name_key, None, False)))
         return col
 
     # ------------------------------------------------------------------- model

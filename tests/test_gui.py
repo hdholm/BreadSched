@@ -3194,6 +3194,51 @@ class TestColumnBehaviour:
         # #406: only Description takes spare width, so narrowing Account widens it.
         assert [column.get_title() for column in columns if column.get_expand()] == ["Description"]
 
+    def test_scheduled_names_sort_after_sorting_another_column(self, app, window, tmp_path):
+        """#427: the Name heading sorts, even after sorting by Frequency."""
+        from breadsched.gen.sample_book import create_sample_book
+        from breadsched.gui.views._base import unwrap
+
+        path = tmp_path / "sample.breadsched"
+        create_sample_book(path, as_of=date.today())
+        app.open_book(str(path))
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        table = view.definitions_view
+        columns = {
+            table.get_columns().get_item(i).get_title(): table.get_columns().get_item(i)
+            for i in range(table.get_columns().get_n_items())
+        }
+
+        def names() -> list[str]:
+            model = table.get_model()
+            rows = [model.get_item(i) for i in range(model.get_n_items())]
+            return [unwrap(row).name for row in rows if row.get_depth() == 0]
+
+        assert len(names()) >= 3
+        table.sort_by_column(columns["Frequency"], Gtk.SortType.ASCENDING)
+        table.sort_by_column(columns["Name"], Gtk.SortType.ASCENDING)
+        assert names() == sorted(names(), key=str.casefold)
+        table.sort_by_column(columns["Name"], Gtk.SortType.DESCENDING)
+        assert names() == sorted(names(), key=str.casefold, reverse=True)
+
+    def test_every_table_column_in_every_view_sorts(self, app, window, populated_book):
+        """Every column's heading sorts, however the view built the column (#427)."""
+        app.open_book(populated_book)
+        unsorted = []
+        for key, _label, _icon in CATEGORIES:
+            window.show_category(key)
+            view = window._views[key]
+            for table in _descendants(view):
+                if not isinstance(table, Gtk.ColumnView):
+                    continue
+                columns = table.get_columns()
+                for index in range(columns.get_n_items()):
+                    column = columns.get_item(index)
+                    if column.get_sorter() is None:
+                        unsorted.append((key, column.get_title()))
+        assert unsorted == []
+
     def test_columns_reorder_and_resize_and_are_remembered(self, app, window, populated_book):
         """#406: columns move (by dragging or the column menu) and keep their widths."""
         from breadsched.gui.views._base import column, column_menu
