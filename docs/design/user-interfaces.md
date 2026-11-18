@@ -267,15 +267,56 @@ Windows must stay usable on small screens whatever the book holds:
   (`TestMenusAndIcons`). View
   toolbars scroll, Dashboard cards wrap in a `Gtk.FlowBox`, and the main stacks are
   not homogeneous, so the window's minimum is the shown page's. The Dashboard's
-  tables sit in a `widgets.wrap_box.WrapBox`: each line takes as many as fit at their
-  natural widths and a section switched off takes no room, where a `Gtk.FlowBox`
-  aligned them in columns, so one wide table kept the narrower ones below it from
-  sitting side by side.
+  items sit in a `Gtk.Grid` with homogeneous columns and rows (see
+  [The Dashboard's grid](#the-dashboards-grid)): each tile scrolls in both
+  directions inside itself, so no item's width or height can widen the window.
 - Every secondary window is a `widgets.bounded.BoundedWindow`, which opens at its
   natural size capped to 90% of the monitor, because a wrapping label's natural width
   is its whole text on one line.
-- Dashboard sections are separate cards sized to their content up to 900 × 420
-  pixels, beyond which the table scrolls inside its card.
+- Dashboard items are tiles of whole grid columns and rows; a table keeps its
+  columns' natural widths and scrolls inside its tile, and a chart fills its tile.
+
+## The Dashboard's grid
+
+The Dashboard's items are tiles on a grid (`gen/engine/dashboard_grid`): `COLUMNS`
+(4) across, rows `ROW_HEIGHT` (120) pixels tall with a 12-pixel gap, each item 1 to
+`COLUMNS` wide and 1 to `MAX_ROWS` (8) tall. An item's place is its position in one
+ordered list; `pack` puts each tile, in order, at the first place from the top left
+where it fits, which is what a CSS grid with `grid-auto-flow: row dense` does. The
+browser lets its CSS pack the tiles (`.dashboard-tile.w<n>.h<n>`) and GTK packs them
+with `pack` into a `Gtk.Grid`, so both draw one arrangement alike; a placement is
+the order and sizes, never coordinates, so the arrangement survives a different
+window width. A narrower window has fewer columns and packs the same list with each
+tile no wider than the grid: GTK takes a column away below 240 pixels a column
+(`DashboardView._on_width`, from the scrolled window's page size), the browser at
+1100, 820 and 560 pixels, where a phone stacks the tiles at their own heights.
+
+The order and sizes are `DashboardConfig.layout`, saved with the rest of the
+Dashboard's settings (`SaveDashboardConfig.layout`, validated by
+`save_dashboard_config`: a key that is not a dashboard breadlet, a key twice, or a
+size off the grid is refused and nothing is stored). An item not in the layout
+follows the arranged ones at its breadlet's own `size` (`Plugin.size`, else
+`DEFAULT_SIZE`), so a book saved before layouts, or a breadlet installed later,
+needs no migration; `DashboardSettings.breadlets` lists every item arranged, with
+its size, and `default_layout` is every item in its own place for **Reset Layout**.
+
+Arranging is a mode of the Dashboard rather than a dialog, because a place only
+means something where it is seen. Each tile gets a title to drag it by (a
+`Gtk.DragSource` and `Gtk.DropTarget`; HTML drag and drop), arrows that move it one
+place among the items shown, a size control, a hide button, and a corner that
+resizes it by whole columns and rows (a `Gtk.GestureDrag`; pointer events). GTK moves
+and resizes by setting each tile's `Gtk.GridLayoutChild` without drawing the
+documents again, so a drag in progress is never interrupted. **Done** saves the
+layout and every item's shown state together; **Cancel** draws the saved one again.
+Links do nothing while arranging, so a click meant to pick a tile opens nothing.
+A table keeps its columns' natural widths and scrolls inside its tile; a chart takes
+the height the rest of its item leaves, drawn natively at that size in GTK and, in
+the browser, drawn again at its tile's pixel size (`fitCharts`, on a
+`ResizeObserver`) so its text stays the page's size in a narrow or a wide tile.
+Printing follows the order arranged. Tests: `tests/test_dashboard_layout.py` (packing,
+storage, refusals), the layout tests in `tests/test_web.py` and
+`tests/test_book_server.py`, `TestArrangeDashboard` in `tests/test_gui.py`, and the
+arranging tests in `tests/test_web_browser.py`.
 
 ## Registers and entry
 

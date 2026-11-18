@@ -45,8 +45,12 @@ On the Dashboard, the cash-flow chart sits under the summary figures; hover a po
 for the day's amount, and open **Chart values** below it for the exact figures. See
 [Dashboard and near-term cash](../USER_GUIDE.md#dashboard-and-near-term-cash).
 **Configure Dashboard…** sets the horizons, sections, groups, and
-columns (see [Configure the Dashboard](#configure-the-dashboard)). Everything on the
-Dashboard is a dashboard breadlet (see [Reports and breadlets](#reports-and-breadlets)):
+columns (see [Configure the Dashboard](#configure-the-dashboard)), and **Arrange**
+places and sizes the Dashboard's items (see
+[Arrange the Dashboard](#arrange-the-dashboard)). Everything on the
+Dashboard is a dashboard breadlet (see [Reports and breadlets](#reports-and-breadlets)),
+each in its own tile on a grid four columns wide that has fewer columns in a
+narrower window and one on a phone:
 a bill's or income's name opens its schedule (or a card payment's register); a
 missed-schedule row lists each missed date and amount under its range; the **Net
 worth**, **Reimbursements due**, **FSA claims needing attention**, and **In goal jars**
@@ -90,6 +94,27 @@ shared with keeps theirs:
 **Save** stores the horizons, sections, and groups in the book and redraws the
 Dashboard. Groups only arrange what the Dashboard shows; its totals cover the whole
 book. See [Dashboard and near-term cash](../USER_GUIDE.md#dashboard-and-near-term-cash).
+
+## Arrange the Dashboard
+
+On the **Dashboard**, **Arrange** gives each item a title bar and outlines its tile:
+
+- **Move** an item by dragging its title onto another item (before it on that item's
+  left half, after it on its right half), or one place at a time with **◀** and
+  **▶**.
+- **Resize** it by dragging its bottom-right corner, a column or a row at a time, or
+  by typing its width (1 to 4 columns) and height (1 to 8 rows).
+- **Hide** it with **×**; **Add an item…** lists the hidden ones and puts the one
+  you choose back, after the others.
+- **Reset layout** puts every item back in its own place and size (hidden items stay
+  hidden).
+
+Items are packed from the top left, each in the first place it fits, and an item
+with more than its tile holds scrolls inside it; a chart is drawn at its tile's
+size. While arranging, rows and figures do not open what they name. **Done** saves
+the arrangement with the rest of your Dashboard settings; **Cancel** puts it back as
+it was. The desktop arranges the same Dashboard the same way, and printing the page
+prints the items in the order arranged.
 
 ## Exchange rates and security prices
 
@@ -152,7 +177,7 @@ and **Realized gains**. **Print** prints the report shown.
 
 The **Dashboard** is made of dashboard breadlets: its own sections, then **Spending
 this month** and **Income and spending** for the last six months, until you turn them
-off under **Sections** in **Configure Dashboard…**. An add-on that fails to load is named
+off under **Sections** in **Configure Dashboard…** or hide them in **Arrange**. An add-on that fails to load is named
 above the report.
 
 ## Online quotes

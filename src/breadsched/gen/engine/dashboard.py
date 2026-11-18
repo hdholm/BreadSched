@@ -51,6 +51,7 @@ from .dashboard_bills import (
     group_missed,
     pending_cash_flow,
 )
+from .dashboard_grid import Tile
 
 __all__ = [
     "BREADLET_PREFIX",
@@ -145,6 +146,9 @@ class DashboardConfig:
     minimum_bill: Money = field(default_factory=lambda: Money(0))
     #: Which of ``SECTIONS`` are shown (#381); a section not named takes its default.
     sections: dict[str, bool] = field(default_factory=lambda: dict(DEFAULT_SECTIONS))
+    #: Each item's place and size, in order (``dashboard_grid``); an item not listed
+    #: follows the listed ones at its breadlet's own size. Empty until arranged.
+    layout: list[Tile] = field(default_factory=list)
 
     def shows(self, section: str, default: bool = False) -> bool:
         """Whether ``section`` is shown: a key of ``SECTIONS``, or a dashboard
@@ -163,6 +167,7 @@ class DashboardConfig:
                 **{name: self.shows(name) for name in SECTIONS},
                 **{k: v for k, v in self.sections.items() if k.startswith(BREADLET_PREFIX)},
             },
+            "layout": [tile.serialize() for tile in self.layout],
         }
 
     @classmethod
@@ -186,6 +191,7 @@ class DashboardConfig:
             reserve=Money(*reserve) if reserve else Money(0),
             minimum_bill=Money(*minimum) if minimum else Money(0),
             sections=sections,
+            layout=_layout(data.get("layout")),
         )
 
     # ------------------------------------------------------------- persistence
@@ -273,6 +279,16 @@ class DashboardConfig:
                     account.group = wanted
                     db.commit_account(account, txn)
             db.set_metadata(self.KEY, self.serialize(), txn)
+
+
+def _layout(stored: object) -> list[Tile]:
+    """A stored layout's tiles, each key once; anything else in it is left out."""
+    tiles: list[Tile] = []
+    for item in stored if isinstance(stored, list) else ():
+        tile = Tile.from_dict(item)
+        if tile is not None and all(each.key != tile.key for each in tiles):
+            tiles.append(tile)
+    return tiles
 
 
 def default_config(db: DbSQLite) -> DashboardConfig:

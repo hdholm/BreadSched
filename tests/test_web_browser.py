@@ -1760,6 +1760,107 @@ def test_configure_dashboard_sets_sections_groups_and_columns(page, served):
     assert "Frequency" not in str(db.get_metadata("dashboard"))
 
 
+def _tile_keys(page) -> list[str]:
+    return [tile.get_attribute("data-key") for tile in page.locator(".dashboard-tile").all()]
+
+
+def test_arranging_the_dashboard_moves_resizes_hides_and_adds_items(page, served):
+    """Arrange: items move by their arrows or by dragging their title, resize by
+    their size or by dragging their corner, hide, and come back; Done saves."""
+    expect = sync_api.expect
+    db, _httpd = served
+    _nav(page, "Dashboard")
+    expect(page.locator(".dashboard-tile").first).to_be_visible()
+    default = _tile_keys(page)
+    assert default[:4] == ["summary", "cash_flow", "groups", "bills"]
+    assert "w4" in page.locator('[data-key="summary"]').get_attribute("class")
+    page.get_by_role("button", name="Arrange", exact=True).click()
+    expect(page.locator(".dashboard-arrange-bar")).to_be_visible()
+    expect(page.get_by_role("button", name="Arrange", exact=True)).to_be_disabled()
+    # Every item shows while arranging, even one with nothing to show yet.
+    expect(page.locator('[data-key="goals"]')).to_contain_text("Nothing to show right now.")
+
+    # While arranging, a bill's name opens nothing.
+    page.locator('[data-key="bills"] .link-button').first.click()
+    expect(page.locator(".detail-dialog")).to_have_count(0)
+
+    page.get_by_role("button", name="Move earlier: Pending bills").click()
+    assert _tile_keys(page).index("bills") == _tile_keys(page).index("groups") - 1
+    # Dragging an item's title onto the left half of another puts it before that one.
+    handle = page.locator('[data-key="income"] .tile-handle')
+    summary = page.locator('[data-key="summary"]')
+    handle.drag_to(summary, target_position={"x": 20, "y": 40})
+    assert _tile_keys(page)[0] == "income"
+
+    width = page.get_by_label("Width in columns: Pending bills")
+    width.fill("1")
+    width.dispatch_event("change")
+    expect(page.locator('[data-key="bills"]')).to_have_class(re.compile(r"\bw1\b"))
+    # Its corner resizes it by whole columns and rows.
+    grip = page.locator('[data-key="bills"] .resize-grip')
+    box = grip.bounding_box()
+    column = page.locator(".dashboard-grid").bounding_box()["width"] / 4
+    page.mouse.move(box["x"] + 5, box["y"] + 5)
+    page.mouse.down()
+    page.mouse.move(box["x"] + 5 + column, box["y"] + 5 + 132, steps=4)
+    page.mouse.up()
+    expect(page.locator('[data-key="bills"]')).to_have_class(re.compile(r"\bw2\b.*\bh4\b"))
+
+    page.get_by_role("button", name="Hide Income and spending").click()
+    expect(page.locator('[data-key="breadlet:recent-income-and-spending"]')).to_have_count(0)
+    page.get_by_label("Add an item").select_option("reimbursables")
+    expect(page.locator('[data-key="reimbursables"]')).to_be_visible()
+    assert _tile_keys(page)[-1] == "reimbursables"
+    page.get_by_role("button", name="Done").click()
+    expect(page.locator(".dashboard-arrange-bar")).to_have_count(0)
+    expect(page.locator(".dashboard-tile").first).to_be_visible()
+
+    arranged = _tile_keys(page)
+    assert arranged[0] == "income"
+    assert "breadlet:recent-income-and-spending" not in arranged
+    assert arranged.index("bills") < arranged.index("groups")
+    from user_fixtures import own_preference
+
+    from breadsched.gen.services.dashboard_config import dashboard_settings
+
+    # The page is the computer account's, so its own Dashboard.
+    saved = {
+        item.key: item for item in dashboard_settings(db, own_preference(db, "dashboard")).breadlets
+    }
+    assert (saved["bills"].width, saved["bills"].height) == (2, 4)
+    assert saved["reimbursables"].shown and not saved["breadlet:recent-income-and-spending"].shown
+    # Shown again, it is drawn as saved.
+    _nav(page, "Accounts")
+    _nav(page, "Dashboard")
+    expect(page.locator(".dashboard-tile").first).to_be_visible()
+    assert _tile_keys(page) == arranged
+
+    # Cancel puts back what was saved; Reset puts every item back, keeping hidden ones hidden.
+    page.get_by_role("button", name="Arrange", exact=True).click()
+    page.get_by_role("button", name="Move later: Summary figures").click()
+    page.get_by_role("button", name="Cancel").click()
+    expect(page.locator(".dashboard-arrange-bar")).to_have_count(0)
+    expect(page.locator(".dashboard-tile").first).to_be_visible()
+    assert _tile_keys(page) == arranged
+    page.get_by_role("button", name="Arrange", exact=True).click()
+    page.get_by_role("button", name="Reset layout").click()
+    page.get_by_role("button", name="Done").click()
+    expect(page.locator(".dashboard-arrange-bar")).to_have_count(0)
+    expect(page.locator(".dashboard-tile").first).to_be_visible()
+    reset = _tile_keys(page)
+    assert reset[:4] == ["summary", "cash_flow", "groups", "bills"]
+    assert "breadlet:recent-income-and-spending" not in reset
+
+
+def test_a_narrow_window_stacks_the_dashboard_in_one_column(page, served):
+    expect = sync_api.expect
+    page.set_viewport_size({"width": 480, "height": 1200})
+    _nav(page, "Dashboard")
+    expect(page.locator(".dashboard-tile").first).to_be_visible()
+    lefts = {round(tile.bounding_box()["x"]) for tile in page.locator(".dashboard-tile").all()}
+    assert len(lefts) == 1
+
+
 def test_the_schedule_editor_folds_away_what_most_schedules_do_not_need(page, served):
     """#383: splits, future changes, and defaults are folded; their summary counts."""
     _nav(page, "Scheduled")

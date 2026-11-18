@@ -350,21 +350,221 @@ async function netWorthChange(point, slot) {
 // Their rows and cards link to what they are; followDashboardLink opens it. The two
 // horizons, the items shown, the groups, and the columns are set in Configure
 // Dashboard (#381).
+//
+// The items sit on a grid (engine.dashboard_grid) as tiles: each has a place in the
+// order, a width in columns and a height in rows, and scrolls inside its tile when
+// it holds more. The CSS grid packs them (row dense), as the desktop does; a narrow
+// window has fewer columns. Arrange lets the household move them (dragging a tile by
+// its title, or with its arrows), resize them (dragging its corner, or with its
+// width and height), hide them, and add hidden ones back; Done saves the
+// arrangement with the rest of the Dashboard's settings.
 async function showDashboard() {
   const data = await get("/api/dashboard");
-  const controls = el("div", { class: "toolbar" },
-    el("button", { class:"action", type:"button",
-      onclick:()=>openDashboardConfigEditor(data.config) }, "Configure Dashboard…"));
-  const items = (data.documents || []).map((item) => {
-    if (item.error) return el("p", { class: "note neg" }, `${item.name}: ${item.error}`);
-    const drawn = renderDocument(item.document, { titled: false, onLink: followDashboardLink,
+  const config = data.config;
+  const grid = config.grid;
+  // Each item's drawn document (or failure), by key; a hidden one added while
+  // arranging is fetched when it is added.
+  const drawn = new Map();
+  const byId = new Map(config.breadlets.map((item) => [item.id, item]));
+  for (const item of data.documents || []) {
+    const key = byId.get(item.id)?.key;
+    if (!key) continue;
+    if (item.error) {
+      drawn.set(key, el("p", { class: "note neg" }, `${item.name}: ${item.error}`));
+      continue;
+    }
+    const node = renderDocument(item.document, { titled: false,
+      onLink: (link) => { if (!arranging) followDashboardLink(link); },
       hiddenColumns: dashboardHiddenColumns });
-    if (!drawn.children.length) return null;
-    drawn.classList.add("dashboard-breadlet", `dashboard-${item.id.replaceAll("_", "-")}`);
-    drawn.dataset.breadlet = item.id;
-    return drawn;
-  });
-  return el("div", { class: "dashboard" }, controls, ...items);
+    // An item with nothing to show takes no room, until it is being arranged.
+    node.dataset.empty = node.children.length ? "" : "true";
+    node.classList.add("dashboard-breadlet", `dashboard-${item.id.replaceAll("_", "-")}`);
+    node.dataset.breadlet = item.id;
+    drawn.set(key, node);
+  }
+  let arranging = false;
+  let items = config.breadlets.map((item) => ({ ...item }));
+  const page = el("div", { class: "dashboard" });
+  const board = el("div", { class: "dashboard-grid",
+    style: `--row-height: ${grid.row_height}px` });
+  const status = el("span", { class: "note neg", role: "status" });
+  const indexOf = (key) => items.findIndex((item) => item.key === key);
+  const clamp = (value, most) => Math.min(most, Math.max(1, Math.round(value)));
+
+  const moveBefore = (key, target, after = false) => {
+    if (key === target) return;
+    const [item] = items.splice(indexOf(key), 1);
+    items.splice(indexOf(target) + (after ? 1 : 0), 0, item);
+    draw();
+  };
+  const move = (key, step) => {
+    const shown = items.filter((item) => item.shown).map((item) => item.key);
+    const position = shown.indexOf(key) + step;
+    if (position >= 0 && position < shown.length) moveBefore(key, shown[position], step > 0);
+  };
+  const resize = (key, width, height) => {
+    const item = items[indexOf(key)];
+    const next = { width: clamp(width ?? item.width, grid.columns),
+      height: clamp(height ?? item.height, grid.max_rows) };
+    if (next.width === item.width && next.height === item.height) return;
+    Object.assign(item, next);
+    draw();
+  };
+  const showItem = async (key, shown) => {
+    const index = indexOf(key);
+    const item = { ...items[index], shown };
+    if (shown) {
+      items.splice(index, 1);
+      items.push(item);
+      if (!drawn.has(key)) {
+        try {
+          const found = await runBreadlet("dashboard", item.id);
+          const node = renderDocument(found.document, { titled: false,
+            hiddenColumns: dashboardHiddenColumns });
+          node.classList.add("dashboard-breadlet");
+          node.dataset.breadlet = item.id;
+          drawn.set(key, node);
+        } catch (error) {
+          drawn.set(key, el("p", { class: "note neg" }, `${item.name}: ${error.message}`));
+        }
+      }
+    } else items[index] = item;
+    draw();
+  };
+
+  // Resizing by a tile's corner: the change in columns and rows the pointer has
+  // moved, from where it started.
+  const startResize = (event, key) => {
+    event.preventDefault();
+    const item = items[indexOf(key)];
+    const start = { x: event.clientX, y: event.clientY, width: item.width, height: item.height };
+    const columns = getComputedStyle(board).gridTemplateColumns.split(" ").length;
+    const gap = parseFloat(getComputedStyle(board).columnGap) || 12;
+    const column = (board.clientWidth - gap * (columns - 1)) / columns;
+    const onMove = (moved) => resize(key,
+      start.width + (moved.clientX - start.x) / (column + gap),
+      start.height + (moved.clientY - start.y) / (grid.row_height + gap));
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const tileHeader = (item) => {
+    const sizeInput = (side, most, label) => el("input", { type: "number", min: "1",
+      max: String(most), value: String(item[side]), class: `tile-${side}`,
+      "aria-label": `${label}: ${item.name}`,
+      onchange: (event) => resize(item.key, side === "width" ? Number(event.target.value) : null,
+        side === "height" ? Number(event.target.value) : null) });
+    const button = (text, label, onclick) => el("button", { type: "button", class: "action",
+      title: label, "aria-label": label, onclick }, text);
+    return el("div", { class: "tile-header" },
+      el("span", { class: "tile-handle", draggable: "true", title: `Drag to move ${item.name}`,
+        ondragstart: (event) => {
+          event.dataTransfer.setData("text/plain", item.key);
+          event.dataTransfer.effectAllowed = "move";
+        } }, el("span", { "aria-hidden": "true" }, "⠿ "), item.name),
+      button("◀", `Move earlier: ${item.name}`, () => move(item.key, -1)),
+      button("▶", `Move later: ${item.name}`, () => move(item.key, 1)),
+      sizeInput("width", grid.columns, "Width in columns"), " × ",
+      sizeInput("height", grid.max_rows, "Height in rows"),
+      button("×", `Hide ${item.name}`, () => showItem(item.key, false)));
+  };
+
+  const tile = (item) => {
+    const body = drawn.get(item.key);
+    if (!body || (!arranging && body.dataset.empty === "true")) return null;
+    const node = el("section", { class: `dashboard-tile w${item.width} h${item.height}`
+      + (arranging ? " arranging" : ""), "data-key": item.key, "data-breadlet": item.id },
+    arranging ? tileHeader(item) : null,
+    el("div", { class: "tile-body" }, body,
+      arranging && body.dataset.empty === "true"
+        ? el("p", { class: "note" }, "Nothing to show right now.") : null),
+    arranging ? el("span", { class: "resize-grip", title: `Drag to resize ${item.name}`,
+      onpointerdown: (event) => startResize(event, item.key) }) : null);
+    if (arranging) {
+      node.addEventListener("dragover", (event) => event.preventDefault());
+      node.addEventListener("drop", (event) => {
+        event.preventDefault();
+        const key = event.dataTransfer.getData("text/plain");
+        if (indexOf(key) < 0) return;
+        const box = node.getBoundingClientRect();
+        moveBefore(key, item.key, event.clientX > box.left + box.width / 2);
+      });
+    }
+    return node;
+  };
+
+  const arrangeBar = () => {
+    const hidden = items.filter((item) => !item.shown);
+    const adder = el("select", { "aria-label": "Add an item", disabled: hidden.length ? null : "disabled",
+      onchange: (event) => { if (event.target.value) showItem(event.target.value, true); } },
+    el("option", { value: "" }, hidden.length ? "Add an item…" : "Every item is shown"),
+    ...hidden.map((item) => el("option", { value: item.key, title: item.description }, item.name)));
+    return el("div", { class: "toolbar dashboard-arrange-bar" },
+      el("span", { class: "note" }, "Drag an item by its title to move it, or its corner to resize it."),
+      adder,
+      el("button", { class: "action", type: "button", onclick: () => {
+        const sizes = new Map(config.defaults.map((tile) => [tile.key, tile]));
+        const known = new Map(items.map((item) => [item.key, item]));
+        items = [...config.defaults.filter((tile) => known.has(tile.key)).map((tile) =>
+          ({ ...known.get(tile.key), width: tile.width, height: tile.height })),
+        ...items.filter((item) => !sizes.has(item.key))];
+        draw();
+      } }, "Reset layout"),
+      el("button", { class: "action", type: "button", onclick: () => render() }, "Cancel"),
+      el("button", { class: "action primary", type: "button", onclick: async () => {
+        try {
+          await post("/api/dashboard/config", {
+            layout: items.map(({ key, width, height }) => ({ key, width, height })),
+            sections: Object.fromEntries(items.map((item) => [item.key, item.shown])),
+          });
+        } catch (error) { status.textContent = error.message; return; }
+        render();
+      } }, "Done"),
+      status);
+  };
+
+  // Done and Cancel finish arranging, so Arrange waits until then.
+  const controls = () => el("div", { class: "toolbar" },
+    el("button", { class:"action", type:"button", disabled: arranging ? "disabled" : null,
+      onclick:()=>openDashboardConfigEditor(config) }, "Configure Dashboard…"),
+    el("button", { class:"action", type:"button", disabled: arranging ? "disabled" : null,
+      title: "Move, resize, hide and add Dashboard items",
+      onclick: () => { arranging = true; draw(); } }, "Arrange"));
+
+  // Each chart is drawn again as tall as its tile has room for, so a wide, short tile
+  // keeps legible text rather than shrinking the whole chart (fitCharts).
+  const fitting = new ResizeObserver((entries) => entries.forEach((entry) =>
+    fitCharts(entry.target)));
+  function draw() {
+    fitting.disconnect();
+    board.replaceChildren(...items.filter((item) => item.shown).map(tile).filter(Boolean));
+    board.querySelectorAll(".tile-body").forEach((body) => fitting.observe(body));
+    board.classList.toggle("arranging", arranging);
+    page.replaceChildren(...[controls(), arranging ? arrangeBar() : null, board].filter(Boolean));
+  }
+  draw();
+  return page;
+}
+
+// Draw each chart in a tile again at the size its tile gives it (the room left by the
+// rest of the item, never less than reads well), so its text stays the size of the
+// page's rather than shrinking with a narrow tile or growing with a wide one.
+function fitCharts(body) {
+  for (const figure of body.querySelectorAll("figure.model-chart")) {
+    const svg = figure.querySelector("svg");
+    if (!figure.chartModel || !svg || !svg.clientWidth) continue;
+    const width = Math.round(svg.clientWidth), height = Math.round(Math.max(120, svg.clientHeight));
+    const [, , drawnWidth, drawnHeight] = (svg.getAttribute("viewBox") || "").split(" ").map(Number);
+    if (Math.abs(drawnWidth - width) < 3 && Math.abs(drawnHeight - height) < 3) continue;
+    const next = modelChart(figure.chartModel, { withTable: false, width, height });
+    if (!next) continue;
+    next.chartModel = figure.chartModel;
+    figure.replaceWith(next);
+  }
 }
 
 // Open what a Dashboard row or card names (report_layout.LINK_KINDS).

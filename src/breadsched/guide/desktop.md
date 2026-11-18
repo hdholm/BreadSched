@@ -124,7 +124,7 @@ A menu item that asks for more before it acts ends in "…". The toolbar command
 icons are, for example, **New Account**, **Edit Account**, **Security Price**, and
 **Exchange Rate** in Accounts, **Manage FSA Claims** on the FSA Dashboard (also in
 the Actions menu in every view),
-**Configure Dashboard** on the Dashboard, **New Scheduled**, **Suggest**, and
+**Configure Dashboard** and **Arrange Dashboard** on the Dashboard, **New Scheduled**, **Suggest**, and
 **New Loan** in Scheduled, **New Scenario**, **Scenarios**, and **Explore** in Plan,
 and **Compare**, **Export**, and **New tab** in Projection. Each icon stands for one
 command, so the same picture never means two things. **View → Hide Empty
@@ -156,10 +156,13 @@ Categorization rules and reimbursable expenses open from **Actions →
 Categorization Rules…** and **Actions → Reimbursable Expenses…**.
 
 Everything on the Dashboard is a dashboard breadlet (see
-[Reports and breadlets](#reports-and-breadlets)): the summary figures and the
-cash-flow chart across the top, then account groups, pending bills, expected income,
-and the rest as separate sections, each as wide as its own columns; they sit side by
-side when the window has room and stack when it does not. A long line wraps; hover
+[Reports and breadlets](#reports-and-breadlets)), each in its own tile on a grid
+four columns wide: the summary figures and the cash-flow chart across the top, then
+account groups, pending bills, expected income, and the rest two columns wide, side
+by side. An item with more than its tile holds scrolls inside it, and a chart grows
+or shrinks to fill its tile. A narrower window has fewer columns and stacks the same
+items in the same order. **Arrange Dashboard** moves and resizes them (see
+[Arrange the Dashboard](#arrange-the-dashboard)). A long line wraps; hover
 over a group to read the accounts it covers, which are listed under it with their
 balances. Activate a bill or income row (double-click or Enter) to open its schedule,
 or a card payment's account; choose the **Net worth**, **Reimbursements due**, **FSA
@@ -267,8 +270,33 @@ arrangement of this book: anyone else it is shared with keeps theirs.
 
 **Save** stores the horizons, sections, and groups in the book; **Cancel** leaves
 them as they were. Groups only arrange what the Dashboard shows; its totals cover the
-whole book. Printing the Dashboard prints the sections it shows. See
+whole book. Printing the Dashboard prints the sections it shows, in the order you
+arranged them. See
 [Dashboard and near-term cash](../USER_GUIDE.md#dashboard-and-near-term-cash).
+
+## Arrange the Dashboard
+
+**Arrange Dashboard** (toolbar icon or the Actions menu) lets you place and size the
+Dashboard's items, as on a router's or server's status page. Each item gets a title
+bar, and its tile is outlined:
+
+- **Move** an item by dragging its title onto another item: dropped on that item's
+  left half it goes before it, on its right half after it. The **‹** and **›**
+  buttons move it one place earlier or later from the keyboard.
+- **Resize** an item by dragging its corner, a column or a row at a time, or with
+  its size button (**2 × 3** is two columns wide and three rows tall), which opens
+  its width (1 to 4 columns) and height (1 to 8 rows).
+- **Hide** an item with its **×**; **Add Item** lists the hidden ones and puts the
+  one you choose back, after the others.
+- **Reset Layout** puts every item back in its own place and size (hidden items stay
+  hidden).
+
+Items are packed from the top left, each in the first place it fits, so a small item
+fills a gap a larger one leaves. While arranging, rows and figures do not open what
+they name, and an item with nothing to show yet still has its tile. **Done** saves
+the arrangement with the rest of your Dashboard settings (it is your own, as
+Configure Dashboard's are); **Cancel** puts it back as it was. The browser arranges
+the same Dashboard the same way.
 
 ## Exchange rates and security prices
 
@@ -338,7 +366,7 @@ opens with its full controls.
 
 The Dashboard is made of dashboard breadlets: its own sections, then **Spending this
 month** and **Income and spending** for the last six months, until you turn them off
-in **Configure Dashboard**. An add-on installed as a Python package adds its own
+in **Configure Dashboard** or hide them in **Arrange Dashboard**. An add-on installed as a Python package adds its own
 breadlets; one that fails to load is named at the top of its report.
 
 ## Online quotes

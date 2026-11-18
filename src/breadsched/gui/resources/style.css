@@ -21,13 +21,19 @@
     background: alpha(currentColor, 0.04);
 }
 
-/* Dashboard groups, bills, and income are separate sections, each sized to its
-   own columns (#152). */
+/* Each Dashboard item is a tile on the Dashboard's grid; while the Dashboard is
+   being arranged, each tile is outlined and has a title to drag it by. */
 .dashboard-section {
     background: alpha(currentColor, 0.03);
     border-radius: 8px;
     padding: 8px 10px;
 }
+.dashboard-section.arranging {
+    outline: 2px dashed alpha(@accent_color, 0.6);
+    outline-offset: -2px;
+}
+.dashboard-tile-header { padding-bottom: 4px; border-bottom: 1px solid alpha(currentColor, 0.15); }
+.dashboard-arrange-bar { padding: 6px 0; }
 
 /* Open views and registers as tabs below the toolbar (#183). */
 .tab-bar button { padding: 2px 8px; min-height: 0; }

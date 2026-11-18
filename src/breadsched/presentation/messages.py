@@ -40,6 +40,11 @@ _SERVICE_MESSAGES = {
     "dashboard.group.account.not_found": "A Dashboard group names an account that no longer exists",
     "dashboard.group.account.duplicate": "An account can be in only one Dashboard group",
     "dashboard.section.invalid": "Choose a Dashboard section that exists",
+    "dashboard.layout.key.invalid": "Arrange only Dashboard items that exist",
+    "dashboard.layout.key.duplicate": "Place each Dashboard item once",
+    "dashboard.layout.size.invalid": (
+        "Make each Dashboard item 1 to 4 columns wide and 1 to 8 rows tall"
+    ),
     "account.not_found": "The account no longer exists",
     "account.cost_basis_method.invalid": "Choose first in, first out or average cost",
     "account.name.required": "Give the account a name",

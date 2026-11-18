@@ -349,6 +349,7 @@ def register(manager: PluginManager) -> None:
             _run_dashboard_spending,
             "This month's spending by category, as a ring",
             shown_by_default=True,
+            size=(2, 3),
         ),
         Plugin(
             "recent-income-and-spending",
@@ -357,6 +358,7 @@ def register(manager: PluginManager) -> None:
             _run_dashboard_income,
             "Income beside spending for the last six months",
             shown_by_default=True,
+            size=(2, 3),
         ),
     ):
         manager.register(plugin)

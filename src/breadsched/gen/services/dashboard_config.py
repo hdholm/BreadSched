@@ -14,6 +14,7 @@ from datetime import date
 from typing import Any
 
 from ..db.sqlite import DbSQLite
+from ..engine import dashboard_grid
 from ..engine.dashboard import (
     BREADLET_PREFIX,
     GROUP_KINDS,
@@ -33,11 +34,13 @@ __all__ = [
     "DashboardGroup",
     "DashboardGroupInput",
     "DashboardSettings",
+    "DashboardTileInput",
     "EMERGENCY_MONTHS_RANGE",
     "LIQUIDITY_DAYS_RANGE",
     "SaveDashboardConfig",
     "dashboard_board",
     "dashboard_settings",
+    "default_layout",
     "default_dashboard_settings",
     "save_dashboard_config",
     "settings_of",
@@ -56,6 +59,16 @@ class DashboardGroupInput:
 
 
 @dataclass(frozen=True, slots=True)
+class DashboardTileInput:
+    """One Dashboard item's place and size: its key (``DashboardBreadlet.key``), its
+    width in columns, and its height in rows."""
+
+    key: str
+    width: int
+    height: int
+
+
+@dataclass(frozen=True, slots=True)
 class SaveDashboardConfig:
     #: The complete groups, in order; None keeps the stored ones.
     groups: tuple[DashboardGroupInput, ...] | None = None
@@ -63,6 +76,10 @@ class SaveDashboardConfig:
     emergency_months: int | None = None
     #: Sections to show or hide by ``SECTIONS`` name; one not named is unchanged.
     sections: Mapping[str, bool] | None = None
+    #: The items' order and sizes; one not listed follows the listed ones at its own
+    #: size. An empty layout puts every item back in its own place and size; None
+    #: keeps the stored layout.
+    layout: tuple[DashboardTileInput, ...] | None = None
 
 
 def _clamp(value: int, bounds: tuple[int, int]) -> int:
@@ -115,6 +132,22 @@ def save_dashboard_config(
         if any(not _known_section(name) for name in request.sections):
             return ServiceResult.failure(ServiceError("dashboard.section.invalid", ("sections",)))
         config.sections = {**config.sections, **{k: bool(v) for k, v in request.sections.items()}}
+    if request.layout is not None:
+        problems: list[ServiceError] = []
+        keys: set[str] = set()
+        for tile in request.layout:
+            if not _known_section(tile.key):
+                problems.append(ServiceError("dashboard.layout.key.invalid", ("layout",)))
+            elif tile.key in keys:
+                problems.append(ServiceError("dashboard.layout.key.duplicate", ("layout",)))
+            if dashboard_grid.size_error(tile.width, tile.height):
+                problems.append(ServiceError("dashboard.layout.size.invalid", ("layout",)))
+            keys.add(tile.key)
+        if problems:
+            return ServiceResult.failure(*problems)
+        config.layout = [
+            dashboard_grid.Tile(tile.key, tile.width, tile.height) for tile in request.layout
+        ]
     if request.liquidity_days is not None:
         config.liquidity_days = _clamp(request.liquidity_days, LIQUIDITY_DAYS_RANGE)
     if request.emergency_months is not None:
@@ -126,15 +159,32 @@ def save_dashboard_config(
     return ServiceResult.success(config)
 
 
-def _dashboard_breadlets():
-    """Every dashboard breadlet in the order the Dashboard shows them: its own
-    sections first, as ``SECTIONS`` lists them, then the others by name."""
+def _dashboard_breadlets(config: DashboardConfig):
+    """Every dashboard breadlet with its tile, in the order the Dashboard shows them:
+    as the household arranged them, then the rest in their own order (the Dashboard's
+    own sections as ``SECTIONS`` lists them, then the others by name)."""
     from ..plug import DASHBOARD, PluginManager
 
     order = list(SECTIONS)
-    return sorted(
+    plugins = sorted(
         PluginManager.instance().by_category(DASHBOARD),
         key=lambda plugin: (order.index(plugin.id) if plugin.id in SECTIONS else len(order),),
+    )
+    by_key = {breadlet_key(plugin.id): plugin for plugin in plugins}
+    tiles = dashboard_grid.arrange(
+        config.layout,
+        by_key,
+        {key: plugin.size or dashboard_grid.DEFAULT_SIZE for key, plugin in by_key.items()},
+    )
+    return [(by_key[tile.key], tile) for tile in tiles]
+
+
+def default_layout() -> tuple[DashboardTileInput, ...]:
+    """Every Dashboard item in its own place and size, as a book never arranged
+    shows them: what putting the layout back offers before it is saved."""
+    return tuple(
+        DashboardTileInput(tile.key, tile.width, tile.height)
+        for _plugin, tile in _dashboard_breadlets(DashboardConfig())
     )
 
 
@@ -162,6 +212,9 @@ class DashboardBreadlet:
     name: str
     description: str
     shown: bool
+    #: Its width in columns and height in rows on the Dashboard's grid.
+    width: int = dashboard_grid.DEFAULT_SIZE[0]
+    height: int = dashboard_grid.DEFAULT_SIZE[1]
 
     @property
     def key(self) -> str:
@@ -189,8 +242,13 @@ class DashboardSettings:
     minimum_bill: Money
     #: Which of ``SECTIONS`` the Dashboard shows (#381).
     sections: dict[str, bool] = field(default_factory=dict)
-    #: Every dashboard breadlet, in the order the Dashboard shows them below its sections.
+    #: Every dashboard breadlet with its size, in the order the Dashboard shows them.
     breadlets: tuple[DashboardBreadlet, ...] = ()
+    #: The grid the breadlets are arranged on: its columns, its tallest item in rows,
+    #: and a row's height in pixels (``engine.dashboard_grid``).
+    columns: int = dashboard_grid.COLUMNS
+    max_rows: int = dashboard_grid.MAX_ROWS
+    row_height: int = dashboard_grid.ROW_HEIGHT
 
 
 def settings_of(config: DashboardConfig) -> DashboardSettings:
@@ -208,9 +266,11 @@ def settings_of(config: DashboardConfig) -> DashboardSettings:
                 plugin.id,
                 plugin.name,
                 plugin.description,
-                config.shows(breadlet_key(plugin.id), plugin.shown_by_default),
+                config.shows(tile.key, plugin.shown_by_default),
+                tile.width,
+                tile.height,
             )
-            for plugin in _dashboard_breadlets()
+            for plugin, tile in _dashboard_breadlets(config)
         ),
     )
 

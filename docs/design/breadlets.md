@@ -9,7 +9,7 @@ one registry (`gen/plug`, `PluginManager`):
 | `importer` | reads a file into a book | the import service calls `run`; sniffing and extensions choose it |
 | `exporter` | writes a file from a book | the export commands call `run` |
 | `report` | builds a printable report | `run(book, options, today)` returns a `ReportDocument` |
-| `dashboard` | builds a small report the Dashboard shows below its own sections | the same signature as a report |
+| `dashboard` | builds a small report the Dashboard shows as one of its items | the same signature as a report |
 
 Every interface lists and reaches them the same way: Reports and the Dashboard in
 GTK (a tab of the Reports window, `gui/dialogs/breadlets_dialog.py` with
@@ -92,8 +92,15 @@ Whether each is shown is kept with the Dashboard's configuration: a section unde
 its own name, any other breadlet under `breadlet:<id>`
 (`dashboard_config.breadlet_key`); one the household has not chosen for takes its
 `shown_by_default` (every section but pending reimbursables). Saving an unknown key
-is refused. `DashboardSettings.breadlets` lists every dashboard breadlet in the order
-shown, which is the one list Configure Dashboard offers in GTK and the browser.
+is refused. Each is a tile on the Dashboard's grid, and its place and size are kept
+under the same key in the configuration's layout (see
+[The Dashboard's grid](user-interfaces.md#the-dashboards-grid)); until the household
+arranges it, it takes its `size`, the columns and rows it asks for (the summary
+figures and the cash-flow chart four columns wide, the tables two; `DEFAULT_SIZE`,
+two by two, when it names none), after the items arranged. An add-on sizes its own
+breadlets the same way. `DashboardSettings.breadlets` lists every dashboard breadlet
+in the order arranged, with its size, which is the one list Configure Dashboard and
+arranging offer in GTK and the browser.
 Running them together, an interface wraps the book in `breadlets.dashboard.sharing`,
 so they share one `book.dashboard()` (and the browser's `/api/dashboard` sends every
 shown breadlet's document at once, calculated with the horizons asked for).
