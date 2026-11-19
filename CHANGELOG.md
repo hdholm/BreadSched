@@ -8,6 +8,16 @@ GitHub releases.
 
 ## Unreleased
 
+- **Scheduled transactions sort by name again** on the desktop: the **Name**
+  heading of the commitments and estimates tables sorts like every other column,
+  schedules by name and each schedule's splits by account (#427).
+- **Scheduled keeps your place** on the desktop. After you edit a schedule (or
+  enter, skip, match, or duplicate one), it stays selected and in view instead of
+  the list jumping back to its first row. Only one row is selected across the
+  commitments and estimates tables, so the buttons act on the row that shows as
+  selected; before, choosing an estimate that already looked selected left them
+  acting on a commitment.
+
 ## 2026.11.18.0
 
 The second beta, published as a GitHub pre-release; its Windows installer and Linux

@@ -28,6 +28,7 @@ __all__ = [
     "column",
     "column_menu",
     "host_widget",
+    "scroll_to_row",
     "sorted_model",
     "table_section",
     "toolbar",
@@ -359,6 +360,16 @@ def unwrap(item):
     if isinstance(item, Gtk.TreeListRow):
         item = item.get_item()
     return item.payload if isinstance(item, Row) else item
+
+
+def scroll_to_row(view: Gtk.ColumnView, position: int) -> bool:
+    """Scroll ``view`` to show a row; False on GTK before 4.12, which cannot."""
+    scroll = getattr(view, "scroll_to", None)
+    flags = getattr(Gtk, "ListScrollFlags", None)  # GTK 4.12 and later
+    if scroll is None or flags is None:
+        return False
+    scroll(position, None, flags.NONE, None)
+    return True
 
 
 def column(

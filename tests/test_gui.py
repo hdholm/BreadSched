@@ -3194,6 +3194,51 @@ class TestColumnBehaviour:
         # #406: only Description takes spare width, so narrowing Account widens it.
         assert [column.get_title() for column in columns if column.get_expand()] == ["Description"]
 
+    def test_scheduled_names_sort_after_sorting_another_column(self, app, window, tmp_path):
+        """#427: the Name heading sorts, even after sorting by Frequency."""
+        from breadsched.gen.sample_book import create_sample_book
+        from breadsched.gui.views._base import unwrap
+
+        path = tmp_path / "sample.breadsched"
+        create_sample_book(path, as_of=date.today())
+        app.open_book(str(path))
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        table = view.definitions_view
+        columns = {
+            table.get_columns().get_item(i).get_title(): table.get_columns().get_item(i)
+            for i in range(table.get_columns().get_n_items())
+        }
+
+        def names() -> list[str]:
+            model = table.get_model()
+            rows = [model.get_item(i) for i in range(model.get_n_items())]
+            return [unwrap(row).name for row in rows if row.get_depth() == 0]
+
+        assert len(names()) >= 3
+        table.sort_by_column(columns["Frequency"], Gtk.SortType.ASCENDING)
+        table.sort_by_column(columns["Name"], Gtk.SortType.ASCENDING)
+        assert names() == sorted(names(), key=str.casefold)
+        table.sort_by_column(columns["Name"], Gtk.SortType.DESCENDING)
+        assert names() == sorted(names(), key=str.casefold, reverse=True)
+
+    def test_every_table_column_in_every_view_sorts(self, app, window, populated_book):
+        """Every column's heading sorts, however the view built the column (#427)."""
+        app.open_book(populated_book)
+        unsorted = []
+        for key, _label, _icon in CATEGORIES:
+            window.show_category(key)
+            view = window._views[key]
+            for table in _descendants(view):
+                if not isinstance(table, Gtk.ColumnView):
+                    continue
+                columns = table.get_columns()
+                for index in range(columns.get_n_items()):
+                    column = columns.get_item(index)
+                    if column.get_sorter() is None:
+                        unsorted.append((key, column.get_title()))
+        assert unsorted == []
+
     def test_columns_reorder_and_resize_and_are_remembered(self, app, window, populated_book):
         """#406: columns move (by dragging or the column menu) and keep their widths."""
         from breadsched.gui.views._base import column, column_menu
@@ -3415,6 +3460,89 @@ class TestScheduledDetail:
         window.show_category("scheduled")
         view = window._views["scheduled"]
         assert view._splits_summary(ScheduledTransaction(name="empty")) == "(no splits)"
+
+
+class TestScheduledKeepsTheSelection:
+    """Editing a schedule leaves it selected, not the list's first row."""
+
+    @pytest.fixture
+    def view(self, app, window, tmp_path):
+        from breadsched.gen.sample_book import create_sample_book
+
+        path = tmp_path / "sample.breadsched"
+        create_sample_book(path, as_of=date.today())
+        app.open_book(str(path))
+        window.show_category("scheduled")
+        return window._views["scheduled"]
+
+    @staticmethod
+    def _select(table, name: str) -> int:
+        from breadsched.gui.views._base import unwrap
+
+        selection = table.get_model()
+        for index in range(selection.get_n_items()):
+            row = selection.get_item(index)
+            if row.get_depth() == 0 and unwrap(row).name == name:
+                selection.set_selected(index)
+                return index
+        raise AssertionError(name)
+
+    @staticmethod
+    def _selected_name(view) -> str:
+        return view._selected_item().name
+
+    def test_closing_the_editor_keeps_the_edited_schedule_selected(self, view):
+        from breadsched.gui.views._base import unwrap
+
+        table = view.definitions_view
+        selection = table.get_model()
+        rows = [selection.get_item(i) for i in range(selection.get_n_items())]
+        last = [unwrap(row).name for row in rows if row.get_depth() == 0][-1]
+        assert self._select(table, last) > 0
+        view._on_edit_clicked(None)
+        dialogs = [w for w in Gtk.Window.list_toplevels() if type(w).__name__ == "ScheduleDialog"]
+        assert dialogs
+        dialogs[-1].close()
+        assert _spin(lambda: not dialogs[-1].get_visible(), 2)
+        assert self._selected_name(view) == last
+        assert view._active_selection is table.get_model()
+
+    def test_one_row_is_selected_across_both_tables(self, view):
+        """The commands act on the row that shows as selected, whichever table."""
+        commitments, estimates = view.definitions_view.get_model(), view.estimates_view.get_model()
+        # Newer GTK (4.20, say) keeps a row selected unless the selection can be
+        # unselected; GTK 4.14 clears it either way.
+        assert commitments.get_can_unselect() and estimates.get_can_unselect()
+        assert commitments.get_selected() == 0
+        assert estimates.get_selected() == Gtk.INVALID_LIST_POSITION
+        self._select(view.estimates_view, "Sample groceries plan")
+        assert commitments.get_selected() == Gtk.INVALID_LIST_POSITION
+        assert self._selected_name(view) == "Sample groceries plan"
+        self._select(view.definitions_view, "Sample rent")
+        assert estimates.get_selected() == Gtk.INVALID_LIST_POSITION
+        assert self._selected_name(view) == "Sample rent"
+
+    def test_a_table_too_old_to_scroll_to_a_row_still_selects_it(self, view, monkeypatch):
+        """ColumnView.scroll_to is GTK 4.12 and later; before it, selecting a
+        schedule selects it without scrolling."""
+        from breadsched.gui.views import _base, scheduled
+
+        assert _base.scroll_to_row(object(), 0) is False
+        monkeypatch.setattr(scheduled, "scroll_to_row", lambda *_args: False)
+        index = self._select(view.estimates_view, "Sample groceries plan")
+        handle = view._selected_item().handle
+        self._select(view.definitions_view, "Sample rent")
+        view.select_schedule(handle)
+        assert view.estimates_view.get_model().get_selected() == index
+        assert self._selected_name(view) == "Sample groceries plan"
+
+    def test_any_refresh_keeps_an_estimate_selected(self, view):
+        table = view.estimates_view
+        self._select(table, "Sample groceries plan")
+        view.refresh()
+        assert self._selected_name(view) == "Sample groceries plan"
+        assert view._active_selection is table.get_model()
+        assert view.edit_button.get_sensitive()
 
 
 class TestScheduleEntry:
