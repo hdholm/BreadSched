@@ -63,6 +63,7 @@ def _signed_money(value: Money | None) -> str:
 class PlanView(BaseView):
     """Category-oriented plan versus actual view derived from transaction events."""
 
+    KEY = "plan"
     PRINTABLE = True
 
     WATCHES = (
@@ -105,7 +106,9 @@ class PlanView(BaseView):
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
         bar.append(spacer)
-        # New scenario, Manage scenarios, and Expense Explorer are toolbar icons.
+        # New Scenario, Manage Scenarios, the scenario events (Add Estimate, Alter,
+        # Suppress), Resolve Actuals, and Expense Explorer are toolbar icons and
+        # menu items (view_catalog); these controls choose what the Plan shows.
         bar.append(Gtk.Label(label="Scenario"))
         self.scenario = bounded_dropdown()
         self.scenario.connect("notify::selected", self._on_scenario_changed)
@@ -142,17 +145,6 @@ class PlanView(BaseView):
         self.apply_button.add_css_class("suggested-action")
         self.apply_button.connect("clicked", self._on_apply)
         bar.append(self.apply_button)
-        self.review_actuals_button = Gtk.Button(label="Resolve actuals…")
-        self.review_actuals_button.set_tooltip_text(
-            "Inspect unmatched actual transactions and match or mark them unexpected"
-        )
-        self.review_actuals_button.connect(
-            "clicked", lambda *_: self.manager.show_category("resolution")
-        )
-        bar.append(self.review_actuals_button)
-        schedules = Gtk.Button(label="Edit baseline schedules…")
-        schedules.connect("clicked", lambda *_: self.manager.show_category("scheduled"))
-        bar.append(schedules)
         self.append_toolbar(bar)
 
         self.control_status = Gtk.Label(xalign=0, wrap=True)
@@ -166,19 +158,7 @@ class PlanView(BaseView):
         self.scenario_events_box.set_sensitive(False)
         for side in ("bottom", "start", "end"):
             getattr(scenario_bar, f"set_margin_{side}")(8)
-        scenario_bar.append(Gtk.Label(label="Scenario events", xalign=0))
-        self.add_estimate_button = Gtk.Button(label="Add estimate…")
-        self.add_estimate_button.set_sensitive(False)
-        self.add_estimate_button.connect("clicked", self._on_add_estimate)
-        scenario_bar.append(self.add_estimate_button)
-        self.alter_schedule_button = Gtk.Button(label="Alter baseline…")
-        self.alter_schedule_button.set_sensitive(False)
-        self.alter_schedule_button.connect("clicked", self._on_alter_schedule)
-        scenario_bar.append(self.alter_schedule_button)
-        self.suppress_schedule_button = Gtk.Button(label="Suppress baseline…")
-        self.suppress_schedule_button.set_sensitive(False)
-        self.suppress_schedule_button.connect("clicked", self._on_suppress_schedule)
-        scenario_bar.append(self.suppress_schedule_button)
+        scenario_bar.append(Gtk.Label(label="Scenario events:", xalign=0))
         self.scenario_hint = Gtk.Label(xalign=0, wrap=True)
         self.scenario_hint.add_css_class("dim")
         self.scenario_hint.set_hexpand(True)
@@ -190,6 +170,13 @@ class PlanView(BaseView):
         self.summary.set_margin_end(12)
         self.summary.set_margin_bottom(8)
         self.append(self.summary)
+        # How many actuals in the range still need matching (Resolve Actuals…).
+        self.actuals_note = Gtk.Label(xalign=0, wrap=True, visible=False)
+        self.actuals_note.add_css_class("dim")
+        self.actuals_note.set_margin_start(12)
+        self.actuals_note.set_margin_end(12)
+        self.actuals_note.set_margin_bottom(8)
+        self.append(self.actuals_note)
         # Quote used for each foreign currency, or amounts left out for lack of one.
         self.currency_note = Gtk.Label(xalign=0, wrap=True, visible=False)
         self.currency_note.set_margin_start(12)
@@ -316,13 +303,13 @@ class PlanView(BaseView):
         selected = self._selected_scenario()
         enabled = self.db is not None and selected is not None
         self.scenario_events_box.set_sensitive(enabled)
-        self.add_estimate_button.set_sensitive(enabled)
-        self.alter_schedule_button.set_sensitive(enabled)
-        self.suppress_schedule_button.set_sensitive(enabled)
+        self.enable_commands(
+            add_estimate=enabled, alter_baseline=enabled, suppress_baseline=enabled
+        )
         if selected is None:
             self.scenario_hint.set_text(
                 "Base scenario is unchanged by scenario events. Choose or create a saved scenario "
-                "to add, alter, or suppress an event."
+                "to add an estimate, or alter or suppress a baseline schedule."
             )
         else:
             count = len(selected.schedule_overrides)
@@ -657,13 +644,18 @@ class PlanView(BaseView):
         )
         self.reimbursable_note.set_visible(bool(reimbursable))
         unmatched = activity.unresolved_actual_count
-        self.review_actuals_button.set_sensitive(unmatched > 0)
-        # How many actuals in the range still need matching.
-        self.review_actuals_button.set_label(
-            f"Resolve actuals ({unmatched})…" if unmatched else "Resolve actuals…"
+        self.enable_commands(resolve_actuals=unmatched > 0)
+        self.actuals_note.set_text(
+            f"{unmatched} actual transaction(s) in this range not yet matched to the plan: "
+            "Resolve Actuals… reviews them."
         )
+        self.actuals_note.set_visible(unmatched > 0)
         self._update_scenario_actions()
         self._render()
+
+    def _on_resolve_actuals(self, _button=None) -> None:
+        """Review the actuals not yet matched to the plan."""
+        self.manager.show_category("resolution")
 
     def _open_budget_jars(self, _button) -> None:
         """Budget Jars over this Plan's range and grouping, in the Reports window."""

@@ -20,10 +20,15 @@ from ...gen.lib.money import Money  # noqa: E402
 from ...gen.utils.logs import get_logger  # noqa: E402
 from ..gi_setup import GLib, GObject, Gtk, Pango
 from ..remote_book import OpenBook
+from ..widgets.points import point_in
 
 __all__ = [
     "BaseView",
     "Row",
+    "attach_row_menu",
+    "column_view_row_at",
+    "mark_row",
+    "row_position",
     "money_label",
     "column",
     "column_menu",
@@ -61,10 +66,16 @@ class BaseView(Gtk.Box):
     #: What should trigger a repaint, as the storage signals name it: a kind's
     #: ``-add``/``-update``/``-delete``, or ``database-changed`` for every change.
     WATCHES: tuple[str, ...] = ("database-changed",)
+    #: The view's key among the window's views (``view_catalog.CATEGORIES``); its
+    #: commands are ``view_catalog.VIEW_ACTIONS[KEY]``.
+    KEY = ""
 
     def __init__(self, manager) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.manager = manager
+        #: Which of this view's commands can be used now, by name; one not named can
+        #: unless it acts on a selected row (``ViewAction.row``).
+        self._commands: dict[str, bool] = {}
         self.db: OpenBook | None = None
         self._unsubscribe: Callable[[], None] | None = None
         self._refresh_pending = False
@@ -84,6 +95,28 @@ class BaseView(Gtk.Box):
         self.updating_label.add_css_class("dim")
         self.append(self.updating_label)
         self.connect("map", self._on_map)
+
+    def enable_commands(self, **states: bool) -> None:
+        """Say which of this view's commands can be used now, by name (``-`` written
+        as ``_``), for its toolbar icons, menu items, and right-click menus."""
+        named = {name.replace("_", "-"): bool(on) for name, on in states.items()}
+        if all(self._commands.get(name) == on for name, on in named.items()):
+            return
+        self._commands.update(named)
+        apply = getattr(self.manager, "apply_view_commands", None)
+        if apply is not None:
+            apply(self)
+        # A view in a window of its own (a register window) holds its own actions.
+        own = getattr(self, "own_actions", None)
+        if own is not None:
+            for name, on in named.items():
+                action = own.lookup_action(f"{self.KEY}-{name}")
+                if action is not None:
+                    action.set_enabled(on)
+
+    def command_enabled(self, item) -> bool:
+        """Whether ``item`` (a ``ViewAction`` of this view) can be used now."""
+        return self._commands.get(item.name, not item.row)
 
     def append_toolbar(self, bar: Gtk.Widget) -> Gtk.ScrolledWindow:
         """Add a row of controls that scrolls sideways on a narrow window.
@@ -408,6 +441,7 @@ def column(
     def on_bind(_factory, item) -> None:
         payload = unwrap(item.get_item())
         label = item.get_child()
+        mark_row(item)
         if cell is not None:
             host = label
             label = host.label
@@ -432,6 +466,142 @@ def column(
     col.set_resizable(True)
     col.set_sorter(Gtk.CustomSorter.new(_compare_by(bind, sort_key, numeric)))
     return col
+
+
+def mark_row(item) -> None:
+    """Note on a cell's widget which row it shows, so a right-click finds the row.
+
+    The row's item is noted, not its position: rows inserted above it (a
+    schedule's splits opening) move it without drawing it again, which would
+    leave a noted position pointing at another row. The model's item holds no
+    reference back to the widget, so nothing is kept alive by it.
+    """
+    child = item.get_child()
+    if child is not None:
+        child.row_item = item.get_item()
+
+
+def row_position(widget: Gtk.Widget | None, model, stop: Gtk.Widget | None = None) -> int | None:
+    """Where in ``model`` the row shown by ``widget`` (or by a widget it is inside,
+    up to ``stop``) is now, or None when it shows no row of ``model``."""
+    while widget is not None and widget is not stop:
+        row = getattr(widget, "row_item", None)
+        if row is not None:
+            return next(
+                (index for index in range(model.get_n_items()) if model.get_item(index) is row),
+                None,
+            )
+        widget = widget.get_parent()
+    return None
+
+
+def column_view_row_at(view: Gtk.ColumnView, x: float, y: float) -> int | None:
+    """The position of the row under a point of ``view``, or None (its header, or
+    below its last row). Each cell's widget carries its row (``mark_row``)."""
+    model = view.get_model()
+    if model is None:
+        return None
+    return row_position(view.pick(x, y, Gtk.PickFlags.DEFAULT), model, view)
+
+
+def _column_view_select(view: Gtk.ColumnView):
+    def select_at(x: float, y: float) -> bool:
+        position = column_view_row_at(view, x, y)
+        selection = view.get_model()
+        if position is None or selection is None:
+            return False
+        selection.set_selected(position)
+        return True
+
+    return select_at
+
+
+def _list_box_select(box: Gtk.ListBox):
+    def select_at(_x: float, y: float) -> bool:
+        row = box.get_row_at_y(int(y))
+        if row is None or not row.get_selectable():
+            return False
+        box.select_row(row)
+        return True
+
+    return select_at
+
+
+def attach_row_menu(owner: BaseView, widget: Gtk.Widget, names=None, select_at=None):
+    """Give ``widget``'s rows a menu of ``owner``'s commands on a row.
+
+    ``owner`` is the view (a ``Gtk.Box``) and holds the menu. A right-click selects
+    the row under the pointer and opens the menu there;
+    Shift+F10 or the Menu key opens it for the row already selected. ``names``
+    narrows the view's row commands (``view_catalog.row_commands``) to those that
+    apply to this table, in the order given. A ``Gtk.ColumnView`` or
+    ``Gtk.ListBox`` needs no ``select_at``; any other widget passes one, taking a
+    point and returning whether it selected a row there. Returns the popover.
+    """
+    from ..gi_setup import Gdk, Gio
+    from ..view_catalog import row_commands, view_action_name
+
+    commands = {item.name: item for item in row_commands(owner.KEY)}
+    menu = Gio.Menu()
+    for name in names if names is not None else commands:
+        item = commands[name]
+        menu.append(item.label, f"win.{view_action_name(owner.KEY, item)}")
+    popover = Gtk.PopoverMenu.new_from_model(menu)
+    # The menu belongs to the view, not to the table: a Gtk.Box lets go of every
+    # child as it goes, while a list box going spins forever trying to remove a
+    # popover that is not one of its rows, and other tables leave it behind.
+    popover.set_parent(owner)
+    popover.set_has_arrow(False)
+    popover.set_halign(Gtk.Align.START)
+    if select_at is None:
+        if isinstance(widget, Gtk.ColumnView):
+            select_at = _column_view_select(widget)
+        elif isinstance(widget, Gtk.ListBox):
+            select_at = _list_box_select(widget)
+        else:
+            raise TypeError(f"{type(widget).__name__} needs select_at")
+
+    def open_at(x: float, y: float) -> None:
+        """Open the menu at a point of ``widget`` (the view's own coordinates)."""
+        place = point_in(widget, owner, x, y) or (x, y)
+        rectangle = Gdk.Rectangle()
+        rectangle.x, rectangle.y = int(place[0]), int(place[1])
+        rectangle.width = rectangle.height = 1
+        popover.set_pointing_to(rectangle)
+        popover.popup()
+
+    def on_pressed(gesture, _presses: int, x: float, y: float) -> None:
+        if select_at(x, y):
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            open_at(x, y)
+
+    click = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
+    click.connect("pressed", on_pressed)
+    widget.add_controller(click)
+
+    def on_key(*_args) -> bool:
+        focus = widget.get_root().get_focus() if widget.get_root() is not None else None
+        x, y = 12.0, 12.0
+        if focus is not None and (focus is widget or focus.is_ancestor(widget)):
+            place = point_in(focus, widget, 0, 0)
+            if place is not None:
+                x, y = place[0] + 12, place[1] + focus.get_height() / 2
+        open_at(x, y)
+        return True
+
+    keys = Gtk.ShortcutController()
+    keys.set_scope(Gtk.ShortcutScope.LOCAL)
+    # Ahead of a focused child's own menu (the register's cell editor has a text
+    # menu on the same keys): these keys open the row's commands.
+    keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+    keys.add_shortcut(
+        Gtk.Shortcut.new(
+            Gtk.ShortcutTrigger.parse_string("<Shift>F10|Menu"), Gtk.CallbackAction.new(on_key)
+        )
+    )
+    widget.add_controller(keys)
+    widget.row_menu = popover
+    return popover
 
 
 def host_widget(host: Gtk.Box, widget: Gtk.Widget | None) -> bool:

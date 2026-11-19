@@ -34,9 +34,10 @@ from .. import hidden_accounts
 from ..gi_setup import GLib, Gtk
 from ..register_sheet import RegisterSheet
 from ..widgets.choice import bounded_dropdown
+from ..widgets.confirm import confirm_delete
 from ..widgets.date_entry import parse_date_text
 from ..widgets.register_grid import BANDING, RegisterGrid
-from ._base import BaseView
+from ._base import BaseView, attach_row_menu
 
 __all__ = ["RegisterView", "column_headings"]
 
@@ -69,6 +70,7 @@ def column_headings(atype: AccountType) -> tuple[str, str]:
 class RegisterView(BaseView):
     """A ledger grid for one account at a time."""
 
+    KEY = "register"
     # A change that names transactions reloads only those (#319), unless it also
     # changed an account; any other change rereads the register.
     WATCHES = ("database-changed",)
@@ -88,6 +90,8 @@ class RegisterView(BaseView):
         self._updating = False
         #: Transactions changed while the register was hidden, reloaded when shown.
         self._pending_changes: set[str] = set()
+        #: Whether the account shown can be reconciled (``_show_reconcilable``).
+        self._reconcilable = False
         #: Set when this commit's transaction signals were handled, so the
         #: database-changed signal that follows them does not reload again.
         self._build()
@@ -143,28 +147,35 @@ class RegisterView(BaseView):
         self.double_line = self._settings_double_line()
         _LIVE_REGISTERS.add(self)
 
+        # In the main window, Edit, Delete, Make Scheduled, Match, Reconcile, and the
+        # rest are toolbar icons and Actions menu items (view_catalog), and the
+        # transaction's own commands are in its right-click menu. A register in a
+        # window of its own has no toolbar, so it shows these as buttons too
+        # (``use_own_window``).
         self.editor_button = Gtk.Button(icon_name="document-edit-symbolic")
         self.editor_button.set_tooltip_text(
             "Open the transaction under the cursor in the full editor "
             "(notes, a claim, and other details)"
         )
         self.editor_button.connect("clicked", lambda *_: self.open_full_editor())
-        bar.append(self.editor_button)
 
         add_button = Gtk.Button(icon_name="list-add-symbolic")
         add_button.set_tooltip_text("New transaction in the full editor")
         add_button.connect("clicked", self._on_add_clicked)
-        bar.append(add_button)
 
         new_window = Gtk.Button(icon_name="window-new-symbolic")
         new_window.set_tooltip_text("Open this account in an independent register window")
         new_window.connect("clicked", self._on_open_window_clicked)
-        bar.append(new_window)
 
         self.reconcile_button = Gtk.Button(label="Reconcile…")
         self.reconcile_button.set_tooltip_text("Compare this account with a statement")
         self.reconcile_button.connect("clicked", self._on_reconcile_clicked)
-        bar.append(self.reconcile_button)
+        #: The buttons a register in its own window shows in place of a toolbar.
+        self.window_buttons = (self.editor_button, add_button, new_window, self.reconcile_button)
+        for button in self.window_buttons:
+            button.set_focus_on_click(False)
+            button.set_visible(False)
+            bar.append(button)
 
         self.append_toolbar(bar)
 
@@ -175,6 +186,9 @@ class RegisterView(BaseView):
             getattr(self.grid, f"set_margin_{side}")(8)
         self.grid.set_vexpand(True)
         self.append(self.grid)
+        # Right-clicking a row moves the cursor there and lists the commands on its
+        # transaction; Shift+F10 or the Menu key lists them for the cursor's row.
+        attach_row_menu(self, self.grid, select_at=self.grid.point_at)
 
         # One line under the register reports what was saved, or why not.
         self.entry_status = Gtk.Label(xalign=0, wrap=True)
@@ -199,10 +213,7 @@ class RegisterView(BaseView):
         account = self._account()
         if account is None:
             return
-        self.reconcile_button.set_sensitive(
-            not account.placeholder
-            and account.account_class in {AccountClass.ASSET, AccountClass.LIABILITY}
-        )
+        self._show_reconcilable(account)
         if (
             self.sheet is None
             or self.sheet.db is not self.db
@@ -252,10 +263,7 @@ class RegisterView(BaseView):
             finally:
                 self._updating = False
             account = view.account
-            self.reconcile_button.set_sensitive(
-                not account.placeholder
-                and account.account_class in {AccountClass.ASSET, AccountClass.LIABILITY}
-            )
+            self._show_reconcilable(account)
             current = self.sheet
             if current is None or current.db is not db or current.account != handle:
                 self.sheet = RegisterSheet(db, handle, view=view)
@@ -364,10 +372,38 @@ class RegisterView(BaseView):
             self.sheet.set_filter(self.filter_entry.get_text())
             self.grid.sync(focus=False)
 
+    def _show_reconcilable(self, account: Account) -> None:
+        """Reconcile only an account a statement covers: a bank, card, or loan."""
+        self._reconcilable = not account.placeholder and account.account_class in {
+            AccountClass.ASSET,
+            AccountClass.LIABILITY,
+        }
+        self.reconcile_button.set_sensitive(self._reconcilable)
+        self._update_commands()
+
+    def _update_commands(self) -> None:
+        """Grey out what the cursor's row cannot use, and Reconcile where no
+        statement applies.
+
+        Only Delete needs a stored transaction: the others also act on typing in
+        the blank one (saving it first), or say why they cannot.
+        """
+        self.enable_commands(
+            edit_transaction=True,
+            delete_transaction=self.cursor_transaction() is not None,
+            make_scheduled=True,
+            match_to_plan=True,
+            edit_in_place=True,
+            split=True,
+            track_reimbursable=True,
+            reconcile=self._reconcilable,
+        )
+
     def _show_message(self) -> None:
         sheet = self.sheet
         if sheet is None:
             return
+        self._update_commands()
         self.set_entry_status(sheet.message, error=sheet.error)
         self._show_balance()
         if sheet.trade_question is not None and not self._asking_trade:
@@ -572,6 +608,46 @@ class RegisterView(BaseView):
     def cursor_transaction(self):
         """The stored transaction under the cursor, or None on the blank one."""
         return self.sheet.draft.source if self.sheet is not None else None
+
+    def delete_selected_transaction(self, *_args):
+        """Ask, then delete the transaction under the cursor (Ctrl+Z restores it).
+
+        Typing in it is abandoned first: what is deleted is the transaction as
+        stored, which the question names.
+        """
+        transaction = self.cursor_transaction()
+        if transaction is None or self.db is None:
+            self.set_entry_status("Put the cursor on a transaction to delete it.", error=True)
+            return None
+        db = self.db
+
+        def delete() -> None:
+            if self.sheet is not None and self.sheet.draft.dirty():
+                self.grid.cancel()
+            try:
+                book_server(db).delete_transaction(transaction.handle)
+            except ApiError as error:
+                self.set_entry_status(str(error), error=True)
+                return
+            self.set_entry_status(f"Deleted {transaction.description}. Ctrl+Z restores it.")
+
+        return confirm_delete(
+            self,
+            f"the transaction {transaction.description or transaction.post_date.isoformat()}",
+            delete,
+        )
+
+    def use_own_window(self, actions) -> None:
+        """Show the commands as buttons, for a register in a window of its own.
+
+        That window has no toolbar, and its right-click menu uses ``actions``, a
+        ``Gio.SimpleActionGroup`` of this register's commands that the window holds
+        as ``win`` (``ViewManager.open_register_window``).
+        """
+        self.own_actions = actions
+        for button in self.window_buttons:
+            button.set_visible(True)
+        self._update_commands()
 
     def track_selected_reimbursable(self, *_args):
         """Open reimbursable expenses to track the cursor transaction's cost.

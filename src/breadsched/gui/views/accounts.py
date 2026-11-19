@@ -11,16 +11,21 @@ would be technically correct and useless.
 
 from __future__ import annotations
 
+from ...api import ApiError  # noqa: E402
 from ...api.local import book_server  # noqa: E402
 from ...gen.lib.account import Account  # noqa: E402
 from ...gen.services import BalanceSummary, ChartLine  # noqa: E402
 from .. import hidden_accounts  # noqa: E402
 from ..gi_setup import Gio, GLib, Gtk, Pango
+from ..widgets.confirm import confirm_delete  # noqa: E402
 from ._base import (
     BaseView,
     Row,
     _compare_by,
+    attach_row_menu,
     column,
+    mark_row,
+    scroll_to_row,
     sorted_model,
     table_section,
     unwrap,
@@ -32,6 +37,7 @@ __all__ = ["AccountTreeView"]
 class AccountTreeView(BaseView):
     """Hierarchical account list with running totals."""
 
+    KEY = "accounts"
     WATCHES = (
         "database-changed",
         "account-add",
@@ -67,10 +73,11 @@ class AccountTreeView(BaseView):
         title.set_hexpand(True)
         header.append(title)
 
-        # New/Edit account, Security price, and Exchange rate are toolbar icons and
-        # Actions menu items while Accounts is shown; Hide empty and Show hidden are
-        # View menu check items (#156, #182). Double-clicking opens the register, as GnuCash
-        # does, so editing is the explicit Edit Account command.
+        # New, Open Register, Edit, and Delete Account, Security Price, and Exchange
+        # Rate are toolbar icons and Actions menu items while Accounts is shown, and
+        # an account's own commands are in its right-click menu; Hide empty and Show
+        # hidden are View menu check items (#156, #182). Double-clicking opens the
+        # register, as GnuCash does, so editing is the explicit Edit Account command.
         self._header = header
 
         self.summary = Gtk.Box(spacing=24)
@@ -92,6 +99,7 @@ class AccountTreeView(BaseView):
         self.column_view.append_column(column("Price", self._format_price, numeric=True))
         self.column_view.append_column(column("Last Quote Update", self._quote_evidence))
         self.column_view.connect("activate", self._on_activated)
+        attach_row_menu(self, self.column_view)
 
         self.append(self._header)
         self.append(self.summary)
@@ -125,6 +133,7 @@ class AccountTreeView(BaseView):
         def on_bind(_factory, item) -> None:
             tree_row = item.get_item()
             expander = item.get_child()
+            mark_row(item)
             expander.set_list_row(tree_row)
             account = tree_row.get_item().payload
             label = expander.get_child()
@@ -209,14 +218,28 @@ class AccountTreeView(BaseView):
         self._refresh_summary(summary)
 
     def _lay_out(self) -> None:
-        """The tree from the chart already read, as the view's filters choose."""
+        """The tree from the chart already read, as the view's filters choose.
+
+        The account that was selected (one just edited, say) stays selected and in
+        view, rather than the selection jumping back to the top of the chart.
+        """
+        kept = self.selected_account()
         model = Gtk.TreeListModel.new(
             self._children_store(None),
             False,  # passthrough: rows are our Row objects, not raw items
-            True,  # autoexpand the first level
+            True,  # autoexpand every level
             self._create_child_model,
         )
-        self.column_view.set_model(Gtk.SingleSelection(model=sorted_model(self.column_view, model)))
+        selection = Gtk.SingleSelection(model=sorted_model(self.column_view, model))
+        selection.connect("notify::selected", self._on_selection_changed)
+        self.column_view.set_model(selection)
+        if kept is not None:
+            for index in range(selection.get_n_items()):
+                if getattr(unwrap(selection.get_item(index)), "handle", None) == kept.handle:
+                    selection.set_selected(index)
+                    scroll_to_row(self.column_view, index)
+                    break
+        self._on_selection_changed()
 
     def _children_store(self, parent: str | None) -> Gio.ListStore:
         store = Gio.ListStore.new(Row)
@@ -306,10 +329,41 @@ class AccountTreeView(BaseView):
             return None
         return unwrap(item)
 
-    def _on_edit_selected(self, _button) -> None:
+    def _on_edit_selected(self, _button=None) -> None:
         account = self.selected_account()
         if account is not None:
             self.edit_account(account)
+
+    def open_selected_register(self, _button=None) -> None:
+        """Open the selected account's register, as double-clicking it does."""
+        account = self.selected_account()
+        if account is not None and not account.placeholder:
+            self.manager.open_register(account.handle)
+
+    def delete_selected_account(self, _button=None):
+        """Ask, then delete the selected account; the book refuses one still in use."""
+        account = self.selected_account()
+        if account is None or self.db is None:
+            return None
+        line = self._lines.get(account.handle)
+        name = line.record.full_name if line is not None else account.name
+        db = self.db
+
+        def delete() -> None:
+            try:
+                book_server(db).delete_account(account.handle)
+            except ApiError as error:
+                self.manager._report_error(str(error))
+
+        return confirm_delete(self, f"the account {name}", delete)
+
+    def _on_selection_changed(self, *_args) -> None:
+        account = self.selected_account()
+        self.enable_commands(
+            open_register=account is not None and not account.placeholder,
+            edit_account=account is not None,
+            delete_account=account is not None,
+        )
 
     def _on_security_price(self, _button) -> None:
         if self.db is None:

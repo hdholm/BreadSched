@@ -187,8 +187,12 @@ class TestEmptyWindow:
     def test_opens_with_a_placeholder(self, window):
         assert window.stack.get_visible_child_name() == "empty"
 
-    def test_the_toolbar_has_an_icon_for_every_category(self, window):
-        assert list(window.view_buttons) == CATEGORY_KEYS
+    def test_the_toolbar_has_an_icon_for_each_main_work_area(self, window):
+        from breadsched.gui.view_catalog import TOOLBAR_VIEWS
+
+        # The FSA Dashboard and Review are on the View menu only.
+        assert list(window.view_buttons) == list(TOOLBAR_VIEWS)
+        assert set(TOOLBAR_VIEWS) == set(CATEGORY_KEYS) - {"fsa-dashboard", "resolution"}
 
     def test_selecting_a_category_without_a_book_does_not_crash(self, window):
         window.lookup_action("show-category").activate(GLib.Variant.new_string("dashboard"))
@@ -962,10 +966,12 @@ class TestRegister:
         window.show_category("register")
         view = window._views["register"]
         view.show_account(app.db.get_account_by_name("Assets:Checking Account").handle)
-        assert view.reconcile_button.get_sensitive() is True
+        _spin(lambda: view.sheet is not None)
+        assert window.lookup_action("register-reconcile").get_enabled() is True
 
         view.show_account(app.db.get_account_by_name("Expenses:Rent").handle)
-        assert view.reconcile_button.get_sensitive() is False
+        _spin(lambda: not window.lookup_action("register-reconcile").get_enabled())
+        assert window.lookup_action("register-reconcile").get_enabled() is False
 
     def test_the_blank_row_posts_one_balanced_two_split_transaction(
         self, app, window, populated_book
@@ -1200,7 +1206,8 @@ class TestRegisterGrid:
 
     def test_enter_and_cancel_are_register_actions(self, app, window, populated_book):
         labels = _menu_labels(app.get_menubar())
-        assert labels["win.register-enter"] == "_Enter Transaction"
+        # E is Edit Transaction's, beside it in the register's commands.
+        assert labels["win.register-enter"] == "E_nter Transaction"
         assert labels["win.register-cancel"] == "_Cancel Transaction"
         view = _grid_register(app, window, populated_book)
         view.sheet.to_blank()
@@ -2114,8 +2121,7 @@ class TestProjectionView:
         view = _projection(window)
 
         assert view._result is not None
-        assert view.explain_button.get_sensitive() is True
-        assert "events" in view.explain_button.get_tooltip_text()
+        assert window.lookup_action("projection-explain-month").get_enabled() is True
 
     def test_projection_explanation_shows_each_stock_reconciling(self, app, window, populated_book):
         from breadsched.api.local import book_server
@@ -3311,8 +3317,11 @@ class TestColumnBehaviour:
     def test_scheduled_columns_resize_and_sort(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("scheduled")
-        window.show_category("upcoming")
-        for name, attribute in (("scheduled", "definitions_view"), ("upcoming", "upcoming_view")):
+        for name, attribute in (
+            ("scheduled", "definitions_view"),
+            ("scheduled", "estimates_view"),
+            ("scheduled", "upcoming_view"),
+        ):
             columns = getattr(window._views[name], attribute).get_columns()
             assert columns.get_n_items() > 0
             for index in range(columns.get_n_items()):
@@ -3542,7 +3551,7 @@ class TestScheduledKeepsTheSelection:
         view.refresh()
         assert self._selected_name(view) == "Sample groceries plan"
         assert view._active_selection is table.get_model()
-        assert view.edit_button.get_sensitive()
+        assert view.manager.lookup_action("scheduled-edit").get_enabled()
 
 
 class TestScheduleEntry:
@@ -4348,11 +4357,11 @@ class TestScheduleEntry:
         selection = view.definitions_view.get_model()
         assert selection is not None
         assert selection.get_selected_item() is not None
-        assert view.edit_button.get_sensitive() is True
-        # Match… opens the selected schedule's current occurrence.
+        assert window.lookup_action("scheduled-edit").get_enabled() is True
+        # Match opens the selected schedule's current occurrence.
         from breadsched.gui.dialogs.match_dialog import OccurrenceMatchWindow
 
-        assert view.match_button.get_sensitive() is True
+        assert window.lookup_action("scheduled-match").get_enabled() is True
         matcher = view.match_selected()
         try:
             assert isinstance(matcher, OccurrenceMatchWindow)
@@ -4370,16 +4379,56 @@ class TestScheduleEntry:
 
 
 class TestScheduledIsSplitInTwo:
-    """Items 6, 7, 8: definitions and upcoming are separate; splits expand inline."""
+    """Items 6, 7, 8: occurrences by date and the definitions are separate tables of
+    one view (Upcoming is no longer a view of its own); splits expand inline."""
 
-    def test_both_categories_exist(self, window):
-        keys = list(window.view_buttons)
-        assert "scheduled" in keys and "upcoming" in keys
+    def test_upcoming_is_a_table_of_scheduled_not_a_view(self, app, window, populated_book):
+        from breadsched.gui.view_catalog import CATEGORIES
 
-    def test_the_definitions_view_has_no_due_list(self, app, window, populated_book):
+        assert "upcoming" not in window.view_buttons
+        assert "upcoming" not in {key for key, _label, _icon in CATEGORIES}
+        app.open_book(populated_book)
+        window.show_category("upcoming")  # an old name shows nothing new
+        assert "upcoming" not in window._views
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        tables = [
+            child.get_first_child().get_first_child().get_label()
+            for child in _children(view)
+            if child.has_css_class("table-section")
+        ]
+        assert tables == ["Upcoming", "Commitments and account payments", "Estimates"]
+
+    def test_the_upcoming_table_lists_occurrences_by_date_within_the_look_ahead(
+        self, app, window, populated_book
+    ):
         app.open_book(populated_book)
         window.show_category("scheduled")
-        assert not hasattr(window._views["scheduled"], "upcoming_view")
+        view = window._views["scheduled"]
+
+        def occurrences():
+            model = view.upcoming_view.get_model()
+            return [unwrap(model.get_item(i)) for i in range(model.get_n_items())]
+
+        month = occurrences()
+        assert month and all(o.when <= date.today() + timedelta(days=30) for o in month)
+        assert [o.when for o in month] == sorted(o.when for o in month)
+        assert view.upcoming_note.get_text()
+        view.horizon_picker.set_selected(4)  # a year
+        assert len(occurrences()) > len(month)
+
+    def test_a_remembered_upcoming_tab_reopens_scheduled(self, app, window, populated_book):
+        app.open_book(populated_book)
+        settings, key = window._tab_settings()
+        settings.set(
+            "open-tabs", key, '{"tabs":[["dashboard"],["upcoming"],["accounts"]],"current":0}'
+        )
+        app.open_book(populated_book)
+        assert window.tabs == [
+            ("dashboard", "Dashboard"),
+            ("scheduled", "Scheduled"),
+            ("accounts", "Accounts"),
+        ]
 
     def test_commitments_and_estimates_have_separate_definition_lists(
         self, app, window, populated_book
@@ -4403,10 +4452,48 @@ class TestScheduledIsSplitInTwo:
         assert all(not schedule.placeholder for schedule in commitment_schedules)
         assert all(schedule.placeholder for schedule in estimate_schedules)
 
-    def test_the_upcoming_view_has_no_definitions(self, app, window, populated_book):
+    def test_an_occurrence_selected_acts_for_its_schedule(self, app, window, populated_book):
+        """One row is selected across the three tables; an occurrence's commands
+        act on its schedule, and Match on that occurrence."""
+        from breadsched.gui.dialogs.match_dialog import OccurrenceMatchWindow
+
         app.open_book(populated_book)
-        window.show_category("upcoming")
-        assert not hasattr(window._views["upcoming"], "definitions_view")
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        upcoming = view.upcoming_view.get_model()
+        # Each table starts with no row selected but the first commitment, and each
+        # can be cleared (newer GTK keeps a row otherwise).
+        assert upcoming.get_selected() == Gtk.INVALID_LIST_POSITION
+        assert upcoming.get_can_unselect()
+        index = next(
+            i
+            for i in range(upcoming.get_n_items())
+            if isinstance(unwrap(upcoming.get_item(i)).schedule, ScheduledTransaction)
+        )
+        occurrence = unwrap(upcoming.get_item(index))
+        upcoming.set_selected(index)
+        definitions = view.definitions_view.get_model()
+        assert definitions.get_selected() == Gtk.INVALID_LIST_POSITION
+        assert view.estimates_view.get_model().get_selected() == Gtk.INVALID_LIST_POSITION
+        assert view._selected_schedule() is occurrence.schedule
+        for name in ("edit", "delete", "duplicate", "match", "enter-next", "skip-next"):
+            assert window.lookup_action(f"scheduled-{name}").get_enabled(), name
+        assert occurrence.schedule.name in view.next_note.get_text()
+        matcher = view.match_selected()
+        try:
+            assert isinstance(matcher, OccurrenceMatchWindow)
+            assert matcher.key == occurrence.schedule.occurrence_key(occurrence.when)
+        finally:
+            matcher.destroy()
+        # Choosing a definition lets go of the occurrence.
+        definitions.set_selected(0)
+        assert upcoming.get_selected() == Gtk.INVALID_LIST_POSITION
+        # A redraw keeps the occurrence chosen before it.
+        upcoming.set_selected(index)
+        view.refresh()
+        chosen = view.upcoming_view.get_model().get_selected_item()
+        assert unwrap(chosen).when == occurrence.when
+        assert unwrap(chosen).schedule.handle == occurrence.schedule.handle
 
     def test_a_definition_expands_into_its_splits(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -4765,7 +4852,9 @@ class TestNavigationHighlight:
         app.open_book(populated_book)
         for key, _label, _icon in CATEGORIES:
             window.show_category(key)
-            assert self._active(window) == [key]
+            # A view without a toolbar icon is highlighted on the View menu only.
+            assert self._active(window) == ([key] if key in window.view_buttons else [])
+            assert window.current_category == key
 
     def test_clicking_an_icon_shows_its_view(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -5142,12 +5231,13 @@ class TestDerivedPlanView:
 
         window.show_category("plan")
         view = window._views["plan"]
-        assert view.review_actuals_button.get_sensitive() is True
+        assert window.lookup_action("plan-resolve-actuals").get_enabled() is True
         assert "actuals to review" in view.summary.get_text()
-        # The button says how many actuals still need matching.
-        assert view.review_actuals_button.get_label().startswith("Resolve actuals (")
+        # The line under the summary says how many actuals still need matching.
+        assert view.actuals_note.get_visible()
+        assert "not yet matched to the plan" in view.actuals_note.get_text()
 
-        view.review_actuals_button.emit("clicked")
+        window.lookup_action("plan-resolve-actuals").activate(None)
 
         assert window.stack.get_visible_child_name() == "resolution"
 
@@ -5284,9 +5374,9 @@ class TestDerivedPlanView:
         window.show_category("plan")
         view = window._views["plan"]
         assert view.scenario_events_box.get_sensitive() is False
-        assert view.add_estimate_button.get_sensitive() is False
-        assert view.alter_schedule_button.get_sensitive() is False
-        assert view.suppress_schedule_button.get_sensitive() is False
+        assert window.lookup_action("plan-add-estimate").get_enabled() is False
+        assert window.lookup_action("plan-alter-baseline").get_enabled() is False
+        assert window.lookup_action("plan-suppress-baseline").get_enabled() is False
 
     def test_scenario_manager_exposes_base_inheritance_and_local_override(
         self, app, window, populated_book
@@ -5706,9 +5796,9 @@ class TestDerivedPlanView:
         view = window._views["plan"]
         assert view.scenario.get_selected() == 0
         assert view._scenario_handle is None
-        assert view.add_estimate_button.get_sensitive() is False
-        assert view.alter_schedule_button.get_sensitive() is False
-        assert view.suppress_schedule_button.get_sensitive() is False
+        assert window.lookup_action("plan-add-estimate").get_enabled() is False
+        assert window.lookup_action("plan-alter-baseline").get_enabled() is False
+        assert window.lookup_action("plan-suppress-baseline").get_enabled() is False
 
         selected = next(
             index
@@ -5716,14 +5806,14 @@ class TestDerivedPlanView:
             if scenario.name == "Alternate future"
         )
         view.scenario.set_selected(selected)
-        assert view.add_estimate_button.get_sensitive() is True
+        assert window.lookup_action("plan-add-estimate").get_enabled() is True
 
         view.scenario.set_selected(0)
         view.flush_refresh()
         assert view._scenario_handle is None
-        assert view.add_estimate_button.get_sensitive() is False
-        assert view.alter_schedule_button.get_sensitive() is False
-        assert view.suppress_schedule_button.get_sensitive() is False
+        assert window.lookup_action("plan-add-estimate").get_enabled() is False
+        assert window.lookup_action("plan-alter-baseline").get_enabled() is False
+        assert window.lookup_action("plan-suppress-baseline").get_enabled() is False
 
     def test_suppressing_a_baseline_schedule_is_scenario_only(self, app, window, populated_book):
         from breadsched.gen.lib import Scenario
@@ -5742,9 +5832,9 @@ class TestDerivedPlanView:
         )
         view.scenario.set_selected(selected)
         assert view.scenario_events_box.get_sensitive() is True
-        assert view.add_estimate_button.get_sensitive() is True
-        assert view.alter_schedule_button.get_sensitive() is True
-        assert view.suppress_schedule_button.get_sensitive() is True
+        assert window.lookup_action("plan-add-estimate").get_enabled() is True
+        assert window.lookup_action("plan-alter-baseline").get_enabled() is True
+        assert window.lookup_action("plan-suppress-baseline").get_enabled() is True
         view._suppress_baseline_schedule(schedule)
 
         saved = app.db.get_scenario_by_name("No recurring payment")
@@ -6249,8 +6339,9 @@ class TestDueReview:
         window.show_category("scheduled")
         view = window._views["scheduled"]
         view.select_schedule(sched.handle)
-        assert view.enter_next_button.get_sensitive() is True
-        assert first.isoformat() in view.enter_next_button.get_tooltip_text()
+        assert window.lookup_action("scheduled-enter-next").get_enabled() is True
+        assert window.lookup_action("scheduled-skip-next").get_enabled() is True
+        assert first.isoformat() in view.next_note.get_text()
 
         assert view.resolve_next(DueDecision.SKIP) is True
         assert db.summary()["txn"] == 0
@@ -6829,7 +6920,7 @@ class TestResolutionView:
         # Match by Split… opens the window from this actual.
         from breadsched.gui.dialogs.match_dialog import TransactionMatchWindow
 
-        assert view.split_button.get_sensitive()
+        assert window.lookup_action("resolution-match-split").get_enabled()
         matcher = view.open_split_matching()
         try:
             assert isinstance(matcher, TransactionMatchWindow)
@@ -6851,7 +6942,11 @@ class TestResolutionView:
         assert "match · expected" in text
         assert "• 1 day after the planned date" in text
         view.candidate_list.select_row(candidate_row)
-        assert view.match_button.get_tooltip_text() == REVIEW_ACTION_HELP["match"]
+        # The commands are toolbar icons, usable once both are chosen, and the line
+        # under the candidates explains them.
+        for name in ("match", "reject", "skip", "unexpected", "match-split"):
+            assert window.lookup_action(f"resolution-{name}").get_enabled(), name
+        assert REVIEW_ACTION_HELP["match"] in view.action_help.get_text()
         assert REVIEW_ACTION_HELP["reject"] in view.action_help.get_text()
         assert not view.fsa_hint.get_visible()
 
@@ -6861,6 +6956,8 @@ class TestResolutionView:
         help_lines = view.action_help.get_text().splitlines()
         assert help_lines[0] == REVIEW_ACTION_HELP["unexpected"]
         assert REVIEW_ACTION_HELP["match"] not in help_lines
+        assert not window.lookup_action("resolution-match").get_enabled()
+        assert window.lookup_action("resolution-unexpected").get_enabled()
 
     def test_reject_then_unexpected_is_persistent(self, app, window, populated_book):
         from breadsched.gen.lib import PlanningResolution
@@ -7027,8 +7124,11 @@ class TestDashboardView:
         view = window._views["fsa-dashboard"]
         view.refresh()
         assert view.attention_label.get_label() == "2 claims need attention."
-        note = view.claim_grid.get_child_at(7, 1)
-        assert note.get_label().startswith("No EOB entered 45 days")
+        from breadsched.gui.views.fsa_dashboard import _attention_text
+
+        model = view.claim_view.get_model()
+        first = unwrap(model.get_item(0))
+        assert _attention_text(first).startswith("No EOB entered 45 days")
         # The report groups by status first, then by the chosen grouping.
         assert view.report_grid.get_child_at(0, 1).get_label() == "Waiting for EOB"
         view.report_by.set_selected(3)
@@ -9101,7 +9201,7 @@ class TestChromeCleanup:
         window.show_category("register")
         window.show_category("dashboard")
         window.show_category("scheduled")
-        window.show_category("upcoming")
+        window.show_category("fsa-dashboard")
         window.show_category("accounts")
         # The register draws its own banded ledger grid instead.
         assert window._views["register"].grid.area.has_css_class("register-grid")
@@ -9109,7 +9209,8 @@ class TestChromeCleanup:
         assert window._views["dashboard"].table("dashboard-income").has_css_class("data-table")
         assert window._views["scheduled"].definitions_view.has_css_class("data-table")
         assert window._views["scheduled"].estimates_view.has_css_class("data-table")
-        assert window._views["upcoming"].upcoming_view.has_css_class("data-table")
+        assert window._views["scheduled"].upcoming_view.has_css_class("data-table")
+        assert window._views["fsa-dashboard"].claim_view.has_css_class("data-table")
         assert window._views["accounts"].column_view.has_css_class("data-table")
 
     def test_the_stylesheet_gives_numeric_values_and_tables_visual_distinction(self):
@@ -9166,7 +9267,7 @@ class TestTableSections:
     """#152/#153: each table owns its column chooser; Dashboard sections are sized."""
 
     # The register draws its own grid, with no column chooser.
-    VIEWS = ("dashboard", "accounts", "scheduled", "upcoming")
+    VIEWS = ("dashboard", "accounts", "scheduled", "fsa-dashboard")
 
     def test_every_chooser_sits_with_its_own_table(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -9212,7 +9313,7 @@ class TestTablesShrink:
     def test_tables_shrink_instead_of_scrolling_sideways(self, app, window, populated_book):
         app.open_book(populated_book)
         tables = []
-        for key in ("dashboard", "accounts", "scheduled", "upcoming"):
+        for key in ("dashboard", "accounts", "scheduled", "fsa-dashboard"):
             window.show_category(key)
             view = window._views[key]
             tables.extend(
@@ -9249,13 +9350,26 @@ class TestTablesShrink:
 
 
 class TestViewActions:
-    """#156: view commands live in menus and toolbar icons, not stray buttons."""
+    """#156: view commands live in menus and toolbar icons, not stray buttons.
+
+    One rule places every command (the GnuCash and Gramps arrangement): the menus
+    list them all, the toolbar shows the current view's (those on the selected row
+    first), a row's right-click menu lists the commands on it, and buttons in a view
+    only change what it shows.
+    """
 
     def _labels(self, view):
         return [
             widget.get_label()
             for widget in _descendants(view)
-            if isinstance(widget, Gtk.Button) and widget.get_label()
+            if isinstance(widget, Gtk.Button) and widget.get_label() and widget.get_visible()
+        ]
+
+    def _tools(self, window):
+        return [
+            button.get_action_name()
+            for button in _descendants(window.view_tools)
+            if isinstance(button, Gtk.Button)
         ]
 
     def test_accounts_and_fsa_have_no_stray_action_buttons(self, app, window, populated_book):
@@ -9263,77 +9377,143 @@ class TestViewActions:
         window.show_category("accounts")
         assert self._labels(window._views["accounts"]) == []
         window.show_category("fsa-dashboard")
-        assert "Manage FSA claims…" not in self._labels(window._views["fsa-dashboard"])
+        # Link Lines and Edit Claim are toolbar icons, not a button per claim.
+        assert self._labels(window._views["fsa-dashboard"]) == []
 
     def test_view_icons_follow_the_current_view(self, app, window, populated_book):
         app.open_book(populated_book)
-
-        def tools():
-            return [
-                button.get_action_name()
-                for button in _descendants(window.view_tools)
-                if isinstance(button, Gtk.Button)
-            ]
-
         window.show_category("fsa-dashboard")
-        assert tools() == ["win.fsa-dashboard-manage-claims"]
+        assert self._tools(window) == [
+            "win.fsa-dashboard-edit-claim",
+            "win.fsa-dashboard-link-proposals",
+            "win.fsa-dashboard-manage-claims",
+        ]
         window.show_category("register")
-        assert tools() == ["win.register-reconcile", "win.register-new-tab"]
+        assert self._tools(window) == [
+            "win.register-edit-transaction",
+            "win.register-delete-transaction",
+            "win.register-make-scheduled",
+            "win.register-match-to-plan",
+            "win.register-reconcile",
+            "win.register-new-tab",
+        ]
         window.show_category("dashboard")
-        assert tools() == [
+        assert self._tools(window) == [
             "win.dashboard-configure",
             "win.dashboard-arrange",
             "win.dashboard-net-worth-history",
         ]
 
     @pytest.mark.parametrize(
-        ("key", "icons", "gone"),
+        ("key", "icons", "buttons"),
         (
             (
                 "scheduled",
-                ["new-scheduled", "suggest", "new-loan", "payroll"],
-                ["New scheduled…", "Suggest from history…", "New loan…"],
+                [
+                    "win.scheduled-new-scheduled",
+                    "win.scheduled-edit",
+                    "win.scheduled-delete",
+                    "win.scheduled-duplicate",
+                    "win.scheduled-enter-next",
+                    "win.scheduled-skip-next",
+                    "win.scheduled-match",
+                    "app.post-scheduled",
+                    "win.scheduled-suggest",
+                    "win.scheduled-new-loan",
+                    "win.scheduled-payroll",
+                ],
+                [],
             ),
             (
                 "plan",
-                ["new-scenario", "manage-scenarios", "explore-expenses"],
-                ["New scenario…", "Manage scenarios…", "Expense Explorer…"],
+                [
+                    "win.plan-new-scenario",
+                    "win.plan-manage-scenarios",
+                    "win.plan-add-estimate",
+                    "win.plan-alter-baseline",
+                    "win.plan-suppress-baseline",
+                    "win.plan-resolve-actuals",
+                    "win.plan-explore-expenses",
+                ],
+                ["Apply"],
             ),
-            ("projection", ["compare", "export", "open-tab"], ["Compare with…"]),
-            ("register", ["reconcile", "new-tab"], []),
+            (
+                "projection",
+                [
+                    "win.projection-explain-month",
+                    "win.projection-compare",
+                    "win.projection-save-scenario",
+                    "win.projection-export",
+                    "win.projection-open-tab",
+                ],
+                [],
+            ),
+            (
+                "resolution",
+                [
+                    "win.resolution-match",
+                    "win.resolution-reject",
+                    "win.resolution-skip",
+                    "win.resolution-match-split",
+                    "win.resolution-attach-fsa",
+                    "win.resolution-unexpected",
+                ],
+                [],
+            ),
+            # The register's own buttons act on the transaction being typed.
+            (
+                "register",
+                [
+                    "win.register-edit-transaction",
+                    "win.register-delete-transaction",
+                    "win.register-make-scheduled",
+                    "win.register-match-to-plan",
+                    "win.register-reconcile",
+                    "win.register-new-tab",
+                ],
+                ["Split", "Enter", "Cancel"],
+            ),
         ),
     )
-    def test_stateless_view_commands_are_toolbar_icons_not_buttons(
-        self, app, window, populated_book, key, icons, gone
+    def test_view_commands_are_toolbar_icons_not_buttons(
+        self, app, window, populated_book, key, icons, buttons
     ):
-        """#156 follow-up: commands that never change with the view's state."""
+        """The toolbar holds a view's commands; its buttons only change what it shows."""
         app.open_book(populated_book)
         window.show_category(key)
-        actions = [
-            button.get_action_name()
-            for button in _descendants(window.view_tools)
-            if isinstance(button, Gtk.Button)
-        ]
-        assert actions == [f"win.{key}-{name}" for name in icons]
-        labels = self._labels(window._views[key])
-        assert not set(gone) & set(labels)
+        assert self._tools(window) == icons
+        assert self._labels(window._views[key]) == buttons
 
-    def test_state_dependent_buttons_stay_in_their_views(self, app, window, populated_book):
+    def test_a_register_window_shows_its_commands_as_buttons(self, app, window, populated_book):
+        """A register window has no toolbar: its commands are buttons, and its
+        right-click menu acts on it through its own window actions."""
         app.open_book(populated_book)
-        window.show_category("projection")
-        assert window._views["projection"].save_button.get_parent() is not None
-        window.show_category("upcoming")
-        assert window._views["upcoming"].post_button.get_parent() is not None
         window.show_category("register")
-        assert window._views["register"].reconcile_button.get_parent() is not None
+        main = window._views["register"]
+        assert not any(button.get_visible() for button in main.window_buttons)
+        own = window.open_register_window(main.account_handle)
+        try:
+            register = own.get_child()
+            assert all(button.get_visible() for button in register.window_buttons)
+            assert "Reconcile…" in self._labels(register)
+            group = register.own_actions
+            assert group.lookup_action("register-edit-transaction") is not None
+            # Delete is greyed out on the blank transaction, as in the main window.
+            _spin(lambda: register.sheet is not None)
+            assert register.cursor_transaction() is None
+            assert not group.lookup_action("register-delete-transaction").get_enabled()
+        finally:
+            own.destroy()
 
     def test_every_view_action_is_in_a_menu_and_registered(self, app, window):
         from breadsched.gui.viewmanager import VIEW_ACTIONS, view_action_name
 
         # A report is listed on the Reports menu by its key (app.open-report), which
-        # opens the same report its view's action does; every other command by name.
+        # opens the same report its view's action does; every other command by name,
+        # a command that works anywhere by its application action. A command on a
+        # row is listed while its view is shown, so each view is shown in turn.
         expected = {
-            f"win.{view_action_name(key, item)}"
+            item.app_action or f"win.{view_action_name(key, item)}"
             for key, actions in VIEW_ACTIONS.items()
             for item in actions
             if not item.report
@@ -9350,14 +9530,50 @@ class TestViewActions:
                     if child is not None:
                         walk(child)
 
-        walk(app.get_menubar())
+        for key in VIEW_ACTIONS:
+            app.show_view_actions(key)
+            walk(app.get_menubar())
         assert expected <= found
         for name in expected:
-            assert window.lookup_action(name[4:]) is not None
+            if name.startswith("win."):
+                assert window.lookup_action(name[4:]) is not None
         for key, actions in VIEW_ACTIONS.items():
             for item in actions:
                 if item.report:
                     assert window.lookup_action(view_action_name(key, item)) is not None
+
+    def test_row_commands_are_listed_only_under_their_own_view(self, app):
+        """Edit or Delete acts on a row you can see: never under Other Views."""
+        from breadsched.gui.viewmanager import VIEW_ACTIONS, view_action_name
+
+        def items(model, inside=False):
+            for index in range(model.get_n_items()):
+                label = model.get_item_attribute_value(index, "label", None)
+                action = model.get_item_attribute_value(index, "action", None)
+                if action is not None:
+                    yield action.get_string(), inside
+                for link in ("submenu", "section"):
+                    child = model.get_item_link(index, link)
+                    if child is not None:
+                        others = inside or (label is not None and "Other" in label.get_string())
+                        yield from items(child, others)
+
+        app.show_view_actions("scheduled")
+        listed = list(items(app.actions_menu.menu))
+        rows = {
+            f"win.{view_action_name(key, item)}"
+            for key, actions in VIEW_ACTIONS.items()
+            for item in actions
+            if item.row
+        }
+        assert ("win.scheduled-edit", False) in listed
+        assert not [name for name, other in listed if other and name in rows]
+        # Review Due is Scheduled's own toolbar icon and is listed once.
+        assert [name for name, _other in listed].count("app.post-scheduled") == 1
+        app.show_view_actions("accounts")
+        names = [name for name, _other in items(app.actions_menu.menu)]
+        assert "win.scheduled-edit" not in names
+        assert names.count("app.post-scheduled") == 1
 
     def test_view_actions_are_disabled_without_a_book(self, window):
         assert window.lookup_action("accounts-new-account").get_enabled() is False
@@ -9383,6 +9599,200 @@ class TestViewActions:
         )
         window.lookup_action("fsa-dashboard-manage-claims").activate(None)
         assert opened == [()]
+
+
+class TestRowCommands:
+    """A view's commands on its selected row: greyed out without one, in the row's
+    right-click menu, and acting on that row."""
+
+    def _select_account(self, view, name):
+        selection = view.column_view.get_model()
+        for index in range(selection.get_n_items()):
+            if unwrap(selection.get_item(index)).name == name:
+                selection.set_selected(index)
+                return unwrap(selection.get_item(index))
+        raise AssertionError(name)
+
+    def test_account_commands_act_on_the_selected_account(
+        self, app, window, populated_book, monkeypatch
+    ):
+        from breadsched.gui.views import accounts as accounts_view
+
+        app.open_book(populated_book)
+        window.show_category("accounts")
+        view = window._views["accounts"]
+        _spin(lambda: bool(view._lines))
+        assert isinstance(view.column_view.row_menu, Gtk.PopoverMenu)
+        rent = self._select_account(view, "Rent")
+        for name in ("open-register", "edit-account", "delete-account"):
+            assert window.lookup_action(f"accounts-{name}").get_enabled(), name
+        # A redrawn chart keeps the account selected (an edit redraws it).
+        view.refresh()
+        _spin(lambda: view.selected_account() is not None)
+        assert view.selected_account().handle == rent.handle
+        # Open Register opens its register, as double-clicking does.
+        window.lookup_action("accounts-open-register").activate(None)
+        assert window.current_category == "register"
+        assert window._views["register"].account_handle == rent.handle
+        # Delete Account asks first, and the book refuses an account in use.
+        window.show_category("accounts")
+        asked, reported = [], []
+        monkeypatch.setattr(
+            accounts_view,
+            "confirm_delete",
+            lambda widget, what, on_confirm, detail="": asked.append((what, on_confirm)),
+        )
+        monkeypatch.setattr(window, "_report_error", reported.append)
+        self._select_account(view, "Rent")
+        window.lookup_action("accounts-delete-account").activate(None)
+        [(what, delete)] = asked
+        assert what == "the account Expenses:Rent"
+        delete()
+        assert reported and app.db.get_account(rent.handle) is not None
+        # An account nothing uses is deleted.
+        spare = Account(name="Spare", atype=AccountType.EXPENSE, parent=rent.parent)
+        with app.db.transaction("Spare") as txn:
+            app.db.add_account(spare, txn)
+        # The test window is never on screen, so the chart is drawn again here.
+        view.refresh()
+        self._select_account(view, "Spare")
+        asked.clear()
+        window.lookup_action("accounts-delete-account").activate(None)
+        asked[0][1]()
+        assert app.db.get_account(spare.handle) is None
+
+    def test_register_commands_act_on_the_cursor_transaction(
+        self, app, window, populated_book, monkeypatch
+    ):
+        from breadsched.gui.views import register as register_view
+
+        view = _grid_register(app, window, populated_book)
+        sheet, grid = view.sheet, view.grid
+        assert isinstance(grid.row_menu, Gtk.PopoverMenu)
+        # On the blank transaction there is nothing to delete; the rest stay usable.
+        sheet.to_blank()
+        grid.sync(focus=False)
+        assert not window.lookup_action("register-delete-transaction").get_enabled()
+        for name in ("edit-transaction", "make-scheduled", "match-to-plan", "split"):
+            assert window.lookup_action(f"register-{name}").get_enabled(), name
+        # A right-click on a row moves the cursor there, changing nothing in it.
+        grid.adjustment.set_value(0)
+        y = grid.row_height * 1.5
+        assert grid.point_at(5, y)
+        transaction = view.cursor_transaction()
+        assert transaction is not None
+        assert window.lookup_action("register-delete-transaction").get_enabled()
+        # Delete asks first, then deletes the transaction under the cursor.
+        asked = []
+        monkeypatch.setattr(
+            register_view,
+            "confirm_delete",
+            lambda widget, what, on_confirm, detail="": asked.append((what, on_confirm)),
+        )
+        window.lookup_action("register-delete-transaction").activate(None)
+        [(what, delete)] = asked
+        assert what == f"the transaction {transaction.description}"
+        assert app.db.get_transaction(transaction.handle) is not None
+        delete()
+        assert app.db.get_transaction(transaction.handle) is None
+        assert "Ctrl+Z restores it" in view.entry_status.get_text()
+
+    def test_scheduled_enter_next_and_skip_next_are_window_actions(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        assert all(isinstance(table.row_menu, Gtk.PopoverMenu) for table in view._tables())
+        schedule = view._selected_schedule()
+        assert schedule is not None
+        before = app.db.get_scheduled(schedule.handle).skipped
+        window.lookup_action("scheduled-skip-next").activate(None)
+        after = app.db.get_scheduled(schedule.handle).skipped
+        assert len(after) == len(before) + 1
+        # The schedule skipped stays selected.
+        assert view._selected_schedule().handle == schedule.handle
+
+    def test_a_right_click_finds_its_row_after_rows_open_above_it(self, app, window, tmp_path):
+        """A row moved by others opening above it is not drawn again, so the row a
+        cell shows is found by its item, never by a position noted when drawn."""
+        from breadsched.gen.sample_book import create_sample_book
+        from breadsched.gui.views._base import mark_row, row_position
+
+        path = tmp_path / "sample.breadsched"
+        create_sample_book(path, as_of=date.today())
+        app.open_book(str(path))
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        selection = view.definitions_view.get_model()
+        tops = [i for i in range(selection.get_n_items()) if selection.get_item(i).get_depth() == 0]
+        assert len(tops) >= 2
+        first, last = selection.get_item(tops[0]), selection.get_item(tops[-1])
+        cell = Gtk.Label()
+
+        class Cell:  # what a column's factory hands its bind handler
+            def get_child(self):
+                return cell
+
+            def get_item(self):
+                return last
+
+        mark_row(Cell())
+        before = row_position(cell, selection)
+        assert unwrap(selection.get_item(before)) is unwrap(last)
+        first.set_expanded(not first.get_expanded())  # its splits open or close
+        after = row_position(cell, selection)
+        assert after != before
+        assert unwrap(selection.get_item(after)) is unwrap(last)
+        assert row_position(Gtk.Label(), selection) is None
+
+    def test_a_row_menu_belongs_to_its_view_not_its_table(self):
+        """A list box going spins forever on a popover that is not one of its rows
+        (other tables leave it behind), so the view holds the menu: a box lets go
+        of every child as it goes."""
+        from breadsched.gui.views._base import attach_row_menu
+
+        owner = Gtk.Box()
+        owner.KEY = "accounts"
+        table = Gtk.ListBox()
+        owner.append(table)
+        menu = attach_row_menu(owner, table)
+        assert menu.get_parent() is owner and table.row_menu is menu
+        owner.remove(table)
+        table.run_dispose()  # what the last reference going does; returns
+        owner.run_dispose()
+        assert menu.get_parent() is None
+
+    def test_a_point_moves_between_widgets_on_any_gtk(self):
+        """compute_point is GTK 4.12 and later; before it, translate_coordinates."""
+        from breadsched.gui.widgets.points import point_in
+
+        class OldWidget:
+            def translate_coordinates(self, target, x, y):
+                return True, x + 1, y + 2
+
+        assert point_in(OldWidget(), None, 3, 4) == (4, 6)
+        box, label = Gtk.Box(), Gtk.Label(label="row")
+        box.append(label)
+        assert point_in(label, box, 5, 6) == (5, 6)
+        assert point_in(label, Gtk.Label(), 5, 6) is None
+
+    def test_switching_register_tabs_applies_each_registers_own_states(
+        self, app, window, populated_book
+    ):
+        """The toolbar's register icons are one set of window actions; each tab's
+        cursor decides them while that tab is shown."""
+        view = _grid_register(app, window, populated_book)
+        view.grid.adjustment.set_value(0)
+        assert view.grid.point_at(5, view.grid.row_height * 1.5)
+        assert window.lookup_action("register-delete-transaction").get_enabled()
+        other = window.open_register_tab()
+        _spin(lambda: other.sheet is not None)
+        other.sheet.to_blank()
+        other.grid.sync(focus=False)
+        assert not window.lookup_action("register-delete-transaction").get_enabled()
+        window._on_tab_clicked(next(tab for tab in window._tabs if tab.view is view))
+        assert window.lookup_action("register-delete-transaction").get_enabled()
 
 
 class TestFsaClaimsWindow:
@@ -9572,8 +9982,43 @@ class TestFsaClaimsWindow:
         view = window._views["fsa-dashboard"]
         view.refresh()
         assert view.claim_heading.get_label() == "FSA claims"
-        assert view.claim_grid.get_child_at(1, 1).get_label() == "Clinic"
-        assert view.claim_grid.get_child_at(2, 1).get_label() == "Fully reimbursed"
+        model = view.claim_view.get_model()
+        [line] = [unwrap(model.get_item(i)) for i in range(model.get_n_items())]
+        assert line.summary.claim.provider == "Clinic"
+        assert line.summary.status.label == "Fully reimbursed"
+
+    def test_edit_claim_opens_the_claim_selected_in_the_dashboard(
+        self, app, window, populated_book, monkeypatch
+    ):
+        """A claim is a row: Edit Claim (toolbar, menu, right-click, double-click)
+        opens it, rather than a Review button on each row."""
+        from breadsched.gen.services import ClaimInput, SaveClaim, save_claim
+
+        db, _fsa, expense, _checking, start, made = self._book(app, populated_book)
+        saved = save_claim(
+            db,
+            SaveClaim(
+                ClaimInput(
+                    service_date=start,
+                    provider="Clinic",
+                    eob_responsibility=Money("80"),
+                    payments=(self._link(made["card"], expense.handle),),
+                )
+            ),
+        ).value
+        window.show_category("fsa-dashboard")
+        view = window._views["fsa-dashboard"]
+        view.refresh()
+        opened = []
+        monkeypatch.setattr(view, "_open_claim", lambda *args: opened.append(args))
+        assert view.claim_view.get_model().get_selected() == 0
+        assert window.lookup_action("fsa-dashboard-edit-claim").get_enabled()
+        window.lookup_action("fsa-dashboard-edit-claim").activate(None)
+        assert opened == [(saved.handle,)]
+        assert isinstance(view.claim_view.row_menu, Gtk.PopoverMenu)
+        # It stays selected when the dashboard is drawn again.
+        view.refresh()
+        assert view._selected_claim() == saved.handle
 
 
 class TestOnlineQuotesDialog:
@@ -10915,13 +11360,13 @@ class TestViewSpecificChrome:
     def test_the_current_view_has_no_icon_and_is_named_beside_its_commands(
         self, app, window, populated_book
     ):
+        from breadsched.gui.view_catalog import TOOLBAR_VIEWS
         from breadsched.gui.viewmanager import CATEGORIES
 
         app.open_book(populated_book)
-        keys = [key for key, _label, _icon in CATEGORIES]
         for key, label, _icon in CATEGORIES:
             window.show_category(key)
-            assert self._visible_icons(window) == [k for k in keys if k != key]
+            assert self._visible_icons(window) == [k for k in TOOLBAR_VIEWS if k != key]
             assert window.view_title.get_label() == label
             assert window.view_heading.get_visible()
 
@@ -10965,13 +11410,17 @@ class TestViewSpecificChrome:
         label, first = sections[0]
         assert label == "Scheduled"
         assert _menu_actions(first) == [
-            f"win.{view_action_name('scheduled', item)}"
+            item.app_action or f"win.{view_action_name('scheduled', item)}"
             for item in VIEW_ACTIONS["scheduled"]
             if not (item.toggle or item.report)
         ]
+        # Review Due is Scheduled's own: the commands that work anywhere leave it out.
+        assert "app.post-scheduled" not in _menu_actions(sections[1][1])
         others = _menu_actions(sections[-1][1])
         assert not any(action.startswith("win.scheduled-") for action in others)
         assert "win.plan-new-scenario" in others
+        # A command on a row is listed under its own view only.
+        assert "win.register-edit-transaction" not in others
 
         window.show_category("plan")
         label, first = self._sections(app)[0]
@@ -12396,9 +12845,22 @@ class TestMenusAndIcons:
         labels = _menu_labels(app.get_menubar())
         assert labels["app.post-scheduled"] == "Review _Due Transactions…"
         assert "upcoming" not in VIEW_ACTIONS
-        assert labels["win.projection-save-scenario"] == "_Save as Scenario…"
+        # Saves in place, or asks a new scenario's name, as a document's Save does.
+        assert labels["win.projection-save-scenario"] == "_Save Scenario"
         assert labels["app.preferences"] == "_Preferences…"
         assert not any("Post Scheduled" in label for label in labels.values())
+
+    def test_each_views_commands_have_their_own_mnemonics(self):
+        """The current view's commands share one section of the Actions menu."""
+        from breadsched.gui.view_catalog import VIEW_ACTIONS
+
+        for key, actions in VIEW_ACTIONS.items():
+            letters = [
+                item.label[item.label.index("_") + 1].lower()
+                for item in actions
+                if not (item.toggle or item.report)
+            ]
+            assert len(letters) == len(set(letters)), key
 
     def test_each_toolbar_icon_means_one_command(self):
         from breadsched.gui.view_catalog import SHARED_ICONS, toolbar_icons

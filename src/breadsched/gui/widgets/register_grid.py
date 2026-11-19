@@ -22,6 +22,7 @@ from collections.abc import Callable
 
 from ..gi_setup import Gdk, Gtk, Pango, PangoCairo
 from ..register_sheet import BLANK, IMBALANCE, NOTES, SPLIT, RegisterSheet
+from .points import point_in
 
 __all__ = ["BANDING", "RegisterGrid", "grid_colours", "match_list_placement"]
 
@@ -485,6 +486,23 @@ class RegisterGrid(Gtk.Box):
         self.sheet.move_to(index, column)
         self.sync()
         return True
+
+    def point_at(self, x: float, y: float) -> bool:
+        """Move the cursor to the row under a point of the grid (a right-click on
+        it), changing nothing there; False for the heading or below the last row."""
+        inside = point_in(self, self.area, x, y)
+        cell = self.cell_at(*inside) if inside is not None else None
+        if cell is None or self.sheet is None:
+            return False
+        index, column = cell
+        moved = True
+        if index != self.sheet.cursor:
+            # Leaving typing that cannot be saved keeps the cursor where it was,
+            # and the message under the register says why; no menu opens then.
+            self.hide_matches()
+            moved = self.sheet.move_to(index, column)
+        self.sync()
+        return moved
 
     def key(self, keyval: int, state: Gdk.ModifierType) -> bool:
         """Handle one key at the cursor; True when the grid used it."""

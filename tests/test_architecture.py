@@ -1494,7 +1494,9 @@ class TestBookServerBoundaries:
             (
                 "gui/views/scheduled.py",
                 # resolve_next prices any shares first; _resolve_next writes (#417).
-                ("_resolve_next", "_on_post_clicked"),
+                # Review Due is the application's own action (app.post-scheduled);
+                # the note over the occurrences counts what it would review.
+                ("_resolve_next", "_show_upcoming_note"),
             ),
             ("gui/dialogs/schedule_dialog.py", ("_on_save",)),
             ("gui/dialogs/account_dialog.py", ("_on_save", "_on_delete")),

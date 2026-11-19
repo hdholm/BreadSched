@@ -1,15 +1,20 @@
-"""Scheduled transactions, in two views.
+"""Scheduled transactions: their occurrences by date, and the definitions.
 
-Definitions and upcoming occurrences answer different questions and are separated
-accordingly. *Scheduled* is the standing arrangement — what recurs, how often, and
-whether it is a commitment or an estimate. *Upcoming* is the diary — what is due,
-what is overdue, and what needs posting. Mixing them meant neither list could be
-sorted usefully, because sorting by date is meaningless for a definition and
-sorting by name is meaningless for a due list.
+Two lists answer two questions, and each sorts usefully on its own. **Upcoming**
+is the diary: every occurrence due within the look-ahead chosen, oldest first,
+flagging the overdue. The definitions below it are the standing arrangement: what
+recurs, how often, and whether it is a commitment or an estimate (the estimates in
+a table of their own). The browser's Scheduled page shows the same three lists.
 
 Selecting a definition expands its splits as rows beneath it, the same way the
 register expands a transaction, so a loan payment shows its interest and principal
 legs where they belong.
+
+The view's commands (Edit, Delete, Duplicate, Enter Next, Skip Next, Match, and the
+rest) are toolbar icons, Actions menu items, and, for a row, its right-click menu
+(``view_catalog``): one row is selected across the three tables, and a command acts
+on its schedule; Match acts on the selected occurrence, or on a selected schedule's
+current one.
 """
 
 from __future__ import annotations
@@ -39,14 +44,16 @@ from ._base import (
     BaseView,
     Row,
     _compare_by,
+    attach_row_menu,
     column,
+    mark_row,
     scroll_to_row,
     sorted_model,
     table_section,
     unwrap,
 )
 
-__all__ = ["ScheduledView", "UpcomingView", "ScheduleSplitRow"]
+__all__ = ["ScheduledView", "ScheduleSplitRow"]
 
 
 def _representative_date(schedule_object: ScheduledTransaction) -> date:
@@ -93,6 +100,16 @@ def _name_key(item) -> str:
     return (item.account_name if _is_split(item) else item.name).casefold()
 
 
+def _due_text(occurrence) -> str:
+    """An occurrence's date, marked overdue or today."""
+    today = date.today()
+    if occurrence.when < today:
+        return f"{occurrence.when.isoformat()}  (overdue)"
+    if occurrence.when == today:
+        return f"{occurrence.when.isoformat()}  (today)"
+    return occurrence.when.isoformat()
+
+
 def _kind_of(item) -> str:
     if _is_split(item):
         return ""
@@ -108,14 +125,25 @@ def _amount_of(item) -> str:
 
 
 class ScheduledView(BaseView):
-    """The definitions: what recurs, and how."""
+    """Occurrences by date, and the definitions: what recurs, and how."""
 
-    WATCHES = ("database-changed", "scheduled-add", "scheduled-update", "scheduled-delete")
+    KEY = "scheduled"
+    WATCHES = (
+        "database-changed",
+        "scheduled-add",
+        "scheduled-update",
+        "scheduled-delete",
+        "transaction-add",
+    )
+
+    #: The look-ahead choices for the occurrences list, in days.
+    HORIZONS = (("Due now", 0), ("7 days", 7), ("30 days", 30), ("90 days", 90), ("1 year", 365))
 
     def __init__(self, manager) -> None:
         super().__init__(manager)
         self._suggest_dialog: Gtk.Window | None = None
         self._active_selection = None
+        self._horizon = 30
         #: The definitions as last read through the book server (#358).
         self._page: ScheduledPage | None = None
         self._build()
@@ -130,66 +158,66 @@ class ScheduledView(BaseView):
         bar = Gtk.Box(spacing=8)
         for side in ("top", "bottom", "start", "end"):
             getattr(bar, f"set_margin_{side}")(8)
-
         title = Gtk.Label(label="Scheduled transactions", xalign=0)
         title.add_css_class("category-title")
         title.set_hexpand(True)
         bar.append(title)
+        # The commands are toolbar icons and Actions menu items (view_catalog);
+        # this names what Enter Next and Skip Next would act on.
+        self.next_note = Gtk.Label(xalign=1, wrap=True)
+        self.next_note.add_css_class("dim")
+        bar.append(self.next_note)
+        self.append_toolbar(bar)
 
-        self.edit_button = Gtk.Button(label="View / Edit…")
-        self.edit_button.set_tooltip_text(
-            "View the selected schedule; edit it when BreadSched can preserve it safely"
+        # Every occurrence by date (what the Upcoming view showed): the look-ahead
+        # changes what the list shows, so it sits beside the list's heading.
+        self.upcoming_view = Gtk.ColumnView()
+        self.upcoming_view.add_css_class("data-table")
+        self.upcoming_view.set_show_row_separators(True)
+        self.upcoming_view.append_column(column("Due", _due_text, sort_key=lambda o: o.when))
+        self.upcoming_view.append_column(column("Schedule", lambda o: o.name, expand=True))
+        self.upcoming_view.append_column(column("Kind", lambda o: _kind_of(o.schedule)))
+        self.upcoming_view.append_column(
+            column("Frequency", lambda o: o.schedule.recurrence.describe(), expand=True)
         )
-        self.edit_button.set_sensitive(False)
-        self.edit_button.connect("clicked", self._on_edit_clicked)
-        bar.append(self.edit_button)
-
-        # Resolve the selected schedule's next occurrence before it is due (#351).
-        self.enter_next_button = Gtk.Button(label="Enter Next")
-        self.enter_next_button.set_sensitive(False)
-        self.enter_next_button.connect("clicked", lambda *_: self.resolve_next(DueDecision.POST))
-        bar.append(self.enter_next_button)
-        self.skip_next_button = Gtk.Button(label="Skip Next")
-        self.skip_next_button.set_sensitive(False)
-        self.skip_next_button.connect("clicked", lambda *_: self.resolve_next(DueDecision.SKIP))
-        bar.append(self.skip_next_button)
-
-        # The Match window on the schedule's current occurrence.
-        self.match_button = Gtk.Button(label="Match…")
-        self.match_button.set_tooltip_text(
-            "Choose the splits that count toward its current occurrence, as in a reconciliation"
+        self.upcoming_view.append_column(
+            column("Amount", lambda o: o.amount.format(), numeric=True)
         )
-        self.match_button.set_sensitive(False)
-        self.match_button.connect("clicked", lambda *_: self.match_selected())
-        bar.append(self.match_button)
-
-        self.duplicate_button = Gtk.Button(label="Duplicate…")
-        self.duplicate_button.set_sensitive(False)
-        self.duplicate_button.connect("clicked", self._on_duplicate_clicked)
-        bar.append(self.duplicate_button)
-
-        self.delete_button = Gtk.Button(label="Delete…")
-        self.delete_button.add_css_class("destructive-action")
-        self.delete_button.set_sensitive(False)
-        self.delete_button.connect("clicked", self._on_delete_clicked)
-        bar.append(self.delete_button)
-
-        # New scheduled, Suggest, and New loan are toolbar icons (#156 follow-up).
+        upcoming = table_section(self.upcoming_view, "upcoming", self._settings(), title="Upcoming")
+        header = upcoming.get_first_child()
+        look_ahead = Gtk.Label(label="Look ahead")
+        header.insert_child_after(look_ahead, upcoming.heading)
+        self.horizon_picker = bounded_dropdown([label for label, _days in self.HORIZONS])
+        self.horizon_picker.set_selected(2)
+        self.horizon_picker.connect("notify::selected", self._on_horizon_changed)
+        header.insert_child_after(self.horizon_picker, look_ahead)
+        self.upcoming_note = Gtk.Label(xalign=0, wrap=True)
+        self.upcoming_note.add_css_class("dim")
+        upcoming.insert_child_after(self.upcoming_note, header)
 
         self.definitions_view = self._definitions_view()
         self.estimates_view = self._definitions_view()
-        self.append_toolbar(bar)
         # Each table carries its own column chooser in its heading (#153).
-        for view, view_id, title in (
-            (self.definitions_view, "scheduled-commitments", "Commitments and account payments"),
-            (self.estimates_view, "scheduled-estimates", "Estimates"),
+        for view, view_id, title_text, section in (
+            (self.upcoming_view, "upcoming", "Upcoming", upcoming),
+            (
+                self.definitions_view,
+                "scheduled-commitments",
+                "Commitments and account payments",
+                None,
+            ),
+            (self.estimates_view, "scheduled-estimates", "Estimates", None),
         ):
-            section = table_section(view, view_id, self._settings(), title=title)
+            if section is None:
+                section = table_section(view, view_id, self._settings(), title=title_text)
             for side in ("start", "end"):
                 getattr(section, f"set_margin_{side}")(12)
             section.scroller.set_vexpand(True)
             section.set_vexpand(True)
             self.append(section)
+            # Activating a row edits its schedule; right-clicking lists its commands.
+            view.connect("activate", lambda *_: self._on_edit_clicked(None))
+            attach_row_menu(self, view)
 
         self.status = Gtk.Label(xalign=0)
         self.status.add_css_class("dim")
@@ -263,6 +291,7 @@ class ScheduledView(BaseView):
         def on_bind(_factory, item) -> None:
             tree_row = item.get_item()
             expander = item.get_child()
+            mark_row(item)
             expander.set_list_row(tree_row)
             payload = unwrap(tree_row)
             label = expander.get_child()
@@ -288,34 +317,74 @@ class ScheduledView(BaseView):
     def refresh(self) -> None:
         if self.db is None:
             return
-        # Drawing the tables again would leave the first row selected; the schedule
-        # that was selected (just edited, entered, or skipped, say) stays selected.
-        kept = self._kept_handle()
-        self._page = book_server(self.db).scheduled_page()
+        # Drawing the tables again would leave the first row selected; the row that
+        # was selected (a schedule just edited, entered, or skipped, say) stays so.
+        kept = self._kept()
+        today = date.today()
+        self._page = book_server(self.db).scheduled_page(self._horizon, today)
         schedules = list(self._page.schedules)
         account_payments = list(self._page.payments)
         commitments = [item for item in schedules if not item.placeholder]
         self._active_selection = None
+        occurrences = Gio.ListStore.new(Row)
+        for occurrence in self._page.upcoming:
+            occurrences.append(Row(occurrence))
+        selection = Gtk.SingleSelection(model=sorted_model(self.upcoming_view, occurrences))
+        # Like the definitions' tables, it starts with no row selected.
+        selection.set_autoselect(False)
+        selection.set_can_unselect(True)
+        selection.set_selected(Gtk.INVALID_LIST_POSITION)
+        selection.connect("notify::selected", self._on_selected)
+        self.upcoming_view.set_model(selection)
         self._set_definitions_model(self.definitions_view, [*commitments, *account_payments], True)
         self._set_definitions_model(
             self.estimates_view,
             [item for item in schedules if item.placeholder],
             False,
         )
-        # The first commitment starts selected; synchronize action sensitivity and
-        # expansion explicitly so the visibly selected row is also the application's
-        # selected row. One row is selected across both tables, so the commands
-        # always act on the row that shows as selected.
-        selection = self.definitions_view.get_model()
-        self._on_selected(selection, None)
+        # The first commitment starts selected; synchronize the commands and the
+        # expansion explicitly so the visibly selected row is also the one the
+        # commands act on. One row is selected across the tables.
+        self._on_selected(self.definitions_view.get_model(), None)
         if kept is not None:
-            self.select_schedule(kept)
+            self._restore(kept)
+        self._show_upcoming_note(today)
 
         estimates = sum(1 for s in schedules if s.placeholder)
         self.status.set_text(
             f"{len(schedules)} scheduled: {len(schedules) - estimates} commitment(s), "
             f"{estimates} estimate(s); {len(account_payments)} account-linked payment(s)"
         )
+
+    def _show_upcoming_note(self, today: date) -> None:
+        """Count the overdue, and what is to be entered or reminded in advance."""
+        if self._page is None or self.db is None:
+            return
+        occurrences = list(self._page.upcoming)
+        overdue = [o for o in occurrences if o.when <= today]
+        if overdue:
+            text = f"{len(overdue)} occurrence(s) overdue, oldest {overdue[0].when.isoformat()}"
+            self.upcoming_note.add_css_class("negative")
+        else:
+            text = (
+                f"Nothing overdue; {len(occurrences)} occurrence(s) in the next "
+                f"{self._horizon} days"
+            )
+            self.upcoming_note.remove_css_class("negative")
+        # Enter- and remind-in-advance occurrences are reviewed too (#352).
+        early = [
+            item
+            for review in book_server(self.db).due_review(today)
+            for item in review.items
+            if item.when > today
+        ]
+        if early:
+            text = f"{text}; {len(early)} to enter or remind in advance"
+        self.upcoming_note.set_text(f"{text}. Review Due Transactions… posts what is due.")
+
+    def _on_horizon_changed(self, picker, _param) -> None:
+        self._horizon = self.HORIZONS[picker.get_selected()][1]
+        self.refresh()
 
     def _set_definitions_model(self, view, items, first: bool) -> None:
         definitions = Gio.ListStore.new(Row)
@@ -334,15 +403,33 @@ class ScheduledView(BaseView):
         selection.connect("notify::selected", self._on_selected)
         view.set_model(selection)
 
-    def _kept_handle(self) -> str | None:
-        """The handle of the schedule (or card payment) selected now, if any; a
-        selected split keeps its schedule."""
+    def _kept(self) -> tuple[str, str, date | None] | None:
+        """What is selected now, to select again after drawing the tables anew: an
+        occurrence (its schedule and date), or a schedule or card payment (a
+        selected split counting as its schedule)."""
         selection = self._active_selection
         selected = selection.get_selected_item() if selection is not None else None
         payload = unwrap(selected) if selected is not None else None
+        if selection is self.upcoming_view.get_model() and payload is not None:
+            return ("occurrence", getattr(payload.schedule, "handle", ""), payload.when)
         if isinstance(payload, ScheduleSplitRow):
             payload = payload.schedule
-        return getattr(payload, "handle", None)
+        handle = getattr(payload, "handle", None)
+        return ("schedule", handle, None) if handle else None
+
+    def _restore(self, kept: tuple[str, str, date | None]) -> None:
+        kind, handle, when = kept
+        if kind == "schedule":
+            self.select_schedule(handle)
+            return
+        selection = self.upcoming_view.get_model()
+        for index in range(selection.get_n_items()):
+            occurrence = unwrap(selection.get_item(index))
+            if getattr(occurrence.schedule, "handle", None) == handle and occurrence.when == when:
+                selection.set_selected(index)
+                self._on_selected(selection, None)
+                scroll_to_row(self.upcoming_view, index)
+                return
 
     def select_schedule(self, handle: str) -> None:
         """Select, expand, and scroll to one schedule: arriving from another view, or
@@ -399,44 +486,52 @@ class ScheduledView(BaseView):
 
     # ----------------------------------------------------------------- actions
 
+    def _tables(self) -> tuple[Gtk.ColumnView, ...]:
+        return (self.upcoming_view, self.definitions_view, self.estimates_view)
+
     def _on_selected(self, selection, _param) -> None:
         if selection is None:
             return
         position = selection.get_selected()
         if position == Gtk.INVALID_LIST_POSITION and selection is not self._active_selection:
-            return  # the other table letting go of its row
+            return  # another table letting go of its row
         self._active_selection = selection
         if position != Gtk.INVALID_LIST_POSITION:
-            for view in (self.definitions_view, self.estimates_view):
+            for view in self._tables():
                 other = view.get_model()
                 if other is not None and other is not selection:
                     other.set_selected(Gtk.INVALID_LIST_POSITION)
-        model = selection.get_model()
-        for index in range(model.get_n_items()):
-            tree_row = model.get_item(index)
-            if tree_row is None or tree_row.get_depth() != 0:
-                continue
-            tree_row.set_expanded(index == position)
+        if selection is not self.upcoming_view.get_model():
+            model = selection.get_model()
+            for index in range(model.get_n_items()):
+                tree_row = model.get_item(index)
+                if tree_row is None or tree_row.get_depth() != 0:
+                    continue
+                tree_row.set_expanded(index == position)
+        self._update_commands()
+
+    def _selected_occurrence(self):
+        """The occurrence selected in the Upcoming list, if one is."""
+        selection = self._active_selection
+        if selection is None or selection is not self.upcoming_view.get_model():
+            return None
         selected = selection.get_selected_item()
-        payload = unwrap(selected) if selected is not None else None
-        selected_schedule = payload is not None and not _is_split(payload)
-        self.edit_button.set_sensitive(selected_schedule)
-        saved_schedule = isinstance(payload, ScheduledTransaction)
-        self.delete_button.set_sensitive(saved_schedule)
-        self.duplicate_button.set_sensitive(saved_schedule)
-        self.match_button.set_sensitive(saved_schedule)
-        self._show_next()
+        return unwrap(selected) if selected is not None else None
 
     def match_selected(self, today=None):
-        """Open the Match window on the selected schedule's current occurrence."""
-        from datetime import date
-
+        """Open the Match window on the selected occurrence, or on the selected
+        schedule's current one."""
         from ..dialogs.match_dialog import OccurrenceMatchWindow
 
         sched = self._selected_schedule()
         if sched is None or self.db is None:
             return None
-        when = sched.current_occurrence(today or date.today())
+        occurrence = self._selected_occurrence()
+        when = (
+            occurrence.when
+            if occurrence is not None
+            else sched.current_occurrence(today or date.today())
+        )
         if when is None:
             return None
         root = self.get_root()
@@ -446,27 +541,35 @@ class ScheduledView(BaseView):
         window.present()
         return window
 
-    def _show_next(self) -> None:
-        """Name the date Enter Next and Skip Next act on, or why they cannot."""
-        sched = self._selected_schedule()
+    def _update_commands(self) -> None:
+        """Grey out the commands the selected row cannot use, and name the
+        occurrence Enter Next and Skip Next would act on."""
+        selection = self._active_selection
+        selected = selection.get_selected_item() if selection is not None else None
+        payload = unwrap(selected) if selected is not None else None
+        item = self._selected_item()
+        schedule = item if isinstance(item, ScheduledTransaction) else None
         upcoming = (
-            book_server(self.db).next_occurrence(sched.handle)
-            if sched is not None and self.db is not None
+            book_server(self.db).next_occurrence(schedule.handle)
+            if schedule is not None and self.db is not None
             else None
         )
-        for button, verb in ((self.enter_next_button, "Enter"), (self.skip_next_button, "Skip")):
-            button.set_sensitive(upcoming is not None)
-            if upcoming is not None:
-                button.set_tooltip_text(
-                    f"{verb} the occurrence of {upcoming.when.isoformat()} "
-                    f"({upcoming.amount.format()}) now, before it is due"
-                )
-            else:
-                button.set_tooltip_text(
-                    "Select a schedule that can still post an occurrence"
-                    if sched is None
-                    else "This schedule has no occurrence to enter or skip"
-                )
+        self.enable_commands(
+            edit=item is not None and not _is_split(payload),
+            delete=schedule is not None,
+            duplicate=schedule is not None,
+            match=schedule is not None,
+            enter_next=upcoming is not None,
+            skip_next=upcoming is not None,
+        )
+        if schedule is not None and upcoming is not None:
+            self.next_note.set_text(
+                f"Next of {schedule.name}: {upcoming.when.isoformat()} ({upcoming.amount.format()})"
+            )
+        elif schedule is not None:
+            self.next_note.set_text(f"{schedule.name} has no occurrence to enter or skip")
+        else:
+            self.next_note.set_text("")
 
     def resolve_next(self, decision: DueDecision) -> bool:
         """Enter or skip the selected schedule's next occurrence; False if refused.
@@ -519,9 +622,12 @@ class ScheduledView(BaseView):
         return True
 
     def _selected_item(self) -> ScheduledTransaction | AccountPaymentDefinition | None:
+        """The selected schedule or card payment, or the selected occurrence's."""
         selection = self._active_selection
         selected = selection.get_selected_item() if selection is not None else None
         payload = unwrap(selected) if selected is not None else None
+        if selection is not None and selection is self.upcoming_view.get_model():
+            payload = getattr(payload, "schedule", None)
         if isinstance(payload, (ScheduledTransaction, AccountPaymentDefinition)):
             return payload
         return None
@@ -568,6 +674,12 @@ class ScheduledView(BaseView):
         )
         dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
+
+    def _on_enter_next_clicked(self, _button=None) -> bool:
+        return self.resolve_next(DueDecision.POST)
+
+    def _on_skip_next_clicked(self, _button=None) -> bool:
+        return self.resolve_next(DueDecision.SKIP)
 
     def _on_duplicate_clicked(self, _button) -> None:
         if self.db is None:
@@ -751,187 +863,3 @@ class ScheduleDeleteDialog(BoundedWindow):
             return
         self.close()
         self.deleted_callback()
-
-
-class UpcomingView(BaseView):
-    """The diary: what is due, what is overdue, and what needs posting."""
-
-    WATCHES = (
-        "database-changed",
-        "scheduled-add",
-        "scheduled-update",
-        "scheduled-delete",
-        "transaction-add",
-    )
-
-    def __init__(self, manager) -> None:
-        super().__init__(manager)
-        self._horizon = 30
-        self._build()
-
-    def _build(self) -> None:
-        bar = Gtk.Box(spacing=8)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(bar, f"set_margin_{side}")(8)
-
-        title = Gtk.Label(label="Upcoming", xalign=0)
-        title.add_css_class("category-title")
-        title.set_hexpand(True)
-        bar.append(title)
-
-        bar.append(Gtk.Label(label="Look ahead"))
-        self.horizon_picker = bounded_dropdown(
-            ["Due now", "7 days", "30 days", "90 days", "1 year"]
-        )
-        self.horizon_picker.set_selected(2)
-        self.horizon_picker.connect("notify::selected", self._on_horizon_changed)
-        bar.append(self.horizon_picker)
-
-        self.match_button = Gtk.Button(label="Match…")
-        self.match_button.set_tooltip_text(
-            "Choose the splits that count toward the selected occurrence"
-        )
-        self.match_button.connect("clicked", lambda *_: self.match_selected())
-        bar.append(self.match_button)
-
-        self.post_button = Gtk.Button(label="Review Due Transactions…")
-        self.post_button.add_css_class("suggested-action")
-        self.post_button.connect("clicked", self._on_post_clicked)
-        bar.append(self.post_button)
-
-        self.upcoming_view = Gtk.ColumnView()
-        self.upcoming_view.add_css_class("data-table")
-        self.upcoming_view.set_show_row_separators(True)
-        self.upcoming_view.connect("activate", self._on_activated)
-        self.upcoming_view.append_column(column("Due", self._due_text, sort_key=lambda o: o.when))
-        self.upcoming_view.append_column(column("Schedule", lambda o: o.name, expand=True))
-        self.upcoming_view.append_column(column("Kind", lambda o: _kind_of(o.schedule)))
-        self.upcoming_view.append_column(
-            column("Frequency", lambda o: o.schedule.recurrence.describe(), expand=True)
-        )
-        self.upcoming_view.append_column(
-            column("Amount", lambda o: o.amount.format(), numeric=True)
-        )
-        self.append_toolbar(bar)
-
-        self.status = Gtk.Label(xalign=0)
-        self.status.add_css_class("dim")
-        for side in ("start", "end"):
-            getattr(self.status, f"set_margin_{side}")(12)
-        self.append(self.status)
-
-        self.table = table_section(
-            self.upcoming_view, "upcoming", self._settings(), table_label="upcoming"
-        )
-        for side in ("start", "end"):
-            getattr(self.table, f"set_margin_{side}")(12)
-        self.table.scroller.set_vexpand(True)
-        self.table.set_vexpand(True)
-        self.append(self.table)
-
-    def _settings(self):
-        return getattr(self.manager.get_application(), "view_settings", None)
-
-    def refresh(self) -> None:
-        if self.db is None:
-            return
-        today = date.today()
-        occurrences = book_server(self.db).scheduled_page(self._horizon, today).upcoming
-        store = Gio.ListStore.new(Row)
-        for occurrence in occurrences:
-            store.append(Row(occurrence))
-        self.upcoming_view.set_model(
-            Gtk.SingleSelection(model=sorted_model(self.upcoming_view, store))
-        )
-
-        overdue = [o for o in occurrences if o.when <= today]
-        # Enter- and remind-in-advance occurrences are reviewed too (#352).
-        reviewable = [
-            item for review in book_server(self.db).due_review(today) for item in review.items
-        ]
-        if overdue:
-            self.status.set_text(
-                f"{len(overdue)} occurrence(s) overdue, oldest {overdue[0].when.isoformat()}"
-            )
-            self.status.add_css_class("negative")
-        else:
-            self.status.set_text(
-                f"Nothing overdue; {len(occurrences)} occurrence(s) in the next "
-                f"{self._horizon} days"
-            )
-            self.status.remove_css_class("negative")
-        early = len([item for item in reviewable if item.when > today])
-        if early:
-            self.status.set_text(f"{self.status.get_text()}; {early} to enter or remind in advance")
-        self.post_button.set_sensitive(bool(reviewable))
-
-    def _due_text(self, occurrence) -> str:
-        today = date.today()
-        if occurrence.when < today:
-            return f"{occurrence.when.isoformat()}  (overdue)"
-        if occurrence.when == today:
-            return f"{occurrence.when.isoformat()}  (today)"
-        return occurrence.when.isoformat()
-
-    def _on_horizon_changed(self, picker, _param) -> None:
-        self._horizon = [0, 7, 30, 90, 365][picker.get_selected()]
-        self.refresh()
-
-    def match_selected(self):
-        """Open the Match window on the selected upcoming occurrence."""
-        from ..dialogs.match_dialog import OccurrenceMatchWindow
-
-        selection = self.upcoming_view.get_model()
-        selected = selection.get_selected_item() if selection is not None else None
-        occurrence = unwrap(selected) if selected is not None else None
-        schedule = getattr(occurrence, "schedule", None)
-        if occurrence is None or not isinstance(schedule, ScheduledTransaction) or self.db is None:
-            return None
-        root = self.get_root()
-        window = OccurrenceMatchWindow(
-            root if isinstance(root, Gtk.Window) else None,
-            self.db,
-            schedule.occurrence_key(occurrence.when),
-        )
-        window.present()
-        return window
-
-    def _on_activated(self, _view, position: int) -> None:
-        selection = self.upcoming_view.get_model()
-        selected = selection.get_item(position) if selection is not None else None
-        occurrence = unwrap(selected) if selected is not None else None
-        if occurrence is not None:
-            if isinstance(occurrence.schedule, AccountPaymentDefinition):
-                db = self.db
-                if db is None:
-                    return
-                try:
-                    account = book_server(db).account(occurrence.schedule.account).account
-                except ApiError:
-                    return
-                from ..dialogs.account_dialog import AccountDialog
-
-                assert db is not None
-                dialog = AccountDialog(self.get_root(), db, account=account)
-                dialog.connect("close-request", self.refresh_on_close)
-                dialog.present()
-            else:
-                self.manager.open_schedule(occurrence.schedule.handle)
-
-    def _on_post_clicked(self, _button) -> None:
-        """Open the same review dialog the book shows on opening.
-
-        Posting everything due in one click is the behaviour this replaced: it is
-        one keystroke away from writing a month of transactions nobody read.
-        """
-        if self.db is None:
-            return
-        from ..dialogs.due_dialog import DueDialog
-
-        reviews = book_server(self.db).due_review()
-        if not reviews:
-            self.status.set_text("Nothing is due")
-            return
-        dialog = DueDialog(self.get_root(), self.db, reviews)
-        dialog.connect("close-request", self.refresh_on_close)
-        dialog.present()

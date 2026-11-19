@@ -17,6 +17,33 @@ GitHub releases.
   commitments and estimates tables, so the buttons act on the row that shows as
   selected; before, choosing an estimate that already looked selected left them
   acting on a commitment.
+- **Commands are where you expect them** on the desktop, in every view, as in
+  GnuCash and Gramps. The menus list every command; the toolbar shows the current
+  view's, those on the selected row first (**Edit**, **Delete**, **Duplicate**,
+  then the view's own), greyed out until a row is selected; and right-clicking a
+  row (or Shift+F10, or the Menu key) lists the commands on it. Buttons inside a
+  view now only change what it shows: pickers, filters, ranges and their **Apply**,
+  and the register's **Enter**, **Cancel**, and **Split**. Before, a view's row
+  commands were buttons beside its table while its larger tools were toolbar
+  icons, and several were on no menu at all.
+  - Scheduled's **View / Edit…**, **Enter Next**, **Skip Next**, **Match…**,
+    **Duplicate…**, and **Delete…**, Review's six buttons, Plan's **Resolve
+    actuals…**, **Add estimate…**, **Alter baseline…**, and **Suppress
+    baseline…**, Projection's **Explain month…** and **Save Base as Scenario…**
+    (now **Save Scenario**), and the FSA Dashboard's **Link selected** are toolbar
+    icons and Actions menu items. Each FSA claim's **Review claim** button is gone:
+    select the claim and choose **Edit Claim**, or double-click it.
+  - New: **Open Register** and **Delete Account…** in Accounts, and **Delete
+    Transaction…** for the register's cursor transaction (Ctrl+Z restores it).
+    The account selected stays selected when Accounts is redrawn after an edit.
+  - **Upcoming is now the first table in Scheduled**, above the definitions, with
+    its look-ahead and overdue note: the separate Upcoming view is gone (a book
+    that had it in a tab reopens Scheduled there), and **Review Due** is a
+    Scheduled toolbar icon. The toolbar has no icons of its own for the FSA
+    Dashboard and Review, which stay on the View menu and are opened by **Manage
+    FSA Claims…** and **Resolve Actuals…**.
+  - A register in a window of its own keeps **Edit**, **New**, **New Window**, and
+    **Reconcile…** as buttons, since it has no toolbar.
 
 ## 2026.11.18.0
 

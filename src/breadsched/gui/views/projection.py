@@ -64,6 +64,7 @@ _ASSUMPTIONS = [
 class ProjectionView(BaseView):
     """Multi-year forecast with live assumptions and saved scenarios."""
 
+    KEY = "projection"
     PRINTABLE = True
 
     WATCHES = (
@@ -163,25 +164,15 @@ class ProjectionView(BaseView):
         bar.append(Gtk.Label(label="Scenario"))
         bar.append(self.scenario_picker)
 
-        # Compare and Export are toolbar icons; Save stays here because its label
-        # follows the scenario being viewed.
-
-        self.explain_button = Gtk.Button(label="Explain month…")
-        self.explain_button.set_sensitive(False)
-        self.explain_button.set_tooltip_text(
-            "Inspect the events, balances, and assumptions behind a projected month"
-        )
-        self.explain_button.connect("clicked", self._on_explain_clicked)
-        bar.append(self.explain_button)
-
-        spacer = Gtk.Box()
-        spacer.set_hexpand(True)
-        bar.append(spacer)
-
-        self.save_button = Gtk.Button(label="Save Base as Scenario…")
-        self.save_button.add_css_class("suggested-action")
-        self.save_button.connect("clicked", self._on_save_clicked)
-        bar.append(self.save_button)
+        # Explain Month, Compare, Save Scenario, and Export are toolbar icons and
+        # Actions menu items (view_catalog); the scenario and the assumptions
+        # choose what the projection shows. This says what Save Scenario does for
+        # the scenario shown.
+        self.save_note = Gtk.Label(xalign=0, wrap=True)
+        self.save_note.add_css_class("dim")
+        self.save_note.set_hexpand(True)
+        bar.append(self.save_note)
+        self.enable_commands(explain_month=False)
         return bar
 
     def _build_controls(self, box: Gtk.Box) -> Gtk.Widget:
@@ -233,8 +224,7 @@ class ProjectionView(BaseView):
         self._projection_dirty = True
         self._comparison = None
         self._result = None
-        if hasattr(self, "explain_button"):
-            self.explain_button.set_sensitive(False)
+        self.enable_commands(explain_month=False)
         super().set_db(db)
         if db is not None:
             self._baseline = baseline_scenario(self.manager, db)
@@ -298,9 +288,7 @@ class ProjectionView(BaseView):
         self.scenario_picker.set_selected(selected)
         self._set_scenario_name(chosen.name if chosen is not None else "Base scenario")
         self._load_scenario_controls()
-        self.save_button.set_label(
-            "Save Scenario Changes" if chosen is not None else "Save Base as Scenario…"
-        )
+        self._show_save_note(chosen is not None)
 
     def _load_scenario_controls(self) -> None:
         self.years_spin.set_value(self.scenario.years)
@@ -453,7 +441,7 @@ class ProjectionView(BaseView):
             return
         LOG.error("projection failed", exc_info=(type(exc), exc, exc.__traceback__))
         self._result = None
-        self.explain_button.set_sensitive(False)
+        self.enable_commands(explain_month=False)
         self.chart.set_model(None)
         self.balances_chart.set_model(None)
         self._show_projection_notes([f"The projection could not be calculated: {exc}"])
@@ -528,7 +516,7 @@ class ProjectionView(BaseView):
 
     def _render(self, result: projection.Projection) -> None:
         self._result = result
-        self.explain_button.set_sensitive(bool(result.rows))
+        self.enable_commands(explain_month=bool(result.rows))
         self.chart.set_model(projection_chart(result, self._comparison, self._currency_label()))
         self.balances_chart.set_model(
             projection_balances_chart(result, self._account_names(result), self._currency_label())
@@ -665,12 +653,17 @@ class ProjectionView(BaseView):
         self._updating = True
         try:
             self._load_scenario_controls()
-            self.save_button.set_label(
-                "Save Scenario Changes" if chosen is not None else "Save Base as Scenario…"
-            )
+            self._show_save_note(chosen is not None)
         finally:
             self._updating = False
         self.recompute()
+
+    def _show_save_note(self, saved: bool) -> None:
+        self.save_note.set_text(
+            "Save Scenario keeps these assumptions in this scenario."
+            if saved
+            else "Save Scenario keeps these assumptions as a new scenario."
+        )
 
     def _on_explain_clicked(self, _button) -> None:
         if self.db is None or self._result is None:

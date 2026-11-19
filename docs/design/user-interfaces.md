@@ -8,7 +8,10 @@ The main window has no sidebar, which duplicated the View menu and took width fr
 every view. The toolbar is arranged around the current view: actions
 that work anywhere (`view_catalog.TOOLBAR`: undo, redo, new transaction, print;
 opening and importing a book are File-menu and start-screen commands), one toggle
-per other view (`view_catalog.CATEGORIES`), the current view's name in bold
+per other main work area (`view_catalog.TOOLBAR_VIEWS`: Dashboard, Accounts,
+Register, Scheduled, Plan, Projection; the FSA Dashboard and Review are on the View
+menu and reached from the commands that lead to them, which leaves the toolbar room
+for the current view's commands), the current view's name in bold
 (`view_heading`) as the divider, its own command icons (`view_tools`, including the
 register's Reconcile), and, only on `viewmanager.SUMMARY_VIEWS` (Dashboard and
 Accounts), the book's account and transaction counts. The toolbar scrolls horizontally rather than setting
@@ -27,7 +30,49 @@ View commands are declared once in `view_catalog.VIEW_ACTIONS`. Each becomes a
 `report` on **Reports**), and appears in the toolbar only while its view is current.
 **Actions** lists the current view's commands first, then the commands that work
 anywhere, then every other view's commands under **Other Views**, so each command
-has exactly one item. A `report` action is not on **Actions**: the **Reports** menu
+has exactly one item.
+
+Where a command goes follows one rule, the GnuCash and Gramps arrangement, which
+replaced a mix in which a view's row commands (Edit, Delete, Enter Next, Match...)
+were buttons beside its table while its larger tools (Suggest, New Loan) were
+toolbar icons:
+
+- **Menus list every command.** A `row` command (one acting on the selected row) is
+  listed only under the current view, never under **Other Views**: the row it acts
+  on is one you can see. An `app_action` item (Scheduled's **Review Due**, which is
+  `app.post-scheduled`) is the application's own action shown among a view's toolbar
+  icons; **Actions** lists it once, under the view that shows it or else with the
+  commands that work anywhere.
+- **The toolbar shows the current view's everyday commands**, its row commands first
+  (New, Edit, Delete, Duplicate, then the view's own), then its tools. A view says
+  which commands it can use now with `BaseView.enable_commands(name=bool)`; a `row`
+  command is greyed out until it does, and `ViewManager.apply_view_commands` applies
+  the displayed view's states to the shared window actions, again whenever the
+  displayed view (or register tab) changes.
+- **A row's right-click menu** (`_base.attach_row_menu`, also Shift+F10 and the Menu
+  key) is a `Gtk.PopoverMenu` of the view's `row` commands, narrowed per table when a
+  view has two (Review's actuals and candidates). The view (a `Gtk.Box`, which lets
+  go of every child as it goes) holds the menu, not the table: a `Gtk.ListBox` being
+  disposed loops forever trying to remove a popover that is not one of its rows,
+  which would hang closing the window. A right-click first selects the
+  row under the pointer: a `Gtk.ColumnView` cell carries its row's item
+  (`mark_row`), whose position `column_view_row_at` looks up when clicked (rows
+  opening above a row move it without its cells being bound again, so a position
+  noted at bind time goes stale), a `Gtk.ListBox` row is found by height, and the
+  register moves its cursor (`RegisterGrid.point_at`). The register's
+  menu takes the keys in the capture phase, ahead of the cell editor's own text menu.
+- **Buttons inside a view only change what it shows**: pickers, filters, ranges and
+  their Apply, and the Dashboard's arranging mode (Add Item, Reset Layout, Cancel,
+  Done), which edits the layout shown. The register's Enter, Cancel, and Split act on
+  the transaction being typed, as GnuCash's do. A register in a window of its own
+  has no toolbar or menus: it shows Edit, New, New Window, and Reconcile as buttons
+  (`RegisterView.use_own_window`) and holds its own `win` action group, so its
+  right-click menu acts on that register.
+
+Upcoming is no longer a view: its by-date occurrences, look-ahead, and overdue note
+are the first table of Scheduled, which keeps one selection across its three tables,
+as the browser's Scheduled page already showed them. A remembered `upcoming` tab
+reopens Scheduled. A `report` action is not on **Actions**: the **Reports** menu
 lists every report once from `gui/reports_window.report_specs()` (the interactive
 reports, then each report breadlet that is not one of them) as `app.open-report`
 with the report's key, and a view's `report` action opens the same key.
@@ -44,13 +89,11 @@ Budget Jars take the Plan view's range, grouping and scenario when the Plan is o
 Transaction command (`app.new-transaction`, Ctrl+T) starts in the shown register's
 account (`ViewManager.shown_register`). Toolbar icons are unique per command:
 `view_catalog.toolbar_icons()` lists them and only `SHARED_ICONS`
-(`document-new` for New…, `tab-new` for …in New Tab) may repeat, each with that one
-meaning; a test enforces it. The menu model is rebuilt only
+(`document-new` for New…, `tab-new` for …in New Tab, `document-edit` for Edit,
+`edit-delete` for Delete, `insert-link` for Match, `media-skip-forward` for Skip) may
+repeat, each with that one meaning; a test enforces it. The menu model is rebuilt only
 when the view changes: opening a submenu moves focus into its popover, and
 rebuilding the same view's model then destroyed the open submenu and crashed GTK.
-Buttons stay in a view only where their state depends on it (Review Due
-Transactions…, Save Base as Scenario…, Reconcile…) or where they act on a table's
-selected row.
 
 The reconcile window (`dialogs/reconciliation_dialog`) is the one statement
 dialog that is not modal: `ReconciliationDialog.present_for` keeps one per book and
@@ -82,7 +125,9 @@ line.
 The FSA claims window (`dialogs/fsa_claims_dialog`) is likewise not modal and
 one per book (`FsaClaimsDialog.present_for`): it is the application action
 `app.fsa-claims`, listed in every view's Actions menu (on the FSA Dashboard, as that
-view's own command and toolbar icon instead), and it refreshes its candidate
+view's own command and toolbar icon instead, beside **Edit FSA Claim**, which opens
+the claim selected in the dashboard's claims table, and **Link Chosen Statement
+Lines**), and it refreshes its candidate
 transactions on `database-changed`. Its chooser's first entry is the new claim. Each
 link list pins the linked splits above a candidate list filtered by search text and
 by range (60 days around the service date, the claim's benefit year, or all) and

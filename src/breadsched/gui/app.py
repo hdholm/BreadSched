@@ -896,8 +896,9 @@ class ActionsMenu:
 
     The current view's commands come first, under that view's name. Commands that
     work anywhere follow, and every other view's commands sit under **Other
-    Views**, so each command still has exactly one menu item. The menu model is
-    rebuilt in place, so the menu bar that shows it never changes.
+    Views**, so each command still has exactly one menu item; a command on a
+    selected row (Edit, Delete...) is listed only while its view is shown. The
+    menu model is rebuilt in place, so the menu bar that shows it never changes.
     """
 
     def __init__(self) -> None:
@@ -918,25 +919,43 @@ class ActionsMenu:
         labels = {item_key: label for item_key, label, _icon in MENU_CATEGORIES}
         self.menu.remove_all()
 
-        def commands(view: str) -> list:
-            # Toggles are on the View menu and reports on the Reports menu.
-            return [item for item in VIEW_ACTIONS.get(view, ()) if not (item.toggle or item.report)]
+        def commands(view: str, *, here: bool = False) -> list:
+            # Toggles are on the View menu and reports on the Reports menu. A
+            # command that works anywhere is listed with the others like it,
+            # except under the current view when that view shows it as its own.
+            # A command on a selected row is listed only for the view shown: the
+            # row it acts on is one you can see.
+            return [
+                item
+                for item in VIEW_ACTIONS.get(view, ())
+                if not (item.toggle or item.report)
+                and (here or (item.app_action is None and not item.row))
+            ]
 
-        if key is not None and commands(key):
+        def target(view: str, item) -> str:
+            return item.app_action or f"win.{view_action_name(view, item)}"
+
+        listed: set[str] = set()
+        if key is not None and commands(key, here=True):
             here = Gio.Menu()
-            for item in commands(key):
-                here.append(item.label, f"win.{view_action_name(key, item)}")
+            for item in commands(key, here=True):
+                here.append(item.label, target(key, item))
+                listed.add(target(key, item))
             self.menu.append_section(labels.get(key, key), here)
         general = Gio.Menu()
-        general.append("New _Transaction…", "app.new-transaction")
-        general.append("Review _Due Transactions…", "app.post-scheduled")
-        general.append("Categorization _Rules…", "app.rules")
-        general.append("Rei_mbursable Expenses…", "app.receivables")
-        general.append("Savings _Goals…", "app.savings-goals")
         # Claims are not tied to the FSA Dashboard: they are managed beside any
-        # register (#366). That view lists the command first already.
-        if key != "fsa-dashboard":
-            general.append("Manage _FSA Claims…", "app.fsa-claims")
+        # register (#366). A view that lists one of these first (the FSA
+        # Dashboard its claims, Scheduled its due review) does not list it twice.
+        for label, action in (
+            ("New _Transaction…", "app.new-transaction"),
+            ("Review _Due Transactions…", "app.post-scheduled"),
+            ("Categorization _Rules…", "app.rules"),
+            ("Rei_mbursable Expenses…", "app.receivables"),
+            ("Savings _Goals…", "app.savings-goals"),
+            ("Manage _FSA Claims…", "app.fsa-claims"),
+        ):
+            if action not in listed and not (action == "app.fsa-claims" and key == "fsa-dashboard"):
+                general.append(label, action)
         self.menu.append_section(None, general)
         others = Gio.Menu()
         for view in VIEW_ACTIONS:
@@ -944,7 +963,7 @@ class ActionsMenu:
                 continue
             submenu = Gio.Menu()
             for item in commands(view):
-                submenu.append(item.label, f"win.{view_action_name(view, item)}")
+                submenu.append(item.label, target(view, item))
             others.append_submenu(labels[view], submenu)
         section = Gio.Menu()
         section.append_submenu("Other _Views", others)
