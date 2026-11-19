@@ -202,7 +202,8 @@ remains on its due date even in a monthly report.
 
 A commitment is an event you expect to occur and may post, such as rent, a loan
 payment, or a paycheck. An estimate fills a planning gap, such as groceries or an
-irregular utility amount. Dashboard and Upcoming show commitments as obligations;
+irregular utility amount. The Dashboard and Scheduled's **Upcoming** list show
+commitments as obligations;
 estimates belong in Plan and Projection and are not presented as bills already due.
 
 **Suggest** (Suggest Estimates from History) creates reviewable estimate drafts. It
@@ -221,7 +222,7 @@ rewrite historical variance. A scheduled occurrence is matched by amount only to
 an actual in the same transaction currency. If an older link connects different
 currencies, its occurrence variance is unavailable. Plan totals convert other
 currencies as described under [Plan](#plan). In Plan, open a value to inspect its
-occurrences and actual splits, and use **Resolve actuals** when an actual needs to be
+occurrences and actual splits, and use **Resolve Actuals** when an actual needs to be
 matched, marked unexpected, or reviewed. Correct a posted split's planning purpose
 in the transaction editor; correct a scheduled purpose in the schedule editor.
 
@@ -234,9 +235,10 @@ matched to it. A scheduled payment (a bill) is done once a transaction is matche
 it or posted from it, even for a different amount.
 
 **Match to Plan** matches by split and amount, the way a statement is reconciled.
-From a planned item (**Match…** beside it in a Plan value's detail, in Scheduled and
-Upcoming, and beside each scheduled jar in Budget jars; a schedule opens on its latest
-occurrence up to today), the window shows
+From a planned item (**Match…** beside it in a Plan value's detail, **Match** in
+Scheduled on a schedule or one of its upcoming occurrences, and **Match…** beside each
+scheduled jar in Budget jars; a schedule opens on its latest occurrence up to today),
+the window shows
 what was expected, what has counted toward it so far, and what remains, and below,
 the splits in its period that could count, none checked: check a split to count the
 amount beside it (all that is left of the split, or what you type), and uncheck it to
@@ -247,8 +249,9 @@ planned items it could count toward, best first: a store receipt can count its
 groceries toward the groceries estimate and its light bulbs toward the household one.
 A split that needed no plan can be marked **Not planned**. **Match** there counts the
 amount typed on top of what the split already counts toward that item. A transaction
-leaves Review once each split it was for is matched or not planned, and the Plan's
-**Resolve actuals (N)…** says how many in its range still need it. The browser has
+leaves Review once each split it was for is matched or not planned, and the Plan says
+how many in its range still need it (the desktop under its summary, beside **Resolve
+Actuals…**; the browser on its **Resolve actuals (N)…** button). The browser has
 the same windows: **Match…** in a Plan value's detail and on each schedule, **Match
 to plan…** on each register row, and **Match by split…** in Review.
 
@@ -880,7 +883,8 @@ it; both can be undone.
 Configure payment behavior on the Credit card account: paid in full or carried
 balance, payment day, usual carried-balance payment, and optional **Paid from** Bank
 or Cash account. BreadSched then shows the known obligation consistently in
-Dashboard, Scheduled, and Upcoming. An explicit or imported payment schedule takes
+the Dashboard and Scheduled (its definitions and its **Upcoming** list). An explicit
+or imported payment schedule takes
 precedence. The generated account-linked row is informational and is not posted
 automatically.
 
@@ -1605,7 +1609,9 @@ An FSA administrator's statement, imported or reconciled, brings FSA transaction
 you did not enter yourself. When one clearly belongs on a claim, the FSA Dashboard
 lists it under **Proposed claim links** with the claim and the role it takes
 (**Paid from the FSA card**, **FSA reimbursement**, or **Refunded to the FSA card**)
-and why; select **Link selected** to link the checked ones. A line is proposed only
+and why; untick any that does not belong, then choose **Link Lines** on the desktop
+toolbar (**Actions → Link Chosen Statement Lines**) or **Link selected** in the
+browser to link the ticked ones. A line is proposed only
 when exactly one claim fits it with a matching amount, and each claim is proposed at
 most once at a time; anything else waits for you in Review. A reimbursement is
 proposed once the claim has the payment you made, and a refund to the FSA card even

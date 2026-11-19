@@ -69,6 +69,7 @@ def _charts(widget: Gtk.Widget):
 class DashboardView(BaseView):
     """The Dashboard's breadlets on their grid, in the order arranged."""
 
+    KEY = "dashboard"
     PRINTABLE = True
 
     WATCHES = (

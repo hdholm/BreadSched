@@ -1,4 +1,10 @@
-"""Review actual transactions that have not yet been resolved against the plan."""
+"""Review actual transactions that have not yet been resolved against the plan.
+
+Choose an actual on the left and a candidate scheduled occurrence on the right;
+Match, Reject Candidate, Skip Occurrence, Match by Split, Attach to FSA Claim, and
+Mark Unexpected are toolbar icons and Actions menu items (``view_catalog``), and
+each list's right-click menu holds the commands on its row.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +17,7 @@ from ...presentation import REVIEW_ACTION_HELP, claim_role_label, review_groups
 from ..gi_setup import Gtk, Pango
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ._base import BaseView
+from ._base import BaseView, attach_row_menu
 
 __all__ = ["ResolutionView"]
 
@@ -19,6 +25,7 @@ __all__ = ["ResolutionView"]
 class ResolutionView(BaseView):
     """Queue of actuals awaiting Match / Reject / Unexpected decisions."""
 
+    KEY = "resolution"
     WATCHES = (
         "database-changed",
         "transaction-add",
@@ -112,40 +119,12 @@ class ResolutionView(BaseView):
         self.variance.add_css_class("dim")
         detail.append(self.variance)
 
-        buttons = Gtk.Box(spacing=8)
-        self.match_button = Gtk.Button(label="Match")
-        self.match_button.connect("clicked", self._on_match)
-        buttons.append(self.match_button)
-        self.reject_button = Gtk.Button(label="Reject candidate")
-        self.reject_button.connect("clicked", self._on_reject)
-        buttons.append(self.reject_button)
-        self.skip_button = Gtk.Button(label="Skip scheduled occurrence")
-        self.skip_button.connect("clicked", self._on_skip)
-        buttons.append(self.skip_button)
-        self.fsa_button = Gtk.Button(label="Attach to FSA claim…")
-        self.fsa_button.connect("clicked", self._on_fsa_attach)
-        buttons.append(self.fsa_button)
-        self.unexpected_button = Gtk.Button(label="Mark unexpected")
-        self.unexpected_button.connect("clicked", self._on_unexpected)
-        buttons.append(self.unexpected_button)
-        # Match each split, for part or all of its amount.
-        self.split_button = Gtk.Button(label="Match by Split…")
-        self.split_button.set_tooltip_text(
-            "Count each split, for part or all of its amount, toward a planned item, "
-            "or mark a split not planned"
-        )
-        self.split_button.connect("clicked", self.open_split_matching)
-        buttons.append(self.split_button)
-        detail.append(buttons)
-        for key, button in (
-            ("match", self.match_button),
-            ("reject", self.reject_button),
-            ("skip", self.skip_button),
-            ("fsa", self.fsa_button),
-            ("unexpected", self.unexpected_button),
-        ):
-            button.set_tooltip_text(REVIEW_ACTION_HELP[key])
-        # The selected action's explanation, so it can be read without hovering.
+        # The commands are toolbar icons and Actions menu items; each list's
+        # right-click menu holds those on its row: an actual's own, and a
+        # candidate's. What each command does is explained here, for the
+        # commands the choice allows, so it can be read without hovering.
+        attach_row_menu(self, self.actual_list, ("match-split", "attach-fsa", "unexpected"))
+        attach_row_menu(self, self.candidate_list, ("match", "reject", "skip"))
         self.action_help = Gtk.Label(xalign=0, wrap=True)
         self.action_help.add_css_class("dim")
         detail.append(self.action_help)
@@ -339,13 +318,15 @@ class ResolutionView(BaseView):
     def _set_action_sensitivity(self) -> None:
         has_actual = self._transaction_handle is not None
         has_candidate = self._candidate_key is not None
-        self.match_button.set_sensitive(has_actual and has_candidate)
-        self.reject_button.set_sensitive(has_actual and has_candidate)
-        self.skip_button.set_sensitive(has_candidate)
         has_fsa = has_actual and self._detail is not None and bool(self._detail.roles)
-        self.fsa_button.set_sensitive(has_fsa)
-        self.unexpected_button.set_sensitive(has_actual)
-        self.split_button.set_sensitive(has_actual)
+        self.enable_commands(
+            match=has_actual and has_candidate,
+            reject=has_actual and has_candidate,
+            skip=has_actual and has_candidate,
+            match_split=has_actual,
+            attach_fsa=has_fsa,
+            unexpected=has_actual,
+        )
         help_keys: tuple[str, ...]
         if has_actual and has_candidate:
             help_keys = ("match", "reject", "skip", "unexpected")

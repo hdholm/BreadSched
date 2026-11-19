@@ -44,6 +44,7 @@ from .remote_book import OpenBook, RemoteBook
 from .view_catalog import (
     CATEGORIES,
     TOOLBAR,
+    TOOLBAR_VIEWS,
     VIEW_ACTIONS,
     ViewAction,
     view_action_name,
@@ -153,6 +154,8 @@ class ViewManager(Gtk.ApplicationWindow):
         self.view_actions: dict[str, Gio.SimpleAction] = {}
         for key, actions in VIEW_ACTIONS.items():
             for item in actions:
+                if item.app_action:
+                    continue  # the application's own action, shown with this view
                 name = view_action_name(key, item)
                 if item.toggle:
                     action = Gio.SimpleAction.new_stateful(
@@ -237,6 +240,8 @@ class ViewManager(Gtk.ApplicationWindow):
         separator.set_margin_end(6)
         self.toolbar.append(separator)
         for key, label, icon in CATEGORIES:
+            if key not in TOOLBAR_VIEWS:
+                continue  # reached from the View menu (and the commands that lead there)
             button = _view_button(key, label, icon)
             self.view_buttons[key] = button
             self.toolbar.append(button)
@@ -723,10 +728,33 @@ class ViewManager(Gtk.ApplicationWindow):
                 _tool_button(
                     item.caption or item.label.replace("_", "").rstrip("…"),
                     item.icon or "system-run-symbolic",
-                    f"win.{view_action_name(key, item)}",
+                    item.app_action or f"win.{view_action_name(key, item)}",
                     item.label.replace("_", ""),
                 )
             )
+        shown = self._shown_view()
+        if shown is not None:
+            self.apply_view_commands(shown)
+
+    def _shown_view(self):
+        """The view on screen: the current register or projection tab included."""
+        shown = self.stack.get_visible_child()
+        if shown is self.register_stack:
+            return self.register_stack.get_visible_child()
+        return shown
+
+    def apply_view_commands(self, view) -> None:
+        """Grey out the shown view's commands it says cannot be used now (a command
+        on a selected row, with no row selected); a hidden view's wait until shown."""
+        key = getattr(view, "KEY", "")
+        if not key or not self.displays(view):
+            return
+        for item in VIEW_ACTIONS.get(key, ()):
+            if item.app_action or item.toggle or item.report:
+                continue
+            action = self.view_actions.get(view_action_name(key, item))
+            if action is not None:
+                action.set_enabled(self.db is not None and view.command_enabled(item))
 
     def _share_view_actions(self, *_args) -> None:
         """Arrange the application's Actions menu around this window's view."""
@@ -749,6 +777,19 @@ class ViewManager(Gtk.ApplicationWindow):
         if handler is None:
             return
         # Most handlers were button callbacks and take the button as an argument.
+        if inspect.signature(handler).parameters:
+            handler(None)
+        else:
+            handler()
+
+    @staticmethod
+    def _on_window_register_action(_action, _parameter, register, item: ViewAction) -> None:
+        """A command chosen in a register window's right-click menu acts on it."""
+        if register.db is None:
+            return
+        handler = getattr(register, item.handler, None)
+        if handler is None:
+            return
         if inspect.signature(handler).parameters:
             handler(None)
         else:
@@ -862,7 +903,7 @@ class ViewManager(Gtk.ApplicationWindow):
         from .views.projection import ProjectionView
         from .views.register import RegisterView
         from .views.resolution import ResolutionView
-        from .views.scheduled import ScheduledView, UpcomingView
+        from .views.scheduled import ScheduledView
 
         factories = {
             "dashboard": lambda: DashboardView(self),
@@ -870,7 +911,6 @@ class ViewManager(Gtk.ApplicationWindow):
             "accounts": lambda: AccountTreeView(self),
             "register": lambda: RegisterView(self),
             "scheduled": lambda: ScheduledView(self),
-            "upcoming": lambda: UpcomingView(self),
             "resolution": lambda: ResolutionView(self),
             "plan": lambda: PlanView(self),
             "projection": lambda: ProjectionView(self),
@@ -1299,9 +1339,11 @@ class ViewManager(Gtk.ApplicationWindow):
     def _reopen_tab(self, entry: list, known: set[str]) -> _Tab | None:
         if self.db is None or not entry or not isinstance(entry[0], str):
             return None
-        if entry[0] not in known:
+        # Upcoming's list is now the first table on Scheduled, so a remembered
+        # Upcoming tab reopens Scheduled (or the Scheduled tab already open).
+        key = "scheduled" if entry[0] == "upcoming" else entry[0]
+        if key not in known:
             return None
-        key = entry[0]
         reference = entry[1] if len(entry) > 1 and isinstance(entry[1], str) else ""
         # A remembered tab comes back as a tab; what it shows is drawn when it is
         # chosen, or in the background (#389), not all at once as the book opens.
@@ -1329,6 +1371,18 @@ class ViewManager(Gtk.ApplicationWindow):
         window.always_remember_size = True
         register = RegisterView(self)
         register.account_handle = account_handle
+        # The window has no toolbar or menus: the register shows its commands as
+        # buttons, and its right-click menu uses actions of this window's own.
+        actions = Gio.SimpleActionGroup()
+        for item in VIEW_ACTIONS["register"]:
+            if item.app_action or item.toggle or item.report:
+                continue
+            action = Gio.SimpleAction.new(view_action_name("register", item), None)
+            action.connect("activate", self._on_window_register_action, register, item)
+            action.set_enabled(register.command_enabled(item))
+            actions.add_action(action)
+        window.insert_action_group("win", actions)
+        register.use_own_window(actions)
         window.set_child(register)
         pair = (window, register)
         self._register_windows.append(pair)

@@ -106,28 +106,43 @@ keep only the choices that contain it.
 
 The toolbar starts with the commands that work anywhere (undo, redo, new
 transaction, and print); open and import a book from the **File** menu or the start
-screen. Next comes one icon for each other work area; the view you are in has no
-icon, since you are already there. The name of the view you are in, in bold, then
-divides those icons from that view's own command icons, such as **Reconcile** in a
-register. On the Dashboard and Accounts, two short lines after them count the
-book's accounts and transactions. The **View** menu lists every area.
-The **Actions** menu follows the view too: the current view's commands come first,
-under its name, then the commands that work anywhere, and every other view's
-commands under **Actions → Other Views**. The **Reports** menu lists every report,
+screen. Next come icons for the main work areas: Dashboard, Accounts, Register,
+Scheduled, Plan, and Projection. The view you are in has no icon, since you are
+already there. The **View** menu lists every area, the FSA Dashboard and Review
+included; those two are also opened by the commands that lead to them (**Manage FSA
+Claims…** and **Resolve Actuals…**). The name of the view you are in, in bold, then
+divides those icons from that view's own command icons. On the Dashboard and
+Accounts, two short lines after them count the book's accounts and transactions.
+
+Every view places its commands the same way, as GnuCash and Gramps do:
+
+- The **Actions** menu lists every command. The current view's come first, under
+  its name, then the commands that work anywhere, and every other view's under
+  **Actions → Other Views**. A command on a selected row, such as Edit or Delete, is
+  listed only while its view is shown.
+- The toolbar shows the current view's everyday commands. Those that act on the
+  selected row come first (**Edit**, **Delete**, **Duplicate**, then the view's own,
+  such as **Enter Next** or **Match**), greyed out while no row is selected; the
+  view's tools follow, such as **Suggest**, **New Loan**, or **Reconcile**.
+- Right-click a row, or press Shift+F10 or the Menu key, for a menu of the commands
+  on that row. Double-clicking a row (or pressing Enter on it) opens it: an
+  account's register, or a schedule or a claim to edit.
+- Buttons inside a view only change what it shows: pickers, filters, ranges, and
+  their **Apply**. The register's **Enter**, **Cancel**, and **Split** act on the
+  transaction being typed, as GnuCash's do, and a register in a window of its own,
+  which has no toolbar, shows its commands as buttons too.
+
+The **Reports** menu lists every report,
 wherever it is calculated: **Expense Explorer…**, **Budget Jars…**, **Net Worth
 History…**, **Holdings and Cost Basis…**, **Realized Gains…**, **Tax Year…**, and the
 charted reports (see [Reports and breadlets](#reports-and-breadlets)). Each opens in
 its own tab of one **Reports** window, so several reports can be open side by side;
 a tab's close button (or the report's own **Close**) closes it, and **Reports →
 Reports Window** shows the window with an **Open Report** menu.
-A menu item that asks for more before it acts ends in "…". The toolbar command
-icons are, for example, **New Account**, **Edit Account**, **Security Price**, and
-**Exchange Rate** in Accounts, **Manage FSA Claims** on the FSA Dashboard (also in
-the Actions menu in every view),
-**Configure Dashboard** and **Arrange Dashboard** on the Dashboard, **New Scheduled**, **Suggest**, and
-**New Loan** in Scheduled, **New Scenario**, **Scenarios**, and **Explore** in Plan,
-and **Compare**, **Export**, and **New tab** in Projection. Each icon stands for one
-command, so the same picture never means two things. **View → Hide Empty
+A menu item that asks for more before it acts ends in "…". Each toolbar icon stands
+for one command, so the same picture never means two things: **Edit** is always
+the pencil, **Delete** the bin, and **Match** the link, whichever view shows them.
+**View → Hide Empty
 Accounts** filters the account tree. **View → Show Hidden Accounts** lists hidden
 accounts there, marked **(hidden)**, and makes them usable everywhere an account is
 chosen (registers and their account list, the transaction editor, schedules,
@@ -139,8 +154,7 @@ Every date field reads dates as the register does: `2026-03-15`, `3/15/26`, `3/1
 (this year), or `15` (this month); in a field holding a date, **t** is today, **+**
 and **-** move a day, **]** and **[** a month, **m** and **h** go to the month's
 first and last day, and **y** and **r** the year's. Leaving the field shows the date
-as `2026-03-15`. Buttons that act on a selected
-row, such as a schedule's **View / Edit…**, stay beside their table.
+as `2026-03-15`.
 
 **New Transaction…** (the toolbar's **Transaction**, or Ctrl+T) opens the
 transaction editor; with a register shown, the new transaction starts in that
@@ -233,17 +247,23 @@ others are drawn when you choose them. Registers, Accounts, and the Plan are rea
 the background instead: they are ready when you switch to them, and after a change the
 Plan keeps showing what it had, marked **Updating…**, until the new figures are in.
 
-Registers can also open in independent windows; their account, filter, and cursor
-do not replace the main window's register state.
+Registers can also open in independent windows (**Actions → Open in New Window**);
+their account, filter, and cursor do not replace the main window's register state.
+Such a window has no toolbar, so its register shows **Edit**, **New**, **New
+Window**, and **Reconcile…** as buttons beside **Enter** and **Cancel**, and its
+right-click menu holds the same commands as the main window's.
 
 ## Accounts
 
-In Accounts, **New Account** and **Edit Account** (toolbar icons, or the Actions
-menu) open the account editor: its name, type, parent, code, description, and notes,
-whether it is a placeholder or hidden, and the settings its type has, such as a
-card's payment terms, a loan's asset, an FSA's funding years, or an investment's
-return and cost method. **Delete** asks first, and refuses an account the book still
-needs, saying why. Its table shows each account's **Balance** in what it holds (its
+In Accounts, **New Account** and **Edit Account** (toolbar icons, the Actions menu,
+or an account's right-click menu) open the account editor: its name, type, parent,
+code, description, and notes, whether it is a placeholder or hidden, and the
+settings its type has, such as a card's payment terms, a loan's asset, an FSA's
+funding years, or an investment's return and cost method. **Open Register** (or
+double-clicking the account) opens its register. **Delete Account** (on the
+toolbar, in the menus, or in the editor) asks first, and refuses an account the
+book still needs, saying why. The account selected stays selected, and in view,
+when the chart is redrawn after an edit. Its table shows each account's **Balance** in what it holds (its
 own currency, or shares for a security), its **Value** in the reporting currency,
 the **Price** that values a security or foreign currency, and the **Last Quote
 Update** (the quote's date and source). See [Accounts](../USER_GUIDE.md#accounts).
@@ -439,12 +459,22 @@ or **Escape** to put it back. As in GnuCash, **Up**, **Down**, **Page Up**, and
 be saved, you stay on it and the line under the register says why. **Ctrl+End**
 returns to the blank transaction.
 
+The transaction under the cursor has commands of its own: toolbar icons, items
+under **Actions**, and its right-click menu (right-clicking a row moves the cursor
+there first; Shift+F10 or the Menu key opens the menu for the cursor's row).
+**Edit Transaction…** opens it in the full editor, or, on the blank transaction, a
+new one holding what you typed. **Delete Transaction…** asks, then deletes it
+(Ctrl+Z restores it); it is greyed out on the blank transaction. **Make
+Scheduled…**, **Match to Plan…**, and **Track as Reimbursable…** save what you typed
+first, then start a schedule from the transaction, choose what it was for, or track
+its cost.
+
 A transaction with more than two splits shows **-- Split Transaction --** as its
 transfer; when you move onto it, its split lines open beneath it, each with a
 memo, an account (completed the same way), and an amount under the account's own
 Increase or Decrease heading, and an empty line waits for another split. Choose
-**Split** in the toolbar to open an ordinary transaction (or the one you are
-typing) the same way, or to fold two lines back into one. While the splits do not
+the register's **Split** button (or **Show Transaction Splits** in its right-click
+menu) to open an ordinary transaction (or the one you are typing) the same way, or to fold two lines back into one. While the splits do not
 balance, the empty last line shows the amount left, in the column that balances
 them: choose its account (or type a memo) and it takes that amount, or type a
 different one. **Enter** saves only once they balance. A new transaction needs one split in this register's account. To move an
@@ -623,6 +653,22 @@ credits are waiting.
 
 ## Scheduled activity
 
+Scheduled shows three tables. **Upcoming** lists every occurrence due within the
+look-ahead chosen beside its heading (**Due now**, 7 days, 30 days, 90 days, or a
+year), oldest first, each date marked *(overdue)* or *(today)*; the line under its
+heading counts what is overdue and what is to be entered or reminded in advance.
+**Commitments and account payments** and **Estimates** list the definitions: what
+recurs, how often, and its next date and amount. Selecting a definition opens its
+splits beneath it. Upcoming used to be a view of its own; a book that had it in a
+tab reopens Scheduled there.
+
+One row is selected across the three tables, and the toolbar, the Actions menu, and
+the row's right-click menu act on its schedule: **Edit**, **Delete**, and
+**Duplicate**, **Enter Next** and **Skip Next**, and **Match** (for an occurrence
+row, that occurrence; for a definition, its current one). Double-clicking a row, or
+pressing Enter on it, edits its schedule (a card payment row opens its account). The
+schedule selected stays selected, and in view, after you edit, enter, or skip it.
+
 Use **New Scheduled** for a fixed or formula-driven commitment or estimate, and
 **Suggest** for reviewable estimate drafts from history. To repeat a transaction
 already recorded, put a register's cursor on it and choose **Actions → Make
@@ -663,8 +709,8 @@ accounts; **Create loan** saves the loan account and its payment schedule. See
 ### Review due transactions
 
 BreadSched asks when a book opens (after any held GnuCash changes), and **Actions →
-Review Due Transactions…**, or the **Review Due Transactions…** button in Upcoming,
-opens the same review; if nothing is due, it says so. Choose each date's action, or one for all
+Review Due Transactions…**, or the **Review Due** toolbar icon in Scheduled, opens
+the same review; if nothing is due, it says so. Choose each date's action, or one for all
 of a schedule's dates, then **Apply**. A schedule with several dates lists them under
 **Show the dates**, so a long list of missed dates opens quickly. If anything was posted, **Posted
 transactions** lists it split by split; choose **Edit…** to change one in the
@@ -679,9 +725,9 @@ fills in the other. **Enter** posts them; **Cancel** posts nothing. See
 
 ### Enter or skip the next occurrence
 
-Select a schedule in Scheduled and choose **Enter Next** to post its next
-occurrence now, or **Skip Next** to mark it done without posting; hover either to
-see the date and amount. An entered transaction opens in **Posted transactions**,
+Select a schedule (or one of its occurrences) in Scheduled and choose **Enter
+Next** to post its next occurrence now, or **Skip Next** to mark it done without
+posting; the line beside the view's title names that occurrence's date and amount. An entered transaction opens in **Posted transactions**,
 and **Edit → Undo** reverses either. In the schedule editor, **Enter in advance
 (days)** and **Remind in advance (days)** set how long before its date an
 occurrence joins the review; its rows say *(in advance)* or *(reminder)*. **Enter
@@ -692,18 +738,25 @@ Next** for a schedule that buys shares asks for their price the same way. See
 
 Set the Plan controls and apply them; they are yours, shared with the browser when you
 use it on this computer, while anyone else the book is shared with keeps their own. Select a
-value to inspect its occurrences and actual splits, and use **Resolve actuals…** to
-match an actual, mark it unexpected, or review it. In **Resolve actuals**, actuals
+value to inspect its occurrences and actual splits, and use **Resolve Actuals…** (a
+toolbar icon while Plan is shown; the line under the Plan summary counts the actuals
+in its range still to match) to match an actual, mark it unexpected, or review it.
+In **Resolve actuals**, actuals
 are grouped under a heading for each category, and each actual shows what it was for, where the money came from, and its notes; the summary
 of the one chosen lists its legs (• marks what it was for) and memos; and each
 candidate, ranked by category first, lists why it is offered and how much of an
-estimate remains. **Match by Split…** there, **Actions → Match to Plan…** in the
-register, **Match…** in Scheduled, Upcoming, and beside each scheduled jar in Budget
-jars, and **Match …** beside each scheduled item in a Plan value's detail open the
+estimate remains. **Match by Split…** there, **Match to Plan…** in the register,
+**Match** in Scheduled (on an occurrence, or a schedule's current one), **Match…**
+beside each scheduled jar in Budget jars, and **Match …** beside each scheduled item
+in a Plan value's detail open the
 [Match to Plan](../USER_GUIDE.md#actuals-and-planned-occurrences) windows, which count
 part or all of each split, mark a split not planned, and close or reopen an
-occurrence. In Resolve actuals, the buttons explain themselves on hover, and the
-line under them says what the available actions do. The Plan summary gives planned,
+occurrence. In Resolve actuals, **Match**, **Reject**, **Skip**, **By Split**,
+**FSA Claim**, and **Unexpected** are toolbar icons and Actions menu items, greyed
+out until an actual (and, for the first three, a candidate) is chosen; each list's
+right-click menu holds those on its row, and the line under the candidates says what
+the available ones do. Without a toolbar icon of its own, Resolve actuals is opened
+from the Plan's **Resolve Actuals…** or **View → Review**. The Plan summary gives planned,
 actual, and variance through the as-of date; **Show** chooses Plan, Period actual,
 or Period variance for the table (see
 [Reporting terms](../USER_GUIDE.md#reporting-terms)). The foreign-currency note sits
@@ -712,7 +765,8 @@ reads **partial**, and its tooltip lists what is left out; Projection, the
 Dashboard, net worth history, and Expense Explorer show the same labels and lists
 (see [Complete, partial, and unavailable values](../USER_GUIDE.md#complete-partial-and-unavailable-values)).
 
-In Projection, **Explain month…** opens a month: its **How this month reconciles** section
+In Projection, **Explain** (on the toolbar, or **Actions → Explain Month…**) opens a
+month: its **How this month reconciles** section
 shows the Cash, Investments, Debts, and Net worth bridges for that month, and
 **Across the whole projection** the same from the first month to the last (see
 [How a projection reconciles](../USER_GUIDE.md#how-a-projection-reconciles)).
@@ -722,7 +776,12 @@ The notes under the Projection chart begin with the
 scenario's cash lasts longer.
 
 Projection runs longer calculations in the background and lets you cancel them.
-Use **New Scenario** and **Scenarios** in Plan, and **Compare** in Projection. To
+Use **New Scenario** and **Scenarios** in Plan, and **Compare** in Projection.
+**Save Scenario** in Projection keeps the assumptions shown: in the scenario shown,
+or, for the Base scenario, as a new scenario you name. In Plan, **Add Estimate**,
+**Alter**, and **Suppress** (toolbar icons, or **Actions → Add Scenario Estimate…**,
+**Alter Baseline Schedule…**, and **Suppress Baseline Schedule…**) add scenario
+events to the saved scenario chosen; they are greyed out for the Base scenario. To
 keep several scenarios open at once, use **New tab** in Projection (see
 [Find your way around](#find-your-way-around)).
 
@@ -797,7 +856,9 @@ the write-off becomes, which a charge recorded to a Receivable account must name
 A warning appears when a linked expense is also on an FSA claim.
 
 When FSA statement lines clearly belong on claims, the FSA Dashboard lists them
-first under **Proposed claim links**, each checked; **Link selected** links them.
+first under **Proposed claim links**, each ticked: untick any that does not belong,
+then choose **Link Lines** on the toolbar (**Actions → Link Chosen Statement
+Lines**).
 Import and reconciliation results say when proposals are waiting.
 
 The FSA Dashboard lists open claims with a **Needs attention** column saying what
@@ -863,7 +924,9 @@ with the FSA card links the FSA side too, so the claim counts as reimbursed by i
 
 The FSA Dashboard's **FSA claims** lists every claim of a benefit year that can still
 be claimed, settled or not, so a claim already filed is easy to tell from a new one,
-and any older claim still open. See
+and any older claim still open. Select one and choose **Edit Claim** (on the
+toolbar, in the Actions menu, or in its right-click menu), or double-click it, to
+open it in Manage FSA Claims; it stays selected when the list is redrawn. See
 [FSA and benefit accounts](../USER_GUIDE.md#fsa-and-benefit-accounts).
 
 ## Import files

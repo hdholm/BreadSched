@@ -56,6 +56,13 @@ Never put user financial data or credentials in a commit message or pull request
   cannot safely reproduce a structure, expose it read-only rather than silently
   normalizing or discarding it.
 - Maintain GTK/web parity when a feature is intended to exist on both surfaces.
+- Declare a desktop view's command in `gui/view_catalog.VIEW_ACTIONS` rather than
+  adding a button to the view: the menus then list it, the toolbar shows it while
+  its view is current, and a command on the selected row (`row=True`) is also in
+  that row's right-click menu and greyed out until the view enables it
+  (`BaseView.enable_commands`). Buttons inside a view only change what it shows;
+  see the placement rule in
+  [User interfaces](docs/design/user-interfaces.md#gtk-window-toolbar-and-tabs).
 - Add a report, a Dashboard item, or a file format as a breadlet registered in
   `gen/plug` (shipped ones in `plugins/breadlets`, `plugins/importer`,
   `plugins/export`), so every interface lists it. A report or Dashboard breadlet
