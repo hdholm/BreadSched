@@ -67,6 +67,9 @@ class Reconciliation(PrimaryObject):
         self.completed_at: datetime | None = None
         self.cancelled_at: datetime | None = None
         self.audit_events = [ReconciliationEvent("opened", self.opened_at)]
+        #: A card statement's minimum payment, in the account's own terms, once
+        #: given (schema 15): what a payment must reach to settle the payment due.
+        self.minimum_payment: Money | None = None
 
     def _serialize(self) -> dict[str, Any]:
         return {
@@ -79,6 +82,17 @@ class Reconciliation(PrimaryObject):
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "cancelled_at": self.cancelled_at.isoformat() if self.cancelled_at else None,
             "audit_events": [event.serialize() for event in self.audit_events],
+            # Written only when given, so a statement without one is stored as before.
+            **(
+                {
+                    "minimum_payment": [
+                        self.minimum_payment.numerator,
+                        self.minimum_payment.denominator,
+                    ]
+                }
+                if self.minimum_payment is not None
+                else {}
+            ),
         }
 
     def _unserialize(self, data: dict[str, Any]) -> None:
@@ -97,3 +111,5 @@ class Reconciliation(PrimaryObject):
         ]
         if not self.audit_events:
             self.audit_events = [ReconciliationEvent("opened", self.opened_at)]
+        minimum = data.get("minimum_payment")
+        self.minimum_payment = Money(*minimum) if minimum is not None else None

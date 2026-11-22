@@ -358,3 +358,34 @@ verification reports missing, cross-account, duplicated, or subsequently changed
 splits referenced by reconciliation history. Imported reconcile states remain
 ledger facts and are included in opening balances rather than rewritten on import.
 
+### Pay a card statement
+
+Finishing a credit card statement that still owes something offers its payment
+(`services.card_payments`, `engine.card_payment`). `card_payment_offer` says what is
+owed (the reconciled ending balance less what was paid into the card since the
+statement date), when it is due, and from which account: the next open occurrence of
+a commitment schedule that pays the card, else the card's first payment day after the
+statement date, paid from its **Paid from** account. The desktop opens the payment in
+the one transaction editor; the browser shows it as a short form. Either saves it with
+`pay_card_statement`, which settles the statement's payment due in the same undoable
+change:
+
+- **Paid in full, or at least the minimum:** the due is settled. A payment short of
+  the statement balance needs the statement's minimum payment, asked once
+  (`card.payment.minimum_needed`) and kept on the completed reconciliation
+  (`Reconciliation.minimum_payment`), so a second payment adds up against it without
+  asking again.
+- **Below the minimum:** the rest of the statement stays due.
+- **A schedule pays the card:** the payment's card leg is allocated to that
+  occurrence, with the statement balance as what it expects. A settling payment
+  short of the statement closes the occurrence early (`closed_occurrences`); one
+  below the minimum leaves it open with the rest of the statement remaining.
+- **The card's own terms:** `account_payment_definitions` reads the latest
+  reconciled statement. Its due date is the card's next payment day after it; it is
+  settled once what was paid since reaches the statement balance or its minimum,
+  even before the due date, and the next cycle is then due at the live balance.
+  Otherwise the rest of the statement stays due on that date.
+
+Refusals (`card.payment.not_card`, `card.payment.no_payment`,
+`card.payment.minimum_invalid`) save nothing.
+

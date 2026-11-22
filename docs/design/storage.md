@@ -31,7 +31,9 @@ its `tags`, which every stored object has, were stored already). They are option
 keys, written only when set, so the step rewrites no row and checks that no schedule
 was added or lost; the version itself is the change of representation, because a
 release that writes schema 14 would open the book and drop them when it saved the
-schedule.
+schedule. Schema 15 also lets a completed credit card reconciliation keep its
+statement's minimum payment (`minimum_payment`, written only once given), for the
+same reason.
 
 An explicit sequential registry (`gen.db.migrations`), a durable migration ledger, a
 transactional runner, and a verified pre-migration backup make that boundary

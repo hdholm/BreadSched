@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import calendar
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from enum import Enum
 
@@ -24,6 +24,7 @@ from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence, add_months
 from ..lib.scheduled import ScheduledSplit, ScheduledTransaction
 from ..lib.transaction import Split, Transaction
+from . import card_payment
 from .currency import book_currency, commodity_fraction
 from .plan_allocations import account_classes, allocate_posted
 
@@ -309,11 +310,16 @@ def apply_formula_inputs(
 
 @dataclass(slots=True)
 class Occurrence:
-    """A single firing of a schedule, real or hypothetical."""
+    """A single firing of a schedule, real or hypothetical.
+
+    ``amount`` is what is still due of it: less what payments counted toward it
+    already (``applied``), so a partly paid bill posts only its remainder.
+    """
 
     schedule: ScheduledTransaction
     when: date
     amount: Money
+    applied: Money = field(default_factory=lambda: Money(0))
 
     @property
     def name(self) -> str:
@@ -444,11 +450,60 @@ def record_leg_price(
     return price
 
 
-def entered_transaction(db: DbSQLite, schedule: ScheduledTransaction, when: date) -> Transaction:
-    """The transaction one occurrence enters into the ledger, every leg priced."""
-    real = schedule.instantiate(when, fraction=commodity_fraction(db, schedule.currency))
+def entered_transaction(
+    db: DbSQLite,
+    schedule: ScheduledTransaction,
+    when: date,
+    *,
+    remaining: Money | None = None,
+) -> Transaction:
+    """The transaction one occurrence enters into the ledger, every leg priced.
+
+    ``remaining`` is what is still due of a partly paid occurrence: every leg is
+    scaled to it, the last taking the rounding so the entry balances.
+    """
+    fraction = commodity_fraction(db, schedule.currency)
+    real = schedule.instantiate(when, fraction=fraction)
+    full = schedule.amount(when=when)
+    if remaining is not None and full and remaining != full:
+        ratio = remaining / full
+        scaled = [(split.value * ratio).quantize(fraction) for split in real.splits]
+        scaled[-1] = -sum(scaled[:-1], Money(0))
+        for split, value in zip(real.splits, scaled, strict=True):
+            if split.value:
+                split.quantity = split.quantity * (value / split.value)
+            split.value = value
     price_legs(db, real)
     return real
+
+
+class _OpenOccurrences:
+    """What payments counted toward each occurrence, read once when first asked."""
+
+    def __init__(self, db: DbSQLite) -> None:
+        self.db = db
+        self._actuals: dict | None = None
+
+    def remainder(self, schedule: ScheduledTransaction, when: date) -> tuple[Money, Money] | None:
+        """(still due, applied) for an open occurrence; None once it expects nothing:
+        closed early, linked whole, or paid in full."""
+        if when in schedule.closed_occurrences:
+            return None
+        full = schedule.amount(when=when)
+        if self._actuals is None:
+            from .plan_allocations import occurrence_actuals
+
+            self._actuals = occurrence_actuals(self.db)
+        parts = self._actuals.get(schedule.occurrence_key(when), ())
+        if not parts:
+            return full, Money(0)
+        if any(part.whole for part in parts):
+            return None
+        expected = parts[0].planned_amount if parts[0].planned_amount is not None else full
+        applied = sum((part.amount for part in parts), Money(0))
+        if applied >= expected:
+            return None
+        return expected - applied, applied
 
 
 @dataclass(slots=True)
@@ -569,6 +624,23 @@ def _payment_recorded(
     return False
 
 
+def _reconciled_statement_due(
+    db: DbSQLite, account: Account, today: date
+) -> card_payment.CardPaymentDue | None:
+    """The latest reconciled statement's payment, while it is the one now due: its
+    due date is today or later, or it is still unpaid."""
+    statement = card_payment.latest_statement(db, account.handle)
+    if statement is None:
+        return None
+    due = card_payment.statement_payment_due(db, statement, today)
+    if due is None or due.schedule is not None:
+        return None
+    if due.due_date < today and due.settled:
+        # Paid and past: the card's own terms take the next cycle from here.
+        return None
+    return due
+
+
 def _account_payment_amount(account: Account, balance: Money) -> Money:
     if balance <= 0:
         return Money(0)
@@ -666,6 +738,25 @@ def account_payment_definitions(
         )
         balance = ledger.balance_recursive_amount(db, account.handle, as_of=today).value
         name = f"{db.full_name(account) or account.name} payment"
+
+        reconciled = _reconciled_statement_due(db, account, today)
+        if reconciled is not None:
+            # A reconciled statement says what is owed and when: its payment is
+            # due until what is paid since reaches its balance, or its minimum.
+            if reconciled.settled:
+                following = card_payment.statement_due_date(account, reconciled.due_date)
+                amount = _account_payment_amount(account, balance)
+                if following is not None and amount > 0:
+                    definitions.append(
+                        _account_payment_definition(account, name, following, amount)
+                    )
+            else:
+                definitions.append(
+                    _account_payment_definition(
+                        account, name, reconciled.due_date, reconciled.remaining
+                    )
+                )
+            continue
 
         if today > candidate and not payment_recorded:
             statement_balance = ledger.balance_recursive_amount(
@@ -837,6 +928,7 @@ def due_occurrences(
     """
     today = as_of or date.today()
     found: list[Occurrence] = []
+    ledger = _OpenOccurrences(db)
     for sched in db.iter_scheduled():
         if not sched.usable:
             continue
@@ -853,7 +945,10 @@ def due_occurrences(
                 continue
             if when in sched.skipped:
                 continue
-            found.append(Occurrence(sched, when, sched.amount(when=when)))
+            still = ledger.remainder(sched, when)
+            if still is None:
+                continue  # closed, or paid another way
+            found.append(Occurrence(sched, when, still[0], still[1]))
     return sorted(found, key=lambda o: (o.when, o.name))
 
 
@@ -918,10 +1013,14 @@ def next_pending(
     today = as_of or date.today()
     since = schedule.last_posted + timedelta(days=1) if schedule.last_posted else None
     horizon = max(today, schedule.recurrence.start) + timedelta(days=_NEXT_LOOKAHEAD_DAYS)
+    ledger = _OpenOccurrences(db)
     for when in schedule.upcoming(horizon, since=since):
         if when in schedule.skipped or already_posted(db, schedule.handle, when):
             continue
-        return Occurrence(schedule, when, schedule.amount(when=when))
+        still = ledger.remainder(schedule, when)
+        if still is None:
+            continue
+        return Occurrence(schedule, when, still[0], still[1])
     return None
 
 
@@ -953,7 +1052,9 @@ def post_due(
         touched: dict[str, ScheduledTransaction] = {}
         for occ in candidates:
             try:
-                real = entered_transaction(db, occ.schedule, occ.when)
+                real = entered_transaction(
+                    db, occ.schedule, occ.when, remaining=occ.amount if occ.applied else None
+                )
             except UnpricedLegError:
                 # Left due: the review says which quote is missing (#417).
                 continue
@@ -986,7 +1087,12 @@ def post_occurrences(
     with db.transaction(message) as txn:
         touched: dict[str, ScheduledTransaction] = {}
         for occurrence in chosen:
-            real = entered_transaction(db, occurrence.schedule, occurrence.when)
+            real = entered_transaction(
+                db,
+                occurrence.schedule,
+                occurrence.when,
+                remaining=occurrence.amount if occurrence.applied else None,
+            )
             allocate_posted(real, class_of)
             db.add_transaction(real, txn)
             posted.append(real)

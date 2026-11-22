@@ -13,6 +13,23 @@ GitHub releases.
   blank transaction at the end, as GnuCash's Blank does, saving the transaction you
   leave if you changed it. The browser's register has the same button and keys.
 
+- **Finishing a credit card statement offers to pay it.** The payment opens ready to
+  change: what the statement still owes, dated today, from the card's **Paid from**
+  account (in the transaction editor on the desktop, in a short form in the browser).
+  Paying the whole statement settles the next payment due. Paying less asks once for
+  the statement's minimum payment, which the statement keeps: at or above it the due
+  is settled and the rest carries forward; below it the rest of the statement stays
+  due. A schedule that pays the card counts the payment toward its next occurrence.
+
+- **A bill paid by hand is not offered for posting again.** The due review no longer
+  offers a scheduled occurrence that is closed or already paid in full, and offers
+  one partly paid for what remains, posting only that.
+
+- **Finish works in the browser's reconciliation.** It stayed disabled even when the
+  difference was zero. The same mistake kept other buttons and checkboxes disabled
+  or checked when they should not have been, in Match to Plan, the Plan's rollover
+  choice, and the Projection's comparison list.
+
 - **Every desktop window looks and answers the same way.** Each dialog has the
   same margins, its **Help** button at the top, and one row of buttons at the
   bottom right, in the same order everywhere: further actions such as **Print…**,
