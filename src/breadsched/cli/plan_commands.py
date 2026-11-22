@@ -373,6 +373,45 @@ def cmd_scheduled_advance(args: argparse.Namespace) -> int:
         return 0
 
 
+def cmd_scheduled_details(args: argparse.Namespace) -> int:
+    """Show or set the number, notes, and tags a schedule's postings carry."""
+    from ..gen.services import SetScheduleDetails
+
+    writing = any(item is not None for item in (args.num, args.notes, args.tags))
+    with book_api(args, "w" if writing else "r") as book:
+        sched = book.find_schedule(args.schedule)
+        if writing:
+            sched = book.set_schedule_details(
+                SetScheduleDetails(
+                    sched.handle,
+                    num=args.num,
+                    notes=args.notes,
+                    tags=tuple(args.tags.split(",")) if args.tags is not None else None,
+                )
+            )
+        emit(
+            {
+                "schedule": sched.handle,
+                "name": sched.name,
+                "num": sched.num,
+                "notes": sched.notes,
+                "tags": sched.tags,
+                "attachments": sched.attachments,
+            },
+            args,
+            "\n".join(
+                [
+                    f"{sched.name}: each posting carries",
+                    f"  number: {sched.num or '(none)'}",
+                    f"  tags: {', '.join(sched.tags) or '(none)'}",
+                    f"  notes: {sched.notes or '(none)'}",
+                    f"  documents: {', '.join(sched.attachments) or '(none)'}",
+                ]
+            ),
+        )
+        return 0
+
+
 def cmd_scheduled(args: argparse.Namespace) -> int:
     as_of = parse_date(args.as_of) or date.today()
     if args.post:
@@ -1104,6 +1143,19 @@ def register(add: AddCommand) -> None:
     )
     add_server_options(advance_cmd)
     advance_cmd.set_defaults(func=cmd_scheduled_advance)
+
+    details_cmd = add(
+        "scheduled-details",
+        "Show or set the number, notes, and tags every posting of a schedule carries",
+    )
+    details_cmd.add_argument("schedule", help="schedule id prefix or exact name")
+    details_cmd.add_argument("--num", help="the number each posting carries ('' clears)")
+    details_cmd.add_argument("--notes", help="the notes each posting carries ('' clears)")
+    details_cmd.add_argument(
+        "--tags", metavar="TAGS", help="replace the tags (comma-separated; '' clears)"
+    )
+    add_server_options(details_cmd)
+    details_cmd.set_defaults(func=cmd_scheduled_details)
 
     review_cmd = add(
         "review",

@@ -8,6 +8,28 @@ GitHub releases.
 
 ## Unreleased
 
+- **A reconciled split warns before you change it**, at the first keystroke into
+  its account, amount, shares, or price, in a register or the transaction editor,
+  as GnuCash does. **Cancel** keeps the cell; **Change It** allows the change, and
+  saving does not ask again. Before, the question came only when saving.
+
+- **A charge or credit from the statement takes its own date.** When reconciling on
+  the desktop, **Add…** opens the line in the transaction editor, dated on the
+  statement date, so its date, amount, and splits can be changed before it is
+  saved; it is still added cleared, and checked when it falls within the
+  statement. In the browser, each line has a date that follows the statement date
+  until you change it. Adding a line in the browser no longer fails with a request
+  error.
+
+- **Schedules carry a number, tags, notes, and documents**, and every transaction
+  a schedule posts carries them: the rent schedule's lease, its ACH reference, its
+  *Home* tag. **Make scheduled…** takes a transaction's own with it. Set them in
+  the browser's schedule editor (**Tags & notes**), or with `breadsched
+  scheduled-details`; link a schedule's documents with `breadsched attachments
+  --schedule`. Books move to native schema 15 when first opened for writing, after
+  a verified backup is written beside them. A release before this one (schema 14)
+  cannot open a book once it has moved; keep the backup if you may go back.
+
 - **One transaction editor, typed like the register.** Every desktop window that
   enters or changes a transaction now uses the same editor: New Transaction, a
   register's Edit Transaction…, reconciliation, and Posted transactions after the

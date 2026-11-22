@@ -67,13 +67,38 @@ def test_current_release_notes_are_valid(tmp_path: Path):
     assert validate_release_notes(tag, path) == []
 
 
+def _unreleased_entries() -> list[str]:
+    """The changelog's entries under ``## Unreleased``."""
+    text = Path("CHANGELOG.md").read_text(encoding="utf-8")
+    section = text.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+    return [line for line in section.splitlines() if line.startswith("- ")]
+
+
 def test_checked_in_release_notes_are_valid():
-    """Notes exist only for a version being released; each must describe it."""
+    """The notes of the version being released must describe it exactly.
+
+    Once released, ``main`` keeps that version until the next release is prepared,
+    and work after it is recorded under Unreleased. Its notes then describe the
+    published release, as the release workflow treats an already tagged version: a
+    later schema is not theirs to name, though they must still be complete notes.
+    """
     tag = f"v{__version__}"
     notes = Path("docs/releases") / f"{tag}.md"
     if notes.exists():
-        assert validate_release_notes(tag, notes) == []
+        problems = validate_release_notes(tag, notes)
+        if _unreleased_entries():
+            problems = [problem for problem in problems if "schema" not in problem]
+        assert problems == []
     assert [path.name for path in Path("docs/releases").glob("v0.*.md")] == []
+
+
+def test_released_notes_still_name_a_schema_once_later_work_begins(tmp_path: Path):
+    """Only the schema lines are let go after a release; a missing heading is not."""
+    tag = f"v{__version__}"
+    notes = tmp_path / f"{tag}.md"
+    notes.write_text(f"# BreadSched {__version__}\n\nApplication version: `{__version__}`\n")
+    problems = [p for p in validate_release_notes(tag, notes) if "schema" not in p]
+    assert any("Upgrade and rollback" in problem for problem in problems)
 
 
 def test_the_version_is_a_calendar_version_and_names_its_stage():

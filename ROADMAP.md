@@ -75,6 +75,9 @@ The rest of this file is unscheduled and comes after the first Beta.
 - Consider richer formula assistance only on top of the existing safe formula
   language; never add Python `eval` or a second formula dialect.
 
+- Link and unlink a schedule's documents in the browser, as its transactions'
+  documents are linked there; today the browser lists them and the command line
+  links them.
 - Show the browser's due review results with edit and delete, as the desktop's
   Posted transactions window opens each in its transaction editor (#328).
 

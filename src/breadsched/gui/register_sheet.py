@@ -1126,7 +1126,7 @@ class RegisterSheet(SplitEntry):
                 return False
             splits, amount = built
         reconciled = self._reconciled_changes(splits)
-        if reconciled and not self._reconciled_confirmed:
+        if reconciled and not self._reconciled_confirmed and not self.reconciled_allowed():
             # A reconciled split's account or amount changes: ask first (#403).
             self.reconciled_question = reconciled
             return self._fail(

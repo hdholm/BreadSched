@@ -13,6 +13,7 @@ import sys
 import pytest
 
 from breadsched.cli.main import main as cli_main
+from breadsched.gen.db.sqlite import SCHEMA_VERSION
 from breadsched.gui import launcher
 
 _HAS_PYGOBJECT = importlib.util.find_spec("gi") is not None
@@ -59,8 +60,8 @@ class TestHelpAndVersion:
         assert launcher.main(["--version"]) == 0
         output = capsys.readouterr().out
         assert __version__ in output
-        assert "native schema 14" in output
-        assert "supports 13–14" in output
+        assert f"native schema {SCHEMA_VERSION}" in output
+        assert f"supports 13–{SCHEMA_VERSION}" in output
 
     def test_help_lists_the_equivalent_commands(self, capsys):
         launcher.main(["--help"])

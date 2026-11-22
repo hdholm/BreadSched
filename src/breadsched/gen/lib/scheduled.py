@@ -388,6 +388,15 @@ class ScheduledTransaction(PrimaryObject):
         #: mapped safely to BreadSched's recurrence model.
         self.source_recurrence: dict[str, Any] | list[dict[str, Any] | str] | str | None = None
         self.unsupported_reason: str = ""
+        #: The number, notes, and linked documents every transaction it posts carries
+        #: (schema 15), as it carries the tags every stored object has: a rent
+        #: schedule's lease, its cheque number, its tag.
+        self.num: str = ""
+        self.notes: str = ""
+        self.attachments: list[str] = []
+        #: Schedules have no GnuCash-linked document; documents are statused as a
+        #: transaction's are (``engine.attachments.statuses``).
+        self.source_link: str | None = None
 
     # ------------------------------------------------------------- realisation
 
@@ -529,6 +538,11 @@ class ScheduledTransaction(PrimaryObject):
             currency=self.currency,
         )
         txn.scheduled_from = self.handle
+        # What every posting carries: its number, notes, tags, and documents.
+        txn.num = self.num
+        txn.notes = self.notes
+        txn.tags = list(self.tags)
+        txn.attachments = list(self.attachments)
         txn.planned_occurrence = self.occurrence_key(when)
         txn.planned_for = when
         txn.planned_amount = self.amount(variables=variables, when=when)
@@ -643,6 +657,10 @@ class ScheduledTransaction(PrimaryObject):
             ),
             "source_recurrence": self.source_recurrence,
             "unsupported_reason": self.unsupported_reason,
+            # Written only when set, so every other schedule's stored form is unchanged.
+            **({"num": self.num} if self.num else {}),
+            **({"notes": self.notes} if self.notes else {}),
+            **({"attachments": list(self.attachments)} if self.attachments else {}),
         }
 
     def _unserialize(self, data: dict[str, Any]) -> None:
@@ -682,6 +700,9 @@ class ScheduledTransaction(PrimaryObject):
         )
         self.source_recurrence = data.get("source_recurrence")
         self.unsupported_reason = str(data.get("unsupported_reason", ""))
+        self.num = str(data.get("num", "") or "")
+        self.notes = str(data.get("notes", "") or "")
+        self.attachments = [str(item) for item in data.get("attachments", []) or []]
 
     def __repr__(self) -> str:
         return f"<ScheduledTransaction {self.name!r} {self.recurrence.describe()}>"

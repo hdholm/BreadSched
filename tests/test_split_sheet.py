@@ -212,3 +212,49 @@ class TestTheKeyboard:
         assert choose("ret", labels) == ("Retirement saving", ["Retirement saving"])
         assert choose("fsa", labels) == ("fsa", ["Benefit / FSA funding"])
         assert choose("", labels) == ("", labels)
+
+
+class TestReconciledSplits:
+    """#403: changing a reconciled split asks first, before the first keystroke."""
+
+    @pytest.fixture
+    def paid(self, db, funded_book):
+        from breadsched.gen.lib import ReconcileState
+
+        paid = Transaction(post_date=date(2026, 1, 20), description="Reconciled rent")
+        paid.splits = [
+            Split(funded_book.rent, Money(900)),
+            Split(funded_book.checking, Money(-900), reconcile=ReconcileState.RECONCILED),
+        ]
+        with db.transaction("Add") as txn:
+            db.add_transaction(paid, txn)
+        return paid
+
+    def test_a_reconciled_lines_account_and_amount_are_guarded(self, db, funded_book, paid):
+        sheet = _sheet(db, transaction=paid, account=funded_book.checking)
+        mine = next(i for i, line in enumerate(sheet.lines) if line.account == "Assets:Checking")
+        other = 1 - mine
+        row = sheet.rows[mine]
+        for column in ("transfer", "increase", "decrease"):
+            assert sheet.reconciled_accounts(row, column) == ("Assets:Checking",)
+        # The memo, and the other (unreconciled) split, change freely.
+        assert sheet.reconciled_accounts(row, "description") == ()
+        assert sheet.reconciled_accounts(sheet.rows[other], "increase") == ()
+        sheet.allow_reconciled_changes()
+        assert sheet.reconciled_accounts(row, "increase") == ()
+
+    def test_the_registers_line_guards_both_splits_its_amount_moves(self, db, funded_book, paid):
+        register = RegisterSheet(db, funded_book.rent, today=date(2026, 2, 20))
+        assert register.select_transaction(paid.handle)
+        row = register.rows[register.cursor]
+        # The amount moves the reconciled checking split too; the transfer is it.
+        assert register.reconciled_accounts(row, "increase") == ("Assets:Checking",)
+        assert register.reconciled_accounts(row, "transfer") == ("Assets:Checking",)
+        assert register.reconciled_accounts(row, "description") == ()
+        # Once allowed, Enter saves without asking again.
+        register.allow_reconciled_changes()
+        register.column = "increase"
+        register.set_text("950")
+        assert register.enter() is True
+        assert register.reconciled_question is None
+        assert db.get_transaction(paid.handle).value_for(funded_book.rent) == Money(950)

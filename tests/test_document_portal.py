@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 from older_book import make_oldest_book  # noqa: E402
 
-from breadsched.gen.db.sqlite import DbSQLite, is_portal_book, migration_backup_path
+from breadsched.gen.db.sqlite import SCHEMA_VERSION, DbSQLite, is_portal_book, migration_backup_path
 from breadsched.gen.engine import attachments
 from breadsched.gen.utils.user_paths import companion_path, data_directory, portal_document_id
 from breadsched.presentation import book_open_notice
@@ -63,7 +63,7 @@ def test_a_migration_backup_of_a_portal_book_goes_to_the_data_folder(portal):
     db = DbSQLite()
     db.load(str(book))
     try:
-        assert db.get_metadata("schema_version") == 14
+        assert db.get_metadata("schema_version") == SCHEMA_VERSION
         expected = companions / "older.breadsched.pre-migration-v13.bak"
         assert db.migration_backup == str(expected)
     finally:

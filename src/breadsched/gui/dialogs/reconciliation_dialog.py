@@ -27,7 +27,12 @@ from ...api import ApiError
 from ...api.local import book_server
 from ...gen.engine import reconciliation
 from ...gen.lib import Account, Money, ReconciliationStatus
-from ...gen.services import AddStatementEntry, StartReconciliation, UpdateReconciliation
+from ...gen.services import (
+    AddStatementEntry,
+    SaveTransaction,
+    StartReconciliation,
+    UpdateReconciliation,
+)
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import claim_link_notice, reimbursement_notice
 from .. import hidden_accounts
@@ -130,7 +135,8 @@ class _Column:
 
 
 class StatementLineRow:
-    """One quick-add line: description, account, amount, and Add."""
+    """One quick-add line: description, account, amount, and Add…, which opens the
+    transaction editor on them."""
 
     def __init__(self, names: list[str], description: str, selected: int | None) -> None:
         self.box = Gtk.Box(spacing=8)
@@ -145,7 +151,11 @@ class StatementLineRow:
         self.amount.set_tooltip_text(
             "Positive raises the balance, as interest charged on a card or earned on savings"
         )
-        self.add = Gtk.Button(label="Add")
+        self.add = Gtk.Button(label="Add…")
+        self.add.set_tooltip_text(
+            "Open the entry in the transaction editor, dated on the statement; "
+            "change the date or the splits there"
+        )
         for widget in (self.description, self.account, self.amount, self.add):
             self.box.append(widget)
 
@@ -757,38 +767,100 @@ class ReconciliationDialog(BoundedWindow):
         dialog.present()
         return dialog
 
-    def add_statement_entry(self, row: StatementLineRow | None = None) -> bool:
-        """Add a quick-add line, cleared, dated on the statement date: a remembered
-        ``row``, or the line to type into."""
+    def add_statement_entry(self, row: StatementLineRow | None = None) -> Gtk.Window | None:
+        """Open a quick-add line in the transaction editor: a remembered ``row``, or
+        the line to type into.
+
+        The entry starts dated on the statement date, with this account's split and
+        the line's account (and its amount, when typed); every field, the date
+        included, can change there, and more splits can be added. Saving adds it as
+        a statement entry: its split here cleared and, when dated within the
+        statement, checked on it.
+        """
+        from .transaction_dialog import TransactionDialog
+
         amount_entry = row.amount if row is not None else self.entry_amount
         account_choice = row.account if row is not None else self.entry_account
         description_entry = row.description if row is not None else self.entry_description
         try:
             when = parse_date_text(self.statement_date.get_text().strip())
-            amount = Money(parse_user_amount(amount_entry.get_text().strip()))
-        except (ValueError, ArithmeticError):
-            self.status.set_text("Enter a statement date and an amount to add.")
-            return False
+        except ValueError:
+            when = date.today()
         index = account_choice.get_selected()
-        if not self.entry_accounts or index >= len(self.entry_accounts):
-            self.status.set_text("Choose the account the charge or credit belongs to.")
-            return False
-        other = self.entry_accounts[index]
-        description = description_entry.get_text().strip()
-        try:
+        other = (
+            self.entry_accounts[index]
+            if self.entry_accounts and 0 <= index < len(self.entry_accounts)
+            else None
+        )
+        value = None
+        text = amount_entry.get_text().strip()
+        if text:
+            try:
+                # Typed in the account's own terms: positive raises its balance.
+                value = Money(parse_user_amount(text)) * self.account.sign()
+            except (ValueError, ArithmeticError):
+                self.status.set_text("Enter an amount such as 2.50, or leave it empty.")
+                return None
+        own = self.account.handle
+
+        def add(request: SaveTransaction) -> str:
+            definition = request.definition
+            others = [split.account for split in definition.splits if split.account != own]
             saved = self.book.add_statement_entry(
-                AddStatementEntry(self.account.handle, other.handle, when, description, amount)
+                AddStatementEntry(
+                    own,
+                    others[0] if others else own,
+                    definition.post_date,
+                    definition.description,
+                    Money(0),
+                    definition=definition,
+                )
             )
-        except ApiError as error:
-            self.status.set_text(str(error))
+            return saved.handle
+
+        editor = TransactionDialog(
+            self,
+            self.db,
+            default_account=own,
+            default_date=when,
+            title="Add from the statement",
+            save_with=add,
+        )
+        editor.prefill(
+            description=description_entry.get_text().strip(),
+            splits=[
+                (own, value, ""),
+                (other.handle if other is not None else None, -value if value else None, ""),
+            ],
+        )
+
+        def closed(*_args) -> bool:
+            if editor.saved:
+                stored = editor.editor.date_entry.get_text().strip()
+                amount_entry.set_text("")
+                if row is not None:
+                    # Added once for this statement; the line to type into stays.
+                    row.done()
+                try:
+                    within = parse_date_text(stored) <= when
+                except ValueError:
+                    within = True
+                self.status.set_text(
+                    f"Added {editor.editor.description_entry.get_text().strip()} on {stored}, "
+                    + (
+                        "cleared; it starts checked."
+                        if within
+                        else "cleared; dated after the statement, so not checked."
+                    )
+                )
+                self._show_starting_balance()
+                if self.session is not None:
+                    self._render()
             return False
-        amount_entry.set_text("")
-        if row is not None:
-            # Added once for this statement; the line to type into stays.
-            row.done()
-        self.status.set_text(f"Added {saved.description} on {when}, cleared; it starts checked.")
-        self._show_starting_balance()
-        return True
+
+        editor.connect("close-request", closed)
+        editor.present()
+        return editor
 
     def confirm_abandon(self) -> Gtk.AlertDialog:
         alert = Gtk.AlertDialog(

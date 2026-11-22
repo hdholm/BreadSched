@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any
 
 from ..api.protocol import BookApi
 from ..gen.services.categorization import AddRule
@@ -216,29 +217,55 @@ def cmd_attachments(args: argparse.Namespace) -> int:
             chosen = book.set_source_link_folder(args.gnucash_folder)
             emit({"folder": chosen}, args, f"GnuCash linked files resolve from: {chosen}")
             return 0
+        if args.transaction and args.schedule:
+            raise CommandError("give --transaction or --schedule, not both")
         target = book.find_transaction(args.transaction) if args.transaction else None
+        # A schedule's documents are linked to every transaction it posts (schema 15).
+        held = book.find_schedule(args.schedule) if args.schedule else None
         if any(item is not None for item in (args.add, args.remove, args.relink)):
-            if target is None:
-                raise CommandError("--transaction is required to change attachments")
+            if target is None and held is None:
+                raise CommandError("--transaction or --schedule is required to change attachments")
+            owner: Any = held if held is not None else target
+            handle = owner.handle
+            changed: Any
             if args.add is not None:
-                if attachment_engine.is_web_address(args.add):
-                    changed = book.link_attachment(target.handle, args.add)
+                web = attachment_engine.is_web_address(args.add)
+                # A file is read where the server holding the book runs.
+                path = args.add if web else str(Path(args.add).resolve())
+                if held is not None:
+                    changed = (
+                        book.link_schedule_attachment(handle, path)
+                        if web
+                        else book.attach_schedule_file(handle, path, copy=not args.link)
+                    )
+                elif web:
+                    changed = book.link_attachment(handle, path)
                 else:
-                    # The file is read where the server holding the book runs.
-                    path = str(Path(args.add).resolve())
-                    changed = book.attach_file(target.handle, path, copy=not args.link)
+                    changed = book.attach_file(handle, path, copy=not args.link)
                 text = f"Linked {changed.attachments[-1]}"
             elif args.remove is not None:
-                changed = book.unlink_attachment(target.handle, args.remove)
+                changed = (
+                    book.unlink_schedule_attachment(handle, args.remove)
+                    if held is not None
+                    else book.unlink_attachment(handle, args.remove)
+                )
                 text = f"Unlinked {args.remove}; the file itself is kept"
             else:
                 if not args.to:
                     raise CommandError("--to is required with --relink")
-                changed = book.relink_attachment(target.handle, args.relink, args.to)
+                changed = (
+                    book.relink_schedule_attachment(handle, args.relink, args.to)
+                    if held is not None
+                    else book.relink_attachment(handle, args.relink, args.to)
+                )
                 text = f"Relinked {args.relink} to {args.to}"
             emit({"handle": changed.handle, "attachments": changed.attachments}, args, text)
             return 0
-        report = book.attachment_report(args.missing, target.handle if target else None)
+        report = book.attachment_report(
+            args.missing,
+            target.handle if target else None,
+            held.handle if held else None,
+        )
         found, folder = list(report.attachments), report.folder
 
         def state(item: attachment_engine.AttachmentStatus) -> str:
@@ -251,13 +278,14 @@ def cmd_attachments(args: argparse.Namespace) -> int:
                 [
                     [
                         item.transaction[:8],
+                        item.holder,
                         item.location,
                         "GnuCash" if item.owner == "source" else "BreadSched",
                         state(item),
                     ]
                     for item in found
                 ],
-                ["id", "document", "linked by", "state"],
+                ["id", "of", "document", "linked by", "state"],
             )
             if found
             else ("No missing documents." if args.missing else "No linked documents.")
@@ -275,6 +303,7 @@ def cmd_attachments(args: argparse.Namespace) -> int:
                         "path": str(item.path) if item.path is not None else None,
                         "present": item.present,
                         "owner": item.owner,
+                        "holder": item.holder,
                     }
                     for item in found
                 ],
@@ -328,6 +357,11 @@ def register(add: AddCommand) -> None:
     )
     attachments_cmd.add_argument(
         "--transaction", metavar="TRANSACTION", help="transaction handle or unique prefix"
+    )
+    attachments_cmd.add_argument(
+        "--schedule",
+        metavar="SCHEDULE",
+        help="schedule id prefix or exact name; its documents link to every posting",
     )
     attachments_cmd.add_argument(
         "--missing", action="store_true", help="only documents that cannot be found"

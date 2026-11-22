@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from ..gi_setup import Gdk, Gtk, Pango, PangoCairo
+from ..gi_setup import Gdk, GLib, Gtk, Pango, PangoCairo
 from ..register_sheet import BLANK, IMBALANCE, NOTES, SPLIT, RegisterSheet
 from ..split_sheet import SplitSheet
 from .points import point_in
@@ -150,6 +150,8 @@ class RegisterGrid(Gtk.Box):
         self._placed_cell: tuple | None = None
         #: One of :data:`BANDING`.
         self.banding = "transactions"
+        #: The question about changing a reconciled split, while it is asked.
+        self.reconciled_alert: Gtk.AlertDialog | None = None
 
         self.adjustment = Gtk.Adjustment(lower=0, upper=1, step_increment=1, page_increment=10)
         self.adjustment.connect("value-changed", lambda *_: self._after_scroll())
@@ -375,8 +377,65 @@ class RegisterGrid(Gtk.Box):
             # a proposed value; Left and Right go to its start or end (#332).
             self.editor.select_region(0, -1)
 
+    # ------------------------------------------------- reconciled splits (#403)
+
+    def _guard(self) -> bool:
+        """Whether the cursor's cell may change now. A cell that would change a
+        reconciled split asks first, before the first keystroke takes effect, as
+        GnuCash does: the cell keeps its text, and **Change It** allows changes to
+        this entry's reconciled splits until it is saved or put back."""
+        sheet = self.sheet
+        if sheet is None or not 0 <= sheet.cursor < len(sheet.rows):
+            return True
+        accounts = sheet.reconciled_accounts(sheet.rows[sheet.cursor], sheet.column)
+        if not accounts:
+            return True
+        self._syncing = True
+        try:
+            self.editor.set_text(sheet.cell_text())
+        finally:
+            self._syncing = False
+        self.hide_matches()
+        if self.reconciled_alert is None:
+            self.ask_reconciled(accounts)
+        return False
+
+    def ask_reconciled(self, accounts: tuple[str, ...]) -> Gtk.AlertDialog:
+        alert = Gtk.AlertDialog(
+            message="Change a reconciled split?",
+            detail=(
+                "This split is reconciled against a statement ("
+                + ", ".join(accounts)
+                + "). Changing it means the statement's reconciled balance will no "
+                "longer match."
+            ),
+            buttons=["Cancel", "Change It"],
+            cancel_button=0,
+            default_button=0,
+        )
+        self.reconciled_alert = alert
+
+        def finished(dialog, result) -> None:
+            try:
+                choice = dialog.choose_finish(result)
+            except GLib.Error:
+                choice = 0
+            self.answer_reconciled(choice == 1)
+
+        alert.choose(self.get_root(), None, finished)
+        return alert
+
+    def answer_reconciled(self, allow: bool) -> None:
+        """The answer to :meth:`ask_reconciled`: allow the change, or keep the cell."""
+        self.reconciled_alert = None
+        if allow and self.sheet is not None:
+            self.sheet.allow_reconciled_changes()
+        self._place_editor(True)
+
     def _on_editor_changed(self, entry: Gtk.Entry) -> None:
         if self._syncing or self.sheet is None:
+            return
+        if not self._guard():
             return
         self.sheet.set_text(entry.get_text())
         if self.sheet.column in self.listed_columns:
@@ -459,7 +518,7 @@ class RegisterGrid(Gtk.Box):
 
     def accept_match(self, name: str) -> None:
         """Take an account (or a choice) from the list into the cell."""
-        if self.sheet is None:
+        if self.sheet is None or not self._guard():
             return
         self.sheet.set_text(name)
         self.hide_matches()
@@ -587,6 +646,8 @@ class RegisterGrid(Gtk.Box):
                 return True
             return False
         if sheet.column in ("description", *self.listed_columns):
+            if not self._guard():
+                return True
             bounds = self.editor.get_selection_bounds()
             start = bounds[0] if bounds else self.editor.get_position()
             if not bounds and start < len(text):

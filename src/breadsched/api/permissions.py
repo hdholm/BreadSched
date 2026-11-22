@@ -100,6 +100,7 @@ _WRITE = {
     "resolve_due",
     "resolve_next",
     "set_advance_days",
+    "set_schedule_details",
     "delete_schedule",
     "duplicate_schedule",
     "post_due",
@@ -183,6 +184,11 @@ _WRITE = {
     "attach_content",
     "unlink_attachment",
     "relink_attachment",
+    "link_schedule_attachment",
+    "attach_schedule_file",
+    "attach_schedule_content",
+    "unlink_schedule_attachment",
+    "relink_schedule_attachment",
 }
 _READ = {
     "subscribe",

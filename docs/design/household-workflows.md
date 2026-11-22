@@ -324,7 +324,12 @@ checked Funds In and Funds Out separately for a GnuCash-style two-column window.
 checked first; later-dated entries last), so a missing entry is easier to find.
 `add_statement_entry` posts a missing statement line, such as interest, as one
 undoable change: the transaction, its Cleared mark, its place in the open
-statement's checks, and the account's remembered line:
+statement's checks (when dated within the statement), and the account's
+remembered line. A quick line gives its date, description, other account, and
+amount; GTK opens the line in the one transaction editor instead, whose Save sends
+the whole entry (`AddStatementEntry.definition`: any date, any splits, notes, and
+tags), and every split in the reconciled account is cleared. The remembered line
+is the entry's description and its first other account:
 `reconciliation.remember_line` keeps the last five distinct (description, other
 account) pairs in book metadata (`reconcile.lines:<account>`), most recent first, and
 `ReconciliationView.remembered_lines` offers them again without amounts.
@@ -332,7 +337,12 @@ account) pairs in book metadata (`reconcile.lines:<account>`), most recent first
 month end to the next month end), else the latest month end, else today once that
 month is reconciled. `services.transactions.reconciled_changes` names the reconciled
 splits an edit would change or drop, so the register, the transaction editor, and the
-browser register ask before saving. The displayed difference is always statement ending balance minus the account's
+browser register ask before saving. GTK asks earlier too, as GnuCash does:
+`SplitEntry.reconciled_accounts` names the reconciled splits typing in a cell would
+change (a split line's own; a register line's amount moves both, its transfer the
+other), and the grid asks at the first keystroke there. Allowed
+(`allow_reconciled_changes`), the entry's reconciled splits change freely until it is
+saved or put back, and the save does not ask again. The displayed difference is always statement ending balance minus the account's
 natural-sign opening-plus-checked balance. GTK and web merely present this shared
 calculation. Their mutations submit typed start, update, complete, cancel, and reopen
 requests through the application-service boundary. Domain failures retain stable

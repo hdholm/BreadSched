@@ -25,6 +25,7 @@ from ..lib.scheduled import (
     ScheduleGrowthPolicy,
 )
 from ..lib.transaction import InvestmentActivityKind, PlanningFlowKind
+from .attachments import normalize_tags
 from .contracts import ServiceError, ServiceResult
 
 
@@ -109,6 +110,11 @@ class FixedScheduleInput:
     #: Enter and remind this many days in advance (#352); None keeps the stored value.
     advance_days: int | None = None
     remind_days: int | None = None
+    #: The number, notes, and tags each posting carries (schema 15); None keeps the
+    #: stored value. Documents are linked through ``services.attachments``.
+    num: str | None = None
+    notes: str | None = None
+    tags: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +151,10 @@ class FormulaScheduleInput:
     #: Enter and remind this many days in advance (#352); None keeps the stored value.
     advance_days: int | None = None
     remind_days: int | None = None
+    #: The number, notes, and tags each posting carries; None keeps the stored value.
+    num: str | None = None
+    notes: str | None = None
+    tags: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -317,7 +327,19 @@ def build_fixed_schedule(
         candidate.remind_days = definition.remind_days
     if definition.estimate_evidence is not None or existing is None:
         candidate.estimate_evidence = definition.estimate_evidence
+    _apply_posting_details(candidate, definition)
     return ServiceResult.success(candidate)
+
+
+def _apply_posting_details(candidate: ScheduledTransaction, given) -> None:
+    """Set the number, notes, and tags a definition gives; None keeps the stored ones.
+    Tags are tidied when the schedule is saved (``save_schedule``)."""
+    if given.num is not None:
+        candidate.num = given.num.strip()
+    if given.notes is not None:
+        candidate.notes = given.notes.strip()
+    if given.tags is not None:
+        candidate.tags = list(given.tags)
 
 
 def build_formula_schedule(
@@ -353,6 +375,7 @@ def build_formula_schedule(
         candidate.advance_days = request.advance_days
     if request.remind_days is not None:
         candidate.remind_days = request.remind_days
+    _apply_posting_details(candidate, request)
     return ServiceResult.success(candidate)
 
 
@@ -645,6 +668,13 @@ def save_schedule(db: DbSQLite, request: SaveSchedule) -> ServiceResult[SavedSch
         return ServiceResult.failure(ServiceError("schedule.identity.changed", ("handle",)))
     errors = _candidate_errors(db, candidate, existing)
     errors.extend(_advance_errors(candidate))
+    # Tags are tidied and spelled as the book already spells them, as a
+    # transaction's are.
+    tags = normalize_tags(db, candidate.tags)
+    if isinstance(tags, ServiceError):
+        errors.append(tags)
+    else:
+        candidate.tags = tags
     if errors:
         return ServiceResult.failure(*errors)
 
@@ -714,6 +744,37 @@ def set_advance_days(db: DbSQLite, request: SetAdvanceDays) -> ServiceResult[Adv
     return ServiceResult.success(
         AdvanceDays(edited.handle, edited.name, edited.advance_days, edited.remind_days)
     )
+
+
+@dataclass(frozen=True, slots=True)
+class SetScheduleDetails:
+    """Change only the number, notes, and tags a schedule's postings carry.
+
+    ``None`` keeps the stored value; documents are linked through
+    ``services.attachments``.
+    """
+
+    schedule: str
+    num: str | None = None
+    notes: str | None = None
+    tags: tuple[str, ...] | None = None
+
+
+def set_schedule_details(
+    db: DbSQLite, request: SetScheduleDetails
+) -> ServiceResult[ScheduledTransaction]:
+    """Validate and save a schedule's number, notes, and tags, keeping everything else."""
+    stored = db.get_scheduled(request.schedule)
+    if stored is None:
+        return ServiceResult.failure(ServiceError("schedule.not_found", ("schedule",)))
+    edited = ScheduledTransaction.from_dict(stored.serialize())
+    _apply_posting_details(edited, request)
+    saved = save_schedule(db, SaveSchedule(edited, stored.handle))
+    if not saved.ok:
+        return ServiceResult.failure(*saved.errors)
+    found = db.get_scheduled(stored.handle)
+    assert found is not None
+    return ServiceResult.success(found)
 
 
 def find_schedule(db: DbSQLite, reference: str) -> ServiceResult[ScheduledTransaction]:

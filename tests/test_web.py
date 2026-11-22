@@ -25,7 +25,7 @@ from gnucash_fixtures import create_book
 
 from breadsched.api.local import book_server
 from breadsched.cli.main import main as cli
-from breadsched.gen.db.sqlite import DbSQLite
+from breadsched.gen.db.sqlite import SCHEMA_VERSION, DbSQLite
 from breadsched.gen.lib import (
     Account,
     AccountType,
@@ -360,8 +360,8 @@ class TestItServes:
         assert payload == {
             "ok": True,
             "application_version": __version__,
-            "native_schema_version": 14,
-            "supported_schema_versions": {"minimum": 13, "maximum": 14},
+            "native_schema_version": SCHEMA_VERSION,
+            "supported_schema_versions": {"minimum": 13, "maximum": SCHEMA_VERSION},
             "sqlite": [],
             "issues": [],
         }
@@ -1093,6 +1093,46 @@ class TestItServes:
         assert caught.value.code == 400
         assert payload["code"] == "loan.name.required"
         assert payload["fields"] == ["name"]
+
+    def test_a_schedules_number_tags_and_notes_are_edited_and_listed(self, client):
+        """Schema 15: what every posting carries is part of the schedule editor."""
+        db = client.database
+        _status, data = client.get("/api/scheduled")
+        category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+        funding = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
+        base = {
+            "name": "Lease rent",
+            "category": category["handle"],
+            "funding": funding["handle"],
+            "amount": "1800",
+            "frequency": "months",
+            "interval": "1",
+            "start": "2026-01-06",
+        }
+        status, saved = client.post(
+            "/api/scheduled/save",
+            {**base, "num": "ACH", "notes": "To June", "tags": ["Home", " home"]},
+        )
+        assert status == 200
+        stored = db.get_scheduled(saved["handle"])
+        assert (stored.num, stored.notes, stored.tags) == ("ACH", "To June", ["Home"])
+        _status, data = client.get("/api/scheduled")
+        row = next(item for item in data["definitions"] if item["handle"] == saved["handle"])
+        assert (row["num"], row["notes"], row["tags"], row["attachments"]) == (
+            "ACH",
+            "To June",
+            ["Home"],
+            [],
+        )
+        # Left out, they keep what is stored; refused, nothing changes.
+        client.post("/api/scheduled/save", {**base, "handle": saved["handle"]})
+        assert db.get_scheduled(saved["handle"]).num == "ACH"
+        before = db.get_scheduled(saved["handle"]).serialize()
+        for bad in ({"tags": "Home"}, {"num": 7}, {"tags": ["a,b"]}):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post("/api/scheduled/save", {**base, "handle": saved["handle"], **bad})
+            assert caught.value.code == 400
+        assert db.get_scheduled(saved["handle"]).serialize() == before
 
     def test_any_interval_schedule_is_edited_with_a_calculated_amount(self, client):
         """#370: every 4 weeks is an ordinary rule, and amounts may be arithmetic."""

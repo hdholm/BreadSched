@@ -683,6 +683,11 @@ are kept. A relative GnuCash link is looked up under GnuCash's *Path head for
 linked files*, which is your home folder unless you tell BreadSched otherwise
 ([command line](guide/cli.md#tags-and-linked-documents)).
 
+A **schedule** can carry a number, tags, notes, and documents too, such as a lease
+on the rent schedule; every transaction it posts carries them, and a transaction
+made scheduled takes its own with it. Unlinking a schedule's document leaves the
+transactions already posted linked to it.
+
 A transaction CSV export includes a **tags** column and a **documents** column. A
 book backup does not include the attachment folder: back it up with your other
 files. See [desktop](guide/desktop.md#tags-and-linked-documents),

@@ -614,9 +614,12 @@ with its groups and subtotals. See
    the last statement. Compare **Starting balance**, the account's reconciled balance
    on that date, with the statement's previous balance. A charge or credit on the
    statement that is not yet in the book, such as interest, can be added here: enter
-   its description, the account it belongs to, and the amount (positive raises the
-   balance, as interest charged on a card does), then choose **Add**. It is added
-   cleared, so it starts checked. Lines added to recent statements are listed with
+   its description, the account it belongs to, and the amount if you like (positive
+   raises the balance, as interest charged on a card does), then choose **Add…**. It
+   opens in the transaction editor, dated on the statement date; change the date,
+   the amount, or the splits there (a fee split between two categories, say), then
+   choose **Save**. Its split in this account is added cleared, and it starts checked
+   when it is dated within the statement. Lines added to recent statements are listed with
    their description and account, ready for an amount; each one added shows
    **Added**, and the last line is always free to type into. Starting a statement
    already reconciled points at **Reopen statement through …** instead.
@@ -650,9 +653,12 @@ Checks are saved as you make them. **Postpone** closes the window and keeps the
 statement, which reopens where you left off; **Abandon…** discards the statement
 without changing any transaction.
 
-Changing the account, amount, or shares of a split already reconciled, in a register
-or the transaction editor, asks **Change a reconciled split?** first; **Cancel**
-leaves it as it was.
+Changing the account, amount, shares, or price of a split already reconciled, in a
+register or the transaction editor, asks **Change a reconciled split?** at the first
+keystroke, before anything changes, as GnuCash does; **Cancel** leaves the cell as
+it was, and **Change It** lets you change that transaction's reconciled splits until
+you save it or put it back. A change that reaches a reconciled split some other way
+(another split's line taking the rest, say) is asked about when you save.
 
 **Edit → Undo** of a large step, such as an import, says what it undoes and asks
 first, then shows its progress while the window stays usable; a small step is undone

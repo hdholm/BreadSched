@@ -1549,7 +1549,9 @@ def test_reconciliation_marks_entries_after_the_statement(page, served):
     register = page.locator("select").first.input_value()
     page.get_by_role("button", name="Reconcile…").click()
     early = min(t.post_date for t in db.iter_transactions(account=register))
-    page.locator(".detail-dialog input[type=date]").fill(early.isoformat())
+    page.locator(".detail-dialog").get_by_label("Statement date", exact=True).fill(
+        early.isoformat()
+    )
     page.locator(".detail-dialog").get_by_role("textbox", name="Ending balance").fill("0")
     page.get_by_role("button", name="Start reconciliation").click()
     later = page.locator(".detail-dialog tr.after-statement")
@@ -1560,6 +1562,29 @@ def test_reconciliation_marks_entries_after_the_statement(page, served):
     page.wait_for_selector(".detail-dialog >> text=Funds in")
 
 
+def test_a_statement_line_takes_a_date_of_its_own(page, served):
+    """A charge or credit from the statement is dated on it until given its own date."""
+    db, _httpd = served
+    _open_register(page)
+    register = page.locator("select").first.input_value()
+    page.get_by_role("button", name="Reconcile…").click()
+    dialog = page.locator(".detail-dialog")
+    dialog.get_by_label("Statement date", exact=True).fill("2030-01-31")
+    line = dialog.locator(".statement-line").last
+    when = line.get_by_label("Statement line date")
+    assert when.input_value() == "2030-01-31"
+    when.fill("2030-01-12")
+    dialog.get_by_label("Statement date", exact=True).fill("2030-02-28")
+    assert when.input_value() == "2030-01-12"  # its own date stays
+    line.get_by_label("Statement line description").fill("Paper statement fee")
+    line.get_by_label("Statement line amount").fill("-3")
+    line.get_by_role("button", name="Add").click()
+    page.wait_for_selector("text=Added Paper statement fee on 2030-01-12")
+    [fee] = [t for t in db.iter_transactions() if t.description == "Paper statement fee"]
+    assert fee.post_date.isoformat() == "2030-01-12"
+    assert fee.split_for(register) is not None
+
+
 def test_a_reconciliation_row_opens_its_transaction_in_the_register(page, served):
     """#374: Edit on a statement row saves the checks and edits the row in place."""
     db, _httpd = served
@@ -1567,7 +1592,9 @@ def test_a_reconciliation_row_opens_its_transaction_in_the_register(page, served
     register = page.locator("select").first.input_value()
     page.get_by_role("button", name="Reconcile…").click()
     latest = max(t.post_date for t in db.iter_transactions(account=register))
-    page.locator(".detail-dialog input[type=date]").fill(latest.isoformat())
+    page.locator(".detail-dialog").get_by_label("Statement date", exact=True).fill(
+        latest.isoformat()
+    )
     page.locator(".detail-dialog").get_by_role("textbox", name="Ending balance").fill("0")
     page.get_by_role("button", name="Start reconciliation").click()
     first = page.locator(".detail-dialog tbody tr").first
@@ -1597,7 +1624,9 @@ def test_reconciliation_headings_sort_the_entries_and_keep_checks(page, served):
     register = page.locator("select").first.input_value()
     page.get_by_role("button", name="Reconcile…").click()
     latest = max(t.post_date for t in db.iter_transactions(account=register))
-    page.locator(".detail-dialog input[type=date]").fill(latest.isoformat())
+    page.locator(".detail-dialog").get_by_label("Statement date", exact=True).fill(
+        latest.isoformat()
+    )
     page.locator(".detail-dialog").get_by_role("textbox", name="Ending balance").fill("0")
     page.get_by_role("button", name="Start reconciliation").click()
     rows = page.locator(".detail-dialog tbody tr")
@@ -1868,7 +1897,7 @@ def test_the_schedule_editor_folds_away_what_most_schedules_do_not_need(page, se
     form = page.locator(".detail-dialog form")
     form.locator("input[name=name]").wait_for()
     summaries = form.locator("details.form-section > summary").all_inner_texts()
-    assert summaries == ["Splits and memos", "Future changes", "Advanced"]
+    assert summaries == ["Splits and memos", "Future changes", "Advanced", "Tags & notes"]
     assert form.locator("select[name=growth_policy]").is_hidden()
     assert form.locator("input[name=amount]").is_visible()
     form.locator("summary", has_text="Advanced").click()
@@ -1885,6 +1914,30 @@ def test_the_schedule_editor_folds_away_what_most_schedules_do_not_need(page, se
     form.locator("summary", has_text="Future changes").click()
     form.get_by_role("button", name="Add date and amount").first.click()
     form.locator("summary", has_text="Future changes (1)").wait_for()
+
+
+def test_a_schedules_tags_and_notes_are_typed_in_its_editor(page, served):
+    """Schema 15: what every posting carries, in a fold that opens once it holds any."""
+    db, _httpd = served
+    expense = next(
+        a for a in db.iter_accounts() if a.account_class.value == "expense" and not a.placeholder
+    )
+    bank = next(a for a in db.iter_accounts() if a.atype.value == "BANK" and not a.placeholder)
+    _nav(page, "Scheduled")
+    page.get_by_role("button", name="New scheduled…").click()
+    form = page.locator(".detail-dialog form")
+    form.locator("input[name=name]").fill("Lease rent")
+    form.locator("select[name=category]").select_option(expense.handle)
+    form.locator("select[name=funding]").select_option(bank.handle)
+    form.locator("input[name=amount]").fill("1800")
+    form.locator("summary", has_text="Tags & notes").click()
+    form.locator("input[name=num]").fill("ACH")
+    form.locator("input[name=tags]").fill("Home, Lease")
+    form.locator("textarea[name=notes]").fill("To June")
+    form.get_by_role("button", name="Save").click()
+    page.locator(".detail-dialog").wait_for(state="detached")
+    saved = next(s for s in db.iter_scheduled() if s.name == "Lease rent")
+    assert (saved.num, saved.tags, saved.notes) == ("ACH", ["Home", "Lease"], "To June")
 
 
 def test_quick_entry_offers_investment_activity_only_for_investment_accounts(page, served):

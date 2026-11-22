@@ -161,7 +161,8 @@ def _me(caller: Caller, two_step: bool = False) -> dict[str, object]:
 
 #: The book server's two routes that take a file's bytes rather than JSON.
 _V1_UPLOAD = re.compile(
-    r"^/api/v1/(?:imports/upload|transactions/(?P<transaction>[^/]+)/attachments/upload)$"
+    r"^/api/v1/(?:imports/upload|transactions/(?P<transaction>[^/]+)/attachments/upload"
+    r"|schedules/(?P<schedule>[^/]+)/attachments/upload)$"
 )
 MAX_JSON_BODY = 64 * 1024
 MAX_UPLOAD_BODY = 32 * 1024 * 1024
@@ -591,7 +592,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         upload = _V1_UPLOAD.match(urlparse(self.path).path)
         if upload is not None:
-            self._v1_upload(upload["transaction"])
+            self._v1_upload(upload["transaction"], upload["schedule"])
             return
         if urlparse(self.path).path.startswith(V1_PREFIX + "/"):
             self._v1("POST")
@@ -992,11 +993,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(f"event: {name}\nid: {revision}\ndata: {data}\n\n".encode())
         self.wfile.flush()
 
-    def _v1_upload(self, transaction: str | None) -> None:
-        """A file's bytes for the book server: an import file (``transaction`` None,
-        ``upload_import_file``) or a document for one transaction (``attach_content``).
+    def _v1_upload(self, transaction: str | None, schedule: str | None = None) -> None:
+        """A file's bytes for the book server: an import file (neither handle,
+        ``upload_import_file``), or a document for one transaction (``attach_content``)
+        or one schedule (``attach_schedule_content``).
         """
-        limit = MAX_UPLOAD_BODY if transaction is None else MAX_ATTACHMENT_BYTES
+        document = transaction is not None or schedule is not None
+        limit = MAX_ATTACHMENT_BYTES if document else MAX_UPLOAD_BODY
         if (
             not self._trusted_api_request()
             or self.headers.get_content_type() != "application/octet-stream"
@@ -1023,8 +1026,11 @@ class Handler(BaseHTTPRequestHandler):
             book = self.api_object.book
 
             def perform() -> tuple[object, int]:
-                if transaction is None:
-                    result: object = {"path": book.upload_import_file(filename, content)}
+                if schedule is not None:
+                    held = book.attach_schedule_content(unquote(schedule), filename, content)
+                    result: object = {"schedule": held.serialize()}
+                elif transaction is None:
+                    result = {"path": book.upload_import_file(filename, content)}
                 else:
                     changed = book.attach_content(unquote(transaction), filename, content)
                     result = {"transaction": to_data(changed)}

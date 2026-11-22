@@ -769,7 +769,7 @@ def from_transaction(transaction: Transaction) -> ScheduledTransaction:
     posted = transaction.post_date
     last = calendar.monthrange(posted.year, posted.month)[1]
     day = -1 if posted.day == last else posted.day if posted.day > 28 else None
-    return ScheduledTransaction(
+    draft = ScheduledTransaction(
         name=transaction.description or "Scheduled transaction",
         description=transaction.description,
         recurrence=Recurrence(
@@ -787,6 +787,12 @@ def from_transaction(transaction: Transaction) -> ScheduledTransaction:
         ],
         currency=transaction.currency,
     )
+    # Its number, notes, tags, and documents repeat with it (schema 15).
+    draft.num = transaction.num
+    draft.notes = transaction.notes or ""
+    draft.tags = list(transaction.tags)
+    draft.attachments = list(transaction.attachments)
+    return draft
 
 
 def delete_definition(db: DbSQLite, handle: str) -> ScheduledTransaction:
