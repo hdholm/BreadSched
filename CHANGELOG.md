@@ -8,6 +8,13 @@ GitHub releases.
 
 ## Unreleased
 
+## 2026.11.22.1
+
+The fourth beta, published as a GitHub pre-release; its Windows installer and Linux
+packages are still not code-signed, so check them against `SHA256SUMS`. Books move
+to native schema 15 when first opened for writing, after a verified backup is
+written beside them; 2026.11.22.0 cannot open a book once it has moved.
+
 - **A note completes from the start of a word.** Typing `ch` in a note or memo
   completes to an earlier one with "Christmas" in it, but no longer to one with
   "which". And when a letter stops matching a completion found inside a note, the
