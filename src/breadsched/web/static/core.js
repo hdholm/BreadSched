@@ -34,7 +34,10 @@ const el = (tag, attrs = {}, ...kids) => {
   for (const [k, v] of Object.entries(attrs)) {
     if (k === "class") node.className = v;
     else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
-    else if (v !== null && v !== undefined) node.setAttribute(k, v);
+    // A boolean attribute is present when true and left out when false:
+    // disabled="false" would still disable a button.
+    else if (v === true) node.setAttribute(k, "");
+    else if (v !== null && v !== undefined && v !== false) node.setAttribute(k, v);
   }
   for (const kid of kids.flat()) {
     if (kid === null || kid === undefined) continue;

@@ -94,6 +94,7 @@ from ..gen.services import (
     account_records,
     balance_summary,
     book_info,
+    card_payments,
     categorization,
     chart_of_accounts,
     dashboard_config,
@@ -179,6 +180,7 @@ from ..gen.services.autocomplete import (
 )
 from ..gen.services.book_info import BookCounts, BookSummary
 from ..gen.services.budget_jars import JarsView
+from ..gen.services.card_payments import CardPaymentOffer, PaidCardStatement, PayCardStatement
 from ..gen.services.categorization import (
     AddRule,
     AppliedCategories,
@@ -1311,6 +1313,12 @@ class LocalBookServer:
 
     def add_statement_entry(self, request: AddStatementEntry) -> SavedTransaction:
         return unwrap(reconciliations.add_statement_entry(self.db, request))
+
+    def card_payment_offer(self, statement: str) -> CardPaymentOffer:
+        return unwrap(card_payments.card_payment_offer(self.db, statement))
+
+    def pay_card_statement(self, request: PayCardStatement) -> PaidCardStatement:
+        return unwrap(card_payments.pay_card_statement(self.db, request))
 
     # ------------------------------------------------------------ savings goals
 

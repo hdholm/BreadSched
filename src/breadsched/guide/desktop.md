@@ -662,6 +662,16 @@ Checks are saved as you make them. **Close** keeps the statement, which reopens
 where you left off; **Abandon** discards the statement without changing any
 transaction.
 
+When **Finish** completes a credit card statement that still owes something, the
+window stays open to offer its payment: what is owed, when it is due, and the
+schedule or account it is paid from. **Pay statement…** opens the payment in the
+transaction editor, for the amount still owed, dated today, from the card's
+**Paid from** account; change anything there and **Save**. A payment for less than
+the statement first asks the statement's **Minimum payment**. The window then says
+whether the payment due is settled, and how much of the statement remains. **Close**
+leaves the statement reconciled and unpaid (see
+[Credit-card payments](../USER_GUIDE.md#credit-card-payments)).
+
 Changing the account, amount, shares, or price of a split already reconciled, in a
 register or the transaction editor, asks **Change a reconciled split?** at the first
 keystroke, before anything changes, as GnuCash does; **Cancel** leaves the cell as

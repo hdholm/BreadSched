@@ -83,6 +83,7 @@ from ..gen.services.attachments import AttachmentReport
 from ..gen.services.autocomplete import EarlierNotes, EntryProposal, SuggestEntry
 from ..gen.services.book_info import BookCounts, BookSummary
 from ..gen.services.budget_jars import JarsView
+from ..gen.services.card_payments import CardPaymentOffer, PaidCardStatement, PayCardStatement
 from ..gen.services.categorization import (
     AddRule,
     AppliedCategories,
@@ -558,6 +559,16 @@ class BookApi(Protocol):
 
     def add_statement_entry(self, request: AddStatementEntry) -> SavedTransaction:
         """Add a statement line such as interest, cleared and checked, as one change."""
+        ...
+
+    def card_payment_offer(self, statement: str) -> CardPaymentOffer:
+        """The payment a finished credit card statement proposes (amount zero when
+        nothing more is owed)."""
+        ...
+
+    def pay_card_statement(self, request: PayCardStatement) -> PaidCardStatement:
+        """Save a card statement's payment and settle its payment due, as one change;
+        a payment short of the statement needs its minimum."""
         ...
 
     # ----------------------------------------------------- historical estimates

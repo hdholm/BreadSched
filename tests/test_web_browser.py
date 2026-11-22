@@ -2645,3 +2645,49 @@ def test_blank_moves_to_the_new_transaction(page, served):
         _blank(page, "description").focus()
         page.keyboard.press(key)
         expect(blank_date).to_be_focused()
+
+
+def test_a_finished_card_statement_offers_its_payment(page, served):
+    """Finishing a card statement offers its payment; a short one asks the minimum."""
+    from breadsched.gen.engine import reconciliation as reconcile
+    from breadsched.gen.lib import AccountType, Money, Transaction
+
+    db, _httpd = served
+    card = next(a for a in db.iter_accounts() if a.atype is AccountType.CREDIT and not a.hidden)
+    expense = next(
+        a for a in db.iter_accounts() if a.atype is AccountType.EXPENSE and not a.placeholder
+    )
+    checking = next(a for a in db.iter_accounts() if a.atype is AccountType.BANK and not a.hidden)
+    statement_date = date.today()
+    with db.transaction("Browser card") as txn:
+        card.card.payment_day = 15
+        card.card.payment_account = checking.handle
+        db.commit_account(card, txn)
+        db.add_transaction(
+            Transaction.simple(statement_date, "Browser charge", expense.handle, card.handle, "80"),
+            txn,
+        )
+    opened = reconcile.start(db, card.handle, statement_date, Money(0))
+    state = reconcile.summary(db, opened)
+    chosen = [c.split for c in state.candidates if not c.after_statement]
+    balance = reconcile.update(db, opened.handle, split_handles=chosen).selected_balance
+    assert reconcile.update(db, opened.handle, ending_balance=balance).balanced
+
+    _open_register(page)
+    page.locator("select").first.select_option(card.handle)
+    page.get_by_role("button", name="Reconcile…").click()
+    page.locator(".detail-dialog").get_by_role("button", name="Finish").click()
+    dialog = page.locator(".detail-dialog")
+    dialog.get_by_text("Pay the statement?").wait_for()
+    assert dialog.get_by_label("Paid from").input_value() == checking.handle
+    # Less than the statement: the minimum is asked for, and nothing is saved yet.
+    dialog.get_by_label("Payment amount").fill("10")
+    dialog.get_by_role("button", name="Pay").click()
+    dialog.get_by_label("Minimum payment").wait_for()
+    assert not [t for t in db.iter_transactions() if t.description.endswith(" payment")]
+    dialog.get_by_label("Minimum payment").fill("5")
+    dialog.get_by_role("button", name="Pay").click()
+    page.wait_for_selector("text=the payment due is settled")
+    [paid] = [t for t in db.iter_transactions() if t.description.endswith(" payment")]
+    assert paid.value_for(card.handle) == Money(10)
+    assert db.get_reconciliation(opened.handle).minimum_payment == Money(5)

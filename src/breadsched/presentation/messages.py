@@ -131,6 +131,15 @@ _SERVICE_MESSAGES = {
     "reconciliation.unbalanced": "The reconciliation is out of balance",
     "reconciliation.entry.amount": "Enter the amount on the statement, other than zero",
     "reconciliation.entry.account": "One split must be in the account being reconciled",
+    "card.payment.statement.not_found": "That statement is no longer in the book",
+    "card.payment.not_card": "Only a finished credit card statement is paid this way",
+    "card.payment.no_payment": "The payment must pay money into the card",
+    "card.payment.minimum_needed": (
+        "This pays less than the statement: enter the statement's minimum payment"
+    ),
+    "card.payment.minimum_invalid": (
+        "The minimum payment must be more than zero and no more than the statement"
+    ),
     "schedule.splits.unbalanced": "The splits must balance: choose an account for the rest",
     "schedule.amount.zero": "Give each split an amount other than zero",
     "reconciliation.status.not_completed": "Only a completed reconciliation can be reopened",

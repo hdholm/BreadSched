@@ -1399,10 +1399,17 @@ async function openReconciliation(account, order = {sort:"date", descending:fals
           onclick:async()=>{
             try {
               await post("/api/reconciliation/complete", {handle:session.handle});
-              backdrop.remove();
-              say("Statement reconciled.");
-              render();
-            } catch (error) { say(error.message, "error"); }
+            } catch (error) { say(error.message, "error"); return; }
+            say("Statement reconciled.");
+            // A card statement still owing something offers its payment.
+            const offer = await get(`/api/v1/reconciliations/${encodeURIComponent(session.handle)}`
+              + "/card-payment").then((reply)=>reply.offer, ()=>null);
+            if (offer && Number(offer.amount) > 0) {
+              showCardPayment(backdrop, offer);
+              return;
+            }
+            backdrop.remove();
+            render();
           }}, "Finish")));
   }
   const body = el("section", {class:"detail-dialog wide"},
@@ -1414,6 +1421,76 @@ async function openReconciliation(account, order = {sort:"date", descending:fals
       el("button", {class:"action", type:"button", onclick:()=>backdrop.remove()}, "Close")));
   backdrop.append(body);
   document.body.append(backdrop);
+}
+
+function showCardPayment(backdrop, offer) {
+  // The payment a reconciled card statement owes: change any field, then Pay.
+  // A payment short of the statement asks for its minimum before it is saved.
+  const sources = state.accounts.filter((item) => !item.placeholder && item.depth > 0
+    && !item.hidden && item.handle !== offer.account);
+  const when = el("input", {type:"date", value:offer.post_date, "aria-label":"Payment date"});
+  const amount = el("input", {inputmode:"decimal", class:"num", "aria-label":"Payment amount",
+    value:shownDecimal(offer.amount)});
+  const from = el("select", {"aria-label":"Paid from"},
+    el("option", {value:""}, "Choose the account it is paid from"),
+    sources.map((item) => el("option", {value:item.handle,
+      selected:item.handle === offer.pay_from ? "selected" : null}, item.full_name)));
+  const description = el("input", {value:offer.description, "aria-label":"Payment description"});
+  const minimum = el("input", {inputmode:"decimal", class:"num", "aria-label":"Minimum payment",
+    value:offer.minimum_payment ? shownDecimal(offer.minimum_payment) : "", placeholder:"0.00"});
+  const minimumLabel = el("label", {hidden:true}, "Statement's minimum payment", minimum);
+  const outcome = el("p", {class:"note"});
+  const due = `${money(offer.amount)} is due on ${offer.due_date}`
+    + (offer.schedule_name ? ` (${offer.schedule_name})` : "");
+  const pay = el("button", {class:"action primary", type:"button", onclick:async()=>{
+    const value = entryDecimal(amount.value);
+    if (!value || !from.value) {
+      say("Enter the amount and the account it is paid from.", "error");
+      return;
+    }
+    const negative = value.startsWith("-") ? value.slice(1) : `-${value}`;
+    const body = {definition:{
+      post_date:when.value, description:description.value.trim(), num:"", notes:"",
+      currency:offer.currency, investment_activity:null, tags:null,
+      splits:[
+        {account:offer.account, value:{value, commodity:offer.currency}, quantity:null,
+          handle:null, memo:"", planning_flow:null, investment_activity:null},
+        {account:from.value, value:{value:negative, commodity:offer.currency}, quantity:null,
+          handle:null, memo:"", planning_flow:null, investment_activity:null},
+      ],
+    }};
+    const typedMinimum = entryDecimal(minimum.value);
+    if (!minimumLabel.hidden && typedMinimum) body.minimum_payment = typedMinimum;
+    try {
+      const paid = await post(`/api/v1/reconciliations/${encodeURIComponent(offer.statement)}`
+        + "/card-payment", body);
+      outcome.textContent = paid.settled
+        ? `Paid ${money(paid.paid)}: the payment due is settled.`
+          + (Number(paid.remaining) > 0 ? ` ${money(paid.remaining)} of the statement carries forward.` : "")
+        : `Paid ${money(paid.paid)}, below the minimum payment: ${money(paid.remaining)}`
+          + " of the statement is still due.";
+      pay.disabled = true;
+      say("Payment saved.");
+    } catch (error) {
+      if (error.code === "card.payment.minimum_needed") {
+        minimumLabel.hidden = false;
+        minimum.focus();
+      }
+      say(error.message, "error");
+    }
+  }}, "Pay");
+  const body = el("section", {class:"detail-dialog"},
+    helpHeading("Pay the statement?", "reconcile"),
+    el("p", {class:"note"}, `The statement through ${offer.statement_date} is reconciled. `
+      + `${due}. Paying less than the statement asks for its minimum payment.`),
+    el("label", {}, "Date", when), el("label", {}, "Amount", amount),
+    el("label", {}, "Paid from", from), el("label", {}, "Description", description),
+    minimumLabel, outcome,
+    el("div", {class:"toolbar"}, el("span", {class:"spacer"}),
+      el("button", {class:"action", type:"button", onclick:()=>{ backdrop.remove(); render(); }},
+        "Close"),
+      pay));
+  backdrop.replaceChildren(body);
 }
 
 async function showRegister() {

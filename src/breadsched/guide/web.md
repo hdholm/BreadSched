@@ -312,6 +312,15 @@ statement. If a deposit in that account
 looks like money back on a [reimbursable expense](#reimbursable-expenses), the page
 says how many such credits are waiting.
 
+**Finish** on a credit card statement that still owes something asks **Pay the
+statement?**: the payment's date (today), amount (what the statement still owes),
+**Paid from** account, and description, all to change, then **Pay**. A payment for
+less than the statement first asks for the statement's **Minimum payment**. The page
+then says whether the payment due is settled and how much of the statement remains;
+**Close** leaves it unpaid. **Finish** could not be pressed before this release, even
+on a balanced statement; it can now. See
+[Credit-card payments](../USER_GUIDE.md#credit-card-payments).
+
 ## Scheduled activity
 
 In **Scheduled**, enter a name, category, funding account, amount, and recurrence to
