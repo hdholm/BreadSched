@@ -8,6 +8,10 @@ GitHub releases.
 
 ## Unreleased
 
+- **The toolbar and the tab row scroll by arrows**, as GnuCash's tabs do, instead of
+  a scrollbar under them. When either is wider than the window, a left and a right
+  arrow appear at its ends (greyed out at the start and the end), the mouse wheel
+  scrolls it too, and choosing a tab brings it into view.
 - **A desktop that stops responding says so, and can be quit and reported.** If
   BreadSched stops responding for 20 seconds, a separate window asks whether to
   wait or quit, and where it was stuck is written to a hang log. After quitting,

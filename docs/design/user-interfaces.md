@@ -14,8 +14,13 @@ menu and reached from the commands that lead to them, which leaves the toolbar r
 for the current view's commands), the current view's name in bold
 (`view_heading`) as the divider, its own command icons (`view_tools`, including the
 register's Reconcile), and, only on `viewmanager.SUMMARY_VIEWS` (Dashboard and
-Accounts), the book's account and transaction counts. The toolbar scrolls horizontally rather than setting
-the window's minimum width. The View menu and the view icons both target the
+Accounts), the book's account and transaction counts. The toolbar and the tab row scroll rather than setting
+the window's minimum width, by arrows at their ends rather than a scrollbar
+(`widgets/scrolling_bar.ScrollingBar`, as GnuCash's tabs do): a scroller with an
+`EXTERNAL` policy and no scrollbar, between a left and a right arrow shown only while
+the row overflows and greyed out at its ends; a wheel scrolls it too, and choosing a
+tab brings it into view (`reveal`). The arrows are shown or hidden at idle, since the
+adjustment changes during layout. The View menu and the view icons both target the
 stateful `win.show-category` action, and `show_category()` is the single navigation
 entry point, so the active icon and menu item always agree however a view was
 reached.

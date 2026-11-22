@@ -98,7 +98,9 @@ The main window opens at the size you last left it, maximized if it was; a
 dialog you resized opens at that size next time. Sizes never exceed the screen
 and can be forgotten in [Preferences](#preferences). BreadSched fits a small
 laptop screen however long your account names and notes are: a long name in a choice list is shortened in the middle when chosen (the list
-shows it in full), wide toolbars scroll sideways, the Dashboard's summary cards wrap
+shows it in full), the toolbar and the tab row show a left and a right arrow at their ends when
+they are wider than the window (click one, or turn the mouse wheel over the row, to
+see the rest; the view's own controls below scroll sideways), the Dashboard's summary cards wrap
 onto more rows, and dialogs open within the screen and scroll inside. Scrollbars are
 always shown, so a list with more out of view says so. A long choice list, such as
 every list of accounts, has a search field when it opens: type part of a name to

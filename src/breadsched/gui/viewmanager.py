@@ -52,6 +52,7 @@ from .view_catalog import (
 from .widgets.bounded import BoundedWindow
 from .widgets.brand import logo_picture
 from .widgets.presented import when_presented
+from .widgets.scrolling_bar import ScrollingBar
 from .widgets.window_sizes import remember_size, restore_size
 
 # The catalog is re-exported for callers that import it from the window.
@@ -281,11 +282,10 @@ class ViewManager(Gtk.ApplicationWindow):
 
     def _build_body(self) -> None:
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        # A narrow window scrolls the toolbar rather than refusing to shrink.
-        toolbar_scroll = Gtk.ScrolledWindow(child=self.toolbar)
-        toolbar_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
-        toolbar_scroll.set_propagate_natural_height(True)
-        outer.append(toolbar_scroll)
+        # A narrow window scrolls the toolbar rather than refusing to shrink: by
+        # arrows at its ends, shown only when it is too wide, as GnuCash's tabs do.
+        self.toolbar_bar = ScrollingBar(self.toolbar)
+        outer.append(self.toolbar_bar)
         outer.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
         self.set_child(outer)
 
@@ -294,9 +294,7 @@ class ViewManager(Gtk.ApplicationWindow):
         self.tab_bar.add_css_class("tab-bar")
         for side in ("start", "end"):
             getattr(self.tab_bar, f"set_margin_{side}")(4)
-        self.tab_scroll = Gtk.ScrolledWindow(child=self.tab_bar)
-        self.tab_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
-        self.tab_scroll.set_propagate_natural_height(True)
+        self.tab_scroll = ScrollingBar(self.tab_bar)
         self.tab_scroll.set_visible(False)
         outer.append(self.tab_scroll)
 
@@ -1135,7 +1133,13 @@ class ViewManager(Gtk.ApplicationWindow):
             item.set_current(item is tab)
         self._update_tab_label(view)
         self.tab_scroll.set_visible(True)
+        # The current tab is in view, wherever the row was scrolled.
+        GLib.idle_add(self._reveal_tab, tab)
         self._remember_tabs()
+
+    def _reveal_tab(self, tab) -> bool:
+        self.tab_scroll.reveal(tab.widget)
+        return False
 
     def _update_tab_label(self, view) -> None:
         if view is None:

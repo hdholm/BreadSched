@@ -13691,6 +13691,64 @@ class TestIssue397:
             other.destroy()
             stranger.destroy()
 
+    def test_a_row_too_wide_scrolls_by_arrows_not_a_scrollbar(self):
+        """As GnuCash's tabs do: arrows only while the row overflows, greyed out
+        at its ends, a wheel scrolling it too, and a child brought into view."""
+        from breadsched.gui.widgets.scrolling_bar import ScrollingBar
+
+        row = Gtk.Box(spacing=4)
+        buttons = [Gtk.Button(label=f"Command {n}") for n in range(30)]
+        for button in buttons:
+            row.append(button)
+        bar = ScrollingBar(row)
+        holder = Gtk.Window()
+        holder.set_default_size(300, -1)
+        holder.set_child(bar)
+        holder.present()
+        try:
+            _spin(lambda: bar.left.get_visible(), 5)
+            assert bar.scroller.get_policy()[0] == Gtk.PolicyType.EXTERNAL  # no scrollbar
+            assert bar.overflowing and bar.left.get_visible() and bar.right.get_visible()
+            assert not bar.left.get_sensitive() and bar.right.get_sensitive()
+            adjustment = bar.scroller.get_hadjustment()
+            bar.right.emit("clicked")
+            _spin(lambda: bar.left.get_sensitive(), 5)
+            assert adjustment.get_value() > 0
+            while bar.right.get_sensitive():
+                bar.right.emit("clicked")
+                _spin(lambda: False, 0.05)
+            end = adjustment.get_upper() - adjustment.get_page_size()
+            assert adjustment.get_value() == pytest.approx(end)
+            bar.reveal(buttons[0])
+            assert adjustment.get_value() == 0
+            bar.reveal(buttons[-1])
+            assert adjustment.get_value() == pytest.approx(end)
+        finally:
+            holder.destroy()
+        # A row that fits shows no arrows.
+        short = Gtk.Box()
+        short.append(Gtk.Button(label="One"))
+        fits = ScrollingBar(short)
+        roomy = Gtk.Window()
+        roomy.set_default_size(600, -1)
+        roomy.set_child(fits)
+        roomy.present()
+        try:
+            _spin(lambda: fits.scroller.get_hadjustment().get_page_size() > 0, 5)
+            _spin(lambda: False, 0.2)
+            assert not fits.overflowing
+            assert not fits.left.get_visible() and not fits.right.get_visible()
+        finally:
+            roomy.destroy()
+
+    def test_the_toolbar_and_tab_row_scroll_by_arrows(self, window):
+        from breadsched.gui.widgets.scrolling_bar import ScrollingBar
+
+        assert isinstance(window.toolbar_bar, ScrollingBar)
+        assert window.toolbar_bar.child is window.toolbar
+        assert isinstance(window.tab_scroll, ScrollingBar)
+        assert window.tab_scroll.child is window.tab_bar
+
     def test_the_reconcile_windows_editor_blocks_only_that_window(
         self, app, window, populated_book
     ):
