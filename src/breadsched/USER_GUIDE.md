@@ -571,9 +571,9 @@ such as Deposit/Withdrawal or Payment/Charge. Filtering the register searches
 everything a transaction holds: its date, number, description, notes, tags, split memos, account names, and amounts, as shown (1,067.25)
 or as typed (1067.25), so 67 finds a 67.00 charge as well as check 1067. It does
 not change the running balance. A transaction cannot be saved unless its exact splits
-balance. While split lines do not balance, the empty last line (or, in the desktop
-transaction editor, a new split row) holds the amount left, waiting for its
-account, as in GnuCash.
+balance. While split lines do not balance, the empty last line (in the desktop
+transaction editor too, whose splits are typed as a register's are) holds the
+amount left, waiting for its account, as in GnuCash.
 
 For entering one purchase or payment quickly, as on a phone, the browser interface
 also has a small **Quick entry** page apart from the full interface
@@ -873,10 +873,11 @@ undo step as the transaction.
 A schedule set to post automatically fetches quotes first too. If nothing prices
 its shares, that date is left due, and the review asks for the price.
 
-In the desktop window, what was posted opens next in **Posted transactions**:
-each transaction with every split on its own line, so you can check the accounts
-and amounts. **Edit…** opens one in the transaction editor and **Delete** removes
-it; both can be undone.
+In the desktop window, what was posted opens next in **Posted transactions**: a
+list of what was posted, with the chosen one open in the transaction editor (the
+same one as everywhere else), so you can check and correct its accounts, amounts,
+tags, and documents. **Save** stores a correction and **Delete…** removes it; both
+can be undone.
 
 ### Credit-card payments
 

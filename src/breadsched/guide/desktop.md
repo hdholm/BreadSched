@@ -160,13 +160,19 @@ as `2026-03-15`.
 
 **New Transaction…** (the toolbar's **Transaction**, or Ctrl+T) opens the
 transaction editor; with a register shown, the new transaction starts in that
-register's account. Each split row has an account, a memo, and two amount columns
-named for that account, as its register names them (for example **Payment** and
-**Charge** for a credit card, **Expense** and **Rebate** for an expense), so you
-never need a minus sign. A blank row shows what it would take to balance the
-others, and saving fills it in. When every row has an amount and they do not
-balance, a new row appears holding the rest, showing **Choose an account…** until
-you choose its account; it goes again if you balance the others yourself.
+register's account. Every window that enters or changes a transaction uses this
+same editor: a register's **Edit Transaction…**, reconciliation, and **Posted
+transactions** after the due review. Its splits are typed on the register's own
+grid, one line per split, exactly as a register's split lines are: **Memo**
+(completed from memos written before for the same description), **Account**
+(completed one `:` segment at a time, with the accounts it may mean listed
+beneath), and two amount columns named as the register you opened it from names
+them (for example **Payment** and **Charge** for a credit card), so you never need
+a minus sign. An amount may be arithmetic, such as `12.50+3`. While the splits do
+not balance, the empty last line shows the rest and takes it when you give it an
+account. A line you empty of everything is no longer a split, and a new one is
+typed on the empty last line. Tab moves from cell to cell and, past the last, on to
+**Save**; Enter saves, and Escape closes the editor.
 
 Categorization rules and reimbursable expenses open from **Actions →
 Categorization Rules…** and **Actions → Reimbursable Expenses…**.
@@ -506,8 +512,9 @@ transaction needs its shares: without them it is not saved, and the cursor moves
 to **Shares**. A share split, which changes shares with no amount, shows its shares
 and no price.
 
-In the transaction editor, a split in such an account has a **Shares** entry
-beside its amount; a negative number means shares sold or moved out.
+In the transaction editor, a split in such an account takes **Shares** and
+**Price** on its line, as in the register; any two of shares, price, and amount
+give the third, and a negative number of shares means shares sold or moved out.
 
 A cash register a security has moved through, such as the checking account you buy
 a fund from, has **Shares** and **Price** columns too. Each transaction shows its
@@ -551,7 +558,7 @@ there. A reconciled entry changes only by reopening its statement (see
 [Reconcile a statement](#reconcile-a-statement)).
 
 In the full editor, a new transaction is proposed the same way: when you leave the
-description and no split has an amount or memo yet, every split of the latest
+description and no split line has an amount or memo yet, every split of the latest
 matching transaction (with its accounts, amounts, and memos) is filled in, and its
 notes too if you have typed none; a note says where it came from. Edit anything before choosing **Save**.
 
@@ -559,9 +566,11 @@ notes too if you have typed none; a note says where it came from. Edit anything 
 
 The full transaction editor opens on **Entry** (date, description, number, and
 notes) above the splits; **Tags & documents** is its second tab, counting the tags
-and documents a transaction has. **Planning detail**, beside **Add split**, shows
-each split's planning purpose, and its investment activity for an investment or
-retirement account; a split that already has either shows it anyway.
+and documents a transaction has. **Planning detail**, above the splits, adds
+**Planning purpose** and **Investment activity** columns to the split lines; each
+completes from its list as an account does, and investment activity is typed only
+for an investment or retirement account. A transaction whose splits already have
+either opens with the columns shown.
 
 On **Tags & documents**, type tags under **Tags**, separated by commas; they
 are saved with the transaction. The register filter also matches tags.
@@ -715,8 +724,10 @@ Review Due Transactions…**, or the **Review Due** toolbar icon in Scheduled, o
 the same review; if nothing is due, it says so. Choose each date's action, or one for all
 of a schedule's dates, then **Apply**. A schedule with several dates lists them under
 **Show the dates**, so a long list of missed dates opens quickly. If anything was posted, **Posted
-transactions** lists it split by split; choose **Edit…** to change one in the
-transaction editor or **Delete** to remove it, then **Close**. See
+transactions** lists it on the left; the one chosen is open on the right in the
+transaction editor, with its **Entry** and **Tags & documents** tabs and its split
+lines. Correct it and choose **Save**, or **Delete…** to remove it, then **Close**.
+See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
 When a date to post buys or sells shares, **Apply** first gets any online quotes it

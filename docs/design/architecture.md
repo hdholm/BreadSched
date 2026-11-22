@@ -238,8 +238,8 @@ more):
 - GTK's due review, Enter Next and Skip Next, schedule delete and duplicate, and
   the schedule editor's save, through `api.local.book_server`.
 
-Transaction saves and deletes go through it too, from GTK's register, transaction
-editor, and Posted transactions, the browser's register and entry form, and the
+Transaction saves and deletes go through it too, from GTK's register and its one
+transaction editor (in the transaction dialog and in Posted transactions), the browser's register and entry form, and the
 command line's `add`, `edit`, and `delete`. Over `/api/v1`, a save travels in
 `api.transaction_codec`'s form; money in the book API's JSON is always exact
 (`api.contract.exact_money`).

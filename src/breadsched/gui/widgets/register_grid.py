@@ -22,6 +22,7 @@ from collections.abc import Callable
 
 from ..gi_setup import Gdk, Gtk, Pango, PangoCairo
 from ..register_sheet import BLANK, IMBALANCE, NOTES, SPLIT, RegisterSheet
+from ..split_sheet import SplitSheet
 from .points import point_in
 
 __all__ = ["BANDING", "RegisterGrid", "grid_colours", "match_list_placement"]
@@ -41,6 +42,8 @@ _FIXED = {
     "decrease": 12,
     "balance": 13,
     "share_balance": 13,
+    "purpose": 22,
+    "activity": 22,
 }
 _SHARED = {"description": 0.55, "transfer": 0.45}
 _NUMERIC = {"increase", "decrease", "balance", "reconcile", "shares", "price", "share_balance"}
@@ -131,7 +134,7 @@ class RegisterGrid(Gtk.Box):
 
     def __init__(self, on_change: Callable[[], None] | None = None) -> None:
         super().__init__(orientation=Gtk.Orientation.HORIZONTAL)
-        self.sheet: RegisterSheet | None = None
+        self.sheet: RegisterSheet | SplitSheet | None = None
         #: Called after anything the user did, so the view can show the message.
         self.on_change = on_change
         self.row_height = 26
@@ -206,7 +209,7 @@ class RegisterGrid(Gtk.Box):
 
     # ------------------------------------------------------------------ model
 
-    def set_sheet(self, sheet: RegisterSheet | None) -> None:
+    def set_sheet(self, sheet: RegisterSheet | SplitSheet | None) -> None:
         self.sheet = sheet
         # A security's register has more columns (#323).
         self._measure()
@@ -294,8 +297,10 @@ class RegisterGrid(Gtk.Box):
                 # A security split arriving in a cash register adds its columns (#407).
                 self._measure()
             self.ensure_visible(sheet.cursor)
-            name = sheet.full_names.get(sheet.account, "")
-            self.area.update_property([Gtk.AccessibleProperty.LABEL], [f"Register for {name}"])
+            label = getattr(sheet, "grid_label", None)
+            if label is None:
+                label = f"Register for {sheet.full_names.get(sheet.account, '')}"
+            self.area.update_property([Gtk.AccessibleProperty.LABEL], [label])
         self._place_editor(focus)
         self.area.queue_draw()
         if self.on_change is not None:
@@ -331,8 +336,9 @@ class RegisterGrid(Gtk.Box):
                 self.area.grab_focus()
             return
         assert sheet is not None
-        if sheet.column != "transfer":
-            # The account list belongs to the transfer cell; elsewhere Enter saves.
+        if sheet.column not in self.listed_columns:
+            # The list belongs to the account cell (and a split sheet's choice
+            # cells); elsewhere Enter saves.
             self.hide_matches()
         x, width = self.column_x(sheet.column)
         notes = sheet.rows[sheet.cursor].kind == NOTES
@@ -373,7 +379,7 @@ class RegisterGrid(Gtk.Box):
         if self._syncing or self.sheet is None:
             return
         self.sheet.set_text(entry.get_text())
-        if self.sheet.column == "transfer":
+        if self.sheet.column in self.listed_columns:
             # Deleting keeps the list current but completes nothing back in.
             _shown, names = self.sheet.quickfill(entry.get_text())
             self.show_matches(names)
@@ -395,7 +401,7 @@ class RegisterGrid(Gtk.Box):
             row.set_child(label)
             self.matches.append(row)
         self.matches.select_row(self.matches.get_row_at_index(0))
-        x, width = self.column_x("transfer")
+        x, width = self.column_x(self.sheet.column)
         position = self.sheet.cursor - self.first_row
         top, height = match_list_placement(
             position, min(len(names), _MATCH_ROWS), self.row_height, self._height
@@ -446,8 +452,13 @@ class RegisterGrid(Gtk.Box):
         elif bottom > first + page:
             adjustment.set_value(bottom - page)
 
+    @property
+    def listed_columns(self) -> tuple[str, ...]:
+        """The columns whose matching choices are listed beneath the cell."""
+        return getattr(self.sheet, "listed_columns", ("transfer",))
+
     def accept_match(self, name: str) -> None:
-        """Take an account from the list into the transfer cell."""
+        """Take an account (or a choice) from the list into the cell."""
         if self.sheet is None:
             return
         self.sheet.set_text(name)
@@ -516,6 +527,19 @@ class RegisterGrid(Gtk.Box):
         if keyval in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab, Gdk.KEY_KP_Tab):
             self._take_match()
             sheet.tab(backwards=shift or keyval == Gdk.KEY_ISO_Left_Tab)
+            leaving = getattr(sheet, "leaving", 0)
+            if leaving:
+                # Past a split sheet's last cell: on to the editor's next control.
+                sheet.leaving = 0
+                self.sync(focus=False)
+                direction = (
+                    Gtk.DirectionType.TAB_FORWARD if leaving > 0 else Gtk.DirectionType.TAB_BACKWARD
+                )
+                root = self.get_root()
+                if root is not None:
+                    self.editor.set_visible(False)
+                    root.child_focus(direction)
+                return True
             return self._done()
         if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_ISO_Enter):
             self.enter()
@@ -562,7 +586,7 @@ class RegisterGrid(Gtk.Box):
                 self._replace(stepped, len(stepped))
                 return True
             return False
-        if sheet.column in ("transfer", "description"):
+        if sheet.column in ("description", *self.listed_columns):
             bounds = self.editor.get_selection_bounds()
             start = bounds[0] if bounds else self.editor.get_position()
             if not bounds and start < len(text):
@@ -575,10 +599,12 @@ class RegisterGrid(Gtk.Box):
             self._typed = typed
             shown, names = sheet.quickfill(typed)
             keep = (
-                _typed_end(typed, shown) if sheet.column == "transfer" else _note_end(typed, shown)
+                _typed_end(typed, shown)
+                if sheet.column in self.listed_columns
+                else _note_end(typed, shown)
             )
             self._replace(shown, keep)
-            if sheet.column == "transfer":
+            if sheet.column in self.listed_columns:
                 self.show_matches(names)
             return True
         return False

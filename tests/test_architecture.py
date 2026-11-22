@@ -334,7 +334,7 @@ class TestServiceBoundaries:
     @pytest.mark.parametrize(
         ("relative", "class_name", "method_name"),
         (
-            ("gui/dialogs/transaction_dialog.py", "TransactionDialog", "_on_save"),
+            ("gui/widgets/transaction_editor.py", "TransactionEditor", "save"),
             ("web/register_resource.py", None, "transaction_add"),
         ),
     )
@@ -713,9 +713,9 @@ class TestServiceBoundaries:
         (
             ("gui/register_sheet.py", "RegisterSheet", "_save_transaction", "save_transaction"),
             (
-                "gui/dialogs/transaction_dialog.py",
-                "TransactionDialog",
-                "_on_delete",
+                "gui/widgets/transaction_editor.py",
+                "TransactionEditor",
+                "delete",
                 "delete_transaction",
             ),
         ),
@@ -1538,8 +1538,9 @@ class TestBookServerBoundaries:
                 ("entry_amount", "entry_trade", "entry_accounts", "entry_num"),
             ),
             ("web/autocomplete_resource.py", ("entry_suggestion",)),
-            ("gui/register_sheet.py", ("num_key", "read_amount", "propose")),
-            ("gui/dialogs/transaction_dialog.py", ("propose_from_entry",)),
+            ("gui/register_sheet.py", ("num_key", "propose")),
+            ("gui/split_entry.py", ("read_amount", "_fill_trade")),
+            ("gui/widgets/transaction_editor.py", ("propose_from_entry",)),
             ("web/account_resource.py", ("commodities", "commodity_price_save")),
             ("gui/dialogs/security_price_dialog.py", ("_on_save",)),
             ("cli/import_commands.py", ("cmd_gnucash_writeback",)),
@@ -1607,7 +1608,7 @@ class TestBookServerBoundaries:
                 ),
             ),
             (
-                "gui/dialogs/transaction_dialog.py",
+                "gui/widgets/transaction_editor.py",
                 ("attach_path", "link_location", "remove_document", "relink_document"),
             ),
             ("web/quote_resource.py", ("quotes", "quote_source_save", "quotes_update")),

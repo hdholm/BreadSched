@@ -8,6 +8,25 @@ GitHub releases.
 
 ## Unreleased
 
+- **One transaction editor, typed like the register.** Every desktop window that
+  enters or changes a transaction now uses the same editor: New Transaction, a
+  register's Edit Transaction…, reconciliation, and Posted transactions after the
+  due review. Its splits are typed on the register's own grid, one line per split,
+  with the same keys as a register's split lines:
+  - the memo and account complete as you type;
+  - an amount may be arithmetic;
+  - the empty last line holds the rest of an unbalanced entry;
+  - a fund's line takes shares and price.
+
+  **Planning detail** adds planning-purpose and investment-activity columns that
+  complete from their lists. The amount columns are named as the register you
+  opened it from names them. The split rows with their own account drop-downs,
+  **Add split**, and remove buttons are gone: type a new split on the empty last
+  line, and empty a line to remove it. **Posted transactions** now lists what was
+  posted and opens the chosen one in that editor, with its **Entry** and **Tags &
+  documents** tabs, **Save**, and **Delete…**, instead of a list of splits with
+  **Edit…** buttons.
+
 ## 2026.11.22.0
 
 The third beta, published as a GitHub pre-release; its Windows installer and Linux
