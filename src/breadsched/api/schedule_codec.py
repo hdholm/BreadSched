@@ -34,8 +34,10 @@ from ..gen.services import (
     FixedSplitInput,
     FormulaScheduleInput,
     SaveFixedSchedule,
+    TransactionSplitInput,
 )
 from .contract import to_json
+from .transaction_codec import split_input_from_json, split_input_json
 
 __all__ = [
     "fixed_request_from_json",
@@ -136,12 +138,16 @@ def formula_request_json(request: FormulaScheduleInput) -> dict[str, Any]:
 
 
 def _posting_details(item) -> dict[str, Any]:
-    """The number, notes, and tags a definition gives (None keeps the stored ones)."""
-    return {
+    """The number, notes, and tags a definition gives (None keeps the stored ones),
+    and a fixed definition's splits typed as ledger amounts."""
+    found: dict[str, Any] = {
         "num": item.num,
         "notes": item.notes,
         "tags": list(item.tags) if item.tags is not None else None,
     }
+    if getattr(item, "ledger_splits", None) is not None:
+        found["ledger_splits"] = [split_input_json(split) for split in item.ledger_splits]
+    return found
 
 
 # ------------------------------------------------------------------ decoding
@@ -160,6 +166,15 @@ def _text(data: Mapping[str, Any], key: str, *, optional: bool = False) -> Any:
     if not isinstance(value, str):
         raise ValueError(f"{key} must be text")
     return value
+
+
+def _ledger_splits(data: Mapping[str, Any]) -> tuple[TransactionSplitInput, ...] | None:
+    value = data.get("ledger_splits")
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise ValueError("ledger_splits must be a list of splits")
+    return tuple(split_input_from_json(item) for item in value)
 
 
 def _tags(data: Mapping[str, Any]) -> tuple[str, ...] | None:
@@ -307,6 +322,7 @@ def fixed_request_from_json(data: Any) -> SaveFixedSchedule:
             num=_text(item, "num", optional=True),
             notes=_text(item, "notes", optional=True),
             tags=_tags(item),
+            ledger_splits=_ledger_splits(item),
         ),
         existing_handle=_text(outer, "existing_handle", optional=True),
         source=_source_from(outer),

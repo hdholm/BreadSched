@@ -8,6 +8,16 @@ GitHub releases.
 
 ## Unreleased
 
+- **Schedules are entered like transactions on the desktop.** The schedule editor
+  types its splits on the register's own split grid, as the transaction editor
+  does, so a schedule can have any number of splits with their memos, planning
+  purposes, and investment activity, and **Save** waits until they balance. Its
+  number and notes are on **Basics**, and its tags and documents on **Tags &
+  documents**, the transaction editor's own tab; every posting carries them. A
+  scenario estimate, or an alternate of a baseline schedule, is edited in the same
+  editor, and an alternate now keeps the baseline's per-leg future amounts instead
+  of dropping them.
+
 - **Text you delete from a note or memo stays deleted.** A description, note, or
   memo completed from an earlier one, with its start then deleted, no longer
   brings the deleted text back at the next letter typed: once anything is deleted,
@@ -30,9 +40,9 @@ GitHub releases.
 - **Schedules carry a number, tags, notes, and documents**, and every transaction
   a schedule posts carries them: the rent schedule's lease, its ACH reference, its
   *Home* tag. **Make scheduled…** takes a transaction's own with it. Set them in
-  the browser's schedule editor (**Tags & notes**), or with `breadsched
-  scheduled-details`; link a schedule's documents with `breadsched attachments
-  --schedule`. Books move to native schema 15 when first opened for writing, after
+  the desktop schedule editor, in the browser's (**Tags & notes**), or with
+  `breadsched scheduled-details`; link a schedule's documents on the desktop or
+  with `breadsched attachments --schedule`. Books move to native schema 15 when first opened for writing, after
   a verified backup is written beside them. A release before this one (schema 14)
   cannot open a book once it has moved; keep the backup if you may go back.
 

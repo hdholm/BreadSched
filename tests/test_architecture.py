@@ -1608,7 +1608,7 @@ class TestBookServerBoundaries:
                 ),
             ),
             (
-                "gui/widgets/transaction_editor.py",
+                "gui/widgets/editor_parts.py",
                 ("attach_path", "link_location", "remove_document", "relink_document"),
             ),
             ("web/quote_resource.py", ("quotes", "quote_source_save", "quotes_update")),

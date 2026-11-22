@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from ..db.sqlite import DbSQLite
@@ -27,6 +27,7 @@ from ..lib.scheduled import (
 from ..lib.transaction import InvestmentActivityKind, PlanningFlowKind
 from .attachments import normalize_tags
 from .contracts import ServiceError, ServiceResult
+from .transactions import TransactionSplitInput
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,9 +88,11 @@ class FixedScheduleInput:
 
     name: str
     recurrence: Recurrence
-    category: str
-    funding: str
-    amount: Money
+    #: The two-sided form the browser and scenarios type: a category, the account
+    #: paying it (or paid into), and an amount in the category's planning terms.
+    category: str = ""
+    funding: str = ""
+    amount: Money = field(default_factory=lambda: Money(0))
     category_planning_flow: PlanningFlowKind | None = None
     funding_planning_flow: PlanningFlowKind | None = None
     investment_activity: InvestmentActivityKind | None = None
@@ -115,6 +118,10 @@ class FixedScheduleInput:
     num: str | None = None
     notes: str | None = None
     tags: tuple[str, ...] | None = None
+    #: The splits as signed ledger amounts, as the desktop's split grid types them
+    #: (each with its memo, planning purpose, and investment activity). Given, they
+    #: are the schedule's splits, and the two-sided fields above are not read.
+    ledger_splits: tuple[TransactionSplitInput, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,11 +182,46 @@ def _on_recurrence(recurrence, when: date) -> bool:
     return when in recurrence.occurrences(when, since=when)
 
 
+def _ledger_splits(
+    db: DbSQLite, given: tuple[TransactionSplitInput, ...]
+) -> ServiceResult[list[ScheduledSplit]]:
+    """Splits typed as signed ledger amounts: at least two, each in an existing
+    account and not zero, together balancing."""
+    errors: list[ServiceError] = []
+    if len(given) < 2:
+        errors.append(ServiceError("schedule.splits.too_few", ("splits",)))
+    total = Money(0)
+    for index, split in enumerate(given):
+        if db.get_account(split.account) is None:
+            errors.append(ServiceError("schedule.account.not_found", (f"splits.{index}.account",)))
+        if not split.value.value:
+            errors.append(ServiceError("schedule.amount.zero", (f"splits.{index}.amount",)))
+        total += split.value.value
+    if total:
+        errors.append(ServiceError("schedule.splits.unbalanced", ("splits",)))
+    if errors:
+        return ServiceResult.failure(*errors)
+    return ServiceResult.success(
+        [
+            ScheduledSplit(
+                split.account,
+                split.value.value,
+                memo=split.memo,
+                planning_flow=split.planning_flow,
+                investment_activity=split.investment_activity,
+            )
+            for split in given
+        ]
+    )
+
+
 def _fixed_splits(
     db: DbSQLite,
     definition: FixedScheduleInput,
     source: ScheduledTransaction | ScenarioSchedule | None = None,
 ) -> ServiceResult[list[ScheduledSplit]]:
+    if definition.ledger_splits is not None:
+        return _ledger_splits(db, definition.ledger_splits)
     errors: list[ServiceError] = []
     category = db.get_account(definition.category)
     funding = db.get_account(definition.funding)
@@ -495,6 +537,9 @@ def build_fixed_scenario_schedule(
     if splits.value is None:
         return ServiceResult.failure(*splits.errors)
     definition = request.definition
+    for split in splits.value:
+        # Per-leg future amounts, as a baseline schedule's are kept.
+        split.amount_changes = list((definition.split_amount_changes or {}).get(split.account, ()))
     candidate = ScenarioSchedule(
         name=definition.name.strip(),
         recurrence=Recurrence.from_dict(definition.recurrence.serialize()),

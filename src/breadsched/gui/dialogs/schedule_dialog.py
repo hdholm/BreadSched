@@ -20,12 +20,9 @@ from ...api import ApiError
 from ...api.local import book_server
 from ...gen.engine.entry_input import parse_amount_text
 from ...gen.lib import (
-    AccountClass,
     FormulaError,
-    InvestmentActivityKind,
     Money,
     PeriodType,
-    PlanningFlowKind,
     Recurrence,
     ScheduledAmountChange,
     ScheduledMonthAmount,
@@ -39,16 +36,17 @@ from ...gen.lib import (
 )
 from ...gen.services import (
     FixedScheduleInput,
-    FixedSplitInput,
     FormulaScheduleInput,
     SaveFixedSchedule,
 )
 from .. import hidden_accounts
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
+from ..split_sheet import SplitSheet
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
+from ..widgets.editor_parts import DocumentsPage, SplitsPanel
 from ..widgets.form_pages import FormGrid, FormPages
 from ..widgets.frequency import FrequencyPicker
 from ..widgets.help import help_row
@@ -56,9 +54,9 @@ from ..widgets.schedule_timeline import (
     DatedAmountListEditor,
     DateListEditor,
     MonthAmountListEditor,
-    PlanningSplitListEditor,
     SplitAmountTimelineEditor,
 )
+from ..widgets.transaction_editor import MORE
 
 __all__ = ["FUTURE_CHANGES", "ScheduleDialog", "update_schedule_pages"]
 
@@ -86,6 +84,8 @@ def update_schedule_pages(dialog) -> None:
             if editor is not None
         ),
     )
+    if getattr(dialog, "category", None) is None:
+        return  # investment activity is a column of the split grid
     accounts = dialog._accounts
     investing = any(
         index < len(accounts) and accounts[index].atype.is_investment
@@ -110,22 +110,18 @@ _GROWTH_POLICIES = [
     ("Expense inflation", ScheduleGrowthPolicy.INFLATION),
 ]
 
-_PLANNING_FLOWS = [
-    ("Ordinary transfer", None),
-    ("Retirement saving", PlanningFlowKind.RETIREMENT_SAVING),
-    ("Benefit / FSA funding", PlanningFlowKind.BENEFIT_FUNDING),
-    ("Debt principal", PlanningFlowKind.DEBT_PRINCIPAL),
-    ("Retirement distribution", PlanningFlowKind.RETIREMENT_INCOME),
-]
-
-_INVESTMENT_ACTIVITIES = [
-    ("Ordinary investment activity", None),
-    *[(kind.label, kind) for kind in InvestmentActivityKind],
-]
-
 
 class ScheduleDialog(BoundedWindow):
-    """Enter a recurring transaction."""
+    """Enter a recurring transaction.
+
+    The scenario schedule editor (``scenario_schedule_dialog``) is this editor for
+    an estimate that is never posted: :attr:`POSTS` false leaves out what only a
+    posting carries or needs.
+    """
+
+    #: Whether what is edited posts to the ledger: its kind, number, notes, tags,
+    #: documents, automatic posting, and days in advance are only for one that does.
+    POSTS = True
 
     def __init__(
         self,
@@ -158,19 +154,23 @@ class ScheduleDialog(BoundedWindow):
         self._formula_entries: list[tuple[int, Gtk.Entry]] = []
         self._formula_originals: list[str] = []
         self._formula_variables_original = ""
-        self._category_ledger_direction: int | None = None
-        self.set_default_size(560, 520)
+        self.set_default_size(760, 640)
         self._load_choices(source)
 
         box, content = self._build_shell()
-        # The fields most schedules need first; the rest a tab away (#383).
+        # The fields most schedules need first; the rest a tab away (#383). Its
+        # splits and its tags and documents are the transaction editor's own parts.
         self.pages = FormPages()
         content.append(self.pages)
         basics = self.pages.page("Basics")
-        splits = self.pages.page("Splits")
+        more = self.pages.page(MORE) if self.POSTS else None
         changes = self.pages.page(FUTURE_CHANGES)
         advanced = self.pages.page("Advanced")
-        self._build_transaction_fields(basics, splits, advanced)
+        self._build_transaction_fields(basics, advanced)
+        if more is not None:
+            self._build_documents(more)
+        # The splits stay in sight beneath the pages, as in the transaction editor.
+        self._build_splits(box)
         # Timeline editors before the recurrence: its signals validate them.
         self._build_timeline_fields(changes)
         self._build_recurrence_fields(basics, advanced)
@@ -215,67 +215,16 @@ class ScheduleDialog(BoundedWindow):
         self.content_scroller = Gtk.ScrolledWindow(child=content)
         self.content_scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         self.content_scroller.set_vexpand(True)
+        self.content_scroller.set_min_content_height(220)
         box.append(self.content_scroller)
         return box, content
 
-    def _build_transaction_fields(
-        self, basics: FormGrid, splits: FormGrid, advanced: FormGrid
-    ) -> None:
+    def _build_transaction_fields(self, basics: FormGrid, advanced: FormGrid) -> None:
         self.name_entry = Gtk.Entry(placeholder_text="Rent")
         self.name_entry.connect("changed", self._validate)
         basics.add("Name", self.name_entry)
-
-        self.kind = bounded_dropdown(
-            [
-                "Commitment - posted to the ledger when due",
-                "Estimate - shapes plans only, never posted",
-            ]
-        )
-        basics.add("Kind", self.kind)
-
-        self.category = bounded_dropdown(self._names)
-        category_default = next(
-            (
-                index
-                for index, account in enumerate(self._accounts)
-                if account.account_class in {AccountClass.INCOME, AccountClass.EXPENSE}
-            ),
-            0,
-        )
-        self.category.set_selected(category_default)
-        self.category.connect("notify::selected", self._validate)
-        basics.add("Category", self.category)
-
-        self.funding = bounded_dropdown(self._names)
-        if len(self._accounts) > 1:
-            self.funding.set_selected(0 if category_default else 1)
-        self.funding.connect("notify::selected", self._validate)
-        basics.add("Paid from / into", self.funding)
-
-        self.amount_entry = Gtk.Entry(placeholder_text="0.00")
-        self.amount_entry.connect("changed", self._validate)
-        basics.add("Amount", self.amount_entry)
-
-        self.category_memo_entry = Gtk.Entry(placeholder_text="Optional memo")
-        splits.add("Category memo", self.category_memo_entry)
-        self.funding_memo_entry = Gtk.Entry(placeholder_text="Optional memo")
-        splits.add("Funding memo", self.funding_memo_entry)
-        self.additional_splits = PlanningSplitListEditor(
-            self._validate,
-            self._names,
-            [label for label, _kind in _PLANNING_FLOWS],
-            [label for label, _kind in _INVESTMENT_ACTIVITIES],
-        )
-        splits.add(
-            "Additional splits",
-            self.additional_splits,
-            tooltip=(
-                "Add payroll deductions, retirement/FSA funding, debt principal, or "
-                "other fixed legs. Amounts are entered in the account's normal direction; "
-                "the paid-from/into split is adjusted automatically to keep the "
-                "transaction balanced."
-            ),
-        )
+        if self.POSTS:
+            self._build_posting_fields(basics)
 
         # Defaults set once and rarely revisited (#383).
         self.growth_policy = bounded_dropdown([label for label, _policy in _GROWTH_POLICIES])
@@ -285,19 +234,85 @@ class ScheduleDialog(BoundedWindow):
             "for formula-driven schedules."
         )
         advanced.add("Projection growth", self.growth_policy)
-        self.category_planning_flow = bounded_dropdown([label for label, _kind in _PLANNING_FLOWS])
-        self.category_planning_flow.connect("notify::selected", self._validate)
-        advanced.add("Category planning purpose", self.category_planning_flow)
-        self.planning_flow = bounded_dropdown([label for label, _kind in _PLANNING_FLOWS])
-        advanced.add("Planning purpose override", self.planning_flow)
-        self.investment_activity = bounded_dropdown(
-            [label for label, _kind in _INVESTMENT_ACTIVITIES]
+
+    def _build_posting_fields(self, basics: FormGrid) -> None:
+        self.kind = bounded_dropdown(
+            [
+                "Commitment - posted to the ledger when due",
+                "Estimate - shapes plans only, never posted",
+            ]
         )
-        self.investment_activity.connect("notify::selected", self._validate)
-        # Shown only for an investment or retirement account, or when already set.
-        self.investment_activity_label = advanced.add(
-            "Investment activity", self.investment_activity
+        basics.add("Kind", self.kind)
+
+        # What every posting carries, as a transaction's Entry page has them.
+        self.num_entry = Gtk.Entry(placeholder_text="Cheque or reference")
+        basics.add("Number", self.num_entry)
+        self.notes_view = Gtk.TextView()
+        self.notes_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        notes_scroll = Gtk.ScrolledWindow(child=self.notes_view)
+        notes_scroll.set_min_content_height(48)
+        basics.add("Notes", notes_scroll)
+
+    def _build_documents(self, more: FormGrid) -> None:
+        """Tags and documents, as a transaction's are; every posting carries them."""
+        source = self.source
+        book = book_server(self.db)
+        stored = None
+        if source is not None and not self.creating:
+            try:
+                stored = book.find_schedule(source.handle)
+            except ApiError:
+                stored = None
+        self.docs = DocumentsPage(
+            more,
+            book,
+            "schedule",
+            stored,
+            folder=book.transaction_editor(None).folder,
+            on_count=self._count_more,
+            on_error=self._document_error,
+            on_changed=lambda _changed: None,
         )
+        if source is not None:
+            # A draft from Make scheduled… brings its transaction's tags.
+            self.docs.tags_entry.set_text(", ".join(source.tags))
+        self.tags_entry = self.docs.tags_entry
+        self._count_more()
+
+    def _count_more(self) -> None:
+        if hasattr(self, "docs"):
+            self.pages.set_count(MORE, self.docs.count())
+
+    def _document_error(self, text: str) -> bool:
+        if hasattr(self, "status"):
+            self.status.set_text(text)
+        return False
+
+    def _build_splits(self, box: Gtk.Box) -> None:
+        """The splits on the register's grid, as the transaction editor shows them."""
+        book = book_server(self.db)
+        context = book.transaction_editor(None)
+        self.sheet = SplitSheet(
+            self.db,
+            book.accounts(),
+            security_accounts=context.security_accounts,
+            transaction=None,
+            # Its amount columns named for its first split, as a stored transaction's are.
+            account=(
+                self.source.splits[0].account
+                if self.source is not None and self.source.splits
+                else None
+            ),
+            currency=self._stored_currency(),
+        )
+        self.sheet.on_enter = lambda: False
+        self.sheet.on_escape = self.close
+        if self.source is not None:
+            self.sheet.schedule_lines(self.source)
+        self.splits_panel = SplitsPanel(self.sheet, self._validate)
+        self.grid = self.splits_panel.grid
+        self.detail_toggle = self.splits_panel.detail_toggle
+        box.append(self.splits_panel)
 
     def _build_timeline_fields(self, changes: FormGrid) -> None:
         changes.note(
@@ -358,9 +373,10 @@ class ScheduleDialog(BoundedWindow):
         self.count_entry.connect("changed", self._recurrence_changed)
         basics.add("Occurrences", self.count_entry)
 
-        self.enabled_check = Gtk.CheckButton(label="Active — include in upcoming and plans")
-        self.enabled_check.set_active(True)
-        basics.add(None, self.enabled_check)
+        if self.POSTS:
+            self.enabled_check = Gtk.CheckButton(label="Active — include in upcoming and plans")
+            self.enabled_check.set_active(True)
+            basics.add(None, self.enabled_check)
 
         self.weekend = bounded_dropdown([w[0] for w in _WEEKEND])
         self.weekend.connect("notify::selected", self._recurrence_changed)
@@ -369,7 +385,10 @@ class ScheduleDialog(BoundedWindow):
             "changes the forecast for both."
         )
         advanced.add("If it falls on a weekend", self.weekend)
+        if self.POSTS:
+            self._build_posting_timing(advanced)
 
+    def _build_posting_timing(self, advanced: FormGrid) -> None:
         self.auto_check = Gtk.CheckButton(label="Post automatically once the date arrives")
         advanced.add(None, self.auto_check)
 
@@ -425,6 +444,7 @@ class ScheduleDialog(BoundedWindow):
     ) -> None:
         if source is not None and read_only_reason:
             grid.set_visible(False)
+            self.splits_panel.set_visible(False)
             self.preview.set_visible(False)
             self.details.set_text(self._detail_text(source, read_only_reason))
             self.details.set_visible(True)
@@ -435,6 +455,9 @@ class ScheduleDialog(BoundedWindow):
         else:
             if source is not None:
                 if self._formula_mode:
+                    # Its formulas own its splits: they are edited in the formula
+                    # editor, not on the grid.
+                    self.splits_panel.set_visible(False)
                     # Loading recurrence controls emits validation callbacks. Build
                     # the formula controls first so those callbacks never observe a
                     # half-constructed dialog.
@@ -453,12 +476,18 @@ class ScheduleDialog(BoundedWindow):
             "",
             f"Name: {source.name}",
             f"Description: {source.description}",
-            f"Kind: {'Estimate' if source.placeholder else 'Commitment'}",
-            f"Enabled: {'yes' if source.enabled else 'no'}",
-            f"Automatic posting: {'yes' if source.auto_create else 'no'}",
-            f"Enter in advance: {source.advance_days} day(s)",
-            f"Remind in advance: {source.remind_days} day(s)",
-            f"Currency: {source.currency or '(book/default)'}",
+            *(
+                [
+                    f"Kind: {'Estimate' if source.placeholder else 'Commitment'}",
+                    f"Enabled: {'yes' if source.enabled else 'no'}",
+                    f"Automatic posting: {'yes' if source.auto_create else 'no'}",
+                    f"Enter in advance: {source.advance_days} day(s)",
+                    f"Remind in advance: {source.remind_days} day(s)",
+                ]
+                if self.POSTS
+                else []
+            ),
+            f"Currency: {self._stored_currency() or '(book/default)'}",
             f"Recurrence: {recurrence.describe()}",
             f"First due: {recurrence.start.isoformat()}",
             f"End date: {recurrence.end.isoformat() if recurrence.end else '(none)'}",
@@ -476,7 +505,14 @@ class ScheduleDialog(BoundedWindow):
                 )
             ),
             f"Weekend adjustment: {recurrence.weekend_adjust.value}",
-            (f"Last posted: {source.last_posted.isoformat() if source.last_posted else '(none)'}"),
+            *(
+                [
+                    "Last posted: "
+                    + (source.last_posted.isoformat() if source.last_posted else "(none)")
+                ]
+                if self.POSTS
+                else []
+            ),
             "",
             "Splits:",
         ]
@@ -514,14 +550,19 @@ class ScheduleDialog(BoundedWindow):
                 f"  {item.when.isoformat()}: {item.amount}"
                 for item in source.occurrence_adjustments
             )
-        if source.source_recurrence is not None:
+        if getattr(source, "source_recurrence", None) is not None:
             lines.extend(["", "Original source recurrence:", f"  {source.source_recurrence}"])
         return "\n".join(lines)
 
     def _load_formula_source(self, source: ScheduledTransaction) -> None:
         """Load editable schedule metadata while preserving formula-owned values."""
+        self._load_basics(source)
+        self.skipped_editor.set_values(source.skipped)
+
+    def _load_basics(self, source: ScheduledTransaction) -> None:
+        """What the fixed and the formula form both show: its name, growth,
+        recurrence, and, for one that posts, how and when it posts."""
         self.name_entry.set_text(source.name)
-        self.kind.set_selected(1 if source.placeholder else 0)
         self.growth_policy.set_selected(
             next(
                 index
@@ -541,24 +582,19 @@ class ScheduleDialog(BoundedWindow):
             if source.recurrence.weekend_adjust is adjustment:
                 self.weekend.set_selected(index)
                 break
-        self.enabled_check.set_active(source.enabled)
-        self.auto_check.set_active(source.auto_create)
-        self.advance_spin.set_value(source.advance_days)
-        self.remind_spin.set_value(source.remind_days)
-        self.skipped_editor.set_values(source.skipped)
+        if self.POSTS:
+            self.kind.set_selected(1 if source.placeholder else 0)
+            self.num_entry.set_text(source.num)
+            self.notes_view.get_buffer().set_text(source.notes)
+            self.enabled_check.set_active(source.enabled)
+            self.auto_check.set_active(source.auto_create)
+            self.advance_spin.set_value(source.advance_days)
+            self.remind_spin.set_value(source.remind_days)
 
     def _protect_formula_fields(self, source: ScheduledTransaction) -> None:
         """Protect formula accounts/amount mechanics while allowing validated formulas."""
+        # Its split grid is not shown at all (``_load_initial_state``).
         protected = (
-            self.category,
-            self.category_planning_flow,
-            self.funding,
-            self.planning_flow,
-            self.investment_activity,
-            self.amount_entry,
-            self.category_memo_entry,
-            self.funding_memo_entry,
-            self.additional_splits,
             self.amount_changes_editor,
             self.seasonal_amounts_editor,
             self.occurrence_adjustments_editor,
@@ -658,136 +694,8 @@ class ScheduleDialog(BoundedWindow):
 
     def _load_source(self, source: ScheduledTransaction) -> None:
         """Populate the fixed editor from the engine-owned split projection."""
-        self.name_entry.set_text(source.name)
-        self.kind.set_selected(1 if source.placeholder else 0)
-        self.growth_policy.set_selected(
-            next(
-                index
-                for index, (_label, policy) in enumerate(_GROWTH_POLICIES)
-                if policy is source.growth_policy
-            )
-        )
-        projection = book_server(self.db).schedule_layout(source).projection
-        if projection.primary is not None and projection.funding is not None:
-            flow_split = source.splits[projection.primary.index]
-            funding_split = source.splits[projection.funding.index]
-            flow_account = self._by_handle.get(flow_split.account)
-            funding_account = self._by_handle.get(funding_split.account)
-            if flow_account is not None and funding_account is not None:
-                funding_item = (funding_account, funding_split)
-                category_index = next(
-                    index
-                    for index, account in enumerate(self._accounts)
-                    if account.handle == flow_account.handle
-                )
-                funding_index = next(
-                    index
-                    for index, account in enumerate(self._accounts)
-                    if account.handle == funding_item[0].handle
-                )
-                self.category.set_selected(category_index)
-                self.funding.set_selected(funding_index)
-                planning_kind = funding_item[1].planning_flow
-                self.planning_flow.set_selected(
-                    next(
-                        (
-                            index
-                            for index, (_label, kind) in enumerate(_PLANNING_FLOWS)
-                            if kind is planning_kind
-                        ),
-                        0,
-                    )
-                )
-                self.category_planning_flow.set_selected(
-                    next(
-                        (
-                            index
-                            for index, (_label, kind) in enumerate(_PLANNING_FLOWS)
-                            if kind is flow_split.planning_flow
-                        ),
-                        0,
-                    )
-                )
-                self.investment_activity.set_selected(
-                    next(
-                        (
-                            index
-                            for index, (_label, kind) in enumerate(_INVESTMENT_ACTIVITIES)
-                            if kind is flow_split.investment_activity
-                        ),
-                        0,
-                    )
-                )
-                resolved_flow = flow_split.resolve(source.variables)
-                if flow_split.planning_flow is not None:
-                    amount = flow_split.planning_flow.plan_amount(resolved_flow)
-                elif flow_split.investment_activity is not None:
-                    amount = abs(resolved_flow)
-                    if flow_split.investment_activity.direction == 0:
-                        self._category_ledger_direction = 1 if resolved_flow >= 0 else -1
-                else:
-                    amount = abs(resolved_flow * flow_account.sign())
-                    if flow_account.account_class.value not in {"income", "expense"}:
-                        self._category_ledger_direction = projection.primary.ledger_direction
-                self.amount_entry.set_text(str(amount.to_decimal()))
-                self.category_memo_entry.set_text(flow_split.memo or "")
-                self.funding_memo_entry.set_text(funding_item[1].memo or "")
-                extra_values = []
-                for projected in projection.additional:
-                    split = source.splits[projected.index]
-                    account = self._by_handle.get(split.account)
-                    assert account is not None
-                    account_index = next(
-                        index
-                        for index, candidate in enumerate(self._accounts)
-                        if candidate.handle == account.handle
-                    )
-                    purpose_index = next(
-                        (
-                            index
-                            for index, (_label, kind) in enumerate(_PLANNING_FLOWS)
-                            if kind is split.planning_flow
-                        ),
-                        0,
-                    )
-                    activity_index = next(
-                        (
-                            index
-                            for index, (_label, kind) in enumerate(_INVESTMENT_ACTIVITIES)
-                            if kind is split.investment_activity
-                        ),
-                        0,
-                    )
-                    normal_amount = projected.amount
-                    direction_index = 1 if projected.opposite_direction else 0
-                    extra_values.append(
-                        (
-                            account_index,
-                            str(normal_amount.to_decimal()),
-                            purpose_index,
-                            activity_index,
-                            split.memo or "",
-                            direction_index,
-                        )
-                    )
-                self.additional_splits.set_values(extra_values)
-
-        self.frequency.set_value(source.recurrence.period, source.recurrence.interval)
-        self.start_entry.set_text(source.recurrence.start.isoformat())
-        if source.recurrence.end is not None:
-            self.ends.set_selected(1)
-            self.end_entry.set_text(source.recurrence.end.isoformat())
-        elif source.recurrence.count is not None:
-            self.ends.set_selected(2)
-            self.count_entry.set_text(str(source.recurrence.count))
-        for index, (_label, adjustment) in enumerate(_WEEKEND):
-            if source.recurrence.weekend_adjust is adjustment:
-                self.weekend.set_selected(index)
-                break
-        self.enabled_check.set_active(source.enabled)
-        self.auto_check.set_active(source.auto_create)
-        self.advance_spin.set_value(source.advance_days)
-        self.remind_spin.set_value(source.remind_days)
+        # Its splits are on the grid already (``_build_splits``).
+        self._load_basics(source)
         self.amount_changes_editor.set_values(
             (item.start, str(item.amount.to_decimal())) for item in source.amount_changes
         )
@@ -877,15 +785,12 @@ class ScheduleDialog(BoundedWindow):
         self.occurrence_adjustments_editor.refresh_date_choices()
         self._validate()
 
-    def _amount(self) -> Money | None:
-        text = self.amount_entry.get_text().strip()
-        if not text:
-            return None
-        try:
-            value = Money(parse_amount_text(text))
-        except (ValueError, ArithmeticError):
-            return None
-        return value if value else None
+    def _stored_currency(self) -> str | None:
+        """The currency stored with what is edited; a scenario estimate has none."""
+        return getattr(self.source, "currency", None)
+
+    def _currency(self) -> str:
+        return self._stored_currency() or book_server(self.db).transaction_currency()
 
     def _amount_changes(self) -> list[ScheduledAmountChange] | None:
         values = self.amount_changes_editor.values()
@@ -984,6 +889,8 @@ class ScheduleDialog(BoundedWindow):
         return sorted(changes, key=lambda item: item.when)
 
     def _validate(self, *_args) -> None:
+        if not hasattr(self, "save_button"):
+            return  # the split grid draws before the rest of the dialog is built
         update_schedule_pages(self)
         problems = []
         if not self.name_entry.get_text().strip():
@@ -1007,8 +914,9 @@ class ScheduleDialog(BoundedWindow):
             self.save_button.set_sensitive(not problems)
             self.status.set_text("; ".join(problems).capitalize() if problems else "")
             return
-        if self._amount() is None:
-            problems.append("enter an amount")
+        split_problem = self.sheet.check(self._currency())
+        if split_problem is not None:
+            problems.append(split_problem.rstrip(".").lower())
         amount_changes = self._amount_changes()
         if amount_changes is None:
             problems.append("check future amounts")
@@ -1022,44 +930,12 @@ class ScheduleDialog(BoundedWindow):
         if skipped is not None and adjustments is not None:
             if set(skipped) & {item.when for item in adjustments}:
                 problems.append("an occurrence cannot be both skipped and overridden")
-        for (
-            _account_index,
-            raw_amount,
-            _purpose_index,
-            _activity_index,
-            _memo,
-            _direction,
-        ) in self.additional_splits.values():
-            try:
-                extra_amount = Money(parse_amount_text(raw_amount))
-            except (ValueError, ArithmeticError):
-                problems.append("check additional split amounts")
-                break
-            if extra_amount <= 0:
-                problems.append("additional split amounts must be greater than zero")
-                break
         draft: ScheduledTransaction | None = None
         if not problems:
             try:
-                draft = book_server(self.db).draft_fixed_schedule(self._fixed_request())
-                refused: str | None = None
-            except ApiError as error:
-                refused = error.code
-            if refused is not None:
-                messages = {
-                    "schedule.accounts.same": "choose two different accounts",
-                    "schedule.accounts.duplicate": (
-                        "each additional split needs a different account"
-                    ),
-                    "schedule.category.classification_conflict": (
-                        "choose a category planning purpose or investment activity, not both"
-                    ),
-                    "schedule.category.role_required": (
-                        "choose income/expense, a category planning purpose, "
-                        "or an investment activity"
-                    ),
-                }
-                problems.append(messages.get(refused, refused))
+                draft = self._draft_fixed()
+            except (ApiError, ValueError) as error:
+                problems.append(str(error).rstrip(".").lower())
 
         self.save_button.set_sensitive(not problems)
         self.status.set_text("; ".join(problems).capitalize() if problems else "")
@@ -1077,6 +953,10 @@ class ScheduleDialog(BoundedWindow):
             self.preview.set_text("")
 
     # ----------------------------------------------------------------- saving
+
+    def _draft_fixed(self):
+        """What the form describes, drafted by the book server for the preview."""
+        return book_server(self.db).draft_fixed_schedule(self._fixed_request())
 
     def _formula_request(self) -> FormulaScheduleInput:
         recurrence = self._recurrence()
@@ -1098,68 +978,65 @@ class ScheduleDialog(BoundedWindow):
             source=self.source,
             advance_days=self.advance_spin.get_value_as_int(),
             remind_days=self.remind_spin.get_value_as_int(),
+            **self._posting_details(),
         )
 
-    def _fixed_request(self) -> SaveFixedSchedule:
-        recurrence = self._recurrence()
-        amount = self._amount()
-        assert recurrence is not None and amount is not None
-        additional = tuple(
-            FixedSplitInput(
-                account=self._accounts[account_index].handle,
-                amount=Money(parse_amount_text(raw_amount)),
-                planning_flow=_PLANNING_FLOWS[purpose_index][1],
-                investment_activity=_INVESTMENT_ACTIVITIES[activity_index][1],
-                memo=memo,
-                opposite_direction=direction_index == 1,
-            )
-            for (
-                account_index,
-                raw_amount,
-                purpose_index,
-                activity_index,
-                memo,
-                direction_index,
-            ) in self.additional_splits.values()
-        )
-        split_changes = {
-            account: tuple(changes)
-            for account, changes in (self._split_amount_changes() or {}).items()
+    def _posting_details(self) -> dict:
+        """The number, notes, and tags every posting carries (schema 15)."""
+        start, end = self.notes_view.get_buffer().get_bounds()
+        return {
+            "num": self.num_entry.get_text().strip(),
+            "notes": self.notes_view.get_buffer().get_text(start, end, True).strip(),
+            "tags": self.docs.tags(),
         }
+
+    def _fixed_request(self) -> SaveFixedSchedule:
+        """The form as a fixed definition, its splits as typed on the grid;
+        ``ValueError`` with the reason when they cannot be saved."""
         return SaveFixedSchedule(
-            FixedScheduleInput(
-                name=self.name_entry.get_text().strip(),
-                recurrence=recurrence,
-                category=self._accounts[self.category.get_selected()].handle,
-                funding=self._accounts[self.funding.get_selected()].handle,
-                amount=amount,
-                category_planning_flow=_PLANNING_FLOWS[self.category_planning_flow.get_selected()][
-                    1
-                ],
-                funding_planning_flow=_PLANNING_FLOWS[self.planning_flow.get_selected()][1],
-                investment_activity=_INVESTMENT_ACTIVITIES[self.investment_activity.get_selected()][
-                    1
-                ],
-                category_ledger_direction=self._category_ledger_direction,
-                additional_splits=additional,
-                category_memo=self.category_memo_entry.get_text().strip(),
-                funding_memo=self.funding_memo_entry.get_text().strip(),
-                enabled=self.enabled_check.get_active(),
-                auto_create=self.auto_check.get_active(),
-                placeholder=self.kind.get_selected() == 1,
-                growth_policy=_GROWTH_POLICIES[self.growth_policy.get_selected()][1],
-                amount_changes=tuple(self._amount_changes() or ()),
-                split_amount_changes=split_changes,
-                seasonal_amounts=tuple(self._seasonal_amounts() or ()),
-                skipped=tuple(self._skipped(recurrence) or ()),
-                occurrence_adjustments=tuple(self._occurrence_adjustments(recurrence) or ()),
-                advance_days=self.advance_spin.get_value_as_int(),
-                remind_days=self.remind_spin.get_value_as_int(),
-            ),
+            self._definition(),
             existing_handle=(
                 self.source.handle if self.source is not None and not self.creating else None
             ),
             source=self.source,
+        )
+
+    def _definition(self) -> FixedScheduleInput:
+        """The fixed definition the form describes (``ValueError`` with the reason
+        when its splits cannot be saved), shared by both editors."""
+        recurrence = self._recurrence()
+        assert recurrence is not None
+        splits = self.sheet.splits(self._currency())
+        if splits is None:
+            raise ValueError(self.sheet.message or "Check the splits.")
+        split_changes = {
+            account: tuple(changes)
+            for account, changes in (self._split_amount_changes() or {}).items()
+        }
+        posting = (
+            {
+                "enabled": self.enabled_check.get_active(),
+                "auto_create": self.auto_check.get_active(),
+                "placeholder": self.kind.get_selected() == 1,
+                "advance_days": self.advance_spin.get_value_as_int(),
+                "remind_days": self.remind_spin.get_value_as_int(),
+                **self._posting_details(),
+            }
+            if self.POSTS
+            else {}
+        )
+        return FixedScheduleInput(
+            name=self.name_entry.get_text().strip(),
+            recurrence=recurrence,
+            # Signed ledger amounts, as the split grid types them.
+            ledger_splits=splits,
+            growth_policy=_GROWTH_POLICIES[self.growth_policy.get_selected()][1],
+            amount_changes=tuple(self._amount_changes() or ()),
+            split_amount_changes=split_changes,
+            seasonal_amounts=tuple(self._seasonal_amounts() or ()),
+            skipped=tuple(self._skipped(recurrence) or ()),
+            occurrence_adjustments=tuple(self._occurrence_adjustments(recurrence) or ()),
+            **posting,
         )
 
     def build(self) -> ScheduledTransaction:
@@ -1179,6 +1056,9 @@ class ScheduleDialog(BoundedWindow):
                 book.save_formula_schedule(self._formula_request())
             else:
                 book.save_fixed_schedule(self._fixed_request())
+        except ValueError as error:
+            self.status.set_text(str(error))
+            return
         except ApiError as error:
             messages = {
                 "schedule.split_amount_changes.unbalanced": (

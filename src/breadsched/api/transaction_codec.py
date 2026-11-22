@@ -55,18 +55,20 @@ def transaction_input_json(item: TransactionInput) -> dict[str, Any]:
         "currency": item.currency,
         "investment_activity": _enum(item.investment_activity),
         "tags": None if item.tags is None else list(item.tags),
-        "splits": [
-            {
-                "account": split.account,
-                "value": _amount(split.value),
-                "quantity": _amount(split.quantity),
-                "handle": split.handle,
-                "memo": split.memo,
-                "planning_flow": _enum(split.planning_flow),
-                "investment_activity": _enum(split.investment_activity),
-            }
-            for split in item.splits
-        ],
+        "splits": [split_input_json(split) for split in item.splits],
+    }
+
+
+def split_input_json(split: TransactionSplitInput) -> dict[str, Any]:
+    """One split input as JSON data (also a schedule's typed splits)."""
+    return {
+        "account": split.account,
+        "value": _amount(split.value),
+        "quantity": _amount(split.quantity),
+        "handle": split.handle,
+        "memo": split.memo,
+        "planning_flow": _enum(split.planning_flow),
+        "investment_activity": _enum(split.investment_activity),
     }
 
 
@@ -134,6 +136,11 @@ def _choice(kind: Any, raw: Any, key: str) -> Any:
         return kind(raw)
     except ValueError:
         raise ValueError(f"{key} is not one of the known values") from None
+
+
+def split_input_from_json(raw: Any) -> TransactionSplitInput:
+    """One split input from untrusted JSON data, or a ``ValueError``."""
+    return _split(raw)
 
 
 def _split(raw: Any) -> TransactionSplitInput:

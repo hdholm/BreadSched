@@ -2577,7 +2577,7 @@ class TestDialogs:
         self, app, window, populated_book, tmp_path, monkeypatch
     ):
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
-        from breadsched.gui.widgets import transaction_editor
+        from breadsched.gui.widgets import editor_parts as transaction_editor
 
         app.open_book(populated_book)
         fresh = TransactionDialog(window, app.db).editor
@@ -3757,6 +3757,16 @@ class TestScheduledKeepsTheSelection:
         assert view.manager.lookup_action("scheduled-edit").get_enabled()
 
 
+def _schedule_lines(
+    dialog, amount, category="Expenses:Rent", funding="Assets:Checking Account"
+) -> None:
+    """Type a two-split schedule on the schedule editor's split grid: the amount on
+    the category, the account paying it on the line holding the rest."""
+    dialog.splits_panel.type_line(0, account=category, increase=amount)
+    dialog.splits_panel.type_line(1, account=funding)
+    dialog._validate()
+
+
 class TestScheduleEntry:
     """Item 6: scheduled transactions must be enterable."""
 
@@ -3772,13 +3782,13 @@ class TestScheduleEntry:
 
     def test_it_accepts_a_complete_one(self, dialog):
         dialog.name_entry.set_text("Council tax")
-        dialog.amount_entry.set_text("180.00")
+        _schedule_lines(dialog, "180.00")
         assert dialog.save_button.get_sensitive() is True
 
     def test_saving_creates_a_two_split_schedule(self, dialog, app):
         before = len(list(app.db.iter_scheduled()))
         dialog.name_entry.set_text("Council tax")
-        dialog.amount_entry.set_text("180.00")
+        _schedule_lines(dialog, "180.00")
         dialog._on_save(None)
         schedules = list(app.db.iter_scheduled())
         assert len(schedules) == before + 1
@@ -3789,10 +3799,13 @@ class TestScheduleEntry:
     def test_the_editor_opens_on_its_basics_with_the_rest_a_tab_away(self, dialog):
         """#383: future changes and defaults are on their own pages."""
         from breadsched.gui.dialogs.schedule_dialog import FUTURE_CHANGES
+        from breadsched.gui.widgets.transaction_editor import MORE
 
         pages = dialog.pages
         titles = [pages.get_tab_label(pages.get_nth_page(i)).get_label() for i in range(4)]
-        assert titles == ["Basics", "Splits", FUTURE_CHANGES, "Advanced"]
+        # Its tags and documents, and its splits, are the transaction editor's.
+        assert titles == ["Basics", MORE, FUTURE_CHANGES, "Advanced"]
+        assert dialog.splits_panel.get_parent() is dialog.get_child()
         assert pages.get_current_page() == 0
         basics = pages.get_nth_page(0)
         assert dialog.name_entry.get_parent() is basics
@@ -3806,32 +3819,24 @@ class TestScheduleEntry:
         assert pages.tab_label(FUTURE_CHANGES) == f"{FUTURE_CHANGES} (2)"
 
     def test_investment_activity_shows_only_for_an_investment_account(self, dialog, app):
+        """Planning detail on the split grid, as in the transaction editor."""
         from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
 
         _add_brokerage(app.db)
         dialog = ScheduleDialog(dialog.get_transient_for(), app.db)
-
-        def index_of(investing: bool) -> int:
-            return next(
-                index
-                for index, account in enumerate(dialog._accounts)
-                if account.atype.is_investment is investing
-            )
-
-        plain = index_of(False)
-        dialog.category.set_selected(plain)
-        dialog.funding.set_selected(plain)
-        assert dialog.investment_activity.get_visible() is False
-        assert dialog.investment_activity_label.get_visible() is False
-        dialog.funding.set_selected(index_of(True))
-        assert dialog.investment_activity.get_visible() is True
-        assert dialog.investment_activity_label.get_visible() is True
+        sheet = dialog.sheet
+        dialog.splits_panel.type_line(0, account="Assets:Checking Account")
+        dialog.detail_toggle.set_active(True)
+        assert "purpose" in sheet.editable_columns(0)
+        assert "activity" not in sheet.editable_columns(0)
+        dialog.splits_panel.type_line(0, account="Test Brokerage")
+        assert "activity" in sheet.editable_columns(0)
         dialog.destroy()
 
     def test_enter_and_remind_in_advance_days_are_saved(self, dialog):
         # #352: GnuCash's create- and remind-in-advance days.
         dialog.name_entry.set_text("Council tax")
-        dialog.amount_entry.set_text("180.00")
+        _schedule_lines(dialog, "180.00")
         dialog.advance_spin.set_value(3)
         dialog.remind_spin.set_value(10)
         built = dialog.build()
@@ -3839,7 +3844,7 @@ class TestScheduleEntry:
 
     def test_an_estimate_is_never_posted(self, dialog):
         dialog.name_entry.set_text("Groceries")
-        dialog.amount_entry.set_text("600.00")
+        _schedule_lines(dialog, "600.00")
         dialog.kind.set_selected(1)
         built = dialog.build()
         assert built.placeholder is True
@@ -3847,13 +3852,13 @@ class TestScheduleEntry:
 
     def test_a_commitment_is_postable(self, dialog):
         dialog.name_entry.set_text("Rent")
-        dialog.amount_entry.set_text("1800.00")
+        _schedule_lines(dialog, "1800.00")
         dialog.kind.set_selected(0)
         assert dialog.build().postable is True
 
     def test_fortnightly_is_offered_and_works(self, dialog):
         dialog.name_entry.set_text("Pay")
-        dialog.amount_entry.set_text("1500.00")
+        _schedule_lines(dialog, "1500.00")
         dialog.frequency.set_value(PeriodType.WEEK, 2)
         dialog.start_entry.set_text("2026-01-02")
         built = dialog.build()
@@ -3868,7 +3873,7 @@ class TestScheduleEntry:
         from breadsched.presentation import FREQUENCY_UNITS
 
         dialog.name_entry.set_text("Water")
-        dialog.amount_entry.set_text("76.84*1.06")
+        _schedule_lines(dialog, "76.84*1.06")
         dialog.start_entry.set_text("2026-01-06")
         dialog.frequency.unit.set_selected(
             [key for key, _label, _period in FREQUENCY_UNITS].index("weeks")
@@ -3916,7 +3921,8 @@ class TestScheduleEntry:
             labels = [model.get_string(i) for i in range(model.get_n_items())]
             assert not any("imported rule" in label for label in labels)
             dialog.frequency.every.set_value(6)
-            dialog.amount_entry.set_text("40+2.5")
+            dialog.splits_panel.type_line(0, increase="40+2.5")
+            dialog.splits_panel.type_line(1, decrease="42.50")
             dialog._on_save(None)
             saved = db.get_scheduled(imported.handle)
             assert (saved.recurrence.period, saved.recurrence.interval) == (PeriodType.WEEK, 6)
@@ -3926,7 +3932,7 @@ class TestScheduleEntry:
 
     def test_schedule_can_end_on_a_date(self, dialog):
         dialog.name_entry.set_text("Temporary rent")
-        dialog.amount_entry.set_text("1800.00")
+        _schedule_lines(dialog, "1800.00")
         dialog.start_entry.set_text("2026-01-01")
         dialog.ends.set_selected(1)
         dialog.end_entry.set_text("2026-03-31")
@@ -3936,7 +3942,7 @@ class TestScheduleEntry:
 
     def test_schedule_can_end_after_occurrences(self, dialog):
         dialog.name_entry.set_text("Six payments")
-        dialog.amount_entry.set_text("1800.00")
+        _schedule_lines(dialog, "1800.00")
         dialog.start_entry.set_text("2026-01-01")
         dialog.ends.set_selected(2)
         dialog.count_entry.set_text("6")
@@ -3965,7 +3971,8 @@ class TestScheduleEntry:
         dialog = ScheduleDialog(window, app.db, source=source)
         assert dialog.growth_policy.get_selected() == 2
         dialog.name_entry.set_text("Rent revised")
-        dialog.amount_entry.set_text("1850.00")
+        dialog.splits_panel.type_line(0, increase="1850.00")
+        dialog.splits_panel.type_line(1, decrease="1850.00")
         dialog.growth_policy.set_selected(1)
         dialog._on_save(None)
         edited = app.db.get_scheduled(source.handle)
@@ -4038,10 +4045,11 @@ class TestScheduleEntry:
         source.estimate_evidence = {"history_start": "2025-01-01", "selected_months": 12}
 
         dialog = ScheduleDialog(window, app.db, source=source, creating=True)
-        dialog.amount_entry.set_text("1850")
+        dialog.detail_toggle.set_active(True)
+        dialog.splits_panel.type_line(0, increase="1850", purpose="Debt principal")
+        dialog.splits_panel.type_line(1, decrease="1850")
         dialog.frequency.set_value(PeriodType.WEEK, 2)
         dialog.start_entry.set_text("2026-02-06")
-        dialog.category_planning_flow.set_selected(3)
         dialog.seasonal_amounts_editor.set_values([(1, "2000"), (7, "1700")])
         built = dialog.build()
 
@@ -4096,10 +4104,11 @@ class TestScheduleEntry:
 
         dialog = ScheduleDialog(window, app.db, source=source)
         rebuilt = dialog.build()
+        # The grid keeps the splits in their stored order.
         assert [(split.account, split.amount, split.memo) for split in rebuilt.splits] == [
             (expense.handle, Money("120.00"), "component A"),
-            (expense.handle, Money("80.00"), "component B"),
             (bank.handle, Money("-200.00"), ""),
+            (expense.handle, Money("80.00"), "component B"),
         ]
 
     def test_imported_fixed_custom_recurrence_round_trips(self, app, window, populated_book):
@@ -4307,8 +4316,8 @@ class TestScheduleEntry:
         dialog = ScheduleDialog(window, app.db, source=source)
         rebuilt = dialog.build()
         assert [(split.account, split.amount, split.memo) for split in rebuilt.splits] == [
-            (reserve.handle, Money("125.00"), "destination"),
             (bank.handle, Money("-125.00"), "source"),
+            (reserve.handle, Money("125.00"), "destination"),
         ]
 
     def test_fixed_asset_liability_transfer_is_editable(self, app, window, populated_book):
@@ -4340,8 +4349,8 @@ class TestScheduleEntry:
         dialog = ScheduleDialog(window, app.db, source=source)
         rebuilt = dialog.build()
         assert [(split.account, split.amount, split.memo) for split in rebuilt.splits] == [
-            (liability.handle, Money("90.00"), "principal"),
             (bank.handle, Money("-90.00"), "funding"),
+            (liability.handle, Money("90.00"), "principal"),
         ]
 
     def test_fixed_multi_leg_balance_sheet_transfer_is_editable(self, app, window, populated_book):
@@ -4453,8 +4462,8 @@ class TestScheduleEntry:
         dialog = ScheduleDialog(window, app.db, source=source)
         assert dialog.save_button.get_visible() is True
         assert dialog.save_button.get_sensitive() is True
-        assert dialog.amount_entry.get_sensitive() is False
-        assert dialog.category.get_sensitive() is False
+        # Its formulas own its splits: no split grid, only the formula editor.
+        assert dialog.splits_panel.get_visible() is False
         assert "formula 'base'" in dialog.details.get_text()
         assert "base = 250" in dialog.details.get_text()
 
@@ -4572,6 +4581,54 @@ class TestScheduleEntry:
             assert matcher.key == schedule.occurrence_key(schedule.current_occurrence(date.today()))
         finally:
             matcher.destroy()
+
+    def test_its_number_notes_tags_and_documents_carry_to_each_posting(
+        self, app, window, populated_book, tmp_path
+    ):
+        """Schema 15, on the desktop: the schedule editor's Basics and Tags & documents
+        are the transaction editor's fields, and a three-way split is typed as one."""
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+        from breadsched.gui.widgets.transaction_editor import MORE
+
+        app.open_book(populated_book)
+        db = app.db
+        dialog = ScheduleDialog(window, db)
+        dialog.name_entry.set_text("Split rent")
+        dialog.num_entry.set_text("ACH")
+        dialog.notes_view.get_buffer().set_text("Lease to June")
+        dialog.tags_entry.set_text("Home, Lease")
+        assert dialog.pages.tab_label(MORE) == f"{MORE} (2)"
+        # Documents wait until the schedule is saved, as a transaction's do.
+        assert dialog.docs.link_entry is None
+        panel = dialog.splits_panel
+        panel.type_line(0, account="Expenses:Rent", increase="1500")
+        panel.type_line(1, account="Expenses:Groceries", increase="300")
+        panel.type_line(2, account="Assets:Checking Account")
+        dialog._validate()
+        assert dialog.save_button.get_sensitive() is True, dialog.status.get_text()
+        dialog._on_save(None)
+        saved = next(s for s in db.iter_scheduled() if s.name == "Split rent")
+        assert (saved.num, saved.notes, saved.tags) == ("ACH", "Lease to June", ["Home", "Lease"])
+        assert [s.amount for s in saved.splits] == [Money(1500), Money(300), Money(-1800)]
+
+        # Reopened, its documents link at once, and each posting carries them.
+        folder = tmp_path / "docs"
+        from breadsched.api.local import book_server
+
+        book_server(db).set_attachment_folder(str(folder))
+        lease = tmp_path / "lease.pdf"
+        lease.write_bytes(b"%PDF")
+        again = ScheduleDialog(window, db, source=saved)
+        assert again.num_entry.get_text() == "ACH"
+        assert again.docs.attach_path(lease) is True
+        assert db.get_scheduled(saved.handle).attachments == ["lease.pdf"]
+        posted = db.get_scheduled(saved.handle).instantiate(date(2026, 6, 1))
+        assert (posted.num, posted.tags, posted.attachments) == (
+            "ACH",
+            ["Home", "Lease"],
+            ["lease.pdf"],
+        )
+        again.destroy()
 
     def test_the_scheduled_view_offers_the_dialog(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -6067,13 +6124,20 @@ class TestDerivedPlanView:
         assert scenario is not None
 
         dialog = ScenarioScheduleDialog(window, app.db, scenario)
-        names = [app.db.full_name(account) for account in dialog._accounts]
+        # The schedule editor, without what only a posting carries.
+        pages = dialog.pages
+        titles = [
+            pages.get_tab_label(pages.get_nth_page(i)).get_label()
+            for i in range(pages.get_n_pages())
+        ]
+        assert titles == ["Basics", "Future changes", "Advanced"]
+        for posting_only in ("kind", "num_entry", "docs", "auto_check", "advance_spin"):
+            assert not hasattr(dialog, posting_only), posting_only
         dialog.name_entry.set_text("Weekly groceries")
-        dialog.category.set_selected(names.index("Income:Salary"))
-        dialog.funding.set_selected(names.index("Assets:Checking Account"))
-        dialog.amount_entry.set_text("300.00")
         dialog.frequency.set_value(PeriodType.WEEK, 1)
         dialog.start_entry.set_text("2026-01-02")
+        _schedule_lines(dialog, "300.00", category="Expenses:Groceries")
+        assert dialog.save_button.get_sensitive() is True
         dialog._on_save(None)
 
         saved = app.db.get_scenario_by_name("Higher food")
@@ -6084,6 +6148,12 @@ class TestDerivedPlanView:
         assert estimate.placeholder is True
         assert estimate.recurrence.period is PeriodType.WEEK
         assert estimate.recurrence.interval == 1
+        groceries = app.db.get_account_by_name("Expenses:Groceries").handle
+        checking = app.db.get_account_by_name("Assets:Checking Account").handle
+        assert [(split.account, split.amount) for split in estimate.splits] == [
+            (groceries, Money("300.00")),
+            (checking, Money("-300.00")),
+        ]
 
     def test_scenario_dialog_can_schedule_a_direct_investment_contribution(
         self, app, window, populated_book
@@ -6111,12 +6181,13 @@ class TestDerivedPlanView:
             app.db.add_scenario(scenario, txn)
 
         dialog = ScenarioScheduleDialog(window, app.db, scenario)
-        dialog_names = [app.db.full_name(account) for account in dialog._accounts]
         dialog.name_entry.set_text("Monthly investment")
-        dialog.category.set_selected(dialog_names.index(app.db.full_name(holding)))
-        dialog.funding.set_selected(dialog_names.index(app.db.full_name(bank)))
-        dialog.investment_activity.set_selected(1)
-        dialog.amount_entry.set_text("250.00")
+        dialog.detail_toggle.set_active(True)
+        dialog.splits_panel.type_line(
+            0, account=app.db.full_name(holding), increase="250.00", activity="contribution"
+        )
+        dialog.splits_panel.type_line(1, account=app.db.full_name(bank))
+        dialog._validate()
         dialog._on_save(None)
 
         saved = app.db.get_scenario(scenario.handle)
@@ -6159,8 +6230,15 @@ class TestDerivedPlanView:
         assert scenario is not None and schedule is not None
         dialog = ScenarioScheduleDialog(window, app.db, scenario, source=schedule)
         assert dialog.growth_policy.get_selected() == 2
-        dialog.amount_entry.set_text("2100.00")
+        # The baseline's splits, on the grid.
+        assert dialog.sheet.line_values()[:2] == [
+            (rent.handle, Money("1800.00"), ""),
+            (checking.handle, Money("-1800.00"), ""),
+        ]
+        dialog.splits_panel.type_line(0, increase="2100.00")
+        dialog.splits_panel.type_line(1, decrease="2100.00")
         dialog.growth_policy.set_selected(3)
+        dialog._validate()
         dialog._on_save(None)
 
         saved = app.db.get_scenario_by_name("Higher rent")
@@ -6171,6 +6249,53 @@ class TestDerivedPlanView:
         assert saved.schedule_overrides[0].growth_policy.value == "inflation"
         assert baseline.splits[0].amount == Money("1800.00")
         assert baseline.growth_policy.value == "income"
+
+    def test_an_alternate_keeps_and_saves_per_leg_future_amounts(self, app, window, populated_book):
+        """A baseline's per-leg future amounts are loaded into its alternate, and
+        the alternate saves them, as a baseline schedule's editor does."""
+        from breadsched.gen.lib import (
+            Money,
+            PeriodType,
+            Recurrence,
+            Scenario,
+            ScheduledSplit,
+            ScheduledSplitAmountChange,
+            ScheduledTransaction,
+        )
+        from breadsched.gui.dialogs.scenario_schedule_dialog import ScenarioScheduleDialog
+
+        app.open_book(populated_book)
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        change = date(2027, 1, 1)
+        schedule = ScheduledTransaction(
+            name="Rent with a rise",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(
+                    rent.handle,
+                    Money("1800.00"),
+                    amount_changes=[ScheduledSplitAmountChange(change, Money("1900.00"))],
+                ),
+                ScheduledSplit(
+                    checking.handle,
+                    Money("-1800.00"),
+                    amount_changes=[ScheduledSplitAmountChange(change, Money("-1900.00"))],
+                ),
+            ],
+        )
+        scenario = Scenario(name="Rent rises")
+        with app.db.transaction("Scenario fixture") as txn:
+            app.db.add_scheduled(schedule, txn)
+            app.db.add_scenario(scenario, txn)
+        dialog = ScenarioScheduleDialog(window, app.db, scenario, source=schedule)
+        assert len(dialog.split_amount_changes_editor.values()) == 2
+        assert dialog.pages.tab_label("Future changes") == "Future changes (2)"
+        dialog._on_save(None)
+        [saved] = app.db.get_scenario(scenario.handle).schedule_overrides
+        assert [
+            [(item.start, item.amount) for item in split.amount_changes] for split in saved.splits
+        ] == [[(change, Money("1900.00"))], [(change, Money("-1900.00"))]]
 
     def test_scenario_formula_schedule_preserves_protected_fields(
         self, app, window, populated_book
@@ -6207,8 +6332,10 @@ class TestDerivedPlanView:
 
         dialog = ScenarioScheduleDialog(window, app.db, scenario, source=source, current=current)
         assert dialog.save_button.get_sensitive() is True
-        assert dialog.amount_entry.get_sensitive() is False
-        assert "formula 'base'" in dialog.protected_details.get_text()
+        # Its formulas own its splits: no grid, and the splits listed as protected.
+        assert dialog.splits_panel.get_visible() is False
+        assert "formula 'base'" in dialog.details.get_text()
+        assert "Automatic posting" not in dialog.details.get_text()
 
         dialog.name_entry.set_text("Updated formula fixture")
         dialog.start_entry.set_text("2026-02-01")
@@ -10714,7 +10841,10 @@ class TestDialogsFitTheScreen:
         dialog = ScenarioScheduleDialog(window, db, Scenario(name="Stress"))
         try:
             outer = dialog.get_child()
-            assert isinstance(outer.get_first_child(), Gtk.ScrolledWindow)
+            # Its pages scroll; its split grid and buttons stay in sight.
+            assert isinstance(dialog.content_scroller, Gtk.ScrolledWindow)
+            assert dialog.content_scroller.get_parent() is outer
+            assert dialog.splits_panel.get_parent() is outer
             footer = outer.get_last_child()
             assert not isinstance(footer, Gtk.ScrolledWindow)
             assert any(isinstance(w, Gtk.Button) for w in _descendants(footer))
