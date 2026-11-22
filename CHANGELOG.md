@@ -8,6 +8,12 @@ GitHub releases.
 
 ## Unreleased
 
+- **Text you delete from a note or memo stays deleted.** A description, note, or
+  memo completed from an earlier one, with its start then deleted, no longer
+  brings the deleted text back at the next letter typed: once anything is deleted,
+  the cell stops completing until you leave it or empty it. Account cells keep
+  completing.
+
 - **A reconciled split warns before you change it**, at the first keystroke into
   its account, amount, shares, or price, in a register or the transaction editor,
   as GnuCash does. **Cancel** keeps the cell; **Change It** allows the change, and

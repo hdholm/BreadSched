@@ -152,6 +152,10 @@ class RegisterGrid(Gtk.Box):
         self.banding = "transactions"
         #: The question about changing a reconciled split, while it is asked.
         self.reconciled_alert: Gtk.AlertDialog | None = None
+        #: Whether something was deleted in the cell being typed in: a description,
+        #: memo, or note then completes no more until the cell is left or emptied,
+        #: so text deliberately removed is not brought back by the next keystroke.
+        self._deleted = False
 
         self.adjustment = Gtk.Adjustment(lower=0, upper=1, step_increment=1, page_increment=10)
         self.adjustment.connect("value-changed", lambda *_: self._after_scroll())
@@ -363,6 +367,7 @@ class RegisterGrid(Gtk.Box):
         arrived = cell != self._placed_cell
         if arrived:
             self._typed = ""  # the letters typed belong to the cell they were typed in
+            self._deleted = False
         self._placed_cell = cell
         heading = "Notes" if notes else sheet.headings()[sheet.column]
         self.editor.update_property(
@@ -437,6 +442,10 @@ class RegisterGrid(Gtk.Box):
             return
         if not self._guard():
             return
+        if len(entry.get_text()) < len(self.sheet.cell_text()):
+            # Backspace, Delete, or a cut: the text is being edited, not typed on.
+            # A cell emptied is begun again, and completes again.
+            self._deleted = bool(entry.get_text())
         self.sheet.set_text(entry.get_text())
         if self.sheet.column in self.listed_columns:
             # Deleting keeps the list current but completes nothing back in.
@@ -648,6 +657,8 @@ class RegisterGrid(Gtk.Box):
         if sheet.column in ("description", *self.listed_columns):
             if not self._guard():
                 return True
+            if self._deleted and sheet.column not in self.listed_columns:
+                return False  # typed as it is, with no completion
             bounds = self.editor.get_selection_bounds()
             start = bounds[0] if bounds else self.editor.get_position()
             if not bounds and start < len(text):

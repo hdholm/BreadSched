@@ -2414,6 +2414,55 @@ class TestDialogs:
         assert closed.editor.grid.key(Gdk.KEY_Escape, Gdk.ModifierType(0)) is True
         assert _spin(lambda: not closed.get_visible())
 
+    def test_deleting_in_a_memo_stops_its_completion(self, app, window, populated_book):
+        """A memo completes from earlier ones beginning with or containing what is
+        typed; once part of it is deleted, typing on keeps the text as edited
+        instead of bringing the deleted part back from the earlier memo."""
+        from breadsched.gen.lib import Split
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+        from breadsched.gui.gi_setup import Gdk
+
+        app.open_book(populated_book)
+        db = app.db
+        checking = db.get_account_by_name("Assets:Checking Account").handle
+        groceries = db.get_account_by_name("Expenses:Groceries").handle
+        earlier = Transaction(post_date=date(2026, 3, 1), description="Corner Grocer")
+        earlier.splits = [
+            Split(groceries, Money(12), memo="Paid by card: weekly shop"),
+            Split(checking, Money(-12)),
+        ]
+        with db.transaction("Add") as txn:
+            db.add_transaction(earlier, txn)
+        dialog = TransactionDialog(window, db, default_account=checking)
+        editor = dialog.editor
+        try:
+            dialog.present()
+            assert _spin(dialog.get_mapped)
+            editor.description_entry.set_text("Corner Grocer")
+            grid, sheet = editor.grid, editor.sheet
+            sheet.cursor, sheet.column = 1, "description"
+            grid.sync()
+            assert grid.key(Gdk.KEY_w, Gdk.ModifierType(0)) is True
+            assert sheet.cell_text() == "Paid by card: weekly shop"  # completed
+            # The start does not apply here: delete it, then type on at the end.
+            grid.editor.delete_text(0, len("Paid by card: "))  # as Delete does
+            assert sheet.cell_text() == "weekly shop"
+            grid.editor.set_position(-1)
+            assert grid.key(Gdk.KEY_space, Gdk.ModifierType(0)) is False  # typed as is
+            grid.editor.insert_text(" x", -1)
+            assert sheet.cell_text() == "weekly shop x"
+            # Emptied, the cell is begun again and completes again.
+            grid.editor.set_text("")
+            assert grid._deleted is False
+            assert grid.key(Gdk.KEY_P, Gdk.ModifierType(0)) is True
+            assert sheet.cell_text() == "Paid by card: weekly shop"
+            # A new cell completes again.
+            sheet.cursor = 0
+            grid.sync()
+            assert grid._deleted is False
+        finally:
+            dialog.destroy()
+
     def test_a_reconciled_split_asks_before_its_first_change(self, app, window, populated_book):
         """#403: as in GnuCash, the first keystroke into a reconciled split's amount
         asks; Cancel keeps the cell, Change It allows the edit and Save asks no more."""
