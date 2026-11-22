@@ -20,6 +20,13 @@
 .data-table row:nth-child(even):not(:selected) {
     background: alpha(currentColor, 0.04);
 }
+/* The row under the pointer is tinted with the selection's own color, lighter,
+   so it stands out from the banding (the theme's hover is a grey as faint as
+   the bands) and still differs from the selected row. theme_selected_bg_color
+   is defined by every GTK 4 theme; accent_bg_color is not before GTK 4.16. */
+.data-table row:hover:not(:selected) {
+    background: alpha(@theme_selected_bg_color, 0.22);
+}
 
 /* Each Dashboard item is a tile on the Dashboard's grid; while the Dashboard is
    being arranged, each tile is outlined and has a title to drag it by. */

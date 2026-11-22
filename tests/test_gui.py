@@ -9273,6 +9273,48 @@ class TestChromeCleanup:
         assert "padding-right" in stylesheet
         assert "data-table" in stylesheet and "nth-child" in stylesheet
 
+    def test_the_row_under_the_pointer_differs_from_the_banding(self, window):
+        """The theme's hover grey is as faint as the bands, so a hovered banded row
+        looked like every other band: the row under the pointer has its own tint,
+        after the banding so it wins, in a color the theme defines (an undefined
+        one silently drops the rule and erases the band instead)."""
+        import re
+
+        from breadsched.gui.app import STYLE_RESOURCE
+
+        stylesheet = STYLE_RESOURCE.read_text(encoding="utf-8")
+        band = stylesheet.index(".data-table row:nth-child(even):not(:selected)")
+        hover = re.search(
+            r"\.data-table row:hover:not\(:selected\)\s*\{\s*background:\s*"
+            r"alpha\(@(\w+),\s*([\d.]+)\)",
+            stylesheet,
+        )
+        assert hover is not None and hover.start() > band
+        name, strength = hover.group(1), float(hover.group(2))
+        assert strength > 0.04  # stronger than the bands' 0.04
+        # A color the theme lacks resolves as no color at all (GTK draws it white),
+        # so the name must resolve differently from a name nothing defines.
+        provider = Gtk.CssProvider()
+        provider.load_from_string(
+            f".hover-probe {{ color: @{name}; }} .undefined-probe {{ color: @no_such_color; }}"
+        )
+        Gtk.StyleContext.add_provider_for_display(
+            window.get_display(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
+        )
+        try:
+            probe, undefined = Gtk.Label(label="x"), Gtk.Label(label="x")
+            probe.add_css_class("hover-probe")
+            undefined.add_css_class("undefined-probe")
+            box = Gtk.Box()
+            box.append(probe)
+            box.append(undefined)
+            window.set_child(box)
+            window.present()
+            _spin(lambda: probe.get_mapped(), 2)
+            assert probe.get_color().to_string() != undefined.get_color().to_string(), name
+        finally:
+            Gtk.StyleContext.remove_provider_for_display(window.get_display(), provider)
+
     def test_plan_grid_numbers_carry_the_numeric_class(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("plan")
