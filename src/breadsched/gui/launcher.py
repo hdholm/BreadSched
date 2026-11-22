@@ -93,8 +93,19 @@ def main(argv: list[str] | None = None) -> int:
         return 3
 
     application = BreadSchedApplication()
+    # Notice a freeze, write where it is stuck, and offer a way out (watchdog);
+    # the next start offers to report it. Only here, not in tests, which drive
+    # GTK without running its main loop between steps.
+    from ..gen.utils.user_paths import data_directory
+    from .watchdog import Watchdog
+
+    application.hang_reports = data_directory() / "hang-reports"
+    watchdog = Watchdog(application.hang_reports).start()
     # Gio parses trailing arguments as files to open, which drives do_open.
-    return application.run([sys.argv[0]] + ([book] if book else []))
+    try:
+        return application.run([sys.argv[0]] + ([book] if book else []))
+    finally:
+        watchdog.stop()
 
 
 if __name__ == "__main__":  # pragma: no cover

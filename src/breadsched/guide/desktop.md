@@ -98,7 +98,9 @@ The main window opens at the size you last left it, maximized if it was; a
 dialog you resized opens at that size next time. Sizes never exceed the screen
 and can be forgotten in [Preferences](#preferences). BreadSched fits a small
 laptop screen however long your account names and notes are: a long name in a choice list is shortened in the middle when chosen (the list
-shows it in full), wide toolbars scroll sideways, the Dashboard's summary cards wrap
+shows it in full), the toolbar and the tab row show a left and a right arrow at their ends when
+they are wider than the window (click one, or turn the mouse wheel over the row, to
+see the rest; the view's own controls below scroll sideways), the Dashboard's summary cards wrap
 onto more rows, and dialogs open within the screen and scroll inside. Scrollbars are
 always shown, so a list with more out of view says so. A long choice list, such as
 every list of accounts, has a search field when it opens: type part of a name to
@@ -1069,3 +1071,20 @@ Use these File menu commands regularly:
   PyGObject packages. The [command line](cli.md) continues to work without GTK.
 - **Edit → Undo** reverses the last change, including a whole import or a batch of
   accepted proposals.
+- If a window seems not to respond, a dialog waiting for an answer may be hidden
+  behind another window. Bringing the main window forward brings such a dialog
+  with it, and **View → Bring All Windows Forward** brings every BreadSched window
+  forward, dialogs on top.
+- If BreadSched stops responding altogether for 20 seconds, a separate window,
+  **BreadSched is not responding**, asks whether to **Wait** (it may still be
+  working) or **Quit BreadSched**; it goes away by itself if BreadSched starts
+  responding again. While a book is being opened or upgraded, which can take a
+  while for a large book, BreadSched allows three minutes instead, and the window
+  says what it has been doing ("has been upgrading your book for 190 seconds"). Either way, where BreadSched was
+  stuck is written to a hang log in the `hang-reports` folder of BreadSched's data
+  folder (`~/.local/share/breadsched` on Linux, `%LOCALAPPDATA%\breadsched` on
+  Windows). Quitting loses only typing not yet entered: the book keeps everything
+  saved before. When you start BreadSched again it offers **Report Problem…**, which
+  opens a GitHub bug report with the version, what happened, and the start of the
+  log filled in (nothing from your book). On Linux, `kill -USR1 <process id>` writes
+  where every thread is to `stacks-on-request.log` in the same folder at any time.

@@ -14,8 +14,13 @@ menu and reached from the commands that lead to them, which leaves the toolbar r
 for the current view's commands), the current view's name in bold
 (`view_heading`) as the divider, its own command icons (`view_tools`, including the
 register's Reconcile), and, only on `viewmanager.SUMMARY_VIEWS` (Dashboard and
-Accounts), the book's account and transaction counts. The toolbar scrolls horizontally rather than setting
-the window's minimum width. The View menu and the view icons both target the
+Accounts), the book's account and transaction counts. The toolbar and the tab row scroll rather than setting
+the window's minimum width, by arrows at their ends rather than a scrollbar
+(`widgets/scrolling_bar.ScrollingBar`, as GnuCash's tabs do): a scroller with an
+`EXTERNAL` policy and no scrollbar, between a left and a right arrow shown only while
+the row overflows and greyed out at its ends; a wheel scrolls it too, and choosing a
+tab brings it into view (`reveal`). The arrows are shown or hidden at idle, since the
+adjustment changes during layout. The View menu and the view icons both target the
 stateful `win.show-category` action, and `show_category()` is the single navigation
 entry point, so the active icon and menu item always agree however a view was
 reached.
@@ -199,6 +204,42 @@ and Spent/Received choosing which account is debited. It saves through
 `/api/transaction` and suggests from `/api/entry/suggest`, so it adds no write path;
 the account used last is kept in `localStorage`. The token travels in the URL's
 fragment as on the full page, and **Full view** and **Quick entry** link the two.
+
+## Freezes: the watchdog and hidden dialogs
+
+GTK draws and handles input on one thread, so a stuck main loop (a loop that
+never ends, a call that never returns) leaves every window, the window manager's
+close button included, unanswered, and nothing in the process can ask anything.
+`gui/watchdog.Watchdog`, started only by the launcher (tests drive GTK without
+running its loop between steps), has the loop tick a heartbeat every second and
+watches it from a thread. After `STALL_SECONDS` (20, past the seconds a large
+book's upgrade blocks the loop by design) without a tick it writes every thread's
+stack with `faulthandler` to `hang-<time>.log` in the data folder's
+`hang-reports`, naming the main thread, and keeps the latest five. It then starts
+`gui/stall_prompt` as a process of its own, which asks **Wait** (the default, and
+closing it) or **Quit BreadSched**, and is withdrawn when the heartbeat resumes.
+Quit writes `last-hang.json` and ends the process with `os._exit(EXIT_HUNG)`: each
+save is a complete SQLite transaction and a lock whose process is gone is replaced
+as stale, so nothing saved is lost. On the next activation
+`BreadSchedApplication.offer_hang_report` asks once whether to report it;
+**Report Problem…** opens the bug form (`versioning.issue_url` with `what` and
+`log`) holding the start of the log, the home directory masked as `~`. On POSIX,
+`SIGUSR1` writes every thread's stack to `stacks-on-request.log`.
+
+Work that blocks the loop by design says so with `watchdog.busy(doing, allow)`, a
+context manager that is a no-op without a running watchdog. Inside it the watchdog
+waits `max(STALL_SECONDS, allow)` (`BUSY_SECONDS`, 180, by default) before asking,
+writes `while <doing>` in the log's first line, and passes `doing` to the prompt,
+which then says what BreadSched has been doing rather than that it stopped. Opening
+a book (`open_book_announced`) is wrapped as "upgrading your book" or "opening
+your book". Work run off the main thread, such as imports and reports behind a
+progress dialog, keeps the loop ticking and needs no announcement.
+
+A modal dialog behind another window looks like a freeze rather than being one.
+When the main window becomes active it presents the visible modal windows that
+stand over it (`_belongs_to` follows their transient-for chain), and
+`app.show-all-windows` (**View → Bring All Windows Forward**) presents every
+window of the application, modal ones last so they end on top.
 
 ## Tables, dialogs, and bounded sizes
 

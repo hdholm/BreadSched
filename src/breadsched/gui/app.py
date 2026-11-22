@@ -87,6 +87,9 @@ class BreadSchedApplication(Gtk.Application):
         self.settings = Settings("settings", directory=settings_directory)
         self.view_settings = Settings("views", directory=settings_directory)
         self.actions: dict[str, Gio.SimpleAction] = {}
+        #: Where the watchdog keeps hang logs and reports (set by the launcher,
+        #: which runs it); a hang report left there is offered on activation.
+        self.hang_reports: Path | None = None
 
     # ------------------------------------------------------------- life cycle
 
@@ -131,6 +134,8 @@ class BreadSchedApplication(Gtk.Application):
             else:
                 self.reopen_last_book()
         window.present()
+        if self.hang_reports is not None:
+            GLib.idle_add(self.offer_hang_report)
 
     @staticmethod
     def _needs_upgrade(path: str) -> bool:
@@ -171,8 +176,14 @@ class BreadSchedApplication(Gtk.Application):
         window.present()
 
         def upgrade() -> None:
+            # Blocks the main loop on purpose; the watchdog waits for it (and,
+            # should it stall, says what it was doing).
+            from . import watchdog
+
+            doing = "upgrading your book" if upgrading else "opening your book"
             try:
-                self._open_or_report(path, failure)
+                with watchdog.busy(doing):
+                    self._open_or_report(path, failure)
             finally:
                 window.show_busy(None)
 
@@ -242,6 +253,7 @@ class BreadSchedApplication(Gtk.Application):
             ("user-guide", self.on_user_guide, "F1"),
             ("about", self.on_about, None),
             ("report-problem", self.on_report_problem, None),
+            ("show-all-windows", self.on_show_all_windows, None),
             ("request-feature", self.on_request_feature, None),
             ("quit", self.on_quit, "<Control>q"),
         ):
@@ -815,6 +827,83 @@ class BreadSchedApplication(Gtk.Application):
         """Open GitHub's bug report form, this version and platform filled in (#397)."""
         return self._open_issue_form(issue_url("bug"))
 
+    def offer_hang_report(self, *_args):
+        """After BreadSched was quit because it stopped responding, offer to report it.
+
+        Asked once: the report is forgotten whichever is chosen. The bug form gets
+        what happened and the start of the hang log (where the program was stuck,
+        the home directory masked); the whole log stays on this computer to attach.
+        """
+        from .watchdog import clear_report, pending_report
+
+        if self.hang_reports is None:
+            return False
+        report = pending_report(self.hang_reports)
+        if report is None:
+            return False
+        clear_report(self.hang_reports)
+        alert = Gtk.AlertDialog(
+            message="BreadSched stopped responding last time",
+            detail=(
+                f"On {report.when.replace('T', ' at ')}, BreadSched had not responded for "
+                f"{report.seconds:.0f} seconds and was quit. Where it was stuck is in "
+                f"{report.log}.\n\nReporting the problem opens a GitHub bug report "
+                "with this version, what happened, and the start of that log filled in. "
+                "Nothing from your book is included."
+            ),
+            buttons=["Not Now", "Report Problem…"],
+            cancel_button=0,
+            default_button=1,
+            modal=True,
+        )
+        self.hang_alert = alert
+
+        def answered(dialog, result) -> None:
+            try:
+                choice = dialog.choose_finish(result)
+            except GLib.Error:
+                return
+            if choice == 1:
+                self.report_hang(report)
+
+        alert.choose(self.props.active_window, None, answered)
+        return False
+
+    def report_hang(self, report) -> str:
+        """Open the bug form with a freeze's details filled in."""
+        from .watchdog import log_excerpt
+
+        return self._open_issue_form(
+            issue_url(
+                "bug",
+                what=(
+                    f"BreadSched stopped responding for {report.seconds:.0f} seconds and "
+                    "was quit from the not-responding prompt. What I was doing just "
+                    "before: "
+                ),
+                log=log_excerpt(report.log),
+            )
+        )
+
+    def on_show_all_windows(self, *_args) -> int:
+        """Bring every BreadSched window forward, dialogs last so they end on top.
+
+        A dialog left behind another window can make BreadSched look frozen:
+        the windows it waits on cannot be used until it is answered.
+        """
+        from .viewmanager import _belongs_to
+
+        owners = tuple(self.get_windows())
+        shown = [
+            window
+            for window in Gtk.Window.list_toplevels()
+            if window.get_visible() and _belongs_to(window, owners)
+        ]
+        shown.sort(key=lambda window: window.get_modal())
+        for window in shown:
+            window.present()
+        return len(shown)
+
     def on_request_feature(self, *_args) -> str:
         """Open GitHub's feature request form (#397)."""
         return self._open_issue_form(issue_url("feature"))
@@ -1038,6 +1127,9 @@ def build_menu_model(actions_menu: ActionsMenu | None = None) -> Gio.Menu:
     tabs.append("Move Tab _Right", "win.move-tab-right")
     tabs.append("_Close Tab", "win.close-tab")
     view_menu.append_section(None, tabs)
+    windows = Gio.Menu()
+    windows.append("Bring All _Windows Forward", "app.show-all-windows")
+    view_menu.append_section(None, windows)
     menubar.append_submenu("_View", view_menu)
 
     # Every view-level command also has a menu item (#156), the current view's

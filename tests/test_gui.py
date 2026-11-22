@@ -339,6 +339,31 @@ class TestDialogsStayInFront:
         assert app.book_path == str(book)
         assert window.stack.get_visible_child_name() != "busy"
 
+    def test_an_upgrade_tells_the_watchdog_it_is_slow_on_purpose(
+        self, app, window, tmp_path, monkeypatch
+    ):
+        from contextlib import contextmanager
+
+        from breadsched.gui import watchdog
+
+        announced = []
+
+        @contextmanager
+        def busy(doing, allow=watchdog.BUSY_SECONDS):
+            announced.append((doing, allow, app.db is None))
+            yield
+
+        monkeypatch.setattr(watchdog, "busy", busy)
+        monkeypatch.setattr(app, "_show_alert", lambda *_: None)
+        window.present()
+        assert _spin(window.get_mapped)
+        app.open_book_announced(
+            str(_old_book(tmp_path)), window=window, failure="Could not open the book"
+        )
+        assert _spin(lambda: app.db is not None)
+        # Announced before the book was opened, with the longer allowance.
+        assert announced == [("upgrading your book", watchdog.BUSY_SECONDS, True)]
+
     def test_a_failed_upgrade_returns_to_the_start_screen_and_says_why(
         self, app, window, tmp_path, monkeypatch
     ):
@@ -13577,6 +13602,216 @@ class TestIssue397:
         assert problem.startswith("https://github.com/hdholm/BreadSched/issues/new?")
         assert "template=bug_report.yml" in problem and "details=BreadSched+" in problem
         assert "template=feature_request.yml" in feature
+
+    def _watchdog(self, directory, ask, exits):
+        from breadsched.gui.watchdog import Watchdog
+
+        # The test never runs GTK's main loop while it waits, so the heartbeat
+        # stops at once: a freeze, quickly.
+        return Watchdog(
+            directory, stall_seconds=0.3, check_every=0.05, ask=ask, exit=exits.append
+        ).start()
+
+    def test_a_freeze_logs_every_threads_stack_and_waiting_keeps_running(self, tmp_path):
+        """GTK's thread stuck: the watchdog thread writes where, then asks."""
+        import time
+
+        from breadsched.gui.watchdog import pending_report
+
+        asked, exits = [], []
+        watchdog = self._watchdog(tmp_path, lambda *args: asked.append(args) or False, exits)
+        try:
+            deadline = time.monotonic() + 10
+            while not asked and time.monotonic() < deadline:
+                time.sleep(0.05)  # the main thread is "stuck" here
+        finally:
+            watchdog.stop()
+        [(seconds, log, resumed, doing)] = asked
+        assert doing == ""  # nothing was announced
+        assert seconds >= 0.3 and log.exists()
+        text = log.read_text(encoding="utf-8")
+        assert "stopped responding" in text and "most recent call first" in text
+        assert "test_a_freeze_logs_every_threads_stack" in text  # where it was stuck
+        assert exits == [] and pending_report(tmp_path) is None
+        assert resumed() is False
+        watchdog.beat()  # the main loop ticks again
+        assert resumed() is True
+
+    def test_quitting_a_freeze_offers_a_report_with_its_stacks_next_time(
+        self, app, tmp_path, monkeypatch
+    ):
+        import time
+
+        from breadsched.gui.watchdog import EXIT_HUNG, pending_report
+
+        exits = []
+        watchdog = self._watchdog(tmp_path, lambda *args: True, exits)
+        try:
+            deadline = time.monotonic() + 10
+            while not exits and time.monotonic() < deadline:
+                time.sleep(0.05)
+        finally:
+            watchdog.stop()
+        assert exits == [EXIT_HUNG]
+        report = pending_report(tmp_path)
+        assert report is not None and report.log.exists()
+        # The next start asks once; reporting fills in what happened and the log.
+        app.hang_reports = tmp_path
+        opened = []
+        monkeypatch.setattr(app, "_open_issue_form", lambda url: opened.append(url) or url)
+        app.offer_hang_report()
+        assert pending_report(tmp_path) is None
+        assert "stopped responding" in app.hang_alert.get_message()
+        app.report_hang(report)
+        [url] = opened
+        assert "template=bug_report.yml" in url and "what=BreadSched+stopped+responding" in url
+        assert "log=BreadSched+" in url and "most+recent+call+first" in url
+        from urllib.parse import unquote_plus
+
+        assert str(Path.home()) not in unquote_plus(url)
+
+    def test_slow_work_announced_is_given_longer_and_named(self, tmp_path):
+        """Upgrading a book blocks the loop on purpose: the watchdog waits for the
+        allowance it names before asking, and the log and question say what it is."""
+        import time
+
+        from breadsched.gui import watchdog as watching
+
+        with watching.busy("doing nothing"):  # no watchdog running: does nothing
+            pass
+        asked, exits = [], []
+        watchdog = self._watchdog(tmp_path, lambda *args: asked.append(args) or False, exits)
+        try:
+            with watching.busy("upgrading your book", allow=1.5):
+                started = time.monotonic()
+                while time.monotonic() - started < 0.8:
+                    time.sleep(0.05)  # past the usual 0.3 s, within the allowance
+                assert asked == []
+                deadline = time.monotonic() + 10
+                while not asked and time.monotonic() < deadline:
+                    time.sleep(0.05)
+            assert watchdog.doing is None
+        finally:
+            watchdog.stop()
+        [(seconds, log, _resumed, doing)] = asked
+        assert seconds >= 1.5 and doing == "upgrading your book"
+        assert "while upgrading your book." in log.read_text(encoding="utf-8")
+        assert watching._current is None
+
+    def test_the_not_responding_prompt_names_slow_work(self):
+        from breadsched.gui.stall_prompt import StallPrompt
+
+        prompt = StallPrompt("190", "/tmp/hang.log", lambda _quit: None, "upgrading your book")
+        try:
+            text = prompt.message.get_label()
+            assert text.startswith("BreadSched has been upgrading your book for 190 seconds")
+        finally:
+            prompt.destroy()
+
+    def test_the_not_responding_prompt_waits_unless_told_to_quit(self):
+        from breadsched.gui.stall_prompt import StallPrompt
+
+        answers = []
+        prompt = StallPrompt("25", "/tmp/hang.log", answers.append)
+        try:
+            assert "25 seconds" in prompt.message.get_label()
+            assert prompt.get_default_widget() is prompt.wait_button
+            prompt.quit_button.emit("clicked")
+            prompt.wait_button.emit("clicked")  # answered once only
+            assert answers == [True]
+        finally:
+            prompt.destroy()
+        answers.clear()
+        closed = StallPrompt("25", "/tmp/hang.log", answers.append)
+        closed.present()
+        closed.close()  # closing it means Wait
+        assert answers == [False]
+
+    def test_dialogs_are_never_left_hidden_behind_the_window(self, app, window, monkeypatch):
+        """A modal dialog behind the main window looks like a freeze: it comes
+        forward with the window, and View lists Bring All Windows Forward."""
+        assert "app.show-all-windows" in _menu_actions(_submenu(app, "_View"))
+        window.present()
+        dialog = Gtk.Window(title="Waiting", transient_for=window, modal=True)
+        other = Gtk.Window(title="Guide", transient_for=window)
+        stranger = Gtk.Window(title="Someone else's", modal=True)
+        presented = []
+        try:
+            dialog.present()
+            other.present()
+            stranger.present()
+            monkeypatch.setattr(dialog, "present", lambda: presented.append("dialog"))
+            monkeypatch.setattr(other, "present", lambda: presented.append("other"))
+            monkeypatch.setattr(stranger, "present", lambda: presented.append("stranger"))
+            assert window._raise_waiting_dialogs() in ([], [dialog])
+            monkeypatch.setattr(window, "is_active", lambda: True)
+            assert window._raise_waiting_dialogs() == [dialog]
+            presented.clear()
+            app.activate_action("show-all-windows", None)
+            assert presented[-1] == "dialog" and "other" in presented
+            assert "stranger" not in presented  # not one of this application's
+        finally:
+            dialog.destroy()
+            other.destroy()
+            stranger.destroy()
+
+    def test_a_row_too_wide_scrolls_by_arrows_not_a_scrollbar(self):
+        """As GnuCash's tabs do: arrows only while the row overflows, greyed out
+        at its ends, a wheel scrolling it too, and a child brought into view."""
+        from breadsched.gui.widgets.scrolling_bar import ScrollingBar
+
+        row = Gtk.Box(spacing=4)
+        buttons = [Gtk.Button(label=f"Command {n}") for n in range(30)]
+        for button in buttons:
+            row.append(button)
+        bar = ScrollingBar(row)
+        holder = Gtk.Window()
+        holder.set_default_size(300, -1)
+        holder.set_child(bar)
+        holder.present()
+        try:
+            _spin(lambda: bar.left.get_visible(), 5)
+            assert bar.scroller.get_policy()[0] == Gtk.PolicyType.EXTERNAL  # no scrollbar
+            assert bar.overflowing and bar.left.get_visible() and bar.right.get_visible()
+            assert not bar.left.get_sensitive() and bar.right.get_sensitive()
+            adjustment = bar.scroller.get_hadjustment()
+            bar.right.emit("clicked")
+            _spin(lambda: bar.left.get_sensitive(), 5)
+            assert adjustment.get_value() > 0
+            while bar.right.get_sensitive():
+                bar.right.emit("clicked")
+                _spin(lambda: False, 0.05)
+            end = adjustment.get_upper() - adjustment.get_page_size()
+            assert adjustment.get_value() == pytest.approx(end)
+            bar.reveal(buttons[0])
+            assert adjustment.get_value() == 0
+            bar.reveal(buttons[-1])
+            assert adjustment.get_value() == pytest.approx(end)
+        finally:
+            holder.destroy()
+        # A row that fits shows no arrows.
+        short = Gtk.Box()
+        short.append(Gtk.Button(label="One"))
+        fits = ScrollingBar(short)
+        roomy = Gtk.Window()
+        roomy.set_default_size(600, -1)
+        roomy.set_child(fits)
+        roomy.present()
+        try:
+            _spin(lambda: fits.scroller.get_hadjustment().get_page_size() > 0, 5)
+            _spin(lambda: False, 0.2)
+            assert not fits.overflowing
+            assert not fits.left.get_visible() and not fits.right.get_visible()
+        finally:
+            roomy.destroy()
+
+    def test_the_toolbar_and_tab_row_scroll_by_arrows(self, window):
+        from breadsched.gui.widgets.scrolling_bar import ScrollingBar
+
+        assert isinstance(window.toolbar_bar, ScrollingBar)
+        assert window.toolbar_bar.child is window.toolbar
+        assert isinstance(window.tab_scroll, ScrollingBar)
+        assert window.tab_scroll.child is window.tab_bar
 
     def test_the_reconcile_windows_editor_blocks_only_that_window(
         self, app, window, populated_book

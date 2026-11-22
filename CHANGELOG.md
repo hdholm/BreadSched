@@ -8,6 +8,19 @@ GitHub releases.
 
 ## Unreleased
 
+- **The toolbar and the tab row scroll by arrows**, as GnuCash's tabs do, instead of
+  a scrollbar under them. When either is wider than the window, a left and a right
+  arrow appear at its ends (greyed out at the start and the end), the mouse wheel
+  scrolls it too, and choosing a tab brings it into view.
+- **A desktop that stops responding says so, and can be quit and reported.** If
+  BreadSched stops responding for 20 seconds, a separate window asks whether to
+  wait or quit, and where it was stuck is written to a hang log. After quitting,
+  the next start offers to open a GitHub bug report with the log's start filled in.
+  Opening or upgrading a book, which blocks the window on purpose, is allowed three
+  minutes, and the question then says what BreadSched has been doing.
+  A dialog hidden behind another window, which can look like a freeze, now comes
+  forward with the main window, and **View → Bring All Windows Forward** brings
+  every window forward.
 - **The row under the pointer stands out** in the desktop's tables. Every other row
   is shaded, and the theme's hover shade was as faint, so a shaded row under the
   pointer looked like any other. The row under the pointer is now tinted with a
