@@ -1513,6 +1513,9 @@ async function showRegister() {
       el("button", {class:"action", type:"button",
         onclick:()=>openInNewTab("Register", { account: state.account }) },
         "Open in new tab"),
+      el("button", {class:"action", type:"button",
+        title:"To the blank transaction at the end (Ctrl+End or Shift+Page Down)",
+        onclick:()=>editRow(null).catch((error)=>say(error.message, "error")) }, "Blank"),
       el("button", {class:"action", type:"button", onclick:()=>{
         const account = usable.find((item)=>item.handle === state.account);
         if (account) openReconciliation(account).catch((error)=>say(error.message,"error"));

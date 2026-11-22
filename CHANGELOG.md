@@ -8,6 +8,11 @@ GitHub releases.
 
 ## Unreleased
 
+- **Blank goes to the new transaction.** A register's **Blank** toolbar button (and
+  **Actions → Blank Transaction**), **Ctrl+End**, or **Shift+Page Down** moves to the
+  blank transaction at the end, as GnuCash's Blank does, saving the transaction you
+  leave if you changed it. The browser's register has the same button and keys.
+
 - **Every desktop window looks and answers the same way.** Each dialog has the
   same margins, its **Help** button at the top, and one row of buttons at the
   bottom right, in the same order everywhere: further actions such as **Print…**,

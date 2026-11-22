@@ -625,6 +625,10 @@ class RegisterGrid(Gtk.Box):
                 return True
             sheet.move(step)
             return self._done()
+        if shift and keyval in (Gdk.KEY_Page_Down, Gdk.KEY_KP_Page_Down):
+            # To the blank transaction, as Ctrl+End does (Shift+End selects text).
+            sheet.to_blank()
+            return self._done()
         if keyval in (Gdk.KEY_Page_Up, Gdk.KEY_Page_Down, Gdk.KEY_KP_Page_Up, Gdk.KEY_KP_Page_Down):
             step = self.visible_rows - 1
             if keyval in (Gdk.KEY_Page_Up, Gdk.KEY_KP_Page_Up):

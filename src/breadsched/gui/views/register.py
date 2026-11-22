@@ -600,6 +600,16 @@ class RegisterView(BaseView):
         """Save the transaction under the cursor; False, with the reason shown, if not."""
         return self.sheet is not None and self.grid.enter()
 
+    def to_blank_transaction(self) -> bool:
+        """Move to the blank transaction at the end, saving the one left if changed,
+        as GnuCash's Blank does; False, with the reason shown, if it cannot be left."""
+        if self.sheet is None:
+            return False
+        moved = self.sheet.to_blank()
+        self.grid.sync()
+        self.grid.grab_focus()
+        return moved
+
     def cancel_transaction(self) -> None:
         """Abandon the typing in the transaction under the cursor (the blank one empties)."""
         if self.sheet is not None:

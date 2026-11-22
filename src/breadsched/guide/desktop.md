@@ -469,8 +469,10 @@ To change an existing transaction, click any of its cells or move to it with
 **Up** and **Down**; type, then press **Enter** to save it (the cursor moves on)
 or **Escape** to put it back. As in GnuCash, **Up**, **Down**, **Page Up**, and
 **Page Down** save the transaction you are leaving if you changed it; if it cannot
-be saved, you stay on it and the line under the register says why. **Ctrl+End**
-returns to the blank transaction.
+be saved, you stay on it and the line under the register says why. **Blank** on
+the toolbar (or **Actions → Blank Transaction**), **Ctrl+End**, or **Shift+Page
+Down** goes to the blank transaction at the end, as GnuCash's Blank does, saving
+the transaction you leave if you changed it.
 
 The transaction under the cursor has commands of its own: toolbar icons, items
 under **Actions**, and its right-click menu (right-clicking a row moves the cursor

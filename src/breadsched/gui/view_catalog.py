@@ -259,6 +259,15 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
         ),
         ViewAction("enter", "E_nter Transaction", "enter_transaction"),
         ViewAction("cancel", "_Cancel Transaction", "cancel_transaction"),
+        # GnuCash's Blank: to the new transaction at the end (Ctrl+End, Shift+Page Down).
+        ViewAction(
+            "blank-transaction",
+            "_Blank Transaction",
+            "to_blank_transaction",
+            "go-bottom-symbolic",
+            True,
+            caption="Blank",
+        ),
         ViewAction(
             "reconcile",
             "_Reconcile…",
