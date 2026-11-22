@@ -63,6 +63,13 @@ Never put user financial data or credentials in a commit message or pull request
   (`BaseView.enable_commands`). Buttons inside a view only change what it shows;
   see the placement rule in
   [User interfaces](docs/design/user-interfaces.md#gtk-window-toolbar-and-tabs).
+- Build a desktop dialog on `widgets.bounded.BoundedWindow`: start it with
+  `self.frame(topic)` and end it with `self.actions(...)`, and take a notes field
+  from `notes_view()`. Its margins, Help row, button order, main button, labels,
+  and fields then follow the
+  [desktop consistency rules](docs/design/user-interfaces.md#desktop-consistency-rules),
+  which `TestDesktopConsistency` checks in `tests/test_architecture.py` and
+  `tests/test_gui.py`.
 - Add a report, a Dashboard item, or a file format as a breadlet registered in
   `gen/plug` (shipped ones in `plugins/breadlets`, `plugins/importer`,
   `plugins/export`), so every interface lists it. A report or Dashboard breadlet

@@ -105,7 +105,7 @@ dialog that is not modal: `ReconciliationDialog.present_for` keeps one per book 
 account and brings it forward, and the window follows `database-changed` (coalesced
 on idle) so a transaction entered or edited elsewhere appears in its Funds In and
 Funds Out lists while it stays open. Each check is saved through
-`update_reconciliation` at once, so Postpone is a plain close and Abandon is
+`update_reconciliation` at once, so Close is a plain close and Abandon is
 `cancel_reconciliation`; multi-selection checks or unchecks several rows in one
 update. Rows for `after_statement` candidates sit below an "After" heading with the
 `after-statement` style. The mouse is the dialog's own: a capture-phase click
@@ -281,12 +281,56 @@ Every dialog follows one set of conventions. `widgets.bounded.BoundedWindow`
 closes on Escape and makes its main button (the `suggested-action` button in its
 last row, or one named with `set_primary`) the default, so Enter in a one-line
 field activates it; a field whose Enter does its own job is marked with
-`keeps_enter`. Editors close with **Cancel** and save with **Save** (or a named
-save); viewers and reports close with **Close**. Every dialog has a **Help** row
-naming a `user_guide.HELP_TOPICS` topic (`TestDialogConventions` checks both). Every
-Delete is a `widgets.confirm.delete_button`: styled `destructive-action`, it asks
-"Delete …?" with Cancel as the default before deleting, even where Ctrl+Z could
-restore it. The browser confirms every delete the same way.
+`keeps_enter`. Every Delete is a `widgets.confirm.delete_button`: styled
+`destructive-action`, it asks "Delete …?" with Cancel as the default before
+deleting, even where Ctrl+Z could restore it. The browser confirms every delete
+the same way.
+
+### Desktop consistency rules
+
+A window looks and answers the same wherever it is opened, because every one is
+built from the same few parts in `widgets.bounded`, and tests hold every window to
+them: `test_architecture.TestDesktopConsistency` in the source of every window,
+and `test_gui.TestDesktopConsistency` on each dialog as built.
+
+1. **One frame.** A dialog starts its content with `BoundedWindow.frame(topic)`:
+   18-pixel margins (`MARGIN`), 12 pixels between rows (`SPACING`), and its
+   **Help** row first, naming a `user_guide.HELP_TOPICS` topic. A form that
+   scrolls (`scroll_body`) keeps the Help row above the scroller and its last row,
+   or last few (`keep`), below it.
+2. **One action row, in one order.** A dialog ends with `BoundedWindow.actions`:
+   one right-aligned row holding, left to right, further actions (**Print…**,
+   **Make scheduled…**, **Preview**), the destructive one (**Delete**,
+   **Abandon**), the dismissing one, and the main one last. **Print…** is always a
+   further action in this row, never in a report's controls. A window whose
+   buttons change page by page refills the same row (`fill_action_row`); a form
+   or editor beside a list has its own row in the same order (`action_row`, as the
+   posted transactions, reimbursable expenses, and savings goals windows have),
+   and the window's row then only closes.
+3. **One main button at most.** Only the row helpers mark a button
+   `suggested-action`, so a window has at most one, last in its row, and Enter
+   activates it. A button that applies a view's or a page's choices (a view's
+   **Apply**, a page's **Save template**) is a plain button. A window whose
+   purpose is deleting has its destructive button last as its main one, and no
+   suggested one.
+4. **Cancel or Close.** The dismissing button says **Cancel** when closing
+   discards what was typed, and **Close** when the window saves as it goes, only
+   shows, or keeps its state (a reconciliation keeps its statement; a held import
+   stays held). A tooltip says what is kept.
+5. **Sentence case, and an ellipsis for another window.** Buttons, alert answers,
+   and a dialog's title are in sentence case (**Choose lots…**, **Keep
+   reconciling**); names keep their capitals (**Dashboard**, GnuCash). Menu items,
+   and a report or tool window titled by its menu item (**Net Worth History**),
+   keep title case, as GnuCash names them. A label ends in **…** (never `...`)
+   when it opens a window where more is chosen; a button that only asks to
+   confirm does not.
+6. **One multi-line field.** Every notes field is `notes_view()`: wrapped text in
+   a framed scroller.
+
+Windows that are documents rather than dialogs (the Reports window's tabs, the
+user guide, a register in its own window) close from the title bar and have no
+action row. The not-responding prompt runs in the watchdog's own process, so it
+is a plain window, but it uses `action_row` too.
 
 Window sizes are the user's, not a book's: `widgets.window_sizes` keeps them
 in the view settings section `window-sizes` as `width,height[,maximized]`. The main

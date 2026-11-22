@@ -37,7 +37,6 @@ from ..gi_setup import Gio, GLib, Gtk
 from ..views.register import BANDING_CHOICES, apply_register_display
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ..widgets.help import help_row
 from ..widgets.window_sizes import forget_sizes
 from .users_dialog import UsersDialog
 
@@ -57,11 +56,7 @@ class PreferencesDialog(BoundedWindow):
         self.view_settings = application.view_settings
         self.set_default_size(560, -1)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.append(help_row("preferences"))
+        box = self.frame("preferences")
 
         grid = Gtk.Grid(column_spacing=12, row_spacing=8)
         box.append(grid)
@@ -162,15 +157,9 @@ class PreferencesDialog(BoundedWindow):
         self.status.add_css_class("dim")
         box.append(self.status)
 
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: self.close())
-        buttons.append(cancel)
         save = Gtk.Button(label="Save")
-        save.add_css_class("suggested-action")
         save.connect("clicked", lambda *_: self.save() and self.close())
-        buttons.append(save)
-        box.append(buttons)
+        self.actions(box, dismiss="Cancel", primary=save)
 
     # --------------------------------------------------------------- the book
 

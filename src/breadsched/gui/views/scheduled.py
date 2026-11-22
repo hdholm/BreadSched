@@ -766,13 +766,10 @@ class ScheduleDuplicateDialog(BoundedWindow):
     def __init__(self, parent, db, scheduled, reason: str, saved_callback) -> None:
         super().__init__(title="Duplicate scheduled transaction", transient_for=parent, modal=True)
         self.db = db
+        box = self.frame("scheduled")
         self.scheduled = scheduled
         self.saved_callback = saved_callback
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
         box.append(
             Gtk.Label(
                 label=(
@@ -790,15 +787,9 @@ class ScheduleDuplicateDialog(BoundedWindow):
         box.append(self.name_entry)
         self.status = Gtk.Label(xalign=0)
         box.append(self.status)
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: self.close())
-        buttons.append(cancel)
         self.save_button = Gtk.Button(label="Create exact copy")
-        self.save_button.add_css_class("suggested-action")
         self.save_button.connect("clicked", self._confirm)
-        buttons.append(self.save_button)
-        box.append(buttons)
+        self.actions(box, dismiss="Cancel", primary=self.save_button)
         self._validate()
 
     def _validate(self, *_args) -> None:
@@ -824,13 +815,10 @@ class ScheduleDeleteDialog(BoundedWindow):
     def __init__(self, parent, db, scheduled, deleted_callback) -> None:
         super().__init__(title="Delete scheduled transaction", transient_for=parent, modal=True)
         self.db = db
+        box = self.frame("scheduled")
         self.scheduled = scheduled
         self.deleted_callback = deleted_callback
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
         box.append(
             Gtk.Label(
                 label=(
@@ -844,15 +832,10 @@ class ScheduleDeleteDialog(BoundedWindow):
         )
         self.status = Gtk.Label(xalign=0, wrap=True)
         box.append(self.status)
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: self.close())
-        buttons.append(cancel)
         delete = Gtk.Button(label="Delete scheduled transaction")
         delete.add_css_class("destructive-action")
         delete.connect("clicked", self._confirm)
-        buttons.append(delete)
-        box.append(buttons)
+        self.actions(box, dismiss="Cancel", primary=delete)
 
     def _confirm(self, _button) -> None:
         try:

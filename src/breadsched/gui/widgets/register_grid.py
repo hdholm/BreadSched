@@ -387,7 +387,7 @@ class RegisterGrid(Gtk.Box):
     def _guard(self) -> bool:
         """Whether the cursor's cell may change now. A cell that would change a
         reconciled split asks first, before the first keystroke takes effect, as
-        GnuCash does: the cell keeps its text, and **Change It** allows changes to
+        GnuCash does: the cell keeps its text, and **Change it** allows changes to
         this entry's reconciled splits until it is saved or put back."""
         sheet = self.sheet
         if sheet is None or not 0 <= sheet.cursor < len(sheet.rows):
@@ -414,7 +414,7 @@ class RegisterGrid(Gtk.Box):
                 + "). Changing it means the statement's reconciled balance will no "
                 "longer match."
             ),
-            buttons=["Cancel", "Change It"],
+            buttons=["Cancel", "Change it"],
             cancel_button=0,
             default_button=0,
         )

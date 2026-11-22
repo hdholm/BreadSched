@@ -13,7 +13,6 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ..widgets.help import help_row
 
 __all__ = ["RealizedGainsDialog"]
 
@@ -37,11 +36,7 @@ class RealizedGainsDialog(BoundedWindow):
         self.year: int | None = None
         self.report: RealizedGainsReport = self.view.report
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(12)
-        self.set_child(outer)
-        outer.append(help_row("specific-lots"))
+        outer = self.frame("specific-lots")
         toolbar = Gtk.Box(spacing=8)
         toolbar.append(Gtk.Label(label="Year"))
         self.year_choice = bounded_dropdown(["All years", *map(str, self.years)])
@@ -50,7 +45,6 @@ class RealizedGainsDialog(BoundedWindow):
         toolbar.append(self.year_choice)
         self.print_button = Gtk.Button(label="Print…")
         self.print_button.connect("clicked", lambda *_: self.print_report())
-        toolbar.append(self.print_button)
         outer.append(toolbar)
 
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -58,9 +52,7 @@ class RealizedGainsDialog(BoundedWindow):
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scroller.set_min_content_height(200)
         outer.append(scroller)
-        close = Gtk.Button(label="Close", halign=Gtk.Align.END)
-        close.connect("clicked", lambda *_: self.close())
-        outer.append(close)
+        self.actions(outer, extra=(self.print_button,))
         self.refresh()
 
     def _choose_year(self) -> None:
@@ -117,7 +109,7 @@ class RealizedGainsDialog(BoundedWindow):
             )
             for lot in item.lots:
                 box.append(_cell(lot_text(lot)))
-            choose = Gtk.Button(label="Choose Lots…", halign=Gtk.Align.START)
+            choose = Gtk.Button(label="Choose lots…", halign=Gtk.Align.START)
             choose.connect(
                 "clicked",
                 lambda _b, sale=item.sale: self.choose_lots(sale.transaction, sale.split),

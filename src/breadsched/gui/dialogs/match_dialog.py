@@ -29,6 +29,7 @@ from ...gen.services.plan_matching import (
 )
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
 
 __all__ = ["OccurrenceMatchWindow", "TransactionMatchWindow"]
 
@@ -40,19 +41,12 @@ def _amount(text: str) -> Money | None:
         return None
 
 
-def _padded(child: Gtk.Widget) -> Gtk.Widget:
-    for side in ("top", "bottom", "start", "end"):
-        getattr(child, f"set_margin_{side}")(12)
-    return child
-
-
-class _MatchWindow(Gtk.Window):
+class _MatchWindow(BoundedWindow):
     def __init__(self, parent: Gtk.Window | None, db, title: str) -> None:
         super().__init__(title=title, transient_for=parent, modal=False)
         self.set_default_size(720, 520)
         self.db = db
-        self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        self.set_child(_padded(self.box))
+        self.box = self.frame("plan")
         self.heading = Gtk.Label(xalign=0, wrap=True)
         self.heading.add_css_class("heading")
         self.totals = Gtk.Label(xalign=0, wrap=True)
@@ -62,12 +56,10 @@ class _MatchWindow(Gtk.Window):
         self.rows.set_selection_mode(Gtk.SelectionMode.NONE)
         scroll = Gtk.ScrolledWindow(child=self.rows, vexpand=True)
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        self.actions = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        done = Gtk.Button(label="Done")
-        done.connect("clicked", lambda _b: self.close())
-        self.actions.append(done)
-        for widget in (self.heading, self.totals, scroll, self.message, self.actions):
+        for widget in (self.heading, self.totals, scroll, self.message):
             self.box.append(widget)
+        #: The window's action row; a window adds its own buttons before Close.
+        self.action_buttons = self.actions(self.box)
 
     def _clear(self) -> None:
         while (row := self.rows.get_row_at_index(0)) is not None:
@@ -89,7 +81,7 @@ class OccurrenceMatchWindow(_MatchWindow):
             "What remains of it is no longer expected; what was matched still counts."
         )
         self.close_button.connect("clicked", self._on_close_toggle)
-        self.actions.prepend(self.close_button)
+        self.action_buttons.prepend(self.close_button)
         self.view: OccurrenceMatching | None = None
         self.refresh()
 

@@ -27,7 +27,6 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ..widgets.help import help_row
 
 __all__ = ["ImportReviewDialog"]
 
@@ -60,11 +59,7 @@ class ImportReviewDialog(BoundedWindow):
         self._options: list[list[HeldImportDecision]] = []
         self.set_default_size(820, 480)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("held-import"))
+        box = self.frame("held-import")
 
         box.append(
             Gtk.Label(
@@ -129,15 +124,10 @@ class ImportReviewDialog(BoundedWindow):
         self.status.add_css_class("dim")
         box.append(self.status)
 
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        close = Gtk.Button(label="Decide later")
-        close.connect("clicked", lambda *_: self.close())
-        buttons.append(close)
         apply_button = Gtk.Button(label="Apply")
-        apply_button.add_css_class("suggested-action")
         apply_button.connect("clicked", self._on_apply)
-        buttons.append(apply_button)
-        box.append(buttons)
+        self.actions(box, primary=apply_button)
+        self.dismiss_button.set_tooltip_text("Decide later: every change stays held")
 
     # ------------------------------------------------------------------ choices
 

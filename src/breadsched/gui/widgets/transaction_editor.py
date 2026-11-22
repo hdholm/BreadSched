@@ -43,7 +43,7 @@ from ...presentation import claim_role_label
 from ..gi_setup import GLib, Gtk
 from ..remote_book import OpenBook
 from ..split_sheet import SplitSheet
-from .bounded import keeps_enter
+from .bounded import keeps_enter, notes_view
 from .choice import bounded_dropdown
 from .date_entry import attach_date_keys, parse_date_text
 from .editor_parts import DocumentsPage, SplitsPanel
@@ -130,12 +130,9 @@ class TransactionEditor(Gtk.Box):
             leave.connect("leave", lambda *_: self.propose_from_entry())
             self.description_entry.add_controller(leave)
 
-        self.notes_view = Gtk.TextView()
-        self.notes_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.notes_view, notes_scroll = notes_view(56)
         if transaction is not None and transaction.notes:
             self.notes_view.get_buffer().set_text(transaction.notes)
-        notes_scroll = Gtk.ScrolledWindow(child=self.notes_view)
-        notes_scroll.set_min_content_height(56)
         # One note, imported ones included (#385).
         header.add("Notes", notes_scroll)
 

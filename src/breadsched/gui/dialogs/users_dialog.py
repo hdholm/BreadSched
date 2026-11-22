@@ -13,9 +13,8 @@ from collections.abc import Callable
 from ...api.permissions import ROLES
 from ...api.users import User, UserDirectory, UserError
 from ..gi_setup import Gtk
-from ..widgets.bounded import BoundedWindow
+from ..widgets.bounded import BoundedWindow, action_row
 from ..widgets.choice import bounded_dropdown
-from ..widgets.help import help_row
 
 __all__ = ["UsersDialog"]
 
@@ -50,19 +49,13 @@ class UsersDialog(BoundedWindow):
         #: The form the window shows in place of its lists, if any.
         self.form: _Form | None = None
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(18)
-        self.set_child(outer)
-        outer.append(help_row("preferences"))
+        outer = self.frame("preferences")
         self.content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         outer.append(self.content)
         self.status = Gtk.Label(xalign=0, wrap=True)
         self.status.add_css_class("dim")
         outer.append(self.status)
-        close = Gtk.Button(label="Close", halign=Gtk.Align.END)
-        close.connect("clicked", lambda *_: self.close())
-        outer.append(close)
+        self.actions(outer)
         self.refresh()
 
     # ------------------------------------------------------------------ lists
@@ -254,17 +247,13 @@ class UsersDialog(BoundedWindow):
         for label, widget in (("Person", people), ("Role", roles)):
             form.append(Gtk.Label(label=label, xalign=0))
             form.append(widget)
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        buttons.append(_button("Cancel", lambda *_: self.refresh()))
         give = _button(
             "Give access",
             lambda *_: self._set_role(
                 candidates[people.get_selected()], ROLES[roles.get_selected()]
             ),
         )
-        give.add_css_class("suggested-action")
-        buttons.append(give)
-        form.append(buttons)
+        form.append(action_row(dismiss=_button("Cancel", lambda *_: self.refresh()), primary=give))
         #: For tests: the choices and the button of the form shown.
         self.grant_form = (people, roles, give)
         _clear(self.content)
@@ -502,14 +491,10 @@ class _Form(Gtk.Box):
             self.check = Gtk.CheckButton(label=check[1])
             self._check_key = check[0]
             self.append(self.check)
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
         cancel = Gtk.Button(label="Cancel")
         cancel.connect("clicked", lambda *_: dialog.refresh())
-        buttons.append(cancel)
         self.submit_button = Gtk.Button(label=action)
-        self.submit_button.add_css_class("suggested-action")
-        buttons.append(self.submit_button)
-        self.append(buttons)
+        self.append(action_row(dismiss=cancel, primary=self.submit_button))
 
         def on_submit(*_args) -> None:
             values = {key: entry.get_text() for key, entry in self.entries.items()}

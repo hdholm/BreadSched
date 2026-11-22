@@ -32,7 +32,6 @@ from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
 from ..widgets.date_entry import attach_date_keys, parse_date_text
-from ..widgets.help import help_row
 
 __all__ = ["FsaClaimsDialog"]
 
@@ -305,11 +304,7 @@ class FsaClaimsDialog(BoundedWindow):
         self.fsa_accounts = view.candidates.fsa_accounts
         self.current: FsaClaim | None = None
         self._allocation_rows: list[_AllocationRow] = []
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(12)
-        self.set_child(outer)
-        outer.prepend(help_row("fsa-claims"))
+        outer = self.frame("fsa-claims")
 
         top = Gtk.Box(spacing=6)
         # The first choice is a new claim, so New (or choosing it) never leaves an
@@ -404,14 +399,9 @@ class FsaClaimsDialog(BoundedWindow):
         outer.append(closing)
         self.status = Gtk.Label(xalign=0, wrap=True)
         outer.append(self.status)
-        actions = Gtk.Box(spacing=6)
         save = Gtk.Button(label="Save claim")
         save.connect("clicked", self._save)
-        actions.append(save)
-        close = Gtk.Button(label="Close")
-        close.connect("clicked", lambda *_: self.close())
-        actions.append(close)
-        outer.append(actions)
+        self.actions(outer, primary=save)
         # The form scrolls; its buttons stay on screen (dialog audit, #148).
         scroll_body(self)
         # The dialog is not modal: it can stay open beside a register, and the

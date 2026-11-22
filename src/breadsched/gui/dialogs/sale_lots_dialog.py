@@ -12,7 +12,6 @@ from ...presentation import lot_text, sale_text
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
-from ..widgets.help import help_row
 
 __all__ = ["SaleLotsDialog"]
 
@@ -30,7 +29,7 @@ class SaleLotsDialog(BoundedWindow):
         split: str,
         on_saved: Callable[[SaleLots], None] | None = None,
     ) -> None:
-        super().__init__(title="Choose Lots Sold", transient_for=parent, modal=True)
+        super().__init__(title="Choose lots sold", transient_for=parent, modal=True)
         self.db = db
         self.transaction = transaction
         self.split = split
@@ -42,11 +41,7 @@ class SaleLotsDialog(BoundedWindow):
             raise ValueError("not a sale of shares") from error
         self.current = current
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(14)
-        self.set_child(outer)
-        outer.append(help_row("specific-lots"))
+        outer = self.frame("specific-lots")
         account_name = book_server(db).account(current.account.handle).full_name
         heading = Gtk.Label(
             label=f"{account_name}: {sale_text(current.sale)}",
@@ -94,17 +89,11 @@ class SaleLotsDialog(BoundedWindow):
         self.message.add_css_class("negative")
         outer.append(self.message)
 
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: self.close())
-        self.method_button = Gtk.Button(label="Use the Account's Method")
+        self.method_button = Gtk.Button(label="Use the account's method")
         self.method_button.connect("clicked", lambda *_: self.use_method())
         self.save_button = Gtk.Button(label="Save")
-        self.save_button.add_css_class("suggested-action")
         self.save_button.connect("clicked", lambda *_: self.save())
-        for button in (cancel, self.method_button, self.save_button):
-            buttons.append(button)
-        outer.append(buttons)
+        self.actions(outer, dismiss="Cancel", primary=self.save_button, extra=(self.method_button,))
         scroll_body(self)
 
     def _store(self, picks: tuple[tuple[str, str], ...]) -> bool:

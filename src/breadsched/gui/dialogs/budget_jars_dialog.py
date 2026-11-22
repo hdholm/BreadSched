@@ -13,7 +13,6 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ..widgets.help import help_row
 from ..widgets.model_chart import ModelChartView
 
 __all__ = ["BudgetJarsDialog"]
@@ -71,11 +70,7 @@ class BudgetJarsDialog(BoundedWindow):
         self.set_default_size(820, 620)
         self.report: JarsReport
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(12)
-        self.set_child(outer)
-        outer.append(help_row("jars"))
+        outer = self.frame("jars")
         note = Gtk.Label(
             label=(
                 "Each scheduled payment and estimate, and each savings goal, is a jar. It "
@@ -99,7 +94,6 @@ class BudgetJarsDialog(BoundedWindow):
         toolbar.append(self.period_choice)
         self.print_button = Gtk.Button(label="Print…")
         self.print_button.connect("clicked", lambda *_: self.print_report())
-        toolbar.append(self.print_button)
         outer.append(toolbar)
 
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -107,9 +101,7 @@ class BudgetJarsDialog(BoundedWindow):
         scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         scroller.set_min_content_height(240)
         outer.append(scroller)
-        close = Gtk.Button(label="Close", halign=Gtk.Align.END)
-        close.connect("clicked", lambda *_: self.close())
-        outer.append(close)
+        self.actions(outer, extra=(self.print_button,))
         self.refresh()
 
     def _choose_period(self) -> None:

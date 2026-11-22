@@ -116,7 +116,10 @@ def test_every_help_button_uses_a_known_topic_and_every_topic_is_used():
     root = Path(__file__).resolve().parent.parent / "src" / "breadsched"
     gtk = set()
     for path in (root / "gui").rglob("*.py"):
-        gtk |= set(re.findall(r'help_(?:row|button)\("([\w-]+)"\)', path.read_text("utf-8")))
+        # A dialog names its topic with the frame it starts from (``frame``).
+        gtk |= set(
+            re.findall(r'(?:help_row|help_button|frame)\("([\w-]+)"\)', path.read_text("utf-8"))
+        )
     scripts = "\n".join(path.read_text("utf-8") for path in (root / "web" / "static").glob("*.js"))
     web = set(re.findall(r'helpButton\("([\w-]+)"\)', scripts))
     web |= set(re.findall(r'helpHeading\([^;]*?, "([\w-]+)"\)', scripts))

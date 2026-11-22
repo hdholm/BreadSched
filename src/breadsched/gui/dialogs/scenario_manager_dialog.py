@@ -20,7 +20,6 @@ from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
 from ..widgets.date_entry import attach_date_keys, parse_date_text
-from ..widgets.help import help_row
 from .drawdown_dialog import DrawdownsDialog
 
 __all__ = ["ScenarioManagerDialog"]
@@ -49,11 +48,7 @@ class ScenarioManagerDialog(BoundedWindow):
         self._original_account_rates: dict[str, Rate] = {}
         self.set_default_size(620, 520)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("plan"))
+        box = self.frame("plan")
 
         box.append(
             Gtk.Label(
@@ -158,15 +153,9 @@ class ScenarioManagerDialog(BoundedWindow):
         self.status = Gtk.Label(xalign=0, wrap=True)
         box.append(self.status)
 
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        close = Gtk.Button(label="Close")
-        close.connect("clicked", lambda *_: self.close())
-        buttons.append(close)
         self.save_button = Gtk.Button(label="Save changes")
-        self.save_button.add_css_class("suggested-action")
         self.save_button.connect("clicked", self._on_save)
-        buttons.append(self.save_button)
-        box.append(buttons)
+        self.actions(box, primary=self.save_button)
         # The form scrolls; its buttons stay on screen (dialog audit, #148).
         scroll_body(self)
 
@@ -462,11 +451,7 @@ class AccountAssumptionsDialog(BoundedWindow):
         self.entries: dict[str, Gtk.Entry] = {}
         self.set_default_size(620, 480)
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(16)
-        self.set_child(outer)
-        outer.prepend(help_row("plan"))
+        outer = self.frame("plan")
         outer.append(
             Gtk.Label(
                 label=(
@@ -494,15 +479,9 @@ class AccountAssumptionsDialog(BoundedWindow):
         outer.append(scroll)
         self.status = Gtk.Label(xalign=0, wrap=True)
         outer.append(self.status)
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: self.close())
-        buttons.append(cancel)
         save = Gtk.Button(label="Use these rates")
-        save.add_css_class("suggested-action")
         save.connect("clicked", self._on_save)
-        buttons.append(save)
-        outer.append(buttons)
+        self.actions(outer, dismiss="Cancel", primary=save)
 
     def _on_save(self, _button) -> None:
         values: dict[str, Decimal] = {}
@@ -544,11 +523,7 @@ class AssumptionTimelineDialog(BoundedWindow):
         self._periods: list[AssumptionPeriod] = []
         self.set_default_size(720, 420)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("plan"))
+        box = self.frame("plan")
         box.append(
             Gtk.Label(
                 label=(
@@ -579,9 +554,7 @@ class AssumptionTimelineDialog(BoundedWindow):
         self.summary = Gtk.Label(xalign=0, wrap=True)
         self.summary.add_css_class("dim")
         box.append(self.summary)
-        close = Gtk.Button(label="Close", halign=Gtk.Align.END)
-        close.connect("clicked", lambda *_: self.close())
-        box.append(close)
+        self.actions(box)
         self._reload()
 
     def _reload(self, selected: int = 0) -> None:
@@ -682,11 +655,7 @@ class AssumptionPeriodDialog(BoundedWindow):
         self.callback = callback
         self._account_rates = dict(period.per_account) if period is not None else {}
         self.set_default_size(520, -1)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("plan"))
+        box = self.frame("plan")
 
         grid = Gtk.Grid(column_spacing=12, row_spacing=8)
         box.append(grid)
@@ -727,15 +696,9 @@ class AssumptionPeriodDialog(BoundedWindow):
 
         self.status = Gtk.Label(xalign=0, wrap=True)
         box.append(self.status)
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: self.close())
-        buttons.append(cancel)
         save = Gtk.Button(label="Save")
-        save.add_css_class("suggested-action")
         save.connect("clicked", self._on_save)
-        buttons.append(save)
-        box.append(buttons)
+        self.actions(box, dismiss="Cancel", primary=save)
 
     def _projection_accounts(self):
         """Liabilities and investments, by full name, through the book server (#358)."""
@@ -821,11 +784,7 @@ class ScenarioDeleteDialog(BoundedWindow):
             if item.parent_handle == scenario.handle
         ]
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("plan"))
+        box = self.frame("plan")
         box.append(
             Gtk.Label(
                 label=(
@@ -844,16 +803,11 @@ class ScenarioDeleteDialog(BoundedWindow):
                 wrap=True,
             )
         )
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: self.close())
-        buttons.append(cancel)
         self.delete_button = Gtk.Button(label="Delete scenario")
         self.delete_button.add_css_class("destructive-action")
         self.delete_button.set_sensitive(not self.children)
         self.delete_button.connect("clicked", self._confirm)
-        buttons.append(self.delete_button)
-        box.append(buttons)
+        self.actions(box, dismiss="Cancel", primary=self.delete_button)
 
     def _confirm(self, _button) -> None:
         try:

@@ -19,7 +19,6 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook, worker_book
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ..widgets.help import help_row
 from ..widgets.model_chart import ModelChartView
 
 __all__ = ["ExpenseExplorerDialog"]
@@ -54,11 +53,7 @@ class ExpenseExplorerDialog(BoundedWindow):
         self.job: BackgroundJob[ExpenseExplorer, None] = BackgroundJob()
         self.connect("close-request", self._on_close_request)
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(12)
-        self.set_child(outer)
-        outer.append(help_row("expenses"))
+        outer = self.frame("expenses")
 
         # Each choice sits beside its label, two to a row, so none is squeezed to a
         # few characters by the others (#311).
@@ -90,14 +85,9 @@ class ExpenseExplorerDialog(BoundedWindow):
         scroll.set_vexpand(True)
         outer.append(scroll)
 
-        actions = Gtk.Box(spacing=8, halign=Gtk.Align.END)
         self.print_button = Gtk.Button(label="Print…")
         self.print_button.connect("clicked", self._print)
-        close = Gtk.Button(label="Close")
-        close.connect("clicked", lambda *_: self.close())
-        actions.append(self.print_button)
-        actions.append(close)
-        outer.append(actions)
+        self.actions(outer, extra=(self.print_button,))
 
         for choice in (self.period, self.category, self.sort, self.income_category):
             choice.connect("notify::selected", self._update)

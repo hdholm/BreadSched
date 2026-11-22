@@ -140,7 +140,7 @@ History…**, **Holdings and Cost Basis…**, **Realized Gains…**, **Tax Year�
 charted reports (see [Reports and breadlets](#reports-and-breadlets)). Each opens in
 its own tab of one **Reports** window, so several reports can be open side by side;
 a tab's close button (or the report's own **Close**) closes it, and **Reports →
-Reports Window** shows the window with an **Open Report** menu.
+Reports Window** shows the window with an **Open report** menu.
 A menu item that asks for more before it acts ends in "…". Each toolbar icon stands
 for one command, so the same picture never means two things: **Edit** is always
 the pencil, **Delete** the bin, and **Match** the link, whichever view shows them.
@@ -219,9 +219,14 @@ When you make the window narrower, text columns such as descriptions shorten (wi
 "…") so every column, including every amount, stays visible. On a small screen, a
 long dialog scrolls its form, and its Save and Cancel buttons stay at the bottom.
 
-Dialogs work the same way throughout: **Escape** closes one as its **Cancel** or
-**Close** button does, **Enter** in a one-line field chooses its main button (such as
-**Save**), and **Help** opens this guide at its section. Every **Delete** asks first.
+Dialogs work the same way throughout: **Help** is at the top right and opens this
+guide at its section, and the buttons are in one row at the bottom right, always in
+the same order: other actions such as **Print…**, then **Delete**, then **Cancel**
+or **Close**, then the main button (such as **Save**), which stands out. **Cancel**
+discards what you typed; **Close** leaves a window that saves as it goes or only
+shows something. **Escape** closes a dialog as its **Cancel** or **Close** button
+does, **Enter** in a one-line field chooses its main button, and every **Delete**
+asks first. A button ending in **…** opens another window.
 
 A book opens on the **Dashboard**, whose tab is always first and has no × to close
 it. The other tabs you had open come back behind it. Every view you open, and the
@@ -314,9 +319,9 @@ bar, and its tile is outlined:
 - **Resize** an item by dragging its corner, a column or a row at a time, or with
   its size button (**2 × 3** is two columns wide and three rows tall), which opens
   its width (1 to 4 columns) and height (1 to 8 rows).
-- **Hide** an item with its **×**; **Add Item** lists the hidden ones and puts the
+- **Hide** an item with its **×**; **Add item** lists the hidden ones and puts the
   one you choose back, after the others.
-- **Reset Layout** puts every item back in its own place and size (hidden items stay
+- **Reset layout** puts every item back in its own place and size (hidden items stay
   hidden).
 
 Items are packed from the top left, each in the first place it fits, so a small item
@@ -348,10 +353,10 @@ first out, or average cost.
 
 ## Choose the lots a sale sells
 
-In **Holdings and Cost Basis**, expand a holding and choose **Choose Lots…** beside a
+In **Holdings and Cost Basis**, expand a holding and choose **Choose lots…** beside a
 sale. Enter the shares to sell from each lot listed (the lots held just before the
 sale) and choose **Save**; shares left unassigned are sold by the account's method,
-and **Use the Account's Method** clears the choice. **Realized Gains…** shows every
+and **Use the account's method** clears the choice. **Realized gains…** shows every
 sale with the lots it took and totals by year; choose a year, open a sale to choose
 its lots, or **Print…** the report. See
 [Specific lots and realized gains](../USER_GUIDE.md#specific-lots-and-realized-gains).
@@ -361,7 +366,7 @@ its lots, or **Print…** the report. See
 In Accounts, choose **Actions → Tax Year…** and pick a **Year**. It lists the year's
 realized gains as short-term and long-term (by sale, with each part's purchase date
 or *Various*), the totals of the tax-relevant accounts and tags, and income by
-source. **Tax-Relevant Accounts and Tags…** lists every tag and account with a check
+source. **Tax-relevant accounts and tags…** lists every tag and account with a check
 box; an account checked by GnuCash's *tax related* mark says so until you change it.
 **Print…** prints the report. See [Tax year](../USER_GUIDE.md#tax-year).
 
@@ -378,7 +383,7 @@ and each jar. **Print…** prints the report with its charts. See [Budget jars](
 Reports, Dashboard items, importers and exporters are all *breadlets*: small
 plug-ins that read the book through the same book server every interface uses.
 Every report opens in its own tab of the **Reports** window, from the **Reports**
-menu, a view's report icon, or the window's **Open Report** menu. A charted report
+menu, a view's report icon, or the window's **Open report** menu. A charted report
 from a breadlet shows its options (a date range, how to group it, a year) above it;
 change them and choose **Run**. It draws its charts and the exact table behind each
 one; **Print…** prints it. The charted reports are:
@@ -637,8 +642,8 @@ with its groups and subtotals. See
 4. Check entries until the difference is zero. Click a row (or its check) to check
    or uncheck it, or press Enter or Space on it. A click selects only that row, in
    both columns; Ctrl-click adds or removes a row and Shift-click selects a range in
-   one column, without checking anything. Then choose **Check Selected** (or
-   **Uncheck Selected**) to check them all at once. Double-click a row to edit its
+   one column, without checking anything. Then choose **Check selected** (or
+   **Uncheck selected**) to check them all at once. Double-click a row to edit its
    transaction; the double-click leaves its check as it was.
 5. Choose **Finish** to mark the checked splits reconciled.
 
@@ -647,18 +652,18 @@ bring the main window in front, enter a missed scheduled transaction or correct 
 in a register, and the lists follow. A transaction editor it opens blocks only the
 reconcile window, so the main window stays usable even when it covers both. It
 closes when the main window does.
-**New Transaction…** enters one in this account dated on the statement, and **Edit
-Transaction…** opens the transaction of the selected row you clicked last. Choosing Reconcile again brings
+**New transaction…** enters one in this account dated on the statement, and **Edit
+transaction…** opens the transaction of the selected row you clicked last. Choosing Reconcile again brings
 the open window forward.
 
-Checks are saved as you make them. **Postpone** closes the window and keeps the
-statement, which reopens where you left off; **Abandon…** discards the statement
-without changing any transaction.
+Checks are saved as you make them. **Close** keeps the statement, which reopens
+where you left off; **Abandon** discards the statement without changing any
+transaction.
 
 Changing the account, amount, shares, or price of a split already reconciled, in a
 register or the transaction editor, asks **Change a reconciled split?** at the first
 keystroke, before anything changes, as GnuCash does; **Cancel** leaves the cell as
-it was, and **Change It** lets you change that transaction's reconciled splits until
+it was, and **Change it** lets you change that transaction's reconciled splits until
 you save it or put it back. A change that reaches a reconciled split some other way
 (another split's line taking the rest, say) is asked about when you save.
 
@@ -1111,7 +1116,7 @@ Use these File menu commands regularly:
   stuck is written to a hang log in the `hang-reports` folder of BreadSched's data
   folder (`~/.local/share/breadsched` on Linux, `%LOCALAPPDATA%\breadsched` on
   Windows). Quitting loses only typing not yet entered: the book keeps everything
-  saved before. When you start BreadSched again it offers **Report Problem…**, which
+  saved before. When you start BreadSched again it offers **Report problem…**, which
   opens a GitHub bug report with the version, what happened, and the start of the
   log filled in (nothing from your book). On Linux, `kill -USR1 <process id>` writes
   where every thread is to `stacks-on-request.log` in the same folder at any time.

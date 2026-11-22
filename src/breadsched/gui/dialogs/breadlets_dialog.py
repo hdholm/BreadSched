@@ -19,7 +19,6 @@ from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.document_view import DocumentView
-from ..widgets.help import help_row
 
 __all__ = ["BreadletReportsDialog"]
 
@@ -45,11 +44,7 @@ class BreadletReportsDialog(BoundedWindow):
         #: The option widgets of the chosen breadlet, by option key.
         self.inputs: dict[str, Gtk.Widget] = {}
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(12)
-        self.set_child(outer)
-        outer.append(help_row("reports"))
+        outer = self.frame("reports")
         for problem in manager.problems:
             note = Gtk.Label(
                 label=f"Add-on {problem.name} did not load: {problem.reason}", xalign=0, wrap=True
@@ -64,7 +59,6 @@ class BreadletReportsDialog(BoundedWindow):
         chooser.append(self.choice)
         self.print_button = Gtk.Button(label="Print…")
         self.print_button.connect("clicked", lambda *_: self.print_report())
-        chooser.append(self.print_button)
         outer.append(chooser)
         self.description = Gtk.Label(xalign=0, wrap=True)
         self.description.add_css_class("dim")
@@ -80,9 +74,7 @@ class BreadletReportsDialog(BoundedWindow):
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scroller.set_min_content_height(320)
         outer.append(scroller)
-        close = Gtk.Button(label="Close", halign=Gtk.Align.END)
-        close.connect("clicked", lambda *_: self.close())
-        outer.append(close)
+        self.actions(outer, extra=(self.print_button,))
 
         ids = [plugin.id for plugin in self.breadlets]
         if breadlet in ids:
@@ -135,7 +127,6 @@ class BreadletReportsDialog(BoundedWindow):
             self.inputs[option.key] = widget
             self.options.append(widget)
         run = Gtk.Button(label="Run")
-        run.add_css_class("suggested-action")
         run.connect("clicked", lambda *_: self.run())
         self.options.append(run)
         self.run()

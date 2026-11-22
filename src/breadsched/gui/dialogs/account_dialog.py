@@ -35,11 +35,10 @@ from ...gen.utils.amount_input import parse_user_amount
 from .. import hidden_accounts
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
-from ..widgets.bounded import BoundedWindow, scroll_body
+from ..widgets.bounded import BoundedWindow, notes_view, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
 from ..widgets.date_entry import attach_date_keys, parse_date_text
-from ..widgets.help import help_row
 
 __all__ = ["AccountDialog"]
 
@@ -80,11 +79,7 @@ class AccountDialog(BoundedWindow):
         self.save_button = Gtk.Button(label="Save")
         self._ready = False
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("accounts"))
+        box = self.frame("accounts")
 
         grid = Gtk.Grid(column_spacing=10, row_spacing=8)
         box.append(grid)
@@ -184,18 +179,13 @@ class AccountDialog(BoundedWindow):
         grid.attach(self.description_entry, 1, row, 1, 1)
         row += 1
 
-        self.notes_view = Gtk.TextView()
-        self.notes_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        self.notes_view.set_size_request(-1, 72)
+        self.notes_view, notes_scroll = notes_view(72)
         self.notes_view.set_tooltip_text(
             "The account's notes. An import fills them from GnuCash and refreshes them only "
             "while you have not edited them here"
         )
         if account is not None and account.notes:
             self.notes_view.get_buffer().set_text(account.notes)
-        notes_scroll = Gtk.ScrolledWindow()
-        notes_scroll.set_min_content_height(72)
-        notes_scroll.set_child(self.notes_view)
         grid.attach(
             Gtk.Label(label="Notes", xalign=0, valign=Gtk.Align.START),
             0,
@@ -416,20 +406,14 @@ class AccountDialog(BoundedWindow):
         box.append(self.card_box)
 
     def _build_actions(self, box: Gtk.Box, account: Account | None) -> None:
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+        delete = None
         if account is not None:
             delete = delete_button(
                 f"the account {self._full_names.get(account.handle, account.name)}",
                 lambda: self._on_delete(None),
             )
-            buttons.append(delete)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: self.close())
-        buttons.append(cancel)
-        self.save_button.add_css_class("suggested-action")
         self.save_button.connect("clicked", self._on_save)
-        buttons.append(self.save_button)
-        box.append(buttons)
+        self.actions(box, dismiss="Cancel", primary=self.save_button, destructive=delete)
 
     # -------------------------------------------------------------- reactions
 
@@ -444,9 +428,7 @@ class AccountDialog(BoundedWindow):
             modal=True,
         )
         window.set_default_size(620, 420)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(14)
+        box = window.frame("accounts")
         heading = Gtk.Label(label="Imported from GnuCash", xalign=0)
         heading.add_css_class("title-3")
         box.append(heading)
@@ -484,11 +466,7 @@ class AccountDialog(BoundedWindow):
         scroller.set_vexpand(True)
         scroller.set_hexpand(True)
         box.append(scroller)
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: window.close())
         keep = Gtk.Button(label="Keep changes")
-        keep.add_css_class("suggested-action")
 
         def on_keep(*_args) -> None:
             self.source_fields = [
@@ -497,10 +475,7 @@ class AccountDialog(BoundedWindow):
             window.close()
 
         keep.connect("clicked", on_keep)
-        buttons.append(cancel)
-        buttons.append(keep)
-        box.append(buttons)
-        window.set_child(box)
+        window.actions(box, dismiss="Cancel", primary=keep)
         #: The open details window and its entries, for tests.
         self.details = (window, entries, keep)
         window.present()

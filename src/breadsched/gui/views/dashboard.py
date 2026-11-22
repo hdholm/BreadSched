@@ -35,6 +35,7 @@ from ...gen.services import DashboardTileInput, SaveDashboardConfig
 from ...gen.services.dashboard_config import DashboardBreadlet, default_layout, settings_of
 from ...plugins.breadlets.dashboard import sharing
 from ..gi_setup import Gdk, GObject, Gtk, Pango
+from ..widgets.bounded import action_row
 from ..widgets.document_view import DocumentView
 from ..widgets.model_chart import ModelChartView
 from ._base import BaseView
@@ -152,22 +153,18 @@ class DashboardView(BaseView):
         hint.add_css_class("dim-label")
         bar.append(hint)
         buttons = Gtk.Box(spacing=8)
-        self.add_menu = Gtk.MenuButton(label="Add Item")
+        self.add_menu = Gtk.MenuButton(label="Add item")
         self.add_menu.set_tooltip_text("Show an item the Dashboard hides")
         self.add_list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.add_menu.set_popover(Gtk.Popover(child=self.add_list))
         buttons.append(self.add_menu)
-        for label, handler in (
-            ("Reset Layout", self.reset_layout),
-            ("Cancel", self.cancel_arranging),
-        ):
-            button = Gtk.Button(label=label)
-            button.connect("clicked", lambda _b, call=handler: call())
-            buttons.append(button)
+        reset = Gtk.Button(label="Reset layout")
+        reset.connect("clicked", lambda _b: self.reset_layout())
+        cancel = Gtk.Button(label="Cancel")
+        cancel.connect("clicked", lambda _b: self.cancel_arranging())
         done = Gtk.Button(label="Done")
-        done.add_css_class("suggested-action")
         done.connect("clicked", lambda _b: self.finish_arranging())
-        buttons.append(done)
+        buttons.append(action_row(extra=(reset,), dismiss=cancel, primary=done))
         bar.append(buttons)
         self.arrange_status = Gtk.Label(xalign=0, wrap=True, visible=False)
         self.arrange_status.add_css_class("error")

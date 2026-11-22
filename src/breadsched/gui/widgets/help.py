@@ -43,5 +43,6 @@ def help_button(topic: str) -> Gtk.Button:
 def help_row(topic: str) -> Gtk.Box:
     """A right-aligned row holding the Help button, for the top of a dialog."""
     row = Gtk.Box(halign=Gtk.Align.END)
+    row.add_css_class("help-row")
     row.append(help_button(topic))
     return row

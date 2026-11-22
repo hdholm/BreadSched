@@ -38,10 +38,9 @@ from ...presentation import claim_link_notice, reimbursement_notice
 from .. import hidden_accounts
 from ..gi_setup import Gdk, GLib, Gtk, Pango
 from ..remote_book import OpenBook
-from ..widgets.bounded import BoundedWindow
+from ..widgets.bounded import BoundedWindow, action_row, fill_action_row
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
-from ..widgets.help import help_row
 
 __all__ = ["ReconciliationDialog"]
 
@@ -212,15 +211,12 @@ class ReconciliationDialog(BoundedWindow):
         self.set_default_size(900, 640)
         _OPEN[(id(db), account.handle)] = self
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(16)
-        outer.append(help_row("reconcile"))
+        outer = self.frame("reconcile")
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, vexpand=True)
         outer.append(self.body)
-        self.footer = Gtk.Box(spacing=8)
+        #: The window's action row; each page fills it in the one order.
+        self.footer = action_row()
         outer.append(self.footer)
-        self.set_child(outer)
 
         #: The open statement shown, or None on the start page.
         self.session: str | None = None
@@ -373,16 +369,17 @@ class ReconciliationDialog(BoundedWindow):
             latest = max(completed, key=lambda item: item.statement_date)
             reopen = Gtk.Button(label=f"Reopen statement through {latest.statement_date}")
             reopen.connect("clicked", lambda *_: self._on_reopen(latest.handle))
-            self.footer.append(reopen)
             self.reopen_button = reopen
-        self.footer.append(Gtk.Box(hexpand=True))
         close = Gtk.Button(label="Close")
         close.connect("clicked", lambda *_: self.close())
-        self.footer.append(close)
         self.start_button = Gtk.Button(label="Start reconciliation")
-        self.start_button.add_css_class("suggested-action")
         self.start_button.connect("clicked", self._on_start)
-        self.footer.append(self.start_button)
+        fill_action_row(
+            self.footer,
+            extra=(self.reopen_button,) if self.reopen_button is not None else (),
+            dismiss=close,
+            primary=self.start_button,
+        )
 
     def _statement_entry_form(self, remembered=()) -> Gtk.Widget:
         """Quick adds for statement lines not yet in the book, such as interest.
@@ -468,14 +465,14 @@ class ReconciliationDialog(BoundedWindow):
         self.body.append(columns)
 
         commands = Gtk.Box(spacing=8)
-        check = Gtk.Button(label="Check Selected")
+        check = Gtk.Button(label="Check selected")
         check.set_tooltip_text("Ctrl- or Shift-click rows to select several")
         check.connect("clicked", lambda *_: self.check_selected(True))
-        uncheck = Gtk.Button(label="Uncheck Selected")
+        uncheck = Gtk.Button(label="Uncheck selected")
         uncheck.connect("clicked", lambda *_: self.check_selected(False))
-        new = Gtk.Button(label="New Transaction…")
+        new = Gtk.Button(label="New transaction…")
         new.connect("clicked", lambda *_: self.new_transaction())
-        edit = Gtk.Button(label="Edit Transaction…")
+        edit = Gtk.Button(label="Edit transaction…")
         edit.connect("clicked", lambda *_: self.edit_transaction())
         for button in (check, uncheck, new, edit):
             commands.append(button)
@@ -486,19 +483,16 @@ class ReconciliationDialog(BoundedWindow):
         self.status = Gtk.Label(xalign=0, wrap=True)
         self.body.append(self.status)
 
-        abandon = Gtk.Button(label="Abandon…")
+        abandon = Gtk.Button(label="Abandon")
+        abandon.add_css_class("destructive-action")
         abandon.set_tooltip_text("Cancel this statement; no transaction has been changed")
         abandon.connect("clicked", lambda *_: self.confirm_abandon())
-        self.footer.append(abandon)
-        self.footer.append(Gtk.Box(hexpand=True))
-        postpone = Gtk.Button(label="Postpone")
-        postpone.set_tooltip_text("Close; the statement and its checks are kept to resume later")
-        postpone.connect("clicked", lambda *_: self.close())
-        self.footer.append(postpone)
+        close = Gtk.Button(label="Close")
+        close.set_tooltip_text("The statement and its checks are kept to resume later")
+        close.connect("clicked", lambda *_: self.close())
         self.finish = Gtk.Button(label="Finish")
-        self.finish.add_css_class("suggested-action")
         self.finish.connect("clicked", lambda *_: self._on_finish(handle))
-        self.footer.append(self.finish)
+        fill_action_row(self.footer, destructive=abandon, dismiss=close, primary=self.finish)
         self._fill(state)
         self._show_totals(state)
 
@@ -870,7 +864,7 @@ class ReconciliationDialog(BoundedWindow):
                 "changed by reconciling it."
             ),
             modal=True,
-            buttons=["Keep Reconciling", "Abandon"],
+            buttons=["Keep reconciling", "Abandon"],
             cancel_button=0,
             default_button=0,
         )
@@ -924,7 +918,6 @@ class ReconciliationDialog(BoundedWindow):
             "That statement is already reconciled. To change it, reopen it with "
             f"“{reopen.get_label()}”."
         )
-        reopen.add_css_class("suggested-action")
         reopen.add_css_class("attention")
         reopen.grab_focus()
 

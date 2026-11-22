@@ -22,9 +22,8 @@ from ...gen.lib.money import Money
 from ...gen.lib.transaction import Transaction
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
-from ..widgets.bounded import BoundedWindow
+from ..widgets.bounded import BoundedWindow, action_row
 from ..widgets.confirm import delete_button
-from ..widgets.help import help_row
 from ..widgets.transaction_editor import TransactionEditor
 
 __all__ = ["PostedTransactionsDialog"]
@@ -52,11 +51,7 @@ class PostedTransactionsDialog(BoundedWindow):
         self.handles = list(handles)
         self.set_default_size(1040, 600)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.append(help_row("due-review"))
+        box = self.frame("due-review")
 
         done = f" and marked {skipped} as done" if skipped else ""
         self.heading = Gtk.Label(xalign=0, wrap=True)
@@ -86,11 +81,7 @@ class PostedTransactionsDialog(BoundedWindow):
         self.status.add_css_class("dim")
         box.append(self.status)
 
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        close = Gtk.Button(label="Close")
-        close.connect("clicked", lambda *_: self.close())
-        buttons.append(close)
-        box.append(buttons)
+        self.actions(box)
 
         #: The editor of the transaction chosen in the list, and its window buttons.
         self.editor: TransactionEditor | None = None
@@ -179,18 +170,15 @@ class PostedTransactionsDialog(BoundedWindow):
         )
         editor.set_vexpand(True)
         self.side.append(editor)
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
         delete = delete_button(
             f"the transaction {transaction.description}",
             partial(self.delete, transaction.handle),
         )
         delete.set_tooltip_text("Remove this transaction; Ctrl+Z restores it")
-        buttons.append(delete)
         save = Gtk.Button(label="Save")
-        save.add_css_class("suggested-action")
         save.connect("clicked", lambda *_: editor.save())
-        buttons.append(save)
-        self.side.append(buttons)
+        # The editor's own row, under it; the window's row only closes.
+        self.side.append(action_row(destructive=delete, primary=save))
         editor.on_can_save = save.set_sensitive
         editor.revalidate()
         self.editor, self.save_button = editor, save

@@ -2465,7 +2465,7 @@ class TestDialogs:
 
     def test_a_reconciled_split_asks_before_its_first_change(self, app, window, populated_book):
         """#403: as in GnuCash, the first keystroke into a reconciled split's amount
-        asks; Cancel keeps the cell, Change It allows the edit and Save asks no more."""
+        asks; Cancel keeps the cell, Change it allows the edit and Save asks no more."""
         from breadsched.gen.lib import ReconcileState
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
@@ -5731,7 +5731,7 @@ class TestDerivedPlanView:
             lines = []
             child = detail.get_child().get_first_child()
             while child is not None:
-                # A sale's row is a box: its line, then Choose Lots….
+                # A sale's row is a box: its line, then Choose lots….
                 label = child if isinstance(child, Gtk.Label) else child.get_first_child()
                 lines.append(label.get_label())
                 child = child.get_next_sibling()
@@ -10852,6 +10852,81 @@ class TestDialogsFitTheScreen:
             dialog.destroy()
 
 
+class TestDesktopConsistency:
+    """The desktop consistency rules, on every dialog as it is built: the
+    standard frame with Help first, one action row last in the one order, one
+    main button at most, Cancel or Close to dismiss, and framed text fields.
+
+    ``test_architecture.TestDesktopConsistency`` checks the same in the source.
+    """
+
+    stressed = TestDialogsFitTheScreen.stressed
+
+    @pytest.mark.parametrize(("module", "name", "extra"), TestDialogsFitTheScreen.DIALOGS)
+    def test_the_dialog_follows_the_rules(self, window, stressed, module, name, extra):
+        import importlib
+
+        from breadsched.gen.lib.scenario import Scenario
+        from breadsched.gui.widgets.bounded import MARGIN, SPACING
+
+        db, long_account, checking, many = stressed
+        args = {
+            None: (),
+            "account": (long_account,),
+            "checking": (checking,),
+            "scenario": (Scenario(name="Stress"),),
+            "manager": (window,),
+        }.get(extra, ())
+        cls = getattr(importlib.import_module(f"breadsched.gui.dialogs.{module}"), name)
+        dialog = (
+            cls(window, db, transaction=many) if extra == "transaction" else cls(window, db, *args)
+        )
+        try:
+            outer = dialog.get_child()
+            sides = ("top", "bottom", "start", "end")
+            assert [getattr(outer, f"get_margin_{side}")() for side in sides] == [MARGIN] * 4
+            assert outer.get_spacing() == SPACING
+            assert outer.get_first_child().has_css_class("help-row"), "Help comes first"
+            row = outer.get_last_child()
+            assert row.has_css_class("action-row"), "the action row comes last"
+            assert row.get_halign() is Gtk.Align.END
+            buttons = [w for w in _children(row) if isinstance(w, Gtk.Button)]
+            labels = [button.get_label() for button in buttons]
+            dismiss = [label for label in labels if label in ("Cancel", "Close")]
+            assert len(dismiss) == 1, labels
+            main = [w for w in _descendants(dialog) if isinstance(w, Gtk.Button)]
+            suggested = [w for w in main if w.has_css_class("suggested-action")]
+            assert len(suggested) <= 1, [w.get_label() for w in suggested]
+            if suggested:
+                # Last in its action row: the window's, or an editor's own beside a list.
+                holder = suggested[0].get_parent()
+                assert holder.has_css_class("action-row"), "the main button is in an action row"
+                assert holder.get_last_child() is suggested[0], "the main button is last"
+            # Further actions, then the destructive one, then the dismissing one.
+            at = labels.index(dismiss[0])
+            for index, button in enumerate(buttons):
+                if button.has_css_class("destructive-action") and index != len(buttons) - 1:
+                    assert index == at - 1, labels
+            for view in (w for w in _descendants(outer) if isinstance(w, Gtk.TextView)):
+                scroller = view.get_parent()
+                assert isinstance(scroller, Gtk.ScrolledWindow) and scroller.get_has_frame()
+        finally:
+            dialog.destroy()
+
+    def test_a_scrolled_dialog_keeps_help_and_its_buttons_in_view(self, window, stressed):
+        from breadsched.gui.dialogs.loan_dialog import LoanDialog
+
+        dialog = LoanDialog(window, stressed[0])
+        try:
+            outer = dialog.get_child()
+            children = list(_children(outer))
+            assert children[0].has_css_class("help-row")
+            assert isinstance(children[1], Gtk.ScrolledWindow)
+            assert children[-1].has_css_class("action-row")
+        finally:
+            dialog.destroy()
+
+
 def summary_owed(db):
     from breadsched.gen.services.receivables import list_receivables
 
@@ -13525,7 +13600,8 @@ class TestDialogConventions:
                 and any(getattr(base, "id", "") == "BoundedWindow" for base in node.bases)
             ]
             if windows:
-                assert text.count("help_row(") >= len(windows), (path.name, windows)
+                # Help comes with the frame every dialog starts from.
+                assert text.count(".frame(") >= len(windows), (path.name, windows)
         for path in sorted(root.rglob("*.py")):
             text = path.read_text("utf-8")
             assert 'Gtk.Button(label="Delete' not in text or path.name in {

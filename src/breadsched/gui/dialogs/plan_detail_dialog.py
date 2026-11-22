@@ -13,7 +13,6 @@ from ...presentation import plan_detail_cost_text
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
-from ..widgets.help import help_row
 
 __all__ = ["PlanDetailDialog"]
 
@@ -45,11 +44,7 @@ class PlanDetailDialog(BoundedWindow):
         self.set_default_size(900, 620)
         self.db = db
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(16)
-        self.set_child(outer)
-        outer.prepend(help_row("plan"))
+        outer = self.frame("plan")
 
         outer.append(
             Gtk.Label(
@@ -89,10 +84,7 @@ class PlanDetailDialog(BoundedWindow):
         notebook.append_page(self._planned_page(detail), Gtk.Label(label="Planned occurrences"))
         notebook.append_page(self._actual_page(detail), Gtk.Label(label="Actual transactions"))
 
-        close = Gtk.Button(label="Close")
-        close.set_halign(Gtk.Align.END)
-        close.connect("clicked", lambda *_: self.close())
-        outer.append(close)
+        self.actions(outer)
 
     @staticmethod
     def _table(

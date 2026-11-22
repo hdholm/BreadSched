@@ -23,7 +23,6 @@ from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
-from ..widgets.help import help_row
 
 __all__ = ["RulesDialog"]
 
@@ -39,11 +38,7 @@ class RulesDialog(BoundedWindow):
         self.book = book_server(db)
         self.proposal_checks: dict[str, Gtk.CheckButton] = {}
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("rules"))
+        box = self.frame("rules")
         box.append(
             Gtk.Label(
                 label=(
@@ -72,8 +67,9 @@ class RulesDialog(BoundedWindow):
             [choice.name for choice in self.categories] or ["(no categories)"]
         )
         add_button = Gtk.Button(label="Add rule")
-        add_button.add_css_class("suggested-action")
         add_button.connect("clicked", lambda _b: self.add_rule())
+        # Beside the fields it adds from, and what Enter in them does.
+        self.set_primary(add_button)
         for widget in (
             Gtk.Label(label="Matching description"),
             self.description_entry,
@@ -85,7 +81,7 @@ class RulesDialog(BoundedWindow):
         box.append(form)
 
         box.append(Gtk.Label(label="Proposals", xalign=0, css_classes=["heading"]))
-        proposal_scroller = Gtk.ScrolledWindow(min_content_height=160, vexpand=True)
+        proposal_scroller = Gtk.ScrolledWindow(min_content_height=140, vexpand=True)
         self.proposal_rows = Gtk.Grid(column_spacing=14, row_spacing=4)
         proposal_scroller.set_child(self.proposal_rows)
         box.append(proposal_scroller)
@@ -95,6 +91,7 @@ class RulesDialog(BoundedWindow):
 
         self.status = Gtk.Label(xalign=0, wrap=True, selectable=True)
         box.append(self.status)
+        self.actions(box)
         self.refresh()
 
     # ------------------------------------------------------------------ views
