@@ -561,6 +561,18 @@ parallel transaction models:
   by moving the keyboard on to the window's next control. An account outside the
   tree, a placeholder, or a hidden account (while hidden accounts are not shown) is
   offered only where the transaction already uses it.
+- **One schedule editor, from the transaction editor's parts.** The transaction
+  editor and `dialogs/schedule_dialog.ScheduleDialog` each hold the two parts in
+  `widgets/editor_parts`: `SplitsPanel` (the split grid with its **Planning detail**
+  toggle) and `DocumentsPage` (tags and linked documents, through the book
+  server's transaction or schedule document operations). A schedule's lines start
+  from its splits (`SplitSheet.schedule_lines`), are checked without a message
+  (`SplitSheet.check`), and are saved as signed ledger amounts
+  (`FixedScheduleInput.ledger_splits`); a formula schedule shows its formula editor
+  instead of the grid. `dialogs/scenario_schedule_dialog.ScenarioScheduleDialog` is
+  that editor with `POSTS` false, which leaves out what only a posting carries or
+  needs (kind, number, notes, tags, documents, automatic posting, days in advance),
+  and saves through the scenario schedule services; it has no form of its own.
 - **Double Line.** The window's stateful `win.double-line` action (**View → Double
   Line**, also in Preferences; remembered in view settings as
   `register.double_line`) adds a `NOTES` row under every transaction

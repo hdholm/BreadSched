@@ -337,8 +337,48 @@ class SplitSheet(SplitEntry):
         line = self.lines[row.line]
         return line if self._holds_security(line) else None
 
+    def check(self, currency: str) -> str | None:
+        """Why the lines cannot be saved, or None, leaving the cursor and the message
+        where they are (for a window that says so as the user types)."""
+        held = (self.cursor, self.column, self.message, self.error)
+        self._quiet = True
+        try:
+            found = self._line_splits(currency)
+            problem = None if found else self.message
+        finally:
+            self._quiet = False
+            self.cursor, self.column, self.message, self.error = held
+        return problem
+
+    def schedule_lines(self, schedule) -> None:
+        """Start the lines from a schedule's splits (signed ledger amounts, with each
+        split's memo, planning purpose, and investment activity)."""
+
+        def value(split) -> Money:
+            return split.amount if split.amount is not None else Money(0)
+
+        self.draft.lines = [
+            Line(
+                account=self.full_names.get(split.account, split.account),
+                memo=split.memo,
+                increase=value(split).format() if value(split) > 0 else "",
+                decrease=(-value(split)).format() if value(split) < 0 else "",
+                purpose=split.planning_flow.label if split.planning_flow is not None else "",
+                activity=(
+                    split.investment_activity.label if split.investment_activity is not None else ""
+                ),
+            )
+            for split in schedule.splits
+        ]
+        self.draft.lines.append(Line())
+        self.cursor = 0
+        self._rebuild()
+        self.snapshot = self.state()
+
     def _fail(self, text: str, column: str | None = None, line: int | None = None) -> bool:
         self.message, self.error = text, True
+        if getattr(self, "_quiet", False):
+            return False
         if line is not None and 0 <= line < len(self.rows):
             self.cursor = line
         if column is not None and column in self.editable_columns(self.cursor):

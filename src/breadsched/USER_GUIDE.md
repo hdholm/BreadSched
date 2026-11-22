@@ -790,11 +790,12 @@ an ordinary choice in the editors, so those schedules are edited like any other.
 amount may be a calculation, such as `76.84*1.06`, as in the register; the result is
 rounded to the cent.
 
-The schedule editors show first what most schedules need: name, kind, accounts,
-amount, and when it repeats. Splits, future changes (future, seasonal, skipped, and
-one-time amounts), and defaults set once (projection growth, planning purposes,
-weekend rule, posting, enter and remind days) are a tab or a fold away, and a
-section that holds something says so. Their **Upcoming** list shows the next
+The schedule editors show first what most schedules need: name, kind, its splits,
+and when it repeats. On the desktop the splits are typed on the register's own split
+grid, as a transaction's are, and a scenario estimate is edited in that same editor.
+Future changes (future, seasonal, skipped, and one-time amounts) and defaults set
+once (projection growth, weekend rule, posting, enter and remind days) are a tab or
+a fold away, and a section that holds something says so. Their **Upcoming** list shows the next
 occurrences not yet entered, from the day after the last one posted (or from today,
 for an estimate or a schedule never posted), each at the amount it will have with
 every future change applied, including each split's future amounts and seasonal

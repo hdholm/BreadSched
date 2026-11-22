@@ -131,6 +131,8 @@ _SERVICE_MESSAGES = {
     "reconciliation.unbalanced": "The reconciliation is out of balance",
     "reconciliation.entry.amount": "Enter the amount on the statement, other than zero",
     "reconciliation.entry.account": "One split must be in the account being reconciled",
+    "schedule.splits.unbalanced": "The splits must balance: choose an account for the rest",
+    "schedule.amount.zero": "Give each split an amount other than zero",
     "reconciliation.status.not_completed": "Only a completed reconciliation can be reopened",
     "reconciliation.status.not_open": "The reconciliation is no longer open",
     "reconciliation.later_completed.exists": "Reopen later statements first",

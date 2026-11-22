@@ -205,3 +205,60 @@ def test_the_command_line_sets_them_and_links_a_schedules_documents(tmp_path, ca
     ]
     # A schedule's or a transaction's, never both at once.
     assert main(["attachments", str(path), "--schedule", "Rent", "--transaction", "x"]) != 0
+
+
+class TestSplitsTypedAsLedgerAmounts:
+    """The desktop types a schedule's splits on the split grid: signed amounts."""
+
+    def _input(self, book, *splits) -> FixedScheduleInput:
+        from breadsched.gen.lib.amount import Amount
+        from breadsched.gen.services import TransactionSplitInput
+
+        return FixedScheduleInput(
+            name="Pay split three ways",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 10, 25)),
+            ledger_splits=tuple(
+                TransactionSplitInput(account, Amount(Money(value), "USD"), memo=memo)
+                for account, value, memo in splits
+            ),
+        )
+
+    def test_they_are_the_schedules_splits_in_order(self, db, book):
+        saved = save_fixed_schedule(
+            db,
+            SaveFixedSchedule(
+                self._input(
+                    book,
+                    (book.checking, "700", "To checking"),
+                    (book.savings, "300", ""),
+                    (book.salary, "-1000", ""),
+                )
+            ),
+        )
+        assert saved.ok, saved.errors
+        stored = db.get_scheduled(saved.value.handle)
+        assert [(s.account, s.amount, s.memo) for s in stored.splits] == [
+            (book.checking, Money(700), "To checking"),
+            (book.savings, Money(300), ""),
+            (book.salary, Money(-1000), ""),
+        ]
+        assert stored.instantiate(date(2026, 10, 25)).is_balanced()
+
+    def test_unbalanced_or_zero_splits_are_refused(self, db, book):
+        for splits, code in (
+            (((book.checking, "700", ""), (book.salary, "-600", "")), "schedule.splits.unbalanced"),
+            (((book.checking, "0", ""), (book.salary, "0", "")), "schedule.amount.zero"),
+            (((book.checking, "5", ""),), "schedule.splits.too_few"),
+        ):
+            refused = save_fixed_schedule(db, SaveFixedSchedule(self._input(book, *splits)))
+            assert not refused.ok and code in {error.code for error in refused.errors}
+        assert list(db.iter_scheduled()) == []
+
+    def test_they_travel_over_http(self, book):
+        from breadsched.api.schedule_codec import fixed_request_from_json, fixed_request_json
+
+        request = SaveFixedSchedule(
+            self._input(book, (book.checking, "-40", "x"), (book.rent, "40", ""))
+        )
+        again = fixed_request_from_json(fixed_request_json(request))
+        assert again.definition.ledger_splits == request.definition.ledger_splits

@@ -528,7 +528,9 @@ GnuCash: Tab moves from the last amount to the notes line, and Enter saves what 
 typed there with the transaction. Typing a note (or a split's memo) completes it from
 the notes written before for transactions with the same description: one beginning
 with what you typed first, else one containing it, with the rest selected so the
-next letter replaces it. The choice is remembered. With it off, saving keeps the notes a transaction already has.
+next letter replaces it. Once you delete anything in a description, note, or memo
+cell, it stops completing until you leave the cell (or empty it), so text you removed
+does not come back as you type on; account cells keep completing. The choice is remembered. With it off, saving keeps the notes a transaction already has.
 Whether you are entering a new transaction or changing one, **Enter** (or **Tab**
 past the last cell) saves it and moves to the next transaction.
 
@@ -693,14 +695,22 @@ Scheduled…** (or **Make scheduled…** in its transaction editor): the new sch
 starts with its splits, monthly from a month later, ready to change before saving. **Frequency** is **Every**
 a number and a unit: days, weeks, months, months on the same weekday, months on the
 last weekday, or years; **twice a month** and **once** take no number. The first due
-date sets the day. Amounts can be calculations such as `76.84*1.06`. The editor opens
-on **Basics** (name, kind, accounts, amount, and when it repeats); **Splits** holds the
-memos and additional splits, **Future changes** the future, seasonal, skipped, and
-one-time amounts (its tab counts them, so a schedule with some says so), and
-**Advanced** the projection growth, planning purposes, weekend rule, posting, and
-enter and remind days. **Investment activity** appears there only when the schedule
-uses an investment or retirement account, or already has one. A scenario estimate's
-editor is laid out the same way. Choose the **New Loan**
+date sets the day. Amounts can be calculations such as `76.84*1.06`.
+
+The schedule editor is built from the transaction editor's own parts. Its splits are
+typed on the same split grid beneath the tabs, as in a register: an account, a memo,
+and an amount in either column for each line, completed and checked the same way, with
+**Planning detail** adding each split's planning purpose and, for an investment or
+retirement account, its investment activity. **Save** waits until the splits balance.
+The editor opens on **Basics** (name, kind, number, notes, and when it repeats);
+**Tags & documents** holds what every posting carries, as a transaction's own tab
+does; **Future changes** the future, per-leg, seasonal, skipped, and one-time amounts
+(its tab counts them, so a schedule with some says so); and **Advanced** the
+projection growth, weekend rule, automatic posting, and enter and remind days. A
+schedule whose amounts are formulas shows its formulas and variables instead of the
+grid. A scenario estimate, or an alternate of a baseline schedule, is edited in the
+same editor without what only a posting has (kind, number, notes, tags, documents,
+automatic posting, and days in advance). Choose the **New Loan**
 toolbar icon in Scheduled to create a loan (see
 [Create a loan](../USER_GUIDE.md#create-a-loan)).
 

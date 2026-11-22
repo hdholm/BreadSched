@@ -34,21 +34,20 @@ from pathlib import Path
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.engine import attachments as attachment_engine
 from ...gen.engine import escrow, fsa_claims
 from ...gen.lib import Money, Transaction
 from ...gen.services import ClaimAttachment, SaveTransaction, TransactionInput
 from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry
 from ...gen.services.transactions import reconciled_changes
 from ...presentation import claim_role_label
-from ..gi_setup import Gio, GLib, Gtk
+from ..gi_setup import GLib, Gtk
 from ..remote_book import OpenBook
 from ..split_sheet import SplitSheet
 from .bounded import keeps_enter
 from .choice import bounded_dropdown
 from .date_entry import attach_date_keys, parse_date_text
+from .editor_parts import DocumentsPage, SplitsPanel
 from .form_pages import FormPages
-from .register_grid import RegisterGrid
 
 __all__ = ["ENTRY", "MORE", "TransactionEditor"]
 
@@ -151,38 +150,21 @@ class TransactionEditor(Gtk.Box):
                 )
                 more.add("Escrow treatment", self.escrow_treatment)
 
-        self.tags_entry = Gtk.Entry(placeholder_text="Comma-separated, e.g. Tax, Home repair")
-        if transaction is not None:
-            self.tags_entry.set_text(", ".join(transaction.tags))
-        self.tags_entry.set_tooltip_text(
-            "BreadSched's own labels; kept when a GnuCash book is imported again"
+        self.docs = DocumentsPage(
+            more,
+            self.book,
+            "transaction",
+            transaction,
+            folder=self.context.folder,
+            on_count=self._count_more,
+            on_error=self._fail,
+            on_changed=self._document_changed,
         )
-        self.tags_entry.connect("changed", lambda *_: self._count_more())
-        more.add("Tags", self.tags_entry)
-
-        self.documents = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        more.add("Documents", self.documents)
-        #: (status, row) for each linked document shown, in order.
-        self.document_rows: list[tuple[attachment_engine.AttachmentStatus, Gtk.Widget]] = []
-        self.link_entry: Gtk.Entry | None = None
-        self._show_documents()
+        self.tags_entry = self.docs.tags_entry
+        self.documents = self.docs.documents
         self._count_more()
 
         # The splits, on the register's grid, beneath every page.
-        caption = Gtk.Box(spacing=8)
-        splits_label = Gtk.Label(label="Splits", xalign=0)
-        splits_label.add_css_class("total-row")
-        splits_label.set_hexpand(True)
-        caption.append(splits_label)
-        self.detail_toggle = Gtk.ToggleButton(label="Planning detail")
-        self.detail_toggle.set_tooltip_text(
-            "Show each split's planning purpose, and investment activity for "
-            "investment and retirement accounts"
-        )
-        self.detail_toggle.connect("toggled", self._on_detail_toggled)
-        caption.append(self.detail_toggle)
-        self.append(caption)
-
         self.sheet = SplitSheet(
             db,
             self.context.accounts,
@@ -194,14 +176,10 @@ class TransactionEditor(Gtk.Box):
         )
         self.sheet.on_enter = self._on_grid_enter
         self.sheet.on_escape = self._on_grid_escape
-        if any(line.purpose or line.activity for line in self.sheet.lines):
-            # Detail already set is never hidden.
-            self.detail_toggle.set_active(True)
-        self.grid = RegisterGrid(on_change=self.revalidate)
-        self.grid.set_banding("lines")
-        self.grid.set_size_request(-1, 26 * (_GRID_LINES + 1))
-        self.grid.set_sheet(self.sheet)
-        self.append(self.grid)
+        self.splits_panel = SplitsPanel(self.sheet, self.revalidate)
+        self.detail_toggle = self.splits_panel.detail_toggle
+        self.grid = self.splits_panel.grid
+        self.append(self.splits_panel)
 
         self.proposal_note = Gtk.Label(xalign=0, wrap=True, visible=False)
         self.proposal_note.add_css_class("dim")
@@ -237,10 +215,6 @@ class TransactionEditor(Gtk.Box):
 
     # ----------------------------------------------------------------- splits
 
-    def _on_detail_toggled(self, button: Gtk.ToggleButton) -> None:
-        self.sheet.set_detail(button.get_active())
-        self.grid.sync(focus=False)
-
     def _description_changed(self, *_args) -> None:
         # Memos complete from those written before for this description (#407).
         self.sheet.draft.description = self.description_entry.get_text()
@@ -269,26 +243,8 @@ class TransactionEditor(Gtk.Box):
         return self.sheet.line_values()
 
     def type_line(self, index: int, **cells: str) -> None:
-        """Type into split line ``index`` as the keyboard would: each named cell
-        (``memo``, ``account``, ``increase``, ``decrease``, ``shares``, ``price``,
-        ``purpose``, ``activity``) in turn, each read as it is left."""
-        columns = {
-            "memo": "description",
-            "account": "transfer",
-            "increase": "increase",
-            "decrease": "decrease",
-            "shares": "shares",
-            "price": "price",
-            "purpose": "purpose",
-            "activity": "activity",
-        }
-        sheet = self.sheet
-        sheet.move_to(index)
-        for name, text in cells.items():
-            sheet.column = columns[name]
-            sheet.set_text(text)
-            sheet.settle()
-        self.grid.sync(focus=False)
+        """Type into split line ``index`` as the keyboard would (``SplitsPanel``)."""
+        self.splits_panel.type_line(index, **cells)
         self.revalidate()
 
     # ----------------------------------------------------------------- filling
@@ -447,7 +403,7 @@ class TransactionEditor(Gtk.Box):
                 notes=self.notes_view.get_buffer().get_text(notes_start, notes_end, True).strip(),
                 currency=currency,
                 splits=splits,
-                tags=tuple(self.tags_entry.get_text().split(",")),
+                tags=self.docs.tags(),
             ),
             existing_handle=self.transaction.handle if self.transaction is not None else None,
             claim_attachment=attachment,
@@ -544,152 +500,36 @@ class TransactionEditor(Gtk.Box):
 
     def _count_more(self) -> None:
         """Count what the second page holds on its tab."""
-        tags = [part for part in self.tags_entry.get_text().split(",") if part.strip()]
-        self.pages.set_count(MORE, len(tags) + len(self.document_rows))
+        if hasattr(self, "docs"):
+            self.pages.set_count(MORE, self.docs.count())
 
-    def _show_documents(self) -> None:
-        while (child := self.documents.get_first_child()) is not None:
-            self.documents.remove(child)
-        self.document_rows = []
-        self.link_entry = None
-        if self.transaction is None:
-            note = Gtk.Label(label="Save the transaction to link documents.", xalign=0)
-            note.add_css_class("dim")
-            self.documents.append(note)
-            return
-        report = self.book.attachment_report(transaction=self.transaction.handle)
-        for item in report.attachments:
-            row = Gtk.Box(spacing=6)
-            label = Gtk.Label(
-                label=item.location + (" — missing" if item.missing else ""),
-                xalign=0,
-                selectable=True,
-                wrap=True,
-            )
-            label.set_hexpand(True)
-            if item.missing:
-                label.add_css_class("negative")
-                label.set_tooltip_text(
-                    f"Not found at {item.path}. Restore the file, or relink it."
-                    if item.path is not None
-                    else "Not found"
-                )
-            elif item.owner == "source":
-                label.set_tooltip_text("Linked in GnuCash; refreshed on re-import")
-            if item.owner == "source":
-                label.add_css_class("dim")
-            row.append(label)
-            open_button = Gtk.Button(label="Open")
-            open_button.set_sensitive(not item.missing)
-            open_button.connect("clicked", lambda _b, status=item: self.open_document(status))
-            row.append(open_button)
-            if item.owner == "breadsched":
-                again = Gtk.Button(label="Relink…")
-                again.connect("clicked", lambda _b, status=item: self._choose_relink(status))
-                row.append(again)
-                remove = Gtk.Button(icon_name="list-remove-symbolic")
-                remove.set_tooltip_text("Unlink; the file itself is kept")
-                remove.connect(
-                    "clicked", lambda _b, status=item: self.remove_document(status.location)
-                )
-                row.append(remove)
-            self.documents.append(row)
-            self.document_rows.append((item, row))
-        folder = report.folder
-        controls = Gtk.Box(spacing=6)
-        attach = Gtk.Button(label="Attach file…")
-        attach.set_tooltip_text(
-            f"Copy a file into {folder} and link it" if folder else "Link a file where it is"
-        )
-        attach.connect("clicked", self._choose_attachment)
-        controls.append(attach)
-        address = Gtk.Entry(placeholder_text="https://…")
-        address.set_hexpand(True)
-        keeps_enter(address)
-        address.connect("activate", lambda entry: self.link_location(entry.get_text()))
-        controls.append(address)
-        self.link_entry = address
-        link = Gtk.Button(label="Link address")
-        link.connect("clicked", lambda *_: self.link_location(address.get_text()))
-        controls.append(link)
-        self.documents.append(controls)
-        self._count_more()
-
-    def _document_changed(self, change) -> bool:
-        try:
-            changed = change(self.book)
-        except ApiError as error:
-            return self._fail(str(error))
+    def _document_changed(self, changed: Transaction) -> None:
         # Later saves build on the stored transaction, including its documents.
         self.transaction = changed
         self.sheet.draft.source = changed
-        self._show_documents()
-        return True
+
+    @property
+    def document_rows(self):
+        return self.docs.document_rows
+
+    @property
+    def link_entry(self) -> Gtk.Entry | None:
+        return self.docs.link_entry
+
+    def _show_documents(self) -> None:
+        self.docs.show()
 
     def attach_path(self, path: Path) -> bool:
-        """Copy a file into the attachment folder (or link it in place) and link it."""
-        if self.transaction is None:
-            return False
-        handle = self.transaction.handle
-        copy = self.book.attachment_report(transaction=handle).folder is not None
-        return self._document_changed(lambda book: book.attach_file(handle, str(path), copy))
+        return self.docs.attach_path(path)
 
     def link_location(self, location: str) -> bool:
-        if self.transaction is None:
-            return False
-        handle = self.transaction.handle
-        return self._document_changed(lambda book: book.link_attachment(handle, location))
+        return self.docs.link_location(location)
 
     def remove_document(self, location: str) -> bool:
-        if self.transaction is None:
-            return False
-        handle = self.transaction.handle
-        return self._document_changed(lambda book: book.unlink_attachment(handle, location))
+        return self.docs.remove_document(location)
 
     def relink_document(self, location: str, path: Path) -> bool:
-        if self.transaction is None:
-            return False
-        new = attachment_engine.location_in(self.context.folder, path)
-        handle = self.transaction.handle
-        return self._document_changed(lambda book: book.relink_attachment(handle, location, new))
+        return self.docs.relink_document(location, path)
 
-    def open_document(self, item: attachment_engine.AttachmentStatus) -> str | None:
-        """Open a document with the desktop's default application."""
-        if item.kind == "web":
-            uri = item.location
-        elif item.path is not None and item.path.is_file():
-            uri = item.path.as_uri()
-        else:
-            self._fail(f"{item.location} cannot be found")
-            return None
-        try:
-            Gio.AppInfo.launch_default_for_uri(uri, None)
-        except GLib.Error as exc:
-            self._fail(f"Could not open {item.location}: {exc.message}")
-        return uri
-
-    def _choose_attachment(self, _button) -> None:
-        dialog = Gtk.FileDialog(title="Attach a document")
-
-        def chosen(dialog, result) -> None:
-            try:
-                file = dialog.open_finish(result)
-            except GLib.Error:
-                return
-            if file.get_path():
-                self.attach_path(Path(file.get_path()))
-
-        dialog.open(self.get_root(), None, chosen)
-
-    def _choose_relink(self, item: attachment_engine.AttachmentStatus) -> None:
-        dialog = Gtk.FileDialog(title=f"Where is {item.location} now?")
-
-        def chosen(dialog, result) -> None:
-            try:
-                file = dialog.open_finish(result)
-            except GLib.Error:
-                return
-            if file.get_path():
-                self.relink_document(item.location, Path(file.get_path()))
-
-        dialog.open(self.get_root(), None, chosen)
+    def open_document(self, item) -> str | None:
+        return self.docs.open_document(item)
