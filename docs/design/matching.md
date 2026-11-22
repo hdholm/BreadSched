@@ -109,6 +109,11 @@ Goals are not matched to actuals. A goal's earmark is released by closing it.
 - **Close occurrence** closes an open occurrence early (a commitment that will not
   be paid in full, or an estimate you are done with), and **Reopen** undoes that.
   An estimate whose period has ended stays closed.
+- **The due review follows the ledger.** A commitment occurrence that is closed
+  (early, linked whole, or paid in full by its allocations) is not offered for
+  posting. One partly paid is offered for what remains, and posting it enters every
+  leg scaled to that remainder (`engine.schedule.due_occurrences`,
+  `entered_transaction(remaining=)`), so a bill paid by hand is never paid twice.
 
 ## Candidates ranked by category first
 

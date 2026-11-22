@@ -895,6 +895,22 @@ or imported payment schedule takes
 precedence. The generated account-linked row is informational and is not posted
 automatically.
 
+When you finish reconciling a card statement that still owes something, BreadSched
+offers to pay it: the payment opens ready to change (its amount, date, and the
+account it is paid from), dated today, for what the statement still owes. Saving
+it settles the statement's payment due when it pays the whole statement. A payment
+for less asks once for the statement's minimum payment, which the statement keeps:
+
+- At or above the minimum, the payment due is settled, and what is left of the
+  statement carries to the next one.
+- Below the minimum, the rest of the statement stays due on the due date, in
+  Upcoming, the due review, and the Projection. A later payment counts with the first.
+
+When a schedule pays the card, the payment counts toward its next occurrence: the due
+review stops offering one that is settled, and offers one only partly paid for what
+remains ([desktop](guide/desktop.md#reconcile-a-statement),
+[browser](guide/web.md#reconcile-a-statement)).
+
 ### Paychecks and pay changes
 
 A paycheck is an ordinary schedule whose gross pay goes into an income account and

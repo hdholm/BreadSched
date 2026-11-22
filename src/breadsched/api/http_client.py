@@ -96,6 +96,7 @@ from ..gen.services.attachments import AttachmentReport
 from ..gen.services.autocomplete import EarlierNotes, EntryProposal, SuggestEntry
 from ..gen.services.book_info import BookCounts, BookSummary
 from ..gen.services.budget_jars import JarsView
+from ..gen.services.card_payments import CardPaymentOffer, PaidCardStatement, PayCardStatement
 from ..gen.services.categorization import (
     AddRule,
     AppliedCategories,
@@ -220,11 +221,13 @@ from .views import (
     advance_days_from_json,
     applied_categories_from_json,
     balance_summary_from_json,
+    card_payment_offer_from_json,
     categorization_rules_from_json,
     change_from_json,
     chart_from_json,
     due_review_from_json,
     next_occurrence_from_json,
+    paid_card_statement_from_json,
     posted_due_from_json,
     reconciliation_summary_from_json,
     reconciliation_view_from_json,
@@ -886,6 +889,17 @@ class HttpBookClient:
         if request.definition is not None:
             body["definition"] = transaction_input_json(request.definition)
         return saved_transaction_from_json(self._call("POST", path, body=body))
+
+    def card_payment_offer(self, statement: str) -> CardPaymentOffer:
+        path = f"/reconciliations/{quote(statement, safe='')}/card-payment"
+        return card_payment_offer_from_json(self._call("GET", path)["offer"])
+
+    def pay_card_statement(self, request: PayCardStatement) -> PaidCardStatement:
+        path = f"/reconciliations/{quote(request.statement, safe='')}/card-payment"
+        body: dict[str, Any] = {"definition": transaction_input_json(request.definition)}
+        if request.minimum_payment is not None:
+            body["minimum_payment"] = request.minimum_payment
+        return paid_card_statement_from_json(self._call("POST", path, body=body))
 
     # ----------------------------------------------------- historical estimates
 

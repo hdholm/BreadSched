@@ -3544,3 +3544,74 @@ def test_matching_by_split_reads_and_writes_alike(target, book):
     assert not api.reopen_occurrence(key).closed_early
     marked = api.mark_split_not_planned(SplitNotPlanned(receipt.handle, leg))
     assert marked.legs[0].not_planned and marked.legs[0].allocations == ()
+
+
+def test_a_card_statement_is_paid_alike(target, book):
+    """A finished card statement offers its payment and is paid either way; a short
+    payment needs the minimum, and a refusal saves nothing."""
+    from breadsched.gen.services import PayCardStatement
+    from breadsched.gen.services.reconciliations import (
+        StartReconciliation,
+        UpdateReconciliation,
+    )
+
+    api, db = target.api, target.db
+    with db.transaction("Card terms") as txn:
+        card = db.get_account(book.card)
+        card.card.payment_day = 15
+        card.card.payment_account = book.checking
+        db.commit_account(card, txn)
+    _post(db, "ab30" + "0" * 28, date(2026, 9, 5), "Shop", book.groceries, book.card, "120")
+    started = api.start_reconciliation(
+        StartReconciliation(book.card, date(2026, 9, 20), Money("120"))
+    )
+    api.update_reconciliation(
+        UpdateReconciliation(
+            started.reconciliation.handle,
+            selected_splits=tuple(c.split for c in started.candidates),
+        )
+    )
+    done = api.complete_reconciliation(started.reconciliation.handle)
+    offer = api.card_payment_offer(done.handle)
+    assert (offer.amount, offer.due_date, offer.pay_from) == (
+        Money("120"),
+        date(2026, 10, 15),
+        book.checking,
+    )
+    usd = api.transaction_currency()
+
+    def payment(amount: str) -> TransactionInput:
+        return TransactionInput(
+            post_date=date(2026, 9, 25),
+            description=offer.description,
+            currency=usd,
+            splits=(
+                TransactionSplitInput(book.card, Amount(Money(amount), usd)),
+                TransactionSplitInput(book.checking, Amount(-Money(amount), usd)),
+            ),
+        )
+
+    before = _snapshot(db)
+    with pytest.raises(ApiError) as refused:
+        api.pay_card_statement(PayCardStatement(done.handle, payment("30")))
+    assert (refused.value.status, refused.value.code) == (400, "card.payment.minimum_needed")
+    with pytest.raises(ApiError) as missing:
+        api.card_payment_offer("missing")
+    assert (missing.value.status, missing.value.code) == (
+        404,
+        "card.payment.statement.not_found",
+    )
+    assert _snapshot(db) == before
+
+    paid = api.pay_card_statement(
+        PayCardStatement(done.handle, payment("30"), minimum_payment=Money("25"))
+    )
+    assert (paid.settled, paid.paid, paid.remaining, paid.minimum_payment) == (
+        True,
+        Money("30"),
+        Money("90"),
+        Money("25"),
+    )
+    assert db.get_transaction(paid.transaction.handle).value_for(book.card) == Money("30")
+    assert db.get_reconciliation(done.handle).minimum_payment == Money("25")
+    assert api.card_payment_offer(done.handle).amount == Money("90")

@@ -220,7 +220,12 @@ def _apply(
                     schedule_engine.record_leg_price(
                         db, txn, typed.commodity, typed.currency, when, typed.price
                     )
-                real = schedule_engine.entered_transaction(db, definition, when)
+                real = schedule_engine.entered_transaction(
+                    db,
+                    definition,
+                    when,
+                    remaining=occurrence.amount if occurrence.applied else None,
+                )
                 for split in real.splits:
                     shares = legs[split.account].shares if split.account in legs else None
                     if shares is not None:

@@ -26,9 +26,12 @@ from datetime import date
 from ...api import ApiError
 from ...api.local import book_server
 from ...gen.engine import reconciliation
-from ...gen.lib import Account, Money, ReconciliationStatus
+from ...gen.lib import Account, AccountType, Money, ReconciliationStatus
 from ...gen.services import (
     AddStatementEntry,
+    CardPaymentOffer,
+    PaidCardStatement,
+    PayCardStatement,
     SaveTransaction,
     StartReconciliation,
     UpdateReconciliation,
@@ -945,7 +948,147 @@ class ReconciliationDialog(BoundedWindow):
         except ApiError as error:
             self.status.set_text(str(error))
             return
-        self.close()
+        offer = None
+        if self.account.atype is AccountType.CREDIT:
+            try:
+                offer = self.book.card_payment_offer(handle)
+            except ApiError:
+                offer = None
+        if offer is None or offer.amount <= 0:
+            self.close()
+            return
+        self._show_payment_offer(offer)
+
+    # ------------------------------------------------------------ the payment
+
+    def _show_payment_offer(self, offer: CardPaymentOffer) -> None:
+        """A card statement just reconciled still owes something: offer its payment."""
+        self.offer = offer
+        #: The statement's minimum, once asked for, to save the payment with.
+        self.minimum_payment: Money | None = offer.minimum_payment
+        self._clear(self.body)
+        self.set_primary(None)
+        heading = Gtk.Label(label="Pay the statement?", xalign=0)
+        heading.add_css_class("heading")
+        self.body.append(heading)
+        due = f"{offer.amount.format()} is due on {offer.due_date.isoformat()}"
+        if offer.schedule_name is not None:
+            due += f" ({offer.schedule_name})"
+        source = f", paid from {offer.pay_from_name}" if offer.pay_from_name else ""
+        self.payment_note = Gtk.Label(
+            label=(
+                f"The statement through {offer.statement_date.isoformat()} is reconciled. "
+                f"{due}{source}. Pay statement… opens the payment to change before saving; "
+                "paying less than the statement asks for its minimum payment."
+            ),
+            xalign=0,
+            wrap=True,
+        )
+        self.body.append(self.payment_note)
+        self.status = Gtk.Label(xalign=0, wrap=True)
+        self.body.append(self.status)
+        close = Gtk.Button(label="Close")
+        close.set_tooltip_text("The statement is reconciled; pay it later from a register")
+        close.connect("clicked", lambda *_: self.close())
+        self.pay_button = Gtk.Button(label="Pay statement…")
+        self.pay_button.connect("clicked", lambda *_: self.pay_statement())
+        fill_action_row(self.footer, dismiss=close, primary=self.pay_button)
+
+    def pay_statement(self) -> Gtk.Window:
+        """Open the statement's payment in the transaction editor, to change and save."""
+        from .transaction_dialog import TransactionDialog
+
+        offer = self.offer
+        editor = TransactionDialog(
+            self,
+            self.db,
+            default_account=offer.account,
+            default_date=offer.post_date,
+            title="Pay the statement",
+            save_with=self._pay,
+        )
+        editor.prefill(
+            description=offer.description,
+            splits=[(offer.account, offer.amount, ""), (offer.pay_from, -offer.amount, "")],
+        )
+        editor.present()
+        self.payment_editor = editor
+        return editor
+
+    def _pay(self, request: SaveTransaction) -> str:
+        """Save the payment; a payment short of the statement first asks its minimum."""
+        try:
+            paid = self.book.pay_card_statement(
+                PayCardStatement(
+                    self.offer.statement,
+                    request.definition,
+                    minimum_payment=(
+                        self.minimum_payment
+                        if self.minimum_payment != self.offer.minimum_payment
+                        else None
+                    ),
+                )
+            )
+        except ApiError as error:
+            if error.code == "card.payment.minimum_needed":
+                self.ask_minimum()
+            raise
+        self._after_payment(paid)
+        return paid.transaction.handle
+
+    def ask_minimum(self) -> BoundedWindow:
+        """Ask the statement's minimum payment, then save the payment again."""
+        window = BoundedWindow(title="Minimum payment", transient_for=self, modal=True)
+        box = window.frame("reconcile")
+        box.append(
+            Gtk.Label(
+                label=(
+                    "This pays less than the statement. What is the statement's minimum "
+                    "payment? At or above it, the payment due is settled; below it, the "
+                    "rest of the statement stays due."
+                ),
+                xalign=0,
+                wrap=True,
+            )
+        )
+        entry = Gtk.Entry(placeholder_text="0.00")
+        entry.update_property([Gtk.AccessibleProperty.LABEL], ["Minimum payment"])
+        box.append(entry)
+        problem = Gtk.Label(xalign=0, wrap=True)
+        problem.add_css_class("negative")
+        box.append(problem)
+        save = Gtk.Button(label="Save payment")
+
+        def answered(*_args) -> None:
+            try:
+                minimum = Money(parse_user_amount(entry.get_text().strip()))
+            except (ValueError, ArithmeticError):
+                problem.set_text("Enter the minimum payment, such as 35.00.")
+                return
+            self.minimum_payment = minimum
+            window.close()
+            if getattr(self, "payment_editor", None) is not None:
+                self.payment_editor.editor.save()
+
+        save.connect("clicked", answered)
+        window.actions(box, dismiss="Cancel", primary=save)
+        window.present()
+        self.minimum_window = (window, entry, save)
+        return window
+
+    def _after_payment(self, paid: PaidCardStatement) -> None:
+        if paid.settled:
+            text = f"Paid {paid.paid.format()}: the payment due is settled."
+            if paid.remaining > 0:
+                text += f" {paid.remaining.format()} of the statement carries forward."
+        else:
+            text = (
+                f"Paid {paid.paid.format()}, below the minimum payment: "
+                f"{paid.remaining.format()} of the statement is still due."
+            )
+        self.status.set_text(text)
+        if paid.remaining <= 0 or paid.settled:
+            self.pay_button.set_sensitive(False)
 
     def _on_reopen(self, handle: str) -> None:
         try:
