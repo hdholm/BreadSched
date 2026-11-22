@@ -6366,6 +6366,59 @@ class TestDueReview:
             for dialog in opened:
                 dialog.destroy()
 
+    @staticmethod
+    def _share_legs(count: int):
+        from breadsched.gen.services import LegQuote
+
+        return [
+            LegQuote(
+                schedule="s",
+                when=date(2026, 11, 15),
+                name=f"401(k) payroll {n}",
+                account="a",
+                account_name="Assets:Retirement:401k Fund",
+                commodity="c",
+                mnemonic=f"FUND{n}",
+                currency="USD",
+                value=Money("500"),
+                price=None,
+                price_date=None,
+                price_source="",
+                shares=None,
+                quote_source="",
+            )
+            for n in range(count)
+        ]
+
+    @pytest.mark.parametrize("count", [3, 12])
+    def test_the_share_price_table_is_tall_enough_to_type_in(self, window, count):
+        """The dialog was 320 high whatever it held, so notes above the table (a
+        fund with no online quote) left the table one line tall until resized."""
+        from breadsched.gen.services.quotes import QuoteFailure
+        from breadsched.gui.dialogs.share_prices import MIN_TABLE_HEIGHT, SharePricesDialog
+
+        legs = self._share_legs(count)
+        failures = [
+            QuoteFailure(leg.mnemonic, "alphavantage", "no Alpha Vantage key is set in Preferences")
+            for leg in legs
+        ]
+        dialog = SharePricesDialog(window, legs, failures, lambda _prices: None)
+        try:
+            dialog.present()
+            _spin(lambda: dialog.table.get_height() > 0)
+            grid = dialog.table.get_child()
+            if not isinstance(grid, Gtk.Grid):
+                grid = grid.get_child()
+            whole = grid.measure(Gtk.Orientation.VERTICAL, -1)[1]
+            assert dialog.table.get_min_content_height() == min(whole, MIN_TABLE_HEIGHT)
+            # The table is shown whole where the screen allows, and never less than
+            # its minimum, so a leg's entries can be read and typed in.
+            assert dialog.table.get_height() >= min(whole, MIN_TABLE_HEIGHT)
+            if count == 3:
+                assert dialog.table.get_height() >= whole
+        finally:
+            dialog.destroy()
+
     def test_shares_a_schedule_buys_are_asked_for_then_entered(
         self, app, window, tmp_path, monkeypatch
     ):
