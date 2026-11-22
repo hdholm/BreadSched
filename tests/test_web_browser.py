@@ -2632,6 +2632,21 @@ def test_the_navigation_groups_views_into_menus(page):
     expect(ledger).to_have_text("Ledger: Register")
 
 
+def test_blank_moves_to_the_new_transaction(page, served):
+    """GnuCash's Blank: the button, Ctrl+End, and Shift+Page Down reach the blank row."""
+    from playwright.sync_api import expect
+
+    _open_register(page)
+    blank_date = page.locator("tr.entry-row input[aria-label='New transaction date']").first
+    page.get_by_role("button", name="Blank").click()
+    expect(blank_date).to_be_focused()
+    # From another field of the blank row's line, either key comes back to its date.
+    for key in ("Control+End", "Shift+PageDown"):
+        _blank(page, "description").focus()
+        page.keyboard.press(key)
+        expect(blank_date).to_be_focused()
+
+
 def test_a_finished_card_statement_offers_its_payment(page, served):
     """Finishing a card statement offers its payment; a short one asks the minimum."""
     from breadsched.gen.engine import reconciliation as reconcile

@@ -764,7 +764,11 @@ function registerEntry(data, usable, row) {
   cancelButton?.addEventListener("click", cancel);
 
   const keys = (event) => {
-    if ((event.key === "ArrowUp" || event.key === "ArrowDown")
+    if ((event.ctrlKey && event.key === "End") || (event.shiftKey && event.key === "PageDown")) {
+      // To the blank transaction, saving the row left if it changed (GnuCash's Blank).
+      event.preventDefault();
+      editRow(null);
+    } else if ((event.key === "ArrowUp" || event.key === "ArrowDown")
         && event.target.tagName === "INPUT" && !event.altKey && !event.ctrlKey) {
       event.preventDefault();
       move(event.key === "ArrowUp" ? -1 : 1);

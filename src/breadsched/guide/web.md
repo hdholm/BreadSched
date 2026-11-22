@@ -232,7 +232,9 @@ the register says it moved out. From a transfer to an expense, **Tab** goes to t
 money-out column (Withdrawal or Charge). **Up** and **Down** in a
 field save the row you are leaving if you changed it and edit the one above or
 below; below the last transaction is the blank row, and a row that cannot be saved
-keeps you there with the reason. While you type an account path into an account
+keeps you there with the reason. **Blank** above the register, **Ctrl+End**, or
+**Shift+Page Down** goes straight to the blank row, saving the row you leave if you
+changed it. While you type an account path into an account
 choice, the matching accounts are listed under it; click one to choose it. The
 **R** column shows **n**, **c**, or **y**; click **n** or **c** to mark an entry
 cleared or not cleared (see

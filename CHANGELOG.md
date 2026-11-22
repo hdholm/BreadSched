@@ -8,6 +8,11 @@ GitHub releases.
 
 ## Unreleased
 
+- **Blank goes to the new transaction.** A register's **Blank** toolbar button (and
+  **Actions → Blank Transaction**), **Ctrl+End**, or **Shift+Page Down** moves to the
+  blank transaction at the end, as GnuCash's Blank does, saving the transaction you
+  leave if you changed it. The browser's register has the same button and keys.
+
 - **Finishing a credit card statement offers to pay it.** The payment opens ready to
   change: what the statement still owes, dated today, from the card's **Paid from**
   account (in the transaction editor on the desktop, in a short form in the browser).

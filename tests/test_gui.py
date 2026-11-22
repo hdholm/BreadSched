@@ -1212,6 +1212,32 @@ class TestRegisterGrid:
         assert sheet.draft.description == stored.description
         assert app.db.get_transaction(stored.handle).description == stored.description
 
+    def test_blank_moves_to_the_new_transaction_from_anywhere(self, app, window, populated_book):
+        """GnuCash's Blank: the toolbar's Blank, Ctrl+End, and Shift+Page Down all
+        move to the blank transaction at the end."""
+        from breadsched.gui.gi_setup import Gdk
+
+        view = _grid_register(app, window, populated_book)
+        sheet, grid = view.sheet, view.grid
+        first = next(i for i, row in enumerate(sheet.rows) if row.kind == "transaction")
+
+        def on_blank() -> bool:
+            return sheet.draft.source is None and sheet.column == "date"
+
+        for move in (
+            lambda: grid.key(Gdk.KEY_Page_Down, Gdk.ModifierType.SHIFT_MASK),
+            lambda: grid.key(Gdk.KEY_End, Gdk.ModifierType.CONTROL_MASK),
+            lambda: window.activate_action("win.register-blank-transaction", None),
+        ):
+            sheet.move_to(first, "description")
+            assert not on_blank()
+            move()
+            assert on_blank()
+        # Plain Page Down still moves a page, not to the end.
+        sheet.move_to(first, "description")
+        grid.key(Gdk.KEY_Page_Down, Gdk.ModifierType(0))
+        assert sheet.draft.source is not None or len(sheet.rows) <= grid.visible_rows
+
     def test_the_enter_button_saves_like_the_key(self, app, window, populated_book):
         view = _grid_register(app, window, populated_book)
         sheet = view.sheet
@@ -9832,6 +9858,7 @@ class TestViewActions:
             "win.register-delete-transaction",
             "win.register-make-scheduled",
             "win.register-match-to-plan",
+            "win.register-blank-transaction",
             "win.register-reconcile",
             "win.register-new-tab",
         ]
@@ -9906,6 +9933,7 @@ class TestViewActions:
                     "win.register-delete-transaction",
                     "win.register-make-scheduled",
                     "win.register-match-to-plan",
+                    "win.register-blank-transaction",
                     "win.register-reconcile",
                     "win.register-new-tab",
                 ],
