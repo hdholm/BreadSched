@@ -13,17 +13,25 @@ release workflow compares the installed wheel's line with
 carry a stale schema window. Book
 verification includes the same application and schema details in its human and JSON
 diagnostics. The integer data-format/schema version determines whether a
-native book can be opened or must be migrated; it is currently 14. A behavior-only
+native book can be opened or must be migrated; it is currently 15. A behavior-only
 release changes only the application version. A persistent representation change
 increments the data-format version and supplies an explicit migration.
 
-SQLite is the native persistence engine. The application writes schema 14 and
-migrates schema 13 before decoding primary objects. The 13→14 step writes each
+SQLite is the native persistence engine. The application writes schema 15 and
+migrates schemas 13 and 14 before decoding primary objects. The 13→14 step writes each
 whole-transaction plan link as split allocations: a transaction linked to an
 occurrence (by `planned_occurrence`, or posted from a schedule) gains
 `plan_allocations` on its plan legs, in full, with its planned date and amount. The
 step checks that no transaction was lost and that every link names the occurrence it
 named before (see [matching](matching.md)).
+
+The 14→15 step lets a schedule carry the number, notes, and linked documents every
+transaction it posts carries (`num`, `notes`, and `attachments` in its stored form;
+its `tags`, which every stored object has, were stored already). They are optional
+keys, written only when set, so the step rewrites no row and checks that no schedule
+was added or lost; the version itself is the change of representation, because a
+release that writes schema 14 would open the book and drop them when it saved the
+schedule.
 
 An explicit sequential registry (`gen.db.migrations`), a durable migration ledger, a
 transactional runner, and a verified pre-migration backup make that boundary
@@ -42,8 +50,8 @@ earlier alphas (schemas 6 through 12) are refused with a message naming the wind
 opening one once with the last 0.2.0 alpha brings it forward. From the first beta,
 a migration step is kept for at least as long as a release that wrote its source
 schema is supported. `tests/test_db.py` (`TestSchemaCompatibility`) holds the
-runner's guarantees on a schema-13 book and `tests/test_plan_allocations.py` the
-step itself. This native-book policy is independent of external GnuCash, QIF, OFX,
+runner's guarantees on a schema-13 book, `tests/test_plan_allocations.py` the 13→14
+step, and `tests/test_schedule_details.py` the 14→15 step. This native-book policy is independent of external GnuCash, QIF, OFX,
 and QFX import compatibility.
 
 ## Journaling and read snapshots

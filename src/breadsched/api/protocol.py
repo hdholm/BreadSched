@@ -68,6 +68,7 @@ from ..gen.services import (
     SaveFixedSchedule,
     SaveTransaction,
     SetAdvanceDays,
+    SetScheduleDetails,
     TagCount,
     TransactionInput,
 )
@@ -273,6 +274,10 @@ class BookApi(Protocol):
     def advance_days(self, schedule: str) -> AdvanceDays: ...
 
     def set_advance_days(self, request: SetAdvanceDays) -> AdvanceDays: ...
+
+    def set_schedule_details(self, request: SetScheduleDetails) -> ScheduledTransaction:
+        """Change only the number, notes, and tags a schedule's postings carry."""
+        ...
 
     def delete_schedule(self, schedule: str) -> SavedSchedule:
         """Remove a definition; what it already posted stays in the ledger."""
@@ -1031,9 +1036,13 @@ class BookApi(Protocol):
     # ------------------------------------------------------------- attachments
 
     def attachment_report(
-        self, missing_only: bool = False, transaction: str | None = None
+        self,
+        missing_only: bool = False,
+        transaction: str | None = None,
+        schedule: str | None = None,
     ) -> AttachmentReport:
-        """Linked documents (all, or one transaction's) checked against the file system."""
+        """Linked documents (all, one transaction's, or one schedule's) checked
+        against the file system."""
         ...
 
     def link_attachment(self, transaction: str, location: str) -> Transaction:
@@ -1053,6 +1062,30 @@ class BookApi(Protocol):
     def unlink_attachment(self, transaction: str, location: str) -> Transaction: ...
 
     def relink_attachment(self, transaction: str, location: str, new: str) -> Transaction: ...
+
+    # A schedule's documents, which every transaction it posts links too (schema 15).
+
+    def link_schedule_attachment(self, schedule: str, location: str) -> ScheduledTransaction:
+        """Link a web address or a file location to a schedule."""
+        ...
+
+    def attach_schedule_file(
+        self, schedule: str, path: str, copy: bool = True
+    ) -> ScheduledTransaction:
+        """Link a file as the server sees it to a schedule (see ``attach_file``)."""
+        ...
+
+    def attach_schedule_content(
+        self, schedule: str, filename: str, content: bytes
+    ) -> ScheduledTransaction:
+        """Copy a document sent as bytes into the attachment folder and link it."""
+        ...
+
+    def unlink_schedule_attachment(self, schedule: str, location: str) -> ScheduledTransaction: ...
+
+    def relink_schedule_attachment(
+        self, schedule: str, location: str, new: str
+    ) -> ScheduledTransaction: ...
 
     def set_attachment_folder(self, folder: str) -> str:
         """Where relative locations resolve; empty restores the default. Returns it."""

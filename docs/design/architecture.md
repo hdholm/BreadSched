@@ -231,8 +231,8 @@ that.
 Every area goes through it (schedules, accounts, the register, budgets, reports, and
 more):
 
-- the command line's `due-review`, `scheduled-next`, `scheduled-advance`, and
-  `scheduled --post`, through `open_book_api`;
+- the command line's `due-review`, `scheduled-next`, `scheduled-advance`,
+  `scheduled-details`, and `scheduled --post`, through `open_book_api`;
 - the browser's due review, next-occurrence, schedule delete and duplicate, and
   post-scheduled routes, through `Api.book`, the server over the request's book;
 - GTK's due review, Enter Next and Skip Next, schedule delete and duplicate, and
@@ -276,7 +276,7 @@ A writable `breadsched serve` or `breadsched web` publishes a server record
 hold several (`api.host`), and a request names its book by id in
 `X-BreadSched-Book`. `api.connect.open_book_api` gives a
 command an explicit `--server`, else the recorded server, else an in-process server.
-So `due-review`, `scheduled-next`, `scheduled-advance`, `scheduled`, `accounts`,
+So `due-review`, `scheduled-next`, `scheduled-advance`, `scheduled-details`, `scheduled`, `accounts`,
 `account`, `register`, `balance`, `add`, `edit`, `delete`, `rules`, `tags`, `goals`,
 `receivables`, `scenario`, `drawdown`, `payroll`, `claims`, `review`, the `plan-*`
 review commands, `import-review`, `sale-lots`, `tax-marks`, `quotes`, `quote-source`,

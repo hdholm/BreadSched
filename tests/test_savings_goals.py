@@ -4,6 +4,7 @@ from datetime import date
 
 import pytest
 
+from breadsched.gen.db.sqlite import SCHEMA_VERSION
 from breadsched.gen.engine import savings_goals
 from breadsched.gen.lib import (
     GoalAllocation,
@@ -278,7 +279,7 @@ def test_cli_migrate_brings_an_older_book_to_the_current_schema(tmp_path, capsys
     result = json.loads(capsys.readouterr().out)
     assert result == {
         "schema_before": 13,
-        "schema": 14,
+        "schema": SCHEMA_VERSION,
         "migrated": True,
         "backup": f"{path}.pre-migration-v13.bak",
     }

@@ -22,6 +22,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from ..db.sqlite import DbSQLite
+from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import Transaction
 from ..utils.user_paths import portal_document_id
 
@@ -57,6 +58,7 @@ def source_link_folder(db: DbSQLite) -> Path:
 class AttachmentStatus:
     """One linked document and whether it can be found."""
 
+    #: The handle of what links it: a transaction, or a schedule (see ``holder``).
     transaction: str
     location: str
     #: ``file`` or ``web``; a web address is never checked.
@@ -69,6 +71,9 @@ class AttachmentStatus:
     #: ``breadsched`` for the book's own attachments, ``source`` for the link
     #: imported from GnuCash.
     owner: str = "breadsched"
+    #: ``transaction``, or ``schedule`` for a schedule's document, which every
+    #: transaction it posts links too (schema 15).
+    holder: str = "transaction"
 
     @property
     def missing(self) -> bool:
@@ -137,27 +142,40 @@ def location_in(folder: Path | None, path: Path) -> str:
 
 
 def _status(
-    db: DbSQLite, transaction: str, location: str, owner: str, folder: Path | None
+    db: DbSQLite,
+    transaction: str,
+    location: str,
+    owner: str,
+    folder: Path | None,
+    holder: str = "transaction",
 ) -> AttachmentStatus:
     if is_web_address(location):
-        return AttachmentStatus(transaction, location, "web", None, None, owner)
+        return AttachmentStatus(transaction, location, "web", None, None, owner, holder)
     path = resolve(db, location, folder)
     return AttachmentStatus(
-        transaction, location, "file", path, path is not None and path.is_file(), owner
+        transaction, location, "file", path, path is not None and path.is_file(), owner, holder
     )
 
 
-def statuses(db: DbSQLite, transaction: Transaction) -> list[AttachmentStatus]:
-    """Every linked document of one transaction, the source link last."""
+def statuses(
+    db: DbSQLite, transaction: Transaction | ScheduledTransaction
+) -> list[AttachmentStatus]:
+    """Every linked document of one transaction (or schedule), the source link last."""
     folder = attachment_folder(db)
+    holder = "schedule" if isinstance(transaction, ScheduledTransaction) else "transaction"
     found = [
-        _status(db, transaction.handle, location, "breadsched", folder)
+        _status(db, transaction.handle, location, "breadsched", folder, holder)
         for location in transaction.attachments
     ]
     if transaction.source_link:
         found.append(
             _status(
-                db, transaction.handle, transaction.source_link, "source", source_link_folder(db)
+                db,
+                transaction.handle,
+                transaction.source_link,
+                "source",
+                source_link_folder(db),
+                holder,
             )
         )
     return found

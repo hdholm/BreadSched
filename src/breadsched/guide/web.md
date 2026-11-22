@@ -363,7 +363,10 @@ typed as `prices`. See
 In Scheduled, a schedule that can still post shows **Enter next (date)** and **Skip
 next**; Skip next asks first. The editor's **Enter in advance (days)** and **Remind
 in advance (days)** set how long before its date an occurrence joins the review,
-where it is marked *in advance* or *reminder*. See
+where it is marked *in advance* or *reminder*. Its **Tags & notes** fold sets the
+number, tags, and notes every transaction it posts carries, and lists the documents
+linked to it; link a schedule's documents with `breadsched attachments
+--schedule`. See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
 ## Review

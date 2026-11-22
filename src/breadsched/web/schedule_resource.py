@@ -80,6 +80,11 @@ def scheduled(api: Api, days: int = 60) -> dict:
                 "auto": item.auto_create,
                 "advance_days": item.advance_days,
                 "remind_days": item.remind_days,
+                # What every posting carries (schema 15).
+                "num": item.num,
+                "notes": item.notes,
+                "tags": list(item.tags),
+                "attachments": list(item.attachments),
                 "next": next_occurrence_json(view.next.get(item.handle)),
                 # The occurrence its Match window opens on.
                 "current_occurrence": (
@@ -419,6 +424,7 @@ def _fixed_schedule_request(api: Api, payload: dict) -> SaveFixedSchedule:
             estimate_evidence=evidence,
             advance_days=_days(payload, "advance_days"),
             remind_days=_days(payload, "remind_days"),
+            **_posting_details(payload),
         ),
         existing_handle=existing.handle if existing is not None else None,
     )
@@ -517,6 +523,7 @@ def scheduled_formula_save(api: Api, payload: dict) -> dict:
             skipped=tuple(parse_skipped(payload, recurrence)),
             advance_days=_days(payload, "advance_days"),
             remind_days=_days(payload, "remind_days"),
+            **_posting_details(payload),
         ),
     )
     return {"handle": saved.handle, "name": saved.name}
@@ -757,6 +764,24 @@ def post_scheduled(api: Api) -> dict:
     """
     _fetch_quotes(api, tuple((occ.schedule.handle, occ.when) for occ in api.book.due_occurrences()))
     return posted_due_json(api.book.post_due(PostDue(only_automatic=False)))
+
+
+def _posting_details(payload: dict) -> dict:
+    """The number, notes, and tags a schedule's postings carry; each left out keeps
+    the stored value."""
+    found: dict = {}
+    for key in ("num", "notes"):
+        value = payload.get(key)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{key} must be text")
+        found[key] = value
+    tags = payload.get("tags")
+    if tags is not None and (
+        not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags)
+    ):
+        raise ValueError("tags must be a list of text")
+    found["tags"] = tuple(tags) if tags is not None else None
+    return found
 
 
 def _days(payload: dict, key: str) -> int | None:

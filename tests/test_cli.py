@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from breadsched.cli.main import main
-from breadsched.gen.db.sqlite import DbSQLite
+from breadsched.gen.db.sqlite import SCHEMA_VERSION, DbSQLite
 from breadsched.gen.engine import valuation
 from breadsched.gen.lib import (
     Account,
@@ -290,8 +290,8 @@ class TestInit:
     def test_version(self, capsys):
         code, out = run(capsys, "--version")
         assert code == 0 and out.startswith("breadsched ")
-        assert "native schema 14" in out
-        assert "supports 13–14" in out
+        assert f"native schema {SCHEMA_VERSION}" in out
+        assert f"supports 13–{SCHEMA_VERSION}" in out
 
 
 class TestPostingAndReading:
@@ -1165,7 +1165,7 @@ class TestVerify:
         capsys.readouterr()
         assert main(["verify", str(path)]) == 0
         output = capsys.readouterr().out.lower()
-        assert "native schema 14" in output
+        assert f"native schema {SCHEMA_VERSION}" in output
         assert "verification passed" in output
 
     def test_verify_json_reports_build_and_schema_versions(self, tmp_path, capsys):
@@ -1181,8 +1181,8 @@ class TestVerify:
         payload = json.loads(capsys.readouterr().out)
 
         assert payload["application_version"] == __version__
-        assert payload["native_schema_version"] == 14
-        assert payload["supported_schema_versions"] == {"minimum": 13, "maximum": 14}
+        assert payload["native_schema_version"] == SCHEMA_VERSION
+        assert payload["supported_schema_versions"] == {"minimum": 13, "maximum": SCHEMA_VERSION}
 
     def test_verify_json_reports_logical_damage(self, tmp_path, capsys):
         import json

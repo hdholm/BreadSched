@@ -48,6 +48,7 @@ from breadsched.gen.services import (
     SaveTransaction,
     ServiceError,
     SetAdvanceDays,
+    SetScheduleDetails,
     TransactionInput,
     TransactionSplitInput,
 )
@@ -2772,6 +2773,94 @@ def test_investment_reports_read_alike(target, book):
     assert year.labels()[usd.handle] == "USD"
     # Without a year, the latest year with a transaction.
     assert api.tax_year().report.year == year.available_years[0]
+
+
+def test_schedule_details_and_documents_alike(target, book, tmp_path):
+    """A schedule's number, notes, tags, and documents (schema 15), set the same in
+    process and over HTTP, and carried by every transaction it posts."""
+    api, db = target.api, target.db
+    [rent] = db.iter_scheduled()
+    folder = tmp_path / "documents"
+    assert api.set_attachment_folder(str(folder)) == str(folder)
+    lease = tmp_path / "lease.pdf"
+    lease.write_bytes(b"%PDF-1.4")
+
+    detailed = api.set_schedule_details(
+        SetScheduleDetails(rent.handle, num="ACH", notes="Lease to June", tags=("Home", " home "))
+    )
+    assert (detailed.num, detailed.notes, detailed.tags) == ("ACH", "Lease to June", ["Home"])
+    # None keeps what is stored.
+    kept = api.set_schedule_details(SetScheduleDetails(rent.handle, notes="Renewed"))
+    assert (kept.num, kept.notes, kept.tags) == ("ACH", "Renewed", ["Home"])
+
+    linked = api.link_schedule_attachment(rent.handle, "https://example.com/lease")
+    assert linked.attachments == ["https://example.com/lease"]
+    copied = api.attach_schedule_file(rent.handle, str(lease))
+    stored = copied.attachments[-1]
+    assert (folder / stored).read_bytes() == b"%PDF-1.4"
+    report = api.attachment_report(schedule=rent.handle)
+    assert {(item.location, item.holder) for item in report.attachments} == {
+        ("https://example.com/lease", "schedule"),
+        (stored, "schedule"),
+    }
+    # The whole book's report lists a schedule's documents as the schedule's.
+    every = api.attachment_report()
+    assert {item.holder for item in every.attachments if item.transaction == rent.handle} == {
+        "schedule"
+    }
+    (folder / "moved.pdf").write_bytes(b"%PDF-1.4")
+    assert api.relink_schedule_attachment(rent.handle, stored, "moved.pdf").attachments == [
+        "https://example.com/lease",
+        "moved.pdf",
+    ]
+
+    # Every posting carries them.
+    outcome = api.resolve_due(
+        ResolveDue(((rent.handle, date(2026, 10, 6), DueDecision.POST),), date(2026, 10, 6))
+    )
+    [posted] = [db.get_transaction(handle) for handle in outcome.transactions]
+    assert (posted.num, posted.notes, posted.tags) == ("ACH", "Renewed", ["Home"])
+    assert posted.attachments == ["https://example.com/lease", "moved.pdf"]
+    # Unlinking from the schedule leaves what was already posted.
+    assert api.unlink_schedule_attachment(rent.handle, "moved.pdf").attachments == [
+        "https://example.com/lease"
+    ]
+    assert db.get_transaction(posted.handle).attachments[-1] == "moved.pdf"
+
+    before = repr(db.get_scheduled(rent.handle).serialize())
+    for call, status, code in (
+        (lambda: api.link_schedule_attachment(rent.handle, "https://example.com/lease"), 400, None),
+        (lambda: api.unlink_schedule_attachment(rent.handle, "nothing"), 404, None),
+        (lambda: api.link_schedule_attachment("missing", "x"), 404, "schedule.not_found"),
+        (lambda: api.set_schedule_details(SetScheduleDetails("missing", num="1")), 404, None),
+        (
+            lambda: api.set_schedule_details(SetScheduleDetails(rent.handle, tags=("a,b",))),
+            400,
+            "tag.invalid",
+        ),
+    ):
+        with pytest.raises(ApiError) as refused:
+            call()
+        assert refused.value.status == status
+        assert code is None or refused.value.code == code
+    assert repr(db.get_scheduled(rent.handle).serialize()) == before
+
+
+def test_a_device_elsewhere_sends_a_schedules_document(remote, tmp_path):
+    """Without the local token, a schedule's document travels as bytes, and a location
+    outside the attachment folder is refused, as a transaction's is."""
+    folder = tmp_path / "documents"
+    remote.local.set_attachment_folder(str(folder))
+    [rent] = remote.db.iter_scheduled()
+    away = tmp_path / "away" / "lease.pdf"
+    away.parent.mkdir()
+    away.write_bytes(b"%PDF-1.4 lease")
+    sent = remote.client.attach_schedule_file(rent.handle, str(away))
+    assert (folder / sent.attachments[-1]).read_bytes() == b"%PDF-1.4 lease"
+    with pytest.raises(ApiError) as refused:
+        remote.client.link_schedule_attachment(rent.handle, str(away))
+    assert refused.value.code == "attachment.outside_folder"
+    assert remote.db.get_scheduled(rent.handle).attachments == sent.attachments
 
 
 def test_documents_served_over_http_stay_in_the_attachment_folder(remote, book, tmp_path):

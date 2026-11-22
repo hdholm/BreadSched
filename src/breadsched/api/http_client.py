@@ -81,6 +81,7 @@ from ..gen.services import (
     SaveFixedSchedule,
     SaveTransaction,
     SetAdvanceDays,
+    SetScheduleDetails,
     TagCount,
     TransactionInput,
 )
@@ -510,6 +511,15 @@ class HttpBookClient:
         body = {"advance_days": request.advance_days, "remind_days": request.remind_days}
         path = f"/schedules/{quote(request.schedule, safe='')}/advance-days"
         return advance_days_from_json(self._call("PATCH", path, body=body))
+
+    def set_schedule_details(self, request: SetScheduleDetails) -> ScheduledTransaction:
+        body = {
+            "num": request.num,
+            "notes": request.notes,
+            "tags": list(request.tags) if request.tags is not None else None,
+        }
+        path = f"/schedules/{quote(request.schedule, safe='')}/details"
+        return ScheduledTransaction.from_dict(self._call("PATCH", path, body=body)["schedule"])
 
     def delete_schedule(self, schedule: str) -> SavedSchedule:
         path = f"/schedules/{quote(schedule, safe='')}"
@@ -1465,9 +1475,16 @@ class HttpBookClient:
     # ------------------------------------------------------------- attachments
 
     def attachment_report(
-        self, missing_only: bool = False, transaction: str | None = None
+        self,
+        missing_only: bool = False,
+        transaction: str | None = None,
+        schedule: str | None = None,
     ) -> AttachmentReport:
-        params = {"missing": "true" if missing_only else None, "transaction": transaction}
+        params = {
+            "missing": "true" if missing_only else None,
+            "transaction": transaction,
+            "schedule": schedule,
+        }
         return from_data(AttachmentReport, self._call("GET", "/attachments", params))
 
     def _attachments(self, transaction: str, action: str, body: dict[str, Any]) -> Transaction:
@@ -1495,6 +1512,39 @@ class HttpBookClient:
 
     def relink_attachment(self, transaction: str, location: str, new: str) -> Transaction:
         return self._attachments(transaction, "/relink", {"location": location, "to": new})
+
+    def _schedule_attachments(
+        self, schedule: str, action: str, body: dict[str, Any]
+    ) -> ScheduledTransaction:
+        path = f"/schedules/{quote(schedule, safe='')}/attachments{action}"
+        return ScheduledTransaction.from_dict(self._call("POST", path, body=body)["schedule"])
+
+    def link_schedule_attachment(self, schedule: str, location: str) -> ScheduledTransaction:
+        return self._schedule_attachments(schedule, "", {"location": location})
+
+    def attach_schedule_file(
+        self, schedule: str, path: str, copy: bool = True
+    ) -> ScheduledTransaction:
+        local = Path(path).expanduser()
+        if not self.host_files and local.is_file():
+            # Not on the server's computer: send the document (it is always copied in).
+            return self.attach_schedule_content(schedule, local.name, local.read_bytes())
+        return self._schedule_attachments(schedule, "/files", {"path": path, "copy": copy})
+
+    def attach_schedule_content(
+        self, schedule: str, filename: str, content: bytes
+    ) -> ScheduledTransaction:
+        path = f"/schedules/{quote(schedule, safe='')}/attachments/upload"
+        found = self._call("POST", path, {"filename": filename}, content=content)
+        return ScheduledTransaction.from_dict(found["schedule"])
+
+    def unlink_schedule_attachment(self, schedule: str, location: str) -> ScheduledTransaction:
+        return self._schedule_attachments(schedule, "/remove", {"location": location})
+
+    def relink_schedule_attachment(
+        self, schedule: str, location: str, new: str
+    ) -> ScheduledTransaction:
+        return self._schedule_attachments(schedule, "/relink", {"location": location, "to": new})
 
     def set_attachment_folder(self, folder: str) -> str:
         found = self._call("PATCH", "/attachment-folders", body={"folder": folder})

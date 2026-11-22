@@ -84,6 +84,7 @@ from ..gen.services import (
     SaveTransaction,
     ServiceError,
     SetAdvanceDays,
+    SetScheduleDetails,
     TagCount,
     TransactionInput,
     account_balance,
@@ -125,6 +126,7 @@ from ..gen.services import (
     schedule_editing,
     security_prices,
     set_advance_days,
+    set_schedule_details,
     set_tags,
     tag_counts,
     transaction_currency,
@@ -415,6 +417,9 @@ class LocalBookServer:
 
     def set_advance_days(self, request: SetAdvanceDays) -> AdvanceDays:
         return unwrap(set_advance_days(self.db, request))
+
+    def set_schedule_details(self, request: SetScheduleDetails) -> ScheduledTransaction:
+        return unwrap(set_schedule_details(self.db, request))
 
     def delete_schedule(self, schedule: str) -> SavedSchedule:
         return unwrap(delete_schedule(self.db, DeleteSchedule(schedule)))
@@ -970,10 +975,13 @@ class LocalBookServer:
     # ------------------------------------------------------------- attachments
 
     def attachment_report(
-        self, missing_only: bool = False, transaction: str | None = None
+        self,
+        missing_only: bool = False,
+        transaction: str | None = None,
+        schedule: str | None = None,
     ) -> AttachmentReport:
         return attachment_service.attachment_report(
-            self.db, missing_only=missing_only, transaction=transaction
+            self.db, missing_only=missing_only, transaction=transaction, schedule=schedule
         )
 
     def link_attachment(self, transaction: str, location: str) -> Transaction:
@@ -993,6 +1001,32 @@ class LocalBookServer:
     def relink_attachment(self, transaction: str, location: str, new: str) -> Transaction:
         new = self._document_location(new)
         return unwrap(attachment_service.relink(self.db, transaction, location, new))
+
+    def link_schedule_attachment(self, schedule: str, location: str) -> ScheduledTransaction:
+        location = self._document_location(location)
+        return unwrap(attachment_service.attach_schedule_location(self.db, schedule, location))
+
+    def attach_schedule_file(
+        self, schedule: str, path: str, copy: bool = True
+    ) -> ScheduledTransaction:
+        self._readable(path)
+        return unwrap(
+            attachment_service.attach_schedule_file(self.db, schedule, Path(path), copy=copy)
+        )
+
+    def attach_schedule_content(
+        self, schedule: str, filename: str, content: bytes
+    ) -> ScheduledTransaction:
+        return unwrap(upload_service.attach_schedule_content(self.db, schedule, filename, content))
+
+    def unlink_schedule_attachment(self, schedule: str, location: str) -> ScheduledTransaction:
+        return unwrap(attachment_service.detach_schedule(self.db, schedule, location))
+
+    def relink_schedule_attachment(
+        self, schedule: str, location: str, new: str
+    ) -> ScheduledTransaction:
+        new = self._document_location(new)
+        return unwrap(attachment_service.relink_schedule(self.db, schedule, location, new))
 
     @property
     def _confined(self) -> bool:

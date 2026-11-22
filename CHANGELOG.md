@@ -8,6 +8,15 @@ GitHub releases.
 
 ## Unreleased
 
+- **Schedules carry a number, tags, notes, and documents**, and every transaction
+  a schedule posts carries them: the rent schedule's lease, its ACH reference, its
+  *Home* tag. **Make scheduled…** takes a transaction's own with it. Set them in
+  the browser's schedule editor (**Tags & notes**), or with `breadsched
+  scheduled-details`; link a schedule's documents with `breadsched attachments
+  --schedule`. Books move to native schema 15 when first opened for writing, after
+  a verified backup is written beside them. A release before this one (schema 14)
+  cannot open a book once it has moved; keep the backup if you may go back.
+
 - **One transaction editor, typed like the register.** Every desktop window that
   enters or changes a transaction now uses the same editor: New Transaction, a
   register's Edit Transaction…, reconciliation, and Posted transactions after the

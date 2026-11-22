@@ -110,6 +110,7 @@ def fixed_request_json(request: SaveFixedSchedule) -> dict[str, Any]:
             "estimate_evidence": item.estimate_evidence,
             "advance_days": item.advance_days,
             "remind_days": item.remind_days,
+            **_posting_details(item),
         },
     }
 
@@ -130,6 +131,16 @@ def formula_request_json(request: FormulaScheduleInput) -> dict[str, Any]:
         "skipped": [when.isoformat() for when in request.skipped],
         "advance_days": request.advance_days,
         "remind_days": request.remind_days,
+        **_posting_details(request),
+    }
+
+
+def _posting_details(item) -> dict[str, Any]:
+    """The number, notes, and tags a definition gives (None keeps the stored ones)."""
+    return {
+        "num": item.num,
+        "notes": item.notes,
+        "tags": list(item.tags) if item.tags is not None else None,
     }
 
 
@@ -149,6 +160,15 @@ def _text(data: Mapping[str, Any], key: str, *, optional: bool = False) -> Any:
     if not isinstance(value, str):
         raise ValueError(f"{key} must be text")
     return value
+
+
+def _tags(data: Mapping[str, Any]) -> tuple[str, ...] | None:
+    value = data.get("tags")
+    if value is None:
+        return None
+    if not isinstance(value, list) or not all(isinstance(tag, str) for tag in value):
+        raise ValueError("tags must be a list of text")
+    return tuple(value)
 
 
 def _flag(data: Mapping[str, Any], key: str) -> bool:
@@ -284,6 +304,9 @@ def fixed_request_from_json(data: Any) -> SaveFixedSchedule:
             estimate_evidence=evidence,
             advance_days=_whole(item, "advance_days"),
             remind_days=_whole(item, "remind_days"),
+            num=_text(item, "num", optional=True),
+            notes=_text(item, "notes", optional=True),
+            tags=_tags(item),
         ),
         existing_handle=_text(outer, "existing_handle", optional=True),
         source=_source_from(outer),
@@ -316,4 +339,7 @@ def formula_request_from_json(data: Any) -> FormulaScheduleInput:
         source=_source_from(item),
         advance_days=_whole(item, "advance_days"),
         remind_days=_whole(item, "remind_days"),
+        num=_text(item, "num", optional=True),
+        notes=_text(item, "notes", optional=True),
+        tags=_tags(item),
     )

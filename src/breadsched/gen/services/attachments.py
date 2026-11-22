@@ -1,4 +1,4 @@
-"""Tag transactions and link documents to them, for CLI, GTK, and web.
+"""Tag transactions and link documents to them or to schedules, for CLI, GTK, and web.
 
 Tags and attachments belong to BreadSched: a GnuCash re-import keeps them, and
 the document GnuCash itself links (``source_link``) is shown beside them but
@@ -26,6 +26,7 @@ from ..engine.attachments import (
     source_link_folder,
     statuses,
 )
+from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import Transaction
 from .contracts import ServiceError, ServiceResult
 
@@ -34,11 +35,15 @@ __all__ = [
     "TagCount",
     "attach_file",
     "attach_location",
+    "attach_schedule_file",
+    "attach_schedule_location",
     "attachment_report",
     "contained_location",
     "detach",
+    "detach_schedule",
     "normalize_tags",
     "relink",
+    "relink_schedule",
     "set_attachment_folder",
     "set_source_link_folder",
     "set_tags",
@@ -155,18 +160,92 @@ def transactions_with_tag(db: DbSQLite, tag: str) -> list[Transaction]:
     ]
 
 
-def attach_location(db: DbSQLite, handle: str, location: str) -> ServiceResult[Transaction]:
-    """Link a web address, an absolute path, or a path inside the attachment folder."""
-    transaction = db.get_transaction(handle)
-    if transaction is None:
-        return ServiceResult.failure(ServiceError("transaction.not_found", ("transaction",)))
+#: What may hold linked documents: a transaction, or a schedule whose every
+#: posting carries them (schema 15).
+Owner = Transaction | ScheduledTransaction
+_OWNERS = {
+    "transaction": ("transaction.not_found", "transaction"),
+    "schedule": ("schedule.not_found", "schedule"),
+}
+
+
+def _owner(db: DbSQLite, kind: str, handle: str) -> Owner | ServiceError:
+    found = db.get_transaction(handle) if kind == "transaction" else db.get_scheduled(handle)
+    if found is None:
+        code, field = _OWNERS[kind]
+        return ServiceError(code, (field,))
+    return found
+
+
+def _store(db: DbSQLite, owner: Owner, label: str) -> ServiceResult:
+    with db.transaction(label) as txn:
+        if isinstance(owner, Transaction):
+            db.commit_transaction(owner, txn)
+        else:
+            db.commit_scheduled(owner, txn)
+    return ServiceResult.success(owner)
+
+
+def _link(db: DbSQLite, kind: str, handle: str, location: str) -> ServiceResult:
+    owner = _owner(db, kind, handle)
+    if isinstance(owner, ServiceError):
+        return ServiceResult.failure(owner)
     location = location.strip()
     if not location:
         return ServiceResult.failure(ServiceError("attachment.location.required", ("location",)))
-    if location in transaction.attachments:
+    if location in owner.attachments:
         return ServiceResult.failure(ServiceError("attachment.duplicate", ("location",)))
-    transaction.attachments.append(location)
-    return _commit(db, transaction, "Link document")
+    owner.attachments.append(location)
+    return _store(db, owner, "Link document")
+
+
+def _attach_file(db: DbSQLite, kind: str, handle: str, source: Path, copy: bool) -> ServiceResult:
+    owner = _owner(db, kind, handle)
+    if isinstance(owner, ServiceError):
+        return ServiceResult.failure(owner)
+    if not source.is_file():
+        return ServiceResult.failure(ServiceError("attachment.file.not_found", ("file",)))
+    if not copy:
+        return _link(db, kind, handle, location_for(db, source))
+    if attachment_folder(db) is None:
+        return ServiceResult.failure(ServiceError("attachment.folder.unavailable", ("file",)))
+    location = copy_into_folder(db, source)
+    result = _link(db, kind, handle, location)
+    if result.value is None:
+        folder = attachment_folder(db)
+        if folder is not None:
+            (folder / location).unlink(missing_ok=True)
+    return result
+
+
+def _detach(db: DbSQLite, kind: str, handle: str, location: str) -> ServiceResult:
+    owner = _owner(db, kind, handle)
+    if isinstance(owner, ServiceError):
+        return ServiceResult.failure(owner)
+    if location not in owner.attachments:
+        return ServiceResult.failure(ServiceError("attachment.not_found", ("location",)))
+    owner.attachments.remove(location)
+    return _store(db, owner, "Unlink document")
+
+
+def _relink(db: DbSQLite, kind: str, handle: str, old: str, new: str) -> ServiceResult:
+    owner = _owner(db, kind, handle)
+    if isinstance(owner, ServiceError):
+        return ServiceResult.failure(owner)
+    if old not in owner.attachments:
+        return ServiceResult.failure(ServiceError("attachment.not_found", ("location",)))
+    new = new.strip()
+    if not new:
+        return ServiceResult.failure(ServiceError("attachment.location.required", ("location",)))
+    if new != old and new in owner.attachments:
+        return ServiceResult.failure(ServiceError("attachment.duplicate", ("location",)))
+    owner.attachments[owner.attachments.index(old)] = new
+    return _store(db, owner, "Relink document")
+
+
+def attach_location(db: DbSQLite, handle: str, location: str) -> ServiceResult[Transaction]:
+    """Link a web address, an absolute path, or a path inside the attachment folder."""
+    return _link(db, "transaction", handle, location)
 
 
 def attach_file(
@@ -177,49 +256,45 @@ def attach_file(
     Without ``copy`` the file stays where it is and is linked by absolute path.
     A copy made for a write that is then refused is removed again.
     """
-    transaction = db.get_transaction(handle)
-    if transaction is None:
-        return ServiceResult.failure(ServiceError("transaction.not_found", ("transaction",)))
-    if not source.is_file():
-        return ServiceResult.failure(ServiceError("attachment.file.not_found", ("file",)))
-    if not copy:
-        return attach_location(db, handle, location_for(db, source))
-    if attachment_folder(db) is None:
-        return ServiceResult.failure(ServiceError("attachment.folder.unavailable", ("file",)))
-    location = copy_into_folder(db, source)
-    result = attach_location(db, handle, location)
-    if result.value is None:
-        folder = attachment_folder(db)
-        if folder is not None:
-            (folder / location).unlink(missing_ok=True)
-    return result
+    return _attach_file(db, "transaction", handle, source, copy)
 
 
 def detach(db: DbSQLite, handle: str, location: str) -> ServiceResult[Transaction]:
     """Unlink a document; the file itself is kept."""
-    transaction = db.get_transaction(handle)
-    if transaction is None:
-        return ServiceResult.failure(ServiceError("transaction.not_found", ("transaction",)))
-    if location not in transaction.attachments:
-        return ServiceResult.failure(ServiceError("attachment.not_found", ("location",)))
-    transaction.attachments.remove(location)
-    return _commit(db, transaction, "Unlink document")
+    return _detach(db, "transaction", handle, location)
 
 
 def relink(db: DbSQLite, handle: str, old: str, new: str) -> ServiceResult[Transaction]:
     """Point a missing (or moved) attachment at its new location, keeping its place."""
-    transaction = db.get_transaction(handle)
-    if transaction is None:
-        return ServiceResult.failure(ServiceError("transaction.not_found", ("transaction",)))
-    if old not in transaction.attachments:
-        return ServiceResult.failure(ServiceError("attachment.not_found", ("location",)))
-    new = new.strip()
-    if not new:
-        return ServiceResult.failure(ServiceError("attachment.location.required", ("location",)))
-    if new != old and new in transaction.attachments:
-        return ServiceResult.failure(ServiceError("attachment.duplicate", ("location",)))
-    transaction.attachments[transaction.attachments.index(old)] = new
-    return _commit(db, transaction, "Relink document")
+    return _relink(db, "transaction", handle, old, new)
+
+
+def attach_schedule_location(
+    db: DbSQLite, handle: str, location: str
+) -> ServiceResult[ScheduledTransaction]:
+    """Link a document to a schedule; every transaction it posts links it too."""
+    return _link(db, "schedule", handle, location)
+
+
+def attach_schedule_file(
+    db: DbSQLite, handle: str, source: Path, *, copy: bool = True
+) -> ServiceResult[ScheduledTransaction]:
+    """Link a file to a schedule, copying it into the attachment folder by default."""
+    return _attach_file(db, "schedule", handle, source, copy)
+
+
+def detach_schedule(
+    db: DbSQLite, handle: str, location: str
+) -> ServiceResult[ScheduledTransaction]:
+    """Unlink a schedule's document; transactions already posted keep theirs."""
+    return _detach(db, "schedule", handle, location)
+
+
+def relink_schedule(
+    db: DbSQLite, handle: str, old: str, new: str
+) -> ServiceResult[ScheduledTransaction]:
+    """Point a schedule's moved or missing document at its new location."""
+    return _relink(db, "schedule", handle, old, new)
 
 
 def set_attachment_folder(db: DbSQLite, folder: str) -> ServiceResult[Path]:
@@ -244,17 +319,26 @@ def set_source_link_folder(db: DbSQLite, folder: str) -> ServiceResult[Path]:
 
 
 def attachment_report(
-    db: DbSQLite, *, missing_only: bool = False, transaction: str | None = None
+    db: DbSQLite,
+    *,
+    missing_only: bool = False,
+    transaction: str | None = None,
+    schedule: str | None = None,
 ) -> AttachmentReport:
-    """Every linked document in the book (or one transaction's), checked against the
-    file system."""
+    """Every linked document in the book (or one transaction's, or one schedule's),
+    checked against the file system. The whole book's lists transactions first,
+    then schedules."""
     found: list[AttachmentStatus] = []
+    owners: list[Owner]
     if transaction is not None:
         one = db.get_transaction(transaction)
-        transactions = [one] if one is not None else []
+        owners = [one] if one is not None else []
+    elif schedule is not None:
+        held = db.get_scheduled(schedule)
+        owners = [held] if held is not None else []
     else:
-        transactions = list(db.iter_transactions())
-    for item in transactions:
+        owners = [*db.iter_transactions(), *db.iter_scheduled()]
+    for item in owners:
         if not item.attachments and not item.source_link:
             continue
         found.extend(statuses(db, item))

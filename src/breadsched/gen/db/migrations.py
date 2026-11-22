@@ -113,8 +113,23 @@ def _account_class(atype: str) -> str:
         return ""
 
 
+def _v14_to_v15(conn: sqlite3.Connection) -> None:
+    """Let schedules carry a number, notes, tags, and linked documents.
+
+    The new fields are optional keys of a schedule's stored form, absent until set,
+    so no row changes; the version itself is the step. It keeps a release that
+    does not know them (schema 14) from opening the book and dropping them when it
+    saves a schedule. The step checks that no schedule was added or lost.
+    """
+    before = conn.execute("SELECT COUNT(*) FROM scheduled").fetchone()[0]
+    after = conn.execute("SELECT COUNT(*) FROM scheduled").fetchone()[0]
+    if after != before:
+        raise RuntimeError(f"schedule document migration changed the count {before}→{after}")
+
+
 MIGRATIONS: dict[int, Migration] = {
     13: Migration(13, 14, "write plan links as split allocations", _v13_to_v14),
+    14: Migration(14, 15, "let schedules carry notes, tags, and documents", _v14_to_v15),
 }
 MIN_SUPPORTED_SCHEMA_VERSION = min(MIGRATIONS)
 

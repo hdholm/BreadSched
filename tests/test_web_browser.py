@@ -1868,7 +1868,7 @@ def test_the_schedule_editor_folds_away_what_most_schedules_do_not_need(page, se
     form = page.locator(".detail-dialog form")
     form.locator("input[name=name]").wait_for()
     summaries = form.locator("details.form-section > summary").all_inner_texts()
-    assert summaries == ["Splits and memos", "Future changes", "Advanced"]
+    assert summaries == ["Splits and memos", "Future changes", "Advanced", "Tags & notes"]
     assert form.locator("select[name=growth_policy]").is_hidden()
     assert form.locator("input[name=amount]").is_visible()
     form.locator("summary", has_text="Advanced").click()
@@ -1885,6 +1885,30 @@ def test_the_schedule_editor_folds_away_what_most_schedules_do_not_need(page, se
     form.locator("summary", has_text="Future changes").click()
     form.get_by_role("button", name="Add date and amount").first.click()
     form.locator("summary", has_text="Future changes (1)").wait_for()
+
+
+def test_a_schedules_tags_and_notes_are_typed_in_its_editor(page, served):
+    """Schema 15: what every posting carries, in a fold that opens once it holds any."""
+    db, _httpd = served
+    expense = next(
+        a for a in db.iter_accounts() if a.account_class.value == "expense" and not a.placeholder
+    )
+    bank = next(a for a in db.iter_accounts() if a.atype.value == "BANK" and not a.placeholder)
+    _nav(page, "Scheduled")
+    page.get_by_role("button", name="New scheduled…").click()
+    form = page.locator(".detail-dialog form")
+    form.locator("input[name=name]").fill("Lease rent")
+    form.locator("select[name=category]").select_option(expense.handle)
+    form.locator("select[name=funding]").select_option(bank.handle)
+    form.locator("input[name=amount]").fill("1800")
+    form.locator("summary", has_text="Tags & notes").click()
+    form.locator("input[name=num]").fill("ACH")
+    form.locator("input[name=tags]").fill("Home, Lease")
+    form.locator("textarea[name=notes]").fill("To June")
+    form.get_by_role("button", name="Save").click()
+    page.locator(".detail-dialog").wait_for(state="detached")
+    saved = next(s for s in db.iter_scheduled() if s.name == "Lease rent")
+    assert (saved.num, saved.tags, saved.notes) == ("ACH", ["Home", "Lease"], "To June")
 
 
 def test_quick_entry_offers_investment_activity_only_for_investment_accounts(page, served):

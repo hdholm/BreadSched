@@ -17,9 +17,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..db.sqlite import DbSQLite
+from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import Transaction
 from ..utils.user_paths import companion_path
-from .attachments import attach_file
+from .attachments import attach_file, attach_schedule_file
 from .contracts import ServiceError, ServiceResult
 
 __all__ = [
@@ -125,3 +126,17 @@ def attach_content(
         staged = Path(staging) / filename
         staged.write_bytes(content)
         return attach_file(db, handle, staged)
+
+
+def attach_schedule_content(
+    db: DbSQLite, handle: str, filename: str, content: bytes
+) -> ServiceResult[ScheduledTransaction]:
+    """Copy a document sent as bytes into the attachment folder and link it to a schedule."""
+    if not _ordinary(filename):
+        return ServiceResult.failure(ServiceError("attachment.filename.invalid", ("filename",)))
+    if not content:
+        return ServiceResult.failure(ServiceError("attachment.file.empty", ("file",)))
+    with tempfile.TemporaryDirectory(prefix="breadsched-attachment-") as staging:
+        staged = Path(staging) / filename
+        staged.write_bytes(content)
+        return attach_schedule_file(db, handle, staged)

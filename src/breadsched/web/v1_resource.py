@@ -237,6 +237,7 @@ from ..gen.services import (
     ResolveDue,
     ResolveNext,
     SetAdvanceDays,
+    SetScheduleDetails,
 )
 from ..gen.services.account_inference import ApplyAccountSuggestions
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
@@ -609,6 +610,28 @@ def advance_days_patch(api: Api, path: Path, body: dict[str, Any]) -> dict:
         remind_days=_optional_days(body, "remind_days"),
     )
     return advance_days_json(api.book.set_advance_days(request))
+
+
+def schedule_details_patch(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    _only(body, {"num", "notes", "tags"})
+    text = {}
+    for key in ("num", "notes"):
+        value = body.get(key)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{key} must be text")
+        text[key] = value
+    tags = body.get("tags")
+    if tags is not None and (
+        not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags)
+    ):
+        raise ValueError("tags must be a list of text")
+    request = SetScheduleDetails(
+        path["handle"],
+        num=text["num"],
+        notes=text["notes"],
+        tags=tuple(tags) if tags is not None else None,
+    )
+    return {"schedule": api.book.set_schedule_details(request).serialize()}
 
 
 def undo_preview_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:
@@ -1684,8 +1707,9 @@ class _Folders:
 def attachments_get(api: Api, _path: Path, query: QueryParams) -> dict:
     missing = query.choice("missing", ("true", "false"), "false") == "true"
     transaction = query.text("transaction")
+    schedule = query.text("schedule")
     query.finish()
-    return to_data(api.book.attachment_report(missing, transaction))
+    return to_data(api.book.attachment_report(missing, transaction, schedule))
 
 
 def attachment_link_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
@@ -1708,6 +1732,29 @@ def attachment_relink_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
     change = from_data(_Relink, body, "request")
     changed = api.book.relink_attachment(path["handle"], change.location, change.to)
     return {"transaction": to_data(changed)}
+
+
+def schedule_attachment_link_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    location = from_data(_Location, body, "request").location
+    return {"schedule": api.book.link_schedule_attachment(path["handle"], location).serialize()}
+
+
+def schedule_attachment_file_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    chosen = from_data(_File, body, "request")
+    changed = api.book.attach_schedule_file(path["handle"], chosen.path, chosen.copy)
+    return {"schedule": changed.serialize()}
+
+
+def schedule_attachment_remove_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    location = from_data(_Location, body, "request").location
+    changed = api.book.unlink_schedule_attachment(path["handle"], location)
+    return {"schedule": changed.serialize()}
+
+
+def schedule_attachment_relink_v1(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    change = from_data(_Relink, body, "request")
+    changed = api.book.relink_schedule_attachment(path["handle"], change.location, change.to)
+    return {"schedule": changed.serialize()}
 
 
 def attachment_folders_patch(api: Api, _path: Path, body: dict[str, Any]) -> dict:

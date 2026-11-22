@@ -403,6 +403,34 @@ function advanceFields(source) {
   ];
 }
 
+// What every posting of a schedule carries (schema 15): its number, tags, and notes.
+// A section that holds something opens by itself, so nothing set is hidden.
+function postingSection(source) {
+  const tags = (source?.tags || []).join(", ");
+  const documents = source?.attachments || [];
+  const held = Boolean(source?.num || tags || source?.notes || documents.length);
+  const summary = el("summary", {}, held ? `Tags & notes (${(source?.tags || []).length + documents.length})` : "Tags & notes");
+  const details = el("details", { class:"form-section" }, summary,
+    el("p", { class:"note" }, "Every transaction this schedule posts carries these."),
+    el("label", {}, "Number", el("input", { name:"num", value:source?.num || "",
+      placeholder:"Cheque or reference" })),
+    el("label", {}, "Tags", el("input", { name:"tags", value:tags,
+      placeholder:"Comma-separated, e.g. Tax, Home repair" })),
+    el("label", {}, "Notes", el("textarea", { name:"notes", rows:"3" }, source?.notes || "")),
+    documents.length
+      ? el("p", { class:"note" }, `Documents: ${documents.join(", ")}`)
+      : el("p", { class:"note" }, "Link documents to a schedule with breadsched attachments --schedule."));
+  if (held) details.open = true;
+  return details;
+}
+
+function postingValues(values) {
+  return {
+    num: values.num ?? null, notes: values.notes ?? null,
+    tags: values.tags === undefined ? null : values.tags.split(","),
+  };
+}
+
 function openScheduledEditor(data, source) {
   const referenced = new Set(source?.account_handles || []);
   const accounts = data.accounts.filter((a) => !a.hidden || referenced.has(a.handle));
@@ -504,7 +532,8 @@ function openScheduledEditor(data, source) {
       investmentField,
       field("Weekend", weekend),
       field("Posting", select("posting", [["manual","Manual"],["automatic","Automatic"]], source?.auto ? "automatic" : "manual")),
-      ...advanceFields(source)));
+      ...advanceFields(source)),
+    postingSection(source));
   form.append(el("div", { class:"toolbar" },
     el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Cancel"),
     el("button", { class:"action primary", type:"submit" }, "Save")));
@@ -561,6 +590,7 @@ function openScheduledEditor(data, source) {
       end: values.end || null, count: values.count || null, weekend: values.weekend,
       auto: values.posting === "automatic" && values.kind !== "estimate",
       advance_days: values.advance_days, remind_days: values.remind_days,
+      ...postingValues(values),
       estimate_evidence: source?.estimate_evidence || null,
     };
   }
@@ -615,7 +645,8 @@ function openFormulaScheduleEditor(source) {
     field("Weekend", weekend),
     field("Posting", select("posting", [["manual","Manual"],["automatic","Automatic"]],
       source.auto ? "automatic" : "manual")),
-    ...advanceFields(source));
+    ...advanceFields(source),
+    postingSection(source));
   const refreshOccurrences = async () => {
     const values = Object.fromEntries(new FormData(form).entries());
     if (!values.start) return;
@@ -649,6 +680,7 @@ function openFormulaScheduleEditor(source) {
         end:values.end || null, count:values.count || null, weekend:values.weekend,
         auto:values.posting === "automatic" && values.kind !== "estimate",
         advance_days:values.advance_days, remind_days:values.remind_days,
+        ...postingValues(values),
       });
       backdrop.remove(); say("Formula schedule updated."); render();
     } catch (error) { say(error.message, "error"); }

@@ -282,12 +282,16 @@ breadsched scheduled-next household.breadsched Rent
 breadsched scheduled-next household.breadsched Rent --enter
 breadsched scheduled-next household.breadsched Gym --skip
 breadsched scheduled-advance household.breadsched Rent --enter-days 3 --remind-days 10
+breadsched scheduled-details household.breadsched Rent --num ACH --tags "Home" --notes "Lease to June"
 ```
 
 `scheduled-next` shows a schedule's next occurrence still to enter or skip, and
 `--enter` or `--skip` decides it now, before it is due. `scheduled-advance` shows,
 or with `--enter-days` and `--remind-days` sets, how many days ahead its
-occurrences are entered or reminded (0 to 999). See
+occurrences are entered or reminded (0 to 999). `scheduled-details` shows, or with
+`--num`, `--tags`, and `--notes` sets, the number, tags, and notes every transaction
+it posts carries (`''` clears one); link its documents with `attachments
+--schedule` ([Tags and linked documents](#tags-and-linked-documents)). See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
 ### Share a book with a running server
@@ -478,9 +482,13 @@ breadsched attachments book.breadsched --missing     # documents that cannot be 
 breadsched attachments book.breadsched --transaction 3f2a \
     --relink receipt.pdf --to ~/Archive/receipt.pdf
 breadsched attachments book.breadsched --transaction 3f2a --remove receipt.pdf
+breadsched attachments book.breadsched --schedule Rent --add ~/Scans/lease.pdf
 ```
 
-`--set ""` removes every tag. `--add` copies a file into the attachment folder;
+`--set ""` removes every tag. `--schedule` in place of `--transaction` links,
+unlinks, or relinks a schedule's documents, which every transaction it posts links
+too; the listing's **of** column says whether a document is a transaction's or a
+schedule's. `--add` copies a file into the attachment folder;
 add `--link` to link it where it is instead. `--remove` unlinks a document and
 keeps the file. `--folder DIR` moves where relative documents are looked up (a
 relative folder is taken from the book's folder; `--folder ""` restores the

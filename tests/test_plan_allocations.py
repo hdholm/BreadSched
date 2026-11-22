@@ -370,7 +370,7 @@ def test_a_schema_13_book_writes_its_plan_links_as_allocations(tmp_path):
     migrated = DbSQLite()
     migrated.load(str(path))
     try:
-        assert migrated.get_metadata("schema_version") == SCHEMA_VERSION == 14
+        assert migrated.get_metadata("schema_version") == SCHEMA_VERSION
         assert migrated.migration_backup is not None
         food_leg = next(
             split
