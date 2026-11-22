@@ -1672,6 +1672,36 @@ class TestRegisterGrid:
         assert grid.editor.get_selection_bounds() == (19, len("Receipt in the blue folder"))
         assert sheet.draft.notes == "Receipt in the blue folder"
 
+    def test_a_note_completes_from_the_start_of_a_word_and_gives_back_the_typing(
+        self, app, window, populated_book
+    ):
+        """``ch`` completes to a note with "Christmas" but not "which"; typing on past
+        a completion found inside a note keeps only the letters typed."""
+        view = _grid_register(app, window, populated_book)
+        grid, sheet, db = view.grid, view.sheet, view.sheet.db
+        earlier_text = sheet.descriptions[0]
+        earlier = next(t for t in db.iter_transactions() if t.description == earlier_text)
+        earlier.notes = "Pick up which ever is ready"
+        with db.transaction("Notes") as txn:
+            db.commit_transaction(earlier, txn)
+        sheet.set_double_line(True)
+        sheet.draft.description = earlier_text
+        notes_row = next(
+            index for index, row in enumerate(sheet.rows) if row.kind == "notes" and row.current
+        )
+        sheet.cursor, sheet.column = notes_row, "description"
+        grid.sync()
+        _type(grid, "ch")
+        assert grid.editor.get_text() == "ch"  # "which" is not a word beginning "ch"
+        _type(grid, "ristmas")
+        assert grid.editor.get_text() == "christmas"
+        # A word inside a note completes, and typing on past it keeps the typing.
+        grid.editor.set_text("")
+        _type(grid, "ev")
+        assert grid.editor.get_text() == "Pick up which ever is ready"
+        _type(grid, "x")
+        assert grid.editor.get_text() == "evx"
+
     def test_escape_puts_the_entry_back(self, app, window, populated_book):
         view = _grid_register(app, window, populated_book)
         grid, sheet = view.grid, view.sheet

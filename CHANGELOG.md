@@ -8,6 +8,12 @@ GitHub releases.
 
 ## Unreleased
 
+- **A note completes from the start of a word.** Typing `ch` in a note or memo
+  completes to an earlier one with "Christmas" in it, but no longer to one with
+  "which". And when a letter stops matching a completion found inside a note, the
+  cell holds just what you typed, instead of keeping the start of that note: no
+  more "whichristmas" to delete.
+
 - **Blank goes to the new transaction.** A register's **Blank** toolbar button (and
   **Actions → Blank Transaction**), **Ctrl+End**, or **Shift+Page Down** moves to the
   blank transaction at the end, as GnuCash's Blank does, saving the transaction you

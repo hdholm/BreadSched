@@ -534,8 +534,10 @@ every transaction in every register, the blank one included, for its notes, as i
 GnuCash: Tab moves from the last amount to the notes line, and Enter saves what you
 typed there with the transaction. Typing a note (or a split's memo) completes it from
 the notes written before for transactions with the same description: one beginning
-with what you typed first, else one containing it, with the rest selected so the
-next letter replaces it. Once you delete anything in a description, note, or memo
+with what you typed first, else one with a word beginning with it (so `ch` finds
+"Christmas" but never "which"), with the rest selected so the next letter replaces
+it. Once a letter stops matching, the cell holds just what you typed, never the
+start of the note it had completed to. Once you delete anything in a description, note, or memo
 cell, it stops completing until you leave the cell (or empty it), so text you removed
 does not come back as you type on; account cells keep completing. The choice is remembered. With it off, saving keeps the notes a transaction already has.
 Whether you are entering a new transaction or changing one, **Enter** (or **Tab**

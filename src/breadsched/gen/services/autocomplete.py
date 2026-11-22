@@ -20,6 +20,7 @@ accounts are all visible and postable, so a proposal can always be saved as is.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date
@@ -192,8 +193,13 @@ def earlier_notes(db: DbSQLite, query: EarlierNotes) -> ServiceResult[tuple[str,
 
 
 def complete_note(typed: str, choices: tuple[str, ...] | list[str]) -> str | None:
-    """The first earlier note that begins with ``typed``, else the first containing
-    it (ignoring case), or ``None``; never one no longer than what was typed."""
+    """The first earlier note that begins with ``typed``, else the first with a word
+    beginning with it (ignoring case), or ``None``; never one no longer than what
+    was typed.
+
+    A word begins at the start of the note or after whitespace, so ``ch`` finds
+    "Christmas" and "Gifts for Christmas" but never "which".
+    """
     key = typed.casefold()
     if not key.strip():
         return None
@@ -201,7 +207,8 @@ def complete_note(typed: str, choices: tuple[str, ...] | list[str]) -> str | Non
     for text in longer:
         if text.casefold().startswith(key):
             return text
+    word = re.compile(r"(?:^|\s)" + re.escape(key))
     for text in longer:
-        if key in text.casefold():
+        if word.search(text.casefold()):
             return text
     return None

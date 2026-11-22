@@ -623,7 +623,8 @@ The desktop and browser registers read what you type the same way:
   earlier descriptions in the account when you type a new entry, most recent first.
 - **Notes and memos.** In the desktop register a transaction's notes line and a
   split's memo complete from those written before for the same description, most
-  recent first: one beginning with what you typed, else one containing it.
+  recent first: one beginning with what you typed, else one with a word beginning
+  with it (`ch` finds "Christmas", never "which").
 - **Numbers.** In **Num**, `+` and `-` step a number up or down, keeping leading
   zeros (`0099` → `0100`). In an empty field they continue from the register's last
   numbered transaction.

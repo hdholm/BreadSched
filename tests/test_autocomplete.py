@@ -134,9 +134,23 @@ def test_earlier_notes_and_memos_for_the_same_description(db, book):
     )
     assert earlier_notes(db, EarlierNotes(description="")).value == ()
 
-    # Beginning with what is typed comes first, then containing it.
+    # Beginning with what is typed comes first, then a word beginning with it.
     assert complete_note("cle", notes) == "Cleaning, Dr. Ames"
     assert complete_note("ames", notes) == "Filling, Dr. Ames"
     assert complete_note("x-ray", notes) is None
     assert complete_note("", notes) is None
     assert complete_note("Filling, Dr. Ames", notes) is None
+
+
+def test_a_note_completes_only_from_the_start_of_a_word():
+    """Typing ``ch`` finds "Christmas", at the start of the note or of any word in
+    it, but never "which", where it starts inside a word."""
+    notes = ("Pick up which ever is ready", "Gifts for Christmas")
+    assert complete_note("ch", notes) == "Gifts for Christmas"
+    assert complete_note("CHRI", notes) == "Gifts for Christmas"
+    assert complete_note("hich", notes) is None
+    assert complete_note("ich", notes) is None
+    # Whitespace of any kind begins a word, a line break included.
+    assert complete_note("re", ("Pick up\nready on Friday",)) == "Pick up\nready on Friday"
+    # Beginning the note still comes first.
+    assert complete_note("gi", notes) == "Gifts for Christmas"
