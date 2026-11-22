@@ -6366,6 +6366,59 @@ class TestDueReview:
             for dialog in opened:
                 dialog.destroy()
 
+    @staticmethod
+    def _share_legs(count: int):
+        from breadsched.gen.services import LegQuote
+
+        return [
+            LegQuote(
+                schedule="s",
+                when=date(2026, 11, 15),
+                name=f"401(k) payroll {n}",
+                account="a",
+                account_name="Assets:Retirement:401k Fund",
+                commodity="c",
+                mnemonic=f"FUND{n}",
+                currency="USD",
+                value=Money("500"),
+                price=None,
+                price_date=None,
+                price_source="",
+                shares=None,
+                quote_source="",
+            )
+            for n in range(count)
+        ]
+
+    @pytest.mark.parametrize("count", [3, 12])
+    def test_the_share_price_table_is_tall_enough_to_type_in(self, window, count):
+        """The dialog was 320 high whatever it held, so notes above the table (a
+        fund with no online quote) left the table one line tall until resized."""
+        from breadsched.gen.services.quotes import QuoteFailure
+        from breadsched.gui.dialogs.share_prices import MIN_TABLE_HEIGHT, SharePricesDialog
+
+        legs = self._share_legs(count)
+        failures = [
+            QuoteFailure(leg.mnemonic, "alphavantage", "no Alpha Vantage key is set in Preferences")
+            for leg in legs
+        ]
+        dialog = SharePricesDialog(window, legs, failures, lambda _prices: None)
+        try:
+            dialog.present()
+            _spin(lambda: dialog.table.get_height() > 0)
+            grid = dialog.table.get_child()
+            if not isinstance(grid, Gtk.Grid):
+                grid = grid.get_child()
+            whole = grid.measure(Gtk.Orientation.VERTICAL, -1)[1]
+            assert dialog.table.get_min_content_height() == min(whole, MIN_TABLE_HEIGHT)
+            # The table is shown whole where the screen allows, and never less than
+            # its minimum, so a leg's entries can be read and typed in.
+            assert dialog.table.get_height() >= min(whole, MIN_TABLE_HEIGHT)
+            if count == 3:
+                assert dialog.table.get_height() >= whole
+        finally:
+            dialog.destroy()
+
     def test_shares_a_schedule_buys_are_asked_for_then_entered(
         self, app, window, tmp_path, monkeypatch
     ):
@@ -9219,6 +9272,48 @@ class TestChromeCleanup:
         stylesheet = STYLE_RESOURCE.read_text(encoding="utf-8")
         assert "padding-right" in stylesheet
         assert "data-table" in stylesheet and "nth-child" in stylesheet
+
+    def test_the_row_under_the_pointer_differs_from_the_banding(self, window):
+        """The theme's hover grey is as faint as the bands, so a hovered banded row
+        looked like every other band: the row under the pointer has its own tint,
+        after the banding so it wins, in a color the theme defines (an undefined
+        one silently drops the rule and erases the band instead)."""
+        import re
+
+        from breadsched.gui.app import STYLE_RESOURCE
+
+        stylesheet = STYLE_RESOURCE.read_text(encoding="utf-8")
+        band = stylesheet.index(".data-table row:nth-child(even):not(:selected)")
+        hover = re.search(
+            r"\.data-table row:hover:not\(:selected\)\s*\{\s*background:\s*"
+            r"alpha\(@(\w+),\s*([\d.]+)\)",
+            stylesheet,
+        )
+        assert hover is not None and hover.start() > band
+        name, strength = hover.group(1), float(hover.group(2))
+        assert strength > 0.04  # stronger than the bands' 0.04
+        # A color the theme lacks resolves as no color at all (GTK draws it white),
+        # so the name must resolve differently from a name nothing defines.
+        provider = Gtk.CssProvider()
+        provider.load_from_string(
+            f".hover-probe {{ color: @{name}; }} .undefined-probe {{ color: @no_such_color; }}"
+        )
+        Gtk.StyleContext.add_provider_for_display(
+            window.get_display(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
+        )
+        try:
+            probe, undefined = Gtk.Label(label="x"), Gtk.Label(label="x")
+            probe.add_css_class("hover-probe")
+            undefined.add_css_class("undefined-probe")
+            box = Gtk.Box()
+            box.append(probe)
+            box.append(undefined)
+            window.set_child(box)
+            window.present()
+            _spin(lambda: probe.get_mapped(), 2)
+            assert probe.get_color().to_string() != undefined.get_color().to_string(), name
+        finally:
+            Gtk.StyleContext.remove_provider_for_display(window.get_display(), provider)
 
     def test_plan_grid_numbers_carry_the_numeric_class(self, app, window, populated_book):
         app.open_book(populated_book)

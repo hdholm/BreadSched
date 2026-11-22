@@ -8,6 +8,17 @@ GitHub releases.
 
 ## Unreleased
 
+- **The row under the pointer stands out** in the desktop's tables. Every other row
+  is shaded, and the theme's hover shade was as faint, so a shaded row under the
+  pointer looked like any other. The row under the pointer is now tinted with a
+  light shade of the selection color, distinct from both the shading and the
+  selected row.
+- **Share prices has room to type** on the desktop. Entering a schedule that buys or
+  sells shares asks for their prices in a window that was always the same height,
+  so a note above the table (a fund with no online quote, say) could squeeze the
+  table to a single line until the window was enlarged. The window now opens as
+  tall as its table needs, within the screen, and the table always shows its
+  heading and about three legs, scrolling the rest.
 - **Scheduled transactions sort by name again** on the desktop: the **Name**
   heading of the commitments and estimates tables sorts like every other column,
   schedules by name and each schedule's splits by account (#427).

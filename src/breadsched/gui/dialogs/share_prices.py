@@ -53,6 +53,11 @@ def _plain(value: Money) -> str:
     return format(value.to_decimal(6).normalize(), "f")
 
 
+#: The least height of the table of legs, in pixels: its heading and about three
+#: two-line legs.
+MIN_TABLE_HEIGHT = 200
+
+
 class SharePricesDialog(BoundedWindow):
     """Each leg that buys or sells shares, with its price and shares to confirm."""
 
@@ -65,7 +70,9 @@ class SharePricesDialog(BoundedWindow):
     ) -> None:
         super().__init__(title="Share prices", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
-        self.set_default_size(720, 320)
+        # As tall as its table needs (fit_to_screen keeps it on the screen): a
+        # fixed height left the table one line tall under the notes above it.
+        self.set_default_size(720, -1)
         self.legs = list(legs)
         self.on_done = on_done
         self._answered = False
@@ -130,6 +137,12 @@ class SharePricesDialog(BoundedWindow):
         scroller = Gtk.ScrolledWindow(child=grid, vexpand=True)
         scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         scroller.set_propagate_natural_height(True)
+        # However many notes sit above it, or however small the window is made,
+        # the table shows its heading and a few legs whole: all of them when they
+        # fit in MIN_TABLE_HEIGHT, and scrolls the rest.
+        table_height = grid.measure(Gtk.Orientation.VERTICAL, -1)[1]
+        scroller.set_min_content_height(min(table_height, MIN_TABLE_HEIGHT))
+        self.table = scroller
         box.append(scroller)
         self.message = Gtk.Label(xalign=0, wrap=True)
         self.message.add_css_class("error")
