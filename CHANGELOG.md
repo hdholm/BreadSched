@@ -8,6 +8,13 @@ GitHub releases.
 
 ## Unreleased
 
+- **A desktop that stops responding says so, and can be quit and reported.** If
+  BreadSched stops responding for 20 seconds, a separate window asks whether to
+  wait or quit, and where it was stuck is written to a hang log. After quitting,
+  the next start offers to open a GitHub bug report with the log's start filled in.
+  A dialog hidden behind another window, which can look like a freeze, now comes
+  forward with the main window, and **View → Bring All Windows Forward** brings
+  every window forward.
 - **The row under the pointer stands out** in the desktop's tables. Every other row
   is shaded, and the theme's hover shade was as faint, so a shaded row under the
   pointer looked like any other. The row under the pointer is now tinted with a

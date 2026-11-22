@@ -13578,6 +13578,119 @@ class TestIssue397:
         assert "template=bug_report.yml" in problem and "details=BreadSched+" in problem
         assert "template=feature_request.yml" in feature
 
+    def _watchdog(self, directory, ask, exits):
+        from breadsched.gui.watchdog import Watchdog
+
+        # The test never runs GTK's main loop while it waits, so the heartbeat
+        # stops at once: a freeze, quickly.
+        return Watchdog(
+            directory, stall_seconds=0.3, check_every=0.05, ask=ask, exit=exits.append
+        ).start()
+
+    def test_a_freeze_logs_every_threads_stack_and_waiting_keeps_running(self, tmp_path):
+        """GTK's thread stuck: the watchdog thread writes where, then asks."""
+        import time
+
+        from breadsched.gui.watchdog import pending_report
+
+        asked, exits = [], []
+        watchdog = self._watchdog(tmp_path, lambda *args: asked.append(args) or False, exits)
+        try:
+            deadline = time.monotonic() + 10
+            while not asked and time.monotonic() < deadline:
+                time.sleep(0.05)  # the main thread is "stuck" here
+        finally:
+            watchdog.stop()
+        [(seconds, log, resumed)] = asked
+        assert seconds >= 0.3 and log.exists()
+        text = log.read_text(encoding="utf-8")
+        assert "stopped responding" in text and "most recent call first" in text
+        assert "test_a_freeze_logs_every_threads_stack" in text  # where it was stuck
+        assert exits == [] and pending_report(tmp_path) is None
+        assert resumed() is False
+        watchdog.beat()  # the main loop ticks again
+        assert resumed() is True
+
+    def test_quitting_a_freeze_offers_a_report_with_its_stacks_next_time(
+        self, app, tmp_path, monkeypatch
+    ):
+        import time
+
+        from breadsched.gui.watchdog import EXIT_HUNG, pending_report
+
+        exits = []
+        watchdog = self._watchdog(tmp_path, lambda *args: True, exits)
+        try:
+            deadline = time.monotonic() + 10
+            while not exits and time.monotonic() < deadline:
+                time.sleep(0.05)
+        finally:
+            watchdog.stop()
+        assert exits == [EXIT_HUNG]
+        report = pending_report(tmp_path)
+        assert report is not None and report.log.exists()
+        # The next start asks once; reporting fills in what happened and the log.
+        app.hang_reports = tmp_path
+        opened = []
+        monkeypatch.setattr(app, "_open_issue_form", lambda url: opened.append(url) or url)
+        app.offer_hang_report()
+        assert pending_report(tmp_path) is None
+        assert "stopped responding" in app.hang_alert.get_message()
+        app.report_hang(report)
+        [url] = opened
+        assert "template=bug_report.yml" in url and "what=BreadSched+stopped+responding" in url
+        assert "log=BreadSched+" in url and "most+recent+call+first" in url
+        from urllib.parse import unquote_plus
+
+        assert str(Path.home()) not in unquote_plus(url)
+
+    def test_the_not_responding_prompt_waits_unless_told_to_quit(self):
+        from breadsched.gui.stall_prompt import StallPrompt
+
+        answers = []
+        prompt = StallPrompt("25", "/tmp/hang.log", answers.append)
+        try:
+            assert "25 seconds" in prompt.message.get_label()
+            assert prompt.get_default_widget() is prompt.wait_button
+            prompt.quit_button.emit("clicked")
+            prompt.wait_button.emit("clicked")  # answered once only
+            assert answers == [True]
+        finally:
+            prompt.destroy()
+        answers.clear()
+        closed = StallPrompt("25", "/tmp/hang.log", answers.append)
+        closed.present()
+        closed.close()  # closing it means Wait
+        assert answers == [False]
+
+    def test_dialogs_are_never_left_hidden_behind_the_window(self, app, window, monkeypatch):
+        """A modal dialog behind the main window looks like a freeze: it comes
+        forward with the window, and View lists Bring All Windows Forward."""
+        assert "app.show-all-windows" in _menu_actions(_submenu(app, "_View"))
+        window.present()
+        dialog = Gtk.Window(title="Waiting", transient_for=window, modal=True)
+        other = Gtk.Window(title="Guide", transient_for=window)
+        stranger = Gtk.Window(title="Someone else's", modal=True)
+        presented = []
+        try:
+            dialog.present()
+            other.present()
+            stranger.present()
+            monkeypatch.setattr(dialog, "present", lambda: presented.append("dialog"))
+            monkeypatch.setattr(other, "present", lambda: presented.append("other"))
+            monkeypatch.setattr(stranger, "present", lambda: presented.append("stranger"))
+            assert window._raise_waiting_dialogs() in ([], [dialog])
+            monkeypatch.setattr(window, "is_active", lambda: True)
+            assert window._raise_waiting_dialogs() == [dialog]
+            presented.clear()
+            app.activate_action("show-all-windows", None)
+            assert presented[-1] == "dialog" and "other" in presented
+            assert "stranger" not in presented  # not one of this application's
+        finally:
+            dialog.destroy()
+            other.destroy()
+            stranger.destroy()
+
     def test_the_reconcile_windows_editor_blocks_only_that_window(
         self, app, window, populated_book
     ):

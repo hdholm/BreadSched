@@ -116,6 +116,9 @@ class ViewManager(Gtk.ApplicationWindow):
         self._build_body()
         self._show_placeholder()
         self.connect("close-request", self._on_close_request)
+        # A dialog that holds this window (a modal one) comes forward whenever the
+        # window does, so it is never left hidden behind it, looking like a freeze.
+        self.connect("notify::is-active", self._raise_waiting_dialogs)
         # With several main windows, the Actions menu follows the focused one.
         self.connect(
             "notify::is-active",
@@ -431,6 +434,22 @@ class ViewManager(Gtk.ApplicationWindow):
             reports.destroy()
             self.reports_window = None
         self._detach_views()
+
+    def _raise_waiting_dialogs(self, *_args) -> list:
+        """Present the visible modal windows over this one when it becomes active."""
+        if not self.is_active():
+            return []
+        waiting = [
+            window
+            for window in Gtk.Window.list_toplevels()
+            if window is not self
+            and window.get_visible()
+            and window.get_modal()
+            and _belongs_to(window, (self,))
+        ]
+        for window in waiting:
+            window.present()
+        return waiting
 
     def _on_close_request(self, *_args) -> bool:
         remember_size(self, "main")
@@ -1417,6 +1436,18 @@ class ViewManager(Gtk.ApplicationWindow):
         update_title()
         window.present()
         return window
+
+
+def _belongs_to(window: Gtk.Window, owners) -> bool:
+    """Whether ``window`` is one of ``owners`` or stands over one of them (its
+    transient-for chain reaches it): a dialog of theirs, or a dialog's dialog."""
+    seen = 0
+    while window is not None and seen < 32:
+        if any(window is owner for owner in owners):
+            return True
+        window = window.get_transient_for()
+        seen += 1
+    return False
 
 
 class _Tab:

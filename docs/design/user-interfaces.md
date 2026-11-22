@@ -200,6 +200,33 @@ and Spent/Received choosing which account is debited. It saves through
 the account used last is kept in `localStorage`. The token travels in the URL's
 fragment as on the full page, and **Full view** and **Quick entry** link the two.
 
+## Freezes: the watchdog and hidden dialogs
+
+GTK draws and handles input on one thread, so a stuck main loop (a loop that
+never ends, a call that never returns) leaves every window, the window manager's
+close button included, unanswered, and nothing in the process can ask anything.
+`gui/watchdog.Watchdog`, started only by the launcher (tests drive GTK without
+running its loop between steps), has the loop tick a heartbeat every second and
+watches it from a thread. After `STALL_SECONDS` (20, past the seconds a large
+book's upgrade blocks the loop by design) without a tick it writes every thread's
+stack with `faulthandler` to `hang-<time>.log` in the data folder's
+`hang-reports`, naming the main thread, and keeps the latest five. It then starts
+`gui/stall_prompt` as a process of its own, which asks **Wait** (the default, and
+closing it) or **Quit BreadSched**, and is withdrawn when the heartbeat resumes.
+Quit writes `last-hang.json` and ends the process with `os._exit(EXIT_HUNG)`: each
+save is a complete SQLite transaction and a lock whose process is gone is replaced
+as stale, so nothing saved is lost. On the next activation
+`BreadSchedApplication.offer_hang_report` asks once whether to report it;
+**Report Problem…** opens the bug form (`versioning.issue_url` with `what` and
+`log`) holding the start of the log, the home directory masked as `~`. On POSIX,
+`SIGUSR1` writes every thread's stack to `stacks-on-request.log`.
+
+A modal dialog behind another window looks like a freeze rather than being one.
+When the main window becomes active it presents the visible modal windows that
+stand over it (`_belongs_to` follows their transient-for chain), and
+`app.show-all-windows` (**View → Bring All Windows Forward**) presents every
+window of the application, modal ones last so they end on top.
+
 ## Tables, dialogs, and bounded sizes
 
 Editors disclose progressively: the fields most entries need come first, and

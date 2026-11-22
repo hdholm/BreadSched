@@ -1069,3 +1069,18 @@ Use these File menu commands regularly:
   PyGObject packages. The [command line](cli.md) continues to work without GTK.
 - **Edit → Undo** reverses the last change, including a whole import or a batch of
   accepted proposals.
+- If a window seems not to respond, a dialog waiting for an answer may be hidden
+  behind another window. Bringing the main window forward brings such a dialog
+  with it, and **View → Bring All Windows Forward** brings every BreadSched window
+  forward, dialogs on top.
+- If BreadSched stops responding altogether for 20 seconds, a separate window,
+  **BreadSched is not responding**, asks whether to **Wait** (it may still be
+  working, as when upgrading a large book) or **Quit BreadSched**; it goes away by
+  itself if BreadSched starts responding again. Either way, where BreadSched was
+  stuck is written to a hang log in the `hang-reports` folder of BreadSched's data
+  folder (`~/.local/share/breadsched` on Linux, `%LOCALAPPDATA%\breadsched` on
+  Windows). Quitting loses only typing not yet entered: the book keeps everything
+  saved before. When you start BreadSched again it offers **Report Problem…**, which
+  opens a GitHub bug report with the version, what happened, and the start of the
+  log filled in (nothing from your book). On Linux, `kill -USR1 <process id>` writes
+  where every thread is to `stacks-on-request.log` in the same folder at any time.

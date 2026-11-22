@@ -79,10 +79,17 @@ def issue_details(interface: str = "Desktop (GTK)") -> str:
     )
 
 
-def issue_url(kind: str = "bug", *, interface: str = "Desktop (GTK)") -> str:
+def issue_url(
+    kind: str = "bug", *, interface: str = "Desktop (GTK)", what: str = "", log: str = ""
+) -> str:
     """The GitHub form for a new bug report (``bug``) or feature request
-    (``feature``); a bug report has this version and system already filled in."""
+    (``feature``); a bug report has this version and system already filled in, and
+    ``what`` happened and its error ``log`` when given (a freeze's stacks)."""
     if kind == "feature":
         return f"{ISSUES_URL}/new?" + urlencode({"template": "feature_request.yml"})
     fields = {"template": "bug_report.yml", "details": issue_details(interface)}
+    if what:
+        fields["what"] = what
+    if log:
+        fields["log"] = log
     return f"{ISSUES_URL}/new?" + urlencode(fields)
