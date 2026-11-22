@@ -28,11 +28,7 @@ are saved as the split's quantity.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal
-from fractions import Fraction
-from typing import Any, Literal
 
 from ..api import ApiError
 from ..api.local import book_server
@@ -42,14 +38,12 @@ from ..gen.engine.entry_input import (
     DATE_KEYS,
     EntryInputError,
     is_arithmetic,
-    parse_entry_amount,
     parse_entry_date,
     quickfill_account,
     quickfill_description,
     trade_price,
 )
 from ..gen.lib.account import Account, AccountClass, AccountType
-from ..gen.lib.amount import Amount
 from ..gen.lib.commodity import Commodity
 from ..gen.lib.money import Money
 from ..gen.lib.transaction import ReconcileState, Transaction
@@ -57,14 +51,32 @@ from ..gen.services import (
     SaveTransaction,
     ToggleCleared,
     TransactionInput,
-    TransactionSplitInput,
 )
-from ..gen.services.autocomplete import EarlierNotes, SuggestEntry, complete_note
-from ..gen.services.entry_input import ReadEntryTrade
+from ..gen.services.autocomplete import SuggestEntry, complete_note
 from ..gen.services.register_view import RegisterView
 from ..gen.services.transactions import reconciled_changes
 from ..presentation.investments import trade_price_text
 from . import hidden_accounts
+from .split_entry import (
+    _SECURITY_SPLIT_FIELDS,
+    _SECURITY_TRANSACTION_FIELDS,
+    _SPLIT_FIELDS,
+    _TRADE_COLUMNS,
+    _TRADE_FIELDS,
+    _TRANSACTION_FIELDS,
+    BLANK,
+    IMBALANCE,
+    NOTES,
+    SPLIT,
+    TRANSACTION,
+    Draft,
+    Line,
+    SheetRow,
+    SplitEntry,
+    TradeQuestion,
+    _frac,
+    selectable_names,
+)
 
 __all__ = [
     "COLUMNS",
@@ -79,14 +91,6 @@ __all__ = [
     "RegisterSheet",
     "SheetRow",
 ]
-
-#: Row kinds.
-TRANSACTION = "transaction"
-SPLIT = "split"
-IMBALANCE = "imbalance"
-BLANK = "blank"
-#: The second line of a transaction in Double Line mode: its notes (#319).
-NOTES = "notes"
 
 #: Column keys, in display order.
 COLUMNS = ("date", "num", "description", "transfer", "reconcile", "increase", "decrease", "balance")
@@ -119,175 +123,13 @@ TRADE_COLUMNS = (
 )
 #: What the transfer cell shows for a transaction of more than two splits.
 SPLIT_LABEL = "-- Split Transaction --"
-_TRANSACTION_FIELDS = ("date", "num", "description", "transfer", "increase", "decrease")
-_SPLIT_FIELDS = ("description", "transfer", "increase", "decrease")
-_TRADE_FIELDS = ("shares", "price")
-_SECURITY_TRANSACTION_FIELDS = ("date", "num", "description", "transfer", *_TRADE_FIELDS) + (
-    "increase",
-    "decrease",
-)
-_SECURITY_SPLIT_FIELDS = ("description", "transfer", *_TRADE_FIELDS, "increase", "decrease")
-_TRADE_COLUMNS = (*_TRADE_FIELDS, "increase", "decrease")
 
 
-def _frac(value: Money) -> Fraction:
-    return Fraction(value.numerator, value.denominator)
-
-
-def _trade_cells(holder) -> dict[str, str]:
-    return {column: getattr(holder, column).strip() for column in _TRADE_COLUMNS}
-
-
-TradeField = Literal["shares", "price", "amount"]
-#: What changing one of shares, price, or amount may work out again.
-TRADE_CHOICES: tuple[TradeField, ...] = ("shares", "price", "amount")
-
-
-@dataclass
-class Line:
-    """One editable split beneath an opened transaction, in the split's own direction."""
-
-    account: str = ""
-    memo: str = ""
-    increase: str = ""
-    decrease: str = ""
-    #: The stored split this line edits, or None for a new one.
-    handle: str | None = None
-    #: Shares and price, for a split in an account that holds a security.
-    shares: str = ""
-    price: str = ""
-    #: The trade cells as last read, so leaving one unchanged recomputes nothing.
-    settled: dict[str, str] = field(default_factory=dict)
-
-    def has_input(self) -> bool:
-        return bool(
-            self.account.strip()
-            or self.memo.strip()
-            or self.amount_text()[0]
-            or self.shares.strip()
-        )
-
-    def amount_text(self) -> tuple[str, int]:
-        if self.increase.strip():
-            return self.increase.strip(), 1
-        return self.decrease.strip(), -1
-
-    def cell(self, column: str) -> str:
-        return {
-            "description": self.memo,
-            "transfer": self.account,
-            "increase": self.increase,
-            "decrease": self.decrease,
-            "shares": self.shares,
-            "price": self.price,
-        }.get(column, "")
-
-
-@dataclass
-class Draft:
-    """The transaction under the cursor, as the text in its cells."""
-
-    #: The stored transaction, or None for the blank one.
-    source: Transaction | None
-    #: This register's split of it.
-    split_handle: str | None
-    date: str = ""
-    num: str = ""
-    description: str = ""
-    transfer: str = ""
-    increase: str = ""
-    decrease: str = ""
-    #: Shares and price, in an account that holds a security (#323).
-    shares: str = ""
-    price: str = ""
-    notes: str = ""
-    expanded: bool = False
-    lines: list[Line] = field(default_factory=list)
-    #: Split handles behind the register and transfer sides of a two-split entry.
-    simple_handles: tuple[str | None, str | None] = (None, None)
-    #: Whether the user chose the transfer (a proposal never overwrites it).
-    transfer_touched: bool = False
-    #: The trade cells as last read, so leaving one unchanged recomputes nothing.
-    settled: dict[str, str] = field(default_factory=dict)
-    snapshot: tuple = ()
-
-    def state(self) -> tuple:
-        lines = tuple(
-            (
-                line.handle,
-                line.account.strip(),
-                line.memo.strip(),
-                *line.amount_text(),
-                line.shares.strip(),
-            )
-            for line in self.lines
-            if line.has_input()
-        )
-        simple = (
-            ()
-            if self.expanded
-            else (
-                self.transfer.strip(),
-                self.increase.strip(),
-                self.decrease.strip(),
-                self.shares.strip(),
-            )
-        )
-        return (
-            self.date.strip(),
-            self.num.strip(),
-            self.description.strip(),
-            self.notes.strip(),
-            self.expanded,
-            simple,
-            lines,
-        )
-
-    def dirty(self) -> bool:
-        return self.state() != self.snapshot
-
-    def cell(self, column: str) -> str:
-        return getattr(self, column) if column in _SECURITY_TRANSACTION_FIELDS else ""
-
-    def set_cell(self, column: str, text: str) -> None:
-        if column in _SECURITY_TRANSACTION_FIELDS:
-            setattr(self, column, text)
-            if column == "transfer":
-                self.transfer_touched = True
-            elif column in ("increase", "decrease") and text.strip():
-                setattr(self, "decrease" if column == "increase" else "increase", "")
-
-
-@dataclass(frozen=True)
-class TradeQuestion:
-    """Shares, price, and amount were all filled and one changed: which other one
-    should change to match (#407)?"""
-
-    holder: Any
-    #: The cell that changed, and what it is.
-    column: str
-    changed: TradeField
-    #: The two that could be worked out again, in the order offered.
-    choices: tuple[TradeField, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class SheetRow:
-    kind: str
-    #: The ledger row of a transaction line; None for the blank transaction.
-    register_row: ledger.RegisterRow | None = None
-    #: For a split line, its index in the draft's lines.
-    line: int | None = None
-    #: Whether this row belongs to the transaction under the cursor.
-    current: bool = False
-
-    @property
-    def handle(self) -> str | None:
-        return self.register_row.transaction.handle if self.register_row is not None else None
-
-
-class RegisterSheet:
+class RegisterSheet(SplitEntry):
     """One account's register: rows, the cursor, and the transaction being typed."""
+
+    #: Tab never leaves a register (past its last cell it saves); see ``SplitSheet``.
+    leaving = 0
 
     def __init__(
         self, db, account: str, *, today: date | None = None, view: RegisterView | None = None
@@ -471,18 +313,10 @@ class RegisterSheet:
         referenced = set()
         if self.draft.source is not None:
             referenced = {split.account for split in self.draft.source.splits}
-        names: dict[str, str] = {}
         records = book_server(self.db).accounts()
         self.full_names = {record.account.handle: record.full_name for record in records}
         self.accounts = {record.account.handle: record.account for record in records}
-        for record in records:
-            item = record.account
-            if item.is_root or item.placeholder or item.parent is None:
-                continue
-            if item.hidden and not hidden_accounts.shown() and item.handle not in referenced:
-                continue
-            names.setdefault(record.full_name, item.handle)
-        self.account_names = dict(sorted(names.items(), key=lambda pair: pair[0].casefold()))
+        self.account_names = selectable_names(records, referenced)
         self.transfer_names = {
             name: handle for name, handle in self.account_names.items() if handle != self.account
         }
@@ -569,20 +403,6 @@ class RegisterSheet:
         # for an account (#369), not on a separate imbalance line.
         return [SheetRow(SPLIT, line=index, current=True) for index in range(len(self.draft.lines))]
 
-    def balancing_line(self) -> int | None:
-        """The empty last split line, when it shows what is left to balance (#369)."""
-        lines = self.draft.lines
-        if not self.draft.expanded or not lines or lines[-1].has_input() or not self.residual():
-            return None
-        return len(lines) - 1
-
-    def _balancing_cells(self) -> tuple[str, str]:
-        """(increase, decrease) text that would balance the entry, as the line shows it."""
-        rest = -self.residual()
-        if rest > 0:
-            return rest.format(), ""
-        return "", (-rest).format()
-
     def _anchor(self) -> tuple[str, int | None]:
         """What the cursor is on: the draft's header line, or one of its split lines."""
         if 0 <= self.cursor < len(self.rows):
@@ -658,29 +478,6 @@ class RegisterSheet:
             draft.transfer = SPLIT_LABEL
         draft.snapshot = draft.state()
         return draft
-
-    def _line_of(self, split) -> Line:
-        value = split.value
-        line = Line(
-            account=self._name(split.account),
-            memo=split.memo,
-            increase=value.format() if value > 0 else "",
-            decrease=(-value).format() if value < 0 else "",
-            handle=split.handle,
-        )
-        if split.account in self.security_accounts:
-            self._load_trade(line, split)
-        return line
-
-    @staticmethod
-    def _load_trade(holder: Draft | Line, split) -> None:
-        """Shares and price of a stored split: a size with a value, else signed shares."""
-        quantity = split.quantity
-        if quantity:
-            holder.shares = shares_text(abs(quantity) if split.value else quantity)
-            price = trade_price(_frac(split.value), _frac(quantity))
-            holder.price = trade_price_text(price)
-        holder.settled = _trade_cells(holder)
 
     # ------------------------------------------------------------ the display
 
@@ -848,42 +645,12 @@ class RegisterSheet:
         row = self.rows[self.cursor]
         if row.kind == SPLIT:
             assert row.line is not None
-            line = self.draft.lines[row.line]
-            # Choosing an account (or a memo) for the line holding the rest takes
-            # the rest as its amount, as GnuCash does (#369).
-            balancing = (
-                self._balancing_cells()
-                if row.line == self.balancing_line()
-                and self.column in ("description", "transfer")
-                and text.strip()
-                else None
-            )
-            attribute = {
-                "description": "memo",
-                "transfer": "account",
-                "increase": "increase",
-                "decrease": "decrease",
-                "shares": "shares",
-                "price": "price",
-            }[self.column]
-            setattr(line, attribute, text)
-            if balancing is not None:
-                line.increase, line.decrease = balancing
-            if self.column in ("increase", "decrease") and text.strip():
-                setattr(line, "decrease" if self.column == "increase" else "increase", "")
-            self._grow_lines()
+            self._set_line_text(row.line, self.column, text)
             return
         if row.kind == NOTES:
             self.draft.notes = text
             return
         self.draft.set_cell(self.column, text)
-
-    def _grow_lines(self) -> None:
-        """Keep an empty split line at the end, ready for the next split."""
-        lines = self.draft.lines
-        if not lines or lines[-1].has_input():
-            lines.append(Line())
-            self._rebuild()
 
     def cell_text(self) -> str:
         """The text in the cursor's cell, for the editor to start from."""
@@ -896,46 +663,23 @@ class RegisterSheet:
         completes from earlier descriptions in this register. The caller selects
         the part beyond ``typed``.
         """
-        if self.column == "transfer":
-            names = (
-                self.account_names if self.rows[self.cursor].kind == SPLIT else self.transfer_names
-            )
-            return quickfill_account(typed, names)
         kind = self.rows[self.cursor].kind
-        if self.column == "description" and kind not in (SPLIT, NOTES):
+        if kind == SPLIT:
+            return self._quickfill_line(self.column, typed)
+        if self.column == "transfer":
+            return quickfill_account(typed, self.transfer_names)
+        if self.column == "description" and kind != NOTES:
             if self.draft.source is None:
                 found = quickfill_description(typed, self.descriptions)
                 if found is not None:
                     return found, []
         elif self.column == "description":
-            # A note or a split's memo completes from those written for the same
-            # description before, beginning with or containing what is typed (#407).
-            found = complete_note(typed, self._earlier_notes(memos=kind == SPLIT))
+            # A note completes from those written for the same description before,
+            # beginning with or containing what is typed (#407).
+            found = complete_note(typed, self._earlier_notes(memos=False))
             if found is not None:
                 return found, []
         return typed, []
-
-    def _earlier_notes(self, *, memos: bool) -> tuple[str, ...]:
-        """Notes (or memos) of earlier transactions with the draft's description,
-        read once for each description."""
-        description = self.draft.description.strip()
-        key = (description, memos)
-        cached = self._note_choices
-        if cached is not None and cached[0] == key:
-            return cached[1]
-        source = self.draft.source
-        try:
-            found = book_server(self.db).earlier_notes(
-                EarlierNotes(
-                    description=description,
-                    memos=memos,
-                    exclude=source.handle if source is not None else None,
-                )
-            )
-        except ApiError:
-            found = ()
-        self._note_choices = (key, found)
-        return found
 
     def date_key(self, text: str, key: str) -> str | None:
         """A date shortcut applied to ``text``; None lets the key be typed."""
@@ -971,35 +715,25 @@ class RegisterSheet:
         """
         column = self.column
         row = self.rows[self.cursor]
+        if row.kind == SPLIT:
+            return self._settle_line(row)
         text = self.cell_text().strip()
-        if column == "date" and row.kind != SPLIT and text:
+        if column == "date" and text:
             try:
                 self.draft.date = parse_entry_date(text, self._date_base()).isoformat()
             except EntryInputError:
                 return self._fail("Enter a date such as 2026-03-15, 3/15, 15, or t.")
         elif column == "transfer" and text and text != SPLIT_LABEL:
-            names = self.account_names if row.kind == SPLIT else self.transfer_names
-            resolved = self._resolve_account(text, names)
+            resolved = self._resolve_account(text, self.transfer_names)
             if resolved is None:
                 return self._fail(f"No account matches “{text}”.")
             self.set_text(resolved)
         elif column in ("increase", "decrease") and text and is_arithmetic(text):
-            try:
-                value = self.read_amount(text)
-            except ValueError:
-                return self._fail("Enter an amount, or arithmetic such as 12.50+3.")
-            other = "decrease" if column == "increase" else "increase"
-            self.set_text("")
-            saved = self.column
-            self.column = column if value >= 0 else other
-            self.set_text(abs(value).format())
-            self.column = saved
-        elif column == "description" and row.kind not in (SPLIT, NOTES) and text:
+            if not self._settle_arithmetic(column, text):
+                return False
+        elif column == "description" and row.kind != NOTES and text:
             self.propose()
-        if column in _TRADE_COLUMNS and (
-            (self.security is not None and row.kind in (TRANSACTION, BLANK, SPLIT))
-            or (row.kind == SPLIT and self._trade_holder(row) is not None)
-        ):
+        if column in _TRADE_COLUMNS and self.security is not None and row.kind != NOTES:
             return self._fill_trade(row, column)
         return True
 
@@ -1014,163 +748,6 @@ class RegisterSheet:
         assert row.line is not None
         line = self.draft.lines[row.line]
         return line if self._holds_security(line) else None
-
-    def _holds_security(self, line: Line) -> bool:
-        handle = self.account_names.get(line.account.strip())
-        return handle is not None and handle in self.security_accounts
-
-    def _read_shares(self, text: str, holder: Draft | Line | None = None) -> Decimal | None:
-        """Typed shares, arithmetic evaluated; ``EntryInputError`` when unreadable.
-
-        A split line's shares round to its own security's unit, which in a cash
-        register is not the register's (#407).
-        """
-        fraction = self.share_fraction
-        if isinstance(holder, Line):
-            account = self.accounts.get(self.account_names.get(holder.account.strip(), ""))
-            if account is not None and account.commodity_scu:
-                fraction = account.commodity_scu
-        return parse_entry_amount(text, "auto", fraction)
-
-    def _fill_trade(self, row: SheetRow, column: str, recompute: TradeField | None = None) -> bool:
-        """Work out the third of shares, price, and amount from the two typed (#323).
-
-        When all three were already filled, changing one changes neither of the
-        others until the question in :attr:`trade_question` is answered (#407).
-        """
-        holder = self._trade_holder(row)
-        if holder is None:
-            return True
-        if getattr(holder, column).strip() == holder.settled.get(column, ""):
-            return True
-        changed: TradeField = "amount" if column in ("increase", "decrease") else column  # type: ignore[assignment]
-        settled = holder.settled
-        was_full = bool(
-            settled.get("shares")
-            and settled.get("price")
-            and (settled.get("increase") or settled.get("decrease"))
-        )
-        if recompute is None and was_full and getattr(holder, column).strip():
-            self.trade_question = TradeQuestion(
-                holder, column, changed, tuple(f for f in TRADE_CHOICES if f != changed)
-            )
-            return True
-        amount_text = holder.increase.strip() or holder.decrease.strip()
-        source = self.draft.source
-        account = (
-            self.account_names[holder.account.strip()] if isinstance(holder, Line) else self.account
-        )
-        try:
-            filled = book_server(self.db).entry_trade(
-                ReadEntryTrade(
-                    account,
-                    shares=holder.shares,
-                    price=holder.price,
-                    amount=amount_text,
-                    changed=changed,
-                    currency=(source.currency if source else None)
-                    or book_server(self.db).transaction_currency(),
-                    recompute=recompute,
-                )
-            )
-        except ApiError as error:
-            return self._fail(str(error))
-        selling = holder.shares.strip().startswith("-")
-        if filled.shares is not None and (amount_text or filled.amount):
-            holder.shares = shares_text(Money(filled.shares))
-        if filled.price is not None:
-            holder.price = trade_price_text(filled.price)
-        if filled.amount is not None:
-            target = (
-                ("increase" if holder.increase.strip() else "decrease")
-                if amount_text
-                else ("decrease" if selling else "increase")
-            )
-            other = "decrease" if target == "increase" else "increase"
-            setattr(holder, target, Money(filled.amount).format())
-            setattr(holder, other, "")
-        holder.settled = _trade_cells(holder)
-        if isinstance(holder, Line):
-            self._grow_lines()
-        return True
-
-    def answer_trade(self, choice: TradeField | None) -> None:
-        """Answer :attr:`trade_question`: work out ``choice`` again from the other
-        two, or with ``None`` put the changed cell back as it was."""
-        question = self.trade_question
-        self.trade_question = None
-        if question is None:
-            return
-        holder = question.holder
-        if choice is None:
-            for name, text in holder.settled.items():
-                setattr(holder, name, text)
-            self._rebuild()
-            return
-        row = next(
-            (candidate for candidate in self.rows if self._trade_holder(candidate) is holder),
-            None,
-        )
-        if row is not None:
-            self._fill_trade(row, question.column, recompute=choice)
-            self._rebuild()
-
-    def _quantity(self, holder: Draft | Line, handle: str | None) -> Money | None:
-        """The shares a draft or line saves, signed like its amount; None when blank.
-
-        Shares left as loaded keep the stored quantity exactly; without an amount
-        (a share split, or shares moved in kind) the typed sign gives the direction.
-        """
-        text = holder.shares.strip()
-        if not text:
-            return None
-        source = None
-        if self.draft.source is not None and handle is not None:
-            source = next((s for s in self.draft.source.splits if s.handle == handle), None)
-        if (
-            source is not None
-            and source.quantity
-            and text
-            in (
-                shares_text(abs(source.quantity)),
-                shares_text(source.quantity),
-            )
-        ):
-            size = abs(source.quantity)
-            typed_sign = -1 if text.startswith("-") else 1
-        else:
-            value = self._read_shares(text, holder)
-            if value is None:
-                return None
-            size = abs(Money(value))
-            typed_sign = -1 if value < 0 else 1
-        if holder.increase.strip():
-            return size
-        if holder.decrease.strip():
-            return -size
-        return size * typed_sign
-
-    @staticmethod
-    def _resolve_account(text: str, names: dict[str, str]) -> str | None:
-        exact = {name.casefold(): name for name in names}
-        if text.casefold() in exact:
-            return exact[text.casefold()]
-        _shown, matches = quickfill_account(text, names)
-        return matches[0] if matches else None
-
-    def read_amount(self, text: str) -> Money:
-        """Typed text as an amount, arithmetic evaluated; ``ValueError`` if unreadable."""
-        source = self.draft.source
-        currency = (source.currency if source is not None else None) or book_server(
-            self.db
-        ).transaction_currency()
-        try:
-            value = book_server(self.db).entry_amount(text, currency).value
-        except ApiError:
-            raise ValueError(text) from None
-        if value is None:
-            raise ValueError(text)
-        return Money(value)
 
     def propose(self) -> bool:
         """Fill a new entry's untouched cells from the latest matching transaction."""
@@ -1236,19 +813,6 @@ class RegisterSheet:
         return True
 
     # ----------------------------------------------------------------- splits
-
-    def residual(self) -> Money:
-        total = Money(0)
-        for line in self.draft.lines:
-            text, sign = line.amount_text()
-            if not text:
-                continue
-            try:
-                value = self.read_amount(text)
-            except ValueError:
-                continue
-            total = total + (value if sign > 0 else -value)
-        return total
 
     def toggle_split(self) -> bool:
         """Open the transaction under the cursor into split lines, or close it again.
@@ -1670,93 +1234,12 @@ class RegisterSheet:
             self._split_input(handle, -amount, currency, other),
         ), amount
 
-    def _line_splits(self, currency: str):
-        splits = []
-        for index, line in enumerate(self.draft.lines):
-            if not line.has_input():
-                continue
-            name = self._resolve_account(line.account.strip(), self.account_names)
-            if not line.account.strip() or name is None:
-                return self._fail("Choose an account for this split.", "transfer", index)
-            text, sign = line.amount_text()
-            try:
-                value = self.read_amount(text) if text else None
-            except ValueError:
-                return self._fail(
-                    "Enter an amount, or arithmetic such as 12.50+3.", "increase", index
-                )
-            quantity = None
-            if self._holds_security(line):
-                try:
-                    quantity = self._quantity(line, line.handle)
-                except EntryInputError:
-                    return self._fail("Enter shares such as 12.345.", "shares", index)
-                if not quantity:
-                    return self._fail("Enter the shares for this split.", "shares", index)
-            if (value is None or value == 0) and not quantity:
-                return self._fail("Enter an amount for this split.", "increase", index)
-            value = value or Money(0)
-            splits.append(
-                self._split_input(
-                    self.account_names[name],
-                    value if sign > 0 else -value,
-                    currency,
-                    line.handle,
-                    line.memo,
-                    quantity=quantity,
-                )
-            )
-        if len(splits) < 2:
-            return self._fail("A transaction needs at least two splits.", "transfer", 0)
-        residual = self.residual()
-        if residual:
-            rest_line = self.balancing_line()
-            return self._fail(
-                f"The splits are out of balance by {residual.format(parens_negative=True)}; "
-                "choose an account for the last line, which holds the rest.",
-                "transfer",
-                rest_line if rest_line is not None else 0,
-            )
+    # ---------------------------------------------------------------- reconcile
+
+    def _needs_own_split(self) -> bool:
         # An existing transaction may move out of this account entirely, such as a
         # purchase entered on the wrong card (#364); a new one must belong here.
-        if self.draft.source is None and not any(split.account == self.account for split in splits):
-            return self._fail("One split must be in this register's account.", "transfer", 0)
-        return tuple(splits)
-
-    def _split_input(
-        self,
-        account: str,
-        value: Money,
-        currency: str,
-        handle: str | None,
-        memo: str | None = None,
-        *,
-        quantity: Money | None = None,
-    ) -> TransactionSplitInput:
-        """One split, keeping what the register does not show from its stored split."""
-        source = None
-        if self.draft.source is not None and handle is not None:
-            source = next((s for s in self.draft.source.splits if s.handle == handle), None)
-        return TransactionSplitInput(
-            account,
-            Amount(value, currency),
-            handle=handle if source is not None else None,
-            memo=(
-                memo if memo is not None else (source.memo if source is not None else "")
-            ).strip(),
-            planning_flow=source.planning_flow if source is not None else None,
-            investment_activity=source.investment_activity if source is not None else None,
-            quantity=self._shares_amount(account, quantity),
-        )
-
-    def _shares_amount(self, account: str, quantity: Money | None) -> Amount | None:
-        """Shares as an amount of the account's security, for the shared service."""
-        if quantity is None:
-            return None
-        obj = self.accounts.get(account)
-        return Amount(quantity, obj.commodity) if obj is not None and obj.commodity else None
-
-    # ---------------------------------------------------------------- reconcile
+        return self.draft.source is None
 
     def toggle_reconcile(self, index: int) -> bool:
         """Mark a transaction's split in this account cleared, or not cleared."""
@@ -1775,9 +1258,6 @@ class RegisterSheet:
         return True
 
     # ----------------------------------------------------------------- messages
-
-    def _say(self, text: str) -> None:
-        self.message, self.error = text, False
 
     def _fail(self, text: str, column: str | None = None, line: int | None = None) -> bool:
         """Report why the cursor stays, moving it to the cell to correct."""

@@ -252,8 +252,9 @@ says so in its title (`Future changes (2)`, `Tags & documents (1)`) or opens by
 itself, so nothing set is hidden from view. A field that applies only to some
 accounts (investment activity) shows only for those, or when it already holds a
 choice. The schedule and scenario schedule editors share `update_schedule_pages`;
-the transaction editor's per-split planning purpose and investment activity follow
-its **Planning detail** toggle (`SplitEditor.show_detail`).
+the transaction editor's per-split planning purpose and investment activity are
+columns of its split grid that its **Planning detail** toggle adds
+(`SplitSheet.set_detail`).
 
 Every table except the register grid (below) is built with `_base.table_section()`: a heading row with the table's
 own column chooser (`column_menu`, which also moves columns, and
@@ -347,9 +348,8 @@ Windows must stay usable on small screens whatever the book holds:
   register's account cell does. Such a list opens at least `LIST_MIN_HEIGHT`
   tall (the list's scrolled window inside the drop-down's popover), so it never shows
   only two or three rows. GTK 4.16 and later cannot unselect a drop-down, so a
-  choice that may be left empty is a real item: a split row's account list ends with
-  **Choose an account…**, which the row holding the rest of an unbalanced entry
-  shows. Toolbar icons are ones current Adwaita still ships
+  choice that may be left empty is a real item. Split accounts are typed, not
+  chosen from a drop-down (see **One transaction editor**). Toolbar icons are ones current Adwaita still ships
   (`TestMenusAndIcons`). View
   toolbars scroll, Dashboard cards wrap in a `Gtk.FlowBox`, and the main stacks are
   not homogeneous, so the window's minimum is the shown page's. The Dashboard's
@@ -535,15 +535,32 @@ parallel transaction models:
   also requires them. The footer is `presentation.register_share_summary`: shares
   held and their market value with the quote's date and source, or "no quote" and
   the ledger amount, never an unquoted conversion. The transaction editor's
-  splits show a Shares entry for a security's split.
-- **Transaction editor splits.** Each `SplitEditor` row is a small register
-  line: account, memo, and increase/decrease entries named by
-  `ledger.register_headings` for the row's own account, so no amount is typed
-  signed (either entry may be arithmetic). A single blank row shows the balancing
-  amount as its placeholder and takes it on save; when every row has an amount and
-  they do not balance, the dialog adds a row (`SplitEditor.auto`) with no account,
-  which blocks saving until one is chosen, and removes it again, untouched, once
-  the entry balances.
+  split grid takes shares and price on a security's line the same way.
+- **One transaction editor.** Every GTK window that enters or changes a
+  transaction holds `widgets/transaction_editor.TransactionEditor`:
+  `dialogs/transaction_dialog.TransactionDialog` (the register's Edit and New,
+  reconciliation, File → New Transaction) and
+  `dialogs/posted_dialog.PostedTransactionsDialog`, whose list opens the chosen
+  posted transaction in it. The editor has the **Entry** page (date, number,
+  description, notes), the split grid beneath its pages, and **Tags &
+  documents**; the window adds only its buttons. The splits are typed on the
+  register's own grid (`widgets/register_grid.RegisterGrid`) over a
+  `split_sheet.SplitSheet`, one transaction's split lines. It and the register's
+  `register_sheet.RegisterSheet` are both a `split_entry.SplitEntry`, which holds
+  everything a split line does once: memo completion, account completion
+  (`selectable_names`, then `entry_input.quickfill_account`), arithmetic amounts,
+  the rest of an unbalanced entry on the empty last line (#369), shares and price
+  in a security (#323, #407), the planning purpose and investment activity cells
+  (`CHOICES`, completed by `choose`; saved only by a sheet that shows them,
+  `edits_detail`, so the register keeps the stored ones), and the split inputs for
+  the shared save service (`_line_splits`, `_split_input`). The split sheet's
+  amount columns are named by `ledger.register_headings` for the account the
+  editor was opened from (Debit and Credit with none). Unlike the register, it
+  saves nothing itself: Enter asks the editor to save (`on_enter`), Escape to close
+  (`on_escape`), and Tab past the last cell sets `leaving`, which the grid answers
+  by moving the keyboard on to the window's next control. An account outside the
+  tree, a placeholder, or a hidden account (while hidden accounts are not shown) is
+  offered only where the transaction already uses it.
 - **Double Line.** The window's stateful `win.double-line` action (**View → Double
   Line**, also in Preferences; remembered in view settings as
   `register.double_line`) adds a `NOTES` row under every transaction

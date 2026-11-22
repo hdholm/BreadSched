@@ -272,10 +272,11 @@ commit in one database transaction and one undo step; defer writes nothing. GTK'
 due dialog, the web review panel, and the `due-review` command are adapters over this
 service; the older unreviewed post-all helpers remain for callers that explicitly
 post automatic schedules. `DueResolution.transactions` names what was posted, and
-GTK opens it in `dialogs/posted_dialog.PostedTransactionsDialog`: every split
-on its own line under its account's register heading, with **Edit…** (the full
-transaction editor) and **Delete** (`delete_transaction`), each an ordinary undoable
-change after which the list rereads the book. The browser review still reports a
+GTK opens it in `dialogs/posted_dialog.PostedTransactionsDialog`: a list of what
+was posted, the chosen transaction open in the one transaction editor
+(`widgets/transaction_editor`, its pages and its split grid), with **Save**
+(`save_transaction`) and **Delete…** (`delete_transaction`), each an ordinary
+undoable change after which the list rereads the book. The browser review still reports a
 count; showing what it posted is on the roadmap.
 
 A schedule stores each leg's value in the transaction currency, never a quantity. Every posting path builds the ledger entry with

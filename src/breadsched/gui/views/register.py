@@ -931,24 +931,7 @@ class RegisterView(BaseView):
             except ValueError:
                 amount = None
         transfer = sheet.transfer_names.get(draft.transfer.strip())
-        lines = None
-        if draft.expanded:
-            lines = []
-            for line in draft.lines:
-                if not line.has_input():
-                    continue
-                text, sign = line.amount_text()
-                try:
-                    value = sheet.read_amount(text) if text else None
-                except ValueError:
-                    value = None
-                lines.append(
-                    (
-                        sheet.account_names.get(line.account.strip()),
-                        value if value is None or sign > 0 else -value,
-                        line.memo.strip(),
-                    )
-                )
+        lines = sheet.line_values() if draft.expanded else None
         dialog.prefill(
             description=draft.description.strip(),
             num=draft.num.strip(),

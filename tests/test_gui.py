@@ -1802,7 +1802,13 @@ class TestRegisterGrid:
             sheet.set_text(text)
         dialog = view.open_full_editor()
         try:
-            assert dialog.description_entry.get_text() == "Needs notes"
+            assert dialog.editor.description_entry.get_text() == "Needs notes"
+            rent = app.db.get_account_by_name("Expenses:Rent").handle
+            assert dialog.editor.split_values() == [
+                (view.account_handle, -Money("9"), ""),
+                (rent, Money("9"), ""),
+            ]
+            assert dialog.save_button.get_sensitive() is True
         finally:
             dialog.destroy()
         # Cancelling the editor keeps the typing.
@@ -2216,13 +2222,13 @@ class TestDialogs:
         with app.db.transaction("Hide rent") as txn:
             app.db.commit_account(rent, txn)
         dialog = TransactionDialog(window, app.db)
-        assert not any("Rent" in name for name in dialog.account_names)
+        assert "Expenses:Rent" not in dialog.editor.sheet.account_names
         dialog.destroy()
         window.show_category("accounts")
         window._views["accounts"].set_show_hidden(True)
         assert hidden_accounts.shown()
         dialog = TransactionDialog(window, app.db)
-        assert any("Rent" in name for name in dialog.account_names)
+        assert "Expenses:Rent" in dialog.editor.sheet.account_names
         dialog.destroy()
 
     def test_dialog_date_fields_take_the_registers_dates_and_keys(self, app, window):
@@ -2246,13 +2252,19 @@ class TestDialogs:
         assert entry.get_text() == "2030-03-15"
         assert read_date(Gtk.Entry(text="15"), date(2030, 4, 1)) == date(2030, 4, 15)
 
-    def test_the_transaction_dialog_starts_with_two_splits(self, app, window, populated_book):
+    def test_the_transaction_dialog_starts_with_the_register_account(
+        self, app, window, populated_book
+    ):
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
         app.open_book(populated_book)
         handle = app.db.get_account_by_name("Assets:Checking Account").handle
         dialog = TransactionDialog(window, app.db, default_account=handle)
-        assert len(dialog.splits) == 2
+        # The register's account on the first line, an empty line for the other side.
+        assert [line.account for line in dialog.editor.sheet.lines] == [
+            "Assets:Checking Account",
+            "",
+        ]
         assert dialog.save_button.get_sensitive() is False
 
     def test_the_transaction_editor_keeps_detail_out_of_the_way(self, app, window, populated_book):
@@ -2262,50 +2274,73 @@ class TestDialogs:
         app.open_book(populated_book)
         _add_brokerage(app.db)
         dialog = TransactionDialog(window, app.db)
-        assert dialog.pages.get_current_page() == 0
-        assert dialog.tags_entry.get_parent() is dialog.pages.get_nth_page(1)
-        assert dialog.pages.tab_label(MORE) == MORE
-        dialog.tags_entry.set_text("Tax, Home")
-        assert dialog.pages.tab_label(MORE) == f"{MORE} (2)"
+        editor = dialog.editor
+        assert editor.pages.get_current_page() == 0
+        assert editor.tags_entry.get_parent() is editor.pages.get_nth_page(1)
+        assert editor.pages.tab_label(MORE) == MORE
+        editor.tags_entry.set_text("Tax, Home")
+        assert editor.pages.tab_label(MORE) == f"{MORE} (2)"
 
-        def index_of(investing: bool) -> int:
-            return next(
-                index
-                for index, account in enumerate(dialog.accounts)
-                if account.atype.is_investment is investing
-            )
-
-        first = dialog.splits[0]
-        first.account.set_selected(index_of(False))
-        assert first.planning_purpose.get_visible() is False
-        assert first.investment_activity.get_visible() is False
-        dialog.detail_toggle.set_active(True)
-        assert first.planning_purpose.get_visible() is True
+        sheet = editor.sheet
+        editor.type_line(0, account="Assets:Checking Account")
+        assert "purpose" not in sheet.columns
+        assert "purpose" not in sheet.editable_columns(0)
+        editor.detail_toggle.set_active(True)
+        assert sheet.columns[-2:] == ("purpose", "activity")
+        assert "purpose" in sheet.editable_columns(0)
         # Investment activity needs an investment or retirement account too.
-        assert first.investment_activity.get_visible() is False
-        first.account.set_selected(index_of(True))
-        assert first.investment_activity.get_visible() is True
-        # A choice already made stays in sight with the detail turned off.
-        first.investment_activity.set_selected(1)
-        dialog.detail_toggle.set_active(False)
-        assert first.investment_activity.get_visible() is True
-        assert first.planning_purpose.get_visible() is False
+        assert "activity" not in sheet.editable_columns(0)
+        editor.type_line(0, account="Test Brokerage")
+        assert "activity" in sheet.editable_columns(0)
+        # Each completes from its list, as an account does.
+        sheet.column = "activity"
+        assert sheet.quickfill("Contr") == ("Contribution", ["Contribution"])
+        editor.type_line(0, activity="contribution")
+        assert sheet.lines[0].activity == "Contribution"
+        dialog.destroy()
+
+        # Detail already set is never hidden: an edited split that has it opens with it.
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        brokerage = app.db.get_account_by_name("Test Brokerage")
+        from breadsched.gen.lib import InvestmentActivityKind, Split
+
+        existing = Transaction(post_date=date(2026, 3, 1), description="Contribution")
+        existing.add_split(
+            Split(
+                brokerage.handle,
+                Money("5"),
+                investment_activity=InvestmentActivityKind.CONTRIBUTION,
+            )
+        )
+        existing.add_split(Split(checking.handle, Money("-5")))
+        with app.db.transaction("Add") as txn:
+            app.db.add_transaction(existing, txn)
+        dialog = TransactionDialog(window, app.db, transaction=existing)
+        assert dialog.editor.detail_toggle.get_active() is True
+        assert "activity" in dialog.editor.sheet.columns
         dialog.destroy()
 
     def test_one_amount_is_enough_for_a_two_split_entry(self, app, window, populated_book):
-        """The common case: pick two accounts, type one number."""
+        """The common case, as in the register: one amount, then the other account,
+        which takes the rest."""
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
         app.open_book(populated_book)
-        dialog = TransactionDialog(window, app.db)
-        dialog.splits[0].set_amount_text("125.00")
+        checking = app.db.get_account_by_name("Assets:Checking Account").handle
+        dialog = TransactionDialog(window, app.db, default_account=checking)
+        editor = dialog.editor
+        editor.type_line(0, decrease="125.00")
+        assert dialog.save_button.get_sensitive() is False
+        assert editor.sheet.text(1, "increase") == "125.00"  # the rest, waiting
+        editor.type_line(1, account="Expenses:Groceries")
+        assert editor.lines()[1] == ("Expenses:Groceries", "", "125.00", "")
         assert dialog.save_button.get_sensitive() is True
-        assert "blank split will be set to" in dialog.status.get_text()
 
     def test_split_rows_name_their_columns_and_hold_the_rest(self, app, window, populated_book):
-        """#369: Increase/Decrease named for each row's account; the rest on a new row."""
+        """#369: the amount columns are named as the register opened from names them,
+        and the rest of an unbalanced entry waits on the empty last line."""
         from breadsched.gen.lib import Money
-        from breadsched.gui.dialogs.transaction_dialog import CHOOSE_ACCOUNT, TransactionDialog
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
         app.open_book(populated_book)
         db = app.db
@@ -2313,40 +2348,24 @@ class TestDialogs:
         rent = db.get_account_by_name("Expenses:Rent")
         checking = db.get_account_by_name("Assets:Checking Account")
         dialog = TransactionDialog(window, db, default_account=card.handle)
+        editor = dialog.editor
         try:
-            handles = [account.handle for account in dialog.accounts]
-            first, second = dialog.splits
-            first.account.set_selected(handles.index(card.handle))
-            second.account.set_selected(handles.index(rent.handle))
-            assert (
-                first.increase.get_placeholder_text(),
-                first.decrease.get_placeholder_text(),
-            ) == (
-                "Payment",
-                "Charge",
-            )
-            assert second.increase.get_placeholder_text() == "Expense"
+            sheet = editor.sheet
+            headings = sheet.headings()
+            assert (headings["increase"], headings["decrease"]) == ("Payment", "Charge")
+            assert editor.lines()[0][0] == sheet.full_names[card.handle]
             # A charge: no signs to get right.
-            first.decrease.set_text("60")
-            assert first.value() == Money("-60")
-            # The blank row shows what balances it, in its expense column.
-            assert second.increase.get_placeholder_text() == "60.00"
-            second.increase.set_text("45")
-            # Out of balance: a new row holds the 15 left, waiting for its account.
-            assert len(dialog.splits) == 3
-            rest = dialog.splits[2]
-            assert rest.auto and rest.account_handle is None
-            # It shows the choice of no account, which GTK 4.16 and later keep: they
-            # cannot unselect a drop-down, so it once kept the first account.
-            assert rest.account.get_selected() == len(dialog.accounts)
-            assert rest.account.get_selected_item().get_string() == CHOOSE_ACCOUNT
-            assert rest.increase.get_placeholder_text() == "15.00"
+            editor.type_line(0, decrease="60")
+            # The empty line shows what balances it, until it has an account.
+            assert sheet.text(1, "increase") == "60.00"
+            editor.type_line(1, account="Expenses:Rent", increase="45")
+            # Out of balance: the next empty line holds the 15 left.
+            assert sheet.text(2, "increase") == "15.00"
             assert dialog.save_button.get_sensitive() is False
-            rest.account.set_selected(handles.index(checking.handle))
-            assert rest.auto is False
+            editor.type_line(2, account="Assets:Checking Account")
             assert dialog.save_button.get_sensitive() is True
-            dialog.description_entry.set_text("Rest on a new split")
-            dialog._on_save(None)
+            editor.description_entry.set_text("Rest on a new split")
+            assert editor.save() is True
             saved = next(
                 t for t in db.iter_transactions() if t.description == "Rest on a new split"
             )
@@ -2358,31 +2377,78 @@ class TestDialogs:
         finally:
             dialog.destroy()
 
+    def test_the_splits_take_the_registers_keys(self, app, window, populated_book):
+        """Tab past the last split cell leaves the grid; Enter saves; Escape closes."""
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+        from breadsched.gui.gi_setup import Gdk
+
+        app.open_book(populated_book)
+        checking = app.db.get_account_by_name("Assets:Checking Account").handle
+        dialog = TransactionDialog(window, app.db, default_account=checking)
+        editor = dialog.editor
+        try:
+            dialog.present()
+            assert _spin(dialog.get_mapped)
+            editor.description_entry.set_text("Keyed in")
+            editor.type_line(0, decrease="3")
+            editor.type_line(1, account="Expenses:Groceries")
+            grid, sheet = editor.grid, editor.sheet
+            sheet.cursor, sheet.column = sheet._tab_order()[-1]
+            grid.sync()
+            assert grid.key(Gdk.KEY_Tab, Gdk.ModifierType(0)) is True
+            assert sheet.leaving == 0 and not grid.editor.get_visible()
+            focus = dialog.get_focus()
+            assert focus is None or not focus.is_ancestor(grid)
+            before = app.db.summary()["txn"]
+            sheet.move_to(0, "description")
+            grid.sync()
+            assert grid.key(Gdk.KEY_Return, Gdk.ModifierType(0)) is True
+            assert app.db.summary()["txn"] == before + 1
+            assert editor.saved is True
+        finally:
+            dialog.destroy()
+        closed = TransactionDialog(window, app.db, default_account=checking)
+        closed.present()
+        assert _spin(closed.get_mapped)
+        closed.editor.grid.sync()
+        assert closed.editor.grid.key(Gdk.KEY_Escape, Gdk.ModifierType(0)) is True
+        assert _spin(lambda: not closed.get_visible())
+
     def test_a_rest_row_goes_again_once_the_entry_balances(self, app, window, populated_book):
+        """The empty last line holds the rest only while the entry is out of balance,
+        as the register's does (#369)."""
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
         app.open_book(populated_book)
-        dialog = TransactionDialog(window, app.db)
+        checking = app.db.get_account_by_name("Assets:Checking Account").handle
+        dialog = TransactionDialog(window, app.db, default_account=checking)
+        editor = dialog.editor
         try:
-            first, second = dialog.splits
-            first.increase.set_text("10")
-            second.decrease.set_text("4")
-            assert len(dialog.splits) == 3 and dialog.splits[2].auto
-            second.decrease.set_text("10+0")
-            assert len(dialog.splits) == 2
-            assert dialog.status.get_text() == "Balanced"
+            editor.type_line(0, increase="10")
+            editor.type_line(1, account="Expenses:Groceries", decrease="4")
+            sheet = editor.sheet
+            # Out of balance: the empty last line shows the 6 left.
+            assert sheet.balancing_line() == 2
+            assert sheet.text(2, "decrease") == "6.00"
+            assert "Out of balance by" in editor.status.get_text()
+            editor.type_line(1, decrease="10+0")
+            assert sheet.balancing_line() is None
+            assert sheet.text(2, "decrease") == ""
+            assert editor.status.get_text() == "Balanced."
         finally:
             dialog.destroy()
 
     def test_transaction_amount_accepts_comma_decimal_input(self, app, window, populated_book):
-        from breadsched.gen.lib import Money
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
         app.open_book(populated_book)
-        dialog = TransactionDialog(window, app.db)
-        dialog.splits[0].set_amount_text("45,67")
+        checking = app.db.get_account_by_name("Assets:Checking Account").handle
+        dialog = TransactionDialog(window, app.db, default_account=checking)
+        dialog.editor.type_line(0, increase="45,67")
+        dialog.editor.type_line(1, account="Income:Salary")
 
-        assert dialog.splits[0].value() == Money("45.67")
+        assert dialog.editor.sheet.residual() == Money(0)
+        assert dialog.editor.lines()[1][3] == "45.67"
         assert dialog.save_button.get_sensitive() is True
 
     def test_the_transaction_dialog_posts(self, app, window, populated_book):
@@ -2390,51 +2456,60 @@ class TestDialogs:
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
         app.open_book(populated_book)
-        dialog = TransactionDialog(window, app.db)
-        dialog.description_entry.set_text("Test entry")
-        dialog.splits[0].set_amount_text("42.00")
+        checking = app.db.get_account_by_name("Assets:Checking Account").handle
+        groceries = app.db.get_account_by_name("Expenses:Groceries").handle
+        dialog = TransactionDialog(window, app.db, default_account=checking)
+        editor = dialog.editor
+        editor.description_entry.set_text("Test entry")
+        # As in the register: the first line names the account it was opened from;
+        # its amount, then an account for the empty line, which takes the rest.
+        editor.type_line(0, decrease="42.00")
+        assert dialog.save_button.get_sensitive() is False
+        editor.type_line(1, account="Expenses:Groceries")
+        assert dialog.save_button.get_sensitive() is True
         before = app.db.summary()["txn"]
-        dialog._on_save(None)
+        dialog.save_button.emit("clicked")
 
         assert app.db.summary()["txn"] == before + 1
         posted = next(t for t in app.db.iter_transactions() if t.description == "Test entry")
         assert posted.is_balanced()
-        first_account = dialog.splits[0].account_handle
-        assert posted.value_for(first_account) == Money("42.00")
+        assert posted.value_for(checking) == Money("-42.00")
+        assert posted.value_for(groceries) == Money("42.00")
 
     def test_the_transaction_editor_saves_tags_and_links_documents(
         self, app, window, populated_book, tmp_path, monkeypatch
     ):
-        from breadsched.gui.dialogs import transaction_dialog
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+        from breadsched.gui.widgets import transaction_editor
 
         app.open_book(populated_book)
-        fresh = TransactionDialog(window, app.db)
+        fresh = TransactionDialog(window, app.db).editor
         assert fresh.document_rows == [] and fresh.link_entry is None
         target = next(t for t in app.db.iter_transactions() if t.description == "Supermarket")
         dialog = TransactionDialog(window, app.db, transaction=target)
-        dialog.tags_entry.set_text("tax, Groceries ,tax")
+        editor = dialog.editor
+        editor.tags_entry.set_text("tax, Groceries ,tax")
         receipt = tmp_path / "receipt.pdf"
         receipt.write_bytes(b"%PDF")
-        assert dialog.attach_path(receipt) is True
-        assert dialog.link_location("https://example.com/r") is True
+        assert editor.attach_path(receipt) is True
+        assert editor.link_location("https://example.com/r") is True
         folder = tmp_path / "gui attachments"
         (folder / "receipt.pdf").unlink()
-        dialog._show_documents()
-        states = [(item.location, item.missing) for item, _row in dialog.document_rows]
+        editor._show_documents()
+        states = [(item.location, item.missing) for item, _row in editor.document_rows]
         assert states == [("receipt.pdf", True), ("https://example.com/r", False)]
         opened = []
         monkeypatch.setattr(
-            transaction_dialog.Gio.AppInfo,
+            transaction_editor.Gio.AppInfo,
             "launch_default_for_uri",
             lambda uri, _context: opened.append(uri),
         )
-        assert dialog.open_document(dialog.document_rows[0][0]) is None
-        assert "cannot be found" in dialog.status.get_text()
-        assert dialog.relink_document("receipt.pdf", receipt) is True
-        assert dialog.open_document(dialog.document_rows[0][0]) == receipt.resolve().as_uri()
-        assert dialog.remove_document("https://example.com/r") is True
-        dialog._on_save(None)
+        assert editor.open_document(editor.document_rows[0][0]) is None
+        assert "cannot be found" in editor.status.get_text()
+        assert editor.relink_document("receipt.pdf", receipt) is True
+        assert editor.open_document(editor.document_rows[0][0]) == receipt.resolve().as_uri()
+        assert editor.remove_document("https://example.com/r") is True
+        assert editor.save() is True
         saved = app.db.get_transaction(target.handle)
         assert saved.tags == ["tax", "Groceries"]
         assert saved.attachments == [str(receipt.resolve())]
@@ -2504,16 +2579,11 @@ class TestDialogs:
             app.db.add_transaction(existing, txn)
 
         fresh = TransactionDialog(window, app.db)
-        assert hidden.handle not in {account.handle for account in fresh.accounts}
+        assert hidden.handle not in fresh.editor.sheet.account_names.values()
 
         editing = TransactionDialog(window, app.db, transaction=existing)
-        hidden_index = next(
-            index
-            for index, account in enumerate(editing.accounts)
-            if account.handle == hidden.handle
-        )
-        assert editing.account_names[hidden_index].endswith(" (hidden)")
-        assert editing.splits[0].account_handle == hidden.handle
+        assert editing.editor.sheet.account_names["Archived category"] == hidden.handle
+        assert editing.editor.lines()[0][0] == "Archived category"
 
     def test_transaction_editor_preserves_split_metadata_and_edits_planning_purpose(
         self, app, window, populated_book
@@ -2557,9 +2627,12 @@ class TestDialogs:
         existing.add_split(Split(bank.handle, Money("-12.34")))
 
         dialog = TransactionDialog(window, app.db, transaction=existing)
-        assert dialog.splits[0].purpose is PlanningFlowKind.RETIREMENT_SAVING
-        dialog.splits[0].planning_purpose.set_selected(2)
-        rebuilt = dialog.build()
+        editor = dialog.editor
+        assert editor.detail_toggle.get_active() is True
+        assert editor.sheet.lines[0].purpose == "Retirement saving"
+        editor.type_line(0, purpose="Benefit")
+        assert editor.sheet.lines[0].purpose == "Benefit / FSA funding"
+        rebuilt = editor.build()
         preserved = rebuilt.split_for(holding.handle)
 
         assert preserved is not None
@@ -2570,6 +2643,9 @@ class TestDialogs:
         assert preserved.planning_flow is PlanningFlowKind.BENEFIT_FUNDING
         assert preserved.investment_activity is InvestmentActivityKind.CONTRIBUTION
         assert preserved.fsa_year_start == date(2026, 1, 1)
+        # A purpose no list holds is refused where it was typed.
+        editor.type_line(0, purpose="Holiday fund")
+        assert "No purpose matches" in editor.status.get_text()
 
     def test_transaction_editor_shows_and_edits_shares_of_a_security_split(
         self, app, window, populated_book
@@ -2580,17 +2656,22 @@ class TestDialogs:
         app.open_book(populated_book)
         account, buy = _security_account(app.db)
         dialog = TransactionDialog(window, app.db, transaction=buy)
-        fund_split = next(e for e in dialog.splits if e.account_handle == account.handle)
-        cash_split = next(e for e in dialog.splits if e.account_handle != account.handle)
-        assert fund_split.shares.get_visible() and fund_split.shares.get_text() == "10.123"
-        assert not cash_split.shares.get_visible()
-        assert dialog.build().split_for(account.handle).quantity == Money("10.123")
+        editor = dialog.editor
+        sheet = editor.sheet
+        fund = next(i for i, line in enumerate(sheet.lines) if line.account == "Assets:VTTHX")
+        cash = next(i for i, line in enumerate(sheet.lines) if line.account and i != fund)
+        # Shares and price, as the register's stock columns (#323).
+        assert "shares" in sheet.columns and "price" in sheet.columns
+        assert sheet.lines[fund].shares == "10.123"
+        assert "shares" in sheet.editable_columns(fund)
+        assert "shares" not in sheet.editable_columns(cash)
+        assert editor.build().split_for(account.handle).quantity == Money("10.123")
 
-        fund_split.shares.set_text("abc")
-        assert "shares" in dialog.status.get_text().lower()
-        assert not dialog.save_button.get_sensitive()
-        fund_split.shares.set_text("10.5")
-        dialog._on_save(None)
+        editor.type_line(fund, shares="abc")
+        assert editor.save() is False
+        assert "shares" in editor.status.get_text().lower()
+        editor.type_line(fund, shares="10.5")
+        assert editor.save() is True
         assert app.db.get_transaction(buy.handle).split_for(account.handle).quantity == Money(
             "10.5"
         )
@@ -2620,8 +2701,8 @@ class TestDialogs:
 
         dialog = TransactionDialog(window, app.db, transaction=correction)
 
-        assert dialog.escrow_treatment is not None
-        assert "manual balance adjustment" in dialog.escrow_treatment.get_text()
+        assert dialog.editor.escrow_treatment is not None
+        assert "manual balance adjustment" in dialog.editor.escrow_treatment.get_text()
 
 
 class TestImportDialogState:
@@ -4650,26 +4731,29 @@ class TestEditingFromTheRegister:
 
     def test_the_dialog_opens_on_the_existing_values(self, register):
         dialog, transaction = self._dialog_for(register)
-        assert dialog.editing is True
-        assert dialog.description_entry.get_text() == transaction.description
-        assert dialog.date_entry.get_text() == transaction.post_date.isoformat()
-        assert len(dialog.splits) == len(transaction.splits)
+        editor = dialog.editor
+        assert editor.editing is True
+        assert editor.description_entry.get_text() == transaction.description
+        assert editor.date_entry.get_text() == transaction.post_date.isoformat()
+        # One line per split, and the empty line for another.
+        assert len(editor.lines()) == len(transaction.splits)
+        assert len(editor.sheet.lines) == len(transaction.splits) + 1
 
     def test_it_opens_balanced_and_saveable(self, register):
         dialog, _ = self._dialog_for(register)
-        assert dialog.status.get_text() == "Balanced"
+        assert dialog.status.get_text() == "Balanced."
         assert dialog.save_button.get_sensitive() is True
 
     def test_a_description_edit_is_stored(self, register, app):
         dialog, transaction = self._dialog_for(register)
-        dialog.description_entry.set_text("Corrected description")
-        dialog._on_save(None)
+        dialog.editor.description_entry.set_text("Corrected description")
+        assert dialog.editor.save() is True
         assert app.db.get_transaction(transaction.handle).description == ("Corrected description")
 
     def test_breadsched_notes_are_edited_separately(self, register, app):
         dialog, transaction = self._dialog_for(register)
-        dialog.notes_view.get_buffer().set_text("Local planning note")
-        dialog._on_save(None)
+        dialog.editor.notes_view.get_buffer().set_text("Local planning note")
+        assert dialog.editor.save() is True
         saved = app.db.get_transaction(transaction.handle)
         assert saved.notes == "Local planning note"
 
@@ -4677,56 +4761,62 @@ class TestEditingFromTheRegister:
         from breadsched.gen.lib import Money
 
         dialog, transaction = self._dialog_for(register)
-        dialog.splits[0].set_amount_text("77.00")
-        dialog.splits[1].set_amount_text("-77.00")
-        for extra in dialog.splits[2:]:
-            extra.set_amount_text("0.00")
-        dialog.revalidate()
-        dialog._on_save(None)
+        editor = dialog.editor
+        first = editor.sheet.account_names[editor.sheet.lines[0].account]
+        editor.type_line(0, increase="77.00")
+        editor.type_line(1, decrease="77.00")
+        # A line emptied of everything is no longer a split.
+        for _extra in range(2, len(editor.lines())):
+            editor.type_line(2, memo="", account="", increase="", decrease="")
+        assert editor.save() is True
 
         edited = app.db.get_transaction(transaction.handle)
         assert edited.is_balanced()
-        assert edited.value_for(dialog.splits[0].account_handle) == Money("77.00")
+        assert edited.value_for(first) == Money("77.00")
 
     def test_an_unbalanced_edit_cannot_be_saved(self, register):
         dialog, _ = self._dialog_for(register)
-        before = len(dialog.splits)
-        dialog.splits[0].set_amount_text("1000000.00")
-        dialog.revalidate()
+        editor = dialog.editor
+        rest = len(editor.sheet.lines) - 1
+        editor.type_line(0, increase="1000000.00")
         assert dialog.save_button.get_sensitive() is False
-        # #369: the rest waits on a new split, for its account.
-        assert len(dialog.splits) == before + 1
-        rest = dialog.splits[-1]
-        assert rest.auto and rest.account_handle is None and rest.is_blank
+        # #369: the rest waits on the empty last line, for its account.
+        assert editor.sheet.balancing_line() == rest
+        assert editor.sheet.text(rest, "increase") or editor.sheet.text(rest, "decrease")
         assert "holds the rest" in dialog.status.get_text()
+        assert editor.save() is False
 
     def test_split_identities_survive_an_edit(self, register, app):
         """Split handles carry reconciliation state; losing them detaches it."""
         dialog, transaction = self._dialog_for(register)
         before = {s.handle for s in transaction.splits}
-        dialog.description_entry.set_text("Same splits")
-        dialog._on_save(None)
+        dialog.editor.description_entry.set_text("Same splits")
+        assert dialog.editor.save() is True
         after = {s.handle for s in app.db.get_transaction(transaction.handle).splits}
         assert after == before
 
     def test_a_split_can_be_added(self, register, app):
+        """As in the register, the empty last line takes a new split, and another
+        empty line follows it."""
         dialog, transaction = self._dialog_for(register)
-        before = len(dialog.splits)
-        dialog.add_split()
-        assert len(dialog.splits) == before + 1
+        editor = dialog.editor
+        before = len(editor.sheet.lines)
+        editor.type_line(before - 1, memo="Extra")
+        assert len(editor.sheet.lines) == before + 1
+        assert not editor.sheet.lines[-1].has_input()
 
-    def test_the_last_two_splits_cannot_be_removed(self, register):
+    def test_a_transaction_keeps_at_least_two_splits(self, register):
         dialog, _ = self._dialog_for(register)
-        while len(dialog.splits) > 2:
-            dialog.remove_split(dialog.splits[-1])
-        dialog.remove_split(dialog.splits[-1])
-        assert len(dialog.splits) == 2
+        editor = dialog.editor
+        while len(editor.lines()) > 1:
+            editor.type_line(0, memo="", account="", increase="", decrease="")
+        assert editor.save() is False
         assert "at least two splits" in dialog.status.get_text()
 
     def test_a_transaction_can_be_deleted_from_the_dialog(self, register, app):
         dialog, transaction = self._dialog_for(register)
         before = app.db.summary()["txn"]
-        dialog._on_delete(None)
+        dialog._on_delete()
         assert app.db.summary()["txn"] == before - 1
         assert app.db.get_transaction(transaction.handle) is None
 
@@ -4738,7 +4828,7 @@ class TestEditingFromTheRegister:
         assert delete_transaction(app.db, DeleteTransaction(transaction.handle)).ok
         try:
             configure_language(["es"])
-            dialog._on_delete(None)
+            dialog._on_delete()
             assert dialog.status.get_text() == "La transacción ya no existe"
         finally:
             configure_language(["C"])
@@ -6689,10 +6779,12 @@ class TestDueReview:
         recorded = next(iter(due_book.db.iter_transactions()))
         assert recorded.post_date == due[0].when
 
-    def test_posted_transactions_open_for_review_split_by_split(self, due_book, window):
-        # #328: posting gave only a count; nothing showed what was written.
+    def test_posted_transactions_open_in_the_transaction_editor(self, due_book, window):
+        # #328: posting gave only a count; nothing showed what was written. What was
+        # posted now opens in the same editor as every other transaction.
         from breadsched.gui.dialogs.due_dialog import POST
-        from breadsched.gui.dialogs.posted_dialog import PostedTransactionsDialog, split_lines
+        from breadsched.gui.dialogs.posted_dialog import PostedTransactionsDialog
+        from breadsched.gui.widgets.transaction_editor import MORE, TransactionEditor
 
         dialog, due = self._dialog(due_book, window, limit=2)
         dialog.set_all(POST)
@@ -6703,37 +6795,39 @@ class TestDueReview:
             assert review.get_modal() and review.get_transient_for() is window
             listed = review.transactions()
             assert len(listed) == 2 == due_book.db.summary()["txn"]
-            assert set(review.edit_buttons) == {txn.handle for txn in listed}
-            assert split_lines(due_book.db, listed[0]) == [
-                ("Expenses", "", "Expense", "1,800.00"),
-                ("Assets", "", "Decrease", "1,800.00"),
-            ]
+            assert review.listed == [txn.handle for txn in listed]
+            # The first is open in the editor, with its pages and its splits.
+            editor = review.editor
+            assert isinstance(editor, TransactionEditor)
+            assert editor.transaction.handle == listed[0].handle
+            assert editor.pages.tab_label(MORE) == MORE
+            assert {line[0] for line in editor.lines()} == {"Expenses", "Assets"}
+            assert editor.sheet.text(0, "increase") == "1,800.00"
             texts = {
-                w.get_label() for w in _descendants(review.journal) if isinstance(w, Gtk.Label)
+                w.get_label() for w in _descendants(review.listing) if isinstance(w, Gtk.Label)
             }
-            assert {"Expenses", "Assets", "1,800.00", listed[0].post_date.isoformat()} <= texts
+            assert listed[0].description in texts
 
-            # Delete goes through the shared service and the list rereads the book.
+            # Choosing another opens it; a correction is saved through the service
+            # and the list rereads the book.
+            assert review.select(listed[1].handle).transaction.handle == listed[1].handle
+            review.editor.description_entry.set_text("Rent, checked")
+            assert review.editor.save() is True, review.editor.status.get_text()
+            assert due_book.db.get_transaction(listed[1].handle).description == "Rent, checked"
+            assert review.editor.transaction.handle == listed[1].handle
+            texts = {
+                w.get_label() for w in _descendants(review.listing) if isinstance(w, Gtk.Label)
+            }
+            assert "Rent, checked" in texts
+            assert "Ctrl+Z" in review.status.get_text()
+
+            # Delete goes through the shared service; the next one opens.
             first = listed[0].handle
             assert review.delete(first)
             assert due_book.db.get_transaction(first) is None
-            assert [txn.handle for txn in review.transactions()] == [listed[1].handle]
-            assert first not in review.delete_buttons
+            assert review.listed == [listed[1].handle]
+            assert review.editor.transaction.handle == listed[1].handle
             assert "Ctrl+Z" in review.status.get_text()
-
-            # Edit opens the full editor on the stored transaction, and closing it
-            # rereads the book (here the change is written as another window would).
-            editor = review.edit(listed[1].handle)
-            assert editor is not None and editor.transaction.handle == listed[1].handle
-            stored = due_book.db.get_transaction(listed[1].handle)
-            stored.description = "Rent, checked"
-            with due_book.db.transaction("Edit") as txn:
-                due_book.db.commit_transaction(stored, txn)
-            editor.close()
-            labels = [
-                w.get_label() for w in _descendants(review.journal) if isinstance(w, Gtk.Label)
-            ]
-            assert "Rent, checked" in labels
 
             # A refused delete changes nothing and says why.
             assert not review.delete("missing")
@@ -9170,15 +9264,15 @@ class TestEditorAutocomplete:
         checking, source = self._grocer(app)
         before = len(list(app.db.iter_transactions()))
         dialog = TransactionDialog(window, app.db, default_account=checking)
-        dialog.description_entry.set_text("CORNER GROCER #99")
+        editor = dialog.editor
+        editor.description_entry.set_text("CORNER GROCER #99")
 
-        suggestion = dialog.propose_from_entry()
+        suggestion = editor.propose_from_entry()
 
         assert suggestion is not None and suggestion.source == source.handle
-        filled = [(e.account_handle, e.value(), e.memo.get_text()) for e in dialog.splits]
-        assert filled == [(s.account, s.value, s.memo) for s in source.splits]
-        assert "Proposed from 2026-09-01" in dialog.proposal_note.get_text()
-        assert dialog.proposal_note.get_visible() is True
+        assert editor.split_values() == [(s.account, s.value, s.memo) for s in source.splits]
+        assert "Proposed from 2026-09-01" in editor.proposal_note.get_text()
+        assert editor.proposal_note.get_visible() is True
         assert dialog.save_button.get_sensitive() is True
         assert len(list(app.db.iter_transactions())) == before
 
@@ -9188,15 +9282,16 @@ class TestEditorAutocomplete:
         app.open_book(populated_book)
         checking, _source = self._grocer(app)
         dialog = TransactionDialog(window, app.db, default_account=checking)
-        dialog.splits[0].set_amount_text("7.00")
-        dialog.description_entry.set_text("Corner Grocer")
+        editor = dialog.editor
+        editor.type_line(0, increase="7.00")
+        editor.description_entry.set_text("Corner Grocer")
 
-        assert dialog.propose_from_entry() is None
-        assert dialog.splits[0].increase.get_text() == "7.00"
-        assert dialog.proposal_note.get_visible() is False
+        assert editor.propose_from_entry() is None
+        assert editor.sheet.lines[0].increase == "7.00"
+        assert editor.proposal_note.get_visible() is False
 
-        memo_only = TransactionDialog(window, app.db, default_account=checking)
-        memo_only.splits[1].memo.set_text("typed")
+        memo_only = TransactionDialog(window, app.db, default_account=checking).editor
+        memo_only.type_line(1, memo="typed")
         memo_only.description_entry.set_text("Corner Grocer")
         assert memo_only.propose_from_entry() is None
 
@@ -9206,23 +9301,22 @@ class TestEditorAutocomplete:
         app.open_book(populated_book)
         checking, _source = self._grocer(app, "42.10")
         _checking, older = self._grocer(app, "5.00")
-        dialog = TransactionDialog(window, app.db, transaction=older)
-        values = [e.value() for e in dialog.splits]
+        editor = TransactionDialog(window, app.db, transaction=older).editor
+        values = editor.split_values()
 
-        assert dialog.propose_from_entry() is None
-        assert [e.value() for e in dialog.splits] == values
+        assert editor.propose_from_entry() is None
+        assert editor.split_values() == values
 
     def test_no_match_leaves_the_form_alone(self, app, window, populated_book):
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
         app.open_book(populated_book)
-        dialog = TransactionDialog(window, app.db)
-        accounts = [e.account_handle for e in dialog.splits]
-        dialog.description_entry.set_text("Something never entered before")
+        editor = TransactionDialog(window, app.db).editor
+        values = editor.split_values()
+        editor.description_entry.set_text("Something never entered before")
 
-        assert dialog.propose_from_entry() is None
-        assert [e.account_handle for e in dialog.splits] == accounts
-        assert all(e.is_blank for e in dialog.splits)
+        assert editor.propose_from_entry() is None
+        assert editor.split_values() == values == []
 
 
 class TestChromeCleanup:
@@ -10345,11 +10439,12 @@ class TestEditorKeepsQuantity:
         app.open_book(populated_book)
         rent = next(t for t in app.db.iter_transactions() if t.description == "Rent")
         dialog = TransactionDialog(window, app.db, transaction=rent)
+        editor = dialog.editor
         try:
-            for editor in dialog.splits:
-                value = editor.value()
-                editor.set_amount_text("-1900.00" if value < 0 else "1900.00")
-            dialog._on_save(None)
+            for index, (_account, value, _memo) in enumerate(editor.split_values()):
+                column = "decrease" if value < 0 else "increase"
+                editor.type_line(index, **{column: "1900.00"})
+            assert editor.save() is True
         finally:
             dialog.destroy()
         stored = app.db.get_transaction(rent.handle)
@@ -11329,7 +11424,7 @@ class TestReconcileWindow:
             assert editor.get_transient_for() is dialog
             editor.destroy()
             creator = dialog.new_transaction()
-            assert creator.default_account == card.handle
+            assert creator.editor.default_account == card.handle
             creator.destroy()
             cancel_reconciliation(db, ReconciliationAction(dialog.session))
             assert _spin(lambda: dialog.session is None)
@@ -12952,11 +13047,11 @@ class TestMenusAndIcons:
 
         dialog = app.on_new_transaction()
         assert isinstance(dialog, TransactionDialog)
-        assert dialog.default_account == register.account_handle
+        assert dialog.editor.default_account == register.account_handle
         dialog.destroy()
         window.show_category("dashboard")
         dialog = app.on_new_transaction()
-        assert isinstance(dialog, TransactionDialog) and dialog.default_account is None
+        assert isinstance(dialog, TransactionDialog) and dialog.editor.default_account is None
         dialog.destroy()
 
     def test_review_due_has_one_name_and_dialog_items_end_in_an_ellipsis(self, app, window):
@@ -13125,7 +13220,7 @@ class TestDialogConventions:
         try:
             dialog.present()
             assert _spin(dialog.get_mapped)
-            assert dialog.description_entry.get_activates_default() is False
+            assert dialog.editor.description_entry.get_activates_default() is False
         finally:
             dialog.destroy()
 
@@ -13472,9 +13567,12 @@ class TestABookTheHostHolds:
 
         # An entry made in GTK is saved by the host.
         dialog = TransactionDialog(window, app.db)
-        dialog.description_entry.set_text("Entered in GTK")
-        dialog.splits[0].set_amount_text("12.00")
-        dialog._on_save(None)
+        editor = dialog.editor
+        editor.description_entry.set_text("Entered in GTK")
+        names = list(editor.sheet.account_names)
+        editor.type_line(0, account=names[0], increase="12.00")
+        editor.type_line(1, account=names[1])
+        assert editor.save() is True
         assert any(t.description == "Entered in GTK" for t in held.iter_transactions())
         assert len(list(held.iter_transactions())) == before + 1
 
