@@ -169,13 +169,13 @@ class Watchdog:
         self._beat_source = GLib.timeout_add(1000, self.beat)
         self._thread = threading.Thread(target=self._watch, name="breadsched-watchdog", daemon=True)
         self._thread.start()
-        user_signal = getattr(signal, "SIGUSR1", None)
-        if user_signal is not None:
+        # Windows has neither SIGUSR1 nor faulthandler.register.
+        if sys.platform != "win32":
             try:
                 log = open(  # noqa: SIM115 - held open for the signal
                     self.directory / "stacks-on-request.log", "a", encoding="utf-8"
                 )
-                faulthandler.register(user_signal, file=log, all_threads=True)
+                faulthandler.register(signal.SIGUSR1, file=log, all_threads=True)
                 self._signal_log = log
             except (OSError, RuntimeError, ValueError):
                 self._signal_log = None
@@ -188,9 +188,8 @@ class Watchdog:
 
             GLib.source_remove(self._beat_source)
             self._beat_source = 0
-        user_signal = getattr(signal, "SIGUSR1", None)
-        if self._signal_log is not None and user_signal is not None:
-            faulthandler.unregister(user_signal)
+        if sys.platform != "win32" and self._signal_log is not None:
+            faulthandler.unregister(signal.SIGUSR1)
             self._signal_log.close()
             self._signal_log = None
 
