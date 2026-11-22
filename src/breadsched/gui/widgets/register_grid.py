@@ -18,6 +18,7 @@ cell. Clicking a cell moves the cursor there; clicking R marks a split cleared.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 
 from ..gi_setup import Gdk, GLib, Gtk, Pango, PangoCairo
@@ -103,11 +104,13 @@ def _typed_end(typed: str, shown: str) -> int:
 
 def _note_end(typed: str, shown: str) -> int:
     """Where what was typed ends in a completed description or note: after it when
-    the completion begins with it, else after where it appears inside (#407)."""
-    if shown.casefold().startswith(typed.casefold()):
+    the completion begins with it, else after the word inside that begins with it
+    (#407; a word begins after whitespace, as ``autocomplete.complete_note`` matches)."""
+    folded, key = shown.casefold(), typed.casefold()
+    if folded.startswith(key):
         return len(typed)
-    found = shown.casefold().find(typed.casefold())
-    return len(shown) if found < 0 else found + len(typed)
+    found = re.search(r"\s" + re.escape(key), folded)
+    return len(shown) if found is None else found.start() + 1 + len(typed)
 
 
 def match_list_placement(row: int, shown: int, row_height: int, height: int) -> tuple[int, int]:
@@ -142,6 +145,8 @@ class RegisterGrid(Gtk.Box):
         self._syncing = False
         #: The letters typed into the cell, in the case they were typed (#363).
         self._typed = ""
+        #: The text the last completion put in the cell, while it is unchanged.
+        self._completed = ""
         self._widths: dict[str, float] = {}
         self._width = 0
         self._height = 0
@@ -367,6 +372,7 @@ class RegisterGrid(Gtk.Box):
         arrived = cell != self._placed_cell
         if arrived:
             self._typed = ""  # the letters typed belong to the cell they were typed in
+            self._completed = ""
             self._deleted = False
         self._placed_cell = cell
         heading = "Notes" if notes else sheet.headings()[sheet.column]
@@ -670,7 +676,13 @@ class RegisterGrid(Gtk.Box):
             # Build on the letters as typed, not as an earlier completion spelled
             # them, so a completion that stops matching gives back the typed case (#363).
             before = text[:start]
-            literal = self._typed if self._typed.casefold() == before.casefold() else before
+            # Typing on over a completion builds on the letters typed, never on the
+            # completion's own start: "gi" completed to "Christmas gifts", then "r",
+            # is "gir", not "Christmas gir".
+            completed = bool(self._typed) and text == self._completed
+            literal = (
+                self._typed if completed or self._typed.casefold() == before.casefold() else before
+            )
             typed = literal + character
             self._typed = typed
             shown, names = sheet.quickfill(typed)
@@ -701,6 +713,7 @@ class RegisterGrid(Gtk.Box):
         finally:
             self._syncing = False
         self.sheet.set_text(text)
+        self._completed = text
         if keep < len(text):
             self.editor.select_region(keep, len(text))
         else:

@@ -675,7 +675,7 @@ class RegisterSheet(SplitEntry):
                     return found, []
         elif self.column == "description":
             # A note completes from those written for the same description before,
-            # beginning with or containing what is typed (#407).
+            # beginning with what is typed, or with a word that does (#407).
             found = complete_note(typed, self._earlier_notes(memos=False))
             if found is not None:
                 return found, []
