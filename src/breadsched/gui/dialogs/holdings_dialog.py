@@ -11,7 +11,6 @@ from ...presentation import holding_cost_text, lot_move_text, lot_text, sale_tex
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
-from ..widgets.help import help_row
 from ..widgets.model_chart import ModelChartView
 
 __all__ = ["HoldingsDialog"]
@@ -40,11 +39,7 @@ class HoldingsDialog(BoundedWindow):
         self.db = db
         self.as_of = as_of
         self.set_default_size(820, 560)
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(12)
-        self.set_child(outer)
-        outer.prepend(help_row("prices"))
+        outer = self.frame("prices")
         note = Gtk.Label(
             label=(
                 "Lots come from each security account's transactions: a sale takes the "
@@ -64,14 +59,9 @@ class HoldingsDialog(BoundedWindow):
         scroller.set_min_content_height(160)
         outer.append(scroller)
 
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        self.gains_button = Gtk.Button(label="Realized Gains…")
+        self.gains_button = Gtk.Button(label="Realized gains…")
         self.gains_button.connect("clicked", lambda *_: self.open_realized_gains())
-        close = Gtk.Button(label="Close")
-        close.connect("clicked", lambda *_: self.close())
-        buttons.append(self.gains_button)
-        buttons.append(close)
-        outer.append(buttons)
+        self.actions(outer, extra=(self.gains_button,))
         self.refresh()
 
     def refresh(self) -> None:
@@ -137,7 +127,7 @@ class HoldingsDialog(BoundedWindow):
             for sale in item.sales:
                 line = Gtk.Box(spacing=8)
                 line.append(_cell(_capital(sale_text(sale))))
-                choose = Gtk.Button(label="Choose Lots…")
+                choose = Gtk.Button(label="Choose lots…")
                 choose.update_property(
                     [Gtk.AccessibleProperty.LABEL],
                     [f"Choose the lots sold on {sale.sold.isoformat()}"],

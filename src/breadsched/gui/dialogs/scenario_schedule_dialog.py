@@ -27,7 +27,6 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ..widgets.help import help_row
 from .schedule_dialog import _GROWTH_POLICIES, ScheduleDialog
 
 __all__ = ["ScenarioScheduleDialog", "ScenarioSchedulePickerDialog"]
@@ -162,27 +161,17 @@ class ScenarioSchedulePickerDialog(BoundedWindow):
         ]
         self.set_default_size(460, 180)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("scheduled"))
+        box = self.frame("scheduled")
         box.append(Gtk.Label(label="Baseline scheduled transaction", xalign=0))
         self.schedule = bounded_dropdown(
             [item.name for item in self._schedules] or ["(none available)"]
         )
         box.append(self.schedule)
 
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: self.close())
-        buttons.append(cancel)
         apply = Gtk.Button(label=action_label)
-        apply.add_css_class("suggested-action")
         apply.set_sensitive(bool(self._schedules))
         apply.connect("clicked", self._on_apply)
-        buttons.append(apply)
-        box.append(buttons)
+        self.actions(box, dismiss="Cancel", primary=apply)
 
     def _on_apply(self, _button) -> None:
         if not self._schedules:

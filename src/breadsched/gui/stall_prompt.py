@@ -12,6 +12,7 @@ import sys
 
 from .gi_setup import GLib, Gtk
 from .watchdog import PROMPT_QUIT
+from .widgets.bounded import action_row
 
 __all__ = ["StallPrompt", "main"]
 
@@ -54,16 +55,12 @@ class StallPrompt(Gtk.Window):
             selectable=True,
         )
         box.append(self.message)
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
         self.quit_button = Gtk.Button(label="Quit BreadSched")
         self.quit_button.add_css_class("destructive-action")
         self.quit_button.connect("clicked", lambda *_: self.answer(True))
         self.wait_button = Gtk.Button(label="Wait")
-        self.wait_button.add_css_class("suggested-action")
         self.wait_button.connect("clicked", lambda *_: self.answer(False))
-        buttons.append(self.quit_button)
-        buttons.append(self.wait_button)
-        box.append(buttons)
+        box.append(action_row(destructive=self.quit_button, primary=self.wait_button))
         self.set_child(box)
         self.set_default_widget(self.wait_button)
         self.connect("close-request", self._on_close)

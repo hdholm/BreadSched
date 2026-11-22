@@ -14,7 +14,6 @@ from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
-from ..widgets.help import help_row
 
 __all__ = ["DrawdownEditDialog", "DrawdownsDialog", "drawdown_summary"]
 
@@ -58,11 +57,7 @@ class DrawdownsDialog(BoundedWindow):
         self.saved_callback = saved_callback
         self.set_default_size(720, 360)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("plan"))
+        box = self.frame("plan")
         box.append(
             Gtk.Label(
                 label=(
@@ -93,9 +88,7 @@ class DrawdownsDialog(BoundedWindow):
         self.summary = Gtk.Label(xalign=0, wrap=True)
         self.summary.add_css_class("dim")
         box.append(self.summary)
-        close = Gtk.Button(label="Close", halign=Gtk.Align.END)
-        close.connect("clicked", lambda *_: self.close())
-        box.append(close)
+        self.actions(box)
         self._reload()
 
     def _reload(self, selected: int = 0) -> None:
@@ -183,11 +176,7 @@ class DrawdownEditDialog(BoundedWindow):
         self._sources = sorted(sources, key=by_name)
         self._targets = sorted(targets, key=by_name)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("plan"))
+        box = self.frame("plan")
         grid = Gtk.Grid(column_spacing=12, row_spacing=8)
         box.append(grid)
 
@@ -247,15 +236,9 @@ class DrawdownEditDialog(BoundedWindow):
         box.append(note)
         self.status = Gtk.Label(xalign=0, wrap=True)
         box.append(self.status)
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: self.close())
-        buttons.append(cancel)
         save = Gtk.Button(label="Save")
-        save.add_css_class("suggested-action")
         save.connect("clicked", self._on_save)
-        buttons.append(save)
-        box.append(buttons)
+        self.actions(box, dismiss="Cancel", primary=save)
         scroll_body(self)
 
     def _account_dropdown(self, handles: list[str], selected: str | None) -> Gtk.DropDown:

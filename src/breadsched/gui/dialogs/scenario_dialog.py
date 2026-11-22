@@ -9,7 +9,6 @@ from ...gen.services import SaveScenario  # noqa: E402
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
-from ..widgets.help import help_row
 
 __all__ = ["SaveScenarioDialog"]
 
@@ -28,11 +27,7 @@ class SaveScenarioDialog(BoundedWindow):
         self.scenario = scenario
         self.set_default_size(420, 260)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("plan"))
+        box = self.frame("plan")
 
         self.name_entry = Gtk.Entry(placeholder_text="Base case")
         if scenario.name and scenario.name != "Working scenario":
@@ -60,15 +55,9 @@ class SaveScenarioDialog(BoundedWindow):
         self.status = Gtk.Label(xalign=0)
         box.append(self.status)
 
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: self.close())
-        buttons.append(cancel)
         save = Gtk.Button(label="Save")
-        save.add_css_class("suggested-action")
         save.connect("clicked", self._on_save)
-        buttons.append(save)
-        box.append(buttons)
+        self.actions(box, dismiss="Cancel", primary=save)
         # The form scrolls; its buttons stay on screen (dialog audit, #148).
         scroll_body(self)
 

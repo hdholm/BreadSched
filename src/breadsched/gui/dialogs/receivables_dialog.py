@@ -30,11 +30,10 @@ from ...presentation import (
 )
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
-from ..widgets.bounded import BoundedWindow, scroll_body
+from ..widgets.bounded import BoundedWindow, action_row, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
 from ..widgets.date_entry import attach_date_keys, parse_date_text
-from ..widgets.help import help_row
 
 __all__ = ["ReceivablesDialog"]
 
@@ -85,11 +84,7 @@ class ReceivablesDialog(BoundedWindow):
         self._costs: list[tuple[str, str]] = []
         self._credits: list[tuple[str, str]] = []
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("reimbursables"))
+        box = self.frame("reimbursables")
         box.append(
             Gtk.Label(
                 label=(
@@ -142,9 +137,7 @@ class ReceivablesDialog(BoundedWindow):
         self.account_note = Gtk.Label(xalign=0, wrap=True)
         self.account_note.add_css_class("dim")
         form.attach(self.account_note, 1, 7, 1, 1)
-        actions = Gtk.Box(spacing=8)
         self.save_button = Gtk.Button(label="Add reimbursable expense")
-        self.save_button.add_css_class("suggested-action")
         self.save_button.connect("clicked", lambda _b: self.save())
         new_button = Gtk.Button(label="New")
         new_button.connect("clicked", lambda _b: self.edit(None))
@@ -153,9 +146,16 @@ class ReceivablesDialog(BoundedWindow):
             self.delete,
             detail="Its transactions are not changed.",
         )
-        for button in (self.save_button, new_button, self.delete_button):
-            actions.append(button)
-        form.attach(actions, 1, 6, 1, 1)
+        # The form's own row; the window's last row only closes.
+        form.attach(
+            action_row(
+                extra=(new_button,), destructive=self.delete_button, primary=self.save_button
+            ),
+            1,
+            6,
+            1,
+            1,
+        )
         box.append(form)
 
         # Credits that clearly reimburse one open receivable; nothing links until
@@ -276,7 +276,8 @@ class ReceivablesDialog(BoundedWindow):
 
         self.status = Gtk.Label(xalign=0, wrap=True, selectable=True)
         box.append(self.status)
-        # The form scrolls; the status line stays in view (#148 dialog audit).
+        self.actions(box)
+        # The form scrolls; the buttons stay in view (#148 dialog audit).
         scroll_body(self)
 
         self.edit(None)

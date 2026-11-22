@@ -18,6 +18,12 @@ Every dialog also answers the keyboard the same way (#335): Escape closes it, as
 its Cancel or Close button does, and Enter in a one-line field activates its main
 button, the ``suggested-action`` button in its last row (or one named with
 :meth:`BoundedWindow.set_primary`).
+
+And every dialog is framed the same way (the desktop consistency rules in
+``docs/design/user-interfaces.md``): :meth:`BoundedWindow.frame` starts its content
+with the standard margins and its **Help** row, and :meth:`BoundedWindow.actions`
+ends it with its one row of buttons, in the one order. :func:`notes_view` is every
+multi-line text field.
 """
 
 from __future__ import annotations
@@ -27,7 +33,25 @@ import weakref
 from ..gi_setup import GLib, Gtk
 from .window_sizes import remember_size, restore_size
 
-__all__ = ["BoundedWindow", "fit_to_screen", "keeps_enter", "scroll_body"]
+__all__ = [
+    "MARGIN",
+    "SPACING",
+    "BoundedWindow",
+    "action_row",
+    "fill_action_row",
+    "fit_to_screen",
+    "keeps_enter",
+    "notes_view",
+    "scroll_body",
+]
+
+#: The space around a dialog's content, and between its rows.
+MARGIN = 18
+SPACING = 12
+
+#: The two words a dialog's dismissing button uses: Cancel discards what is
+#: typed; Close leaves a window that saves as it goes, or saves nothing.
+DISMISS = ("Cancel", "Close")
 
 #: One-line fields whose Enter does their own job (fetch, propose), not the dialog's.
 _OWN_ENTER: weakref.WeakSet = weakref.WeakSet()
@@ -45,8 +69,10 @@ SCREEN_SHARE = 0.9
 _SIDES = ("top", "bottom", "start", "end")
 
 
-def scroll_body(window: Gtk.Window) -> Gtk.ScrolledWindow:
-    """Wrap ``window``'s content box, less its last child, in a vertical scroller.
+def scroll_body(window: Gtk.Window, keep: int = 1) -> Gtk.ScrolledWindow:
+    """Wrap ``window``'s content box, less its Help row and its last ``keep``
+    children (its action row, and a status line that must stay in view), in a
+    vertical scroller.
 
     The content box's margins move to the new outer box, so the dialog looks the
     same; only its minimum height changes. The scroller asks for the form's natural
@@ -54,20 +80,31 @@ def scroll_body(window: Gtk.Window) -> Gtk.ScrolledWindow:
     """
     body = window.get_child()
     assert isinstance(body, Gtk.Box), "scroll_body expects a vertical content box"
-    footer = body.get_last_child()
+    footers: list[Gtk.Widget] = []
+    child = body.get_last_child()
+    while child is not None and len(footers) < keep:
+        footers.insert(0, child)
+        child = child.get_prev_sibling()
+    # The Help row stays at the top, as the buttons stay at the bottom.
+    header = body.get_first_child()
+    if header is not None and (not header.has_css_class("help-row") or header in footers):
+        header = None
     outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=body.get_spacing())
     for side in _SIDES:
         getattr(outer, f"set_margin_{side}")(getattr(body, f"get_margin_{side}")())
         getattr(body, f"set_margin_{side}")(0)
     window.set_child(None)
-    if footer is not None:
+    for footer in footers:
         body.remove(footer)
+    if header is not None:
+        body.remove(header)
+        outer.append(header)
     scroller = Gtk.ScrolledWindow(child=body)
     scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
     scroller.set_propagate_natural_height(True)
     scroller.set_vexpand(True)
     outer.append(scroller)
-    if footer is not None:
+    for footer in footers:
         outer.append(footer)
     window.set_child(outer)
     return scroller
@@ -178,6 +215,45 @@ class BoundedWindow(Gtk.Window):
         self.close()
         return True
 
+    def frame(self, help_topic: str | None, *, spacing: int = SPACING) -> Gtk.Box:
+        """Start the window's content: a vertical box with the standard margins,
+        holding the **Help** row for ``help_topic`` first. Add the window's rows to
+        it, then end it with :meth:`actions`."""
+        from .help import help_row
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=spacing)
+        for side in _SIDES:
+            getattr(box, f"set_margin_{side}")(MARGIN)
+        if help_topic is not None:
+            box.append(help_row(help_topic))
+        self.set_child(box)
+        return box
+
+    def actions(
+        self,
+        box: Gtk.Box,
+        *,
+        dismiss: str | Gtk.Button = "Close",
+        primary: Gtk.Button | None = None,
+        destructive: Gtk.Widget | None = None,
+        extra: tuple[Gtk.Widget, ...] = (),
+    ) -> Gtk.Box:
+        """End ``box`` with the window's one row of buttons, right-aligned, always
+        in this order: ``extra`` buttons (another window or a further action),
+        the ``destructive`` one (``confirm.delete_button``), the dismissing one
+        (**Cancel** or **Close**, closing the window unless a button is given),
+        and the ``primary`` one last, the only ``suggested-action``, which Enter
+        activates."""
+        if isinstance(dismiss, str):
+            assert dismiss in DISMISS, dismiss
+            button = Gtk.Button(label=dismiss)
+            button.connect("clicked", lambda *_: self.close())
+            dismiss = button
+        self.dismiss_button = dismiss
+        row = action_row(extra=extra, destructive=destructive, dismiss=dismiss, primary=primary)
+        box.append(row)
+        return row
+
     def set_primary(self, button: Gtk.Widget) -> None:
         """Make ``button`` the one Enter activates."""
         self._primary = button
@@ -217,3 +293,56 @@ class BoundedWindow(Gtk.Window):
                     ):
                         widget.set_activates_default(True)
         super().present()
+
+
+def action_row(
+    *,
+    extra: tuple[Gtk.Widget, ...] = (),
+    destructive: Gtk.Widget | None = None,
+    dismiss: Gtk.Widget | None = None,
+    primary: Gtk.Button | None = None,
+) -> Gtk.Box:
+    """A right-aligned row of buttons in the one order every window uses: further
+    actions, the destructive one, the dismissing one, then the main one, the only
+    ``suggested-action``. A window's last row (:meth:`BoundedWindow.actions`), or an
+    editor's own row beside a list."""
+    row = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+    row.add_css_class("action-row")
+    fill_action_row(row, extra=extra, destructive=destructive, dismiss=dismiss, primary=primary)
+    return row
+
+
+def fill_action_row(
+    row: Gtk.Box,
+    *,
+    extra: tuple[Gtk.Widget, ...] = (),
+    destructive: Gtk.Widget | None = None,
+    dismiss: Gtk.Widget | None = None,
+    primary: Gtk.Button | None = None,
+) -> None:
+    """Empty an :func:`action_row` and fill it again, for a window whose buttons
+    change from page to page."""
+    while (child := row.get_first_child()) is not None:
+        row.remove(child)
+    for widget in (*extra, destructive, dismiss):
+        if widget is not None:
+            row.append(widget)
+    if primary is not None:
+        # A window whose purpose is deleting has its destructive button last, as
+        # its main one, and no suggested one.
+        if not primary.has_css_class("destructive-action"):
+            primary.add_css_class("suggested-action")
+        row.append(primary)
+
+
+def notes_view(min_height: int = 48) -> tuple[Gtk.TextView, Gtk.ScrolledWindow]:
+    """A multi-line text field, as every window shows one: wrapped, in a framed
+    scroller. Returns the text view and the scroller to place."""
+    view = Gtk.TextView()
+    view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+    for side in ("top", "bottom", "left", "right"):
+        getattr(view, f"set_{side}_margin")(4)
+    scroller = Gtk.ScrolledWindow(child=view)
+    scroller.set_has_frame(True)
+    scroller.set_min_content_height(min_height)
+    return view, scroller

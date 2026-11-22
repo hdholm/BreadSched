@@ -19,7 +19,6 @@ from ..gi_setup import GLib, Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ..widgets.help import help_row
 from ..widgets.model_chart import ModelChartView
 
 #: Grouping choices and how far back each looks from the current period.
@@ -45,11 +44,7 @@ class NetWorthHistoryDialog(BoundedWindow):
         self._currency = book_server(db).reporting_currency()
         self.history: NetWorthHistory | None = None
         self.change: NetWorthChange | None = None
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(12)
-        self.set_child(outer)
-        outer.prepend(help_row("net-worth"))
+        outer = self.frame("net-worth")
         controls = Gtk.Box(spacing=8)
         outer.append(controls)
         controls.append(Gtk.Label(label="Group by"))
@@ -58,16 +53,13 @@ class NetWorthHistoryDialog(BoundedWindow):
         controls.append(self.grouping)
         printing = Gtk.Button(label="Print…")
         printing.connect("clicked", self._print)
-        controls.append(printing)
-        close = Gtk.Button(label="Close")
-        close.connect("clicked", lambda *_: self.close())
-        controls.append(close)
         self.content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         scroll = Gtk.ScrolledWindow(child=self.content)
         scroll.set_vexpand(True)
         outer.append(scroll)
         self.change_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         outer.append(self.change_box)
+        self.actions(outer, extra=(printing,))
         self._update()
 
     @staticmethod

@@ -388,10 +388,7 @@ class ResolutionView(BaseView):
         dialog = BoundedWindow(
             title="Attach to FSA claim", transient_for=self.get_root(), modal=True
         )
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(12)
-        dialog.set_child(box)
+        box = dialog.frame("fsa-claims")
         claim_pick = bounded_dropdown([f"{item.label} — {item.reason}" for item in claims])
         role_pick = bounded_dropdown(
             [f"{claim_role_label(role)} · {account}" for role, _split, account, _years in roles]
@@ -410,14 +407,8 @@ class ResolutionView(BaseView):
             box.append(row)
         status = Gtk.Label(xalign=0, wrap=True)
         box.append(status)
-        actions = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: dialog.close())
-        actions.append(cancel)
         attach = Gtk.Button(label="Attach")
-        attach.add_css_class("suggested-action")
-        actions.append(attach)
-        box.append(actions)
+        dialog.actions(box, dismiss="Cancel", primary=attach)
 
         def do_attach(_button) -> None:
             if self.db is None:

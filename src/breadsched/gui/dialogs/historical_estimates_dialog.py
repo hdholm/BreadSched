@@ -9,7 +9,6 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ..widgets.help import help_row
 
 __all__ = ["HistoricalEstimatesDialog"]
 
@@ -22,13 +21,7 @@ class HistoricalEstimatesDialog(BoundedWindow):
         self.db = db
         self.set_default_size(760, 520)
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        outer.set_margin_top(12)
-        outer.set_margin_bottom(12)
-        outer.set_margin_start(12)
-        outer.set_margin_end(12)
-        self.set_child(outer)
-        outer.prepend(help_row("scheduled"))
+        outer = self.frame("scheduled")
 
         controls = Gtk.Box(spacing=8)
         controls.append(Gtk.Label(label="Completed months", xalign=0))
@@ -67,9 +60,7 @@ class HistoricalEstimatesDialog(BoundedWindow):
         scroller.set_vexpand(True)
         outer.append(scroller)
 
-        close = Gtk.Button(label="Close")
-        close.connect("clicked", lambda *_: self.close())
-        outer.append(close)
+        self.actions(outer)
         self._reload()
 
     def _scenario_handle(self) -> str | None:

@@ -25,7 +25,6 @@ from ..background import BackgroundJob
 from ..gi_setup import Gtk, Pango
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
-from ..widgets.help import help_row
 
 __all__ = ["OnlineQuotesDialog"]
 
@@ -106,11 +105,7 @@ class OnlineQuotesDialog(BoundedWindow):
         self.source_choices: list[str] = list(quote_source_choices(FinanceQuoteInfo(False, "")))
         self.set_default_size(640, 520)
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(16)
-        self.set_child(outer)
-        outer.append(help_row("online-quotes"))
+        outer = self.frame("online-quotes")
         body = outer
         intro = Gtk.Label(
             label=(
@@ -177,19 +172,14 @@ class OnlineQuotesDialog(BoundedWindow):
         self.results = Gtk.Label(xalign=0, wrap=True, selectable=True)
         footer.append(self.results)
 
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        close = Gtk.Button(label="Close")
-        close.connect("clicked", lambda *_: self.close())
         self.save_button = Gtk.Button(label="Save sources")
         self.save_button.connect("clicked", lambda *_: self.save_sources())
         self.fetch_button = Gtk.Button(label="Get quotes")
-        self.fetch_button.add_css_class("suggested-action")
         self.fetch_button.connect("clicked", lambda *_: self.get_quotes())
-        for button in (close, self.save_button, self.fetch_button):
-            buttons.append(button)
-        footer.append(buttons)
         outer.append(footer)
-        scroll_body(self)
+        self.actions(outer, primary=self.fetch_button, extra=(self.save_button,))
+        # The results stay in view below the form, with the buttons.
+        scroll_body(self, keep=2)
         self.connect("close-request", self._on_close)
         self.probe.start(
             lambda _cancel, _report: finance_quote_info(),

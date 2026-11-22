@@ -34,7 +34,6 @@ from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, read_date
-from ..widgets.help import help_row
 
 __all__ = ["ImportDialog"]
 
@@ -56,11 +55,7 @@ class ImportDialog(BoundedWindow):
         self.set_default_size(820, 640)
         self.connect("close-request", self._on_close_request)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("import"))
+        box = self.frame("import")
 
         box.append(
             Gtk.Label(
@@ -189,20 +184,21 @@ class ImportDialog(BoundedWindow):
         scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         box.append(scroller)
 
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
         self.close_button = Gtk.Button(label="Close")
         self.close_button.connect("clicked", self._on_close)
-        buttons.append(self.close_button)
+        # Shown, in place of nothing, only while an import runs.
         self.cancel_button = Gtk.Button(label="Cancel import")
         self.cancel_button.connect("clicked", self._on_cancel)
         self.cancel_button.set_visible(False)
-        buttons.append(self.cancel_button)
         self.import_button = Gtk.Button(label="Import")
-        self.import_button.add_css_class("suggested-action")
         self.import_button.set_sensitive(False)
         self.import_button.connect("clicked", self._on_import)
-        buttons.append(self.import_button)
-        box.append(buttons)
+        self.actions(
+            box,
+            dismiss=self.close_button,
+            primary=self.import_button,
+            extra=(self.cancel_button,),
+        )
 
         remembered = book_server(self.db).import_source()
         if remembered is not None and Path(remembered).is_file():

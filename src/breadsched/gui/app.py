@@ -851,7 +851,7 @@ class BreadSchedApplication(Gtk.Application):
                 "with this version, what happened, and the start of that log filled in. "
                 "Nothing from your book is included."
             ),
-            buttons=["Not Now", "Report Problem…"],
+            buttons=["Not now", "Report problem…"],
             cancel_button=0,
             default_button=1,
             modal=True,

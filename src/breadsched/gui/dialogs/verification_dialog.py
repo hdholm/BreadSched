@@ -8,7 +8,6 @@ from ...gen.utils.cancellation import OperationCancelled
 from ..background import BackgroundJob
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
-from ..widgets.help import help_row
 
 __all__ = ["VerificationDialog"]
 
@@ -24,11 +23,7 @@ class VerificationDialog(BoundedWindow):
         self.set_default_size(700, 480)
         self.connect("close-request", self._on_close_request)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("protect"))
+        box = self.frame("protect")
 
         self.heading = Gtk.Label(label="Checking SQLite and financial relationships…", xalign=0)
         self.heading.add_css_class("category-title")
@@ -43,9 +38,10 @@ class VerificationDialog(BoundedWindow):
         scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         box.append(scroller)
 
-        self.close_button = Gtk.Button(label="Cancel", halign=Gtk.Align.END)
+        # Cancel stops the check; once it is done, the same button closes.
+        self.close_button = Gtk.Button(label="Cancel")
         self.close_button.connect("clicked", self._on_close)
-        box.append(self.close_button)
+        self.actions(box, dismiss=self.close_button)
 
         def work(cancel, _report) -> BookVerification:
             if cancel.is_set():

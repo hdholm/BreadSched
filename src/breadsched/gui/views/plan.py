@@ -142,7 +142,6 @@ class PlanView(BaseView):
         self.measure.connect("notify::selected", self._on_controls_changed)
         bar.append(self.measure)
         self.apply_button = Gtk.Button(label="Apply")
-        self.apply_button.add_css_class("suggested-action")
         self.apply_button.connect("clicked", self._on_apply)
         bar.append(self.apply_button)
         self.append_toolbar(bar)

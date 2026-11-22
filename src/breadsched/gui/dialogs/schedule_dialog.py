@@ -43,13 +43,12 @@ from .. import hidden_accounts
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..split_sheet import SplitSheet
-from ..widgets.bounded import BoundedWindow
+from ..widgets.bounded import BoundedWindow, notes_view
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.editor_parts import DocumentsPage, SplitsPanel
 from ..widgets.form_pages import FormGrid, FormPages
 from ..widgets.frequency import FrequencyPicker
-from ..widgets.help import help_row
 from ..widgets.schedule_timeline import (
     DatedAmountListEditor,
     DateListEditor,
@@ -205,11 +204,7 @@ class ScheduleDialog(BoundedWindow):
         ]
 
     def _build_shell(self) -> tuple[Gtk.Box, Gtk.Box]:
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("scheduled"))
+        box = self.frame("scheduled")
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         self.content_scroller = Gtk.ScrolledWindow(child=content)
@@ -247,10 +242,7 @@ class ScheduleDialog(BoundedWindow):
         # What every posting carries, as a transaction's Entry page has them.
         self.num_entry = Gtk.Entry(placeholder_text="Cheque or reference")
         basics.add("Number", self.num_entry)
-        self.notes_view = Gtk.TextView()
-        self.notes_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        notes_scroll = Gtk.ScrolledWindow(child=self.notes_view)
-        notes_scroll.set_min_content_height(48)
+        self.notes_view, notes_scroll = notes_view()
         basics.add("Notes", notes_scroll)
 
     def _build_documents(self, more: FormGrid) -> None:
@@ -424,17 +416,12 @@ class ScheduleDialog(BoundedWindow):
         self.status = Gtk.Label(xalign=0)
         box.append(self.status)
 
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        self.button_box = buttons
-        cancel = Gtk.Button(label="Close" if read_only_reason else "Cancel")
-        cancel.connect("clicked", lambda *_: self.close())
-        buttons.append(cancel)
         self.save_button = Gtk.Button(label="Save")
-        self.save_button.add_css_class("suggested-action")
         self.save_button.set_sensitive(False)
         self.save_button.connect("clicked", self._on_save)
-        buttons.append(self.save_button)
-        box.append(buttons)
+        self.button_box = self.actions(
+            box, dismiss="Close" if read_only_reason else "Cancel", primary=self.save_button
+        )
 
     def _load_initial_state(
         self,

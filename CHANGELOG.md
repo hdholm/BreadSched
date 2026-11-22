@@ -8,6 +8,19 @@ GitHub releases.
 
 ## Unreleased
 
+- **Every desktop window looks and answers the same way.** Each dialog has the
+  same margins, its **Help** button at the top, and one row of buttons at the
+  bottom right, in the same order everywhere: further actions such as **Print…**,
+  then **Delete**, then **Cancel** or **Close**, then the main button, which Enter
+  presses. **Print…** moved to that row in Budget Jars, Breadlet Reports, Realized
+  Gains, Net Worth History, and Tax Year, and **Find** to the bottom of Find; the
+  FSA claims, Net Worth History, and Reconcile buttons are no longer spread across
+  the window. Windows that had no closing button (Rules, Reimbursable Expenses,
+  Savings Goals, Payroll, Match to Plan) have **Close**. Notes fields have a frame.
+  Button labels are in sentence case (**Choose lots…**, **Realized gains…**,
+  **Reset layout**). Reconcile's **Postpone** is now **Close**, which still keeps
+  the statement, and **Abandon** no longer has an ellipsis.
+
 - **Schedules are entered like transactions on the desktop.** The schedule editor
   types its splits on the register's own split grid, as the transaction editor
   does, so a schedule can have any number of splits with their memos, planning
@@ -26,7 +39,7 @@ GitHub releases.
 
 - **A reconciled split warns before you change it**, at the first keystroke into
   its account, amount, shares, or price, in a register or the transaction editor,
-  as GnuCash does. **Cancel** keeps the cell; **Change It** allows the change, and
+  as GnuCash does. **Cancel** keeps the cell; **Change it** allows the change, and
   saving does not ask again. Before, the question came only when saving.
 
 - **A charge or credit from the statement takes its own date.** When reconciling on

@@ -17,7 +17,6 @@ from ...gen.services.gnucash_writeback import (
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
-from ..widgets.help import help_row
 
 __all__ = ["GnuCashWritebackDialog"]
 
@@ -33,11 +32,7 @@ class GnuCashWritebackDialog(BoundedWindow):
         self.plan: WritebackPlan | None = None
         self.checks: list[tuple[str, Gtk.CheckButton]] = []
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(18)
-        self.set_child(outer)
-        outer.prepend(help_row("writeback"))
+        outer = self.frame("writeback")
 
         self.summary = Gtk.Label(xalign=0, wrap=True)
         outer.append(self.summary)
@@ -59,15 +54,9 @@ class GnuCashWritebackDialog(BoundedWindow):
         self.status.add_css_class("dim")
         outer.append(self.status)
 
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        close = Gtk.Button(label="Close")
-        close.connect("clicked", lambda *_: self.close())
-        buttons.append(close)
         self.write_button = Gtk.Button(label="Write selected")
-        self.write_button.add_css_class("suggested-action")
         self.write_button.connect("clicked", lambda *_: self.write())
-        buttons.append(self.write_button)
-        outer.append(buttons)
+        self.actions(outer, primary=self.write_button)
         self.refresh()
 
     # ------------------------------------------------------------------ preview

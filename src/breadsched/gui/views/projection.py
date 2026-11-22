@@ -467,9 +467,7 @@ class ProjectionView(BaseView):
         window.set_default_size(440, -1)
         window.set_resizable(False)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
+        box = window.frame("plan")
         label = Gtk.Label(label="Preparing projection…", xalign=0)
         label.set_wrap(True)
         box.append(label)
@@ -478,8 +476,7 @@ class ProjectionView(BaseView):
         box.append(bar)
         cancel = Gtk.Button(label="Cancel")
         cancel.connect("clicked", lambda *_: self._cancel_projection())
-        box.append(cancel)
-        window.set_child(box)
+        window.actions(box, dismiss=cancel)
         window.present()
         self._progress_window = window
         self._progress_bar = bar
@@ -678,13 +675,10 @@ class ProjectionView(BaseView):
         names = [s.name for s in self._scenarios]
         picker = bounded_dropdown(["None", *names])
         dialog = BoundedWindow(title="Compare with", transient_for=self.get_root(), modal=True)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(16)
+        box = dialog.frame("plan")
         box.append(Gtk.Label(label="Overlay another scenario's net worth"))
         box.append(picker)
         apply_button = Gtk.Button(label="Apply")
-        apply_button.add_css_class("suggested-action")
 
         def on_apply(_b) -> None:
             index = picker.get_selected()
@@ -701,8 +695,7 @@ class ProjectionView(BaseView):
             self._calculate(self._scenarios[index - 1], comparison_ready)
 
         apply_button.connect("clicked", on_apply)
-        box.append(apply_button)
-        dialog.set_child(box)
+        dialog.actions(box, dismiss="Cancel", primary=apply_button)
         dialog.present()
 
     def _on_save_clicked(self, _button) -> None:

@@ -34,7 +34,6 @@ from ..widgets.bounded import BoundedWindow, keeps_enter
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
 from ..widgets.date_entry import attach_date_keys, parse_date_text
-from ..widgets.help import help_row
 
 __all__ = ["PAY_PERIODS", "PayrollDialog"]
 
@@ -100,11 +99,7 @@ class PayrollDialog(BoundedWindow):
         self.deposit_accounts = list(self.view.deposit_accounts)
         self.line_accounts = list(self.view.line_accounts)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("payroll"))
+        box = self.frame("payroll")
 
         top = Gtk.Box(spacing=8)
         top.append(Gtk.Label(label="Paycheck"))
@@ -122,6 +117,7 @@ class PayrollDialog(BoundedWindow):
 
         self.status = Gtk.Label(xalign=0, wrap=True, selectable=True)
         box.append(self.status)
+        self.actions(box)
         self.refresh(select=schedule)
 
     def _name(self, handle: str) -> str:
@@ -199,7 +195,6 @@ class PayrollDialog(BoundedWindow):
         preview.connect("clicked", lambda _b: self.preview_change())
         buttons.append(preview)
         self.save_change_button = Gtk.Button(label="Save pay change")
-        self.save_change_button.add_css_class("suggested-action")
         self.save_change_button.connect("clicked", lambda _b: self.save_change())
         buttons.append(self.save_change_button)
         page.append(buttons)
@@ -256,7 +251,6 @@ class PayrollDialog(BoundedWindow):
         add_line.connect("clicked", lambda _b: self.add_template_line())
         buttons.append(add_line)
         save = Gtk.Button(label="Save template")
-        save.add_css_class("suggested-action")
         save.connect("clicked", lambda _b: self.save_template())
         buttons.append(save)
         self.delete_template_button = delete_button(

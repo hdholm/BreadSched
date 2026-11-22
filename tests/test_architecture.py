@@ -2300,3 +2300,127 @@ class TestCommunityHealth:
     def test_every_path_has_a_code_owner(self):
         owners = (self.ROOT / ".github/CODEOWNERS").read_text(encoding="utf-8")
         assert any(line.startswith("* @") for line in owners.splitlines())
+
+
+class TestDesktopConsistency:
+    """The desktop consistency rules (``docs/design/user-interfaces.md``, Desktop
+    consistency rules), checked in the source so a new window cannot drift.
+
+    ``test_gui.TestDesktopConsistency`` checks the same rules on the windows built.
+    """
+
+    GUI = SRC / "gui"
+    #: The one module that frames windows and marks their main button.
+    FRAME = GUI / "widgets" / "bounded.py"
+    #: Windows that are documents, not dialogs: tabs or pages, closed from the
+    #: title bar, with no action row.
+    DOCUMENTS = {
+        "ReportsWindow": "a window of report tabs",
+        "UserGuideWindow": "the guide, read like a document",
+    }
+    #: Plain ``Gtk.Window`` subclasses, each for its reason.
+    PLAIN_WINDOWS = {
+        "BoundedWindow": "the base every dialog is built on",
+        "StallPrompt": "runs in the watchdog's own process; uses action_row",
+    }
+    #: Capitalized words a sentence-case label may still hold: names.
+    NAMES = {
+        "BreadSched",
+        "GnuCash",
+        "Dashboard",
+        "Plan",
+        "Double",
+        "Line",
+        "Ctrl",
+    }
+    LABEL = re.compile(
+        r"Gtk\.(?:Button|MenuButton|ToggleButton|CheckButton)\([^()]*?label=\"([^\"]+)\""
+    )
+    ALERT = re.compile(r"buttons=\[([^\]]+)\]")
+
+    def _sources(self):
+        for path in sorted(self.GUI.rglob("*.py")):
+            yield path, path.read_text(encoding="utf-8")
+
+    def test_only_the_shared_row_marks_a_main_button(self):
+        offenders = [
+            str(path.relative_to(SRC))
+            for path, text in self._sources()
+            if path != self.FRAME and 'add_css_class("suggested-action")' in text
+        ]
+        assert offenders == []
+
+    def test_every_multi_line_field_is_the_shared_notes_view(self):
+        # The guide's text view shows the guide; it is read, not typed in.
+        reader = self.GUI / "user_guide.py"
+        offenders = [
+            str(path.relative_to(SRC))
+            for path, text in self._sources()
+            if path not in (self.FRAME, reader) and "Gtk.TextView(" in text
+        ]
+        assert offenders == []
+
+    def test_every_dialog_is_framed_and_ends_with_its_action_row(self):
+        missing = []
+        for path, text in self._sources():
+            tree = ast.parse(text)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.ClassDef):
+                    continue
+                bases = {getattr(base, "id", getattr(base, "attr", "")) for base in node.bases}
+                if not bases & {"BoundedWindow", "_MatchWindow", "ScheduleDialog"}:
+                    continue
+                if node.name in self.DOCUMENTS or bases & {"_MatchWindow", "ScheduleDialog"}:
+                    continue  # a document, or framed by the class it extends
+                body = ast.get_source_segment(text, node) or ""
+                # A window whose buttons change page by page refills its row.
+                ends = "self.actions(" in body or "fill_action_row(" in body
+                if "self.frame(" not in body or not ends:
+                    missing.append(f"{path.relative_to(SRC)}:{node.name}")
+            # A window built in place is framed there too; a register window is
+            # a register, a document.
+            built = text.count("= BoundedWindow(") - text.count("RegisterView(self)")
+            if built > text.count(".frame("):
+                missing.append(f"{path.relative_to(SRC)}: BoundedWindow built unframed")
+        assert missing == []
+
+    def test_no_other_plain_windows(self):
+        found = []
+        for _path, text in self._sources():
+            for node in ast.walk(ast.parse(text)):
+                if isinstance(node, ast.ClassDef) and any(
+                    getattr(base, "attr", "") == "Window" for base in node.bases
+                ):
+                    found.append(node.name)
+        assert set(found) == set(self.PLAIN_WINDOWS)
+
+    def _bad_label(self, label: str) -> str | None:
+        if "..." in label:
+            return "uses three dots, not an ellipsis (…)"
+        words = re.findall(r"[A-Za-z][\w'-]*", label)
+        capitals = [
+            word
+            for word in words[1:]
+            if word[0].isupper() and not word.isupper() and word not in self.NAMES
+        ]
+        return f"is not sentence case: {capitals}" if capitals else None
+
+    def test_buttons_and_alert_answers_are_in_sentence_case(self):
+        offenders = []
+        for path, text in self._sources():
+            labels = self.LABEL.findall(text)
+            for listed in self.ALERT.findall(text):
+                labels.extend(re.findall(r"\"([^\"]+)\"", listed))
+            for label in labels:
+                problem = self._bad_label(label)
+                if problem:
+                    offenders.append(f"{path.relative_to(SRC)}: {label!r} {problem}")
+        assert offenders == []
+
+    def test_the_dismissing_button_says_cancel_or_close(self):
+        offenders = []
+        for path, text in self._sources():
+            for match in re.finditer(r"dismiss=\"([^\"]+)\"", text):
+                if match.group(1) not in ("Cancel", "Close"):
+                    offenders.append(f"{path.relative_to(SRC)}: {match.group(1)!r}")
+        assert offenders == []

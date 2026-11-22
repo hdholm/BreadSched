@@ -18,7 +18,6 @@ from ..gi_setup import Gtk, Pango
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ..widgets.help import help_row
 
 __all__ = ["TaxMarksDialog", "TaxYearDialog"]
 
@@ -64,11 +63,7 @@ class TaxYearDialog(BoundedWindow):
         if self.year not in self.years:
             self.years = sorted({*self.years, self.year}, reverse=True)
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(12)
-        self.set_child(outer)
-        outer.append(help_row("tax-year"))
+        outer = self.frame("tax-year")
         note = Gtk.Label(
             label=(
                 "Calendar year, US rules: a lot is long-term when sold more than a year "
@@ -88,12 +83,11 @@ class TaxYearDialog(BoundedWindow):
         self.year_choice.set_selected(self.years.index(self.year))
         self.year_choice.connect("notify::selected", lambda *_: self._choose_year())
         toolbar.append(self.year_choice)
-        self.marks_button = Gtk.Button(label="Tax-Relevant Accounts and Tags…")
+        self.marks_button = Gtk.Button(label="Tax-relevant accounts and tags…")
         self.marks_button.connect("clicked", lambda *_: self.open_marks())
         toolbar.append(self.marks_button)
         self.print_button = Gtk.Button(label="Print…")
         self.print_button.connect("clicked", lambda *_: self.print_report())
-        toolbar.append(self.print_button)
         outer.append(toolbar)
 
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -101,9 +95,7 @@ class TaxYearDialog(BoundedWindow):
         scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         scroller.set_min_content_height(240)
         outer.append(scroller)
-        close = Gtk.Button(label="Close", halign=Gtk.Align.END)
-        close.connect("clicked", lambda *_: self.close())
-        outer.append(close)
+        self.actions(outer, extra=(self.print_button,))
         self.refresh()
 
     def _choose_year(self) -> None:
@@ -249,17 +241,13 @@ class TaxMarksDialog(BoundedWindow):
     def __init__(
         self, parent: Gtk.Window | None, db: OpenBook, on_saved: Callable[[], None] | None = None
     ) -> None:
-        super().__init__(title="Tax-Relevant Accounts and Tags", transient_for=parent)
+        super().__init__(title="Tax-relevant accounts and tags", transient_for=parent)
         self.db = db
         self.on_saved = on_saved
         self.set_default_size(560, 560)
         self.marks = book_server(db).tax_marks()
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(outer, f"set_margin_{side}")(12)
-        self.set_child(outer)
-        outer.append(help_row("tax-year"))
+        outer = self.frame("tax-year")
         note = Gtk.Label(
             label=(
                 "A marked account counts with the accounts beneath it. Until you change it "
@@ -301,15 +289,9 @@ class TaxMarksDialog(BoundedWindow):
         self.message = Gtk.Label(xalign=0, wrap=True)
         self.message.add_css_class("negative")
         outer.append(self.message)
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: self.close())
         self.save_button = Gtk.Button(label="Save")
-        self.save_button.add_css_class("suggested-action")
         self.save_button.connect("clicked", lambda *_: self.save())
-        buttons.append(cancel)
-        buttons.append(self.save_button)
-        outer.append(buttons)
+        self.actions(outer, dismiss="Cancel", primary=self.save_button)
 
     def save(self) -> bool:
         accounts: dict[str, bool | None] = {

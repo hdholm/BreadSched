@@ -21,7 +21,6 @@ from ..gi_setup import GLib, Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ..widgets.help import help_row
 
 __all__ = ["CsvImportDialog"]
 
@@ -79,11 +78,7 @@ class CsvImportDialog(BoundedWindow):
         self.columns: tuple[str, ...] = ()
         self.set_default_size(900, 680)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("csv-import"))
+        box = self.frame("csv-import")
 
         intro = Gtk.Label(
             label=(
@@ -181,17 +176,11 @@ class CsvImportDialog(BoundedWindow):
         self.status = Gtk.Label(xalign=0, wrap=True)
         box.append(self.status)
 
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        close = Gtk.Button(label="Close")
-        close.connect("clicked", lambda *_: self.close())
         self.preview_button = Gtk.Button(label="Preview")
         self.preview_button.connect("clicked", lambda *_: self.preview())
         self.import_button = Gtk.Button(label="Import")
-        self.import_button.add_css_class("suggested-action")
         self.import_button.connect("clicked", lambda *_: self.import_rows())
-        for button in (close, self.preview_button, self.import_button):
-            buttons.append(button)
-        box.append(buttons)
+        self.actions(box, primary=self.import_button, extra=(self.preview_button,))
         self._set_ready(False)
         if not self.accounts:
             self._message("Add a bank, cash, or card account before importing a statement.", True)

@@ -31,7 +31,6 @@ from ..background import BackgroundJob
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
-from ..widgets.help import help_row
 
 __all__ = ["SharePricesDialog", "SharePricing", "price_shares"]
 
@@ -76,11 +75,7 @@ class SharePricesDialog(BoundedWindow):
         self.legs = list(legs)
         self.on_done = on_done
         self._answered = False
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.append(help_row("due-review"))
+        box = self.frame("due-review")
         box.append(
             Gtk.Label(
                 label=(
@@ -147,15 +142,9 @@ class SharePricesDialog(BoundedWindow):
         self.message = Gtk.Label(xalign=0, wrap=True)
         self.message.add_css_class("error")
         box.append(self.message)
-        actions = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda _b: self.close())
         enter = Gtk.Button(label="Enter")
-        enter.add_css_class("suggested-action")
         enter.connect("clicked", lambda _b: self.enter())
-        actions.append(cancel)
-        actions.append(enter)
-        box.append(actions)
+        self.actions(box, dismiss="Cancel", primary=enter)
         self.connect("close-request", self._on_close)
         if self.entries:
             self.entries[0][0].grab_focus()

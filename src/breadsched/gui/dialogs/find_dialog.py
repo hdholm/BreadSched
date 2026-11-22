@@ -31,7 +31,6 @@ from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
 from ..widgets.form_pages import FormGrid
-from ..widgets.help import help_row
 
 __all__ = ["FindDialog", "ResultLine"]
 
@@ -160,11 +159,7 @@ class FindDialog(BoundedWindow):
         )
         self.accounts = [record.account for record in records]
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(12)
-        self.set_child(box)
-        box.append(help_row("find"))
+        box = self.frame("find")
 
         form = FormGrid()
         self.text_entry = Gtk.Entry(placeholder_text="Anything a transaction holds")
@@ -247,19 +242,13 @@ class FindDialog(BoundedWindow):
         form.add("Subtotal by", subtotals)
         box.append(form)
 
-        actions = Gtk.Box(spacing=8)
         self.status = Gtk.Label(xalign=0, wrap=True)
-        self.status.set_hexpand(True)
-        actions.append(self.status)
-        find = Gtk.Button(label="Find")
-        find.add_css_class("suggested-action")
-        find.connect("clicked", lambda *_: self.find())
-        actions.append(find)
+        box.append(self.status)
+        self.find_button = Gtk.Button(label="Find")
+        self.find_button.connect("clicked", lambda *_: self.find())
         self.print_button = Gtk.Button(label="Print…")
         self.print_button.set_sensitive(False)
         self.print_button.connect("clicked", lambda *_: self.print_report())
-        actions.append(self.print_button)
-        box.append(actions)
 
         self.results = Gtk.ColumnView()
         self.results.add_css_class("data-table")
@@ -280,9 +269,7 @@ class FindDialog(BoundedWindow):
         scroller.set_vexpand(True)
         box.append(scroller)
 
-        close = Gtk.Button(label="Close", halign=Gtk.Align.END)
-        close.connect("clicked", lambda *_: self.close())
-        box.append(close)
+        self.actions(box, primary=self.find_button, extra=(self.print_button,))
         self.lines: list[ResultLine] = []
 
     # ---------------------------------------------------------------- reading

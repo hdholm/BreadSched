@@ -24,7 +24,6 @@ from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import attach_date_keys, parse_date_text
-from ..widgets.help import help_row
 
 __all__ = ["LoanDialog"]
 
@@ -44,11 +43,7 @@ class LoanDialog(BoundedWindow):
         self._expenses = list(self.choices.expenses)
         self._funding = list(self.choices.payment_accounts)
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        for side in ("top", "bottom", "start", "end"):
-            getattr(box, f"set_margin_{side}")(18)
-        self.set_child(box)
-        box.prepend(help_row("loans"))
+        box = self.frame("loans")
 
         grid = Gtk.Grid(column_spacing=10, row_spacing=8)
         box.append(grid)
@@ -124,16 +119,10 @@ class LoanDialog(BoundedWindow):
         self.status = Gtk.Label(xalign=0)
         box.append(self.status)
 
-        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
-        cancel.connect("clicked", lambda *_: self.close())
-        buttons.append(cancel)
         self.save_button = Gtk.Button(label="Create loan")
-        self.save_button.add_css_class("suggested-action")
         self.save_button.set_sensitive(False)
         self.save_button.connect("clicked", self._on_save)
-        buttons.append(self.save_button)
-        box.append(buttons)
+        self.actions(box, dismiss="Cancel", primary=self.save_button)
         # The form scrolls on a small screen and the buttons stay in view.
         scroll_body(self)
 

@@ -1,6 +1,6 @@
 """The Reports window: every report in one place, each open report in its own tab.
 
-The Reports menu, a view's report button, and the window's own **Open Report** menu
+The Reports menu, a view's report button, and the window's own **Open report** menu
 all open a report here. Each report is a tab with a close button, so several can be
 open at once and compared. The interactive reports (Expense Explorer, Budget Jars,
 Net Worth History, Holdings and Cost Basis, Realized Gains, Tax Year) keep their
@@ -159,7 +159,7 @@ class ReportsWindow(BoundedWindow):
         menu = Gio.Menu()
         for spec in report_specs():
             menu.append(f"{spec.label}…", f"reports.open::{spec.key}")
-        self.open_button = Gtk.MenuButton(label="Open Report", menu_model=menu)
+        self.open_button = Gtk.MenuButton(label="Open report", menu_model=menu)
         self.open_button.set_tooltip_text("Open a report in a new tab")
         bar.append(self.open_button)
         help_box = help_row("reports")
@@ -176,7 +176,7 @@ class ReportsWindow(BoundedWindow):
         self.notebook.connect("page-removed", lambda *_: self._empty_note())
         outer.append(self.notebook)
         self.empty = Gtk.Label(
-            label="Choose Open Report to open a report. Each opens in its own tab.",
+            label="Choose Open report to open a report. Each opens in its own tab.",
             vexpand=True,
         )
         self.empty.add_css_class("dim-label")
