@@ -8,6 +8,13 @@ GitHub releases.
 
 ## Unreleased
 
+## 2026.11.22.0
+
+The third beta, published as a GitHub pre-release; its Windows installer and Linux
+packages are still not code-signed, so check them against `SHA256SUMS`. Books are
+unchanged (native schema 14), so it opens every book the earlier betas do. Every
+change is on the desktop.
+
 - **The toolbar and the tab row scroll by arrows**, as GnuCash's tabs do, instead of
   a scrollbar under them. When either is wider than the window, a left and a right
   arrow appear at its ends (greyed out at the start and the end), the mouse wheel
