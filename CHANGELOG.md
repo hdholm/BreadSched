@@ -16,6 +16,8 @@ GitHub releases.
   BreadSched stops responding for 20 seconds, a separate window asks whether to
   wait or quit, and where it was stuck is written to a hang log. After quitting,
   the next start offers to open a GitHub bug report with the log's start filled in.
+  Opening or upgrading a book, which blocks the window on purpose, is allowed three
+  minutes, and the question then says what BreadSched has been doing.
   A dialog hidden behind another window, which can look like a freeze, now comes
   forward with the main window, and **View → Bring All Windows Forward** brings
   every window forward.

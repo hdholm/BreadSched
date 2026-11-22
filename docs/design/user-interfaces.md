@@ -226,6 +226,15 @@ as stale, so nothing saved is lost. On the next activation
 `log`) holding the start of the log, the home directory masked as `~`. On POSIX,
 `SIGUSR1` writes every thread's stack to `stacks-on-request.log`.
 
+Work that blocks the loop by design says so with `watchdog.busy(doing, allow)`, a
+context manager that is a no-op without a running watchdog. Inside it the watchdog
+waits `max(STALL_SECONDS, allow)` (`BUSY_SECONDS`, 180, by default) before asking,
+writes `while <doing>` in the log's first line, and passes `doing` to the prompt,
+which then says what BreadSched has been doing rather than that it stopped. Opening
+a book (`open_book_announced`) is wrapped as "upgrading your book" or "opening
+your book". Work run off the main thread, such as imports and reports behind a
+progress dialog, keeps the loop ticking and needs no announcement.
+
 A modal dialog behind another window looks like a freeze rather than being one.
 When the main window becomes active it presents the visible modal windows that
 stand over it (`_belongs_to` follows their transient-for chain), and

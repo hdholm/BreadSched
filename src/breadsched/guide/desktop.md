@@ -1077,8 +1077,10 @@ Use these File menu commands regularly:
   forward, dialogs on top.
 - If BreadSched stops responding altogether for 20 seconds, a separate window,
   **BreadSched is not responding**, asks whether to **Wait** (it may still be
-  working, as when upgrading a large book) or **Quit BreadSched**; it goes away by
-  itself if BreadSched starts responding again. Either way, where BreadSched was
+  working) or **Quit BreadSched**; it goes away by itself if BreadSched starts
+  responding again. While a book is being opened or upgraded, which can take a
+  while for a large book, BreadSched allows three minutes instead, and the window
+  says what it has been doing ("has been upgrading your book for 190 seconds"). Either way, where BreadSched was
   stuck is written to a hang log in the `hang-reports` folder of BreadSched's data
   folder (`~/.local/share/breadsched` on Linux, `%LOCALAPPDATA%\breadsched` on
   Windows). Quitting loses only typing not yet entered: the book keeps everything

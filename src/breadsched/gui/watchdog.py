@@ -15,6 +15,10 @@ manager's close button, and nothing inside the process can ask anything. So:
 - on the next start the application offers to report the problem, the log's
   stacks filled in (``pending_report``).
 
+Work that blocks the main loop by design, such as upgrading a book as it opens,
+says so with ``busy``: the watchdog then waits up to that work's allowance before
+asking, and its log and question name the work ("upgrading your book").
+
 On POSIX, ``kill -USR1 <pid>`` also writes every thread's stack, on demand, to
 ``stacks-on-request.log`` in the same directory.
 
@@ -32,7 +36,8 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -45,6 +50,7 @@ __all__ = [
     "HangReport",
     "STALL_SECONDS",
     "Watchdog",
+    "busy",
     "clear_report",
     "log_excerpt",
     "pending_report",
@@ -54,6 +60,10 @@ __all__ = [
 #: or upgrading a large book blocks it for seconds by design, so this is well past
 #: that, and the question offers to wait.
 STALL_SECONDS = 20.0
+#: How long work announced with ``busy`` may block the main loop before the
+#: watchdog asks: a large book's upgrade backs it up, verifies the copy, and
+#: migrates it, which can take minutes.
+BUSY_SECONDS = 180.0
 #: The exit status of a process the user quit after it stopped responding.
 EXIT_HUNG = 70
 #: Hang logs kept; older ones are removed.
@@ -108,7 +118,32 @@ def log_excerpt(log: Path, limit: int = 3000) -> str:
     return text
 
 
-def _ask_in_another_process(seconds: float, log: Path, resumed: Callable[[], bool]) -> bool:
+#: The running watchdog, which ``busy`` tells what the main loop is doing.
+_current: Watchdog | None = None
+
+
+@contextmanager
+def busy(doing: str, allow: float = BUSY_SECONDS) -> Iterator[None]:
+    """Say the main loop is ``doing`` something slow on purpose (a phrase such as
+    "upgrading your book"), allowing it ``allow`` seconds before the watchdog asks.
+
+    Does nothing without a running watchdog (the tests, the command line).
+    """
+    watchdog = _current
+    if watchdog is None:
+        yield
+        return
+    previous = watchdog.doing
+    watchdog.doing = (doing, allow)
+    try:
+        yield
+    finally:
+        watchdog.doing = previous
+
+
+def _ask_in_another_process(
+    seconds: float, log: Path, resumed: Callable[[], bool], doing: str = ""
+) -> bool:
     """Ask in a separate process whether to quit; False (wait) if it cannot ask.
 
     The question is withdrawn as soon as the main loop ticks again.
@@ -119,6 +154,7 @@ def _ask_in_another_process(seconds: float, log: Path, resumed: Callable[[], boo
         "breadsched.gui.stall_prompt",
         f"{seconds:.0f}",
         str(log),
+        doing,
     ]
     try:
         prompt = subprocess.Popen(command)  # noqa: S603 - our own module, fixed arguments
@@ -142,7 +178,7 @@ class Watchdog:
         *,
         stall_seconds: float = STALL_SECONDS,
         check_every: float = 1.0,
-        ask: Callable[[float, Path, Callable[[], bool]], bool] = _ask_in_another_process,
+        ask: Callable[[float, Path, Callable[[], bool], str], bool] = _ask_in_another_process,
         exit: Callable[[int], object] = os._exit,  # noqa: A002 - mirrors os._exit
     ) -> None:
         self.directory = Path(directory)
@@ -155,6 +191,9 @@ class Watchdog:
         self._thread: threading.Thread | None = None
         self._beat_source = 0
         self._signal_log: TextIO | None = None
+        #: What the main loop is busy with on purpose, and for how long it may be
+        #: (``busy``); None when nothing was announced.
+        self.doing: tuple[str, float] | None = None
         #: Hang logs written by this watchdog, newest last.
         self.logs: list[Path] = []
 
@@ -164,6 +203,8 @@ class Watchdog:
         """Start ticking on GTK's loop and watching from a thread."""
         from .gi_setup import GLib
 
+        global _current
+        _current = self
         self.directory.mkdir(parents=True, exist_ok=True)
         self._last_beat = time.monotonic()
         self._beat_source = GLib.timeout_add(1000, self.beat)
@@ -182,6 +223,9 @@ class Watchdog:
         return self
 
     def stop(self) -> None:
+        global _current
+        if _current is self:
+            _current = None
         self._stopped.set()
         if self._beat_source:
             from .gi_setup import GLib
@@ -206,15 +250,18 @@ class Watchdog:
     def _watch(self) -> None:
         while not self._stopped.wait(self.check_every):
             stalled = self.stalled_for()
-            if stalled < self.stall_seconds:
+            doing = self.doing
+            limit = max(self.stall_seconds, doing[1]) if doing else self.stall_seconds
+            if stalled < limit:
                 continue
             beat = self._last_beat
-            log = self.write_log(stalled)
+            what = doing[0] if doing else ""
+            log = self.write_log(stalled, what)
 
             def resumed(beat: float = beat) -> bool:
                 return self._last_beat != beat
 
-            if self._ask(stalled, log, resumed):
+            if self._ask(stalled, log, resumed, what):
                 self._record(stalled, log)
                 self._exit(EXIT_HUNG)
                 return
@@ -222,15 +269,17 @@ class Watchdog:
             while not self._stopped.is_set() and self._last_beat == beat:
                 self._stopped.wait(self.check_every)
 
-    def write_log(self, stalled: float) -> Path:
+    def write_log(self, stalled: float, doing: str = "") -> Path:
         """Write every thread's stack to a new hang log, keeping the latest few."""
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         log = self.directory / f"hang-{stamp}.log"
         with open(log, "w", encoding="utf-8") as handle:
+            at = datetime.now().isoformat(timespec="seconds")
+            context = f", while {doing}" if doing else ""
             handle.write(
                 f"BreadSched {__version__} stopped responding: the main loop had not "
-                f"run for {stalled:.0f} seconds at {datetime.now().isoformat(timespec='seconds')}."
-                f"\nThe main thread, which draws every window, is Thread "
+                f"run for {stalled:.0f} seconds at {at}{context}.\n"
+                f"The main thread, which draws every window, is Thread "
                 f"0x{threading.main_thread().ident or 0:016x}; each thread's most recent "
                 "call is at the top.\n\n"
             )

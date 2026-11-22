@@ -176,8 +176,14 @@ class BreadSchedApplication(Gtk.Application):
         window.present()
 
         def upgrade() -> None:
+            # Blocks the main loop on purpose; the watchdog waits for it (and,
+            # should it stall, says what it was doing).
+            from . import watchdog
+
+            doing = "upgrading your book" if upgrading else "opening your book"
             try:
-                self._open_or_report(path, failure)
+                with watchdog.busy(doing):
+                    self._open_or_report(path, failure)
             finally:
                 window.show_busy(None)
 

@@ -339,6 +339,31 @@ class TestDialogsStayInFront:
         assert app.book_path == str(book)
         assert window.stack.get_visible_child_name() != "busy"
 
+    def test_an_upgrade_tells_the_watchdog_it_is_slow_on_purpose(
+        self, app, window, tmp_path, monkeypatch
+    ):
+        from contextlib import contextmanager
+
+        from breadsched.gui import watchdog
+
+        announced = []
+
+        @contextmanager
+        def busy(doing, allow=watchdog.BUSY_SECONDS):
+            announced.append((doing, allow, app.db is None))
+            yield
+
+        monkeypatch.setattr(watchdog, "busy", busy)
+        monkeypatch.setattr(app, "_show_alert", lambda *_: None)
+        window.present()
+        assert _spin(window.get_mapped)
+        app.open_book_announced(
+            str(_old_book(tmp_path)), window=window, failure="Could not open the book"
+        )
+        assert _spin(lambda: app.db is not None)
+        # Announced before the book was opened, with the longer allowance.
+        assert announced == [("upgrading your book", watchdog.BUSY_SECONDS, True)]
+
     def test_a_failed_upgrade_returns_to_the_start_screen_and_says_why(
         self, app, window, tmp_path, monkeypatch
     ):
@@ -13601,7 +13626,8 @@ class TestIssue397:
                 time.sleep(0.05)  # the main thread is "stuck" here
         finally:
             watchdog.stop()
-        [(seconds, log, resumed)] = asked
+        [(seconds, log, resumed, doing)] = asked
+        assert doing == ""  # nothing was announced
         assert seconds >= 0.3 and log.exists()
         text = log.read_text(encoding="utf-8")
         assert "stopped responding" in text and "most recent call first" in text
@@ -13643,6 +13669,44 @@ class TestIssue397:
         from urllib.parse import unquote_plus
 
         assert str(Path.home()) not in unquote_plus(url)
+
+    def test_slow_work_announced_is_given_longer_and_named(self, tmp_path):
+        """Upgrading a book blocks the loop on purpose: the watchdog waits for the
+        allowance it names before asking, and the log and question say what it is."""
+        import time
+
+        from breadsched.gui import watchdog as watching
+
+        with watching.busy("doing nothing"):  # no watchdog running: does nothing
+            pass
+        asked, exits = [], []
+        watchdog = self._watchdog(tmp_path, lambda *args: asked.append(args) or False, exits)
+        try:
+            with watching.busy("upgrading your book", allow=1.5):
+                started = time.monotonic()
+                while time.monotonic() - started < 0.8:
+                    time.sleep(0.05)  # past the usual 0.3 s, within the allowance
+                assert asked == []
+                deadline = time.monotonic() + 10
+                while not asked and time.monotonic() < deadline:
+                    time.sleep(0.05)
+            assert watchdog.doing is None
+        finally:
+            watchdog.stop()
+        [(seconds, log, _resumed, doing)] = asked
+        assert seconds >= 1.5 and doing == "upgrading your book"
+        assert "while upgrading your book." in log.read_text(encoding="utf-8")
+        assert watching._current is None
+
+    def test_the_not_responding_prompt_names_slow_work(self):
+        from breadsched.gui.stall_prompt import StallPrompt
+
+        prompt = StallPrompt("190", "/tmp/hang.log", lambda _quit: None, "upgrading your book")
+        try:
+            text = prompt.message.get_label()
+            assert text.startswith("BreadSched has been upgrading your book for 190 seconds")
+        finally:
+            prompt.destroy()
 
     def test_the_not_responding_prompt_waits_unless_told_to_quit(self):
         from breadsched.gui.stall_prompt import StallPrompt
