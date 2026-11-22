@@ -11718,6 +11718,66 @@ class TestReconcileWindow:
         finally:
             dialog.destroy()
 
+    def _finish_card_statement(self, window, db, card, made):
+        """Give the card a payment day and account, then reconcile its statement."""
+        checking = db.get_account_by_name("Assets:Checking Account")
+        with db.transaction("Card terms") as txn:
+            card.card.payment_day = 15
+            card.card.payment_account = checking.handle
+            db.commit_account(card, txn)
+        dialog = self._start(window, db, card)
+        for name in ("Groceries", "Fuel", "Payment"):
+            dialog._checks[made[name].split_for(card.handle).handle].set_active(True)
+        dialog.finish.emit("clicked")
+        return dialog, checking
+
+    def test_a_finished_card_statement_offers_its_payment(self, app, window, populated_book):
+        db, card, _rent, made = self._card(app, populated_book)
+        dialog, checking = self._finish_card_statement(window, db, card, made)
+        try:
+            # The window stays open to offer the payment, due on the next payment day.
+            assert dialog.get_visible()
+            assert "70.00 is due on 2030-02-15" in dialog.payment_note.get_text()
+            assert dialog.footer.get_last_child() is dialog.pay_button
+            opened = dialog.pay_statement()
+            editor = opened.editor
+            assert opened.get_title() == "Pay the statement"
+            assert editor.split_values() == [
+                (card.handle, Money("70"), ""),
+                (checking.handle, -Money("70"), ""),
+            ]
+            assert editor.save() is True
+            assert "the payment due is settled" in dialog.status.get_text()
+            assert dialog.pay_button.get_sensitive() is False
+            [paid] = [t for t in db.iter_transactions() if t.description.endswith("payment")]
+            assert paid.value_for(card.handle) == Money("70")
+        finally:
+            dialog.destroy()
+
+    def test_a_short_payment_asks_for_the_minimum(self, app, window, populated_book):
+        db, card, _rent, made = self._card(app, populated_book)
+        dialog, checking = self._finish_card_statement(window, db, card, made)
+        try:
+            opened = dialog.pay_statement()
+            editor = opened.editor
+            editor.prefill(
+                description="Card payment",
+                splits=[(card.handle, Money("20"), ""), (checking.handle, -Money("20"), "")],
+            )
+            # Short of the statement: nothing is saved until the minimum is given.
+            assert editor.save() is False
+            assert "minimum payment" in editor.status.get_text()
+            minimum_window, entry, save = dialog.minimum_window
+            assert minimum_window.get_title() == "Minimum payment"
+            entry.set_text("25")
+            save.emit("clicked")
+            assert "below the minimum payment" in dialog.status.get_text()
+            assert "50.00 of the statement is still due" in dialog.status.get_text()
+            statement = next(iter(db.iter_reconciliations(card.handle)))
+            assert db.get_reconciliation(statement.handle).minimum_payment == Money("25")
+        finally:
+            dialog.destroy()
+
     def test_several_selected_rows_are_checked_and_unchecked_together(
         self, app, window, populated_book
     ):

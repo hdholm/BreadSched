@@ -206,10 +206,12 @@ from ..api.views import (
     advance_days_json,
     applied_categories_json,
     balance_summary_json,
+    card_payment_offer_json,
     categorization_rules_json,
     chart_json,
     due_review_json,
     next_occurrence_json,
+    paid_card_statement_json,
     posted_due_json,
     reconciliation_summary_json,
     reconciliation_view_json,
@@ -246,6 +248,7 @@ from ..gen.services import (
 from ..gen.services.account_inference import ApplyAccountSuggestions
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
 from ..gen.services.autocomplete import EarlierNotes, SuggestEntry
+from ..gen.services.card_payments import PayCardStatement
 from ..gen.services.categorization import AddRule
 from ..gen.services.claims import ClaimReportQuery, CloseClaim, ReopenClaim, SaveClaim
 from ..gen.services.csv_import import CsvImportRequest, InspectCsv
@@ -439,6 +442,8 @@ __all__ = [
     "cleared_toggle",
     "reconciliation_cancel",
     "statement_entry_add",
+    "card_payment_offer_get",
+    "card_payment_pay",
     "reconciliation_complete",
     "reconciled_balance_get",
     "reconciliation_get",
@@ -1067,6 +1072,26 @@ def statement_entry_add(api: Api, path: Path, body: dict[str, Any]) -> dict:
         definition=transaction_input_from_json(raw) if raw is not None else None,
     )
     return saved_transaction_json(api.book.add_statement_entry(request))
+
+
+def card_payment_offer_get(api: Api, path: Path, query: QueryParams) -> dict:
+    """The payment a finished credit card statement proposes."""
+    query.finish()
+    return {"offer": card_payment_offer_json(api.book.card_payment_offer(path["handle"]))}
+
+
+def card_payment_pay(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    """Save a card statement's payment and settle its payment due."""
+    _only(body, {"definition", "minimum_payment"})
+    raw = body.get("definition")
+    if not isinstance(raw, dict):
+        raise ValueError("definition must be the payment transaction")
+    request = PayCardStatement(
+        path["handle"],
+        transaction_input_from_json(raw),
+        minimum_payment=_money(body, "minimum_payment", optional=True),
+    )
+    return paid_card_statement_json(api.book.pay_card_statement(request))
 
 
 def cleared_toggle(api: Api, path: Path, body: dict[str, Any]) -> dict:

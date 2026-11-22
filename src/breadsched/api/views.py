@@ -40,6 +40,7 @@ from ..gen.services import (
     SavedTransaction,
     TagCount,
 )
+from ..gen.services.card_payments import CardPaymentOffer, PaidCardStatement
 from ..gen.services.categorization import (
     AppliedCategories,
     CategorizationRules,
@@ -848,3 +849,70 @@ def breadlets_json(plugins: Any, today: date, problems: Any = ()) -> dict[str, A
         "breadlets": [plugin.describe(today) for plugin in plugins],
         "problems": [{"name": item.name, "reason": item.reason} for item in problems],
     }
+
+
+# ------------------------------------------------------- card statement payment
+
+
+def card_payment_offer_json(offer: CardPaymentOffer) -> dict[str, Any]:
+    """The payment a finished card statement proposes, to change before saving."""
+    return {
+        "statement": offer.statement,
+        "account": offer.account,
+        "account_name": offer.account_name,
+        "statement_date": to_json(offer.statement_date),
+        "statement_balance": to_json(offer.statement_balance),
+        "minimum_payment": to_json(offer.minimum_payment),
+        "amount": to_json(offer.amount),
+        "due_date": to_json(offer.due_date),
+        "post_date": to_json(offer.post_date),
+        "description": offer.description,
+        "pay_from": offer.pay_from,
+        "pay_from_name": offer.pay_from_name,
+        "schedule": offer.schedule,
+        "schedule_name": offer.schedule_name,
+        "currency": offer.currency,
+    }
+
+
+def card_payment_offer_from_json(payload: dict[str, Any]) -> CardPaymentOffer:
+    minimum = payload.get("minimum_payment")
+    return CardPaymentOffer(
+        statement=payload["statement"],
+        account=payload["account"],
+        account_name=payload["account_name"],
+        statement_date=date.fromisoformat(payload["statement_date"]),
+        statement_balance=Money(payload["statement_balance"]),
+        minimum_payment=Money(minimum) if minimum is not None else None,
+        amount=Money(payload["amount"]),
+        due_date=date.fromisoformat(payload["due_date"]),
+        post_date=date.fromisoformat(payload["post_date"]),
+        description=payload["description"],
+        pay_from=payload.get("pay_from"),
+        pay_from_name=payload.get("pay_from_name"),
+        schedule=payload.get("schedule"),
+        schedule_name=payload.get("schedule_name"),
+        currency=payload.get("currency", ""),
+    )
+
+
+def paid_card_statement_json(paid: PaidCardStatement) -> dict[str, Any]:
+    """What paying a card statement saved, and whether it settled the payment due."""
+    return {
+        **saved_transaction_json(paid.transaction),
+        "settled": paid.settled,
+        "paid": to_json(paid.paid),
+        "remaining": to_json(paid.remaining),
+        "minimum_payment": to_json(paid.minimum_payment),
+    }
+
+
+def paid_card_statement_from_json(payload: dict[str, Any]) -> PaidCardStatement:
+    minimum = payload.get("minimum_payment")
+    return PaidCardStatement(
+        saved_transaction_from_json(payload),
+        bool(payload["settled"]),
+        Money(payload["paid"]),
+        Money(payload["remaining"]),
+        Money(minimum) if minimum is not None else None,
+    )

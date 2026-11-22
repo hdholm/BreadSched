@@ -34,6 +34,13 @@ from .attachments import (
     tag_counts,
     transactions_with_tag,
 )
+from .card_payments import (
+    CardPaymentOffer,
+    PaidCardStatement,
+    PayCardStatement,
+    card_payment_offer,
+    pay_card_statement,
+)
 from .claims import (
     AcceptedClaimLinks,
     ClaimAllocationInput,
@@ -443,6 +450,11 @@ __all__ = [
     "save_base_assumptions",
     "save_scenario_assumptions",
     "add_statement_entry",
+    "card_payment_offer",
+    "pay_card_statement",
+    "CardPaymentOffer",
+    "PaidCardStatement",
+    "PayCardStatement",
     "cancel_reconciliation",
     "complete_reconciliation",
     "reopen_reconciliation",
