@@ -193,7 +193,11 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from ..api.account_codec import save_account_from_json
 from ..api.schedule_codec import fixed_request_from_json, formula_request_from_json
-from ..api.transaction_codec import save_transaction_from_json, transaction_input_json
+from ..api.transaction_codec import (
+    save_transaction_from_json,
+    transaction_input_from_json,
+    transaction_input_json,
+)
 from ..api.typed_codec import from_data, to_data
 from ..api.views import (
     account_balance_json,
@@ -1049,15 +1053,18 @@ def reconciled_balance_get(api: Api, path: Path, query: QueryParams) -> dict:
 
 
 def statement_entry_add(api: Api, path: Path, body: dict[str, Any]) -> dict:
-    _only(body, {"other_account", "post_date", "description", "amount"})
+    _only(body, {"other_account", "post_date", "description", "amount", "definition"})
     amount = _money(body, "amount")
     assert amount is not None
+    raw = body.get("definition")
     request = AddStatementEntry(
         path["handle"],
         _required_text(body, "other_account"),
         _required_date(body, "post_date"),
         str(body.get("description") or ""),
         amount,
+        # The whole entry, as the transaction editor gives it.
+        definition=transaction_input_from_json(raw) if raw is not None else None,
     )
     return saved_transaction_json(api.book.add_statement_entry(request))
 

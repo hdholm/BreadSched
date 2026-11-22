@@ -2414,6 +2414,54 @@ class TestDialogs:
         assert closed.editor.grid.key(Gdk.KEY_Escape, Gdk.ModifierType(0)) is True
         assert _spin(lambda: not closed.get_visible())
 
+    def test_a_reconciled_split_asks_before_its_first_change(self, app, window, populated_book):
+        """#403: as in GnuCash, the first keystroke into a reconciled split's amount
+        asks; Cancel keeps the cell, Change It allows the edit and Save asks no more."""
+        from breadsched.gen.lib import ReconcileState
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        db = app.db
+        target = next(t for t in db.iter_transactions() if t.description == "Rent")
+        checking = db.get_account_by_name("Assets:Checking Account").handle
+        target.split_for(checking).reconcile = ReconcileState.RECONCILED
+        with db.transaction("Reconcile") as txn:
+            db.commit_transaction(target, txn)
+        dialog = TransactionDialog(window, db, transaction=target, default_account=checking)
+        editor = dialog.editor
+        try:
+            dialog.present()
+            assert _spin(dialog.get_mapped)
+            grid, sheet = editor.grid, editor.sheet
+            mine = next(
+                i
+                for i, line in enumerate(sheet.lines)
+                if line.handle and (target.split_for(checking).handle == line.handle)
+            )
+            column = "decrease" if sheet.lines[mine].decrease else "increase"
+            before = sheet.lines[mine].cell(column)
+            sheet.cursor, sheet.column = mine, column
+            grid.sync()
+            grid.editor.set_text("1")
+            assert grid.reconciled_alert is not None
+            assert sheet.lines[mine].cell(column) == before  # the keystroke waits
+            grid.answer_reconciled(False)
+            grid.editor.set_text("1")
+            assert grid.reconciled_alert is not None
+            grid.answer_reconciled(True)
+            grid.editor.set_text("1900.00")
+            assert sheet.lines[mine].cell(column) == "1900.00"
+            assert grid.reconciled_alert is None
+            other = 1 - mine
+            editor.type_line(
+                other, **{("increase" if column == "decrease" else "decrease"): "1900.00"}
+            )
+            assert editor.save() is True  # asked once, before the change
+            assert editor.reconciled_question is None
+            assert abs(db.get_transaction(target.handle).value_for(checking)) == Money("1900")
+        finally:
+            dialog.destroy()
+
     def test_a_rest_row_goes_again_once_the_entry_balances(self, app, window, populated_book):
         """The empty last line holds the rest only while the entry is out of balance,
         as the register's does (#369)."""
@@ -11261,6 +11309,7 @@ class TestReconcileWindow:
         self, app, window, populated_book
     ):
         from breadsched.gui.dialogs.reconciliation_dialog import ReconciliationDialog
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
         db, card, rent, _made = self._card(app, populated_book)
         dialog = ReconciliationDialog.present_for(window, db, card)
@@ -11268,7 +11317,18 @@ class TestReconcileWindow:
             dialog.statement_date.set_text("2030-01-31")
             dialog.entry_account.set_selected(dialog.entry_accounts.index(rent))
             dialog.entry_amount.set_text("2.50")
-            assert dialog.add_statement_entry()
+            # The line opens in the transaction editor, dated on the statement.
+            opened = dialog.add_statement_entry()
+            assert isinstance(opened, TransactionDialog)
+            editor = opened.editor
+            assert editor.date_entry.get_text() == "2030-01-31"
+            assert editor.description_entry.get_text() == "Interest"
+            assert editor.split_values() == [
+                (card.handle, -Money("2.50"), ""),
+                (rent.handle, Money("2.50"), ""),
+            ]
+            assert opened.save_button.get_sensitive() is True
+            assert editor.save() is True
             assert "Added Interest" in dialog.status.get_text()
             [added] = [t for t in db.iter_transactions() if t.description == "Interest"]
             assert added.split_for(card.handle).value == Money("-2.50")
@@ -11295,7 +11355,7 @@ class TestReconcileWindow:
             dialog.entry_description.set_text("Late fee")
             dialog.entry_account.set_selected(dialog.entry_accounts.index(rent))
             dialog.entry_amount.set_text("-25")
-            assert dialog.add_statement_entry()
+            assert dialog.add_statement_entry().editor.save() is True
         finally:
             dialog.destroy()
         dialog = ReconciliationDialog(window, db, card)
@@ -11308,10 +11368,57 @@ class TestReconcileWindow:
             assert dialog.entry_amount.get_text() == ""
             dialog.statement_date.set_text("2030-02-28")
             row.amount.set_text("-25")
-            assert dialog.add_statement_entry(row)
+            opened = dialog.add_statement_entry(row)
+            assert opened.editor.save() is True
             assert row.add.get_label() == "Added" and not row.add.get_sensitive()
             assert dialog.entry_description.get_sensitive()
             assert len([t for t in db.iter_transactions() if t.description == "Late fee"]) == 2
+        finally:
+            dialog.destroy()
+
+    def test_a_statement_line_takes_its_own_date_and_any_splits(self, app, window, populated_book):
+        """A line need not be dated on the statement, nor have two splits: its editor
+        is the transaction editor. One after the statement date is cleared, not checked."""
+        from breadsched.gen.lib import ReconcileState
+        from breadsched.gui.dialogs.reconciliation_dialog import ReconciliationDialog
+
+        db, card, rent, _made = self._card(app, populated_book)
+        groceries = db.get_account_by_name("Expenses:Groceries").handle
+        dialog = ReconciliationDialog.present_for(window, db, card)
+        try:
+            dialog.statement_date.set_text("2030-01-31")
+            dialog.ending_balance.set_text("70")
+            dialog.start_button.emit("clicked")
+            dialog.entry_description.set_text("Split fee")
+            dialog.entry_account.set_selected(dialog.entry_accounts.index(rent))
+            opened = dialog.add_statement_entry()
+            editor = opened.editor
+            editor.date_entry.set_text("2030-01-15")
+            editor.type_line(0, decrease="30")
+            editor.type_line(1, increase="20")
+            editor.type_line(2, account="Expenses:Groceries")
+            assert editor.save() is True, editor.status.get_text()
+            [fee] = [t for t in db.iter_transactions() if t.description == "Split fee"]
+            assert fee.post_date == date(2030, 1, 15)
+            assert {s.account: s.value for s in fee.splits} == {
+                card.handle: Money("-30"),
+                rent.handle: Money("20"),
+                groceries: Money("10"),
+            }
+            own = fee.split_for(card.handle)
+            assert own.reconcile is ReconcileState.CLEARED
+            assert own.handle in dialog._statement().reconciliation.selected_splits
+
+            later = dialog.add_statement_entry()
+            later.editor.date_entry.set_text("2030-02-03")
+            later.editor.description_entry.set_text("After the statement")
+            later.editor.type_line(0, decrease="5")
+            later.editor.type_line(1, account="Expenses:Groceries", increase="5")
+            assert later.editor.save() is True, later.editor.status.get_text()
+            [after] = [t for t in db.iter_transactions() if t.description == "After the statement"]
+            mine = after.split_for(card.handle)
+            assert mine.reconcile is ReconcileState.CLEARED
+            assert mine.handle not in dialog._statement().reconciliation.selected_splits
         finally:
             dialog.destroy()
 

@@ -72,6 +72,7 @@ class TransactionEditor(Gtk.Box):
         transaction: Transaction | None = None,
         on_saved: Callable[[str], None] | None = None,
         on_close: Callable[[], None] | None = None,
+        save_with: Callable[[SaveTransaction], str] | None = None,
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         self.db = db
@@ -82,6 +83,10 @@ class TransactionEditor(Gtk.Box):
         #: (Escape in the splits).
         self.on_saved = on_saved
         self.on_close = on_close
+        #: How Save stores the entry, returning its handle: the shared save service
+        #: unless the window adds the entry another way (a statement line, which is
+        #: also cleared and checked on the statement).
+        self.save_with = save_with
         #: True once Save has written the transaction.
         self.saved = False
         #: The accounts of reconciled splits the last Save asked about (#403).
@@ -470,7 +475,10 @@ class TransactionEditor(Gtk.Box):
             return self._fail(str(exc))
         changed = (
             reconciled_changes(self.transaction, request.definition.splits)
-            if self.transaction is not None and not confirmed
+            if self.transaction is not None
+            and not confirmed
+            # Allowed already, when the first change to it was typed.
+            and not self.sheet.reconciled_allowed()
             else ()
         )
         if changed:
@@ -498,12 +506,16 @@ class TransactionEditor(Gtk.Box):
             self.reconciled_question = changed
             return False
         try:
-            saved = self.book.save_transaction(request)
+            handle = (
+                self.save_with(request)
+                if self.save_with is not None
+                else self.book.save_transaction(request).handle
+            )
         except ApiError as error:
             return self._fail(str(error))
         self.saved = True
         if self.on_saved is not None:
-            self.on_saved(saved.handle)
+            self.on_saved(handle)
         return True
 
     def delete(self) -> bool:

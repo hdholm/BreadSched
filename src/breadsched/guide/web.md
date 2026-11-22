@@ -295,7 +295,8 @@ Choose **Reconcile…** in the register, enter the statement date (a month after
 last statement is proposed) and ending balance, check entries until the difference
 is zero, and finish. Before starting, **Add a charge or credit from the statement**
 lists the lines added to recent statements, ready for an amount, and one more to
-type into. Starting a statement already reconciled points at its **Reopen** button.
+type into. Each line is dated on the statement until you give it a date of its own;
+one dated within the statement starts checked. Starting a statement already reconciled points at its **Reopen** button.
 Saving a change to a reconciled split in the register asks first. The totals show the checked
 Funds In and Funds Out separately, and entries dated after the statement are listed,
 shaded and marked *after statement*, in case a date is wrong; they are never checked

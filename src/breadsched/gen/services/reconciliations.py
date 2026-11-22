@@ -192,6 +192,10 @@ class AddStatementEntry:
     post_date: date
     description: str
     amount: Money
+    #: The whole entry, as the transaction editor gives it: any date, any splits,
+    #: notes and tags. When given it is what is added, and the fields above only
+    #: name the account being reconciled.
+    definition: TransactionInput | None = None
 
 
 def add_statement_entry(
@@ -199,49 +203,59 @@ def add_statement_entry(
 ) -> ServiceResult[SavedTransaction]:
     """Add a statement line, such as interest, already cleared and checked.
 
-    The transaction, its cleared mark, and its place in the account's open
+    A quick line gives its account, date, description, and amount; the
+    transaction editor gives the whole entry (``definition``), any date and any
+    splits. Either way each split in the account being reconciled is marked
+    cleared and, when dated within the statement, checked on it. The
+    transaction, its cleared marks, and its place in the account's open
     statement are one change, so a single Undo removes the entry.
     """
     account = db.get_account(request.account)
     if account is None:
         return ServiceResult.failure(ServiceError("reconciliation.account.not_found", ("account",)))
-    if not request.amount:
-        return ServiceResult.failure(ServiceError("reconciliation.entry.amount", ("amount",)))
-    currency = transaction_currency(db)
-    value = request.amount * account.sign()
-    built = build_transaction(
-        db,
-        SaveTransaction(
-            TransactionInput(
-                post_date=request.post_date,
-                description=request.description,
-                splits=(
-                    TransactionSplitInput(request.account, Amount(value, currency)),
-                    TransactionSplitInput(request.other_account, Amount(-value, currency)),
-                ),
-                currency=currency,
-            )
-        ),
-    )
+    definition = request.definition
+    if definition is None:
+        if not request.amount:
+            return ServiceResult.failure(ServiceError("reconciliation.entry.amount", ("amount",)))
+        currency = transaction_currency(db)
+        value = request.amount * account.sign()
+        definition = TransactionInput(
+            post_date=request.post_date,
+            description=request.description,
+            splits=(
+                TransactionSplitInput(request.account, Amount(value, currency)),
+                TransactionSplitInput(request.other_account, Amount(-value, currency)),
+            ),
+            currency=currency,
+        )
+    if not any(split.account == request.account for split in definition.splits):
+        return ServiceResult.failure(ServiceError("reconciliation.entry.account", ("splits",)))
+    built = build_transaction(db, SaveTransaction(definition))
     if built.value is None:
         return ServiceResult.failure(*built.errors)
     transaction = built.value
-    own = next(split for split in transaction.splits if split.account == request.account)
-    own.reconcile = ReconcileState.CLEARED
+    own = [split for split in transaction.splits if split.account == request.account]
+    for split in own:
+        split.reconcile = ReconcileState.CLEARED
+    others = [split.account for split in transaction.splits if split.account != request.account]
     try:
         session = reconciliation.open_for_account(db, request.account)
     except reconciliation.ReconciliationError as exc:
         return ServiceResult.failure(ServiceError(exc.code, exc.fields))
-    if session is not None and request.post_date <= session.statement_date:
-        session.selected_splits = [*session.selected_splits, own.handle]
+    checked = (
+        session if session is not None and transaction.post_date <= session.statement_date else None
+    )
+    if checked is not None:
+        checked.selected_splits = [*checked.selected_splits, *(split.handle for split in own)]
     with db.transaction(f"Add {transaction.description}") as txn:
         db.add_transaction(transaction, txn)
-        if session is not None and own.handle in session.selected_splits:
-            db.commit_reconciliation(session, txn)
+        if checked is not None:
+            db.commit_reconciliation(checked, txn)
         # Offered again on the next statement, without its amount (#403).
-        reconciliation.remember_line(
-            db, request.account, request.description, request.other_account, txn
-        )
+        if others:
+            reconciliation.remember_line(
+                db, request.account, transaction.description, others[0], txn
+            )
     return ServiceResult.success(
         SavedTransaction(transaction.handle, transaction.post_date, transaction.description)
     )

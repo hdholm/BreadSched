@@ -1030,6 +1030,37 @@ def test_statement_entries_and_starting_balances_alike(target, book):
     assert fee.selected and not fee.funds_in
     assert (state.selected_in, state.selected_out) == (Money(0), Money(2))
 
+    # The transaction editor sends the whole entry: its own date, any splits.
+    usd = api.transaction_currency()
+    split_fee = api.add_statement_entry(
+        AddStatementEntry(
+            book.checking,
+            book.groceries,
+            date(2026, 9, 30),
+            "",
+            Money(0),
+            definition=TransactionInput(
+                post_date=date(2026, 9, 12),
+                description="Split fee",
+                notes="On the paper statement",
+                currency=usd,
+                splits=(
+                    TransactionSplitInput(book.checking, Amount(Money("-9"), usd)),
+                    TransactionSplitInput(book.groceries, Amount(Money("4"), usd)),
+                    TransactionSplitInput(book.rent, Amount(Money("5"), usd)),
+                ),
+            ),
+        )
+    )
+    stored = db.get_transaction(split_fee.handle)
+    assert (stored.post_date, stored.notes, len(stored.splits)) == (
+        date(2026, 9, 12),
+        "On the paper statement",
+        3,
+    )
+    state = api.reconciliation(book.checking).current
+    assert next(c for c in state.candidates if c.transaction == split_fee.handle).selected
+
     before = _snapshot(db)
     for call, status, code in (
         (
@@ -1043,6 +1074,29 @@ def test_statement_entries_and_starting_balances_alike(target, book):
             ),
             400,
             "reconciliation.entry.amount",
+        ),
+        (
+            # A whole entry with no split in the account being reconciled.
+            lambda: api.add_statement_entry(
+                AddStatementEntry(
+                    book.checking,
+                    book.groceries,
+                    date(2026, 9, 30),
+                    "",
+                    Money(0),
+                    definition=TransactionInput(
+                        post_date=date(2026, 9, 12),
+                        description="Elsewhere",
+                        currency=usd,
+                        splits=(
+                            TransactionSplitInput(book.groceries, Amount(Money("4"), usd)),
+                            TransactionSplitInput(book.rent, Amount(Money("-4"), usd)),
+                        ),
+                    ),
+                )
+            ),
+            400,
+            "reconciliation.entry.account",
         ),
     ):
         with pytest.raises(ApiError) as refused:

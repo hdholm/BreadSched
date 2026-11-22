@@ -207,7 +207,11 @@ from .discovery import LOOPBACK
 from .host import BOOK_HEADER, HostedBook
 from .protocol import Change, Listener
 from .schedule_codec import fixed_request_json, formula_request_json
-from .transaction_codec import save_transaction_json, transaction_input_from_json
+from .transaction_codec import (
+    save_transaction_json,
+    transaction_input_from_json,
+    transaction_input_json,
+)
 from .typed_codec import from_data, to_data
 from .views import (
     account_balance_from_json,
@@ -873,12 +877,14 @@ class HttpBookClient:
 
     def add_statement_entry(self, request: AddStatementEntry) -> SavedTransaction:
         path = f"/accounts/{quote(request.account, safe='')}/statement-entries"
-        body = {
+        body: dict[str, Any] = {
             "other_account": request.other_account,
             "post_date": request.post_date,
             "description": request.description,
             "amount": request.amount,
         }
+        if request.definition is not None:
+            body["definition"] = transaction_input_json(request.definition)
         return saved_transaction_from_json(self._call("POST", path, body=body))
 
     # ----------------------------------------------------- historical estimates

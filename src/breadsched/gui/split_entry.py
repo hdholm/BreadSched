@@ -32,7 +32,12 @@ from ..gen.engine.entry_input import (
 from ..gen.lib.account import Account
 from ..gen.lib.amount import Amount
 from ..gen.lib.money import Money
-from ..gen.lib.transaction import InvestmentActivityKind, PlanningFlowKind, Transaction
+from ..gen.lib.transaction import (
+    InvestmentActivityKind,
+    PlanningFlowKind,
+    ReconcileState,
+    Transaction,
+)
 from ..gen.services import TransactionSplitInput
 from ..gen.services.autocomplete import EarlierNotes, complete_note
 from ..gen.services.entry_input import ReadEntryTrade
@@ -115,6 +120,9 @@ class Line:
             "activity": self.activity,
         }.get(column, "")
 
+
+#: The cells whose change alters a split's account, amount, or shares.
+_PROTECTED = ("transfer", "increase", "decrease", "shares", "price")
 
 #: What each split-line column is stored as on a :class:`Line`.
 LINE_ATTRIBUTES = {
@@ -610,6 +618,47 @@ class SplitEntry:
 
     def _say(self, text: str) -> None:
         self.message, self.error = text, False
+
+    # ------------------------------------------------- reconciled splits (#403)
+
+    def reconciled_accounts(self, row: SheetRow, column: str) -> tuple[str, ...]:
+        """The accounts of reconciled splits that typing in ``column`` of ``row``
+        would change, so the grid asks before the first keystroke, as GnuCash does;
+        empty when none would, or once changes were allowed for this entry.
+
+        A split line's account, amount, shares, and price belong to its own split;
+        a register's two-split line moves both splits with its amount, and the
+        other split with its transfer account.
+        """
+        source = self.draft.source
+        if source is None or column not in _PROTECTED or self.reconciled_allowed():
+            return ()
+        reconciled = {
+            split.handle: split
+            for split in source.splits
+            if split.reconcile is ReconcileState.RECONCILED
+        }
+        if not reconciled:
+            return ()
+        if row.kind == SPLIT:
+            if row.line is None or row.line >= len(self.draft.lines):
+                return ()
+            handles = [self.draft.lines[row.line].handle]
+        elif self.draft.expanded:
+            return ()
+        else:
+            mine, other = self.draft.simple_handles
+            handles = [other] if column == "transfer" else [mine, other]
+        return tuple(
+            self._name(reconciled[handle].account) for handle in handles if handle in reconciled
+        )
+
+    def allow_reconciled_changes(self) -> None:
+        """Allow changing this entry's reconciled splits until it is saved or put back."""
+        self._allowed_reconciled = id(self.draft)
+
+    def reconciled_allowed(self) -> bool:
+        return getattr(self, "_allowed_reconciled", None) == id(self.draft)
 
     # ------------------------------------------------------- typing split lines
 

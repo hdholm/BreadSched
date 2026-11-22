@@ -8,9 +8,11 @@ every place entering or changing a transaction uses, with the window's buttons:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 
 from ...gen.lib import Transaction
+from ...gen.services import SaveTransaction
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
@@ -31,9 +33,12 @@ class TransactionDialog(BoundedWindow):
         default_account: str | None = None,
         default_date: date | None = None,
         transaction: Transaction | None = None,
+        *,
+        title: str | None = None,
+        save_with: Callable[[SaveTransaction], str] | None = None,
     ) -> None:
         super().__init__(
-            title="Edit transaction" if transaction is not None else "New transaction",
+            title=title or ("Edit transaction" if transaction is not None else "New transaction"),
             transient_for=parent,
             modal=True,
         )
@@ -53,6 +58,7 @@ class TransactionDialog(BoundedWindow):
             transaction=transaction,
             on_saved=lambda _handle: self.close(),
             on_close=self.close,
+            save_with=save_with,
         )
         self.editor.set_vexpand(True)
         box.append(self.editor)

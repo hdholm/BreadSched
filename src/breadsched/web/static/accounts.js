@@ -1276,24 +1276,32 @@ async function openReconciliation(account, order = {sort:"date", descending:fals
       const other = el("select", {"aria-label":"Statement line account"}, others.map((item) =>
         el("option", {value:item.handle, selected:item.handle === line.account ? "selected" : null},
           item.full_name)));
+      // Dated on the statement until a date of its own is typed.
+      const when = el("input", {type:"date", value:statementDate.value,
+        "aria-label":"Statement line date"});
+      when.dataset.follows = "statement";
+      when.addEventListener("input", () => { delete when.dataset.follows; });
+      statementDate.addEventListener("input", () => {
+        if (when.dataset.follows) when.value = statementDate.value;
+      });
       const amount = el("input", {inputmode:"decimal", placeholder:"0.00", class:"num",
         "aria-label":"Statement line amount",
         title:"Positive raises the balance, as interest charged on a card or earned on savings"});
       const add = el("button", {class:"action", type:"button", onclick:async()=>{
         try {
           await post(`/api/v1/accounts/${encodeURIComponent(account.handle)}/statement-entries`, {
-            other_account:other.value, post_date:statementDate.value,
+            other_account:other.value, post_date:when.value || statementDate.value,
             description:description.value.trim(), amount:amount.value.trim(),
           });
-          say(`Added ${description.value.trim()} on ${statementDate.value}, cleared; it starts checked.`);
+          say(`Added ${description.value.trim()} on ${when.value || statementDate.value}, cleared.`);
           amount.value = "";
           if (line.remembered) {
-            [description, other, amount, add].forEach((node) => { node.disabled = true; });
+            [description, when, other, amount, add].forEach((node) => { node.disabled = true; });
             add.textContent = "Added";
           }
         } catch (error) { say(error.message, "error"); }
       }}, "Add");
-      return el("div", {class:"toolbar statement-line"}, description, other, amount, add);
+      return el("div", {class:"toolbar statement-line"}, description, when, other, amount, add);
     };
     const remembered = (data.remembered_lines || []).map((line) => ({...line, remembered:true}));
     const blank = {description:"Interest", account:interest?.handle || ""};

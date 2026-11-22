@@ -122,7 +122,10 @@ async function post(path, body) {
   const response = await fetch(path, {
     method: "POST",
     headers: { ...apiHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ number_format: browserNumberFormat, ...(body || {}) }),
+    // The page's own routes read numbers in the browser's format; the book API
+    // (/api/v1) takes exact typed fields and refuses any other.
+    body: JSON.stringify(path.startsWith("/api/v1/") ? (body || {})
+      : { number_format: browserNumberFormat, ...(body || {}) }),
   });
   const payload = await response.json();
   if (!response.ok) {
