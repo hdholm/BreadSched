@@ -4,6 +4,9 @@
 after the GTK smoke. It goes through the application's own actions, not a test
 double:
 
+- The main window carries an icon of its own (``WM_GETICON``), which GTK sets
+  from the BreadSched icon; without it the title bar and taskbar fall back to
+  the window class's icon, Python's.
 - **Open** shows the native "Open book" dialog; the check types another book's
   path into its file-name box and presses Open, then requires the application
   to have opened that book.
@@ -36,6 +39,8 @@ TIMEOUT = 60.0
 WM_SETTEXT = 0x000C
 WM_GETTEXT = 0x000D
 WM_COMMAND = 0x0111
+WM_GETICON = 0x007F
+ICON_SMALL, ICON_BIG = 0, 1
 WM_KEYDOWN = 0x0100
 WM_KEYUP = 0x0101
 VK_RETURN = 0x0D
@@ -63,6 +68,9 @@ class _Win32:
             ("SendMessageW", user32)
         )
         self._get = prototype(lresult, hwnd, uint, wintypes.WPARAM, wintypes.LPWSTR)(
+            ("SendMessageW", user32)
+        )
+        self._ask = prototype(lresult, hwnd, uint, wintypes.WPARAM, wintypes.LPARAM)(
             ("SendMessageW", user32)
         )
         self.post = prototype(wintypes.BOOL, hwnd, uint, wintypes.WPARAM, wintypes.LPARAM)(
@@ -125,6 +133,27 @@ class _Win32:
         else:
             self.post(self.item(dialog, IDOK), BM_CLICK, 0, 0)
         return way
+
+    def own_top_windows(self) -> list[int]:
+        """This process's visible top-level windows."""
+        found: list[int] = []
+
+        def visit(window: int, _param: int) -> bool:
+            pid = wintypes.DWORD()
+            self._owner(window, ctypes.byref(pid))
+            if pid.value == os.getpid() and self.visible(window):
+                found.append(window)
+            return True
+
+        self._enum_top(self._enum_proc(visit), 0)
+        return found
+
+    def icons(self, window: int) -> dict[str, bool]:
+        """Whether ``window`` has its own large and small icon set."""
+        return {
+            "big": bool(self._ask(window, WM_GETICON, ICON_BIG, 0)),
+            "small": bool(self._ask(window, WM_GETICON, ICON_SMALL, 0)),
+        }
 
     def own_windows(self) -> list[str]:
         """This process's visible top-level windows, e.g. a rejection message box."""
@@ -240,6 +269,17 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
     window.present()
     settle()
 
+    # The main window shows the BreadSched icon, not the window class's own.
+    def branded() -> dict[str, bool] | None:
+        for handle in win32.own_top_windows():
+            if "BreadSched" in win32.text(handle):
+                icons = win32.icons(handle)
+                if all(icons.values()):
+                    return icons
+        return None
+
+    window_icon = wait_for(branded, "the main window's own icon")
+
     # Open another book through the native file chooser.
     target = Path(other_book).resolve()
     app.on_open()
@@ -319,6 +359,7 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
     assert printed, "no printable view was printed"
 
     report = {
+        "window_icon": window_icon,
         "opened": str(app.book_path),
         "exported": str(export),
         "export_header": header,

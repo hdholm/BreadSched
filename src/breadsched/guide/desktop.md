@@ -38,7 +38,7 @@ statement.
 The Windows installer (`BreadSched-<version>-setup.exe`) needs no administrator
 rights and nothing else installed: it carries its own Python and GTK. It installs
 for the current user under `%LOCALAPPDATA%\Programs\BreadSched` and adds
-**BreadSched** to the Start menu. The installation folder also holds
+**BreadSched**, with its icon, to the Start menu. The installation folder also holds
 `breadsched.cmd` for the [command line](cli.md) and `breadsched-gtk.cmd`.
 To type `breadsched` in any new Command Prompt or PowerShell window, tick **Add
 the breadsched command to PATH** on the installer's Components page (off by

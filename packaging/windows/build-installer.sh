@@ -56,6 +56,8 @@ cat > "$stage/breadsched-gtk.cmd" <<'CMD'
 start "" "%~dp0runtime\bin\pythonw.exe" -m breadsched.gui %*
 CMD
 cp "$root/LICENSE" "$stage/LICENSE.txt"
+# The Windows icon: the installer's own, the shortcut's, and the Apps list's.
+cp "$root/data/icons/org.breadsched.BreadSched.ico" "$stage/breadsched.ico"
 # Run by the installer and uninstaller to edit the user PATH when asked to.
 cp "$here/user_path.py" "$stage/user_path.py"
 # Run by the installer and uninstaller to stop gdbus.exe helpers from this runtime.

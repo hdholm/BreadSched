@@ -3,7 +3,8 @@
 The Flatpak manifest installs a desktop entry, AppStream metadata, and a themed
 icon. Their identifiers must agree with ``APP_ID`` and the installed launcher, or
 the desktop shows an entry that cannot start, has no icon, or is rejected by
-software centres.
+software centres. The Windows installer gives its shortcut, its Apps entry, and
+itself the BreadSched icon, the same images as the packaged hicolor icons.
 """
 
 from __future__ import annotations
@@ -12,9 +13,11 @@ import configparser
 import importlib.util
 import json
 import shutil
+import struct
 import subprocess
 import tomllib
 import xml.etree.ElementTree as ET
+import zlib
 from pathlib import Path
 
 import pytest
@@ -25,6 +28,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DESKTOP = ROOT / "data" / f"{APP_ID}.desktop"
 METAINFO = ROOT / "data" / f"{APP_ID}.metainfo.xml"
 ICON = ROOT / "data" / "icons" / f"{APP_ID}.svg"
+WINDOWS_ICON = ROOT / "data" / "icons" / f"{APP_ID}.ico"
+HICOLOR = ROOT / "src" / "breadsched" / "gui" / "resources" / "icons" / "hicolor"
 MANIFEST = ROOT / f"{APP_ID}.json"
 
 
@@ -105,6 +110,112 @@ def test_icon_is_a_scalable_svg():
     assert png.startswith(b"\x89PNG\r\n\x1a\n")
     # The PNG header's width and height.
     assert (int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big")) == (512, 512)
+
+
+def _png_rgba(data: bytes) -> tuple[int, int, bytes]:
+    """Width, height, and RGBA rows of an 8-bit RGBA, non-interlaced PNG."""
+    assert data.startswith(b"\x89PNG\r\n\x1a\n")
+    position, chunks, header = 8, b"", b""
+    while position < len(data):
+        (length,) = struct.unpack(">I", data[position : position + 4])
+        kind = data[position + 4 : position + 8]
+        body = data[position + 8 : position + 8 + length]
+        if kind == b"IHDR":
+            header = body
+        elif kind == b"IDAT":
+            chunks += body
+        position += 12 + length
+    width, height, depth, colour, _c, _f, interlace = struct.unpack(">IIBBBBB", header)
+    assert (depth, colour, interlace) == (8, 6, 0), "an 8-bit RGBA, non-interlaced PNG"
+    raw, stride, rows = zlib.decompress(chunks), width * 4, []
+    previous = bytearray(stride)
+    for y in range(height):
+        kind, line = (
+            raw[y * (stride + 1)],
+            bytearray(raw[y * (stride + 1) + 1 : (y + 1) * (stride + 1)]),
+        )
+        for x in range(stride):
+            left = line[x - 4] if x >= 4 else 0
+            up, corner = previous[x], previous[x - 4] if x >= 4 else 0
+            if kind == 1:
+                line[x] = (line[x] + left) & 0xFF
+            elif kind == 2:
+                line[x] = (line[x] + up) & 0xFF
+            elif kind == 3:
+                line[x] = (line[x] + (left + up) // 2) & 0xFF
+            elif kind == 4:
+                guess = left + up - corner
+                near = min(
+                    (abs(guess - left), 0, left),
+                    (abs(guess - up), 1, up),
+                    (abs(guess - corner), 2, corner),
+                )[2]
+                line[x] = (line[x] + near) & 0xFF
+        rows.append(bytes(line))
+        previous = line
+    return width, height, b"".join(rows)
+
+
+def test_windows_icon_holds_each_packaged_icon_size_as_a_bitmap():
+    """``data/icons/*.ico`` is the hicolor PNGs from 16 to 256 pixels, each a 32-bit
+    bitmap with alpha that shows exactly the packaged image."""
+    data = WINDOWS_ICON.read_bytes()
+    reserved, kind, count = struct.unpack("<HHH", data[:6])
+    assert (reserved, kind) == (0, 1)
+    sizes = []
+    for index in range(count):
+        width, height, _colours, _r, planes, bits, length, offset = struct.unpack(
+            "<BBBBHHII", data[6 + 16 * index : 22 + 16 * index]
+        )
+        side = width or 256
+        assert height == width and (planes, bits) == (1, 32)
+        bitmap = data[offset : offset + length]
+        size, dib_width, dib_height, _planes, dib_bits, compression = struct.unpack(
+            "<IiiHHI", bitmap[:20]
+        )
+        assert (size, dib_width, dib_height, dib_bits, compression) == (40, side, 2 * side, 32, 0)
+        stride = side * 4
+        pixels = bitmap[40 : 40 + stride * side]
+        assert len(bitmap) == 40 + stride * side + ((side + 31) // 32) * 4 * side
+        # Bottom-up BGRA rows, as Windows stores them.
+        rgba = b"".join(
+            bytes(
+                value
+                for x in range(side)
+                for value in (row[4 * x + 2], row[4 * x + 1], row[4 * x], row[4 * x + 3])
+            )
+            for row in reversed([pixels[y * stride : (y + 1) * stride] for y in range(side)])
+        )
+        png = HICOLOR / f"{side}x{side}" / "apps" / f"{APP_ID}.png"
+        assert _png_rgba(png.read_bytes()) == (side, side, rgba), side
+        sizes.append(side)
+    assert sizes == [16, 24, 32, 48, 64, 128, 256]
+
+
+def test_windows_installer_shows_the_breadsched_icon():
+    """The shortcut runs pythonw.exe, so without its own icon it shows Python's."""
+    windows = ROOT / "packaging" / "windows"
+    build = (windows / "build-installer.sh").read_text(encoding="utf-8")
+    script = (windows / "breadsched.nsi").read_text(encoding="utf-8")
+    check = (windows / "test-installer.ps1").read_text(encoding="utf-8")
+    desktop = (ROOT / "scripts" / "windows_desktop_checks.py").read_text(encoding="utf-8")
+
+    assert f'cp "$root/data/icons/{WINDOWS_ICON.name}" "$stage/breadsched.ico"' in build
+    assert '!define MUI_ICON "${STAGE}\\breadsched.ico"' in script
+    assert '!define MUI_UNICON "${STAGE}\\breadsched.ico"' in script
+    assert script.index("MUI_ICON") < script.index("!insertmacro MUI_PAGE_LICENSE")
+    shortcut = script[script.index('CreateShortcut "$SMPROGRAMS\\${APP}\\${APP}.lnk"') :]
+    assert shortcut.split("\n")[1].strip() == '"$INSTDIR\\breadsched.ico" 0'
+    assert 'WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\\breadsched.ico"' in script
+    assert 'Delete "$INSTDIR\\breadsched.ico"' in script.split('Section "Uninstall"', 1)[1]
+    # On Windows, every install of this build checks the shortcut and Apps entry,
+    # and the running window must carry an icon of its own.
+    assert "if ($Setup -eq $Installer) { Test-Branding $Target }" in check
+    assert '$shortcut.IconLocation -ne "$icon,0"' in check
+    assert "(Get-ItemProperty $uninstallKey).DisplayIcon" in check
+    assert "icon left behind after uninstall" in check
+    assert 'wait_for(branded, "the main window\'s own icon")' in desktop
+    assert "WM_GETICON = 0x007F" in desktop
 
 
 def test_flatpak_manifest_installs_each_desktop_file_under_the_app_id():
