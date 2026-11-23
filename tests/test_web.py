@@ -7946,3 +7946,40 @@ class TestBudgetJars:
             with pytest.raises(urllib.error.HTTPError) as caught:
                 client.get(f"/api/budget-jars?{query}")
             assert caught.value.code == 400, query
+
+
+class TestResponseHeaders:
+    """CodeQL py/http-response-splitting: no header the server writes may hold a
+    line break, however its value was built."""
+
+    def test_a_header_value_with_a_line_break_or_nul_is_refused(self):
+        from breadsched.web.transport import header_value
+
+        assert header_value("inline; filename*=UTF-8''receipt.pdf") == (
+            "inline; filename*=UTF-8''receipt.pdf"
+        )
+        for hostile in ("a\r\nSet-Cookie: x=1", "a\nX-Evil: 1", "a\rb", "a\0b"):
+            with pytest.raises(ValueError):
+                header_value(hostile)
+
+    def test_a_document_named_with_a_line_break_is_refused(self, client):
+        """A file name from the request with a line break (or any control character)
+        is refused before it is stored, so it can reach no header or listing."""
+        transaction = next(iter(client.database.iter_transactions()))
+        before = client.database.get_transaction(transaction.handle).attachments
+        for hostile in ("a\r\nSet-Cookie: stolen=1.pdf", "tab\there.pdf", "bell\x07.pdf"):
+            query = urllib.parse.urlencode({"transaction": transaction.handle, "filename": hostile})
+            upload = urllib.request.Request(
+                client.base_url + "/api/attachment/upload?" + query,
+                data=b"%PDF-1",
+                headers={
+                    "Content-Type": "application/octet-stream",
+                    "X-BreadSched-Token": client.token,
+                },
+                method="POST",
+            )
+            with pytest.raises(urllib.error.HTTPError) as refused:
+                urllib.request.urlopen(upload, timeout=10)
+            assert refused.value.code == 400
+            assert json.loads(refused.value.read())["code"] == "attachment.filename.invalid"
+        assert client.database.get_transaction(transaction.handle).attachments == before

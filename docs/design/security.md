@@ -82,7 +82,11 @@ the uploads folder unless it comes from the computer account on this computer. A
 document is served as itself only if it cannot run (PDF, common images, plain text);
 anything else is sent as bytes to be saved, and every document carries a `sandbox`
 content security policy. JSON responses and documents are `no-store` with
-`Referrer-Policy: no-referrer`. A change stream asks again, at every change and
+`Referrer-Policy: no-referrer`. No response header can be split: every value the
+server writes passes `transport.header_value`, which refuses a line break or NUL
+before anything is sent, and an uploaded file's name may hold no control character
+(`attachment.filename.invalid`); a document's name reaches `Content-Disposition`
+only percent-encoded. A change stream asks again, at every change and
 keep-alive, whether its caller may still read the book. Sign-in attempts are checked
 one at a time, so throttling and single-use codes hold for attempts sent together.
 The HTTP client sends a token in the clear only to loopback, and trusts a server

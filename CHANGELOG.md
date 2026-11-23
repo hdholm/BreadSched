@@ -8,6 +8,12 @@ GitHub releases.
 
 ## Unreleased
 
+- **An uploaded document's name may not contain a line break.** Uploading a file
+  whose name holds a line break or another control character is refused, and no
+  response header the browser server writes can hold one (CodeQL
+  `py/http-response-splitting`). No such header was ever sent: the name was always
+  encoded.
+
 ## 2026.11.22.1
 
 The fourth beta, published as a GitHub pre-release; its Windows installer and Linux

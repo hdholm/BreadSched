@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import os
 import tempfile
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,11 +38,14 @@ IMPORT_SUFFIXES = frozenset({".qif", ".ofx", ".qfx", ".gnucash", ".xml", ".sqlit
 
 
 def _ordinary(filename: str) -> bool:
+    """A plain file name: not empty, not a path, not too long, and with no control
+    character (a line break in a name breaks listings and every header it reaches)."""
     return not (
         not filename
         or filename in {".", ".."}
         or len(filename.encode("utf-8")) > 255
-        or any(c in filename for c in "/\\\0")
+        or any(c in filename for c in "/\\")
+        or any(unicodedata.category(c) == "Cc" for c in filename)
     )
 
 
