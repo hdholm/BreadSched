@@ -129,6 +129,20 @@ ACCOUNT_PATHS = frozenset(
 HOST_BOOKS = "/api/v1/host/books"
 
 
+def header_value(value: str) -> str:
+    """``value`` as it may be written in a response header: refused (``ValueError``)
+    when it holds a line break or NUL, which would end the header and let what
+    follows be read as more headers or a body (HTTP response splitting).
+
+    Every header the server writes passes through here, so a value built from a
+    request, such as a document's file name, can never split a response.
+    """
+    cleaned = value.replace("\r", "").replace("\n", "").replace("\0", "")
+    if cleaned != value:
+        raise ValueError("a response header may not contain a line break")
+    return cleaned
+
+
 @dataclass(frozen=True, slots=True)
 class _Book:
     """One book a host serves: its writer, read snapshots, and who may use it."""
@@ -248,11 +262,16 @@ class Handler(BaseHTTPRequestHandler):
         *,
         sandbox: bool = False,
     ) -> None:
+        # Checked before anything is written, so a refused value sends no half response.
+        kind = header_value(content_type)
+        extra = [
+            (header_value(name), header_value(value)) for name, value in (headers or {}).items()
+        ]
         self.send_response(status)
-        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
-        for name, value in (headers or {}).items():
+        for name, value in extra:
             self.send_header(name, value)
         self.send_header(
             "Content-Security-Policy",
