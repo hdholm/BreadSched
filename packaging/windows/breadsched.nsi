@@ -11,6 +11,11 @@
 ; choose it on the Components page, or pass /ADDTOPATH to a silent install. A
 ; later install keeps that choice unless it is changed, and the uninstaller always
 ; removes the entry. user_path.py makes the change with the bundled Python.
+;
+; breadsched.ico, the BreadSched icon (data/icons, made by scripts/brand_assets.py),
+; is the installer's and uninstaller's own icon, the Start-menu shortcut's icon
+; (the shortcut runs pythonw.exe, whose own icon is Python's), and the icon of the
+; entry in Settings > Apps.
 
 Unicode true
 !include "MUI2.nsh"
@@ -39,6 +44,8 @@ RequestExecutionLevel user
 SetCompressor /SOLID lzma
 
 !define MUI_ABORTWARNING
+!define MUI_ICON "${STAGE}\breadsched.ico"
+!define MUI_UNICON "${STAGE}\breadsched.ico"
 !insertmacro MUI_PAGE_LICENSE "${STAGE}\LICENSE.txt"
 !insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
@@ -67,7 +74,7 @@ Section "BreadSched" SecMain
 
   CreateDirectory "$SMPROGRAMS\${APP}"
   CreateShortcut "$SMPROGRAMS\${APP}\${APP}.lnk" "$INSTDIR\runtime\bin\pythonw.exe" "-m breadsched.gui" \
-    "$INSTDIR\runtime\bin\pythonw.exe" 0
+    "$INSTDIR\breadsched.ico" 0
   CreateShortcut "$SMPROGRAMS\${APP}\Uninstall ${APP}.lnk" "$INSTDIR\Uninstall.exe"
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -75,6 +82,7 @@ Section "BreadSched" SecMain
   WriteRegStr HKCU "Software\${APP}" "Version" "${VERSION}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "${APP}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${VERSION}"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\breadsched.ico"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "BreadSched contributors"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
@@ -129,6 +137,7 @@ Section "Uninstall"
   Delete "$INSTDIR\breadsched.cmd"
   Delete "$INSTDIR\breadsched-gtk.cmd"
   Delete "$INSTDIR\LICENSE.txt"
+  Delete "$INSTDIR\breadsched.ico"
   Delete "$INSTDIR\user_path.py"
   Delete "$INSTDIR\stop-helpers.ps1"
   Delete "$INSTDIR\Uninstall.exe"

@@ -6,7 +6,9 @@
 # over it, and requires the upgraded copy to report this version and still read the
 # book, then uninstalls before the clean-install checks. A default install must
 # leave the user PATH alone; /ADDTOPATH adds the directory once, a later install
-# keeps it, and uninstalling restores the PATH value exactly. Usage:
+# keeps it, and uninstalling restores the PATH value exactly. Each install of this
+# build must give its Start-menu shortcut and its Settings > Apps entry the
+# BreadSched icon. Usage:
 #   pwsh packaging/windows/test-installer.ps1 dist\windows\BreadSched-<version>-setup.exe
 #   pwsh packaging/windows/test-installer.ps1 <new-setup.exe> -Previous <published-setup.exe>
 param(
@@ -30,6 +32,28 @@ function Install-Once([string]$Setup = $Installer, [string]$Target = $dir, [stri
     foreach ($path in "breadsched.cmd", "Uninstall.exe", "runtime\bin\python.exe",
                       "runtime\bin\pythonw.exe") {
         if (-not (Test-Path (Join-Path $Target $path))) { throw "missing $path after install" }
+    }
+    # A published installer from before the icon was added has none to check.
+    if ($Setup -eq $Installer) { Test-Branding $Target }
+}
+
+# The shortcut and the Apps entry show the BreadSched icon, not pythonw.exe's.
+function Test-Branding([string]$Target) {
+    $icon = Join-Path $Target "breadsched.ico"
+    $lnk = Join-Path ([Environment]::GetFolderPath("Programs")) "BreadSched\BreadSched.lnk"
+    if (-not (Test-Path $lnk)) { throw "no Start-menu shortcut at $lnk" }
+    $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
+    if ($shortcut.IconLocation -ne "$icon,0") {
+        throw "shortcut icon is '$($shortcut.IconLocation)', expected '$icon,0'"
+    }
+    if ($shortcut.TargetPath -ne (Join-Path $Target "runtime\bin\pythonw.exe")) {
+        throw "shortcut runs '$($shortcut.TargetPath)'"
+    }
+    $shown = (Get-ItemProperty $uninstallKey).DisplayIcon
+    if ($shown -ne $icon) { throw "Apps entry icon is '$shown', expected '$icon'" }
+    $bytes = [IO.File]::ReadAllBytes($icon)
+    if ($bytes[0] -ne 0 -or $bytes[1] -ne 0 -or $bytes[2] -ne 1 -or $bytes[3] -ne 0) {
+        throw "$icon is not an icon file"
     }
 }
 
@@ -66,6 +90,7 @@ function Uninstall-From([string]$Target) {
     Remove-Item -Force (Join-Path $Target "Uninstall.exe") -ErrorAction SilentlyContinue
     if (Test-Path (Join-Path $Target "runtime")) { throw "runtime left behind after uninstall" }
     if (Test-Path (Join-Path $Target "breadsched.cmd")) { throw "launcher left behind after uninstall" }
+    if (Test-Path (Join-Path $Target "breadsched.ico")) { throw "icon left behind after uninstall" }
     if (Test-Path $uninstallKey) { throw "uninstall registration left behind" }
     if ((Count-OnPath $Target) -ne 0) { throw "uninstall left $Target on PATH" }
 }

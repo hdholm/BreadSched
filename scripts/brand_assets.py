@@ -5,7 +5,9 @@
 transparent outside its rounded tile, at every size GTK's hicolor theme looks
 for, inside the package (so an uninstalled checkout finds it too), and in
 ``data/icons`` as the scalable icon the Linux, Flatpak, and Windows packages
-install. ``breadsched-logo.webp`` (with the BreadSched name) becomes the logo the
+install, and as the Windows icon (``data/icons/org.breadsched.BreadSched.ico``) that
+the installer, its Start-menu shortcut, and the Apps list show.
+``breadsched-logo.webp`` (with the BreadSched name) becomes the logo the
 splash screen and About dialog show. The web pages get a favicon and a home-screen
 icon.
 
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import io
+import struct
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
@@ -25,6 +28,8 @@ BRAND = ROOT / "data" / "brand"
 APP_ID = "org.breadsched.BreadSched"
 PACKAGE = ROOT / "src" / "breadsched"
 ICON_SIZES = (16, 24, 32, 48, 64, 128, 256, 512)
+#: The sizes in the Windows icon; Windows draws 256 px as its largest.
+WINDOWS_ICON_SIZES = (16, 24, 32, 48, 64, 128, 256)
 #: How far a pixel may stray from white and still be the artwork's backdrop.
 BACKDROP_TOLERANCE = 18
 
@@ -39,6 +44,34 @@ def _write(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
     print(f"wrote {path.relative_to(ROOT)} ({len(data):,} bytes)")
+
+
+def windows_icon(images: list[Image.Image]) -> bytes:
+    """A Windows ``.ico`` holding each image as a 32-bit bitmap with alpha.
+
+    Bitmaps rather than PNG entries, so every reader (NSIS, the shell, older
+    Windows) takes each size. Each bitmap is stored bottom-up in BGRA order,
+    twice its height to leave room for the 1-bit mask, which is clear since the
+    alpha already says what shows.
+    """
+    entries: list[bytes] = []
+    images = sorted(images, key=lambda image: image.width)
+    for image in images:
+        rgba = image.convert("RGBA")
+        width, height = rgba.size
+        rows = [rgba.crop((0, y, width, y + 1)).tobytes("raw", "BGRA") for y in range(height)]
+        mask_row = bytes(((width + 31) // 32) * 4)
+        header = struct.pack("<IiiHHIIiiII", 40, width, height * 2, 1, 32, 0, 0, 0, 0, 0, 0)
+        entries.append(header + b"".join(reversed(rows)) + mask_row * height)
+    directory = struct.pack("<HHH", 0, 1, len(images))
+    offset = 6 + 16 * len(images)
+    for image, data in zip(images, entries, strict=True):
+        side = image.width
+        directory += struct.pack(
+            "<BBBBHHII", side % 256, side % 256, 0, 0, 1, 32, len(data), offset
+        )
+        offset += len(data)
+    return directory + b"".join(entries)
 
 
 def transparent_tile(source: Image.Image) -> Image.Image:
@@ -106,6 +139,9 @@ def main() -> None:
         "</svg>\n"
     )
     _write(ROOT / "data" / "icons" / f"{APP_ID}.svg", svg.encode("ascii"))
+    # The Windows icon is made of the same images the hicolor tree carries.
+    sized = [Image.open(icons / f"{s}x{s}" / "apps" / f"{APP_ID}.png") for s in WINDOWS_ICON_SIZES]
+    _write(ROOT / "data" / "icons" / f"{APP_ID}.ico", windows_icon(sized))
 
     static = PACKAGE / "web" / "static"
     _write(static / "favicon.png", _png(tile.resize((64, 64), Image.LANCZOS)))

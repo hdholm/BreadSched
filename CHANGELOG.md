@@ -8,6 +8,9 @@ GitHub releases.
 
 ## Unreleased
 
+- **BreadSched has its own icon on Windows.** The Start-menu shortcut, the entry in
+  Settings > Apps, and the installer and uninstaller show the BreadSched icon, where
+  the shortcut showed Python's.
 - **An uploaded document's name may not contain a line break.** Uploading a file
   whose name holds a line break or another control character is refused, and no
   response header the browser server writes can hold one (CodeQL

@@ -113,7 +113,10 @@ and a scalable icon that the GTK application also sets as its window icon. The i
 the logo are made from the artwork in `data/brand` by `scripts/brand_assets.py`
 (needs Pillow): the scalable icon carries the 512-pixel image, and the package
 itself carries the hicolor sizes, the logo, and the browser's favicon and home-screen
-icon, so a checkout or `pip` install shows the icon too. CI builds the
+icon, so a checkout or `pip` install shows the icon too. The Windows icon
+(`data/icons/org.breadsched.BreadSched.ico`) holds the hicolor images from 16 to 256
+pixels as 32-bit bitmaps, which NSIS and every Windows shell read; a test decodes
+each and requires it to match the packaged PNG. CI builds the
 Flatpak from the checkout, installs it from a local repository, validates the
 desktop files with `desktop-file-validate` and `appstreamcli`, and, with the network
 unshared, runs the CLI (Dashboard, CSV export, backup, restore, imported-book
@@ -188,6 +191,12 @@ MSYS2's makensis with the official plugins produced an installer that hung in a
 silent upgrade). MSYS2's makensis is used only with plugins of its own; otherwise
 the script stops before compiling. Both installer jobs time out after 30 minutes.
 
+- The BreadSched icon (`breadsched.ico`) is the installer's and uninstaller's own,
+  the Start-menu shortcut's (which runs `pythonw.exe`, whose own icon is Python's),
+  and the Settings > Apps entry's (`DisplayIcon`). `test-installer.ps1` checks the
+  shortcut and the entry after each install of the build, and
+  `windows_desktop_checks.py` requires the running main window to carry an icon of
+  its own (`WM_GETICON`), not only its window class's.
 - It installs per user (no administrator rights) under
   `%LOCALAPPDATA%\Programs\BreadSched` and registers under HKCU. Books never live
   in the installation directory, so neither upgrade nor uninstall touches them.
