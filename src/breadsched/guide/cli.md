@@ -594,6 +594,22 @@ breadsched claims BOOK --history 3f2a
 or the start of one), `--reopen` takes it up again, and `--history` lists the
 claim's EOB changes, closings, and reopenings.
 
+```sh
+breadsched claims BOOK --draft 7c1e     # the claim --track would save; saves nothing
+breadsched claims BOOK --track 7c1e     # save it as a new claim
+```
+
+`--draft` and `--track` start a claim from a transaction (named by its handle or
+the start of one), as **Track as FSA Claim** does on the desktop: its date, its
+description as the provider, its spending on expense accounts as the healthcare
+payment, and the FSA account and funding year worked out from its accounts, each
+line explaining how it was chosen (see
+[FSA and benefit accounts](../USER_GUIDE.md#fsa-and-benefit-accounts)). `--json`
+gives the draft as `claim`, `existing`, and `notes`; `--track` adds the saved
+claim's `handle`. `--track` refuses a transaction already on a claim, naming it,
+and one whose FSA account cannot be told apart; add that claim in the desktop or
+browser claims editor instead.
+
 ## Savings goals
 
 ```sh

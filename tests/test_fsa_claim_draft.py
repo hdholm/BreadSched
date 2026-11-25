@@ -302,6 +302,52 @@ def test_a_receivables_own_reclassification_starts_no_claim(db, book, medical, m
     assert result.errors[0].code == "claim.split.owned_posting"
 
 
+def _claims_in(path):
+    from breadsched.gen.db.sqlite import DbSQLite
+
+    reopened = DbSQLite()
+    reopened.load(str(path), mode="r")
+    try:
+        return list(reopened.iter_fsa_claims())
+    finally:
+        reopened.close()
+
+
+def test_the_command_line_drafts_and_tracks_a_claim(db, book, medical, tmp_path, capsys):
+    import json
+
+    from breadsched.cli.main import main
+
+    fsa = _fsa(db, book, "Health FSA", [_year()])
+    paid = _post(
+        db, Transaction.simple(date(2026, 3, 8), "Clinic", medical.handle, book.card, "120")
+    )
+    path = tmp_path / "claims.breadsched"
+    db.backup_to(str(path))
+    reference = paid.handle[:10]
+
+    assert main(["claims", str(path), "--draft", reference]) == 0
+    out = capsys.readouterr().out
+    assert "not saved" in out and "Provider: Clinic" in out
+    assert "Healthcare payment: 120.00 Expenses:Medical" in out
+    assert "FSA allocation: Assets:Health FSA, funding year from 2026-01-01" in out
+    assert main(["claims", str(path), "--draft", reference, "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["existing"] is None
+    assert payload["claim"]["allocations"][0]["account"] == fsa.handle
+    assert _claims_in(path) == []
+
+    assert main(["claims", str(path), "--track", reference, "--json"]) == 0
+    tracked = json.loads(capsys.readouterr().out)
+    [claim] = _claims_in(path)
+    assert claim.handle == tracked["handle"] and claim.provider == "Clinic"
+    assert [link.transaction for link in claim.payments] == [paid.handle]
+    # Tracking it again is refused, naming the claim it is already on.
+    assert main(["claims", str(path), "--track", reference]) != 0
+    assert "Already on the claim 2026-03-08 Clinic" in capsys.readouterr().err
+    assert main(["claims", str(path), "--track", reference, "--draft", reference]) != 0
+
+
 def test_history_never_picks_an_fsa_without_a_year_for_the_date(db, book, medical):
     old = _fsa(db, book, "Old FSA", [_year(date(2025, 1, 1))])
     current = _fsa(db, book, "Current FSA", [_year()])

@@ -8,6 +8,15 @@ GitHub releases.
 
 ## Unreleased
 
+- **Track a transaction as an FSA claim.** **Track as FSA Claim…** on a desktop
+  register row, **FSA claim…** in the browser register, and `breadsched claims
+  --draft`/`--track` start a new claim from a transaction you already recorded, as
+  **Track as Reimbursable** does for reimbursable expenses. The service date,
+  provider, healthcare payment, FSA account, and funding year are filled in from the
+  transaction and its accounts (a payment made with the FSA card is linked as **Paid
+  from the FSA card**), and each choice is explained; nothing is saved until you save
+  the claim. A transaction already on a claim opens that claim.
+
 ## 2026.11.25.0
 
 The fifth beta, published as a GitHub pre-release; its Windows installer and Linux

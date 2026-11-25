@@ -202,6 +202,64 @@ def _claim_event_text(event: FsaClaimEvent) -> str:
     return f"{event.on.isoformat()} {text}" + (f": {event.note}" if event.note else "")
 
 
+def _claim_from_transaction(book: BookApi, args: argparse.Namespace) -> int:
+    """Show, or save with ``--track``, a new claim started from one transaction."""
+    from ..api.typed_codec import to_data
+    from ..gen.services import SaveClaim
+
+    transaction = book.find_transaction(args.track or args.draft)
+    draft = book.fsa_claim_draft(transaction.handle)
+    if draft.claim is None:
+        message = " ".join(draft.notes) or "That transaction is already on an FSA claim."
+        if args.track:
+            raise CommandError(message)
+        emit(to_data(draft), args, message)
+        return 0
+    claim = draft.claim
+    names = {record.account.handle: record.full_name for record in book.accounts()}
+    values = {split.handle: split.value for split in transaction.splits}
+    accounts = {split.handle: split.account for split in transaction.splits}
+    lines = [
+        f"Service date: {claim.service_date.isoformat()}",
+        f"Provider: {claim.provider or '(none)'}",
+    ]
+    if claim.description:
+        lines.append(f"Description: {claim.description}")
+    for link in claim.payments:
+        account = names.get(accounts.get(link.split, ""), "")
+        lines.append(f"Healthcare payment: {values[link.split].format()} {account}".rstrip())
+    for allocation in claim.allocations:
+        paid = " (paid from the FSA card)" if allocation.reimbursements else ""
+        lines.append(
+            f"FSA allocation: {names.get(allocation.account, allocation.account)}, "
+            f"funding year from {allocation.funding_year_start.isoformat()}{paid}"
+        )
+    if claim.receivable:
+        lines.append("Payer covers part: linked reimbursable expense")
+    lines.extend(draft.notes)
+    if not args.track:
+        heading = "New FSA claim (not saved; --track saves it):"
+        emit(to_data(draft), args, "\n".join([heading, *lines]))
+        return 0
+    if not claim.allocations:
+        raise CommandError(
+            " ".join(draft.notes) or "The claim needs an FSA account and funding year."
+        )
+    saved = book.save_fsa_claim(SaveClaim(claim))
+    emit(
+        {"handle": saved.handle, "draft": to_data(draft)},
+        args,
+        "\n".join(
+            [
+                f"Tracked {transaction.description or 'the transaction'} as an FSA claim "
+                f"({saved.handle[:8]}):",
+                *lines,
+            ]
+        ),
+    )
+    return 0
+
+
 def _claim_link_proposals(book: BookApi, args: argparse.Namespace) -> int:
     """FSA statement lines that clearly belong on one claim; link them all if asked."""
     from ..presentation import claim_role_label
@@ -332,7 +390,12 @@ def cmd_claims(args: argparse.Namespace) -> int:
     changing = bool(args.close or args.reopen)
     if args.close and args.reopen:
         raise CommandError("use --close or --reopen, not both")
-    with book_api(args, "w" if changing or args.link_proposals else "r") as book:
+    if args.track and args.draft:
+        raise CommandError("use --track or --draft, not both")
+    writing = changing or args.link_proposals or args.track
+    with book_api(args, "w" if writing else "r") as book:
+        if args.track or args.draft:
+            return _claim_from_transaction(book, args)
         if changing:
             claim = book.find_fsa_claim(args.close or args.reopen)
             on = parse_date(args.on) or date.today()
@@ -803,6 +866,17 @@ def register(add: AddCommand) -> None:
         action="store_true",
         help="list open FSA benefit years: funded, used (paid from the card, reimbursed, "
         "refunded to the card), and remaining",
+    )
+    claims_cmd.add_argument(
+        "--track",
+        metavar="TRANSACTION",
+        help="save a new claim for this transaction's healthcare cost, with the FSA "
+        "account and funding year inferred from its accounts",
+    )
+    claims_cmd.add_argument(
+        "--draft",
+        metavar="TRANSACTION",
+        help="show the claim --track would save, without saving it",
     )
     claims_cmd.add_argument(
         "--history", metavar="CLAIM", help="list a claim's EOB changes, closings, and reopenings"
