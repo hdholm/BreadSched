@@ -974,7 +974,9 @@ currency as of the Dashboard date; a missing quote makes the affected figure
 unavailable. Dashboard groups only arrange accounts into rows for reading: adding,
 removing, or rearranging groups never changes those totals, Needed within N days,
 Months covered, or the pending bills and income. Selecting a chart parent for a
-group includes its descendants in that group's row; the row shows only the group
+group includes its descendants in that group's row, except a descendant you put
+in another group: that account (with its own descendants) is counted in its own
+group and left out of the parent's row, so each account is counted once. The row shows only the group
 and the selected account's own valuation note, and hovering over the row lists every
 included account, one per line, with its quote date and source where it has one.
 

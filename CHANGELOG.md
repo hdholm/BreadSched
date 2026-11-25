@@ -8,6 +8,14 @@ GitHub releases.
 
 ## Unreleased
 
+- **A Dashboard group holding a sub-account of another group's account now shows.**
+  When one group held a parent account (say `Assets:Investments`) and another held
+  one of its sub-accounts (`Assets:Investments:Brokerage`), the second group
+  disappeared from the Dashboard though Configure Dashboard still listed it. The
+  sub-account is now counted in its own group and left out of the parent's row, so
+  each account is counted once; the parent's group total falls by that amount.
+  Net worth, Assets, Debts, and Liquid do not change.
+
 - **Track a transaction as an FSA claim.** **Track as FSA Claim…** on a desktop
   register row, **FSA claim…** in the browser register, and `breadsched claims
   --draft`/`--track` start a new claim from a transaction you already recorded, as

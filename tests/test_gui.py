@@ -7792,6 +7792,49 @@ class TestDashboardView:
         assert app.db.get_account(member.handle).group != "Property"
         assert "Property" not in str(app.db.get_metadata("dashboard"))
 
+    def test_a_group_of_a_parents_child_shows_on_the_dashboard_once_saved(self, view, app):
+        """A group holding a child of another group's parent account is shown and
+        counts that child; the parent's group counts the rest (each once)."""
+        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+
+        opened = []
+        original = DashboardDialog.present
+
+        def capture(dialog):
+            opened.append(dialog)
+            original(dialog)
+
+        DashboardDialog.present = capture
+        try:
+            view._on_configure(None)
+        finally:
+            DashboardDialog.present = original
+        [dialog] = opened
+        parent = app.db.get_account_by_name("Assets")
+        child = app.db.get_account_by_name("Assets:Checking Account")
+        before = view.board.net_worth
+        for name, account in (("Group A", parent), ("Group B", child)):
+            row = dialog.add_group()
+            row["name"].set_text(name)
+            dialog.add_account(row, account.handle)
+        dialog._on_save(None)
+        _spin(lambda: False, 0.3)
+
+        from breadsched.gen.engine import ledger
+
+        def balance(account):
+            return ledger.balance_recursive_amount(app.db, account.handle).value
+
+        shown = {group.name: group for group in view.board.groups}
+        assert set(shown) == {"Group A", "Group B"}
+        assert shown["Group B"].total == balance(child)
+        assert shown["Group A"].total == balance(parent) - balance(child)
+        text = view.section("groups").text()
+        assert "Group A" in text and "Group B" in text
+        assert "Assets:Checking Account" in text
+        # Groups only arrange rows: the book's totals do not move.
+        assert view.board.net_worth == before
+
     def test_the_group_dialog_refuses_an_account_in_two_groups(self, view, app):
         from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
 
