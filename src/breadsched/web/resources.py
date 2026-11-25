@@ -44,6 +44,7 @@ from .find_resource import find
 from .fsa_claim_resource import (
     fsa_claim_close,
     fsa_claim_delete,
+    fsa_claim_draft,
     fsa_claim_reopen,
     fsa_claim_save,
     fsa_claims,
@@ -580,6 +581,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/commodities": _without_query(commodities),
     "/api/quotes": _without_query(quotes),
     "/api/fsa/claims": fsa_claims,
+    "/api/fsa/claim-draft": fsa_claim_draft,
     "/api/register": register,
     "/api/reconciliation": reconciliation,
     "/api/scheduled": _scheduled,
