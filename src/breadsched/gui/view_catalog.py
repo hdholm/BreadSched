@@ -257,6 +257,12 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             "track_selected_reimbursable",
             row=True,
         ),
+        ViewAction(
+            "track-fsa-claim",
+            "Track as _FSA Claim…",
+            "track_selected_fsa_claim",
+            row=True,
+        ),
         ViewAction("enter", "E_nter Transaction", "enter_transaction"),
         ViewAction("cancel", "_Cancel Transaction", "cancel_transaction"),
         # GnuCash's Blank: to the new transaction at the end (Ctrl+End, Shift+Page Down).

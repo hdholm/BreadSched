@@ -1839,7 +1839,12 @@ class TestBookServerBoundaries:
             ),
             (
                 "gui/views/register.py",
-                ("_account", "_populate_picker", "track_selected_reimbursable"),
+                (
+                    "_account",
+                    "_populate_picker",
+                    "track_selected_reimbursable",
+                    "track_selected_fsa_claim",
+                ),
             ),
             ("gui/register_sheet.py", ("_save_transaction",)),
         ],
