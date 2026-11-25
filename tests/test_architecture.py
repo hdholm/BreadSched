@@ -1579,7 +1579,7 @@ class TestBookServerBoundaries:
             ("web/currency_quote_resource.py", ("save_currency_quote",)),
             ("gui/dialogs/exchange_rate_dialog.py", ("save",)),
             ("web/dashboard_resource.py", ("dashboard_config_save",)),
-            ("gui/dialogs/dashboard_dialog.py", ("save",)),
+            ("gui/dialogs/dashboard_settings.py", ("save",)),
             ("cli/categorization_commands.py", ("cmd_attachments",)),
             ("cli/projection_commands.py", ("cmd_net_worth", "cmd_net_worth_change")),
             ("web/net_worth_resource.py", ("net_worth_change", "net_worth_history")),
@@ -1829,7 +1829,7 @@ class TestBookServerBoundaries:
                 "gui/viewmanager.py",
                 ("_refresh_status", "_account_record", "_scenario_exists", "open_register_tab"),
             ),
-            ("gui/dialogs/dashboard_dialog.py", ("_on_reset", "save")),
+            ("gui/dialogs/dashboard_settings.py", ("_on_reset", "save")),
             ("gui/dialogs/historical_estimates_dialog.py", ("__init__",)),
             (
                 "gui/register_sheet.py",

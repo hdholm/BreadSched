@@ -636,15 +636,12 @@ class TestDashboardIsHome:
     def test_configure_dashboard_lists_the_breadlets_beside_the_sections(
         self, app, window, populated_book
     ):
-        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
 
         app.open_book(populated_book)
-        dialog = DashboardDialog(window, app.db)
-        try:
-            check = dialog.section_checks["breadlet:spending-this-month"]
-            assert check.get_label() == "Spending this month" and check.get_active()
-        finally:
-            dialog.destroy()
+        dialog = DashboardSettings(app.db)
+        check = dialog.section_checks["breadlet:spending-this-month"]
+        assert check.get_label() == "Spending this month" and check.get_active()
 
 
 class TestArrangeDashboard:
@@ -7698,11 +7695,9 @@ class TestDashboardView:
             assert values == sorted(values)
 
     def _configure(self, view, app):
-        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
 
-        return DashboardDialog(
-            view.get_root(), app.db, tables=view.column_tables(), settings=view._settings()
-        )
+        return DashboardSettings(app.db, tables=view.column_tables(), settings=view._settings())
 
     def test_the_horizons_moved_into_configure_dashboard(self, view, app):
         """The toolbar no longer holds the horizons; the dialog does (#381)."""
@@ -7710,7 +7705,6 @@ class TestDashboardView:
         dialog = self._configure(view, app)
         assert dialog.liquidity_spin.get_value() == view.config.liquidity_days
         assert dialog.emergency_spin.get_value() == view.config.emergency_months
-        dialog.destroy()
 
     def test_changing_a_horizon_is_kept_as_ones_own_and_changes_the_verdict(self, view, app):
         from user_fixtures import own_preference
@@ -7722,7 +7716,6 @@ class TestDashboardView:
         dialog.emergency_spin.set_value(12)
         dialog.liquidity_spin.set_value(45)
         assert dialog.save() is True
-        dialog.destroy()
         # The computer account's own Dashboard; the book keeps its own.
         stored = DashboardConfig.load(app.db, own_preference(app.db, "dashboard"))
         assert (stored.emergency_months, stored.liquidity_days) == (12, 45)
@@ -7739,7 +7732,6 @@ class TestDashboardView:
         dialog.section_checks["bills"].set_active(False)
         dialog.section_checks["reimbursables"].set_active(True)
         assert dialog.save() is True
-        dialog.destroy()
         view.refresh()
         assert "bills" not in view.shown_sections()
         assert "reimbursables" in view.shown_sections()
@@ -7764,15 +7756,14 @@ class TestDashboardView:
         # Not part of the book.
         assert "Frequency" not in str(app.db.get_metadata("dashboard"))
         frequency.set_active(True)
-        dialog.destroy()
 
     def test_the_group_dialog_builds_and_saves(self, view, app):
         from user_fixtures import own_preference
 
         from breadsched.gen.engine.dashboard import DashboardConfig
-        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
 
-        dialog = DashboardDialog(view.get_root(), app.db)
+        dialog = DashboardSettings(app.db)
         row = dialog.add_group()
         row["name"].set_text("Property")
         row["kind"].set_selected(3)
@@ -7781,7 +7772,7 @@ class TestDashboardView:
         dialog._add_picked(row)
         assert row["accounts"] == [dialog.accounts[0].handle]
         assert row["picker"].get_selected() == 0
-        dialog._on_save(None)
+        assert dialog.save()
 
         # Kept as the computer account's own arrangement, members and all (decision
         # 0004): the book's accounts and configuration are left as they were.
@@ -7793,10 +7784,10 @@ class TestDashboardView:
         assert "Property" not in str(app.db.get_metadata("dashboard"))
 
     def test_the_group_dialog_refuses_an_account_in_two_groups(self, view, app):
-        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
 
         before = [(a.handle, a.group) for a in app.db.iter_accounts()]
-        dialog = DashboardDialog(view.get_root(), app.db)
+        dialog = DashboardSettings(app.db)
         for name in ("One", "Two"):
             row = dialog.add_group()
             row["name"].set_text(name)
@@ -7806,12 +7797,11 @@ class TestDashboardView:
         assert dialog.save() is False
         assert dialog.status.get_text() == "An account can be in only one Dashboard group"
         assert [(a.handle, a.group) for a in app.db.iter_accounts()] == before
-        dialog.destroy()
 
     def test_adding_an_account_to_a_group_moves_it_from_another(self, view, app):
-        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
 
-        dialog = DashboardDialog(view.get_root(), app.db)
+        dialog = DashboardSettings(app.db)
         first, second = dialog.add_group(), dialog.add_group()
         first["name"].set_text("First")
         handle = dialog.accounts[0].handle
@@ -7825,7 +7815,6 @@ class TestDashboardView:
         assert line.handle == handle
         dialog.remove_account(second, handle)
         assert second["accounts"] == [] and second["members"].get_first_child() is None
-        dialog.destroy()
 
     def test_an_empty_book_still_renders(self, app, window, tmp_path):
         from breadsched.cli.main import main as cli
@@ -8782,12 +8771,12 @@ class TestNoGtkCriticals:
         app.open_book(populated_book)
         window.show_category("dashboard")
         view = window._views["dashboard"]
-        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
 
-        dialog = DashboardDialog(window, app.db, tables=view.column_tables())
+        dialog = DashboardSettings(app.db, tables=view.column_tables())
         dialog.emergency_spin.set_value(9)
         dialog.liquidity_spin.set_value(45)
-        dialog._on_save(None)
+        assert dialog.save()
         view.refresh()
         view.flush_refresh()
         assert criticals == []
@@ -9894,7 +9883,6 @@ class TestViewActions:
         ]
         window.show_category("dashboard")
         assert self._tools(window) == [
-            "win.dashboard-configure",
             "win.dashboard-arrange",
             "win.dashboard-net-worth-history",
         ]
@@ -10838,7 +10826,6 @@ class TestDialogsFitTheScreen:
     DIALOGS = (
         ("account_dialog", "AccountDialog", "account"),
         ("csv_import_dialog", "CsvImportDialog", None),
-        ("dashboard_dialog", "DashboardDialog", None),
         ("drawdown_dialog", "DrawdownsDialog", "scenario"),
         ("exchange_rate_dialog", "ExchangeRateDialog", None),
         ("fsa_claims_dialog", "FsaClaimsDialog", None),
@@ -13138,7 +13125,7 @@ class TestBoundedSizes:
     def test_dialogs_open_within_the_screen(self, app, window, stress):
         from breadsched.gui.dialogs.account_dialog import AccountDialog
         from breadsched.gui.dialogs.csv_import_dialog import CsvImportDialog
-        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.preferences_dialog import PreferencesDialog
         from breadsched.gui.dialogs.reconciliation_dialog import ReconciliationDialog
         from breadsched.gui.dialogs.rules_dialog import RulesDialog
         from breadsched.gui.dialogs.savings_goals_dialog import SavingsGoalsDialog
@@ -13152,7 +13139,8 @@ class TestBoundedSizes:
         makers = {
             "account": lambda: AccountDialog(window, db, db.get_account(chain[-1])),
             "csv-import": lambda: CsvImportDialog(window, db),
-            "dashboard": lambda: DashboardDialog(window, db),
+            # Preferences, with the open book's Dashboard tab.
+            "preferences": lambda: PreferencesDialog(window, app),
             "reconcile": lambda: ReconciliationDialog(window, db, bank),
             "rules": lambda: RulesDialog(window, db),
             "goals": lambda: SavingsGoalsDialog(window, db),
@@ -13271,6 +13259,131 @@ class TestPreferences:
         assert app.view_settings.get("register", "banding") == "lines"
         # The View menu's Double Line check follows the saved preference.
         assert window.lookup_action("double-line").get_state().get_boolean() is True
+
+    def test_the_dashboard_has_its_own_tab_and_no_configure_command(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
+
+        dialog = app.on_preferences()
+        tabs = [
+            dialog.notebook.get_tab_label_text(dialog.notebook.get_nth_page(index))
+            for index in range(dialog.notebook.get_n_pages())
+        ]
+        assert tabs == ["General", "Dashboard"]
+        # Without a book the tab says why it is empty.
+        assert dialog.dashboard is None
+        assert "Open a book" in dialog.notebook.get_nth_page(1).get_label()
+        dialog.close()
+
+        app.open_book(populated_book)
+        window.show_category("dashboard")
+        dialog = app.on_preferences()
+        assert isinstance(dialog.dashboard, DashboardSettings)
+        assert dialog.dashboard.column_checks  # the Dashboard's tables are listed
+        dialog.close()
+        # Configuration is in Preferences only: no toolbar icon or menu item.
+        assert "win.dashboard-configure" not in _menu_labels(app.get_menubar())
+        assert window.lookup_action("dashboard-configure") is None
+
+    def test_saving_preferences_saves_the_dashboard_and_redraws_it(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        window.show_category("dashboard")
+        view = window._views["dashboard"]
+        dialog = app.on_preferences()
+        settings = dialog.dashboard
+        row = settings.add_group()
+        row["name"].set_text("Group P")
+        settings.add_account(row, settings.accounts[0].handle)
+        settings.emergency_spin.set_value(7)
+        dialog.primary().emit("clicked")
+        assert _spin(lambda: not dialog.get_visible())
+        # Redrawn at once when on screen; otherwise marked out of date and redrawn
+        # when next shown.
+        assert view.get_mapped() or not view.is_current()
+        view.ensure_current()
+        assert "Group P" in view.section("groups").text()
+        assert view.board.config.emergency_months == 7
+
+    def test_a_refused_dashboard_keeps_preferences_open_on_its_tab(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        dialog = app.on_preferences()
+        settings = dialog.dashboard
+        for name in ("One", "Two"):
+            row = settings.add_group()
+            row["name"].set_text(name)
+            row["accounts"].append(settings.accounts[0].handle)
+        dialog.primary().emit("clicked")
+        assert dialog.get_visible()
+        assert dialog.notebook.get_current_page() == 1
+        assert "only one Dashboard group" in settings.status.get_text()
+        dialog._closing = True
+        dialog.close()
+
+    def _with_unadded(self, app, populated_book):
+        from user_fixtures import own_preference
+
+        app.open_book(populated_book)
+        dialog = app.on_preferences()
+        assert _spin(dialog.get_mapped)
+        settings = dialog.dashboard
+        row = settings.add_group()
+        row["name"].set_text("Chosen")
+        row["picker"].set_selected(1)  # chosen, but Add never pressed
+        chosen = settings.accounts[0]
+        [item] = settings.unadded()
+        assert (item.group, item.account) == ("Chosen", settings.names[chosen.handle])
+
+        def saved_groups():
+            stored = own_preference(app.db, "dashboard") or {}
+            return {
+                group["name"]: list(group.get("accounts", [])) for group in stored.get("groups", [])
+            }
+
+        return dialog, row, chosen, saved_groups
+
+    def test_save_asks_about_an_account_chosen_but_not_added(self, app, window, populated_book):
+        dialog, row, chosen, saved_groups = self._with_unadded(app, populated_book)
+        dialog.primary().emit("clicked")
+        message, buttons = dialog.unadded_question
+        assert message == "Add the chosen account before saving?"
+        assert buttons == ["Go back", "Save without it", "Add and save"]
+        # Go back: nothing saved, the Dashboard tab shown, the choice kept.
+        dialog.settle_unadded(0, saving=True)
+        assert dialog.get_visible() and dialog.notebook.get_current_page() == 1
+        assert "Chosen" not in saved_groups()
+        assert row["picker"].get_selected() == 1
+        # Add and save: the account joins the group, then everything is saved.
+        dialog.primary().emit("clicked")
+        dialog.settle_unadded(2, saving=True)
+        assert _spin(lambda: not dialog.get_visible())
+        assert saved_groups()["Chosen"] == [chosen.handle]
+
+    def test_save_without_the_unadded_account_saves_the_rest(self, app, window, populated_book):
+        dialog, _row, chosen, saved_groups = self._with_unadded(app, populated_book)
+        dialog.dashboard.emergency_spin.set_value(8)
+        dialog.primary().emit("clicked")
+        dialog.settle_unadded(1, saving=True)
+        assert _spin(lambda: not dialog.get_visible())
+        assert chosen.handle not in saved_groups().get("Chosen", [])
+
+    def test_cancel_asks_before_dropping_an_unadded_account(self, app, window, populated_book):
+        dialog, _row, _chosen, saved_groups = self._with_unadded(app, populated_book)
+        dialog.dismiss_button.emit("clicked")
+        assert dialog.get_visible()
+        message, buttons = dialog.unadded_question
+        assert message == "Close without adding the chosen account?"
+        assert buttons == ["Go back", "Close without saving"]
+        dialog.settle_unadded(0, saving=False)
+        assert dialog.get_visible()
+        dialog.dismiss_button.emit("clicked")
+        dialog.settle_unadded(1, saving=False)
+        assert _spin(lambda: not dialog.get_visible())
+        assert "Chosen" not in saved_groups()
 
     def test_users_are_out_of_the_way_until_wanted(self, app, window):
         """Alone, Preferences says "Only you"; Users and devices manages

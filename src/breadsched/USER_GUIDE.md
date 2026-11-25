@@ -965,7 +965,7 @@ each bill and up on each scheduled pay. Its lowest day is marked, which is the d
 to watch: if the line goes below zero, a bill falls due before the money to pay it
 arrives. It uses the same bills and pay that *Needed* counts, so the two agree. A
 period longer than about two months is drawn by the week. The chart is not shown
-when nothing is scheduled inside the period, and **Configure Dashboard** can hide
+when nothing is scheduled inside the period, and the Dashboard settings can hide
 it.
 
 Net worth, Assets, and Debts always cover every asset and liability account in the
@@ -1026,9 +1026,10 @@ bills: the expense, payer, when it was incurred, when the money is expected (mar
 overdue once that date passes), what is still owed, and its status. It is off until
 you turn it on.
 
-**Configure Dashboard** holds everything the Dashboard can be told
-([desktop](guide/desktop.md#configure-the-dashboard),
-[browser](guide/web.md#configure-the-dashboard)): the two horizons (how many days of
+The Dashboard settings hold everything the Dashboard can be told: on the desktop
+they are the **Dashboard** tab of **Edit → Preferences**
+([desktop](guide/desktop.md#configure-the-dashboard)), in the browser **Configure
+Dashboard** ([browser](guide/web.md#configure-the-dashboard)). They hold the two horizons (how many days of
 bills cash must cover, and how many months of outgoings the emergency fund should
 last), which items show (the summary figures, the cash-flow chart, account groups, pending bills, expected income, pending reimbursables (off until you turn it on), FSA claims needing attention, and savings goals), the groups and their accounts, and each table's
 columns. All of it is each person's own: when a book is shared with other people,
@@ -1299,7 +1300,7 @@ figures, the cash-flow chart, account groups, pending bills, expected income, pe
 reimbursables, FSA claims needing attention, and savings goals) and any other. A
 row or figure on it opens what it is (a bill's schedule, a card's payment settings,
 the savings goals), and its tables sort by any column. Two more show below them until
-you turn them off in Configure Dashboard: **Spending this month**, as a ring, and **Income and
+you turn them off in the Dashboard settings: **Spending this month**, as a ring, and **Income and
 spending** for the last six months. A range that starts before the book's first month
 starts with that month. Foreign-currency activity without an exchange rate for its
 date is left out of both, and the report says so.

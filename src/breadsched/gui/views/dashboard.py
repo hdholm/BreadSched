@@ -16,8 +16,9 @@ height), hide them, and add hidden ones back; **Done** saves the arrangement wit
 the rest of the Dashboard's settings. A narrow window has fewer columns and stacks
 the same items in the same order.
 
-Everything else the Dashboard can be told lives in **Configure Dashboard** (#381):
-the two horizons, which items show, the account groups, and each table's columns.
+Everything else the Dashboard can be told lives in the **Dashboard** tab of
+Edit → Preferences (#381): the two horizons, which items show, the account groups,
+and each table's columns.
 The breadlets share one Dashboard calculation per refresh
 (``breadlets.dashboard.sharing``).
 """
@@ -114,7 +115,8 @@ class DashboardView(BaseView):
         title.add_css_class("category-title")
         title.set_hexpand(True)
         bar.append(title)
-        # Configure and Arrange Dashboard are toolbar icons and Actions items (#156).
+        # Arrange Dashboard is a toolbar icon and an Actions item (#156); its
+        # settings are in Edit → Preferences.
         self._bar = bar
         self.append_toolbar(bar)
 
@@ -235,7 +237,7 @@ class DashboardView(BaseView):
         tile.set_name(f"tile-{item.id}")
         tile.key = item.key
         for section in view.table_sections.values():
-            # Columns are chosen in Configure Dashboard (#381), not in each heading;
+            # Columns are chosen in Preferences → Dashboard (#381), not in each heading;
             # the tile scrolls a long or wide table, not the table itself, so each
             # column keeps its natural width as in the browser.
             section.chooser.set_visible(False)
@@ -549,7 +551,7 @@ class DashboardView(BaseView):
         return summary.card_rows[0] if summary is not None and summary.card_rows else None
 
     def column_tables(self) -> tuple[tuple[str, str, Gtk.ColumnView], ...]:
-        """The Dashboard's tables as Configure Dashboard lists their columns."""
+        """The Dashboard's tables as Preferences → Dashboard lists their columns."""
         found = []
         for view in self.documents.values():
             for key, table in view.tables.items():
@@ -613,17 +615,6 @@ class DashboardView(BaseView):
             from ..reports_window import open_report
 
             open_report(self.get_root(), self.db, target)
-
-    def _on_configure(self, _button) -> None:
-        if self.db is None:
-            return
-        from ..dialogs.dashboard_dialog import DashboardDialog
-
-        dialog = DashboardDialog(
-            self.get_root(), self.db, tables=self.column_tables(), settings=self._settings()
-        )
-        dialog.connect("close-request", self.refresh_on_close)
-        dialog.present()
 
     def _open_net_worth_history(self, _button) -> None:
         if self.db is None:

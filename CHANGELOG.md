@@ -8,6 +8,14 @@ GitHub releases.
 
 ## Unreleased
 
+- **Desktop settings are all in Edit → Preferences.** Preferences has a **General**
+  tab (what it held before) and a **Dashboard** tab with everything Configure
+  Dashboard held: horizons, items shown, groups, and columns. The Dashboard's
+  toolbar icon and Actions menu item for Configure Dashboard are gone. If an account
+  is chosen in a group's list but **Add** was not pressed, **Save** asks whether to
+  add it first, and **Cancel** asks before closing without it. The browser's
+  **Configure Dashboard…** is unchanged.
+
 ## 2026.11.25.0
 
 The fifth beta, published as a GitHub pre-release; its Windows installer and Linux

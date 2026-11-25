@@ -1,4 +1,8 @@
-"""Configure the Dashboard: its horizons, sections, groups, and columns (#381).
+"""The Dashboard's settings: its horizons, sections, groups, and columns (#381).
+
+They are the **Dashboard** tab of Edit → Preferences (:class:`DashboardSettings` is
+that tab's content); all configuration lives in Preferences, so the Dashboard's
+toolbar and menus no longer have a Configure Dashboard command of their own.
 
 Groups are edited here rather than guessed, because only the household knows that
 "Home Easton" means one asset account paired with one mortgage. A property group
@@ -14,6 +18,7 @@ apply at once and are not part of Save.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from ...api import ApiError
 from ...api.local import book_server
@@ -29,10 +34,9 @@ from ...gen.services.dashboard_config import (
 )
 from ..gi_setup import Gtk, Pango
 from ..remote_book import OpenBook
-from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 
-__all__ = ["DashboardDialog"]
+__all__ = ["DashboardSettings", "Unadded"]
 
 KINDS = list(GROUP_KINDS)
 
@@ -48,27 +52,36 @@ _EXPLANATION = {
 _PICK = "Add an account…"
 
 
-class DashboardDialog(BoundedWindow):
-    """Every Dashboard setting in one place, a page per kind.
+@dataclass(frozen=True)
+class Unadded:
+    """An account chosen in a group's picker but never added with its **Add**."""
+
+    group: str
+    account: str
+    row: dict
+
+
+class DashboardSettings(Gtk.Box):
+    """Every Dashboard setting in one place, a page per kind: the content of the
+    Preferences window's Dashboard tab.
 
     ``tables`` are the Dashboard's tables as ``(title, view id, column view)``:
     their columns are shown and hidden here and remembered in ``settings``. It
-    reads the book's configuration when it opens, so it shows each account's group
-    as stored now.
+    reads the book's configuration when it is made, so it shows each account's
+    group as stored now. :meth:`save` stores the rest; the window holding it saves
+    and closes.
     """
 
     def __init__(
         self,
-        parent: Gtk.Window | None,
         db: OpenBook,
         tables: Sequence[tuple[str, str, Gtk.ColumnView]] = (),
         settings=None,
     ) -> None:
-        super().__init__(title="Configure Dashboard", transient_for=parent, modal=True)
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.db = db
         self.settings = settings
         self.config = book_server(db).dashboard_settings()
-        self.set_default_size(720, 580)
 
         records = sorted(
             (record for record in book_server(db).accounts() if not record.account.is_root),
@@ -79,13 +92,12 @@ class DashboardDialog(BoundedWindow):
             record.account.handle: record.full_name or record.account.name for record in records
         }
         self.rows: list[dict] = []
-
-        box = self.frame("dashboard")
+        box = self
 
         self.notebook = Gtk.Notebook()
         self.notebook.set_vexpand(True)
         box.append(self.notebook)
-        self.notebook.append_page(self._general_page(), Gtk.Label(label="General"))
+        self.notebook.append_page(self._general_page(), Gtk.Label(label="Horizons and items"))
         self.notebook.append_page(self._groups_page(), Gtk.Label(label="Groups"))
         self.column_checks: dict[str, list[Gtk.CheckButton]] = {}
         if tables:
@@ -94,10 +106,6 @@ class DashboardDialog(BoundedWindow):
         self.status = Gtk.Label(xalign=0, wrap=True)
         self.status.add_css_class("negative")
         box.append(self.status)
-
-        save = Gtk.Button(label="Save")
-        save.connect("clicked", self._on_save)
-        self.actions(box, dismiss="Cancel", primary=save)
 
         for group in self.config.groups:
             self.add_group(group)
@@ -374,6 +382,29 @@ class DashboardDialog(BoundedWindow):
             sections={name: check.get_active() for name, check in self.section_checks.items()},
         )
 
+    def unadded(self) -> list[Unadded]:
+        """Accounts chosen in a group's picker but not yet added with **Add**.
+
+        Saving or closing would otherwise lose them without a word, since only
+        **Add** puts an account in the group.
+        """
+        found = []
+        for row in self.rows:
+            index = row["picker"].get_selected()
+            if index < 1 or index > len(self.accounts):
+                continue
+            handle = self.accounts[index - 1].handle
+            if handle in row["accounts"]:
+                continue
+            group = row["name"].get_text().strip() or "an unnamed group"
+            found.append(Unadded(group, self.names[handle], row))
+        return found
+
+    def add_unadded(self) -> None:
+        """Add every account chosen but not yet added, as its **Add** would."""
+        for item in self.unadded():
+            self._add_picked(item.row)
+
     def save(self) -> bool:
         """Store the settings; False, with the reason shown, if they were refused."""
         try:
@@ -383,7 +414,3 @@ class DashboardDialog(BoundedWindow):
             return False
         self.config = book_server(self.db).dashboard_settings()
         return True
-
-    def _on_save(self, _button) -> None:
-        if self.save():
-            self.close()

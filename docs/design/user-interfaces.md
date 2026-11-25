@@ -348,10 +348,17 @@ can forget them all (`forget_sizes`).
 not part of a book: `general.last_book_path`, `register.double_line` and
 `register.banding` in the view settings, and the Alpha Vantage key through
 `plugins.quotes.save_alphavantage_key` (stored only if changed, so a key from the
-environment is not copied into the file). **Configure Dashboard…** there
-activates the window's existing `win.dashboard-configure`, because the Dashboard's
-horizons, sections, and groups belong to the book. The browser has no equivalent window; its guide's Preferences
-section says where each setting lives there.
+environment is not copied into the file). Those are its **General** tab. Its
+**Dashboard** tab is `dialogs.dashboard_settings.DashboardSettings`, the open book's
+Dashboard settings (horizons, sections, groups through the book server's
+`save_dashboard_settings`, and each table's columns in the view settings), so all
+desktop configuration is in one window and the Dashboard has no configure command
+of its own. **Save** saves that tab first: a refusal keeps the window open on it
+with the reason, and nothing else is written. Save and close (Cancel, Escape, the
+title bar) ask first when a group's account picker holds an account that was never
+added (`DashboardSettings.unadded`), since only **Add** puts it in the group. The
+browser has no equivalent window; its guide's Preferences section says where each
+setting lives there, and its Dashboard keeps **Configure Dashboard…**.
 
 A modal dialog is never shown behind the window it blocks, and never two at
 once. The main window's own modal dialogs (alerts from `_report`, the GnuCash change

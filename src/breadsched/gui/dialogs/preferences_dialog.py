@@ -11,9 +11,6 @@ over toolbars:
   to every open register when saved.
 * **Online quotes** – the Alpha Vantage API key, the same stored key the Online
   Quotes window edits.
-* **Dashboard** – **Configure Dashboard…**, which opens that window for the open
-  book (its horizons, sections, and groups belong to the book, not to these
-  settings).
 * **Windows** – forget the remembered window sizes (#349).
 * **Sharing** – let other BreadSched commands use the open book through this window
   (``general.share_book``, #359).
@@ -21,7 +18,12 @@ over toolbars:
   this computer's books, and your devices. Used alone,
   nothing here needs changing.
 
-**Save** writes them all; **Cancel** (or Escape) changes nothing.
+Those are the **General** tab. The **Dashboard** tab holds every Dashboard
+setting of the open book (:class:`~.dashboard_settings.DashboardSettings`): its
+horizons, the items shown, the account groups, and each table's columns.
+
+**Save** writes them all; **Cancel** (or Escape) changes nothing. Either asks
+first when an account was chosen in a Dashboard group's picker but not added.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from ..views.register import BANDING_CHOICES, apply_register_display
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.window_sizes import forget_sizes
+from .dashboard_settings import DashboardSettings
 from .users_dialog import UsersDialog
 
 __all__ = ["PreferencesDialog"]
@@ -58,8 +61,14 @@ class PreferencesDialog(BoundedWindow):
 
         box = self.frame("preferences")
 
+        self.notebook = Gtk.Notebook()
+        self.notebook.set_vexpand(True)
+        box.append(self.notebook)
         grid = Gtk.Grid(column_spacing=12, row_spacing=8)
-        box.append(grid)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(grid, f"set_margin_{side}")(12)
+        self.notebook.append_page(grid, Gtk.Label(label="General"))
+        self.notebook.append_page(self._dashboard_page(), Gtk.Label(label="Dashboard"))
         row = 0
 
         def heading(text: str) -> None:
@@ -113,14 +122,6 @@ class PreferencesDialog(BoundedWindow):
         grid.attach(self.api_key, 1, row, 1, 1)
         row += 1
 
-        heading("Dashboard")
-        groups = Gtk.Button(label="Configure Dashboard…", halign=Gtk.Align.START)
-        groups.set_tooltip_text("Choose what the open book's Dashboard shows")
-        groups.set_sensitive(getattr(application, "db", None) is not None)
-        groups.connect("clicked", self._on_dashboard_groups)
-        grid.attach(groups, 0, row, 2, 1)
-        row += 1
-
         heading("Windows")
         self.forget_sizes = Gtk.CheckButton(
             label="Forget remembered window sizes (windows open at their own sizes again)"
@@ -158,8 +159,13 @@ class PreferencesDialog(BoundedWindow):
         box.append(self.status)
 
         save = Gtk.Button(label="Save")
-        save.connect("clicked", lambda *_: self.save() and self.close())
+        save.connect("clicked", lambda *_: self.save_and_close())
         self.actions(box, dismiss="Cancel", primary=save)
+        #: Set once the user agreed to close with an account chosen but not added.
+        self._closing = False
+        #: The question asked about such accounts, as (message, buttons), for tests.
+        self.unadded_question: tuple[str, list[str]] | None = None
+        self.connect("close-request", self._on_close_request)
 
     # --------------------------------------------------------------- the book
 
@@ -187,10 +193,101 @@ class PreferencesDialog(BoundedWindow):
 
     # -------------------------------------------------------------- dashboard
 
-    def _on_dashboard_groups(self, _button) -> None:
-        parent = self.get_transient_for()
-        if parent is not None:
-            parent.activate_action("win.dashboard-configure", None)
+    def _dashboard_view(self):
+        """The open book's Dashboard view (the view a book opens on), or None."""
+        views = getattr(self.get_transient_for(), "_views", None)
+        return views.get("dashboard") if views is not None else None
+
+    def _dashboard_page(self) -> Gtk.Widget:
+        """The open book's Dashboard settings, or why there are none."""
+        db = getattr(self.application, "db", None)
+        #: The Dashboard tab's settings; None without an open book.
+        self.dashboard: DashboardSettings | None = None
+        if db is None:
+            note = Gtk.Label(
+                label="Open a book to choose what its Dashboard shows.", xalign=0, wrap=True
+            )
+            for side in ("top", "bottom", "start", "end"):
+                getattr(note, f"set_margin_{side}")(12)
+            return note
+        view = self._dashboard_view()
+        tables = view.column_tables() if view is not None else ()
+        self.dashboard = DashboardSettings(db, tables=tables, settings=self.view_settings)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(self.dashboard, f"set_margin_{side}")(12)
+        return self.dashboard
+
+    # ------------------------------------------------- accounts not yet added
+
+    def _unadded_text(self) -> str:
+        assert self.dashboard is not None
+        return "\n".join(f"{item.account} in {item.group}" for item in self.dashboard.unadded())
+
+    def save_and_close(self) -> None:
+        """Save, then close; first ask about an account chosen but not added."""
+        if self.dashboard is not None and self.dashboard.unadded():
+            self.ask_unadded(saving=True)
+            return
+        if self.save():
+            self._closing = True
+            self.close()
+
+    def _on_close_request(self, *_args) -> bool:
+        """Cancel, Escape, or the title bar: ask first about an unadded account."""
+        if self._closing or self.dashboard is None or not self.dashboard.unadded():
+            return False
+        self.ask_unadded(saving=False)
+        return True
+
+    def ask_unadded(self, *, saving: bool) -> None:
+        """An account is chosen in a group's picker but **Add** was not chosen."""
+        if saving:
+            message = "Add the chosen account before saving?"
+            buttons = ["Go back", "Save without it", "Add and save"]
+        else:
+            message = "Close without adding the chosen account?"
+            buttons = ["Go back", "Close without saving"]
+        detail = (
+            "An account is chosen in a Dashboard group but was not added with its "
+            "Add button:\n" + self._unadded_text()
+        )
+        self.unadded_question = (message, buttons)
+        alert = Gtk.AlertDialog(
+            message=message,
+            detail=detail,
+            buttons=buttons,
+            cancel_button=0,
+            default_button=len(buttons) - 1,
+        )
+
+        def finished(dialog, result) -> None:
+            try:
+                choice = dialog.choose_finish(result)
+            except GLib.Error:
+                choice = 0
+            # Already answered (or the window closed meanwhile): nothing to do.
+            if self.unadded_question is not None:
+                self.settle_unadded(choice, saving=saving)
+
+        alert.choose(self, None, finished)
+
+    def settle_unadded(self, choice: int, *, saving: bool) -> None:
+        """Act on the answer to :meth:`ask_unadded` (its button's index)."""
+        self.unadded_question = None
+        if choice == 0:
+            # Go back: show the group with the account still chosen.
+            self.notebook.set_current_page(1)
+            return
+        if not saving:
+            self._closing = True
+            self.close()
+            return
+        assert self.dashboard is not None
+        if choice == 2:
+            self.dashboard.add_unadded()
+        if self.save():
+            self._closing = True
+            self.close()
 
     # ------------------------------------------------------------------ users
 
@@ -224,7 +321,18 @@ class PreferencesDialog(BoundedWindow):
     # ----------------------------------------------------------------- saving
 
     def save(self) -> bool:
-        """Write every setting; False, with the reason shown, if one could not be saved."""
+        """Write every setting; False, with the reason shown, if one could not be saved.
+
+        The Dashboard tab is saved first: when the book refuses it, nothing else is
+        written and the tab is shown with the reason.
+        """
+        if self.dashboard is not None:
+            if not self.dashboard.save():
+                self.notebook.set_current_page(1)
+                return False
+            view = self._dashboard_view()
+            if view is not None:
+                view.invalidate()
         self.settings.set(*SHARE_SETTING, self.share_book.get_active())
         if self.book_path:
             self.settings.set("general", "last_book_path", self.book_path)
