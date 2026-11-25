@@ -41,7 +41,7 @@ from ...plugins.quotes import alphavantage_key, save_alphavantage_key
 from ..book_sharing import SETTING as SHARE_SETTING
 from ..gi_setup import Gio, GLib, Gtk
 from ..views.register import BANDING_CHOICES, apply_register_display
-from ..widgets.bounded import BoundedWindow
+from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.date_entry import SETTING as DATE_SETTING
 from ..widgets.window_sizes import forget_sizes
@@ -184,6 +184,9 @@ class PreferencesDialog(BoundedWindow):
         save = Gtk.Button(label="Save")
         save.connect("clicked", lambda *_: self.save_and_close())
         self.actions(box, dismiss="Cancel", primary=save)
+        # With the Dashboard tab the window is tall: the tabs scroll on a small
+        # screen while the status line and buttons stay in view.
+        scroll_body(self, keep=2)
         #: Set once the user agreed to close with an account chosen but not added.
         self._closing = False
         #: The question asked about such accounts, as (message, buttons), for tests.
