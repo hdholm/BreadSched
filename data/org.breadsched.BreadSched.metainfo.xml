@@ -36,6 +36,9 @@
   <content_rating type="oars-1.1"/>
   <!-- Every release, newest first; its notes are docs/releases/vVERSION.md. -->
   <releases>
+    <release version="2026.11.25.0" date="2026-11-25" type="development">
+      <url type="details">https://github.com/hdholm/BreadSched/releases/tag/v2026.11.25.0</url>
+    </release>
     <release version="2026.11.22.1" date="2026-11-22" type="development">
       <url type="details">https://github.com/hdholm/BreadSched/releases/tag/v2026.11.22.1</url>
     </release>

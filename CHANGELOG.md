@@ -8,6 +8,12 @@ GitHub releases.
 
 ## Unreleased
 
+## 2026.11.25.0
+
+The fifth beta, published as a GitHub pre-release; its Windows installer and Linux
+packages are still not code-signed, so check them against `SHA256SUMS`. Books stay
+at native schema 15, so 2026.11.22.1 still opens a book this version has used.
+
 - **BreadSched has its own icon on Windows.** The Start-menu shortcut, the entry in
   Settings > Apps, and the installer and uninstaller show the BreadSched icon, where
   the shortcut showed Python's.
