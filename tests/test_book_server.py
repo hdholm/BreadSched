@@ -1427,6 +1427,50 @@ def test_fsa_claims_alike(target, book):
     assert db.get_fsa_claim(saved.handle) is None
 
 
+def test_fsa_claim_draft_alike(target, book):
+    """Track as FSA Claim: the draft reads the same either way and saves nothing."""
+    from breadsched.gen.lib import Account, AccountType, FsaFundingYear
+    from breadsched.gen.services.claims import ClaimLinkInput, SaveClaim
+
+    api, db = target.api, target.db
+    year = date(2026, 1, 1)
+    fsa = Account(name="Health FSA", atype=AccountType.FSA, parent=book.assets)
+    fsa.fsa.years = [FsaFundingYear(year, date(2026, 12, 31), Money("1500.00"))]
+    medical = Account(name="Medical", atype=AccountType.EXPENSE, parent=book.expenses)
+    with db.transaction("FSA") as txn:
+        db.add_account(fsa, txn)
+        db.add_account(medical, txn)
+    paid = Transaction.simple(date(2026, 3, 8), "Clinic", medical.handle, fsa.handle, "80")
+    with db.transaction("Clinic") as txn:
+        db.add_transaction(paid, txn)
+    cost = next(split for split in paid.splits if split.account == medical.handle)
+    card = next(split for split in paid.splits if split.account == fsa.handle)
+
+    draft = api.fsa_claim_draft(paid.handle)
+    assert list(db.iter_fsa_claims()) == []
+    assert draft.transaction == paid.handle and draft.existing is None
+    assert draft.claim is not None
+    assert draft.claim.payments == (ClaimLinkInput(paid.handle, cost.handle),)
+    [allocation] = draft.claim.allocations
+    assert (allocation.account, allocation.funding_year_start) == (fsa.handle, year)
+    assert allocation.reimbursements == (ClaimLinkInput(paid.handle, card.handle),)
+    assert draft.notes and "Paid from the FSA card" in draft.notes[0]
+
+    saved = api.save_fsa_claim(SaveClaim(draft.claim))
+    again = api.fsa_claim_draft(paid.handle)
+    assert (again.claim, again.existing) == (None, saved.handle)
+    for reference, status, code in (("no-such-transaction", 404, "transaction.not_found"),):
+        with pytest.raises(ApiError) as refused:
+            api.fsa_claim_draft(reference)
+        assert (refused.value.status, refused.value.code) == (status, code)
+    moved = Transaction.simple(date(2026, 3, 9), "Move", book.savings, book.checking, "5")
+    with db.transaction("Move") as txn:
+        db.add_transaction(moved, txn)
+    with pytest.raises(ApiError) as refused:
+        api.fsa_claim_draft(moved.handle)
+    assert (refused.value.status, refused.value.code) == (400, "claim.draft.no_cost")
+
+
 def test_plan_review_alike(target, book):
     from breadsched.gen.lib.transaction import PlanningResolution
     from breadsched.gen.services.review import ReviewOccurrence
