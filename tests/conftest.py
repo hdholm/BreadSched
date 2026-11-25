@@ -83,6 +83,21 @@ def hidden_accounts_put_away():
 
 
 @pytest.fixture(autouse=True)
+def iso_locale_dates():
+    """Read the computer's locale as writing ISO dates, so a desktop showing dates
+    "as the locale writes them" (the default) shows the same dates on every machine;
+    tests of the other styles choose them explicitly. The style chosen in
+    Preferences is put back to the default after each test."""
+    from breadsched.gen.utils import date_format
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(date_format, "_locale_style", "iso")
+        date_format.set_current(date_format.DEFAULT_STYLE)
+        yield
+        date_format.set_current(date_format.DEFAULT_STYLE)
+
+
+@pytest.fixture(autouse=True)
 def isolate_logging():
     """Stop one test's logging setup leaking into the next.
 

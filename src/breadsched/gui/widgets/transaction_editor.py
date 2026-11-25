@@ -45,7 +45,7 @@ from ..remote_book import OpenBook
 from ..split_sheet import SplitSheet
 from .bounded import keeps_enter, notes_view
 from .choice import bounded_dropdown
-from .date_entry import attach_date_keys, parse_date_text
+from .date_entry import attach_date_keys, date_examples, parse_date_text, shown_date
 from .editor_parts import DocumentsPage, SplitsPanel
 from .form_pages import FormPages
 
@@ -108,7 +108,7 @@ class TransactionEditor(Gtk.Box):
         more = self.pages.page(MORE)
 
         when = (transaction.post_date if transaction is not None else default_date) or date.today()
-        self.date_entry = attach_date_keys(Gtk.Entry(text=when.isoformat()))
+        self.date_entry = attach_date_keys(Gtk.Entry(text=shown_date(when)))
         self.date_entry.connect("changed", self.revalidate)
         header.add("Date", self.date_entry)
 
@@ -191,7 +191,8 @@ class TransactionEditor(Gtk.Box):
             self.fsa_claim = bounded_dropdown(
                 ["Do not attach"]
                 + [
-                    f"{claim.service_date} {claim.provider or claim.description or 'FSA claim'}"
+                    f"{shown_date(claim.service_date)} "
+                    f"{claim.provider or claim.description or 'FSA claim'}"
                     for claim in self.fsa_claims
                 ]
             )
@@ -312,7 +313,7 @@ class TransactionEditor(Gtk.Box):
         ):
             notes.set_text(suggestion.notes)  # #363: only notes left empty
         self.proposal_note.set_text(
-            f"Proposed from {suggestion.when.isoformat()} “{suggestion.description}”. "
+            f"Proposed from {shown_date(suggestion.when)} “{suggestion.description}”. "
             "Edit anything before saving."
         )
         self.proposal_note.set_visible(True)
@@ -332,7 +333,7 @@ class TransactionEditor(Gtk.Box):
         try:
             parse_date_text(self.date_entry.get_text().strip())
         except ValueError:
-            problem = "Check the date (YYYY-MM-DD)."
+            problem = f"Check the date: enter one such as {date_examples()}."
         residual = sheet.residual()
         if sheet.error and sheet.message:
             text, negative = sheet.message, True
@@ -374,7 +375,7 @@ class TransactionEditor(Gtk.Box):
         try:
             when = parse_date_text(self.date_entry.get_text().strip())
         except ValueError:
-            raise ValueError("Check the date (YYYY-MM-DD).") from None
+            raise ValueError(f"Check the date: enter one such as {date_examples()}.") from None
         currency = (
             self.transaction.currency if self.transaction is not None else None
         ) or self.book.transaction_currency()

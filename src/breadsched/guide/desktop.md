@@ -152,11 +152,14 @@ reconciliation, loans) until it is turned off; choosing it leaves the view you a
 in where it is. **View
 → Double Line** shows every register's notes line.
 
-Every date field reads dates as the register does: `2026-03-15`, `3/15/26`, `3/15`
-(this year), or `15` (this month); in a field holding a date, **t** is today, **+**
-and **-** move a day, **]** and **[** a month, **m** and **h** go to the month's
-first and last day, and **y** and **r** the year's. Leaving the field shows the date
-as `2026-03-15`.
+Every date field reads dates as the register does: a whole date as dates are shown
+(**Edit → Preferences → Dates**) or as `2026-03-15`, a month and day (`3/15`, or
+`15/3` when dates are shown day first) in this year, or `15` (this month); in a
+field holding a date, **t** is today, **+** and **-** move a day, **]** and **[** a
+month, **m** and **h** go to the month's first and last day, and **y** and **r** the
+year's. An empty field's hint shows how a date is written, such as `MM/DD/YYYY`, and
+leaving the field shows the date as every date is shown (see [How dates are
+shown](../USER_GUIDE.md#how-dates-are-shown)).
 
 **New Transaction…** (the toolbar's **Transaction**, or Ctrl+T) opens the
 transaction editor; with a register shown, the new transaction starts in that
@@ -1067,6 +1070,10 @@ work, on two tabs. **Dashboard** holds the open book's Dashboard settings (see
 [Configure the Dashboard](#configure-the-dashboard)). **General** holds the rest,
 kept in your own settings, not in a book:
 
+- **Dates**: **Show dates as** chooses how every date is shown: as your computer's
+  locale writes them (the default), `2026-03-15`, `03/15/2026`, `15/03/2026`, or
+  `15.03.2026`. It also decides whether a typed `3/4` is month or day first. Saving
+  redraws every open view.
 - **Book**: the book BreadSched opens when it starts. **Choose…** picks another,
   and **Forget** starts without one.
 - **Registers**: **Double Line** (also **View → Double Line**) and **Row shading**,

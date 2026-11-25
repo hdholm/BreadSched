@@ -101,8 +101,15 @@ def _full_year(text: str, base: date) -> int:
     return year
 
 
-def parse_entry_date(text: str, base: date, today: date | None = None) -> date:
-    """Read ``text`` as a date, relative to ``base`` (the date the field held)."""
+def parse_entry_date(
+    text: str, base: date, today: date | None = None, *, day_first: bool = False
+) -> date:
+    """Read ``text`` as a date, relative to ``base`` (the date the field held).
+
+    ``day_first`` reads ``15/3``, ``15.3.26`` and ``15/03/2026`` day before month,
+    as a desktop showing dates as DD/MM/YYYY or DD.MM.YYYY writes them
+    (``utils.date_format.day_first``); ``YYYY-MM-DD`` is read the same either way.
+    """
     today = today or date.today()
     raw = text.strip()
     if not raw:
@@ -138,7 +145,9 @@ def parse_entry_date(text: str, base: date, today: date | None = None) -> date:
         parts = re.fullmatch(r"(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2}|\d{4}))?", raw)
         if parts:
             year = _full_year(parts[3], base) if parts[3] else base.year
-            return date(year, int(parts[1]), int(parts[2]))
+            first, second = int(parts[1]), int(parts[2])
+            month, day = (second, first) if day_first else (first, second)
+            return date(year, month, day)
     except (OverflowError, ValueError) as exc:
         if isinstance(exc, EntryInputError):
             raise

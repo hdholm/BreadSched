@@ -18,6 +18,7 @@ from ...gen.services import BalanceSummary, ChartLine  # noqa: E402
 from .. import hidden_accounts  # noqa: E402
 from ..gi_setup import Gio, GLib, Gtk, Pango
 from ..widgets.confirm import confirm_delete  # noqa: E402
+from ..widgets.date_entry import shown_text
 from ._base import (
     BaseView,
     Row,
@@ -97,7 +98,14 @@ class AccountTreeView(BaseView):
         self.column_view.append_column(column("Balance", self._format_balance, numeric=True))
         self.column_view.append_column(column("Value", self._format_value, numeric=True))
         self.column_view.append_column(column("Price", self._format_price, numeric=True))
-        self.column_view.append_column(column("Last Quote Update", self._quote_evidence))
+        self.column_view.append_column(
+            column(
+                "Last Quote Update",
+                self._quote_evidence,
+                # By the ISO text, so quote dates sort by date in any shown order.
+                sort_key=self._quote_evidence_key,
+            )
+        )
         self.column_view.connect("activate", self._on_activated)
         attach_row_menu(self, self.column_view)
 
@@ -182,10 +190,15 @@ class AccountTreeView(BaseView):
             return ""
         return f"{line.price.format()} {line.currency or ''}".strip()
 
+    def _quote_evidence_key(self, account) -> str:
+        line = self._lines.get(account.handle)
+        return line.quote_evidence if line is not None else ""
+
     def _quote_evidence(self, account) -> str:
         # The quote date already says how current it is (#151).
         line = self._lines.get(account.handle)
-        return line.quote_evidence if line is not None else ""
+        # The shared evidence writes its quote date in ISO; shown as dates are here.
+        return shown_text(line.quote_evidence) if line is not None else ""
 
     # ------------------------------------------------------------------ model
 

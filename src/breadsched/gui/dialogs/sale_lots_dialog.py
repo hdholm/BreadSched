@@ -12,6 +12,7 @@ from ...presentation import lot_text, sale_text
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
+from ..widgets.date_entry import shown_date, shown_text
 
 __all__ = ["SaleLotsDialog"]
 
@@ -44,7 +45,7 @@ class SaleLotsDialog(BoundedWindow):
         outer = self.frame("specific-lots")
         account_name = book_server(db).account(current.account.handle).full_name
         heading = Gtk.Label(
-            label=f"{account_name}: {sale_text(current.sale)}",
+            label=f"{account_name}: {shown_text(sale_text(current.sale))}",
             xalign=0,
             wrap=True,
         )
@@ -71,12 +72,12 @@ class SaleLotsDialog(BoundedWindow):
         chosen = {pick.lot: shares_text(pick.quantity) for pick in current.picks}
         self.entries: dict[str, Gtk.Entry] = {}
         for row, lot in enumerate(current.offered, start=1):
-            grid.attach(Gtk.Label(label=lot_text(lot), xalign=0), 0, row, 1, 1)
+            grid.attach(Gtk.Label(label=shown_text(lot_text(lot)), xalign=0), 0, row, 1, 1)
             entry = Gtk.Entry(text=chosen.get(lot.transaction, ""), width_chars=10)
             entry.set_placeholder_text("0")
             entry.update_property(
                 [Gtk.AccessibleProperty.LABEL],
-                [f"Shares to sell from the lot bought {lot.acquired.isoformat()}"],
+                [f"Shares to sell from the lot bought {shown_date(lot.acquired)}"],
             )
             grid.attach(entry, 1, row, 1, 1)
             self.entries[lot.transaction] = entry

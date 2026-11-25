@@ -24,6 +24,7 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, action_row
 from ..widgets.confirm import delete_button
+from ..widgets.date_entry import shown_date
 from ..widgets.transaction_editor import TransactionEditor
 
 __all__ = ["PostedTransactionsDialog"]
@@ -123,7 +124,7 @@ class PostedTransactionsDialog(BoundedWindow):
             title.set_wrap(True)
             line.append(title)
             detail = Gtk.Label(
-                label=f"{transaction.post_date.isoformat()}   {_amount(transaction).format()}",
+                label=f"{shown_date(transaction.post_date)}   {_amount(transaction).format()}",
                 xalign=0,
             )
             detail.add_css_class("dim")

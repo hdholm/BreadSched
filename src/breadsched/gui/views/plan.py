@@ -33,6 +33,7 @@ from ..planning_context import (
     selected_scenario_handle,
 )
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import shown_text
 from ._base import BaseView
 
 __all__ = ["PlanView"]
@@ -633,7 +634,7 @@ class PlanView(BaseView):
         self.goal_milestones = plan.goal_milestones
         self.goal_note.set_text(
             "Savings goals reaching their target:\n"
-            + "\n".join(plan_goal_text(item) for item in self.goal_milestones)
+            + "\n".join(shown_text(plan_goal_text(item)) for item in self.goal_milestones)
         )
         self.goal_note.set_visible(bool(self.goal_milestones))
         reimbursable = self._report.reimbursable_categories

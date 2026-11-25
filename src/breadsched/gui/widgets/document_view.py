@@ -28,6 +28,7 @@ from ...plugins.export.report_layout import (
     TableRow,
 )
 from ..gi_setup import Gio, GObject, Gtk, Pango
+from .date_entry import shown_document
 from .model_chart import ModelChartView
 
 __all__ = ["DocumentView"]
@@ -137,6 +138,9 @@ class DocumentView(Gtk.Box):
             self.remove(child)
         if document is None:
             return
+        # Drawn with its dates as the desktop shows them; ``self.document`` stays
+        # as the report made it, for printing and export.
+        document = shown_document(document)
         if self.titled:
             self.append(_label(document.title, css=("title-2",)))
             if document.subtitle:

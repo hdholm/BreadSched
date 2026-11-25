@@ -33,7 +33,14 @@ from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, action_row, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
-from ..widgets.date_entry import attach_date_keys, parse_date_text
+from ..widgets.date_entry import (
+    attach_date_keys,
+    date_examples,
+    date_hint,
+    parse_date_text,
+    shown_date,
+    shown_text,
+)
 
 __all__ = ["ReceivablesDialog"]
 
@@ -110,10 +117,10 @@ class ReceivablesDialog(BoundedWindow):
         form = Gtk.Grid(column_spacing=10, row_spacing=6)
         self.payer_entry = Gtk.Entry(hexpand=True, placeholder_text="Acme Insurance")
         self.description_entry = Gtk.Entry(hexpand=True, placeholder_text="What it was for")
-        self.incurred_entry = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
+        self.incurred_entry = attach_date_keys(Gtk.Entry(placeholder_text=date_hint()))
         self.expected_entry = Gtk.Entry(placeholder_text="Optional", xalign=1)
         self.expected_entry.add_css_class("numeric")
-        self.cash_date_entry = attach_date_keys(Gtk.Entry(placeholder_text="Optional YYYY-MM-DD"))
+        self.cash_date_entry = attach_date_keys(Gtk.Entry(placeholder_text=date_hint("Optional")))
         self.account_picker = bounded_dropdown()
         self.account_picker.set_tooltip_text(
             "The Receivable account holding what is owed; by default one per currency, "
@@ -207,7 +214,7 @@ class ReceivablesDialog(BoundedWindow):
         self.detail.append(credit_row)
 
         dispute_row = Gtk.Box(spacing=8)
-        self.dispute_date = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
+        self.dispute_date = attach_date_keys(Gtk.Entry(placeholder_text=date_hint()))
         self.dispute_note = Gtk.Entry(hexpand=True, placeholder_text="Why the payer contests it")
         mark = Gtk.Button(label="Mark disputed")
         mark.connect("clicked", lambda _b: self.dispute())
@@ -222,7 +229,7 @@ class ReceivablesDialog(BoundedWindow):
         write_row = Gtk.Box(spacing=8)
         self.write_off_amount = Gtk.Entry(placeholder_text="0.00", xalign=1)
         self.write_off_amount.add_css_class("numeric")
-        self.write_off_date = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
+        self.write_off_date = attach_date_keys(Gtk.Entry(placeholder_text=date_hint()))
         self.write_off_reason = Gtk.Entry(hexpand=True, placeholder_text="Reason")
         # The expense a write-off becomes; a direct charge has none of its own (#378).
         self.write_off_account = bounded_dropdown()
@@ -252,7 +259,7 @@ class ReceivablesDialog(BoundedWindow):
             "What the payer pays in that scenario; 0 for nothing. The rest is projected "
             "as written off."
         )
-        self.scenario_date = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
+        self.scenario_date = attach_date_keys(Gtk.Entry(placeholder_text=date_hint()))
         self.scenario_date.set_tooltip_text("When the payer pays in that scenario")
         self.scenario_button = Gtk.Button(label="Apply to scenario")
         self.scenario_button.set_tooltip_text(
@@ -307,7 +314,7 @@ class ReceivablesDialog(BoundedWindow):
         if transaction is None or split is None:
             self.pending_expense = None
             return
-        self.incurred_entry.set_text(transaction.post_date.isoformat())
+        self.incurred_entry.set_text(shown_date(transaction.post_date))
         self.description_entry.set_text(transaction.description)
         self.expected_entry.set_text(split.value.format())
         # A charge recorded straight to a receivable account is held there (#378).
@@ -322,7 +329,7 @@ class ReceivablesDialog(BoundedWindow):
             else f"{split.value.format()} expense"
         )
         self._message(
-            f"Tracking the {what} from {transaction.post_date.isoformat()} "
+            f"Tracking the {what} from {shown_date(transaction.post_date)} "
             f"“{transaction.description}”. Enter who owes it back and choose Add "
             "receivable; nothing is recorded until then.",
             False,
@@ -351,7 +358,7 @@ class ReceivablesDialog(BoundedWindow):
             self.rows.attach(Gtk.Label(label="No reimbursable expenses yet.", xalign=0), 0, 1, 4, 1)
         for row, summary in enumerate(summaries, start=1):
             item = summary.receivable
-            texts = (item.payer, item.description or "—", item.incurred_date.isoformat())
+            texts = (item.payer, item.description or "—", shown_date(item.incurred_date))
             for column, text in enumerate(texts):
                 label = Gtk.Label(label=text, xalign=0, selectable=True)
                 self.rows.attach(label, column, row, 1, 1)
@@ -362,7 +369,7 @@ class ReceivablesDialog(BoundedWindow):
                 self.rows.attach(_amount(value), column, row, 1, 1)
             self.rows.attach(Gtk.Label(label=summary.status.label, xalign=0), 7, row, 1, 1)
             self.rows.attach(Gtk.Label(label=f"{summary.age_days} d", xalign=1), 8, row, 1, 1)
-            expected_by = item.expected_cash_date.isoformat() if item.expected_cash_date else "—"
+            expected_by = shown_date(item.expected_cash_date) if item.expected_cash_date else "—"
             self.rows.attach(Gtk.Label(label=expected_by, xalign=0), 9, row, 1, 1)
             open_button = Gtk.Button(label="Open")
             open_button.connect("clicked", lambda _b, handle=item.handle: self.edit(handle))
@@ -397,7 +404,7 @@ class ReceivablesDialog(BoundedWindow):
             self.proposal_checks[(item.receivable, item.transaction, item.split)] = check
             self.proposal_rows.attach(check, 0, row, 1, 1)
             for column, text in enumerate(
-                (item.when.isoformat(), item.description, item.payer), start=1
+                (shown_date(item.when), item.description, item.payer), start=1
             ):
                 self.proposal_rows.attach(Gtk.Label(label=text, xalign=0), column, row, 1, 1)
             self.proposal_rows.attach(_amount(item.amount), 4, row, 1, 1)
@@ -461,7 +468,7 @@ class ReceivablesDialog(BoundedWindow):
                 self.links.attach(missing, 1, row, 4, 1)
             else:
                 for column, text in enumerate(
-                    (link.when.isoformat(), link.description or "", link.account_name or ""),
+                    (shown_date(link.when), link.description or "", link.account_name or ""),
                     start=1,
                 ):
                     self.links.attach(Gtk.Label(label=text, xalign=0), column, row, 1, 1)
@@ -471,7 +478,7 @@ class ReceivablesDialog(BoundedWindow):
             self.links.attach(unlink, 5, row, 1, 1)
         self._fill_pickers(receivable)
         self.dispute_date.set_text(
-            receivable.disputed_on.isoformat() if receivable.disputed_on else ""
+            shown_date(receivable.disputed_on) if receivable.disputed_on else ""
         )
         self.dispute_note.set_text(receivable.dispute_note)
         self._fill_scenarios(view, line.scenario_changes)
@@ -493,7 +500,7 @@ class ReceivablesDialog(BoundedWindow):
             self.scenario_picker.set_selected(min(selected, len(self._scenarios) - 1))
         self.scenario_button.set_sensitive(bool(self._scenarios))
         changes = [
-            reimbursement_override_text(change.scenario_name, change.override)
+            shown_text(reimbursement_override_text(change.scenario_name, change.override))
             for change in scenario_changes
         ]
         self.scenario_changes.set_text(
@@ -520,7 +527,7 @@ class ReceivablesDialog(BoundedWindow):
             for line in items:
                 item = line.candidate
                 names.append(
-                    f"{item.when.isoformat()} · {item.description} · "
+                    f"{shown_date(item.when)} · {item.description} · "
                     f"{line.account_name} · {item.value.format()}"
                 )
             if not items:
@@ -547,14 +554,14 @@ class ReceivablesDialog(BoundedWindow):
         """Load a receivable into the form, or clear the form to add one."""
         receivable = self._stored(handle) if handle is not None else None
         self.editing = receivable.handle if receivable is not None else None
-        today = date.today().isoformat()
+        today = shown_date(date.today())
         self.payer_entry.set_text(receivable.payer if receivable else "")
         self.description_entry.set_text(receivable.description if receivable else "")
-        self.incurred_entry.set_text(receivable.incurred_date.isoformat() if receivable else today)
+        self.incurred_entry.set_text(shown_date(receivable.incurred_date) if receivable else today)
         expected = receivable.expected_amount if receivable else None
         self.expected_entry.set_text(expected.format() if expected is not None else "")
         cash_date = receivable.expected_cash_date if receivable else None
-        self.cash_date_entry.set_text(cash_date.isoformat() if cash_date else "")
+        self.cash_date_entry.set_text(shown_date(cash_date) if cash_date else "")
         self.write_off_amount.set_text("")
         self.write_off_date.set_text(today)
         self.write_off_reason.set_text("")
@@ -579,7 +586,7 @@ class ReceivablesDialog(BoundedWindow):
         try:
             return parse_date_text(text)
         except ValueError:
-            raise ValueError(f"Enter the {label} as YYYY-MM-DD.") from None
+            raise ValueError(f"Enter the {label}, such as {date_examples()}.") from None
 
     def _money(self, entry: Gtk.Entry, label: str, *, optional: bool = False) -> Money | None:
         text = entry.get_text().strip()
@@ -651,7 +658,7 @@ class ReceivablesDialog(BoundedWindow):
         override = changed.reimbursement_overrides.get(self.editing)
         self._refresh_detail()
         self._message(
-            reimbursement_override_text(changed.name, override) + "."
+            shown_text(reimbursement_override_text(changed.name, override)) + "."
             if override is not None
             else f"{changed.name} expects what the reimbursable expense says.",
             False,

@@ -29,7 +29,14 @@ from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, action_row, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
-from ..widgets.date_entry import attach_date_keys, parse_date_text
+from ..widgets.date_entry import (
+    attach_date_keys,
+    date_examples,
+    date_hint,
+    parse_date_text,
+    shown_date,
+    shown_text,
+)
 from ..widgets.model_chart import ModelChartView
 
 __all__ = ["SavingsGoalsDialog"]
@@ -81,8 +88,8 @@ class SavingsGoalsDialog(BoundedWindow):
         self.name_entry = Gtk.Entry(hexpand=True, placeholder_text="New roof")
         self.account_picker = bounded_dropdown()
         self.target_entry = Gtk.Entry(placeholder_text="12000.00")
-        self.start_entry = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
-        self.target_date_entry = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
+        self.start_entry = attach_date_keys(Gtk.Entry(placeholder_text=date_hint()))
+        self.target_date_entry = attach_date_keys(Gtk.Entry(placeholder_text=date_hint()))
         self.description_entry = Gtk.Entry(placeholder_text="Optional")
         for row, (label, widget) in enumerate(
             (
@@ -107,7 +114,7 @@ class SavingsGoalsDialog(BoundedWindow):
         allocate = Gtk.Box(spacing=8)
         allocate.append(Gtk.Label(label="Add extra money"))
         self.allocate_amount = Gtk.Entry(placeholder_text="Amount")
-        self.allocate_date = attach_date_keys(Gtk.Entry(text=self.today.isoformat()))
+        self.allocate_date = attach_date_keys(Gtk.Entry(text=shown_date(self.today)))
         self.allocate_memo = Gtk.Entry(placeholder_text="Memo", hexpand=True)
         self.allocate_button = Gtk.Button(label="Add to jar")
         self.allocate_button.connect("clicked", lambda _b: self.allocate())
@@ -130,7 +137,7 @@ class SavingsGoalsDialog(BoundedWindow):
         )
         self.override_excluded = Gtk.CheckButton(label="Leave out")
         # Model the purchase in that scenario: the target is spent on this date.
-        self.purchase_on = Gtk.Entry(placeholder_text="Buy on", width_chars=12)
+        self.purchase_on = attach_date_keys(Gtk.Entry(placeholder_text="Buy on", width_chars=12))
         self.purchase_on.set_tooltip_text(
             "In this scenario, spend the target on this date (on or after the target date)"
         )
@@ -214,14 +221,14 @@ class SavingsGoalsDialog(BoundedWindow):
             cells = (
                 (item.goal.name, False),
                 (item.account_name, False),
-                (item.goal.target_date.isoformat(), False),
+                (shown_date(item.goal.target_date), False),
                 (item.target.format(), True),
                 (item.set_aside.format(), True),
                 (item.remaining.format(), True),
-                (goal_status_text(item), False),
+                (shown_text(goal_status_text(item)), False),
                 (
                     "\n".join(
-                        goal_override_text(line.scenario_name, line.override)
+                        shown_text(goal_override_text(line.scenario_name, line.override))
                         for line in view.overrides.get(item.goal.handle, ())
                     )
                     or "—",
@@ -264,8 +271,8 @@ class SavingsGoalsDialog(BoundedWindow):
         if goal is not None and goal.account in self._accounts:
             self.account_picker.set_selected(self._accounts.index(goal.account))
         self.target_entry.set_text(str(goal.target_amount.to_decimal()) if goal else "")
-        self.start_entry.set_text((goal.start_date if goal else self.today).isoformat())
-        self.target_date_entry.set_text(goal.target_date.isoformat() if goal else "")
+        self.start_entry.set_text(shown_date(goal.start_date if goal else self.today))
+        self.target_date_entry.set_text(shown_date(goal.target_date) if goal else "")
         self.description_entry.set_text(goal.description if goal is not None else "")
         self.save_button.set_label("Save changes" if goal is not None else "Add goal")
         self.allocate_button.set_sensitive(goal is not None)
@@ -283,7 +290,7 @@ class SavingsGoalsDialog(BoundedWindow):
         try:
             return parse_date_text(entry.get_text().strip())
         except ValueError:
-            raise ValueError(f"Enter the {label} as YYYY-MM-DD.") from None
+            raise ValueError(f"Enter the {label}, such as {date_examples()}.") from None
 
     def _money(self, entry: Gtk.Entry, label: str) -> Money:
         try:
@@ -385,7 +392,7 @@ class SavingsGoalsDialog(BoundedWindow):
         override = changed.goal_overrides.get(self.editing)
         self.refresh()
         self._message(
-            goal_override_text(changed.name, override)
+            shown_text(goal_override_text(changed.name, override))
             if override is not None
             else f"{changed.name} follows the goal unchanged.",
             False,

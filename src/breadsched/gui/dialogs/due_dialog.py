@@ -42,6 +42,7 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import shown_date
 from .share_prices import price_shares
 
 __all__ = ["DueDialog"]
@@ -198,12 +199,12 @@ class DueDialog(BoundedWindow):
     def _date_row(
         self, grid: Gtk.Grid, row: int, review: DueScheduleReview, item: DueItem, choice: _Choice
     ) -> None:
-        due = Gtk.Label(label=item.when.isoformat(), xalign=0)
+        due = Gtk.Label(label=shown_date(item.when), xalign=0)
         if item.stage == "overdue":
             due.add_css_class("negative")
         note = _STAGE_NOTES.get(item.stage)
         if note:
-            due.set_text(f"{item.when.isoformat()}  ({note})")
+            due.set_text(f"{shown_date(item.when)}  ({note})")
         due.set_margin_start(18)
         grid.attach(due, 0, row, 1, 1)
         grid.attach(Gtk.Label(label=review.name, xalign=0), 1, row, 1, 1)

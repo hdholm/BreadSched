@@ -29,7 +29,13 @@ from ..remote_book import OpenBook
 from ..views._base import Row, column
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ..widgets.date_entry import attach_date_keys, parse_date_text
+from ..widgets.date_entry import (
+    attach_date_keys,
+    date_examples,
+    date_hint,
+    parse_date_text,
+    shown_date,
+)
 from ..widgets.form_pages import FormGrid
 
 __all__ = ["FindDialog", "ResultLine"]
@@ -91,7 +97,7 @@ def result_lines(result: FindResult) -> list[ResultLine]:
             lines.append(
                 ResultLine(
                     "split",
-                    row.date.isoformat(),
+                    shown_date(row.date),
                     row.num,
                     row.description,
                     row.account_name,
@@ -201,8 +207,8 @@ class FindDialog(BoundedWindow):
         self.subaccounts_check.set_active(True)
         form.add(None, self.subaccounts_check)
         dates = Gtk.Box(spacing=6)
-        self.start_entry = attach_date_keys(Gtk.Entry(placeholder_text="From YYYY-MM-DD"))
-        self.end_entry = attach_date_keys(Gtk.Entry(placeholder_text="To YYYY-MM-DD"))
+        self.start_entry = attach_date_keys(Gtk.Entry(placeholder_text=date_hint("From")))
+        self.end_entry = attach_date_keys(Gtk.Entry(placeholder_text=date_hint("To")))
         dates.append(self.start_entry)
         dates.append(self.end_entry)
         form.add("Dates", dates)
@@ -282,7 +288,9 @@ class FindDialog(BoundedWindow):
         try:
             return parse_date_text(text)
         except ValueError:
-            raise ValueError(f"check the {label} date (YYYY-MM-DD)") from None
+            raise ValueError(
+                f"check the {label} date: enter one such as {date_examples()}"
+            ) from None
 
     @staticmethod
     def _money(entry: Gtk.Entry, label: str) -> Money | None:

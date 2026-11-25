@@ -18,6 +18,7 @@ from ..gi_setup import Gtk, Pango
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import shown_date
 
 __all__ = ["TaxMarksDialog", "TaxYearDialog"]
 
@@ -162,8 +163,8 @@ class TaxYearDialog(BoundedWindow):
                     (
                         line.account_name,
                         shares_text(line.quantity),
-                        line.acquired.isoformat() if line.acquired else "Various",
-                        line.sold.isoformat(),
+                        shown_date(line.acquired) if line.acquired else "Various",
+                        shown_date(line.sold),
                         line.term.label,
                         line.proceeds.format(),
                         line.cost.format(),

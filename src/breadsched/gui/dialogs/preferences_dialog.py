@@ -6,6 +6,9 @@ over toolbars:
 
 * **Book** – the book opened at start (``general.last_book_path``), which can be
   changed or forgotten.
+* **Dates** – how every date is shown (``general.date_format``): as the computer's
+  locale writes dates (the default), or ISO, month first, or day first; it is also
+  the order a typed ``3/4`` is read in.
 * **Registers** – Double Line (also **View → Double Line**) and row shading
   (``register.double_line``, ``register.banding`` in the view settings), applied
   to every open register when saved.
@@ -33,12 +36,14 @@ from pathlib import Path
 
 from ...api.local import book_server
 from ...api.users import UserDirectory
+from ...gen.utils import date_format
 from ...plugins.quotes import alphavantage_key, save_alphavantage_key
 from ..book_sharing import SETTING as SHARE_SETTING
 from ..gi_setup import Gio, GLib, Gtk
 from ..views.register import BANDING_CHOICES, apply_register_display
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import SETTING as DATE_SETTING
 from ..widgets.window_sizes import forget_sizes
 from .dashboard_settings import DashboardSettings
 from .users_dialog import UsersDialog
@@ -112,6 +117,24 @@ class PreferencesDialog(BoundedWindow):
         self.banding.set_selected(keys.index(chosen) if chosen in keys else 0)
         grid.attach(Gtk.Label(label="Row shading", xalign=0), 0, row, 1, 1)
         grid.attach(self.banding, 1, row, 1, 1)
+        row += 1
+
+        heading("Dates")
+        self.date_styles = list(date_format.STYLES)
+        self.date_format = bounded_dropdown(
+            [date_format.style_label(style) for style in self.date_styles]
+        )
+        self.date_format.update_property([Gtk.AccessibleProperty.LABEL], ["Show dates as"])
+        self.date_format.set_tooltip_text(
+            "How every date is shown, and the order a typed 3/4 is read in "
+            "(YYYY-MM-DD is always accepted)"
+        )
+        stored = self.settings.get(*DATE_SETTING) or date_format.DEFAULT_STYLE
+        self.date_format.set_selected(
+            self.date_styles.index(stored) if stored in self.date_styles else 0
+        )
+        grid.attach(Gtk.Label(label="Show dates as", xalign=0), 0, row, 1, 1)
+        grid.attach(self.date_format, 1, row, 1, 1)
         row += 1
 
         heading("Online quotes")
@@ -334,6 +357,7 @@ class PreferencesDialog(BoundedWindow):
             if view is not None:
                 view.invalidate()
         self.settings.set(*SHARE_SETTING, self.share_book.get_active())
+        self.settings.set(*DATE_SETTING, self.date_styles[self.date_format.get_selected()])
         if self.book_path:
             self.settings.set("general", "last_book_path", self.book_path)
         else:

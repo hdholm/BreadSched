@@ -348,7 +348,25 @@ can forget them all (`forget_sizes`).
 not part of a book: `general.last_book_path`, `register.double_line` and
 `register.banding` in the view settings, and the Alpha Vantage key through
 `plugins.quotes.save_alphavantage_key` (stored only if changed, so a key from the
-environment is not copied into the file). Those are its **General** tab. Its
+environment is not copied into the file), and `general.date_format`, the date style.
+Those are its **General** tab.
+
+**Dates.** `gen.utils.date_format` writes a date in a style (`locale`, the default,
+`iso`, `mdy`, `dmy`, `dmy-dot`); `locale` is read once from how the locale writes a
+known date (`%x` of 2001-02-03; `C`/`POSIX` or anything unrecognised is ISO), and the
+process's current style is `date_format.current()`. The desktop sets it at start and
+on Preferences' Save (`BreadSchedApp.preferences_changed`, which redraws every view)
+and shows dates only through `widgets.date_entry`: `shown_date` for a date,
+`shown_text` for ISO dates in shared wording (presentation texts, quote evidence),
+and `shown_document` for a report or Dashboard document, which `DocumentView` and
+printing apply. `shown_document` rewrites the words of a document, never its links,
+sort keys, or identifying names, and gives a cell whose text changes its ISO text as
+its sort key; desktop columns showing dates sort by the date. The style also sets
+`parse_entry_date(day_first=...)`, so a date is typed back as shown; ISO is always
+read. Stored dates, report options, exports, the browser, and the command line stay
+ISO. `TestDesktopDates` keeps it so: desktop code calls `isoformat()` only where the
+text is not shown, no field asks for `YYYY`, and every field whose text is read as a
+date (directly or through a helper given it) is made with `attach_date_keys`. Its
 **Dashboard** tab is `dialogs.dashboard_settings.DashboardSettings`, the open book's
 Dashboard settings (horizons, sections, groups through the book server's
 `save_dashboard_settings`, and each table's columns in the view settings), so all

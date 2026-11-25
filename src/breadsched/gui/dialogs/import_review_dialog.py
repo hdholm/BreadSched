@@ -27,6 +27,7 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import shown_date
 
 __all__ = ["ImportReviewDialog"]
 
@@ -90,7 +91,7 @@ class ImportReviewDialog(BoundedWindow):
             grid.attach(label, position, 0, 1, 1)
 
         for index, change in enumerate(self.changes, start=1):
-            grid.attach(Gtk.Label(label=change.post_date.isoformat(), xalign=0), 0, index, 1, 1)
+            grid.attach(Gtk.Label(label=shown_date(change.post_date), xalign=0), 0, index, 1, 1)
             grid.attach(Gtk.Label(label=change.description, xalign=0), 1, index, 1, 1)
             lines = list(change.changes)
             if change.blocked_by:

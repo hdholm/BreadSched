@@ -40,6 +40,7 @@ from ..gi_setup import Gio, Gtk, Pango
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import shown_date
 from ._base import (
     BaseView,
     Row,
@@ -104,10 +105,10 @@ def _due_text(occurrence) -> str:
     """An occurrence's date, marked overdue or today."""
     today = date.today()
     if occurrence.when < today:
-        return f"{occurrence.when.isoformat()}  (overdue)"
+        return f"{shown_date(occurrence.when)}  (overdue)"
     if occurrence.when == today:
-        return f"{occurrence.when.isoformat()}  (today)"
-    return occurrence.when.isoformat()
+        return f"{shown_date(occurrence.when)}  (today)"
+    return shown_date(occurrence.when)
 
 
 def _kind_of(item) -> str:
@@ -238,7 +239,14 @@ class ScheduledView(BaseView):
                 expand=True,
             )
         )
-        view.append_column(column("Next", lambda s: "" if _is_split(s) else self._next_text(s)))
+        view.append_column(
+            column(
+                "Next",
+                lambda s: "" if _is_split(s) else self._next_text(s),
+                # By date, whatever order Preferences shows it in; finished ones last.
+                sort_key=lambda s: "" if _is_split(s) else self._next_key(s),
+            )
+        )
         view.append_column(column("Amount", _amount_of, numeric=True))
         view.append_column(
             column(
@@ -363,7 +371,7 @@ class ScheduledView(BaseView):
         occurrences = list(self._page.upcoming)
         overdue = [o for o in occurrences if o.when <= today]
         if overdue:
-            text = f"{len(overdue)} occurrence(s) overdue, oldest {overdue[0].when.isoformat()}"
+            text = f"{len(overdue)} occurrence(s) overdue, oldest {shown_date(overdue[0].when)}"
             self.upcoming_note.add_css_class("negative")
         else:
             text = (
@@ -468,11 +476,18 @@ class ScheduledView(BaseView):
             self._page = book_server(self.db).scheduled_page()
         return dict(self._page.names) if self._page is not None else {}
 
-    def _next_text(self, sched) -> str:
+    def _next_date(self, sched) -> date | None:
         if isinstance(sched, AccountPaymentDefinition):
-            return sched.next_due.isoformat()
-        following = sched.recurrence.next_after(date.today() - timedelta(days=1))
-        return following.isoformat() if following else "finished"
+            return sched.next_due
+        return sched.recurrence.next_after(date.today() - timedelta(days=1))
+
+    def _next_text(self, sched) -> str:
+        following = self._next_date(sched)
+        return shown_date(following) if following else "finished"
+
+    def _next_key(self, sched) -> str:
+        following = self._next_date(sched)
+        return following.isoformat() if following else "~finished"
 
     def _splits_summary(self, sched) -> str:
         """Every leg as text. Kept for the web and CLI views, and for tests."""
@@ -564,7 +579,7 @@ class ScheduledView(BaseView):
         )
         if schedule is not None and upcoming is not None:
             self.next_note.set_text(
-                f"Next of {schedule.name}: {upcoming.when.isoformat()} ({upcoming.amount.format()})"
+                f"Next of {schedule.name}: {shown_date(upcoming.when)} ({upcoming.amount.format()})"
             )
         elif schedule is not None:
             self.next_note.set_text(f"{schedule.name} has no occurrence to enter or skip")
@@ -609,7 +624,7 @@ class ScheduledView(BaseView):
             self.status.set_text(str(error))
             return False
         self.refresh()
-        when = upcoming.when.isoformat()
+        when = shown_date(upcoming.when)
         if decision is DueDecision.SKIP:
             self.status.set_text(f"Skipped {sched.name} of {when}. Ctrl+Z restores it.")
         else:

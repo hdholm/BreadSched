@@ -35,7 +35,7 @@ from ..gi_setup import GLib, Gtk
 from ..register_sheet import RegisterSheet
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import confirm_delete
-from ..widgets.date_entry import parse_date_text
+from ..widgets.date_entry import parse_date_text, shown_date
 from ..widgets.register_grid import BANDING, RegisterGrid
 from ._base import BaseView, attach_row_menu
 
@@ -643,7 +643,7 @@ class RegisterView(BaseView):
 
         return confirm_delete(
             self,
-            f"the transaction {transaction.description or transaction.post_date.isoformat()}",
+            f"the transaction {transaction.description or shown_date(transaction.post_date)}",
             delete,
         )
 

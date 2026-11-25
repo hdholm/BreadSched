@@ -19,7 +19,7 @@ from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
-from ..widgets.date_entry import attach_date_keys, parse_date_text
+from ..widgets.date_entry import attach_date_keys, parse_date_text, shown_date
 from .drawdown_dialog import DrawdownsDialog
 
 __all__ = ["ScenarioManagerDialog"]
@@ -564,9 +564,9 @@ class AssumptionTimelineDialog(BoundedWindow):
         )
         model = Gtk.StringList()
         for period in self._periods:
-            through = period.end.isoformat() if period.end is not None else "onward"
+            through = shown_date(period.end) if period.end is not None else "onward"
             detail = period.description.strip() or self._changed_rates(period)
-            model.append(f"{period.start.isoformat()} — {through}: {detail}")
+            model.append(f"{shown_date(period.start)} — {through}: {detail}")
         self.picker.set_model(model)
         if self._periods:
             self.picker.set_selected(min(selected, len(self._periods) - 1))
@@ -659,14 +659,14 @@ class AssumptionPeriodDialog(BoundedWindow):
 
         grid = Gtk.Grid(column_spacing=12, row_spacing=8)
         box.append(grid)
-        grid.attach(Gtk.Label(label="Start (YYYY-MM-DD)", xalign=0), 0, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Start", xalign=0), 0, 0, 1, 1)
         self.start_entry = attach_date_keys(Gtk.Entry())
-        self.start_entry.set_text(period.start.isoformat() if period else date.today().isoformat())
+        self.start_entry.set_text(shown_date(period.start) if period else shown_date(date.today()))
         grid.attach(self.start_entry, 1, 0, 1, 1)
         grid.attach(Gtk.Label(label="Through (blank = onward)", xalign=0), 0, 1, 1, 1)
         self.end_entry = attach_date_keys(Gtk.Entry())
         if period is not None and period.end is not None:
-            self.end_entry.set_text(period.end.isoformat())
+            self.end_entry.set_text(shown_date(period.end))
         grid.attach(self.end_entry, 1, 1, 1, 1)
         grid.attach(Gtk.Label(label="Description", xalign=0), 0, 2, 1, 1)
         self.description_entry = Gtk.Entry()

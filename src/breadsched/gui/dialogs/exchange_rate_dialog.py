@@ -20,7 +20,7 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ..widgets.date_entry import attach_date_keys, parse_date_text
+from ..widgets.date_entry import attach_date_keys, date_examples, parse_date_text, shown_date
 
 __all__ = ["ExchangeRateDialog"]
 
@@ -70,7 +70,7 @@ class ExchangeRateDialog(BoundedWindow):
             next((i for i in range(len(self.currencies)) if i != target_index), 0)
         )
 
-        self.date_entry = attach_date_keys(Gtk.Entry(text=date.today().isoformat()))
+        self.date_entry = attach_date_keys(Gtk.Entry(text=shown_date(date.today())))
         grid.attach(Gtk.Label(label="As of", xalign=0), 0, 2, 1, 1)
         grid.attach(self.date_entry, 1, 2, 1, 1)
 
@@ -117,7 +117,7 @@ class ExchangeRateDialog(BoundedWindow):
             return
         self.current.set_text(
             f"Latest {source.mnemonic}→{target.mnemonic}: {latest.value.to_decimal()} "
-            f"on {latest.quote_date.isoformat()} ({latest.source or 'unknown source'})."
+            f"on {shown_date(latest.quote_date)} ({latest.source or 'unknown source'})."
         )
 
     def save(self) -> CommodityPrice | None:
@@ -129,7 +129,7 @@ class ExchangeRateDialog(BoundedWindow):
         try:
             quote_date = parse_date_text(self.date_entry.get_text().strip())
         except ValueError:
-            self._error("Enter the quote date as YYYY-MM-DD.")
+            self._error(f"Enter the quote date, such as {date_examples()}.")
             return None
         try:
             value = Money(parse_user_amount(self.rate_entry.get_text().strip()))

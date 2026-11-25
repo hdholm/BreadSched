@@ -593,6 +593,18 @@ all three filled, changing one asks which of the other two should change. A cash
 register that a security has moved through shows the security leg's shares and
 price too, and takes them in its split lines.
 
+### How dates are shown
+
+The desktop shows every date one way, chosen in **Edit → Preferences** under
+**Dates** ([desktop](guide/desktop.md#preferences)): as your computer's locale
+writes dates (the default), or as `2026-03-15`, `03/15/2026`, `15/03/2026`, or
+`15.03.2026`. Registers, lists, dialogs, date fields, reports, the Dashboard, and
+printed reports all follow it, and tables still sort dates by date. The choice also
+sets how a typed `3/4` is read: month first, or day first when dates are shown day
+first, so you can type a date the way you see it; `2026-03-15` is always read as
+such. The browser shows dates as it always has, and the command line, exported
+files, and the book itself use `2026-03-15`.
+
 ### Typing shortcuts in the register
 
 The desktop and browser registers read what you type the same way:
@@ -600,6 +612,9 @@ The desktop and browser registers read what you type the same way:
 - **Dates.** Type a full date (`2026-03-15`), a month and day in this year
   (`3/15`), a day in this month (`15`), or a two- or four-digit year after the day
   (`3/15/27`; a two-digit year is the one nearest the date shown, within 50 years).
+  On the desktop, a date shown day first (see [How dates are
+  shown](#how-dates-are-shown)) is typed day first too: `15/3`, `15.3.27`.
+  `2026-03-15` is read the same way everywhere.
   While the field holds a whole date, single keys change it in place: `+` and `-`
   move a day, `]` and `[` move a month (keeping the day, or the month's last day
   when it is shorter), `t` is today, `m` and `h` are the first and last day of

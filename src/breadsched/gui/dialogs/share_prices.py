@@ -31,6 +31,7 @@ from ..background import BackgroundJob
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
+from ..widgets.date_entry import shown_date
 
 __all__ = ["SharePricesDialog", "SharePricing", "price_shares"]
 
@@ -107,13 +108,13 @@ class SharePricesDialog(BoundedWindow):
         self._filling = False
         for row, leg in enumerate(self.legs, start=1):
             occurrence = Gtk.Label(
-                label=f"{leg.name} · {leg.when.isoformat()}\n{leg.account_name}", xalign=0
+                label=f"{leg.name} · {shown_date(leg.when)}\n{leg.account_name}", xalign=0
             )
             grid.attach(occurrence, 0, row, 1, 1)
             grid.attach(Gtk.Label(label=leg.value.format(), xalign=1), 1, row, 1, 1)
             quote = (
                 f"{price_text(leg.price)} {leg.currency} on "
-                f"{leg.price_date.isoformat() if leg.price_date else '?'} ({leg.price_source})"
+                f"{shown_date(leg.price_date) if leg.price_date else '?'} ({leg.price_source})"
                 if leg.price is not None
                 else "No price stored"
             )
@@ -186,7 +187,7 @@ class SharePricesDialog(BoundedWindow):
             elif typed_price is None:
                 self.message.set_text(
                     f"Give a share price or the shares of {leg.mnemonic} for "
-                    f"{leg.name} {leg.when.isoformat()}."
+                    f"{leg.name} {shown_date(leg.when)}."
                 )
                 return None
         return tuple(found)

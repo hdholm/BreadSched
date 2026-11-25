@@ -17,7 +17,7 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ..widgets.date_entry import attach_date_keys, parse_date_text
+from ..widgets.date_entry import attach_date_keys, parse_date_text, shown_text
 from ..widgets.document_view import DocumentView
 
 __all__ = ["BreadletReportsDialog"]
@@ -120,6 +120,8 @@ class BreadletReportsDialog(BoundedWindow):
                 widget = Gtk.Entry(text=default, width_chars=11)
                 if option.kind == "date":
                     attach_date_keys(widget)
+                    # The default is ISO; show it as the desktop shows dates.
+                    widget.set_text(shown_text(default))
                 widget.connect("activate", lambda *_: self.run())
                 if option.help:
                     widget.set_placeholder_text(option.help)

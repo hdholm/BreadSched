@@ -8,7 +8,7 @@ from datetime import date
 
 from ..gi_setup import Gtk
 from .choice import bounded_dropdown
-from .date_entry import attach_date_keys, parse_date_text
+from .date_entry import attach_date_keys, date_hint, parse_date_text, shown_date
 
 __all__ = [
     "DateListEditor",
@@ -73,12 +73,12 @@ class DatedAmountListEditor(_ListEditor):
 
     def _make_date_control(self, when: date | None) -> Gtk.Widget:
         if self._date_choices is None:
-            entry = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD", hexpand=True))
+            entry = attach_date_keys(Gtk.Entry(placeholder_text=date_hint(), hexpand=True))
             if when is not None:
-                entry.set_text(when.isoformat())
+                entry.set_text(shown_date(when))
             return entry
-        choices = [item.isoformat() for item in self._date_choices()]
-        current = when.isoformat() if when is not None else None
+        choices = [shown_date(item) for item in self._date_choices()]
+        current = shown_date(when) if when is not None else None
         if current is not None and current not in choices:
             choices.insert(0, current)
         dropdown = bounded_dropdown(choices or ["(no occurrences)"])
@@ -180,10 +180,10 @@ class DateListEditor(_ListEditor):
 
     def add_row(self, when: date | None = None) -> None:
         row = Gtk.Box(spacing=6)
-        choices = [item.isoformat() for item in self._date_choices()] if self._date_choices else []
-        current = when.isoformat() if when is not None else None
+        choices = [shown_date(item) for item in self._date_choices()] if self._date_choices else []
+        current = shown_date(when) if when is not None else None
         if self._date_choices is None:
-            date_entry = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD", hexpand=True))
+            date_entry = attach_date_keys(Gtk.Entry(placeholder_text=date_hint(), hexpand=True))
             if current is not None:
                 date_entry.set_text(current)
             date_entry.connect("changed", self._on_changed)
@@ -345,8 +345,8 @@ class SplitAmountTimelineEditor(_ListEditor):
         account = bounded_dropdown(self._account_names)
         account.set_hexpand(True)
         account.set_selected(account_index)
-        when_entry = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
-        when_entry.set_text(when.isoformat() if when is not None else "")
+        when_entry = attach_date_keys(Gtk.Entry(placeholder_text=date_hint()))
+        when_entry.set_text(shown_date(when) if when is not None else "")
         amount_entry = Gtk.Entry(placeholder_text="Signed ledger amount")
         amount_entry.set_text(amount)
         account.connect("notify::selected", self._on_changed)

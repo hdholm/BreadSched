@@ -13,6 +13,7 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import shown_date
 from ..widgets.model_chart import ModelChartView
 
 __all__ = ["BudgetJarsDialog"]
@@ -85,7 +86,7 @@ class BudgetJarsDialog(BoundedWindow):
         outer.append(note)
 
         toolbar = Gtk.Box(spacing=8)
-        toolbar.append(_cell(f"{self.start.isoformat()} to {self.end.isoformat()}"))
+        toolbar.append(_cell(f"{shown_date(self.start)} to {shown_date(self.end)}"))
         toolbar.append(Gtk.Label(label="Group by"))
         self.period_choice = bounded_dropdown([item.value.title() for item in _PERIODS])
         self.period_choice.update_property([Gtk.AccessibleProperty.LABEL], ["Group by"])

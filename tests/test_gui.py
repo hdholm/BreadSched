@@ -7917,7 +7917,7 @@ class TestDashboardView:
             assert "after the start date" in dialog.status.get_text()
             assert app.db.get_savings_goal(goal.handle).serialize() == stored
             dialog.target_date_entry.set_text("not a date")
-            assert dialog.save() is None and "YYYY-MM-DD" in dialog.status.get_text()
+            assert dialog.save() is None and "2026-03-15" in dialog.status.get_text()
 
             dialog.allocate_amount.set_text("250")
             assert dialog.allocate() is not None
@@ -8649,7 +8649,7 @@ class TestExchangeRateDialog:
         )
         dialog.date_entry.set_text("March 1")
         assert dialog.save() is None
-        assert "YYYY-MM-DD" in dialog.status.get_text()
+        assert "2026-03-15" in dialog.status.get_text()
         assert len(list(app.db.iter_prices())) == before
 
     def test_accounts_view_offers_the_exchange_rate_editor(self, fx_book, window):
@@ -11303,7 +11303,7 @@ class TestReceivablesDialog:
             dialog.payer_entry.set_text("Acme")
             dialog.incurred_entry.set_text("yesterday")
             assert dialog.save() is None
-            assert "YYYY-MM-DD" in dialog.status.get_text()
+            assert "2026-03-15" in dialog.status.get_text()
             dialog.incurred_entry.set_text("2026-01-02")
             dialog.expected_entry.set_text("-5")
             assert dialog.save() is None
@@ -14583,3 +14583,133 @@ class TestLargeUndo:
         self._import_like(db, 2)
         undo_with_care(window, db)
         assert not [t for t in db.iter_transactions() if t.description.startswith("Imported")]
+
+
+class TestDateStyle:
+    """Edit → Preferences chooses how every desktop date is shown and read."""
+
+    def test_preferences_offer_the_styles_and_save_the_choice(self, app, window):
+        from breadsched.gen.utils import date_format
+
+        dialog = app.on_preferences()
+        assert dialog.date_styles == list(date_format.STYLES)
+        # The default follows the computer's locale.
+        assert dialog.date_styles[dialog.date_format.get_selected()] == "locale"
+        dialog.date_format.set_selected(dialog.date_styles.index("dmy"))
+        dialog.primary().emit("clicked")
+        assert _spin(lambda: not dialog.get_visible())
+        assert app.settings.get("general", "date_format") == "dmy"
+        assert date_format.current() == "dmy"
+        # Opened again, Preferences shows the choice.
+        again = app.on_preferences()
+        assert again.date_styles[again.date_format.get_selected()] == "dmy"
+        again.close()
+
+    def test_the_register_shows_and_reads_dates_in_the_chosen_style(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        checking = app.db.get_account_by_name("Assets:Checking Account").handle
+        window.open_register(checking)
+        view = window._views["register"]
+        sheet = view.sheet
+        index = next(i for i, row in enumerate(sheet.rows) if row.kind == "transaction")
+        stored = sheet.rows[index].register_row.post_date
+        assert sheet.text(index, "date") == stored.isoformat()
+
+        dialog = app.on_preferences()
+        dialog.date_format.set_selected(dialog.date_styles.index("dmy-dot"))
+        dialog.primary().emit("clicked")
+        assert _spin(lambda: not dialog.get_visible())
+        view.ensure_current()
+        sheet = view.sheet
+        assert sheet.text(index, "date") == stored.strftime("%d.%m.%Y")
+
+        # Typed as shown: 5/4 is the 5th of April.
+        sheet.to_blank()
+        for column, text in (
+            ("date", "5/4/2026"),
+            ("description", "Day first"),
+            ("transfer", "Expenses:Rent"),
+            ("decrease", "5"),
+        ):
+            sheet.column = column
+            sheet.set_text(text)
+        assert sheet.leave()
+        saved = next(t for t in app.db.iter_transactions() if t.description == "Day first")
+        assert saved.post_date == date(2026, 4, 5)
+
+    def test_date_fields_show_hint_and_read_in_the_style(self):
+        from breadsched.gen.utils import date_format
+        from breadsched.gui.widgets.date_entry import (
+            date_examples,
+            date_hint,
+            parse_date_text,
+            set_date_style,
+            shown_date,
+        )
+
+        set_date_style("mdy")
+        assert date_hint("Start") == "Start MM/DD/YYYY"
+        assert shown_date(date(2026, 3, 5)) == "03/05/2026"
+        assert parse_date_text("3/5/2026") == date(2026, 3, 5)
+        assert "03/15/2026" in date_examples()
+        set_date_style("dmy")
+        assert parse_date_text("3/5/2026") == date(2026, 5, 3)
+        assert parse_date_text("2026-03-05") == date(2026, 3, 5)
+        assert shown_date(None, "—") == "—"
+        assert date_format.current() == "dmy"
+
+    def test_report_documents_are_drawn_and_printed_in_the_style(self):
+        from breadsched.gui.printing import print_operation
+        from breadsched.gui.widgets.date_entry import set_date_style, shown_document
+        from breadsched.gui.widgets.document_view import DocumentView
+        from breadsched.plugins.export.report_layout import (
+            Cell,
+            Column,
+            Paragraph,
+            ReportDocument,
+            Section,
+            Table,
+            TableRow,
+        )
+
+        document = ReportDocument(
+            "Report",
+            "As at 2026-03-05",
+            (
+                Section(
+                    (
+                        Paragraph("Quote of 2026-02-01."),
+                        Table(
+                            (Column("Date"), Column("Amount", numeric=True)),
+                            (
+                                TableRow(
+                                    (Cell("2026-03-05"), Cell("10.00", numeric=True)),
+                                    link="schedule:2026-03-05",
+                                ),
+                            ),
+                        ),
+                    ),
+                    name="2026-03-05",
+                ),
+            ),
+        )
+        assert shown_document(document) is document  # ISO: nothing to change
+        set_date_style("dmy")
+        shown = shown_document(document)
+        assert shown.subtitle == "As at 05/03/2026"
+        [paragraph, table] = shown.sections[0].blocks
+        assert paragraph.text == "Quote of 01/02/2026."
+        cell = table.rows[0].cells[0]
+        # Shown day first, still sorted by the date.
+        assert (cell.text, cell.sort) == ("05/03/2026", "2026-03-05")
+        # Links and names identify; they are left alone.
+        assert table.rows[0].link == "schedule:2026-03-05"
+        assert shown.sections[0].name == "2026-03-05"
+
+        view = DocumentView(titled=True)
+        view.show_document(document)
+        assert view.document is document  # kept as made, for export
+        assert "05/03/2026" in _texts(view)
+        assert print_operation(document) is not None

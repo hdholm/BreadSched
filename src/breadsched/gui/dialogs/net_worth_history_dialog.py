@@ -19,6 +19,7 @@ from ..gi_setup import GLib, Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import shown_date
 from ..widgets.model_chart import ModelChartView
 
 #: Grouping choices and how far back each looks from the current period.
@@ -92,7 +93,7 @@ class NetWorthHistoryDialog(BoundedWindow):
         self.history = history
         explanation = self._label(
             "Assets less debts, market-valued at each period end (the last on "
-            f"{history.as_of.isoformat()}). A point with a missing quote is left out "
+            f"{shown_date(history.as_of)}). A point with a missing quote is left out "
             "of the charts and names the account instead of guessing a conversion. "
             "The second chart stacks each group of accounts, assets above zero and "
             "debts below, so each column adds up to net worth."
@@ -127,7 +128,7 @@ class NetWorthHistoryDialog(BoundedWindow):
             ]
             cells = [
                 (point.label, False),
-                (point.valued_on.isoformat(), False),
+                (shown_date(point.valued_on), False),
                 (self._money(point.assets), True),
                 (self._money(point.debts), True),
                 (self._money(point.net_worth), True),
@@ -172,7 +173,9 @@ class NetWorthHistoryDialog(BoundedWindow):
             self.change_box.append(self._label(str(error)))
             return
         self.change = change
-        heading = f"Net worth change {change.start.isoformat()} through {change.closing_on}"
+        heading = (
+            f"Net worth change {shown_date(change.start)} through {shown_date(change.closing_on)}"
+        )
         self.change_box.append(
             self._label(heading + (" (to date)" if change.partial else ""), heading=True)
         )
@@ -209,7 +212,7 @@ class NetWorthHistoryDialog(BoundedWindow):
             grid.attach(self._label(heading, heading=True), column, 0, 1, 1)
         rows = [
             [
-                posting.posted.isoformat(),
+                shown_date(posting.posted),
                 posting.description,
                 "; ".join(posting.accounts),
                 posting.currency,
@@ -220,10 +223,10 @@ class NetWorthHistoryDialog(BoundedWindow):
         rows += [
             ["", label, "", "", self._money(value)]
             for label, value in (
-                (f"Opening net worth ({change.opening_on.isoformat()})", change.opening),
+                (f"Opening net worth ({shown_date(change.opening_on)})", change.opening),
                 ("Postings", change.posted),
                 ("Market and exchange-rate changes", change.revaluation),
-                (f"Closing net worth ({change.closing_on.isoformat()})", change.closing),
+                (f"Closing net worth ({shown_date(change.closing_on)})", change.closing),
                 ("Change", change.change),
             )
         ]

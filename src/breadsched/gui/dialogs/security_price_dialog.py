@@ -17,7 +17,7 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ..widgets.date_entry import attach_date_keys, parse_date_text
+from ..widgets.date_entry import attach_date_keys, parse_date_text, shown_date
 
 __all__ = ["SecurityPriceDialog"]
 
@@ -100,7 +100,7 @@ class SecurityPriceDialog(BoundedWindow):
         grid.attach(self.currency_picker, 1, row, 1, 1)
         row += 1
 
-        self.date_entry = attach_date_keys(Gtk.Entry(text=date.today().isoformat()))
+        self.date_entry = attach_date_keys(Gtk.Entry(text=shown_date(date.today())))
         grid.attach(Gtk.Label(label="As of", xalign=0), 0, row, 1, 1)
         grid.attach(self.date_entry, 1, row, 1, 1)
         row += 1
@@ -149,7 +149,7 @@ class SecurityPriceDialog(BoundedWindow):
             self.namespace_entry.set_text("FUND")
             self.fraction_entry.set_text("10000")
             self.price_entry.set_text("")
-            self.date_entry.set_text(date.today().isoformat())
+            self.date_entry.set_text(shown_date(date.today()))
             return
         security = self.securities[index - 1]
         self.mnemonic_entry.set_text(security.mnemonic)
@@ -159,10 +159,10 @@ class SecurityPriceDialog(BoundedWindow):
         latest = self._latest.get(security.handle)
         if latest is None:
             self.price_entry.set_text("")
-            self.date_entry.set_text(date.today().isoformat())
+            self.date_entry.set_text(shown_date(date.today()))
             return
         self.price_entry.set_text(latest.value.format())
-        self.date_entry.set_text(latest.quote_date.isoformat())
+        self.date_entry.set_text(shown_date(latest.quote_date))
         currency_index = next(
             (i for i, item in enumerate(self.currencies) if item.handle == latest.currency),
             None,
@@ -240,7 +240,7 @@ class SecurityPriceDialog(BoundedWindow):
             return
         quote = quotes[0]
         self.price_entry.set_text(f"{quote.value}")
-        self.date_entry.set_text(quote.when.isoformat())
+        self.date_entry.set_text(shown_date(quote.when))
         match = next(
             (i for i, item in enumerate(self.currencies) if item.mnemonic == quote.currency),
             None,
@@ -249,7 +249,7 @@ class SecurityPriceDialog(BoundedWindow):
             self.currency_picker.set_selected(match)
         self.status.remove_css_class("negative")
         self.status.set_text(
-            f"{quote.value} {quote.currency} on {quote.when.isoformat()} from {quote.origin}. "
+            f"{quote.value} {quote.currency} on {shown_date(quote.when)} from {quote.origin}. "
             "Choose Save price to keep it."
         )
 

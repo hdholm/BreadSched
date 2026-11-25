@@ -43,7 +43,7 @@ from ..gi_setup import Gdk, GLib, Gtk, Pango
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, action_row, fill_action_row
 from ..widgets.choice import bounded_dropdown
-from ..widgets.date_entry import attach_date_keys, parse_date_text
+from ..widgets.date_entry import attach_date_keys, parse_date_text, shown_date
 
 __all__ = ["ReconciliationDialog"]
 
@@ -348,7 +348,7 @@ class ReconciliationDialog(BoundedWindow):
         grid = Gtk.Grid(column_spacing=10, row_spacing=8)
         # A month after the last statement, or the latest month end (#403).
         proposed = view.default_statement_date or date.today()
-        self.statement_date = attach_date_keys(Gtk.Entry(text=proposed.isoformat()))
+        self.statement_date = attach_date_keys(Gtk.Entry(text=shown_date(proposed)))
         self.statement_date.connect("changed", lambda *_: self._show_starting_balance())
         self.starting_balance = Gtk.Label(xalign=1)
         self.starting_balance.add_css_class("numeric")
@@ -370,7 +370,8 @@ class ReconciliationDialog(BoundedWindow):
         self.reopen_button: Gtk.Button | None = None
         if completed:
             latest = max(completed, key=lambda item: item.statement_date)
-            reopen = Gtk.Button(label=f"Reopen statement through {latest.statement_date}")
+            through = shown_date(latest.statement_date)
+            reopen = Gtk.Button(label=f"Reopen statement through {through}")
             reopen.connect("clicked", lambda *_: self._on_reopen(latest.handle))
             self.reopen_button = reopen
         close = Gtk.Button(label="Close")
@@ -437,7 +438,8 @@ class ReconciliationDialog(BoundedWindow):
     def _render_session(self, state: reconciliation.ReconciliationSummary) -> None:
         session = state.reconciliation
         handle = session.handle
-        heading = Gtk.Label(label=f"Statement through {session.statement_date}", xalign=0)
+        through = shown_date(session.statement_date)
+        heading = Gtk.Label(label=f"Statement through {through}", xalign=0)
         heading.add_css_class("title-3")
         self.body.append(heading)
 
@@ -551,7 +553,7 @@ class ReconciliationDialog(BoundedWindow):
         check.connect("toggled", self._on_check_toggled)
         check.update_property([Gtk.AccessibleProperty.LABEL], [f"Check {candidate.description}"])
         self._checks[candidate.split] = check
-        when = Gtk.Label(label=candidate.post_date.isoformat(), xalign=0)
+        when = Gtk.Label(label=shown_date(candidate.post_date), xalign=0)
         # The check number: sometimes all a statement lists for an entry.
         num = Gtk.Label(label=candidate.num, xalign=0)
         num.set_width_chars(5)
@@ -971,13 +973,13 @@ class ReconciliationDialog(BoundedWindow):
         heading = Gtk.Label(label="Pay the statement?", xalign=0)
         heading.add_css_class("heading")
         self.body.append(heading)
-        due = f"{offer.amount.format()} is due on {offer.due_date.isoformat()}"
+        due = f"{offer.amount.format()} is due on {shown_date(offer.due_date)}"
         if offer.schedule_name is not None:
             due += f" ({offer.schedule_name})"
         source = f", paid from {offer.pay_from_name}" if offer.pay_from_name else ""
         self.payment_note = Gtk.Label(
             label=(
-                f"The statement through {offer.statement_date.isoformat()} is reconciled. "
+                f"The statement through {shown_date(offer.statement_date)} is reconciled. "
                 f"{due}{source}. Pay statement… opens the payment to change before saving; "
                 "paying less than the statement asks for its minimum payment."
             ),

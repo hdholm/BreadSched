@@ -2302,6 +2302,112 @@ class TestCommunityHealth:
         assert any(line.startswith("* @") for line in owners.splitlines())
 
 
+class TestDesktopDates:
+    """Every date the desktop shows is in the style chosen in Preferences, and every
+    date field reads dates as the register does (``widgets.date_entry``)."""
+
+    #: ``isoformat()`` in desktop code, where the text is not shown as a date: a
+    #: report option's value, a file name, a sort key, and log timestamps.
+    NOT_SHOWN = {
+        ("gui/watchdog.py", "_record"),
+        ("gui/watchdog.py", "write_log"),
+        ("gui/dialogs/breadlets_dialog.py", "given"),
+        ("gui/dialogs/net_worth_history_dialog.py", "_export_change"),
+        ("gui/views/scheduled.py", "_next_key"),
+    }
+
+    @staticmethod
+    def _gui_modules():
+        for path in sorted((SRC / "gui").rglob("*.py")):
+            yield path.relative_to(SRC).as_posix(), ast.parse(path.read_text(encoding="utf-8"))
+
+    def test_no_desktop_code_shows_a_date_as_iso(self):
+        found = set()
+
+        class Finder(ast.NodeVisitor):
+            def __init__(self, relative: str) -> None:
+                self.relative = relative
+                self.functions: list[str] = []
+
+            def visit_FunctionDef(self, node) -> None:
+                self.functions.append(node.name)
+                self.generic_visit(node)
+                self.functions.pop()
+
+            visit_AsyncFunctionDef = visit_FunctionDef
+
+            def visit_Call(self, node) -> None:
+                if isinstance(node.func, ast.Attribute) and node.func.attr == "isoformat":
+                    found.add((self.relative, self.functions[-1] if self.functions else ""))
+                self.generic_visit(node)
+
+        for relative, tree in self._gui_modules():
+            Finder(relative).visit(tree)
+        assert found - self.NOT_SHOWN == set()
+
+    def test_no_date_field_asks_for_a_fixed_format(self):
+        for relative, tree in self._gui_modules():
+            for node in ast.walk(tree):
+                if isinstance(node, ast.keyword) and node.arg in ("placeholder_text", "label"):
+                    if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+                        assert "YYYY" not in node.value.value, (relative, node.value.value)
+
+    def test_every_date_field_read_has_the_registers_keys(self):
+        """A field whose text is read as a date is made with ``attach_date_keys``,
+        whether it is read directly or through a helper given the field."""
+        readers = {"parse_date_text", "read_date"}
+
+        def name_of(func) -> str:
+            return getattr(func, "id", getattr(func, "attr", ""))
+
+        def field_read(call) -> str | None:
+            text = ast.unparse(call.args[0])
+            if name_of(call.func) == "read_date":
+                return text
+            return text.split(".get_text()")[0] if ".get_text()" in text else None
+
+        for relative, tree in self._gui_modules():
+            if relative == "gui/widgets/date_entry.py":
+                continue
+            attached = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and name_of(node.func) == "attach_date_keys":
+                    if node.args:
+                        attached.add(ast.unparse(node.args[0]))
+                if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+                    if name_of(node.value.func) == "attach_date_keys":
+                        attached.update(ast.unparse(target) for target in node.targets)
+            # Helpers that read a date from a field they are given: name -> position.
+            helpers: dict[str, int] = {}
+            reads: list[tuple[str, str]] = []
+            for function in ast.walk(tree):
+                if not isinstance(function, ast.FunctionDef):
+                    continue
+                params = [arg.arg for arg in function.args.args]
+                for node in ast.walk(function):
+                    if not (
+                        isinstance(node, ast.Call) and name_of(node.func) in readers and node.args
+                    ):
+                        continue
+                    widget = field_read(node)
+                    if widget is None:
+                        continue  # text, not a field
+                    if widget in params:
+                        offset = 1 if params and params[0] == "self" else 0
+                        helpers[function.name] = params.index(widget) - offset
+                    else:
+                        reads.append((widget, ast.unparse(node)))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and name_of(node.func) in helpers:
+                    position = helpers[name_of(node.func)]
+                    if 0 <= position < len(node.args):
+                        reads.append((ast.unparse(node.args[position]), ast.unparse(node)))
+            for widget, where in reads:
+                if widget.isidentifier():
+                    continue  # a local name (a loop over fields), not a field itself
+                assert widget in attached, (relative, where)
+
+
 class TestDesktopConsistency:
     """The desktop consistency rules (``docs/design/user-interfaces.md``, Desktop
     consistency rules), checked in the source so a new window cannot drift.

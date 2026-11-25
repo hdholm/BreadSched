@@ -21,6 +21,7 @@ from ..gi_setup import GLib, Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import shown_date
 
 __all__ = ["CsvImportDialog"]
 
@@ -327,7 +328,7 @@ class CsvImportDialog(BoundedWindow):
             [
                 [
                     str(row.line),
-                    row.when.isoformat() if row.when else "",
+                    shown_date(row.when) if row.when else "",
                     row.amount.format(parens_negative=True) if row.amount is not None else "",
                     row.description,
                     "; ".join(
