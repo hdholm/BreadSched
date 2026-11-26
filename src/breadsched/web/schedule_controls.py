@@ -19,11 +19,10 @@ from ..gen.lib import (
     PeriodType,
     PlanningFlowKind,
     Recurrence,
-    ScheduledAmountChange,
-    ScheduledMonthAmount,
-    ScheduledOccurrenceAdjustment,
-    ScheduledSplitAmountChange,
+    ScheduledSplit,
     ScheduledTransaction,
+    ScheduledVersion,
+    VersionKind,
     WeekendAdjust,
 )
 from ..gen.services import FixedSplitInput
@@ -208,58 +207,6 @@ def weekend_key(adjust: WeekendAdjust) -> str:
     return "none"
 
 
-def parse_amount_changes(payload: dict, schedule_start: date) -> list[ScheduledAmountChange]:
-    raw_changes = payload.get("amount_changes") or []
-    if not isinstance(raw_changes, list):
-        raise ValueError("future amounts must be a list")
-    changes = []
-    seen = set()
-    for raw in raw_changes:
-        if not isinstance(raw, dict):
-            raise ValueError("future amount entry is invalid")
-        try:
-            when = date.fromisoformat(str(raw.get("start") or ""))
-            amount = abs(input_amount(payload, raw.get("amount") or ""))
-        except (ValueError, ArithmeticError):
-            raise ValueError("future amounts require YYYY-MM-DD dates and valid amounts") from None
-        if when < schedule_start:
-            raise ValueError("future amount date cannot precede first occurrence")
-        if not amount:
-            raise ValueError("future amount must be greater than zero")
-        if when in seen:
-            raise ValueError("future amount dates must be unique")
-        seen.add(when)
-        changes.append(ScheduledAmountChange(when, amount))
-    return sorted(changes, key=lambda item: item.start)
-
-
-def parse_seasonal_amounts(payload: dict) -> list[ScheduledMonthAmount]:
-    raw_amounts = payload.get("seasonal_amounts") or []
-    if not isinstance(raw_amounts, list):
-        raise ValueError("seasonal amounts must be a list")
-    amounts = []
-    seen = set()
-    for raw in raw_amounts:
-        if not isinstance(raw, dict):
-            raise ValueError("seasonal amount entry is invalid")
-        try:
-            raw_month = raw.get("month")
-            if raw_month is None:
-                raise ValueError
-            month = int(raw_month)
-            amount = abs(input_amount(payload, raw.get("amount") or ""))
-            item = ScheduledMonthAmount(month, amount)
-        except (TypeError, ValueError, ArithmeticError):
-            raise ValueError(
-                "seasonal amounts require a month from 1 through 12 and a positive amount"
-            ) from None
-        if month in seen:
-            raise ValueError("seasonal amount months must be unique")
-        seen.add(month)
-        amounts.append(item)
-    return sorted(amounts, key=lambda item: item.month)
-
-
 def parse_skipped(payload: dict, recurrence: Recurrence) -> list[date]:
     raw_skipped = payload.get("skipped") or []
     if not isinstance(raw_skipped, list):
@@ -278,35 +225,6 @@ def parse_skipped(payload: dict, recurrence: Recurrence) -> list[date]:
         seen.add(when)
         skipped.append(when)
     return sorted(skipped)
-
-
-def parse_occurrence_adjustments(
-    payload: dict, recurrence: Recurrence
-) -> list[ScheduledOccurrenceAdjustment]:
-    raw_changes = payload.get("occurrence_adjustments") or []
-    if not isinstance(raw_changes, list):
-        raise ValueError("one-time amounts must be a list")
-    changes = []
-    seen = set()
-    for raw in raw_changes:
-        if not isinstance(raw, dict):
-            raise ValueError("one-time amount entry is invalid")
-        try:
-            when = date.fromisoformat(str(raw.get("when") or ""))
-            amount = abs(input_amount(payload, raw.get("amount") or ""))
-        except (ValueError, ArithmeticError):
-            raise ValueError(
-                "one-time amounts require YYYY-MM-DD dates and valid amounts"
-            ) from None
-        if not amount:
-            raise ValueError("one-time amount must be greater than zero")
-        if when in seen:
-            raise ValueError("one-time amount dates must be unique")
-        if when not in recurrence.occurrences(when, since=when):
-            raise ValueError(f"{when.isoformat()} is not an occurrence of this schedule")
-        seen.add(when)
-        changes.append(ScheduledOccurrenceAdjustment(when, amount))
-    return sorted(changes, key=lambda item: item.when)
 
 
 def parse_additional_splits(payload: dict) -> tuple[FixedSplitInput, ...]:
@@ -348,36 +266,116 @@ def parse_additional_splits(payload: dict) -> tuple[FixedSplitInput, ...]:
     return tuple(splits)
 
 
-def parse_split_amount_changes(
-    payload: dict,
-    schedule_start: date,
-    allowed_accounts: set[str],
-) -> dict[str, list[ScheduledSplitAmountChange]]:
-    raw_changes = payload.get("split_amount_changes") or []
-    if not isinstance(raw_changes, list):
-        raise ValueError("per-leg amount changes must be a list")
-    grouped: dict[str, list[ScheduledSplitAmountChange]] = {}
-    seen: set[tuple[str, date]] = set()
-    for raw in raw_changes:
+def parse_versions(payload: dict) -> list[ScheduledVersion]:
+    """The editor's versions: each ``{kind, start | month, legs}``, every leg with its
+    account, memo, an ``amount`` or a ``formula``, and its ``direction`` (-1 for
+    the Decrease column, which negates an amount; an amount may also be signed).
+    Validation of the whole schedule (balance, dates on the schedule) is the
+    service's."""
+    raw_versions = payload.get("versions") or []
+    if not isinstance(raw_versions, list):
+        raise ValueError("versions must be a list")
+    versions = []
+    for raw in raw_versions:
         if not isinstance(raw, dict):
-            raise ValueError("per-leg amount change entry is invalid")
-        account = str(raw.get("account") or "").strip()
-        if account not in allowed_accounts:
-            raise ValueError("per-leg amount change must reference a selected split account")
+            raise ValueError("a version is invalid")
+        kind = str(raw.get("kind") or "")
+        if kind not in {item.value for item in VersionKind}:
+            raise ValueError("a version is from a date, on one date, or for a month")
         try:
-            when = date.fromisoformat(str(raw.get("start") or ""))
-            amount = input_amount(payload, raw.get("amount") or "0")
-        except (ValueError, ArithmeticError):
-            raise ValueError(
-                "per-leg amounts require YYYY-MM-DD dates and valid signed amounts"
-            ) from None
-        if when < schedule_start:
-            raise ValueError("per-leg amount changes cannot precede the first occurrence")
-        key = (account, when)
-        if key in seen:
-            raise ValueError("per-leg amount dates must be unique for each account")
-        seen.add(key)
-        grouped.setdefault(account, []).append(ScheduledSplitAmountChange(when, amount))
-    for changes in grouped.values():
-        changes.sort(key=lambda item: item.start)
-    return grouped
+            start = date.fromisoformat(str(raw["start"])) if raw.get("start") else None
+            month = int(raw["month"]) if raw.get("month") not in (None, "") else None
+        except (TypeError, ValueError):
+            raise ValueError("a version needs a YYYY-MM-DD date or a month from 1 to 12") from None
+        legs = raw.get("legs") or []
+        if not isinstance(legs, list):
+            raise ValueError("a version's legs must be a list")
+        splits = []
+        for leg in legs:
+            if not isinstance(leg, dict):
+                raise ValueError("a version's leg is invalid")
+            formula = str(leg.get("formula") or "").strip()
+            amount = None
+            if not formula:
+                try:
+                    amount = input_amount(payload, leg.get("amount") or "0")
+                except (ValueError, ArithmeticError):
+                    raise ValueError("each leg needs an amount or a formula") from None
+                if str(leg.get("direction")) == "-1":
+                    amount = -amount  # typed in the Decrease column
+            raw_purpose = str(leg.get("planning_flow") or "").strip()
+            raw_activity = str(leg.get("investment_activity") or "").strip()
+            try:
+                splits.append(
+                    ScheduledSplit(
+                        str(leg.get("account") or "").strip(),
+                        amount,
+                        formula=formula,
+                        memo=str(leg.get("memo") or "").strip(),
+                        planning_flow=PlanningFlowKind(raw_purpose) if raw_purpose else None,
+                        investment_activity=(
+                            InvestmentActivityKind(raw_activity) if raw_activity else None
+                        ),
+                        direction=(-1 if formula and str(leg.get("direction")) == "-1" else 1),
+                    )
+                )
+            except ValueError:
+                raise ValueError("choose a valid planning purpose or activity") from None
+        try:
+            versions.append(ScheduledVersion(kind, splits, start=start, month=month))
+        except ValueError as exc:
+            raise ValueError(str(exc)) from None
+    return versions
+
+
+def parse_new_version(payload: dict) -> tuple[VersionKind, date | None, int | None]:
+    """The kind, date, and month of the version an editor is adding
+    (``new_version``: ``{kind, start | month}``)."""
+    raw = payload.get("new_version")
+    if not isinstance(raw, dict):
+        raise ValueError("new_version must name the version's kind and date or month")
+    try:
+        kind = VersionKind(str(raw.get("kind") or ""))
+    except ValueError:
+        raise ValueError("a version is from a date, on one date, or for a month") from None
+    try:
+        if kind is VersionKind.MONTH:
+            month = int(raw["month"])
+            if not 1 <= month <= 12:
+                raise ValueError
+            return kind, None, month
+        return kind, date.fromisoformat(str(raw["start"])), None
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("a version needs a YYYY-MM-DD date or a month from 1 to 12") from None
+
+
+def versions_json(versions, names: dict[str, str]) -> list[dict]:
+    """Versions as the browser editor reads them (see :func:`parse_versions`)."""
+    return [
+        {
+            "kind": version.kind.value,
+            "start": version.start.isoformat() if version.start else None,
+            "month": version.month,
+            "label": version.label(),
+            "legs": [
+                {
+                    "account": split.account,
+                    "account_name": names.get(split.account, split.account),
+                    "memo": split.memo,
+                    "amount": (
+                        str(split.amount.to_decimal())
+                        if split.amount is not None and not split.formula
+                        else None
+                    ),
+                    "formula": split.formula,
+                    "direction": split.direction,
+                    "planning_flow": split.planning_flow.value if split.planning_flow else None,
+                    "investment_activity": (
+                        split.investment_activity.value if split.investment_activity else None
+                    ),
+                }
+                for split in version.splits
+            ],
+        }
+        for version in versions
+    ]

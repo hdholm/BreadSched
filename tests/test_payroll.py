@@ -216,7 +216,7 @@ def test_pay_change_scales_taxes_keeps_the_rest_and_balances_the_deposit(db, boo
     assert after[payroll["retirement"]] == (Money("165.00"), "scaled")
     assert after[payroll["loan"]] == (Money("100.00"), "kept")
     assert after[book.checking] == (Money("2344.40"), "balance")
-    assert db.get_scheduled(schedule.handle).splits[0].amount_changes == []
+    assert db.get_scheduled(schedule.handle).versions == []  # a preview saves nothing
 
     assert apply_pay_change(db, change).ok
     saved = db.get_scheduled(schedule.handle)
@@ -224,8 +224,13 @@ def test_pay_change_scales_taxes_keeps_the_rest_and_balances_the_deposit(db, boo
     later = paycheck_breakdown(db, saved, raise_on)
     assert (before.gross, before.net) == (Money("3000.00"), Money("2118.50"))
     assert (later.gross, later.net) == (Money("3300.00"), Money("2344.40"))
-    loan = next(split for split in saved.splits if split.account == payroll["loan"])
-    assert loan.amount_changes == []
+    # The change is the paycheck's version from that date: every line, the loan as it was.
+    [version] = saved.versions
+    assert (version.kind.value, version.start) == ("from", raise_on)
+    loan = next(split for split in version.splits if split.account == payroll["loan"])
+    assert loan.amount == next(
+        split.amount for split in saved.splits if split.account == payroll["loan"]
+    )
 
     deposits = {
         event.planned_date: next(

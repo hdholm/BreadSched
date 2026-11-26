@@ -13,12 +13,12 @@ release workflow compares the installed wheel's line with
 carry a stale schema window. Book
 verification includes the same application and schema details in its human and JSON
 diagnostics. The integer data-format/schema version determines whether a
-native book can be opened or must be migrated; it is currently 15. A behavior-only
+native book can be opened or must be migrated; it is currently 16. A behavior-only
 release changes only the application version. A persistent representation change
 increments the data-format version and supplies an explicit migration.
 
-SQLite is the native persistence engine. The application writes schema 15 and
-migrates schemas 13 and 14 before decoding primary objects. The 13→14 step writes each
+SQLite is the native persistence engine. The application writes schema 16 and
+migrates schemas 13, 14, and 15 before decoding primary objects. The 13→14 step writes each
 whole-transaction plan link as split allocations: a transaction linked to an
 occurrence (by `planned_occurrence`, or posted from a schedule) gains
 `plan_allocations` on its plan legs, in full, with its planned date and amount. The
@@ -34,6 +34,15 @@ release that writes schema 14 would open the book and drop them when it saved th
 schedule. Schema 15 also lets a completed credit card reconciliation keep its
 statement's minimum payment (`minimum_payment`, written only once given), for the
 same reason.
+
+The 15→16 step keeps a schedule's changes as versions of the whole transaction
+(`versions` in its stored form; see [planning](planning.md#schedules-and-formulas)).
+Schema 15 kept four narrower keys: `amount_changes` and `seasonal_amounts` and
+`occurrence_adjustments` on the schedule, and `amount_changes` on each leg. The step
+rewrites each schedule, and each scenario's own `schedule_overrides`, with
+`versions_from_legacy`, drops those keys, reads every rewritten schedule back, and
+checks that no schedule or scenario was added or lost. A release that writes schema
+15 cannot read `versions`, so the version rises.
 
 An explicit sequential registry (`gen.db.migrations`), a durable migration ledger, a
 transactional runner, and a verified pre-migration backup make that boundary

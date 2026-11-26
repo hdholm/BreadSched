@@ -6,9 +6,8 @@ travel as JSON, so this module encodes every field losslessly and decodes it bac
 strictly: a value of the wrong type is a ``ValueError`` (a 400), never a guess.
 
 Top-level amounts are decimal strings, as everywhere in the book API's JSON. Parts
-that already have a stored form (recurrences, dated amount changes, seasonal
-amounts, one-time adjustments, and a schedule an edit is based on) travel in that
-form, so nothing is translated twice.
+that already have a stored form (recurrences, versions, and a schedule an edit is
+based on) travel in that form, so nothing is translated twice.
 """
 
 from __future__ import annotations
@@ -20,11 +19,8 @@ from typing import Any, TypeVar
 
 from ..gen.lib.money import Money
 from ..gen.lib.recurrence import Recurrence
+from ..gen.lib.schedule_versions import ScheduledVersion
 from ..gen.lib.scheduled import (
-    ScheduledAmountChange,
-    ScheduledMonthAmount,
-    ScheduledOccurrenceAdjustment,
-    ScheduledSplitAmountChange,
     ScheduledTransaction,
     ScheduleGrowthPolicy,
 )
@@ -95,20 +91,8 @@ def fixed_request_json(request: SaveFixedSchedule) -> dict[str, Any]:
             "auto_create": item.auto_create,
             "placeholder": item.placeholder,
             "growth_policy": _enum(item.growth_policy),
-            "amount_changes": [change.serialize() for change in item.amount_changes],
-            "split_amount_changes": (
-                None
-                if item.split_amount_changes is None
-                else {
-                    account: [change.serialize() for change in changes]
-                    for account, changes in item.split_amount_changes.items()
-                }
-            ),
-            "seasonal_amounts": [amount.serialize() for amount in item.seasonal_amounts],
+            "versions": [version.serialize() for version in item.versions],
             "skipped": [when.isoformat() for when in item.skipped],
-            "occurrence_adjustments": [
-                adjustment.serialize() for adjustment in item.occurrence_adjustments
-            ],
             "estimate_evidence": item.estimate_evidence,
             "advance_days": item.advance_days,
             "remind_days": item.remind_days,
@@ -131,6 +115,11 @@ def formula_request_json(request: FormulaScheduleInput) -> dict[str, Any]:
         "placeholder": request.placeholder,
         "growth_policy": _enum(request.growth_policy),
         "skipped": [when.isoformat() for when in request.skipped],
+        "versions": (
+            None
+            if request.versions is None
+            else [version.serialize() for version in request.versions]
+        ),
         "advance_days": request.advance_days,
         "remind_days": request.remind_days,
         **_posting_details(request),
@@ -271,15 +260,6 @@ def fixed_request_from_json(data: Any) -> SaveFixedSchedule:
     """A ``SaveFixedSchedule`` from untrusted JSON data, or a ``ValueError``."""
     outer = _object(data, "request")
     item = _object(outer.get("definition"), "definition")
-    raw_changes = item.get("split_amount_changes")
-    split_changes: dict[str, tuple[ScheduledSplitAmountChange, ...]] | None = None
-    if raw_changes is not None:
-        split_changes = {
-            str(account): _parts(
-                {"changes": changes}, "changes", ScheduledSplitAmountChange.from_dict
-            )
-            for account, changes in _object(raw_changes, "split_amount_changes").items()
-        }
     evidence = item.get("estimate_evidence")
     if evidence is not None and not isinstance(evidence, dict):
         raise ValueError("estimate_evidence must be an object")
@@ -309,13 +289,8 @@ def fixed_request_from_json(data: Any) -> SaveFixedSchedule:
             auto_create=_flag(item, "auto_create"),
             placeholder=_flag(item, "placeholder"),
             growth_policy=policy or ScheduleGrowthPolicy.AUTO,
-            amount_changes=_parts(item, "amount_changes", ScheduledAmountChange.from_dict),
-            split_amount_changes=split_changes,
-            seasonal_amounts=_parts(item, "seasonal_amounts", ScheduledMonthAmount.from_dict),
+            versions=_parts(item, "versions", ScheduledVersion.from_dict),
             skipped=_skipped(item),
-            occurrence_adjustments=_parts(
-                item, "occurrence_adjustments", ScheduledOccurrenceAdjustment.from_dict
-            ),
             estimate_evidence=evidence,
             advance_days=_whole(item, "advance_days"),
             remind_days=_whole(item, "remind_days"),
@@ -353,6 +328,11 @@ def formula_request_from_json(data: Any) -> FormulaScheduleInput:
         growth_policy=policy or ScheduleGrowthPolicy.AUTO,
         skipped=_skipped(item),
         source=_source_from(item),
+        versions=(
+            None
+            if item.get("versions") is None
+            else _parts(item, "versions", ScheduledVersion.from_dict)
+        ),
         advance_days=_whole(item, "advance_days"),
         remind_days=_whole(item, "remind_days"),
         num=_text(item, "num", optional=True),

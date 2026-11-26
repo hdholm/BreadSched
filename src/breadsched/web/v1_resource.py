@@ -17,7 +17,9 @@ Resources so far, all under ``/api/v1``:
 * ``GET /schedules/lookup`` (``reference``) – one schedule, as it is stored.
 * ``GET`` and ``POST /schedules/{handle}/next`` (``decision``, ``date``, ``as_of``,
   ``prices``).
-* ``GET`` and ``PATCH /schedules/{handle}/advance-days``.
+* ``GET`` and ``PATCH /schedules/{handle}/advance-days``; ``PATCH
+  /schedules/{handle}/versions`` (``versions``, each as ``ScheduledVersion``
+  serializes) – replace a schedule's versions.
 * ``DELETE /schedules/{handle}`` and ``POST /schedules/{handle}/duplicate`` (``name``).
 * ``POST /post-due`` (``as_of``, ``all``) – post what is due without a review.
 * ``POST /schedules/fixed`` and ``POST /schedules/formula`` – save from an editor;
@@ -230,7 +232,7 @@ from ..gen.engine.fsa_claim_report import GROUPINGS
 from ..gen.engine.fsa_claims import FsaClaimStatus
 from ..gen.engine.loans import LoanTerms
 from ..gen.engine.transaction_query import TransactionQuery
-from ..gen.lib import Scenario, ScheduledTransaction
+from ..gen.lib import Scenario, ScheduledTransaction, ScheduledVersion
 from ..gen.lib.money import Money
 from ..gen.lib.scenario import AssumptionPeriod
 from ..gen.services import (
@@ -245,6 +247,7 @@ from ..gen.services import (
     ResolveNext,
     SetAdvanceDays,
     SetScheduleDetails,
+    SetScheduleVersions,
 )
 from ..gen.services.account_inference import ApplyAccountSuggestions
 from ..gen.services.assumptions import SaveBaseAssumptions, SaveScenarioAssumptions
@@ -643,6 +646,20 @@ def schedule_details_patch(api: Api, path: Path, body: dict[str, Any]) -> dict:
         tags=tuple(tags) if tags is not None else None,
     )
     return {"schedule": api.book.set_schedule_details(request).serialize()}
+
+
+def schedule_versions_patch(api: Api, path: Path, body: dict[str, Any]) -> dict:
+    """Replace a schedule's versions; each as ``ScheduledVersion.serialize`` writes it."""
+    _only(body, {"versions"})
+    raw = body.get("versions")
+    if not isinstance(raw, list) or not all(isinstance(item, dict) for item in raw):
+        raise ValueError("versions must be a list of versions")
+    try:
+        versions = tuple(ScheduledVersion.from_dict(item) for item in raw)
+    except (KeyError, TypeError, ValueError, ArithmeticError):
+        raise ValueError("a version is invalid") from None
+    request = SetScheduleVersions(path["handle"], versions)
+    return {"schedule": api.book.set_schedule_versions(request).serialize()}
 
 
 def undo_preview_post(api: Api, _path: Path, body: dict[str, Any]) -> dict:

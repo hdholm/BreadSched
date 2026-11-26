@@ -20,6 +20,7 @@ from ..gen.lib import (
     ScheduleGrowthPolicy,
     occurrence_preview,
 )
+from ..gen.lib.schedule_versions import starting_version
 from ..gen.services import (
     DueDecision,
     DueQuotes,
@@ -40,13 +41,12 @@ from .controls import input_amount
 from .schedule_controls import (
     frequency_key,
     parse_additional_splits,
-    parse_amount_changes,
-    parse_occurrence_adjustments,
-    parse_seasonal_amounts,
+    parse_new_version,
     parse_skipped,
-    parse_split_amount_changes,
+    parse_versions,
     schedule_recurrence,
     simple_parts,
+    versions_json,
     weekend_key,
 )
 
@@ -124,28 +124,8 @@ def scheduled(api: Api, days: int = 60) -> dict:
                 ),
                 "count": item.recurrence.count,
                 "weekend": weekend_key(item.recurrence.weekend_adjust),
-                "amount_changes": [
-                    {"start": change.start.isoformat(), "amount": change.amount}
-                    for change in item.amount_changes
-                ],
-                "split_amount_changes": [
-                    {
-                        "account": split.account,
-                        "start": change.start.isoformat(),
-                        "amount": change.amount,
-                    }
-                    for split in item.splits
-                    for change in split.amount_changes
-                ],
-                "seasonal_amounts": [
-                    {"month": value.month, "amount": value.amount}
-                    for value in item.seasonal_amounts
-                ],
+                "versions": versions_json(item.versions, dict(view.names)),
                 "skipped": [when.isoformat() for when in item.skipped],
-                "occurrence_adjustments": [
-                    {"when": change.when.isoformat(), "amount": change.amount}
-                    for change in item.occurrence_adjustments
-                ],
                 "estimate_evidence": item.estimate_evidence,
             }
         )
@@ -182,10 +162,8 @@ def scheduled(api: Api, days: int = 60) -> dict:
                 "end": None,
                 "count": None,
                 "weekend": "none",
-                "amount_changes": [],
-                "seasonal_amounts": [],
+                "versions": [],
                 "skipped": [],
-                "occurrence_adjustments": [],
             }
         )
     return {
@@ -250,10 +228,8 @@ def scheduled_draft(api: Api, payload: dict) -> dict:
         "end": None,
         "count": None,
         "weekend": "none",
-        "amount_changes": [],
-        "split_amount_changes": [],
+        "versions": [],
         "skipped": [],
-        "occurrence_adjustments": [],
     }
 
 
@@ -321,11 +297,15 @@ def _fixed_schedule_request(api: Api, payload: dict) -> SaveFixedSchedule:
     except (ValueError, ArithmeticError) as exc:
         raise ValueError("amount must be a valid number") from exc
     recurrence = schedule_recurrence(payload, existing)
-    amount_changes = parse_amount_changes(payload, recurrence.start)
     skipped = parse_skipped(payload, recurrence)
-    adjustments = parse_occurrence_adjustments(payload, recurrence)
-    if set(skipped) & {change.when for change in adjustments}:
-        raise ValueError("an occurrence cannot be both skipped and overridden")
+    # A request without versions keeps the stored ones.
+    versions = (
+        parse_versions(payload)
+        if "versions" in payload
+        else list(existing.versions)
+        if existing is not None
+        else []
+    )
 
     default_growth_policy = (
         existing.growth_policy if existing is not None else ScheduleGrowthPolicy.AUTO
@@ -357,25 +337,6 @@ def _fixed_schedule_request(api: Api, payload: dict) -> SaveFixedSchedule:
         if existing_parts is not None
         else ""
     )
-    selected_handles = {
-        category_handle,
-        funding_handle,
-        *(split.account for split in additional_splits),
-    }
-    existing_split_changes = (
-        {split.account: tuple(split.amount_changes) for split in existing.splits}
-        if existing is not None
-        else {}
-    )
-    split_changes = (
-        parse_split_amount_changes(
-            payload,
-            recurrence.start,
-            selected_handles,
-        )
-        if "split_amount_changes" in payload
-        else existing_split_changes
-    )
     placeholder = bool(payload.get("placeholder", False))
     evidence = existing.estimate_evidence if existing is not None else None
     if "estimate_evidence" in payload:
@@ -383,13 +344,6 @@ def _fixed_schedule_request(api: Api, payload: dict) -> SaveFixedSchedule:
         if raw_evidence is not None and not isinstance(raw_evidence, dict):
             raise ValueError("estimate evidence must be an object")
         evidence = raw_evidence
-    seasonal_amounts = (
-        parse_seasonal_amounts(payload)
-        if "seasonal_amounts" in payload
-        else list(existing.seasonal_amounts)
-        if existing is not None
-        else []
-    )
     enabled = existing.enabled if existing is not None else True
     if "enabled" in payload:
         if not isinstance(payload["enabled"], bool):
@@ -414,13 +368,8 @@ def _fixed_schedule_request(api: Api, payload: dict) -> SaveFixedSchedule:
             auto_create=bool(payload.get("auto", False)),
             placeholder=placeholder,
             growth_policy=growth_policy,
-            amount_changes=tuple(amount_changes),
-            split_amount_changes={
-                account: tuple(changes) for account, changes in split_changes.items()
-            },
-            seasonal_amounts=tuple(seasonal_amounts),
+            versions=tuple(versions),
             skipped=tuple(skipped),
-            occurrence_adjustments=tuple(adjustments),
             estimate_evidence=evidence,
             advance_days=_days(payload, "advance_days"),
             remind_days=_days(payload, "remind_days"),
@@ -442,6 +391,21 @@ def scheduled_preview(api: Api, payload: dict) -> dict:
     return {"preview": preview_rows(draft, payload)}
 
 
+def scheduled_version_start(api: Api, payload: dict) -> dict:
+    """A new version for the schedule an editor describes, unsaved, filled in from
+    what the schedule then is (``schedule_versions.starting_version``). A payload
+    with ``formulas`` describes a formula schedule, as its save does."""
+    kind, start, month = parse_new_version(payload)
+    # A version can be added before the schedule is named; the draft needs a name.
+    payload = {**payload, "name": str(payload.get("name") or "").strip() or "New schedule"}
+    draft = (
+        api.book.draft_formula_schedule(_formula_schedule_request(api, payload))
+        if "formulas" in payload
+        else api.book.draft_fixed_schedule(_fixed_schedule_request(api, payload))
+    )
+    return {"version": versions_json([starting_version(draft, kind, start, month)], _names(api))[0]}
+
+
 def preview_rows(draft: ScheduledTransaction | ScenarioSchedule, payload: dict) -> list[dict]:
     """A preview from ``as_of`` (today when absent) onward, as an editor lists it."""
     raw = str(payload.get("as_of") or "").strip()
@@ -457,6 +421,12 @@ def preview_rows(draft: ScheduledTransaction | ScenarioSchedule, payload: dict) 
 
 def scheduled_formula_save(api: Api, payload: dict) -> dict:
     """Update formula inputs and ordinary metadata without exposing owned mechanics."""
+    saved = api.book.save_formula_schedule(_formula_schedule_request(api, payload))
+    return {"handle": saved.handle, "name": saved.name}
+
+
+def _formula_schedule_request(api: Api, payload: dict) -> FormulaScheduleInput:
+    """The formula schedule an editor's fields describe."""
     handle = str(payload.get("handle") or "").strip()
     if not handle:
         raise KeyError(handle)
@@ -509,24 +479,22 @@ def scheduled_formula_save(api: Api, payload: dict) -> dict:
             raise ValueError("automatic posting status must be true or false")
         auto_create = payload["auto"]
 
-    saved = api.book.save_formula_schedule(
-        FormulaScheduleInput(
-            existing_handle=existing.handle,
-            name=name,
-            recurrence=recurrence,
-            formulas=formulas,
-            variables=raw_variables,
-            enabled=enabled,
-            auto_create=auto_create,
-            placeholder=placeholder,
-            growth_policy=growth_policy,
-            skipped=tuple(parse_skipped(payload, recurrence)),
-            advance_days=_days(payload, "advance_days"),
-            remind_days=_days(payload, "remind_days"),
-            **_posting_details(payload),
-        ),
+    return FormulaScheduleInput(
+        existing_handle=existing.handle,
+        name=name,
+        recurrence=recurrence,
+        formulas=formulas,
+        variables=raw_variables,
+        enabled=enabled,
+        auto_create=auto_create,
+        placeholder=placeholder,
+        growth_policy=growth_policy,
+        skipped=tuple(parse_skipped(payload, recurrence)),
+        versions=tuple(parse_versions(payload)) if "versions" in payload else None,
+        advance_days=_days(payload, "advance_days"),
+        remind_days=_days(payload, "remind_days"),
+        **_posting_details(payload),
     )
-    return {"handle": saved.handle, "name": saved.name}
 
 
 def scheduled_delete(api: Api, payload: dict) -> dict:
@@ -581,7 +549,7 @@ def historical_estimates(
                 "variability": item.variability,
                 "reason": item.reason,
                 "evidence": item.evidence.serialize(),
-                "draft": historical_estimate_draft(draft),
+                "draft": historical_estimate_draft(draft, _names(api)),
                 "planning_flow": (
                     item.planning_flow.value if item.planning_flow is not None else None
                 ),
@@ -595,7 +563,7 @@ def historical_estimates(
     }
 
 
-def historical_estimate_draft(view: ScheduleEditorView) -> dict:
+def historical_estimate_draft(view: ScheduleEditorView, names: dict[str, str]) -> dict:
     """Translate the engine-owned draft once for every interactive client."""
     draft = view.schedule
     parts = simple_parts(view)
@@ -627,13 +595,8 @@ def historical_estimate_draft(view: ScheduleEditorView) -> dict:
         "category_memo": parts["category_memo"],
         "funding_memo": parts["funding_memo"],
         "additional_splits": parts["additional_splits"],
-        "amount_changes": [],
-        "split_amount_changes": [],
-        "seasonal_amounts": [
-            {"month": item.month, "amount": item.amount} for item in draft.seasonal_amounts
-        ],
+        "versions": versions_json(draft.versions, names),
         "skipped": [],
-        "occurrence_adjustments": [],
         "account_handles": [parts["category"], parts["funding"]],
         "estimate_evidence": draft.estimate_evidence,
     }
@@ -811,3 +774,8 @@ def scheduled_next(api: Api, payload: dict) -> dict:
         prices=_leg_prices(payload),
     )
     return resolution_json(api.book.resolve_next(request))
+
+
+def _names(api: Api) -> dict[str, str]:
+    """Every account's full name, by handle, for a draft's versions."""
+    return {record.account.handle: record.full_name for record in api.book.accounts()}

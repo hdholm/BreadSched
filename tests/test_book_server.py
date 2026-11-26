@@ -49,6 +49,7 @@ from breadsched.gen.services import (
     ServiceError,
     SetAdvanceDays,
     SetScheduleDetails,
+    SetScheduleVersions,
     TransactionInput,
     TransactionSplitInput,
 )
@@ -3659,3 +3660,39 @@ def test_a_card_statement_is_paid_alike(target, book):
     assert db.get_transaction(paid.transaction.handle).value_for(book.card) == Money("30")
     assert db.get_reconciliation(done.handle).minimum_payment == Money("25")
     assert api.card_payment_offer(done.handle).amount == Money("90")
+
+
+def test_schedule_versions_are_replaced_alike(target, book):
+    """A schedule's versions, replaced the same in process and over HTTP; a version
+    the service refuses leaves the stored schedule as it was."""
+    from breadsched.gen.lib import ScheduledVersion
+
+    api, db = target.api, target.db
+    [rent] = db.iter_scheduled()
+    start = rent.recurrence.start
+    later = date(start.year + 1, start.month, start.day)
+    raised = ScheduledVersion.moving("from", rent.splits, Money("2000.00"), start=later)
+    december = ScheduledVersion.moving("month", rent.splits, Money("2500.00"), month=12)
+    saved = api.set_schedule_versions(SetScheduleVersions(rent.handle, (raised, december)))
+    assert saved.versions == [raised, december]
+    assert db.get_scheduled(rent.handle).versions == [raised, december]
+    assert sum(leg.value for leg in saved.legs_at(later) if leg.value > 0) == Money("2000.00")
+
+    before = repr(db.get_scheduled(rent.handle).serialize())
+    unbalanced = ScheduledVersion(
+        "from",
+        [ScheduledSplit(rent.splits[0].account, Money("10")), *rent.splits[1:]],
+        start=later,
+    )
+    for request, status, code in (
+        (SetScheduleVersions("missing", ()), 404, "schedule.not_found"),
+        (SetScheduleVersions(rent.handle, (raised, raised)), 400, "schedule.versions.duplicate"),
+        (SetScheduleVersions(rent.handle, (unbalanced,)), 400, "schedule.versions.unbalanced"),
+    ):
+        with pytest.raises(ApiError) as refused:
+            api.set_schedule_versions(request)
+        assert refused.value.status == status
+        assert refused.value.code == code
+    assert repr(db.get_scheduled(rent.handle).serialize()) == before
+    # An empty tuple removes every version.
+    assert api.set_schedule_versions(SetScheduleVersions(rent.handle, ())).versions == []

@@ -15,12 +15,9 @@ from breadsched.gen.lib import (
     Recurrence,
     Scenario,
     ScenarioSchedule,
-    ScheduledAmountChange,
-    ScheduledMonthAmount,
-    ScheduledOccurrenceAdjustment,
     ScheduledSplit,
-    ScheduledSplitAmountChange,
     ScheduledTransaction,
+    ScheduledVersion,
     Split,
     Transaction,
 )
@@ -73,9 +70,23 @@ class TestEventDomain:
                 ScheduledSplit(book.rent, Money("1800.00")),
                 ScheduledSplit(book.checking, Money("-1800.00")),
             ],
-            amount_changes=[
-                ScheduledAmountChange(date(2026, 7, 1), Money("1950.00")),
-                ScheduledAmountChange(date(2027, 1, 1), Money("2100.00")),
+            versions=[
+                ScheduledVersion(
+                    "from",
+                    [
+                        ScheduledSplit(book.rent, Money("1950.00")),
+                        ScheduledSplit(book.checking, Money("-1950.00")),
+                    ],
+                    start=date(2026, 7, 1),
+                ),
+                ScheduledVersion(
+                    "from",
+                    [
+                        ScheduledSplit(book.rent, Money("2100.00")),
+                        ScheduledSplit(book.checking, Money("-2100.00")),
+                    ],
+                    start=date(2027, 1, 1),
+                ),
             ],
         )
         with db.transaction("rent schedule") as txn:
@@ -96,8 +107,10 @@ class TestEventDomain:
                 ScheduledSplit("expense", Money("1800")),
                 ScheduledSplit("cash", Money("-1800")),
             ],
-            amount_changes=[ScheduledAmountChange(date(2030, 1, 1), Money("1950"))],
         )
+        schedule.versions = [
+            ScheduledVersion.moving("from", schedule.splits, Money("1950"), start=date(2030, 1, 1))
+        ]
 
         clone = ScheduledTransaction.from_dict(schedule.serialize())
 
@@ -111,21 +124,21 @@ class TestEventDomain:
             recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
             splits=[
                 ScheduledSplit(book.salary, Money("-1000")),
-                ScheduledSplit(
-                    book.utilities,
-                    Money("200"),
-                    amount_changes=[ScheduledSplitAmountChange(effective, Money("225"))],
-                ),
-                ScheduledSplit(
-                    book.brokerage,
-                    Money("100"),
-                    amount_changes=[ScheduledSplitAmountChange(effective, Money("125"))],
-                ),
-                ScheduledSplit(
-                    book.checking,
-                    Money("700"),
-                    amount_changes=[ScheduledSplitAmountChange(effective, Money("650"))],
-                ),
+                ScheduledSplit(book.utilities, Money("200")),
+                ScheduledSplit(book.brokerage, Money("100")),
+                ScheduledSplit(book.checking, Money("700")),
+            ],
+            versions=[
+                ScheduledVersion(
+                    "from",
+                    [
+                        ScheduledSplit(book.salary, Money("-1000")),
+                        ScheduledSplit(book.utilities, Money("225")),
+                        ScheduledSplit(book.brokerage, Money("125")),
+                        ScheduledSplit(book.checking, Money("650")),
+                    ],
+                    start=effective,
+                )
             ],
         )
         clone = ScheduledTransaction.from_dict(payroll.serialize())
@@ -143,14 +156,14 @@ class TestEventDomain:
             db.add_scheduled(clone, txn)
         event = planning.scheduled_events(db, effective, effective)[0]
         sources = {split.account: split.amount_source for split in event.expected_splits}
-        assert sources[book.utilities] == "per-leg amount effective 2026-07-01"
+        assert sources[book.utilities] == "amount from 2026-07-01"
         assert event.as_dict()["amount_explanations"][1]["source"] == sources[book.utilities]
 
         cell = plan_detail.explain_category_period(
             db, book.utilities, effective, date(2026, 7, 31), as_of=effective
         )
         assert any(
-            "Amount for Utilities: per-leg amount effective 2026-07-01." in line
+            "Amount for Utilities: amount from 2026-07-01." in line
             for line in cell.planned_events[0].explanation
         )
 
@@ -165,7 +178,7 @@ class TestEventDomain:
         projected_sources = {
             split.account: split.amount_source for split in projected.expected_splits
         }
-        assert projected_sources[book.brokerage] == "per-leg amount effective 2026-07-01"
+        assert projected_sources[book.brokerage] == "amount from 2026-07-01"
 
     def test_seasonal_amount_profile_round_trips_and_posts_resolved_amount(self):
         schedule = ScheduledTransaction(
@@ -175,11 +188,18 @@ class TestEventDomain:
                 ScheduledSplit("expense", Money("100")),
                 ScheduledSplit("cash", Money("-100")),
             ],
-            seasonal_amounts=[
-                ScheduledMonthAmount(1, Money("240")),
-                ScheduledMonthAmount(7, Money("240")),
-            ],
         )
+        schedule.versions = [
+            ScheduledVersion(
+                "month",
+                [
+                    ScheduledSplit("expense", formula="base * 2.4"),
+                    ScheduledSplit("cash", formula="base * 2.4", direction=-1),
+                ],
+                month=month,
+            )
+            for month in (1, 7)
+        ]
 
         clone = ScheduledTransaction.from_dict(schedule.serialize())
 
@@ -199,8 +219,15 @@ class TestEventDomain:
                 ScheduledSplit(book.checking, Money("-1800.00")),
             ],
             skipped=[date(2026, 3, 1)],
-            occurrence_adjustments=[
-                ScheduledOccurrenceAdjustment(date(2026, 4, 1), Money("2300.00"))
+            versions=[
+                ScheduledVersion(
+                    "once",
+                    [
+                        ScheduledSplit(book.rent, Money("2300.00")),
+                        ScheduledSplit(book.checking, Money("-2300.00")),
+                    ],
+                    start=date(2026, 4, 1),
+                )
             ],
         )
         with db.transaction("rent schedule") as txn:
@@ -228,8 +255,10 @@ class TestEventDomain:
                 ScheduledSplit("cash", Money("-1800")),
             ],
             skipped=[date(2026, 3, 1)],
-            occurrence_adjustments=[ScheduledOccurrenceAdjustment(date(2026, 4, 1), Money("2300"))],
         )
+        source.versions = [
+            ScheduledVersion.moving("once", source.splits, Money("2300"), start=date(2026, 4, 1))
+        ]
 
         clone = ScheduledTransaction.from_dict(source.serialize())
 
@@ -250,8 +279,10 @@ class TestEventDomain:
 
         alternate = ScenarioSchedule.from_scheduled(salary)
         alternate.skipped = [date(2026, 2, 5)]
-        alternate.occurrence_adjustments = [
-            ScheduledOccurrenceAdjustment(date(2026, 3, 5), Money("1400.00"))
+        alternate.versions = [
+            ScheduledVersion.moving(
+                "once", alternate.splits, Money("1400.00"), start=date(2026, 3, 5)
+            )
         ]
         scenario = Scenario(name="Alternate", schedule_overrides=[alternate])
         events = planning.scenario_events(db, scenario, date(2026, 1, 1), date(2026, 3, 31))
@@ -942,7 +973,16 @@ class TestHistoricalEstimateProposals:
                 ScheduledSplit(book.rent, Money("80")),
                 ScheduledSplit(book.checking, Money("-80")),
             ],
-            amount_changes=[ScheduledAmountChange(date(2026, 4, 1), Money("120"))],
+            versions=[
+                ScheduledVersion(
+                    "from",
+                    [
+                        ScheduledSplit(book.rent, Money("120")),
+                        ScheduledSplit(book.checking, Money("-120")),
+                    ],
+                    start=date(2026, 4, 1),
+                )
+            ],
         )
         with db.transaction("History and changing bill") as txn:
             db.add_scheduled(bill, txn)
@@ -1706,14 +1746,29 @@ class TestHistoricalEstimateProposals:
         assert base.auto_create is False
         assert base.recurrence.serialize() == proposal.recurrence.serialize()
         assert alternate.recurrence.serialize() == proposal.recurrence.serialize()
-        assert [item.serialize() for item in base.seasonal_amounts] == [
-            item.serialize() for item in proposal.seasonal_amounts
-        ]
-        assert [item.serialize() for item in alternate.seasonal_amounts] == [
-            item.serialize() for item in proposal.seasonal_amounts
-        ]
-        assert base.seasonal_amounts[0] is not proposal.seasonal_amounts[0]
-        assert alternate.seasonal_amounts[0] is not proposal.seasonal_amounts[0]
+        # Each seasonal month is a month version scaling every leg's base, and gives
+        # that month's typical amount (to the ratio's six places).
+        months = [item.month for item in proposal.seasonal_amounts]
+        for draft in (base, alternate):
+            assert [version.month for version in draft.versions] == months
+            assert all(version.kind.value == "month" for version in draft.versions)
+            assert all(
+                split.formula.startswith("base * ")
+                for version in draft.versions
+                for split in version.splits
+            )
+            for item in proposal.seasonal_amounts:
+                when = next(
+                    day
+                    for day in draft.recurrence.occurrences(date(2030, 12, 31))
+                    if day.month == item.month
+                )
+                total = sum(
+                    (value for _account, value in draft.resolved_splits(when=when) if value > 0),
+                    Money(0),
+                )
+                assert abs(total - item.amount) < Money("0.01")
+        assert base.versions[0] is not alternate.versions[0]
 
     def test_accepted_base_estimate_is_subtracted_on_reanalysis(self, db, book):
         from breadsched.gen.engine import estimates

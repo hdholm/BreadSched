@@ -82,6 +82,7 @@ from ..gen.services import (
     SaveTransaction,
     SetAdvanceDays,
     SetScheduleDetails,
+    SetScheduleVersions,
     TagCount,
     TransactionInput,
 )
@@ -527,6 +528,11 @@ class HttpBookClient:
             "tags": list(request.tags) if request.tags is not None else None,
         }
         path = f"/schedules/{quote(request.schedule, safe='')}/details"
+        return ScheduledTransaction.from_dict(self._call("PATCH", path, body=body)["schedule"])
+
+    def set_schedule_versions(self, request: SetScheduleVersions) -> ScheduledTransaction:
+        body = {"versions": [version.serialize() for version in request.versions]}
+        path = f"/schedules/{quote(request.schedule, safe='')}/versions"
         return ScheduledTransaction.from_dict(self._call("PATCH", path, body=body)["schedule"])
 
     def delete_schedule(self, schedule: str) -> SavedSchedule:

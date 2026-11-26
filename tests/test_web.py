@@ -36,10 +36,9 @@ from breadsched.gen.lib import (
     PeriodType,
     PlanningFlowKind,
     Recurrence,
-    ScheduledAmountChange,
-    ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
+    ScheduledVersion,
     Split,
     Transaction,
 )
@@ -53,6 +52,30 @@ from breadsched.web.resources import GET_ROUTES, QueryParams
 from breadsched.web.scenario_resource import scenarios_report
 from breadsched.web.server import serve
 from breadsched.web.transport import SCRIPTS
+
+
+def _fixed_version(kind: str, legs, *, start: str | None = None, month: int | None = None):
+    """A version as the browser sends it: each leg's account and signed amount."""
+    return {
+        "kind": kind,
+        "start": start,
+        "month": month,
+        "legs": [{"account": account, "amount": amount} for account, amount in legs],
+    }
+
+
+def _moving_version(kind, category, funding, amount, *, start=None, month=None):
+    """A version scaling the transaction below to move ``amount``."""
+    formula = f"base * {amount} / base_total"
+    return {
+        "kind": kind,
+        "start": start,
+        "month": month,
+        "legs": [
+            {"account": category, "formula": formula, "direction": 1},
+            {"account": funding, "formula": formula, "direction": -1},
+        ],
+    }
 
 
 def raw_http(client, request: bytes) -> tuple[int, dict]:
@@ -340,11 +363,15 @@ class TestItServes:
     def test_schedule_occurrence_controls_are_structured(self, client):
         _status, body, _headers = page_scripts(client)
         text = body.decode("utf-8")
-        assert "timelineEditor" in text
         assert "occurrenceTimelineEditor" in text
-        assert "Add date and amount" in text
         assert "Add skipped occurrence" in text
-        assert "Add occurrence amount" in text
+        # One versions editor replaced the dated, per-leg, seasonal, and one-time
+        # amount editors; versions start from the server's draft.
+        assert "function versionsEditor" in text
+        assert "/api/scheduled/version-start" in text
+        assert "/api/scenario/event/version-start" in text
+        for gone in ("timelineEditor(", "monthAmountEditor", "splitAmountTimelineEditor"):
+            assert gone not in text.replace("occurrenceTimelineEditor(", "")
         assert "Future amounts use YYYY-MM-DD=amount" not in text
 
     def test_the_summary_reports_the_book(self, client):
@@ -1286,19 +1313,27 @@ class TestItServes:
                 "frequency": "monthly",
                 "start": "2026-01-01",
                 "placeholder": True,
-                "seasonal_amounts": [
-                    {"month": 1, "amount": "40.00"},
-                    {"month": 7, "amount": "10.00"},
+                "versions": [
+                    _moving_version(
+                        "month", category["handle"], funding["handle"], "40.00", month=1
+                    ),
+                    _moving_version(
+                        "month", category["handle"], funding["handle"], "10.00", month=7
+                    ),
                 ],
             },
         )
         assert status == 200
         _status, data = client.get("/api/scheduled")
         item = next(row for row in data["definitions"] if row["handle"] == created["handle"])
-        assert item["seasonal_amounts"] == [
-            {"month": 1, "amount": "40.00"},
-            {"month": 7, "amount": "10.00"},
+        assert [(row["kind"], row["month"], row["label"]) for row in item["versions"]] == [
+            ("month", 1, "every January"),
+            ("month", 7, "every July"),
         ]
+        assert item["versions"][0]["legs"][1]["direction"] == -1
+        stored = client.database.get_scheduled(created["handle"])
+        assert stored.amount(when=date(2026, 1, 1)) == Money("40.00")
+        assert stored.amount(when=date(2026, 7, 1)) == Money("10.00")
         assert all(row["schedule"] != created["handle"] for row in data["upcoming"])
 
     def test_occurrence_options_follow_recurrence_and_weekend_adjustment(self, client):
@@ -1339,26 +1374,31 @@ class TestItServes:
                 "frequency": "monthly",
                 "start": "2019-01-15",
                 "weekend": "none",
-                "amount_changes": [{"start": "2026-12-01", "amount": "1950.00"}],
-                "split_amount_changes": [
-                    {"account": category, "start": "2027-02-01", "amount": "2000.00"},
-                    {"account": funding, "start": "2027-02-01", "amount": "-2000.00"},
+                "versions": [
+                    _fixed_version(
+                        "from", [(category, "1950.00"), (funding, "-1950.00")], start="2026-12-01"
+                    ),
+                    _fixed_version(
+                        "from", [(category, "2000.00"), (funding, "-2000.00")], start="2027-02-01"
+                    ),
+                    _moving_version("month", category, funding, "1700.00", month=11),
+                    _fixed_version(
+                        "once", [(category, "2300.00"), (funding, "-2300.00")], start="2027-04-15"
+                    ),
                 ],
-                "seasonal_amounts": [{"month": 11, "amount": "1700.00"}],
                 "skipped": ["2027-03-15"],
-                "occurrence_adjustments": [{"when": "2027-04-15", "amount": "2300.00"}],
                 "as_of": "2026-10-20",
             },
         )
         assert status == 200
         assert [(row["when"], row["amount"], row["status"]) for row in payload["preview"]][:7] == [
-            ("2026-11-15", "1700.00", "Seasonal amount"),
-            ("2026-12-15", "1950.00", "Future amount"),
-            ("2027-01-15", "1950.00", "Future amount"),
-            ("2027-02-15", "1950.00", "Future amount"),
-            ("2027-03-15", "1950.00", "Skipped"),
-            ("2027-04-15", "2300.00", "One-time amount"),
-            ("2027-05-15", "1950.00", "Future amount"),
+            ("2026-11-15", "1700.00", "Month version"),
+            ("2026-12-15", "1950.00", "Changed version"),
+            ("2027-01-15", "1950.00", "Changed version"),
+            ("2027-02-15", "2000.00", "Changed version"),
+            ("2027-03-15", "2000.00", "Skipped"),
+            ("2027-04-15", "2300.00", "One-time version"),
+            ("2027-05-15", "2000.00", "Changed version"),
         ]
 
     def test_the_preview_follows_per_leg_amounts_alone(self, client):
@@ -1372,17 +1412,18 @@ class TestItServes:
                 "amount": "1800.00",
                 "frequency": "monthly",
                 "start": "2026-01-01",
-                "split_amount_changes": [
-                    {"account": category, "start": "2026-12-01", "amount": "1900.00"},
-                    {"account": funding, "start": "2026-12-01", "amount": "-1900.00"},
+                "versions": [
+                    _fixed_version(
+                        "from", [(category, "1900.00"), (funding, "-1900.00")], start="2026-12-01"
+                    )
                 ],
                 "as_of": "2026-10-20",
             },
         )
         assert [(row["when"], row["amount"], row["status"]) for row in payload["preview"]][:3] == [
             ("2026-11-01", "1800.00", "Normal"),
-            ("2026-12-01", "1900.00", "Future amount"),
-            ("2027-01-01", "1900.00", "Future amount"),
+            ("2026-12-01", "1900.00", "Changed version"),
+            ("2027-01-01", "1900.00", "Changed version"),
         ]
 
     def test_the_preview_starts_after_the_last_posted_occurrence(self, client):
@@ -1411,6 +1452,74 @@ class TestItServes:
         ]
         # A preview never saves.
         assert client.database.get_scheduled(created["handle"]).serialize() == before
+
+    def test_a_new_version_starts_from_what_the_schedule_then_is(self, client):
+        """The editor's Add version: a version from a date copies the legs then in
+        force; a month version is every leg base * 1.0 in its own column; a version on
+        one date is that occurrence's amounts. Nothing is saved."""
+        category, funding = self._accounts(client)
+        body = {
+            "category": category,
+            "funding": funding,
+            "amount": "1800.00",
+            "frequency": "monthly",
+            "start": "2026-01-15",
+            "versions": [
+                _fixed_version(
+                    "from", [(category, "1950.00"), (funding, "-1950.00")], start="2026-06-15"
+                ),
+                _moving_version("month", category, funding, "1700.00", month=11),
+            ],
+        }
+        before = [item.serialize() for item in client.database.iter_scheduled()]
+
+        def start(new_version):
+            status, payload = client.post(
+                "/api/scheduled/version-start", {**body, "new_version": new_version}
+            )
+            assert status == 200
+            return payload["version"]
+
+        later = start({"kind": "from", "start": "2026-09-15"})
+        assert (later["kind"], later["start"], later["label"]) == (
+            "from",
+            "2026-09-15",
+            "from 2026-09-15",
+        )
+        assert [(leg["account"], leg["amount"], leg["formula"]) for leg in later["legs"]] == [
+            (category, "1950.00", ""),
+            (funding, "-1950.00", ""),
+        ]
+        month = start({"kind": "month", "month": 3})
+        assert (month["kind"], month["month"]) == ("month", 3)
+        assert [(leg["formula"], leg["direction"]) for leg in month["legs"]] == [
+            ("base * 1.0", 1),
+            ("base * 1.0", -1),
+        ]
+        once = start({"kind": "once", "start": "2026-11-15"})
+        # That occurrence is the month version on top of the dated one.
+        assert [leg["amount"] for leg in once["legs"]] == ["1700.00", "-1700.00"]
+        assert [item.serialize() for item in client.database.iter_scheduled()] == before
+
+    @pytest.mark.parametrize(
+        "new_version",
+        [None, {"kind": "weekly"}, {"kind": "month", "month": 13}, {"kind": "from"}],
+    )
+    def test_a_new_version_needs_its_kind_and_date_or_month(self, client, new_version):
+        category, funding = self._accounts(client)
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/scheduled/version-start",
+                {
+                    "category": category,
+                    "funding": funding,
+                    "amount": "1800.00",
+                    "frequency": "monthly",
+                    "start": "2026-01-15",
+                    "new_version": new_version,
+                },
+            )
+        assert caught.value.code == 400
 
     def test_the_preview_refuses_what_a_save_would(self, client):
         category, _funding = self._accounts(client)
@@ -1464,24 +1573,31 @@ class TestItServes:
                 "funding": funding["handle"],
                 "planning_flow": "benefit_funding",
                 "amount": "110.00",
-                "amount_changes": [
-                    {"start": "2026-05-15", "amount": "125.00"},
-                    {"start": "2026-07-15", "amount": "140.00"},
-                ],
-                "split_amount_changes": [
-                    {
-                        "account": category["handle"],
-                        "start": "2026-06-15",
-                        "amount": "130.00",
-                    },
-                    {
-                        "account": funding["handle"],
-                        "start": "2026-06-15",
-                        "amount": "-130.00",
-                    },
+                "versions": [
+                    _fixed_version("from", [(c, a) for c, a in pairs], start=when)
+                    for when, pairs in (
+                        (
+                            "2026-05-15",
+                            ((category["handle"], "125.00"), (funding["handle"], "-125.00")),
+                        ),
+                        (
+                            "2026-06-15",
+                            ((category["handle"], "130.00"), (funding["handle"], "-130.00")),
+                        ),
+                        (
+                            "2026-07-15",
+                            ((category["handle"], "140.00"), (funding["handle"], "-140.00")),
+                        ),
+                    )
+                ]
+                + [
+                    _fixed_version(
+                        "once",
+                        [(category["handle"], "150.00"), (funding["handle"], "-150.00")],
+                        start="2026-04-15",
+                    )
                 ],
                 "skipped": ["2026-03-13"],
-                "occurrence_adjustments": [{"when": "2026-04-15", "amount": "150.00"}],
                 "frequency": "monthly",
                 "start": "2026-02-15",
                 "count": "6",
@@ -1503,30 +1619,30 @@ class TestItServes:
         assert item["planning_flow"] == "benefit_funding"
         assert item["category_memo"] == "service category"
         assert item["funding_memo"] == "payment account"
-        assert item["amount_changes"] == [
-            {"start": "2026-05-15", "amount": "125.00"},
-            {"start": "2026-07-15", "amount": "140.00"},
+        assert [(row["kind"], row["start"]) for row in item["versions"]] == [
+            ("from", "2026-05-15"),
+            ("from", "2026-06-15"),
+            ("from", "2026-07-15"),
+            ("once", "2026-04-15"),
         ]
-        assert item["split_amount_changes"] == [
-            {
-                "account": category["handle"],
-                "start": "2026-06-15",
-                "amount": "130.00",
-            },
-            {
-                "account": funding["handle"],
-                "start": "2026-06-15",
-                "amount": "-130.00",
-            },
-        ]
+        assert item["versions"][1]["legs"][0] == {
+            "account": category["handle"],
+            "account_name": category["name"],
+            "memo": "",
+            "amount": "130.00",
+            "formula": "",
+            "direction": 1,
+            "planning_flow": None,
+            "investment_activity": None,
+        }
         restored = client.database.get_scheduled(handle)
         assert restored is not None
         assert dict(restored.resolved_splits(when=date(2026, 6, 15))) == {
-            category["handle"]: Money("125.00"),
-            funding["handle"]: Money("-125.00"),
+            category["handle"]: Money("130.00"),
+            funding["handle"]: Money("-130.00"),
         }
+        assert restored.amount(when=date(2026, 4, 15)) == Money("150.00")
         assert item["skipped"] == ["2026-03-13"]
-        assert item["occurrence_adjustments"] == [{"when": "2026-04-15", "amount": "150.00"}]
         _status, plan = client.get("/api/plan?from=2026-01&through=2026-12&period=month")
         benefit = next(row for row in plan["planning_flows"] if row["kind"] == "benefit_funding")
         assert Money(benefit["planned"][1]) == Money("-110.00")
@@ -1542,9 +1658,13 @@ class TestItServes:
                     "amount": "110.00",
                     "frequency": "monthly",
                     "start": "2026-02-15",
-                    "split_amount_changes": [
-                        {"account": category["handle"], "start": "2026-06-15", "amount": "130"},
-                        {"account": category["handle"], "start": "2026-06-15", "amount": "135"},
+                    # A version whose legs do not balance is refused, storing nothing.
+                    "versions": [
+                        _fixed_version(
+                            "from",
+                            [(category["handle"], "130"), (funding["handle"], "-135")],
+                            start="2026-06-15",
+                        )
                     ],
                 },
             )
@@ -1872,9 +1992,12 @@ class TestItServes:
                 ScheduledSplit(category["handle"], formula="base"),
                 ScheduledSplit(funding["handle"], formula="-base"),
             ],
-            amount_changes=[ScheduledAmountChange(date(2026, 7, 15), "300")],
-            occurrence_adjustments=[ScheduledOccurrenceAdjustment(date(2026, 5, 15), "275")],
         )
+        # Versions of a formula schedule are formulas too.
+        source.versions = [
+            ScheduledVersion.moving("from", source.splits, Money("300"), start=date(2026, 7, 15)),
+            ScheduledVersion.moving("once", source.splits, Money("275"), start=date(2026, 5, 15)),
+        ]
         source.variables = {"base": "250"}
         with client.database.transaction("Add formula fixture") as txn:
             client.database.add_scheduled(source, txn)
@@ -1898,8 +2021,6 @@ class TestItServes:
                 "start": "2026-02-15",
                 "weekend": "none",
                 "splits": [{"account": "crafted", "amount": "999"}],
-                "amount_changes": [],
-                "occurrence_adjustments": [],
             },
         )
         assert status == 200
@@ -1912,8 +2033,34 @@ class TestItServes:
             funding["handle"],
         ]
         assert restored.variables == {"base": "120", "factor": "2"}
-        assert restored.amount_changes[0].amount == Money("300")
-        assert restored.occurrence_adjustments[0].amount == Money("275")
+        # A save without versions keeps them.
+        assert [version.serialize() for version in restored.versions] == [
+            version.serialize() for version in source.versions
+        ]
+
+        # A formula schedule's new month version starts from its own legs.
+        _status, started = client.post(
+            "/api/scheduled/version-start",
+            {
+                "handle": source.handle,
+                "name": restored.name,
+                "formulas": [
+                    {"index": 0, "formula": "base * factor"},
+                    {"index": 1, "formula": "-(base * factor)"},
+                ],
+                "variables": {"base": "120", "factor": "2"},
+                "frequency": "monthly",
+                "start": "2026-02-15",
+                "weekend": "none",
+                "new_version": {"kind": "month", "month": 12},
+            },
+        )
+        assert [
+            (leg["account"], leg["formula"], leg["direction"]) for leg in started["version"]["legs"]
+        ] == [
+            (category["handle"], "base * 1.0", 1),
+            (funding["handle"], "base * 1.0", -1),
+        ]
 
         with pytest.raises(urllib.error.HTTPError) as caught:
             client.post(
@@ -5173,7 +5320,12 @@ class TestScenarioEventWebParity:
                     "frequency": "monthly",
                     "start": "2026-03-01",
                     "skipped": ["2026-04-01"],
-                    "occurrence_adjustments": [{"when": "2026-04-01", "amount": "1700"}],
+                    # Skipped and given a one-time version: refused.
+                    "versions": [
+                        _moving_version(
+                            "once", rent["handle"], bank["handle"], "1700", start="2026-04-01"
+                        )
+                    ],
                 },
             )
         assert caught.value.code == 400
@@ -5199,8 +5351,14 @@ class TestScenarioEventWebParity:
                 "category": rent["handle"],
                 "funding": bank["handle"],
                 "amount": "1500.00",
-                "amount_changes": [{"start": "2027-01-01", "amount": "1550.00"}],
-                "seasonal_amounts": [{"month": 12, "amount": "1600.00"}],
+                "versions": [
+                    _fixed_version(
+                        "from",
+                        [(rent["handle"], "1550.00"), (bank["handle"], "-1550.00")],
+                        start="2027-01-01",
+                    ),
+                    _moving_version("month", rent["handle"], bank["handle"], "1600.00", month=12),
+                ],
                 "frequency": "monthly",
                 "start": "2024-03-01",
                 "as_of": "2026-10-20",
@@ -5208,8 +5366,37 @@ class TestScenarioEventWebParity:
         )
         assert [(row["when"], row["amount"], row["status"]) for row in payload["preview"]][:3] == [
             ("2026-11-01", "1500.00", "Normal"),
-            ("2026-12-01", "1600.00", "Seasonal amount"),
-            ("2027-01-01", "1550.00", "Future amount"),
+            ("2026-12-01", "1600.00", "Month version"),
+            ("2027-01-01", "1550.00", "Changed version"),
+        ]
+        after = scenario_event_client.database.get_scenario(scenario["handle"]).serialize()
+        assert after == before
+
+    def test_a_scenario_schedules_new_version_starts_from_its_legs(self, scenario_event_client):
+        scenario = self._saved_scenario(scenario_event_client)
+        _status, events = scenario_event_client.get(
+            "/api/scenario/events?" + urllib.parse.urlencode({"handle": scenario["handle"]})
+        )
+        rent = next(account for account in events["accounts"] if account["name"].endswith("Rent"))
+        bank = next(
+            account for account in events["accounts"] if account["name"].endswith("Checking")
+        )
+        before = scenario_event_client.database.get_scenario(scenario["handle"]).serialize()
+        _status, payload = scenario_event_client.post(
+            "/api/scenario/event/version-start",
+            {
+                "handle": scenario["handle"],
+                "category": rent["handle"],
+                "funding": bank["handle"],
+                "amount": "1500.00",
+                "frequency": "monthly",
+                "start": "2026-03-01",
+                "new_version": {"kind": "from", "start": "2027-01-01"},
+            },
+        )
+        assert [(leg["account_name"], leg["amount"]) for leg in payload["version"]["legs"]] == [
+            (rent["name"], "1500.00"),
+            (bank["name"], "-1500.00"),
         ]
         after = scenario_event_client.database.get_scenario(scenario["handle"]).serialize()
         assert after == before
@@ -5233,7 +5420,9 @@ class TestScenarioEventWebParity:
                 "funding": bank["handle"],
                 "planning_flow": "debt_principal",
                 "amount": "1500.00",
-                "seasonal_amounts": [{"month": 7, "amount": "1600.00"}],
+                "versions": [
+                    _moving_version("month", rent["handle"], bank["handle"], "1600.00", month=7)
+                ],
                 "frequency": "monthly",
                 "start": "2026-03-01",
                 "weekend": "none",
@@ -5244,7 +5433,9 @@ class TestScenarioEventWebParity:
         assert saved["changes"][0]["amount"] == "1500.00"
         assert saved["changes"][0]["planning_flow"] == "debt_principal"
         assert saved["changes"][0]["growth_policy"] == "inflation"
-        assert saved["changes"][0]["seasonal_amounts"] == [{"month": 7, "amount": "1600.00"}]
+        [version] = saved["changes"][0]["versions"]
+        assert (version["kind"], version["month"]) == ("month", 7)
+        assert version["legs"][0]["formula"] == "base * 1600.00 / base_total"
 
     def test_scenario_estimate_can_carry_fixed_multisplit_classifications(
         self, scenario_event_client
@@ -5366,14 +5557,22 @@ class TestScenarioEventWebParity:
                 "frequency": "monthly",
                 "start": "2026-03-01",
                 "skipped": ["2026-05-01"],
-                "occurrence_adjustments": [{"when": "2026-06-01", "amount": "1750.00"}],
+                "versions": [
+                    _fixed_version(
+                        "once",
+                        [(rent["handle"], "1750.00"), (bank["handle"], "-1750.00")],
+                        start="2026-06-01",
+                    )
+                ],
                 "weekend": "none",
             },
         )
         assert status == 200
         change = saved["changes"][0]
         assert change["skipped"] == ["2026-05-01"]
-        assert change["occurrence_adjustments"] == [{"when": "2026-06-01", "amount": "1750.00"}]
+        assert [(row["kind"], row["start"]) for row in change["versions"]] == [
+            ("once", "2026-06-01")
+        ]
 
     def test_scenario_estimate_can_end_after_occurrence_count(self, scenario_event_client):
         scenario = self._saved_scenario(scenario_event_client)
@@ -5533,9 +5732,9 @@ def test_historical_estimate_draft_can_be_adjusted_before_save(client):
         "frequency": "biweekly",
         "start": "2026-10-02",
         "category_planning_flow": "debt_principal",
-        "seasonal_amounts": [
-            {"month": 1, "amount": "2100"},
-            {"month": 7, "amount": "1750"},
+        "versions": [
+            _moving_version("month", draft["category"], draft["funding"], "2100", month=1),
+            _moving_version("month", draft["category"], draft["funding"], "1750", month=7),
         ],
     }
     status, saved = client.post("/api/scheduled/save", payload)
@@ -5547,10 +5746,11 @@ def test_historical_estimate_draft_can_be_adjusted_before_save(client):
     assert restored.recurrence.interval == 2
     assert restored.recurrence.start == date(2026, 10, 2)
     assert restored.splits[0].planning_flow is PlanningFlowKind.DEBT_PRINCIPAL
-    assert [(item.month, item.amount) for item in restored.seasonal_amounts] == [
-        (1, Money("2100")),
-        (7, Money("1750")),
-    ]
+    assert [version.month for version in restored.versions] == [1, 7]
+    january = next(
+        day for day in restored.recurrence.occurrences(date(2027, 12, 31)) if day.month == 1
+    )
+    assert restored.amount(when=january) == Money("2100")
     assert restored.estimate_evidence == proposal["evidence"]
 
 
@@ -6369,7 +6569,7 @@ class TestPayroll:
         }
         status, preview = client.post("/api/payroll/change/preview", change)
         assert status == 200 and preview["net_after"] == "3045.00"
-        assert client.database.get_scheduled(created["handle"]).splits[0].amount_changes == []
+        assert client.database.get_scheduled(created["handle"]).versions == []
         status, applied = client.post("/api/payroll/change", change)
         assert status == 200 and applied == preview
         _status, later = client.get("/api/payroll?as_of=2026-04-10")

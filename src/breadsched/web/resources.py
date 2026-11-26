@@ -132,6 +132,7 @@ from .scenario_resource import (
     scenario_event_preview,
     scenario_event_save,
     scenario_event_suppress,
+    scenario_event_version_start,
     scenario_events,
     scenario_period_delete,
     scenario_period_save,
@@ -154,6 +155,7 @@ from .schedule_resource import (
     scheduled_occurrence_options,
     scheduled_preview,
     scheduled_save,
+    scheduled_version_start,
 )
 from .tax_resource import tax_marks_save, tax_marks_view, tax_year_report
 from .v1_resource import (
@@ -331,6 +333,7 @@ from .v1_resource import (
     schedule_lookup,
     schedule_save_fixed,
     schedule_save_formula,
+    schedule_versions_patch,
     scheduled_page_get,
     schedules_view_get,
     securities_get,
@@ -702,6 +705,7 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/scheduled/next": scheduled_next,
     "/api/scheduled/occurrences": scheduled_occurrence_options,
     "/api/scheduled/preview": scheduled_preview,
+    "/api/scheduled/version-start": scheduled_version_start,
     "/api/scheduled/save": scheduled_save,
     "/api/scheduled/formula-save": scheduled_formula_save,
     "/api/scheduled/delete": scheduled_delete,
@@ -723,6 +727,7 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/scenario/drawdown/save": scenario_drawdown_save,
     "/api/scenario/drawdown/delete": scenario_drawdown_delete,
     "/api/scenario/event/preview": scenario_event_preview,
+    "/api/scenario/event/version-start": scenario_event_version_start,
     "/api/scenario/event/save": scenario_event_save,
     "/api/scenario/event/suppress": scenario_event_suppress,
     "/api/projection/calculate": projection_calculate,
@@ -763,6 +768,7 @@ V1_ROUTES: tuple[tuple[str, str, Callable[..., object]], ...] = (
     ("GET", "/schedules/{handle}/advance-days", advance_days_get),
     ("PATCH", "/schedules/{handle}/advance-days", advance_days_patch),
     ("PATCH", "/schedules/{handle}/details", schedule_details_patch),
+    ("PATCH", "/schedules/{handle}/versions", schedule_versions_patch),
     ("DELETE", "/schedules/{handle}", schedule_delete),
     ("POST", "/schedules/{handle}/duplicate", schedule_duplicate),
     ("POST", "/post-due", post_due_post),

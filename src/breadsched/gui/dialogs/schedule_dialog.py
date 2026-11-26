@@ -18,16 +18,11 @@ from datetime import date
 
 from ...api import ApiError
 from ...api.local import book_server
-from ...gen.engine.entry_input import parse_amount_text
 from ...gen.lib import (
     FormulaError,
     Money,
     PeriodType,
     Recurrence,
-    ScheduledAmountChange,
-    ScheduledMonthAmount,
-    ScheduledOccurrenceAdjustment,
-    ScheduledSplitAmountChange,
     ScheduledTransaction,
     ScheduleGrowthPolicy,
     WeekendAdjust,
@@ -50,12 +45,10 @@ from ..widgets.editor_parts import DocumentsPage, SplitsPanel
 from ..widgets.form_pages import FormGrid, FormPages
 from ..widgets.frequency import FrequencyPicker
 from ..widgets.schedule_timeline import (
-    DatedAmountListEditor,
     DateListEditor,
-    MonthAmountListEditor,
-    SplitAmountTimelineEditor,
 )
 from ..widgets.transaction_editor import MORE
+from ..widgets.versions_editor import VersionsEditor, version_label
 
 __all__ = ["FUTURE_CHANGES", "ScheduleDialog", "update_schedule_pages"]
 
@@ -70,18 +63,7 @@ def update_schedule_pages(dialog) -> None:
     Shared by the schedule and scenario schedule editors, whose fields match.
     """
     dialog.pages.set_count(
-        FUTURE_CHANGES,
-        sum(
-            len(editor.values())
-            for editor in (
-                dialog.amount_changes_editor,
-                getattr(dialog, "split_amount_changes_editor", None),
-                dialog.seasonal_amounts_editor,
-                dialog.skipped_editor,
-                dialog.occurrence_adjustments_editor,
-            )
-            if editor is not None
-        ),
+        FUTURE_CHANGES, len(dialog.versions_editor) + len(dialog.skipped_editor.values())
     )
     if getattr(dialog, "category", None) is None:
         return  # investment activity is a column of the split grid
@@ -308,39 +290,29 @@ class ScheduleDialog(BoundedWindow):
 
     def _build_timeline_fields(self, changes: FormGrid) -> None:
         changes.note(
-            "Changes from a date onward, in particular months, or on single "
-            "occurrences. Most schedules need none."
+            "Versions of the whole transaction: from a date on, on one date, or in a "
+            "month every year. Most schedules need none."
         )
-        self.amount_changes_editor = DatedAmountListEditor(self._validate, "Add future amount")
-        changes.add("Future amounts", self.amount_changes_editor)
-        self.split_amount_changes_editor = SplitAmountTimelineEditor(self._validate, self._names)
-        changes.add(
-            "Per-leg future amounts",
-            self.split_amount_changes_editor,
-            tooltip=(
-                "Set the exact signed ledger amount for one leg from a date onward. "
-                "All effective legs must still balance."
-            ),
+        self.versions_editor = VersionsEditor(
+            self.db,
+            book_server(self.db).accounts(),
+            self._validate,
+            self._versions_draft,
+            currency=self._stored_currency(),
         )
-        self.seasonal_amounts_editor = MonthAmountListEditor(self._validate)
-        changes.add(
-            "Seasonal month amounts",
-            self.seasonal_amounts_editor,
-            tooltip=(
-                "Override the ordinary amount in selected calendar months. "
-                "Each month may appear once."
-            ),
-        )
+        changes.add("Versions", self.versions_editor)
         self.skipped_editor = DateListEditor(
             self._validate, "Add skipped occurrence", self._occurrence_options
         )
         changes.add("Skip occurrences", self.skipped_editor)
-        self.occurrence_adjustments_editor = DatedAmountListEditor(
-            self._validate,
-            "Add one-time amount",
-            self._occurrence_options,
-        )
-        changes.add("One-time amounts", self.occurrence_adjustments_editor)
+
+    def _versions_draft(self) -> ScheduledTransaction | None:
+        """The schedule as the form describes it now, for a new version to start
+        from; None when it cannot be read."""
+        try:
+            return self.build()
+        except (ApiError, ValueError, AssertionError):
+            return ScheduledTransaction.from_dict(self.source.serialize()) if self.source else None
 
     def _build_recurrence_fields(self, basics: FormGrid, advanced: FormGrid) -> None:
         # Every N days, weeks, months, or years (#370): any interval GnuCash
@@ -520,23 +492,18 @@ class ScheduleDialog(BoundedWindow):
         if source.variables:
             lines.extend(["", "Formula variables:"])
             lines.extend(f"  {key} = {value}" for key, value in sorted(source.variables.items()))
-        if source.amount_changes:
-            lines.extend(["", "Future amount changes:"])
-            lines.extend(
-                f"  {shown_date(item.start)}: {item.amount}" for item in source.amount_changes
-            )
-        if source.seasonal_amounts:
-            lines.extend(["", "Seasonal month amounts:"])
-            lines.extend(f"  month {item.month}: {item.amount}" for item in source.seasonal_amounts)
+        if source.versions:
+            lines.extend(["", "Versions:"])
+            for version in source.versions:
+                lines.append(f"  {version_label(version)}:")
+                lines.extend(
+                    f"    {self._full_names.get(leg.account, leg.account)}: "
+                    + (f"formula {leg.formula!r}" if leg.formula else str(leg.amount or Money(0)))
+                    for leg in version.splits
+                )
         if source.skipped:
             lines.extend(["", "Skipped occurrences:"])
             lines.extend(f"  {shown_date(when)}" for when in source.skipped)
-        if source.occurrence_adjustments:
-            lines.extend(["", "One-time occurrence amounts:"])
-            lines.extend(
-                f"  {shown_date(item.when)}: {item.amount}"
-                for item in source.occurrence_adjustments
-            )
         if getattr(source, "source_recurrence", None) is not None:
             lines.extend(["", "Original source recurrence:", f"  {source.source_recurrence}"])
         return "\n".join(lines)
@@ -545,6 +512,7 @@ class ScheduleDialog(BoundedWindow):
         """Load editable schedule metadata while preserving formula-owned values."""
         self._load_basics(source)
         self.skipped_editor.set_values(source.skipped)
+        self.versions_editor.set_versions(source.versions)
 
     def _load_basics(self, source: ScheduledTransaction) -> None:
         """What the fixed and the formula form both show: its name, growth,
@@ -580,21 +548,15 @@ class ScheduleDialog(BoundedWindow):
 
     def _protect_formula_fields(self, source: ScheduledTransaction) -> None:
         """Protect formula accounts/amount mechanics while allowing validated formulas."""
-        # Its split grid is not shown at all (``_load_initial_state``).
-        protected = (
-            self.amount_changes_editor,
-            self.seasonal_amounts_editor,
-            self.occurrence_adjustments_editor,
-        )
-        for widget in protected:
-            widget.set_sensitive(False)
+        # Its split grid is not shown at all (``_load_initial_state``); its versions,
+        # whose legs may be formulas too, stay editable.
         self.preview.set_visible(False)
         self.details.set_text(
             self._detail_text(
                 source,
-                "Split accounts and formula-derived amount timelines remain protected. "
-                "Formula expressions and named variables may be edited when the safe "
-                "formula evaluator can validate the revised expressions.",
+                "Split accounts remain protected. Formula expressions, named variables, "
+                "and versions may be edited when the safe formula evaluator can "
+                "validate them.",
             )
         )
         self.details.set_visible(True)
@@ -683,33 +645,8 @@ class ScheduleDialog(BoundedWindow):
         """Populate the fixed editor from the engine-owned split projection."""
         # Its splits are on the grid already (``_build_splits``).
         self._load_basics(source)
-        self.amount_changes_editor.set_values(
-            (item.start, str(item.amount.to_decimal())) for item in source.amount_changes
-        )
-        self.seasonal_amounts_editor.set_values(
-            (item.month, str(item.amount.to_decimal())) for item in source.seasonal_amounts
-        )
-        split_changes: list[tuple[int, date, str]] = []
-        for split in source.splits:
-            found = next(
-                (
-                    position
-                    for position, candidate in enumerate(self._accounts)
-                    if candidate.handle == split.account
-                ),
-                None,
-            )
-            if found is None:
-                continue
-            index = found
-            split_changes.extend(
-                (index, item.start, str(item.amount.to_decimal())) for item in split.amount_changes
-            )
-        self.split_amount_changes_editor.set_values(split_changes)
         self.skipped_editor.set_values(source.skipped)
-        self.occurrence_adjustments_editor.set_values(
-            (item.when, str(item.amount.to_decimal())) for item in source.occurrence_adjustments
-        )
+        self.versions_editor.set_versions(source.versions)
 
     # ------------------------------------------------------------- validation
 
@@ -769,7 +706,6 @@ class ScheduleDialog(BoundedWindow):
 
     def _recurrence_changed(self, *_args) -> None:
         self.skipped_editor.refresh_date_choices()
-        self.occurrence_adjustments_editor.refresh_date_choices()
         self._validate()
 
     def _stored_currency(self) -> str | None:
@@ -778,60 +714,6 @@ class ScheduleDialog(BoundedWindow):
 
     def _currency(self) -> str:
         return self._stored_currency() or book_server(self.db).transaction_currency()
-
-    def _amount_changes(self) -> list[ScheduledAmountChange] | None:
-        values = self.amount_changes_editor.values()
-        if not values:
-            return []
-        changes = []
-        try:
-            for when_text, amount_text in values:
-                when = parse_date_text(when_text)
-                amount = Money(parse_amount_text(amount_text))
-                if amount <= 0:
-                    return None
-                changes.append(ScheduledAmountChange(when, amount))
-        except (ValueError, ArithmeticError):
-            return None
-        if len({item.start for item in changes}) != len(changes):
-            return None
-        return sorted(changes, key=lambda item: item.start)
-
-    def _split_amount_changes(self) -> dict[str, list[ScheduledSplitAmountChange]] | None:
-        grouped: dict[str, list[ScheduledSplitAmountChange]] = {}
-        seen: set[tuple[str, date]] = set()
-        try:
-            for account_index, when_text, amount_text in self.split_amount_changes_editor.values():
-                account = self._accounts[account_index]
-                when = parse_date_text(when_text)
-                amount = Money(parse_amount_text(amount_text))
-                key = (account.handle, when)
-                if key in seen:
-                    return None
-                seen.add(key)
-                grouped.setdefault(account.handle, []).append(
-                    ScheduledSplitAmountChange(when, amount)
-                )
-        except (IndexError, ValueError, ArithmeticError):
-            return None
-        for values in grouped.values():
-            values.sort(key=lambda item: item.start)
-        return grouped
-
-    def _seasonal_amounts(self) -> list[ScheduledMonthAmount] | None:
-        values = self.seasonal_amounts_editor.values()
-        if len({month for month, _amount in values}) != len(values):
-            return None
-        try:
-            amounts = [
-                ScheduledMonthAmount(month, Money(parse_amount_text(raw_amount)))
-                for month, raw_amount in values
-            ]
-        except (ValueError, ArithmeticError):
-            return None
-        if any(item.amount <= 0 for item in amounts):
-            return None
-        return sorted(amounts, key=lambda item: item.month)
 
     def _skipped(self, recurrence: Recurrence | None) -> list[date] | None:
         values = self.skipped_editor.values()
@@ -848,32 +730,6 @@ class ScheduleDialog(BoundedWindow):
         if any(when not in recurrence.occurrences(when, since=when) for when in skipped):
             return None
         return sorted(skipped)
-
-    def _occurrence_adjustments(
-        self, recurrence: Recurrence | None
-    ) -> list[ScheduledOccurrenceAdjustment] | None:
-        values = self.occurrence_adjustments_editor.values()
-        if not values:
-            return []
-        if recurrence is None:
-            return None
-        changes = []
-        try:
-            for when_text, amount_text in values:
-                when = parse_date_text(when_text)
-                amount = Money(parse_amount_text(amount_text))
-                if amount <= 0:
-                    return None
-                changes.append(ScheduledOccurrenceAdjustment(when, amount))
-        except (ValueError, ArithmeticError):
-            return None
-        if len({item.when for item in changes}) != len(changes):
-            return None
-        if any(
-            item.when not in recurrence.occurrences(item.when, since=item.when) for item in changes
-        ):
-            return None
-        return sorted(changes, key=lambda item: item.when)
 
     def _validate(self, *_args) -> None:
         if not hasattr(self, "save_button"):
@@ -893,6 +749,8 @@ class ScheduleDialog(BoundedWindow):
         skipped = self._skipped(recurrence)
         if skipped is None:
             problems.append("check skipped occurrence dates")
+        if self.versions_editor.values() is None:
+            problems.append(self.versions_editor.problem.rstrip(".").lower())
         if self._formula_mode:
             if self._formula_inputs_changed():
                 formula_problem = self._validate_formula_inputs()
@@ -904,19 +762,6 @@ class ScheduleDialog(BoundedWindow):
         split_problem = self.sheet.check(self._currency())
         if split_problem is not None:
             problems.append(split_problem.rstrip(".").lower())
-        amount_changes = self._amount_changes()
-        if amount_changes is None:
-            problems.append("check future amounts")
-        if self._split_amount_changes() is None:
-            problems.append("check per-leg future amounts")
-        if self._seasonal_amounts() is None:
-            problems.append("check seasonal month amounts")
-        adjustments = self._occurrence_adjustments(recurrence)
-        if adjustments is None:
-            problems.append("check one-time amounts")
-        if skipped is not None and adjustments is not None:
-            if set(skipped) & {item.when for item in adjustments}:
-                problems.append("an occurrence cannot be both skipped and overridden")
         draft: ScheduledTransaction | None = None
         if not problems:
             try:
@@ -963,6 +808,7 @@ class ScheduleDialog(BoundedWindow):
             growth_policy=_GROWTH_POLICIES[self.growth_policy.get_selected()][1],
             skipped=tuple(self._skipped(recurrence) or ()),
             source=self.source,
+            versions=tuple(self.versions_editor.values() or ()),
             advance_days=self.advance_spin.get_value_as_int(),
             remind_days=self.remind_spin.get_value_as_int(),
             **self._posting_details(),
@@ -996,10 +842,6 @@ class ScheduleDialog(BoundedWindow):
         splits = self.sheet.splits(self._currency())
         if splits is None:
             raise ValueError(self.sheet.message or "Check the splits.")
-        split_changes = {
-            account: tuple(changes)
-            for account, changes in (self._split_amount_changes() or {}).items()
-        }
         posting = (
             {
                 "enabled": self.enabled_check.get_active(),
@@ -1018,11 +860,8 @@ class ScheduleDialog(BoundedWindow):
             # Signed ledger amounts, as the split grid types them.
             ledger_splits=splits,
             growth_policy=_GROWTH_POLICIES[self.growth_policy.get_selected()][1],
-            amount_changes=tuple(self._amount_changes() or ()),
-            split_amount_changes=split_changes,
-            seasonal_amounts=tuple(self._seasonal_amounts() or ()),
+            versions=tuple(self.versions_editor.values() or ()),
             skipped=tuple(self._skipped(recurrence) or ()),
-            occurrence_adjustments=tuple(self._occurrence_adjustments(recurrence) or ()),
             **posting,
         )
 
@@ -1048,8 +887,8 @@ class ScheduleDialog(BoundedWindow):
             return
         except ApiError as error:
             messages = {
-                "schedule.split_amount_changes.unbalanced": (
-                    "Per-leg future amounts do not balance; update the funding or another leg."
+                "schedule.versions.unbalanced": (
+                    "A version does not balance on its first occurrence; check its legs."
                 ),
                 "schedule.estimate.invalid": "Check the historical-estimate amounts.",
                 "schedule.investment.invalid": "Check the investment activity splits.",

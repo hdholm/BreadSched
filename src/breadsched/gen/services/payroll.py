@@ -32,7 +32,8 @@ from ..engine.payroll import (
 from ..lib.account import AccountClass
 from ..lib.money import Money
 from ..lib.recurrence import Recurrence
-from ..lib.scheduled import ScheduledSplitAmountChange, ScheduledTransaction
+from ..lib.schedule_versions import ScheduledVersion, VersionKind
+from ..lib.scheduled import ScheduledSplit, ScheduledTransaction
 from ..lib.transaction import InvestmentActivityKind
 from .contracts import ServiceError, ServiceResult
 from .savings_goals import NamedChoice
@@ -375,20 +376,28 @@ def _pay_change(
         return ServiceResult.failure(ServiceError("schedule.not_found", ("schedule",)))
     if request.start < schedule.recurrence.start:
         return ServiceResult.failure(ServiceError("payroll.change.before_start", ("start",)))
-    if any(split.formula for split in schedule.splits):
+    if schedule.has_formulas():
         return ServiceResult.failure(ServiceError("payroll.schedule.formula", ("schedule",)))
-    if (
-        schedule.amount_changes
-        or schedule.seasonal_amounts
-        or any(item.when >= request.start for item in schedule.occurrence_adjustments)
+    if any(
+        version.kind is VersionKind.MONTH
+        or (
+            version.kind is VersionKind.ONCE
+            and version.start is not None
+            and version.start >= request.start
+        )
+        for version in schedule.versions
     ):
         return ServiceResult.failure(ServiceError("payroll.schedule.whole_amounts", ("schedule",)))
-    if len({split.account for split in schedule.splits}) != len(schedule.splits):
+    legs = schedule.legs_at(request.start)
+    if len({leg.account for leg in legs}) != len(legs):
         return ServiceResult.failure(
             ServiceError("payroll.schedule.repeated_account", ("schedule",))
         )
     if any(
-        change.start > request.start for split in schedule.splits for change in split.amount_changes
+        version.kind is VersionKind.FROM
+        and version.start is not None
+        and version.start > request.start
+        for version in schedule.versions
     ):
         return ServiceResult.failure(ServiceError("payroll.change.later_exists", ("start",)))
     breakdown = paycheck_breakdown(db, schedule, request.start)
@@ -416,27 +425,26 @@ def preview_pay_change(db: DbSQLite, request: PayChange) -> ServiceResult[PayCha
 
 
 def apply_pay_change(db: DbSQLite, request: PayChange) -> ServiceResult[PayChangePlan]:
-    """Save the change as per-leg future amounts from ``request.start``."""
+    """Save the change as the paycheck's version from ``request.start``: every leg of
+    the paycheck then in force, with its amount after the change."""
     result = _pay_change(db, request)
     if result.value is None:
         return ServiceResult.failure(*result.errors)
     schedule, plan = result.value
     candidate = ScheduledTransaction.from_dict(schedule.serialize())
     after = {line.account: line for line in plan.lines}
-    for split in candidate.splits:
-        line = after[split.account]
-        value = -line.after if line.kind is PayLegKind.GROSS else line.after
-        if line.before == line.after and not any(
-            change.start == request.start for change in split.amount_changes
-        ):
-            continue
-        split.amount_changes = sorted(
-            [
-                *(change for change in split.amount_changes if change.start != request.start),
-                ScheduledSplitAmountChange(request.start, value),
-            ],
-            key=lambda change: change.start,
-        )
+    legs = []
+    for leg in candidate.legs_at(request.start):
+        line = after[leg.account]
+        split = ScheduledSplit.from_dict(leg.split.serialize())
+        split.formula = ""
+        split.amount = -line.after if line.kind is PayLegKind.GROSS else line.after
+        legs.append(split)
+    candidate.versions = [
+        version
+        for version in candidate.versions
+        if not (version.kind is VersionKind.FROM and version.start == request.start)
+    ] + [ScheduledVersion(VersionKind.FROM, legs, start=request.start)]
     saved = save_schedule(db, SaveSchedule(candidate, schedule.handle))
     if saved.value is None:
         return ServiceResult.failure(*saved.errors)

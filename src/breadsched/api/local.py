@@ -85,6 +85,7 @@ from ..gen.services import (
     ServiceError,
     SetAdvanceDays,
     SetScheduleDetails,
+    SetScheduleVersions,
     TagCount,
     TransactionInput,
     account_balance,
@@ -128,6 +129,7 @@ from ..gen.services import (
     security_prices,
     set_advance_days,
     set_schedule_details,
+    set_schedule_versions,
     set_tags,
     tag_counts,
     transaction_currency,
@@ -423,6 +425,9 @@ class LocalBookServer:
 
     def set_schedule_details(self, request: SetScheduleDetails) -> ScheduledTransaction:
         return unwrap(set_schedule_details(self.db, request))
+
+    def set_schedule_versions(self, request: SetScheduleVersions) -> ScheduledTransaction:
+        return unwrap(set_schedule_versions(self.db, request))
 
     def delete_schedule(self, schedule: str) -> SavedSchedule:
         return unwrap(delete_schedule(self.db, DeleteSchedule(schedule)))

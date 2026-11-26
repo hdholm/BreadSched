@@ -127,9 +127,87 @@ def _v14_to_v15(conn: sqlite3.Connection) -> None:
         raise RuntimeError(f"schedule document migration changed the count {before}→{after}")
 
 
+#: The keys schema 15 kept a schedule's changes under, before versions.
+_LEGACY_KEYS = ("amount_changes", "seasonal_amounts", "occurrence_adjustments")
+
+
+def _with_versions(data: dict) -> bool:
+    """Rewrite one stored schedule's changes as versions; True if it changed."""
+    from ..lib.schedule_versions import versions_from_legacy
+
+    splits = [split for split in data.get("splits") or [] if isinstance(split, dict)]
+    legacy = any(data.get(key) for key in _LEGACY_KEYS) or any(
+        split.get("amount_changes") for split in splits
+    )
+    if "versions" in data and not legacy:
+        return False
+    versions = versions_from_legacy(
+        splits,
+        data.get("amount_changes") or [],
+        data.get("seasonal_amounts") or [],
+        data.get("occurrence_adjustments") or [],
+    )
+    data["versions"] = [version.serialize() for version in versions]
+    for key in _LEGACY_KEYS:
+        data.pop(key, None)
+    for split in splits:
+        split.pop("amount_changes", None)
+    return True
+
+
+def _v15_to_v16(conn: sqlite3.Connection) -> None:
+    """Keep a schedule's changes as versions of the whole transaction.
+
+    Schema 15 kept four narrower changes: a whole-transaction amount from a date, each
+    fixed leg's amount from a date, a whole-transaction amount for a calendar month,
+    and one for a single date. Each schedule, and each scenario's own schedules, now
+    keeps them as ``versions`` (``lib.schedule_versions.versions_from_legacy``), with
+    the amounts they gave; a month's version now also applies after a later
+    whole-transaction change, as versions are layered. The step checks that no
+    schedule or scenario was added or lost and that every schedule reads back.
+    """
+    import json
+
+    from ..lib.scenario import ScenarioSchedule
+    from ..lib.scheduled import ScheduledTransaction
+
+    before = conn.execute("SELECT COUNT(*) FROM scheduled").fetchone()[0]
+    for handle, blob in conn.execute("SELECT handle, blob FROM scheduled").fetchall():
+        data = json.loads(blob)
+        if not isinstance(data, dict) or not _with_versions(data):
+            continue
+        ScheduledTransaction.from_dict({**data, "handle": handle})
+        conn.execute(
+            "UPDATE scheduled SET blob=? WHERE handle=?",
+            (json.dumps(data, separators=(",", ":")), handle),
+        )
+    after = conn.execute("SELECT COUNT(*) FROM scheduled").fetchone()[0]
+    if after != before:
+        raise RuntimeError(f"schedule version migration changed the count {before}→{after}")
+
+    scenarios = conn.execute("SELECT COUNT(*) FROM scenario").fetchone()[0]
+    for handle, blob in conn.execute("SELECT handle, blob FROM scenario").fetchall():
+        data = json.loads(blob)
+        if not isinstance(data, dict):
+            continue
+        changed = False
+        for item in data.get("schedule_overrides") or []:
+            if isinstance(item, dict) and _with_versions(item):
+                ScenarioSchedule.from_dict(item)
+                changed = True
+        if changed:
+            conn.execute(
+                "UPDATE scenario SET blob=? WHERE handle=?",
+                (json.dumps(data, separators=(",", ":")), handle),
+            )
+    if conn.execute("SELECT COUNT(*) FROM scenario").fetchone()[0] != scenarios:
+        raise RuntimeError("schedule version migration changed the scenario count")
+
+
 MIGRATIONS: dict[int, Migration] = {
     13: Migration(13, 14, "write plan links as split allocations", _v13_to_v14),
     14: Migration(14, 15, "let schedules carry notes, tags, and documents", _v14_to_v15),
+    15: Migration(15, 16, "keep schedule changes as whole-transaction versions", _v15_to_v16),
 }
 MIN_SUPPORTED_SCHEMA_VERSION = min(MIGRATIONS)
 
