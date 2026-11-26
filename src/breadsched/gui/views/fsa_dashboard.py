@@ -14,6 +14,7 @@ from ...gen.services.claims import ClaimReportQuery
 from ...presentation import claim_role_label, fsa_account_text, fsa_usage_text
 from ..gi_setup import Gio, Gtk
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import shown_date
 from ._base import BaseView, Row, attach_row_menu, column, sorted_model, table_section, unwrap
 
 #: (grouping, label) choices for the claims report, in the order offered.
@@ -25,6 +26,10 @@ GROUPINGS = (
 )
 
 __all__ = ["FsaDashboardView"]
+
+
+def _service_date(line):
+    return line.summary.claim.service_date
 
 
 class FsaDashboardView(BaseView):
@@ -102,7 +107,7 @@ class FsaDashboardView(BaseView):
         for title, bind, numeric, expand in (
             (
                 "Service date",
-                lambda line: line.summary.claim.service_date.isoformat(),
+                lambda line: shown_date(line.summary.claim.service_date),
                 False,
                 False,
             ),
@@ -114,7 +119,11 @@ class FsaDashboardView(BaseView):
             ("Remaining", lambda line: line.summary.remaining_reimbursable.format(), True, False),
             ("Needs attention", _attention_text, False, True),
         ):
-            self.claim_view.append_column(column(title, bind, expand=expand, numeric=numeric))
+            # The service date sorts by date, whatever order Preferences shows it in.
+            key = _service_date if title == "Service date" else None
+            self.claim_view.append_column(
+                column(title, bind, expand=expand, numeric=numeric, sort_key=key)
+            )
         self.claim_view.connect("activate", lambda *_a: self.edit_selected_claim())
         attach_row_menu(self, self.claim_view)
         self.claim_section = table_section(
@@ -225,7 +234,7 @@ class FsaDashboardView(BaseView):
             self.proposal_grid.attach(check, 0, row_index, 1, 1)
             self._proposal_checks.append((check, (item.claim, item.transaction, item.split)))
             values = (
-                item.when.isoformat(),
+                shown_date(item.when),
                 item.description,
                 item.amount.format(),
                 item.claim_label,

@@ -10,6 +10,7 @@ from ...gen.engine.projection_bridge import StockBridge, month_bridges, projecti
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import shown_date
 
 __all__ = ["ProjectionDetailDialog"]
 
@@ -191,7 +192,7 @@ class ProjectionDetailDialog(BoundedWindow):
 
         event_rows = [
             (
-                event.when.isoformat(),
+                shown_date(event.when),
                 event.description,
                 event.source.value,
                 event.status.value,

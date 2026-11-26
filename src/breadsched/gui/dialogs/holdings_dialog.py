@@ -11,6 +11,7 @@ from ...presentation import holding_cost_text, lot_move_text, lot_text, sale_tex
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
+from ..widgets.date_entry import shown_date, shown_text
 from ..widgets.model_chart import ModelChartView
 
 __all__ = ["HoldingsDialog"]
@@ -123,14 +124,14 @@ class HoldingsDialog(BoundedWindow):
             box.set_margin_start(18)
             expander.set_child(box)
             for lot in item.lots:
-                box.append(_cell(_capital(lot_text(lot))))
+                box.append(_cell(_capital(shown_text(lot_text(lot)))))
             for sale in item.sales:
                 line = Gtk.Box(spacing=8)
-                line.append(_cell(_capital(sale_text(sale))))
+                line.append(_cell(_capital(shown_text(sale_text(sale)))))
                 choose = Gtk.Button(label="Choose lots…")
                 choose.update_property(
                     [Gtk.AccessibleProperty.LABEL],
-                    [f"Choose the lots sold on {sale.sold.isoformat()}"],
+                    [f"Choose the lots sold on {shown_date(sale.sold)}"],
                 )
                 choose.connect(
                     "clicked",
@@ -140,7 +141,7 @@ class HoldingsDialog(BoundedWindow):
                 box.append(line)
                 self.choose_buttons.append(choose)
             for move in item.moves:
-                text = lot_move_text(move, view.other_name(move.other_account))
+                text = shown_text(lot_move_text(move, view.other_name(move.other_account)))
                 box.append(_cell(_capital(text)))
             for problem in item.problems:
                 warning = _cell(problem)

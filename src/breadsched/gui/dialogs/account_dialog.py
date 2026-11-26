@@ -38,7 +38,7 @@ from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, notes_view, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
-from ..widgets.date_entry import attach_date_keys, parse_date_text
+from ..widgets.date_entry import attach_date_keys, date_hint, parse_date_text, shown_date
 
 __all__ = ["AccountDialog"]
 
@@ -491,8 +491,8 @@ class AccountDialog(BoundedWindow):
         rules = Gtk.Box(spacing=6)
         row.append(dates)
         row.append(rules)
-        start = attach_date_keys(Gtk.Entry(placeholder_text="Start YYYY-MM-DD"))
-        through = attach_date_keys(Gtk.Entry(placeholder_text="Through YYYY-MM-DD"))
+        start = attach_date_keys(Gtk.Entry(placeholder_text=date_hint("Start")))
+        through = attach_date_keys(Gtk.Entry(placeholder_text=date_hint("Through")))
         election = Gtk.Entry(placeholder_text="Election")
         runout = attach_date_keys(Gtk.Entry(placeholder_text="Run-out through (optional)"))
         carryover = Gtk.Entry(placeholder_text="Carryover limit (optional)")
@@ -502,15 +502,15 @@ class AccountDialog(BoundedWindow):
         grace = attach_date_keys(Gtk.Entry(placeholder_text="Grace through (optional)"))
         grace.set_tooltip_text("Services up to this date may still be claimed against this year")
         if funding_year is not None:
-            start.set_text(funding_year.start.isoformat())
-            through.set_text(funding_year.through.isoformat())
+            start.set_text(shown_date(funding_year.start))
+            through.set_text(shown_date(funding_year.through))
             election.set_text(f"{funding_year.election.to_decimal():.2f}")
             if funding_year.runout_through:
-                runout.set_text(funding_year.runout_through.isoformat())
+                runout.set_text(shown_date(funding_year.runout_through))
             if funding_year.carryover_limit is not None:
                 carryover.set_text(f"{funding_year.carryover_limit.to_decimal():.2f}")
             if funding_year.grace_through:
-                grace.set_text(funding_year.grace_through.isoformat())
+                grace.set_text(shown_date(funding_year.grace_through))
         for line, widgets in (
             (dates, (start, through, election, runout)),
             (rules, (carryover, grace)),

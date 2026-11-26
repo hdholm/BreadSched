@@ -19,6 +19,7 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook, worker_book
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import shown_date
 from ..widgets.model_chart import ModelChartView
 
 __all__ = ["ExpenseExplorerDialog"]
@@ -269,7 +270,7 @@ class ExpenseExplorerDialog(BoundedWindow):
             self._label("Income over time" if income else "Spending over time", heading=True)
         )
         explanation = self._label(
-            f"Actual is posted through {self.report.plan.report.as_of.isoformat()}; "
+            f"Actual is posted through {shown_date(self.report.plan.report.as_of)}; "
             "the rule marks that date's period. Categories past the seventh are "
             "combined as Other. "
             + (
@@ -344,12 +345,12 @@ class ExpenseExplorerDialog(BoundedWindow):
         grid = Gtk.Grid(column_spacing=12, row_spacing=3)
         rows = [("Planned date", "Scheduled", "Expected")]
         rows += [
-            (item.planned_date.isoformat(), item.description, item.expected.format())
+            (shown_date(item.planned_date), item.description, item.expected.format())
             for item in detail.planned_events
         ]
         rows.append(("Received", "Payer", "Actual"))
         rows += [
-            (item.post_date.isoformat(), group.name, item.amount.format())
+            (shown_date(item.post_date), group.name, item.amount.format())
             for group in detail.merchants
             for item in group.transactions
         ]

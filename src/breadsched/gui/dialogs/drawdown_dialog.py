@@ -13,7 +13,7 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
-from ..widgets.date_entry import attach_date_keys, parse_date_text
+from ..widgets.date_entry import attach_date_keys, parse_date_text, shown_date
 
 __all__ = ["DrawdownEditDialog", "DrawdownsDialog", "drawdown_summary"]
 
@@ -31,11 +31,11 @@ def drawdown_summary(db: OpenBook, drawdown: Drawdown) -> str:
         amount = f"{drawdown.annual_amount} a year"
         if drawdown.escalate:
             amount += ", rising with inflation"
-    through = drawdown.end.isoformat() if drawdown.end is not None else "onward"
+    through = shown_date(drawdown.end) if drawdown.end is not None else "onward"
     return (
         f"{names.get(drawdown.account, drawdown.account)} → "
         f"{names.get(drawdown.into, drawdown.into)}, "
-        f"{drawdown.start.isoformat()} — {through}: {amount}"
+        f"{shown_date(drawdown.start)} — {through}: {amount}"
     )
 
 
@@ -190,16 +190,16 @@ class DrawdownEditDialog(BoundedWindow):
             self._targets, drawdown.into if drawdown else None
         )
         grid.attach(self.into_picker, 1, 1, 1, 1)
-        grid.attach(Gtk.Label(label="Start (YYYY-MM-DD)", xalign=0), 0, 2, 1, 1)
+        grid.attach(Gtk.Label(label="Start", xalign=0), 0, 2, 1, 1)
         self.start_entry = attach_date_keys(Gtk.Entry())
         self.start_entry.set_text(
-            drawdown.start.isoformat() if drawdown else scenario.start.isoformat()
+            shown_date(drawdown.start) if drawdown else shown_date(scenario.start)
         )
         grid.attach(self.start_entry, 1, 2, 1, 1)
         grid.attach(Gtk.Label(label="Through (blank = onward)", xalign=0), 0, 3, 1, 1)
         self.end_entry = attach_date_keys(Gtk.Entry())
         if drawdown is not None and drawdown.end is not None:
-            self.end_entry.set_text(drawdown.end.isoformat())
+            self.end_entry.set_text(shown_date(drawdown.end))
         grid.attach(self.end_entry, 1, 3, 1, 1)
 
         by_rate = drawdown is not None and drawdown.annual_rate is not None

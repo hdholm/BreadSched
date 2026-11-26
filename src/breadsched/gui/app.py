@@ -31,6 +31,8 @@ from .view_catalog import CATEGORIES as MENU_CATEGORIES  # noqa: E402
 from .view_catalog import VIEW_ACTIONS, view_action_name  # noqa: E402
 from .viewmanager import ViewManager  # noqa: E402
 from .widgets.brand import install_icons, logo_texture
+from .widgets.date_entry import SETTING as DATE_SETTING
+from .widgets.date_entry import date_style, set_date_style
 from .widgets.presented import when_presented
 
 if TYPE_CHECKING:
@@ -87,6 +89,8 @@ class BreadSchedApplication(Gtk.Application):
         #: user can delete the second without losing the first.
         self.settings = Settings("settings", directory=settings_directory)
         self.view_settings = Settings("views", directory=settings_directory)
+        # Every desktop date is shown in the style chosen in Preferences.
+        set_date_style(self.settings.get(*DATE_SETTING))
         self.actions: dict[str, Gio.SimpleAction] = {}
         #: Where the watchdog keeps hang logs and reports (set by the launcher,
         #: which runs it); a hang report left there is offered on activation.
@@ -815,8 +819,15 @@ class BreadSchedApplication(Gtk.Application):
         return dialog
 
     def preferences_changed(self) -> None:
-        """Apply saved preferences: menus (View → Double Line) and book sharing."""
+        """Apply saved preferences: menus (View → Double Line), book sharing, and the
+        date style (every view redraws its dates in it)."""
         self.update_sharing()
+        style = self.settings.get(*DATE_SETTING)
+        if style != date_style():
+            set_date_style(style)
+            for window in self.get_windows():
+                if isinstance(window, ViewManager):
+                    window.refresh_views()
         double_line = self.view_settings.get_bool("register", "double_line")
         for window in self.get_windows():
             action = getattr(window, "double_line_action", None)

@@ -348,10 +348,35 @@ can forget them all (`forget_sizes`).
 not part of a book: `general.last_book_path`, `register.double_line` and
 `register.banding` in the view settings, and the Alpha Vantage key through
 `plugins.quotes.save_alphavantage_key` (stored only if changed, so a key from the
-environment is not copied into the file). **Configure Dashboard…** there
-activates the window's existing `win.dashboard-configure`, because the Dashboard's
-horizons, sections, and groups belong to the book. The browser has no equivalent window; its guide's Preferences
-section says where each setting lives there.
+environment is not copied into the file), and `general.date_format`, the date style.
+Those are its **General** tab.
+
+**Dates.** `gen.utils.date_format` writes a date in a style (`locale`, the default,
+`iso`, `mdy`, `dmy`, `dmy-dot`); `locale` is read once from how the locale writes a
+known date (`%x` of 2001-02-03; `C`/`POSIX` or anything unrecognised is ISO), and the
+process's current style is `date_format.current()`. The desktop sets it at start and
+on Preferences' Save (`BreadSchedApp.preferences_changed`, which redraws every view)
+and shows dates only through `widgets.date_entry`: `shown_date` for a date,
+`shown_text` for ISO dates in shared wording (presentation texts, quote evidence),
+and `shown_document` for a report or Dashboard document, which `DocumentView` and
+printing apply. `shown_document` rewrites the words of a document, never its links,
+sort keys, or identifying names, and gives a cell whose text changes its ISO text as
+its sort key; desktop columns showing dates sort by the date. The style also sets
+`parse_entry_date(day_first=...)`, so a date is typed back as shown; ISO is always
+read. Stored dates, report options, exports, the browser, and the command line stay
+ISO. `TestDesktopDates` keeps it so: desktop code calls `isoformat()` only where the
+text is not shown, no field asks for `YYYY`, and every field whose text is read as a
+date (directly or through a helper given it) is made with `attach_date_keys`. Its
+**Dashboard** tab is `dialogs.dashboard_settings.DashboardSettings`, the open book's
+Dashboard settings (horizons, sections, groups through the book server's
+`save_dashboard_settings`, and each table's columns in the view settings), so all
+desktop configuration is in one window and the Dashboard has no configure command
+of its own. **Save** saves that tab first: a refusal keeps the window open on it
+with the reason, and nothing else is written. Save and close (Cancel, Escape, the
+title bar) ask first when a group's account picker holds an account that was never
+added (`DashboardSettings.unadded`), since only **Add** puts it in the group. The
+browser has no equivalent window; its guide's Preferences section says where each
+setting lives there, and its Dashboard keeps **Configure Dashboard…**.
 
 A modal dialog is never shown behind the window it blocks, and never two at
 once. The main window's own modal dialogs (alerts from `_report`, the GnuCash change

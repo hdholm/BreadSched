@@ -99,8 +99,9 @@ arranges it, it takes its `size`, the columns and rows it asks for (the summary
 figures and the cash-flow chart four columns wide, the tables two; `DEFAULT_SIZE`,
 two by two, when it names none), after the items arranged. An add-on sizes its own
 breadlets the same way. `DashboardSettings.breadlets` lists every dashboard breadlet
-in the order arranged, with its size, which is the one list Configure Dashboard and
-arranging offer in GTK and the browser.
+in the order arranged, with its size, which is the one list the Dashboard settings
+(Preferences → Dashboard in GTK, Configure Dashboard in the browser) and arranging
+offer.
 Running them together, an interface wraps the book in `breadlets.dashboard.sharing`,
 so they share one `book.dashboard()` (and the browser's `/api/dashboard` sends every
 shown breadlet's document at once, calculated with the horizons asked for).
@@ -124,7 +125,7 @@ gets the same abilities:
   with the same column settings as every other table, in the browser a sortable
   table whose hidden columns are kept per browser. The Dashboard's bills, income,
   reimbursables and goals use the keys their tables always had (`dashboard`,
-  `dashboard-income`, ...), so Configure Dashboard's Columns page still lists them.
+  `dashboard-income`, ...), so the Dashboard settings' Columns page still lists them.
 - A missed schedule's dates are its due cell's note, below the range, on every
   screen and on paper.
 

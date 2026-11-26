@@ -33,7 +33,7 @@ from ..gi_setup import Gio, GLib, Gtk, Pango
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
-from ..widgets.date_entry import attach_date_keys, read_date
+from ..widgets.date_entry import attach_date_keys, read_date, shown_date
 
 __all__ = ["ImportDialog"]
 
@@ -258,8 +258,8 @@ class ImportDialog(BoundedWindow):
 
     def set_limit(self, since, until) -> None:
         """Show the first and last dates to import; ``None`` leaves one open."""
-        self.since_entry.set_text(since.isoformat() if since is not None else "")
-        self.until_entry.set_text(until.isoformat() if until is not None else "")
+        self.since_entry.set_text(shown_date(since) if since is not None else "")
+        self.until_entry.set_text(shown_date(until) if until is not None else "")
 
     def _limit_dates(self):
         """The dates typed, as ``(since, until)``; raises ``ValueError`` on a bad one."""
@@ -288,7 +288,7 @@ class ImportDialog(BoundedWindow):
         self.set_limit(None if self.duplicates_check.get_active() else last, None)
         # Said beside the detected format, so the dialog needs no more height.
         last_import_note = (
-            f" · last imported {last.isoformat()}, so the import starts there "
+            f" · last imported {shown_date(last)}, so the import starts there "
             "(All dates compares earlier transactions too)"
             if last is not None
             else ""

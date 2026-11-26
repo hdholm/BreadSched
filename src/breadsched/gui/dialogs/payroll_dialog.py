@@ -33,7 +33,13 @@ from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, keeps_enter
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
-from ..widgets.date_entry import attach_date_keys, parse_date_text
+from ..widgets.date_entry import (
+    attach_date_keys,
+    date_examples,
+    date_hint,
+    parse_date_text,
+    shown_date,
+)
 
 __all__ = ["PAY_PERIODS", "PayrollDialog"]
 
@@ -146,7 +152,7 @@ class PayrollDialog(BoundedWindow):
         row = Gtk.Box(spacing=8)
         row.append(Gtk.Label(label="As of"))
         self.as_of_entry = attach_date_keys(
-            Gtk.Entry(text=date.today().isoformat(), width_chars=12)
+            Gtk.Entry(text=shown_date(date.today()), width_chars=12)
         )
         keeps_enter(self.as_of_entry)
         self.as_of_entry.connect("activate", lambda _entry: self.show_breakdown())
@@ -179,7 +185,7 @@ class PayrollDialog(BoundedWindow):
         form = Gtk.Box(spacing=8)
         form.append(Gtk.Label(label="From"))
         self.change_start_entry = attach_date_keys(
-            Gtk.Entry(width_chars=12, placeholder_text="YYYY-MM-DD")
+            Gtk.Entry(width_chars=12, placeholder_text=date_hint())
         )
         form.append(self.change_start_entry)
         form.append(Gtk.Label(label="New gross"))
@@ -268,7 +274,7 @@ class PayrollDialog(BoundedWindow):
         self.new_name_entry = Gtk.Entry(placeholder_text="Schedule name", hexpand=True)
         self.new_start_entry = attach_date_keys(
             Gtk.Entry(
-                text=date.today().isoformat(), width_chars=12, placeholder_text="First payday"
+                text=shown_date(date.today()), width_chars=12, placeholder_text="First payday"
             )
         )
         self.new_period_picker = bounded_dropdown([label for label, *_rest in PAY_PERIODS])
@@ -338,7 +344,7 @@ class PayrollDialog(BoundedWindow):
         try:
             when = parse_date_text(self.as_of_entry.get_text().strip())
         except ValueError:
-            self._message("Enter the date as YYYY-MM-DD.", True)
+            self._message(f"Enter a date such as {date_examples()}.", True)
             return None
         breakdown = self._paycheck(when)
         if breakdown is None:
@@ -367,7 +373,7 @@ class PayrollDialog(BoundedWindow):
         if breakdown is None:
             return
         if not self.change_start_entry.get_text().strip():
-            self.change_start_entry.set_text(date.today().isoformat())
+            self.change_start_entry.set_text(shown_date(date.today()))
         self.change_gross_entry.set_text(str(breakdown.gross.to_decimal()))
         _heading(self.change_rows_grid, ("Line", "Account", "Now", "Change", "Amount", "After"))
         for row, leg in enumerate(breakdown.legs, start=1):
@@ -407,7 +413,7 @@ class PayrollDialog(BoundedWindow):
         try:
             start = parse_date_text(self.change_start_entry.get_text().strip())
         except ValueError:
-            self._message("Enter the pay change date as YYYY-MM-DD.", True)
+            self._message(f"Enter the pay change date, such as {date_examples()}.", True)
             return None
         try:
             gross = Money(parse_user_amount(self.change_gross_entry.get_text().strip()))
@@ -447,7 +453,7 @@ class PayrollDialog(BoundedWindow):
         self.last_plan = plan
         self._show_plan(plan)
         self._message(
-            f"From {request.start.isoformat()}: take-home "
+            f"From {shown_date(request.start)}: take-home "
             f"{plan.total(PayLegKind.NET).format()}. Nothing is saved until you "
             "choose Save pay change."
         )
@@ -466,7 +472,7 @@ class PayrollDialog(BoundedWindow):
         selected = self.selected_paycheck()
         self.refresh(select=selected.schedule if selected else None)
         self._message(
-            f"Saved the pay change from {request.start.isoformat()}: take-home "
+            f"Saved the pay change from {shown_date(request.start)}: take-home "
             f"{plan.total(PayLegKind.NET).format()}. Edit → Undo reverses it."
         )
         return plan
@@ -641,7 +647,7 @@ class PayrollDialog(BoundedWindow):
         try:
             start = parse_date_text(self.new_start_entry.get_text().strip())
         except ValueError:
-            self._message("Enter the first payday as YYYY-MM-DD.", True)
+            self._message(f"Enter the first payday, such as {date_examples()}.", True)
             return None
         gross_text = self.new_gross_entry.get_text().strip()
         try:

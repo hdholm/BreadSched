@@ -593,6 +593,18 @@ all three filled, changing one asks which of the other two should change. A cash
 register that a security has moved through shows the security leg's shares and
 price too, and takes them in its split lines.
 
+### How dates are shown
+
+The desktop shows every date one way, chosen in **Edit → Preferences** under
+**Dates** ([desktop](guide/desktop.md#preferences)): as your computer's locale
+writes dates (the default), or as `2026-03-15`, `03/15/2026`, `15/03/2026`, or
+`15.03.2026`. Registers, lists, dialogs, date fields, reports, the Dashboard, and
+printed reports all follow it, and tables still sort dates by date. The choice also
+sets how a typed `3/4` is read: month first, or day first when dates are shown day
+first, so you can type a date the way you see it; `2026-03-15` is always read as
+such. The browser shows dates as it always has, and the command line, exported
+files, and the book itself use `2026-03-15`.
+
 ### Typing shortcuts in the register
 
 The desktop and browser registers read what you type the same way:
@@ -600,6 +612,9 @@ The desktop and browser registers read what you type the same way:
 - **Dates.** Type a full date (`2026-03-15`), a month and day in this year
   (`3/15`), a day in this month (`15`), or a two- or four-digit year after the day
   (`3/15/27`; a two-digit year is the one nearest the date shown, within 50 years).
+  On the desktop, a date shown day first (see [How dates are
+  shown](#how-dates-are-shown)) is typed day first too: `15/3`, `15.3.27`.
+  `2026-03-15` is read the same way everywhere.
   While the field holds a whole date, single keys change it in place: `+` and `-`
   move a day, `]` and `[` move a month (keeping the day, or the month's last day
   when it is shorter), `t` is today, `m` and `h` are the first and last day of
@@ -965,7 +980,7 @@ each bill and up on each scheduled pay. Its lowest day is marked, which is the d
 to watch: if the line goes below zero, a bill falls due before the money to pay it
 arrives. It uses the same bills and pay that *Needed* counts, so the two agree. A
 period longer than about two months is drawn by the week. The chart is not shown
-when nothing is scheduled inside the period, and **Configure Dashboard** can hide
+when nothing is scheduled inside the period, and the Dashboard settings can hide
 it.
 
 Net worth, Assets, and Debts always cover every asset and liability account in the
@@ -1028,9 +1043,10 @@ bills: the expense, payer, when it was incurred, when the money is expected (mar
 overdue once that date passes), what is still owed, and its status. It is off until
 you turn it on.
 
-**Configure Dashboard** holds everything the Dashboard can be told
-([desktop](guide/desktop.md#configure-the-dashboard),
-[browser](guide/web.md#configure-the-dashboard)): the two horizons (how many days of
+The Dashboard settings hold everything the Dashboard can be told: on the desktop
+they are the **Dashboard** tab of **Edit → Preferences**
+([desktop](guide/desktop.md#configure-the-dashboard)), in the browser **Configure
+Dashboard** ([browser](guide/web.md#configure-the-dashboard)). They hold the two horizons (how many days of
 bills cash must cover, and how many months of outgoings the emergency fund should
 last), which items show (the summary figures, the cash-flow chart, account groups, pending bills, expected income, pending reimbursables (off until you turn it on), FSA claims needing attention, and savings goals), the groups and their accounts, and each table's
 columns. All of it is each person's own: when a book is shared with other people,
@@ -1301,7 +1317,7 @@ figures, the cash-flow chart, account groups, pending bills, expected income, pe
 reimbursables, FSA claims needing attention, and savings goals) and any other. A
 row or figure on it opens what it is (a bill's schedule, a card's payment settings,
 the savings goals), and its tables sort by any column. Two more show below them until
-you turn them off in Configure Dashboard: **Spending this month**, as a ring, and **Income and
+you turn them off in the Dashboard settings: **Spending this month**, as a ring, and **Income and
 spending** for the last six months. A range that starts before the book's first month
 starts with that month. Foreign-currency activity without an exchange rate for its
 date is left out of both, and the report says so.

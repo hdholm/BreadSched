@@ -25,6 +25,7 @@ from ..background import BackgroundJob
 from ..gi_setup import Gtk, Pango
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
+from ..widgets.date_entry import shown_date
 
 __all__ = ["OnlineQuotesDialog"]
 
@@ -259,7 +260,7 @@ class OnlineQuotesDialog(BoundedWindow):
             return
         self.last_update = update
         lines = [
-            f"{item.symbol}: {price_text(item.value)} {item.currency} on {item.when.isoformat()} "
+            f"{item.symbol}: {price_text(item.value)} {item.currency} on {shown_date(item.when)} "
             f"({item.source}){'' if item.changed else ', unchanged'}"
             for item in update.stored
         ]

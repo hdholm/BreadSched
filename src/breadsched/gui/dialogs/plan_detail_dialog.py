@@ -13,6 +13,7 @@ from ...presentation import plan_detail_cost_text
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
+from ..widgets.date_entry import shown_date
 
 __all__ = ["PlanDetailDialog"]
 
@@ -119,7 +120,7 @@ class PlanDetailDialog(BoundedWindow):
     ) -> Gtk.Widget:
         rows = [
             (
-                item.planned_date.isoformat(),
+                shown_date(item.planned_date),
                 item.description,
                 _SOURCE_NAMES.get(item.source, item.source),
                 item.status,
@@ -157,7 +158,7 @@ class PlanDetailDialog(BoundedWindow):
         buttons = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=3)
         self.match_buttons: list[Gtk.Button] = []
         for item in scheduled:
-            button = Gtk.Button(label=f"Match {item.planned_date.isoformat()} {item.description}…")
+            button = Gtk.Button(label=f"Match {shown_date(item.planned_date)} {item.description}…")
             button.set_tooltip_text(
                 "Choose the splits that count toward it, as in a reconciliation"
             )
@@ -180,7 +181,7 @@ class PlanDetailDialog(BoundedWindow):
     ) -> Gtk.Widget:
         rows = [
             (
-                item.post_date.isoformat(),
+                shown_date(item.post_date),
                 item.description,
                 item.resolution.value,
                 "\n".join(item.explanation) or "—",

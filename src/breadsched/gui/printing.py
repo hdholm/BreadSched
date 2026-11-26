@@ -30,6 +30,7 @@ import cairo
 from ..plugins.export.report_layout import ReportDocument
 from .gi_setup import Gio, GLib, Gtk
 from .report_printer import ReportPrinter
+from .widgets.date_entry import shown_document
 
 __all__ = [
     "export_pdf",
@@ -121,8 +122,9 @@ def print_operation(
     """A print operation that lays out and draws ``document``.
 
     ``custom_tab`` adds the **Report** tab choosing the optional section; the
-    portal print dialog cannot show it.
+    portal print dialog cannot show it. Its dates print as the desktop shows them.
     """
+    document = shown_document(document)
     operation = Gtk.PrintOperation()
     operation.set_job_name(f"BreadSched {document.title}")
     operation.set_unit(Gtk.Unit.POINTS)
@@ -236,7 +238,7 @@ def print_document(parent: Gtk.Window | None, document: ReportDocument) -> None:
     if result == Gtk.PrintOperationResult.ERROR:
         from ..plugins.export.html_report import render_html
 
-        open_print_preview(render_html(document))
+        open_print_preview(render_html(shown_document(document)))
 
 
 @atexit.register

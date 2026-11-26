@@ -30,6 +30,7 @@ from ...gen.services.plan_matching import (
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
+from ..widgets.date_entry import shown_date
 
 __all__ = ["OccurrenceMatchWindow", "TransactionMatchWindow"]
 
@@ -93,9 +94,9 @@ class OccurrenceMatchWindow(_MatchWindow):
             return
         self.view = view
         period = (
-            f"{view.planned_date.isoformat()} to {view.period_end.isoformat()}"
+            f"{shown_date(view.planned_date)} to {shown_date(view.period_end)}"
             if view.period_end is not None
-            else view.planned_date.isoformat()
+            else shown_date(view.planned_date)
         )
         kind = "Estimate" if view.estimate else "Scheduled"
         self.heading.set_text(f"{kind}: {view.description} · {period}")
@@ -123,7 +124,7 @@ class OccurrenceMatchWindow(_MatchWindow):
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
         number = f"  {candidate.num}" if candidate.num else ""
         for label, dim in (
-            (f"{candidate.date.isoformat()}{number}  {candidate.description}", False),
+            (f"{shown_date(candidate.date)}{number}  {candidate.description}", False),
             (f"{candidate.account_name} ← {', '.join(candidate.other_accounts)}", True),
             (" · ".join(part for part in (candidate.memo, candidate.notes) if part), True),
         ):
@@ -188,7 +189,7 @@ class TransactionMatchWindow(_MatchWindow):
             self._say(refused)
             return
         self.view = view
-        self.heading.set_text(f"{view.date.isoformat()} · {view.description}")
+        self.heading.set_text(f"{shown_date(view.date)} · {view.description}")
         state = {"matched": "Matched", "unexpected": "Not planned"}.get(
             view.resolution.value, "Still to match"
         )
@@ -229,7 +230,7 @@ class TransactionMatchWindow(_MatchWindow):
             box.append(line)
         choose = Gtk.Box(spacing=8)
         labels = [
-            f"{item.planned_date.isoformat()} {item.description} "
+            f"{shown_date(item.planned_date)} {item.description} "
             f"({item.remaining.format()} remains)"
             for item in leg.candidates
         ]

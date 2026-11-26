@@ -17,6 +17,7 @@ from ...gen.services.gnucash_writeback import (
 from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
+from ..widgets.date_entry import shown_date
 
 __all__ = ["GnuCashWritebackDialog"]
 
@@ -81,7 +82,7 @@ class GnuCashWritebackDialog(BoundedWindow):
             self.content.append(Gtk.Label(label="Nothing to write.", xalign=0))
         for change in self.plan.changes:
             check = Gtk.CheckButton(
-                label=f"{change.post_date.isoformat()}  {change.description}  "
+                label=f"{shown_date(change.post_date)}  {change.description}  "
                 f"({', '.join(change.kinds)})"
             )
             self.checks.append((change.transaction, check))
@@ -98,7 +99,7 @@ class GnuCashWritebackDialog(BoundedWindow):
             for item in self.plan.unsupported:
                 self.content.append(
                     Gtk.Label(
-                        label=f"{item.post_date.isoformat()}  {item.description}: {item.reason}",
+                        label=f"{shown_date(item.post_date)}  {item.description}: {item.reason}",
                         xalign=0,
                         wrap=True,
                     )

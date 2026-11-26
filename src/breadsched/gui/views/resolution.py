@@ -17,6 +17,7 @@ from ...presentation import REVIEW_ACTION_HELP, claim_role_label, review_groups
 from ..gi_setup import Gtk, Pango
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import shown_date
 from ._base import BaseView, attach_row_menu
 
 __all__ = ["ResolutionView"]
@@ -203,7 +204,7 @@ class ResolutionView(BaseView):
         box.set_margin_start(8)
         box.set_margin_end(8)
         description = Gtk.Label(
-            label=f"{transaction.date.isoformat()}  {transaction.description}",
+            label=f"{shown_date(transaction.date)}  {transaction.description}",
             xalign=0,
         )
         description.set_ellipsize(Pango.EllipsizeMode.END)
@@ -253,7 +254,7 @@ class ResolutionView(BaseView):
             for split in detail.splits
         )
         self.actual_summary.set_text(
-            f"{actual.date.isoformat()} · {actual.description}\n"
+            f"{shown_date(actual.date)} · {actual.description}\n"
             f"Actual amount: {actual.amount.format()}"
         )
         # Notes and legs can be long; they share the bounded, scrolling area.
@@ -271,7 +272,7 @@ class ResolutionView(BaseView):
             row.candidate = candidate
             event = candidate.event
             text = (
-                f"{event.planned_date.isoformat()}  {event.description}\n"
+                f"{shown_date(event.planned_date)}  {event.description}\n"
                 f"{explained.label} · expected {event.expected_amount.format()}"
                 + (
                     f", {event.remaining_amount.format()} remains"
@@ -393,11 +394,9 @@ class ResolutionView(BaseView):
         role_pick = bounded_dropdown(
             [f"{claim_role_label(role)} · {account}" for role, _split, account, _years in roles]
         )
+        funding_years = sorted({year for _role, _split, _account, years in roles for year in years})
         year_pick = bounded_dropdown(
-            ["Auto funding year"]
-            + sorted(
-                {year.isoformat() for _role, _split, _account, years in roles for year in years}
-            )
+            ["Auto funding year"] + [shown_date(year) for year in funding_years]
         )
         rows = (("Claim", claim_pick), ("As", role_pick), ("Funding year", year_pick))
         for label, widget in rows:
@@ -416,13 +415,7 @@ class ResolutionView(BaseView):
             claim = claims[claim_pick.get_selected()].claim
             role, split, _account, _years = roles[role_pick.get_selected()]
             selected_year = year_pick.get_selected()
-            year = None
-            if selected_year > 0:
-                model = year_pick.get_model()
-                item = model.get_string(selected_year)
-                from datetime import date as _date
-
-                year = _date.fromisoformat(item)
+            year = funding_years[selected_year - 1] if selected_year > 0 else None
             request = ReviewClaimAttachment(transaction.handle, claim, role, split, year)
             try:
                 book_server(self.db).attach_review_claim(request)

@@ -32,7 +32,7 @@ from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
-from ..widgets.date_entry import attach_date_keys, parse_date_text
+from ..widgets.date_entry import attach_date_keys, date_hint, parse_date_text, shown_date
 
 __all__ = ["FsaClaimsDialog"]
 
@@ -184,7 +184,7 @@ def _event_text(event: FsaClaimEvent) -> str:
         text = f"EOB changed from {amount(event.previous)} to {amount(event.current)}"
     else:
         text = "Closed" if event.kind == FsaClaimEvent.CLOSED else "Reopened"
-    return f"{event.on.isoformat()} {text}" + (f": {event.note}" if event.note else "")
+    return f"{shown_date(event.on)} {text}" + (f": {event.note}" if event.note else "")
 
 
 class _AllocationRow(Gtk.Frame):
@@ -230,7 +230,7 @@ class _AllocationRow(Gtk.Frame):
             self.repay.set_links(allocation.repayments)
             self.rejections.set_text(
                 "; ".join(
-                    f"{item.attempted_on.isoformat()} | {item.amount.to_decimal()} | {item.reason}"
+                    f"{shown_date(item.attempted_on)} | {item.amount.to_decimal()} | {item.reason}"
                     for item in allocation.rejections
                 )
             )
@@ -240,7 +240,9 @@ class _AllocationRow(Gtk.Frame):
             self.year.set_model(Gtk.StringList.new([]))
             return
         account = self.accounts[self.account.get_selected()]
-        labels = [f"{year.start} – {year.through}" for year in account.years]
+        labels = [
+            f"{shown_date(year.start)} – {shown_date(year.through)}" for year in account.years
+        ]
         self.year.set_model(Gtk.StringList.new(labels))
 
     def value(self) -> ClaimAllocationInput:
@@ -341,7 +343,7 @@ class FsaClaimsDialog(BoundedWindow):
         outer.append(top)
 
         fields = Gtk.Grid(column_spacing=8, row_spacing=6)
-        self.service = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
+        self.service = attach_date_keys(Gtk.Entry(placeholder_text=date_hint()))
         self.provider = Gtk.Entry(placeholder_text="Provider")
         self.description = Gtk.Entry(placeholder_text="Description")
         self.eob = Gtk.Entry(placeholder_text="EOB patient responsibility")
@@ -479,7 +481,7 @@ class FsaClaimsDialog(BoundedWindow):
         summaries = book_server(self.db).fsa_claims().claims
         self.claims = [summary.claim for summary in summaries]
         labels = [
-            f"{summary.claim.service_date} {summary.claim.provider or 'FSA claim'}"
+            f"{shown_date(summary.claim.service_date)} {summary.claim.provider or 'FSA claim'}"
             f" — {summary.status.label}"
             for summary in summaries
         ]
@@ -519,7 +521,7 @@ class FsaClaimsDialog(BoundedWindow):
             return
         claim = draft.claim
         self.new_claim()
-        self.service.set_text(claim.service_date.isoformat())
+        self.service.set_text(shown_date(claim.service_date))
         self.provider.set_text(claim.provider)
         self.description.set_text(claim.description)
         self.payments.set_links(claim.payments)
@@ -559,7 +561,7 @@ class FsaClaimsDialog(BoundedWindow):
                     item.transaction,
                     item.split,
                     item.date,
-                    f"{item.date} {item.description} — {item.amount.format()}",
+                    f"{shown_date(item.date)} {item.description} — {item.amount.format()}",
                 )
                 for item in found
             ]
@@ -620,7 +622,7 @@ class FsaClaimsDialog(BoundedWindow):
 
     def _load(self, claim: FsaClaim | None) -> None:
         self.current = claim
-        self.service.set_text(claim.service_date.isoformat() if claim else date.today().isoformat())
+        self.service.set_text(shown_date(claim.service_date) if claim else shown_date(date.today()))
         self.provider.set_text(claim.provider if claim else "")
         self.description.set_text(claim.description if claim else "")
         self.eob.set_text(
@@ -681,7 +683,7 @@ class FsaClaimsDialog(BoundedWindow):
             parts.append(f"to repay to the FSA {summary.over_reimbursed.format()}")
         if claim.closed_on is not None:
             parts.append(
-                f"closed {claim.closed_on.isoformat()}"
+                f"closed {shown_date(claim.closed_on)}"
                 + (f" ({claim.close_reason})" if claim.close_reason else "")
                 + f", gave up {summary.forgone.format()}"
             )

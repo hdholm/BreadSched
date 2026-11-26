@@ -636,15 +636,12 @@ class TestDashboardIsHome:
     def test_configure_dashboard_lists_the_breadlets_beside_the_sections(
         self, app, window, populated_book
     ):
-        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
 
         app.open_book(populated_book)
-        dialog = DashboardDialog(window, app.db)
-        try:
-            check = dialog.section_checks["breadlet:spending-this-month"]
-            assert check.get_label() == "Spending this month" and check.get_active()
-        finally:
-            dialog.destroy()
+        dialog = DashboardSettings(app.db)
+        check = dialog.section_checks["breadlet:spending-this-month"]
+        assert check.get_label() == "Spending this month" and check.get_active()
 
 
 class TestArrangeDashboard:
@@ -7698,11 +7695,9 @@ class TestDashboardView:
             assert values == sorted(values)
 
     def _configure(self, view, app):
-        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
 
-        return DashboardDialog(
-            view.get_root(), app.db, tables=view.column_tables(), settings=view._settings()
-        )
+        return DashboardSettings(app.db, tables=view.column_tables(), settings=view._settings())
 
     def test_the_horizons_moved_into_configure_dashboard(self, view, app):
         """The toolbar no longer holds the horizons; the dialog does (#381)."""
@@ -7710,7 +7705,6 @@ class TestDashboardView:
         dialog = self._configure(view, app)
         assert dialog.liquidity_spin.get_value() == view.config.liquidity_days
         assert dialog.emergency_spin.get_value() == view.config.emergency_months
-        dialog.destroy()
 
     def test_changing_a_horizon_is_kept_as_ones_own_and_changes_the_verdict(self, view, app):
         from user_fixtures import own_preference
@@ -7722,7 +7716,6 @@ class TestDashboardView:
         dialog.emergency_spin.set_value(12)
         dialog.liquidity_spin.set_value(45)
         assert dialog.save() is True
-        dialog.destroy()
         # The computer account's own Dashboard; the book keeps its own.
         stored = DashboardConfig.load(app.db, own_preference(app.db, "dashboard"))
         assert (stored.emergency_months, stored.liquidity_days) == (12, 45)
@@ -7739,7 +7732,6 @@ class TestDashboardView:
         dialog.section_checks["bills"].set_active(False)
         dialog.section_checks["reimbursables"].set_active(True)
         assert dialog.save() is True
-        dialog.destroy()
         view.refresh()
         assert "bills" not in view.shown_sections()
         assert "reimbursables" in view.shown_sections()
@@ -7764,15 +7756,14 @@ class TestDashboardView:
         # Not part of the book.
         assert "Frequency" not in str(app.db.get_metadata("dashboard"))
         frequency.set_active(True)
-        dialog.destroy()
 
     def test_the_group_dialog_builds_and_saves(self, view, app):
         from user_fixtures import own_preference
 
         from breadsched.gen.engine.dashboard import DashboardConfig
-        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
 
-        dialog = DashboardDialog(view.get_root(), app.db)
+        dialog = DashboardSettings(app.db)
         row = dialog.add_group()
         row["name"].set_text("Property")
         row["kind"].set_selected(3)
@@ -7781,7 +7772,7 @@ class TestDashboardView:
         dialog._add_picked(row)
         assert row["accounts"] == [dialog.accounts[0].handle]
         assert row["picker"].get_selected() == 0
-        dialog._on_save(None)
+        assert dialog.save()
 
         # Kept as the computer account's own arrangement, members and all (decision
         # 0004): the book's accounts and configuration are left as they were.
@@ -7795,21 +7786,10 @@ class TestDashboardView:
     def test_a_group_of_a_parents_child_shows_on_the_dashboard_once_saved(self, view, app):
         """A group holding a child of another group's parent account is shown and
         counts that child; the parent's group counts the rest (each once)."""
-        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
 
-        opened = []
-        original = DashboardDialog.present
-
-        def capture(dialog):
-            opened.append(dialog)
-            original(dialog)
-
-        DashboardDialog.present = capture
-        try:
-            view._on_configure(None)
-        finally:
-            DashboardDialog.present = original
-        [dialog] = opened
+        # Edit → Preferences → Dashboard, saved as Preferences saves it.
+        dialog = DashboardSettings(app.db)
         parent = app.db.get_account_by_name("Assets")
         child = app.db.get_account_by_name("Assets:Checking Account")
         before = view.board.net_worth
@@ -7817,8 +7797,8 @@ class TestDashboardView:
             row = dialog.add_group()
             row["name"].set_text(name)
             dialog.add_account(row, account.handle)
-        dialog._on_save(None)
-        _spin(lambda: False, 0.3)
+        assert dialog.save()
+        view.refresh()
 
         from breadsched.gen.engine import ledger
 
@@ -7836,10 +7816,10 @@ class TestDashboardView:
         assert view.board.net_worth == before
 
     def test_the_group_dialog_refuses_an_account_in_two_groups(self, view, app):
-        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
 
         before = [(a.handle, a.group) for a in app.db.iter_accounts()]
-        dialog = DashboardDialog(view.get_root(), app.db)
+        dialog = DashboardSettings(app.db)
         for name in ("One", "Two"):
             row = dialog.add_group()
             row["name"].set_text(name)
@@ -7849,12 +7829,11 @@ class TestDashboardView:
         assert dialog.save() is False
         assert dialog.status.get_text() == "An account can be in only one Dashboard group"
         assert [(a.handle, a.group) for a in app.db.iter_accounts()] == before
-        dialog.destroy()
 
     def test_adding_an_account_to_a_group_moves_it_from_another(self, view, app):
-        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
 
-        dialog = DashboardDialog(view.get_root(), app.db)
+        dialog = DashboardSettings(app.db)
         first, second = dialog.add_group(), dialog.add_group()
         first["name"].set_text("First")
         handle = dialog.accounts[0].handle
@@ -7868,7 +7847,6 @@ class TestDashboardView:
         assert line.handle == handle
         dialog.remove_account(second, handle)
         assert second["accounts"] == [] and second["members"].get_first_child() is None
-        dialog.destroy()
 
     def test_an_empty_book_still_renders(self, app, window, tmp_path):
         from breadsched.cli.main import main as cli
@@ -7971,7 +7949,7 @@ class TestDashboardView:
             assert "after the start date" in dialog.status.get_text()
             assert app.db.get_savings_goal(goal.handle).serialize() == stored
             dialog.target_date_entry.set_text("not a date")
-            assert dialog.save() is None and "YYYY-MM-DD" in dialog.status.get_text()
+            assert dialog.save() is None and "2026-03-15" in dialog.status.get_text()
 
             dialog.allocate_amount.set_text("250")
             assert dialog.allocate() is not None
@@ -8703,7 +8681,7 @@ class TestExchangeRateDialog:
         )
         dialog.date_entry.set_text("March 1")
         assert dialog.save() is None
-        assert "YYYY-MM-DD" in dialog.status.get_text()
+        assert "2026-03-15" in dialog.status.get_text()
         assert len(list(app.db.iter_prices())) == before
 
     def test_accounts_view_offers_the_exchange_rate_editor(self, fx_book, window):
@@ -8825,12 +8803,12 @@ class TestNoGtkCriticals:
         app.open_book(populated_book)
         window.show_category("dashboard")
         view = window._views["dashboard"]
-        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
 
-        dialog = DashboardDialog(window, app.db, tables=view.column_tables())
+        dialog = DashboardSettings(app.db, tables=view.column_tables())
         dialog.emergency_spin.set_value(9)
         dialog.liquidity_spin.set_value(45)
-        dialog._on_save(None)
+        assert dialog.save()
         view.refresh()
         view.flush_refresh()
         assert criticals == []
@@ -9937,7 +9915,6 @@ class TestViewActions:
         ]
         window.show_category("dashboard")
         assert self._tools(window) == [
-            "win.dashboard-configure",
             "win.dashboard-arrange",
             "win.dashboard-net-worth-history",
         ]
@@ -10881,7 +10858,6 @@ class TestDialogsFitTheScreen:
     DIALOGS = (
         ("account_dialog", "AccountDialog", "account"),
         ("csv_import_dialog", "CsvImportDialog", None),
-        ("dashboard_dialog", "DashboardDialog", None),
         ("drawdown_dialog", "DrawdownsDialog", "scenario"),
         ("exchange_rate_dialog", "ExchangeRateDialog", None),
         ("fsa_claims_dialog", "FsaClaimsDialog", None),
@@ -11359,7 +11335,7 @@ class TestReceivablesDialog:
             dialog.payer_entry.set_text("Acme")
             dialog.incurred_entry.set_text("yesterday")
             assert dialog.save() is None
-            assert "YYYY-MM-DD" in dialog.status.get_text()
+            assert "2026-03-15" in dialog.status.get_text()
             dialog.incurred_entry.set_text("2026-01-02")
             dialog.expected_entry.set_text("-5")
             assert dialog.save() is None
@@ -11576,7 +11552,9 @@ class TestTrackFsaClaim:
             assert dialog.get_transient_for() is window
             assert dialog.current is None  # a new claim, not yet saved
             assert list(db.iter_fsa_claims()) == []
-            assert dialog.service.get_text() == rent_txn.post_date.isoformat()
+            from breadsched.gui.widgets.date_entry import shown_date
+
+            assert dialog.service.get_text() == shown_date(rent_txn.post_date)
             assert dialog.provider.get_text() == "Rent"
             assert [(link.transaction, link.split) for link in dialog.payments.links()] == [
                 (rent_txn.handle, cost.handle)
@@ -13267,7 +13245,7 @@ class TestBoundedSizes:
     def test_dialogs_open_within_the_screen(self, app, window, stress):
         from breadsched.gui.dialogs.account_dialog import AccountDialog
         from breadsched.gui.dialogs.csv_import_dialog import CsvImportDialog
-        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.preferences_dialog import PreferencesDialog
         from breadsched.gui.dialogs.reconciliation_dialog import ReconciliationDialog
         from breadsched.gui.dialogs.rules_dialog import RulesDialog
         from breadsched.gui.dialogs.savings_goals_dialog import SavingsGoalsDialog
@@ -13281,7 +13259,8 @@ class TestBoundedSizes:
         makers = {
             "account": lambda: AccountDialog(window, db, db.get_account(chain[-1])),
             "csv-import": lambda: CsvImportDialog(window, db),
-            "dashboard": lambda: DashboardDialog(window, db),
+            # Preferences, with the open book's Dashboard tab.
+            "preferences": lambda: PreferencesDialog(window, app),
             "reconcile": lambda: ReconciliationDialog(window, db, bank),
             "rules": lambda: RulesDialog(window, db),
             "goals": lambda: SavingsGoalsDialog(window, db),
@@ -13400,6 +13379,131 @@ class TestPreferences:
         assert app.view_settings.get("register", "banding") == "lines"
         # The View menu's Double Line check follows the saved preference.
         assert window.lookup_action("double-line").get_state().get_boolean() is True
+
+    def test_the_dashboard_has_its_own_tab_and_no_configure_command(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
+
+        dialog = app.on_preferences()
+        tabs = [
+            dialog.notebook.get_tab_label_text(dialog.notebook.get_nth_page(index))
+            for index in range(dialog.notebook.get_n_pages())
+        ]
+        assert tabs == ["General", "Dashboard"]
+        # Without a book the tab says why it is empty.
+        assert dialog.dashboard is None
+        assert "Open a book" in dialog.notebook.get_nth_page(1).get_label()
+        dialog.close()
+
+        app.open_book(populated_book)
+        window.show_category("dashboard")
+        dialog = app.on_preferences()
+        assert isinstance(dialog.dashboard, DashboardSettings)
+        assert dialog.dashboard.column_checks  # the Dashboard's tables are listed
+        dialog.close()
+        # Configuration is in Preferences only: no toolbar icon or menu item.
+        assert "win.dashboard-configure" not in _menu_labels(app.get_menubar())
+        assert window.lookup_action("dashboard-configure") is None
+
+    def test_saving_preferences_saves_the_dashboard_and_redraws_it(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        window.show_category("dashboard")
+        view = window._views["dashboard"]
+        dialog = app.on_preferences()
+        settings = dialog.dashboard
+        row = settings.add_group()
+        row["name"].set_text("Group P")
+        settings.add_account(row, settings.accounts[0].handle)
+        settings.emergency_spin.set_value(7)
+        dialog.primary().emit("clicked")
+        assert _spin(lambda: not dialog.get_visible())
+        # Redrawn at once when on screen; otherwise marked out of date and redrawn
+        # when next shown.
+        assert view.get_mapped() or not view.is_current()
+        view.ensure_current()
+        assert "Group P" in view.section("groups").text()
+        assert view.board.config.emergency_months == 7
+
+    def test_a_refused_dashboard_keeps_preferences_open_on_its_tab(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        dialog = app.on_preferences()
+        settings = dialog.dashboard
+        for name in ("One", "Two"):
+            row = settings.add_group()
+            row["name"].set_text(name)
+            row["accounts"].append(settings.accounts[0].handle)
+        dialog.primary().emit("clicked")
+        assert dialog.get_visible()
+        assert dialog.notebook.get_current_page() == 1
+        assert "only one Dashboard group" in settings.status.get_text()
+        dialog._closing = True
+        dialog.close()
+
+    def _with_unadded(self, app, populated_book):
+        from user_fixtures import own_preference
+
+        app.open_book(populated_book)
+        dialog = app.on_preferences()
+        assert _spin(dialog.get_mapped)
+        settings = dialog.dashboard
+        row = settings.add_group()
+        row["name"].set_text("Chosen")
+        row["picker"].set_selected(1)  # chosen, but Add never pressed
+        chosen = settings.accounts[0]
+        [item] = settings.unadded()
+        assert (item.group, item.account) == ("Chosen", settings.names[chosen.handle])
+
+        def saved_groups():
+            stored = own_preference(app.db, "dashboard") or {}
+            return {
+                group["name"]: list(group.get("accounts", [])) for group in stored.get("groups", [])
+            }
+
+        return dialog, row, chosen, saved_groups
+
+    def test_save_asks_about_an_account_chosen_but_not_added(self, app, window, populated_book):
+        dialog, row, chosen, saved_groups = self._with_unadded(app, populated_book)
+        dialog.primary().emit("clicked")
+        message, buttons = dialog.unadded_question
+        assert message == "Add the chosen account before saving?"
+        assert buttons == ["Go back", "Save without it", "Add and save"]
+        # Go back: nothing saved, the Dashboard tab shown, the choice kept.
+        dialog.settle_unadded(0, saving=True)
+        assert dialog.get_visible() and dialog.notebook.get_current_page() == 1
+        assert "Chosen" not in saved_groups()
+        assert row["picker"].get_selected() == 1
+        # Add and save: the account joins the group, then everything is saved.
+        dialog.primary().emit("clicked")
+        dialog.settle_unadded(2, saving=True)
+        assert _spin(lambda: not dialog.get_visible())
+        assert saved_groups()["Chosen"] == [chosen.handle]
+
+    def test_save_without_the_unadded_account_saves_the_rest(self, app, window, populated_book):
+        dialog, _row, chosen, saved_groups = self._with_unadded(app, populated_book)
+        dialog.dashboard.emergency_spin.set_value(8)
+        dialog.primary().emit("clicked")
+        dialog.settle_unadded(1, saving=True)
+        assert _spin(lambda: not dialog.get_visible())
+        assert chosen.handle not in saved_groups().get("Chosen", [])
+
+    def test_cancel_asks_before_dropping_an_unadded_account(self, app, window, populated_book):
+        dialog, _row, _chosen, saved_groups = self._with_unadded(app, populated_book)
+        dialog.dismiss_button.emit("clicked")
+        assert dialog.get_visible()
+        message, buttons = dialog.unadded_question
+        assert message == "Close without adding the chosen account?"
+        assert buttons == ["Go back", "Close without saving"]
+        dialog.settle_unadded(0, saving=False)
+        assert dialog.get_visible()
+        dialog.dismiss_button.emit("clicked")
+        dialog.settle_unadded(1, saving=False)
+        assert _spin(lambda: not dialog.get_visible())
+        assert "Chosen" not in saved_groups()
 
     def test_users_are_out_of_the_way_until_wanted(self, app, window):
         """Alone, Preferences says "Only you"; Users and devices manages
@@ -14599,3 +14703,133 @@ class TestLargeUndo:
         self._import_like(db, 2)
         undo_with_care(window, db)
         assert not [t for t in db.iter_transactions() if t.description.startswith("Imported")]
+
+
+class TestDateStyle:
+    """Edit → Preferences chooses how every desktop date is shown and read."""
+
+    def test_preferences_offer_the_styles_and_save_the_choice(self, app, window):
+        from breadsched.gen.utils import date_format
+
+        dialog = app.on_preferences()
+        assert dialog.date_styles == list(date_format.STYLES)
+        # The default follows the computer's locale.
+        assert dialog.date_styles[dialog.date_format.get_selected()] == "locale"
+        dialog.date_format.set_selected(dialog.date_styles.index("dmy"))
+        dialog.primary().emit("clicked")
+        assert _spin(lambda: not dialog.get_visible())
+        assert app.settings.get("general", "date_format") == "dmy"
+        assert date_format.current() == "dmy"
+        # Opened again, Preferences shows the choice.
+        again = app.on_preferences()
+        assert again.date_styles[again.date_format.get_selected()] == "dmy"
+        again.close()
+
+    def test_the_register_shows_and_reads_dates_in_the_chosen_style(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        checking = app.db.get_account_by_name("Assets:Checking Account").handle
+        window.open_register(checking)
+        view = window._views["register"]
+        sheet = view.sheet
+        index = next(i for i, row in enumerate(sheet.rows) if row.kind == "transaction")
+        stored = sheet.rows[index].register_row.post_date
+        assert sheet.text(index, "date") == stored.isoformat()
+
+        dialog = app.on_preferences()
+        dialog.date_format.set_selected(dialog.date_styles.index("dmy-dot"))
+        dialog.primary().emit("clicked")
+        assert _spin(lambda: not dialog.get_visible())
+        view.ensure_current()
+        sheet = view.sheet
+        assert sheet.text(index, "date") == stored.strftime("%d.%m.%Y")
+
+        # Typed as shown: 5/4 is the 5th of April.
+        sheet.to_blank()
+        for column, text in (
+            ("date", "5/4/2026"),
+            ("description", "Day first"),
+            ("transfer", "Expenses:Rent"),
+            ("decrease", "5"),
+        ):
+            sheet.column = column
+            sheet.set_text(text)
+        assert sheet.leave()
+        saved = next(t for t in app.db.iter_transactions() if t.description == "Day first")
+        assert saved.post_date == date(2026, 4, 5)
+
+    def test_date_fields_show_hint_and_read_in_the_style(self):
+        from breadsched.gen.utils import date_format
+        from breadsched.gui.widgets.date_entry import (
+            date_examples,
+            date_hint,
+            parse_date_text,
+            set_date_style,
+            shown_date,
+        )
+
+        set_date_style("mdy")
+        assert date_hint("Start") == "Start MM/DD/YYYY"
+        assert shown_date(date(2026, 3, 5)) == "03/05/2026"
+        assert parse_date_text("3/5/2026") == date(2026, 3, 5)
+        assert "03/15/2026" in date_examples()
+        set_date_style("dmy")
+        assert parse_date_text("3/5/2026") == date(2026, 5, 3)
+        assert parse_date_text("2026-03-05") == date(2026, 3, 5)
+        assert shown_date(None, "—") == "—"
+        assert date_format.current() == "dmy"
+
+    def test_report_documents_are_drawn_and_printed_in_the_style(self):
+        from breadsched.gui.printing import print_operation
+        from breadsched.gui.widgets.date_entry import set_date_style, shown_document
+        from breadsched.gui.widgets.document_view import DocumentView
+        from breadsched.plugins.export.report_layout import (
+            Cell,
+            Column,
+            Paragraph,
+            ReportDocument,
+            Section,
+            Table,
+            TableRow,
+        )
+
+        document = ReportDocument(
+            "Report",
+            "As at 2026-03-05",
+            (
+                Section(
+                    (
+                        Paragraph("Quote of 2026-02-01."),
+                        Table(
+                            (Column("Date"), Column("Amount", numeric=True)),
+                            (
+                                TableRow(
+                                    (Cell("2026-03-05"), Cell("10.00", numeric=True)),
+                                    link="schedule:2026-03-05",
+                                ),
+                            ),
+                        ),
+                    ),
+                    name="2026-03-05",
+                ),
+            ),
+        )
+        assert shown_document(document) is document  # ISO: nothing to change
+        set_date_style("dmy")
+        shown = shown_document(document)
+        assert shown.subtitle == "As at 05/03/2026"
+        [paragraph, table] = shown.sections[0].blocks
+        assert paragraph.text == "Quote of 01/02/2026."
+        cell = table.rows[0].cells[0]
+        # Shown day first, still sorted by the date.
+        assert (cell.text, cell.sort) == ("05/03/2026", "2026-03-05")
+        # Links and names identify; they are left alone.
+        assert table.rows[0].link == "schedule:2026-03-05"
+        assert shown.sections[0].name == "2026-03-05"
+
+        view = DocumentView(titled=True)
+        view.show_document(document)
+        assert view.document is document  # kept as made, for export
+        assert "05/03/2026" in _texts(view)
+        assert print_operation(document) is not None

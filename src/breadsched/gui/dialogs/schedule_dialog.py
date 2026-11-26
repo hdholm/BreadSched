@@ -45,7 +45,7 @@ from ..remote_book import OpenBook
 from ..split_sheet import SplitSheet
 from ..widgets.bounded import BoundedWindow, notes_view
 from ..widgets.choice import bounded_dropdown
-from ..widgets.date_entry import attach_date_keys, parse_date_text
+from ..widgets.date_entry import attach_date_keys, date_hint, parse_date_text, shown_date
 from ..widgets.editor_parts import DocumentsPage, SplitsPanel
 from ..widgets.form_pages import FormGrid, FormPages
 from ..widgets.frequency import FrequencyPicker
@@ -349,7 +349,7 @@ class ScheduleDialog(BoundedWindow):
         self.frequency.connect_changed(self._recurrence_changed)
         basics.add("Frequency", self.frequency)
 
-        self.start_entry = attach_date_keys(Gtk.Entry(text=date.today().replace(day=1).isoformat()))
+        self.start_entry = attach_date_keys(Gtk.Entry(text=shown_date(date.today().replace(day=1))))
         self.start_entry.connect("changed", self._recurrence_changed)
         basics.add("First due", self.start_entry)
 
@@ -357,7 +357,7 @@ class ScheduleDialog(BoundedWindow):
         self.ends.connect("notify::selected", self._recurrence_changed)
         basics.add("Ends", self.ends)
 
-        self.end_entry = attach_date_keys(Gtk.Entry(placeholder_text="YYYY-MM-DD"))
+        self.end_entry = attach_date_keys(Gtk.Entry(placeholder_text=date_hint()))
         self.end_entry.connect("changed", self._recurrence_changed)
         basics.add("End date", self.end_entry)
 
@@ -476,8 +476,8 @@ class ScheduleDialog(BoundedWindow):
             ),
             f"Currency: {self._stored_currency() or '(book/default)'}",
             f"Recurrence: {recurrence.describe()}",
-            f"First due: {recurrence.start.isoformat()}",
-            f"End date: {recurrence.end.isoformat() if recurrence.end else '(none)'}",
+            f"First due: {shown_date(recurrence.start)}",
+            f"End date: {shown_date(recurrence.end) if recurrence.end else '(none)'}",
             (f"Occurrence limit: {recurrence.count if recurrence.count is not None else '(none)'}"),
             (
                 "Day of month: "
@@ -495,7 +495,7 @@ class ScheduleDialog(BoundedWindow):
             *(
                 [
                     "Last posted: "
-                    + (source.last_posted.isoformat() if source.last_posted else "(none)")
+                    + (shown_date(source.last_posted) if source.last_posted else "(none)")
                 ]
                 if self.POSTS
                 else []
@@ -523,18 +523,18 @@ class ScheduleDialog(BoundedWindow):
         if source.amount_changes:
             lines.extend(["", "Future amount changes:"])
             lines.extend(
-                f"  {item.start.isoformat()}: {item.amount}" for item in source.amount_changes
+                f"  {shown_date(item.start)}: {item.amount}" for item in source.amount_changes
             )
         if source.seasonal_amounts:
             lines.extend(["", "Seasonal month amounts:"])
             lines.extend(f"  month {item.month}: {item.amount}" for item in source.seasonal_amounts)
         if source.skipped:
             lines.extend(["", "Skipped occurrences:"])
-            lines.extend(f"  {when.isoformat()}" for when in source.skipped)
+            lines.extend(f"  {shown_date(when)}" for when in source.skipped)
         if source.occurrence_adjustments:
             lines.extend(["", "One-time occurrence amounts:"])
             lines.extend(
-                f"  {item.when.isoformat()}: {item.amount}"
+                f"  {shown_date(item.when)}: {item.amount}"
                 for item in source.occurrence_adjustments
             )
         if getattr(source, "source_recurrence", None) is not None:
@@ -558,10 +558,10 @@ class ScheduleDialog(BoundedWindow):
             )
         )
         self.frequency.set_value(source.recurrence.period, source.recurrence.interval)
-        self.start_entry.set_text(source.recurrence.start.isoformat())
+        self.start_entry.set_text(shown_date(source.recurrence.start))
         if source.recurrence.end is not None:
             self.ends.set_selected(1)
-            self.end_entry.set_text(source.recurrence.end.isoformat())
+            self.end_entry.set_text(shown_date(source.recurrence.end))
         elif source.recurrence.count is not None:
             self.ends.set_selected(2)
             self.count_entry.set_text(str(source.recurrence.count))
@@ -932,7 +932,7 @@ class ScheduleDialog(BoundedWindow):
             self.preview.set_text(
                 "Upcoming:\n"
                 + "\n".join(
-                    f"{when.isoformat()}   {value.format()}   {status}"
+                    f"{shown_date(when)}   {value.format()}   {status}"
                     for when, value, status in rows
                 )
             )

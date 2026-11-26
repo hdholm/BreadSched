@@ -104,13 +104,6 @@ class ViewAction:
 VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
     "dashboard": (
         ViewAction(
-            "configure",
-            "_Configure Dashboard…",
-            "_on_configure",
-            "emblem-system-symbolic",
-            toolbar=True,
-        ),
-        ViewAction(
             "arrange",
             "_Arrange Dashboard",
             "_on_arrange",

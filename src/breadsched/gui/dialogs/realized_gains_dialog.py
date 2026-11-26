@@ -13,6 +13,7 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.date_entry import shown_date, shown_text
 
 __all__ = ["RealizedGainsDialog"]
 
@@ -96,7 +97,7 @@ class RealizedGainsDialog(BoundedWindow):
             chosen = "named lots" if item.sale.specific else "the account's method"
             expander = Gtk.Expander(
                 label=(
-                    f"{item.sold.isoformat()} {item.account_name}: "
+                    f"{shown_date(item.sold)} {item.account_name}: "
                     f"{shares_text(item.sale.quantity)} shares, gain "
                     f"{item.sale.gain.format(parens_negative=True)} ({chosen})"
                 )
@@ -108,7 +109,7 @@ class RealizedGainsDialog(BoundedWindow):
                 _cell(f"Proceeds {item.sale.proceeds.format()}, cost {item.sale.cost.format()}")
             )
             for lot in item.lots:
-                box.append(_cell(lot_text(lot)))
+                box.append(_cell(shown_text(lot_text(lot))))
             choose = Gtk.Button(label="Choose lots…", halign=Gtk.Align.START)
             choose.connect(
                 "clicked",

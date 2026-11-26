@@ -8,6 +8,24 @@ GitHub releases.
 
 ## Unreleased
 
+- **Choose how the desktop shows dates.** **Edit → Preferences → Dates** shows
+  every desktop date (registers, lists, dialogs, date fields, reports, the
+  Dashboard, and printing) as your computer's locale writes dates, which is the new
+  default, or as `2026-03-15`, `03/15/2026`, `15/03/2026`, or `15.03.2026`. Dates
+  shown day first are typed day first too (`15/3`); `2026-03-15` is always accepted.
+  Tables still sort dates by date. The browser, command line, exports, and the book
+  itself are unchanged.
+- **Every desktop date field reads dates as the register does.** The savings goal's
+  **Buy on** field took only `2026-03-15` and lacked the register's date keys; it now
+  works like the others. No field's hint or message asks for `YYYY-MM-DD` any more:
+  each shows how a date is written in the chosen style.
+- **Desktop settings are all in Edit → Preferences.** Preferences has a **General**
+  tab (what it held before) and a **Dashboard** tab with everything Configure
+  Dashboard held: horizons, items shown, groups, and columns. The Dashboard's
+  toolbar icon and Actions menu item for Configure Dashboard are gone. If an account
+  is chosen in a group's list but **Add** was not pressed, **Save** asks whether to
+  add it first, and **Cancel** asks before closing without it. The browser's
+  **Configure Dashboard…** is unchanged.
 - **A Dashboard group holding a sub-account of another group's account now shows.**
   When one group held a parent account (say `Assets:Investments`) and another held
   one of its sub-accounts (`Assets:Investments:Brokerage`), the second group
@@ -15,7 +33,6 @@ GitHub releases.
   sub-account is now counted in its own group and left out of the parent's row, so
   each account is counted once; the parent's group total falls by that amount.
   Net worth, Assets, Debts, and Liquid do not change.
-
 - **Track a transaction as an FSA claim.** **Track as FSA Claim…** on a desktop
   register row, **FSA claim…** in the browser register, and `breadsched claims
   --draft`/`--track` start a new claim from a transaction you already recorded, as

@@ -55,6 +55,7 @@ from ..gen.services import (
 from ..gen.services.autocomplete import SuggestEntry, complete_note
 from ..gen.services.register_view import RegisterView
 from ..gen.services.transactions import reconciled_changes
+from ..gen.utils import date_format
 from ..presentation.investments import trade_price_text
 from . import hidden_accounts
 from .split_entry import (
@@ -77,6 +78,21 @@ from .split_entry import (
     _frac,
     selectable_names,
 )
+
+
+def _shown(value: date) -> str:
+    """A date as the desktop shows dates (Edit → Preferences)."""
+    return date_format.format_date(value, date_format.current())
+
+
+def _read_date(text: str, base: date) -> date:
+    """A typed date, read in the order the desktop shows dates in."""
+    return parse_entry_date(text, base, day_first=date_format.day_first(date_format.current()))
+
+
+def _examples() -> str:
+    return date_format.entry_examples(date_format.current())
+
 
 __all__ = [
     "COLUMNS",
@@ -444,7 +460,7 @@ class RegisterSheet(SplitEntry):
         return self.last_date or self.today or date.today()
 
     def _blank_draft(self) -> Draft:
-        draft = Draft(None, None, date=self._blank_date().isoformat())
+        draft = Draft(None, None, date=_shown(self._blank_date()))
         draft.snapshot = draft.state()
         return draft
 
@@ -454,7 +470,7 @@ class RegisterSheet(SplitEntry):
         draft = Draft(
             transaction,
             split_handle,
-            date=transaction.post_date.isoformat(),
+            date=_shown(transaction.post_date),
             num=transaction.num,
             description=transaction.description,
             notes=transaction.notes or "",
@@ -531,9 +547,9 @@ class RegisterSheet(SplitEntry):
             if row.current:
                 return draft.cell(column)
             # The blank transaction waits at the end with the date it will offer.
-            return self._blank_date().isoformat() if column == "date" else ""
+            return _shown(self._blank_date()) if column == "date" else ""
         if column == "date":
-            return ledger_row.post_date.isoformat()
+            return _shown(ledger_row.post_date)
         if column == "num":
             return ledger_row.transaction.num
         if column == "description":
@@ -686,8 +702,8 @@ class RegisterSheet(SplitEntry):
         if key not in DATE_KEYS:
             return None
         try:
-            base = parse_entry_date(text, self._date_base())
-            return parse_entry_date(key, base).isoformat()
+            base = _read_date(text, self._date_base())
+            return _shown(_read_date(key, base))
         except EntryInputError:
             return None
 
@@ -709,9 +725,10 @@ class RegisterSheet(SplitEntry):
     def settle(self) -> bool:
         """Read the cursor's cell before leaving it; False (with a message) when unreadable.
 
-        A date shows as ``YYYY-MM-DD``, arithmetic as its result (a negative
-        result moves to the other amount column), and an account as its full
-        name. Empty cells are fine until the transaction is saved.
+        A date shows as every desktop date does (``utils.date_format``),
+        arithmetic as its result (a negative result moves to the other amount
+        column), and an account as its full name. Empty cells are fine until the
+        transaction is saved.
         """
         column = self.column
         row = self.rows[self.cursor]
@@ -720,9 +737,9 @@ class RegisterSheet(SplitEntry):
         text = self.cell_text().strip()
         if column == "date" and text:
             try:
-                self.draft.date = parse_entry_date(text, self._date_base()).isoformat()
+                self.draft.date = _shown(_read_date(text, self._date_base()))
             except EntryInputError:
-                return self._fail("Enter a date such as 2026-03-15, 3/15, 15, or t.")
+                return self._fail(f"Enter a date such as {_examples()}.")
         elif column == "transfer" and text and text != SPLIT_LABEL:
             resolved = self._resolve_account(text, self.transfer_names)
             if resolved is None:
@@ -763,7 +780,7 @@ class RegisterSheet(SplitEntry):
         suggestion = proposal.suggestion
         if suggestion is None:
             return False
-        source = f"{suggestion.when.isoformat()} “{suggestion.description}”"
+        source = f"{_shown(suggestion.when)} “{suggestion.description}”"
         if draft.expanded or len(suggestion.splits) > 2:
             if draft.transfer_touched or any(line.has_input() for line in draft.lines):
                 return False
@@ -1104,9 +1121,9 @@ class RegisterSheet(SplitEntry):
         if account is None or (draft.source is None and not self.enabled):
             return self._fail(self.disabled_reason or "This register takes no new transactions.")
         try:
-            when = parse_entry_date(draft.date, self._date_base())
+            when = _read_date(draft.date, self._date_base())
         except EntryInputError:
-            return self._fail("Enter a date such as 2026-03-15, 3/15, 15, or t.", "date")
+            return self._fail(f"Enter a date such as {_examples()}.", "date")
         description = draft.description.strip()
         if not description:
             return self._fail("Enter a description.", "description")

@@ -23,6 +23,7 @@ from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
+from ..widgets.date_entry import shown_date
 
 __all__ = ["RulesDialog"]
 
@@ -153,7 +154,7 @@ class RulesDialog(BoundedWindow):
                 for conflict, name in zip(item.conflicts, entry.conflict_names, strict=True)
             )
             cells = (
-                (item.when.isoformat(), 0),
+                (shown_date(item.when), 0),
                 (item.description, 0),
                 (item.amount.format(parens_negative=True), 1),
                 (entry.category_name, 0),

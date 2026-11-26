@@ -152,11 +152,14 @@ reconciliation, loans) until it is turned off; choosing it leaves the view you a
 in where it is. **View
 → Double Line** shows every register's notes line.
 
-Every date field reads dates as the register does: `2026-03-15`, `3/15/26`, `3/15`
-(this year), or `15` (this month); in a field holding a date, **t** is today, **+**
-and **-** move a day, **]** and **[** a month, **m** and **h** go to the month's
-first and last day, and **y** and **r** the year's. Leaving the field shows the date
-as `2026-03-15`.
+Every date field reads dates as the register does: a whole date as dates are shown
+(**Edit → Preferences → Dates**) or as `2026-03-15`, a month and day (`3/15`, or
+`15/3` when dates are shown day first) in this year, or `15` (this month); in a
+field holding a date, **t** is today, **+** and **-** move a day, **]** and **[** a
+month, **m** and **h** go to the month's first and last day, and **y** and **r** the
+year's. An empty field's hint shows how a date is written, such as `MM/DD/YYYY`, and
+leaving the field shows the date as every date is shown (see [How dates are
+shown](../USER_GUIDE.md#how-dates-are-shown)).
 
 **New Transaction…** (the toolbar's **Transaction**, or Ctrl+T) opens the
 transaction editor; with a register shown, the new transaction starts in that
@@ -283,11 +286,12 @@ Update** (the quote's date and source). See [Accounts](../USER_GUIDE.md#accounts
 
 ## Configure the Dashboard
 
-On the Dashboard, **Configure Dashboard** (toolbar icon or the Actions menu) holds
-everything the Dashboard can be told, on three pages. All of it is your own
+The **Dashboard** tab of **Edit → Preferences…** (Ctrl+,) holds everything the open
+book's Dashboard can be told, on three pages; like every other setting, it is in
+Preferences rather than on the Dashboard's toolbar. All of it is your own
 arrangement of this book: anyone else it is shared with keeps theirs.
 
-- **General**: the two horizons, **Liquid for** so many days of bills and how many
+- **Horizons and items**: the two horizons, **Liquid for** so many days of bills and how many
   months of outgoings the **Emergency fund covers**, and what is **Shown on the
   Dashboard**: the summary figures, the cash-flow chart, account groups, pending bills, expected income, pending reimbursables (off until you turn it on), FSA claims needing attention, and savings goals, then any other dashboard breadlets (see
   [Reports and breadlets](#reports-and-breadlets)). The summary figures name the
@@ -296,13 +300,18 @@ arrangement of this book: anyone else it is shared with keeps theirs.
   its accounts. A group lists only its own accounts, each with a remove button;
   **Add an account…** is a searchable list (type part of a name) and **Add** puts
   the chosen account in the group. An account is in at most one group, so adding it
-  to one takes it out of another, and the dialog says so. **Suggest from accounts**
-  proposes groups from the chart of accounts.
+  to one takes it out of another, and the tab says so. **Suggest from accounts**
+  proposes groups from the chart of accounts. If an account is chosen in a group's
+  list but **Add** was not pressed, **Save** asks whether to add it first (**Add and
+  save**), save without it, or go back, and **Cancel** asks before closing without
+  it.
 - **Columns**: the columns each Dashboard table shows. These are yours, remembered
   on this computer rather than in the book, and change as soon as you tick them.
 
-**Save** stores the horizons, sections, and groups in the book; **Cancel** leaves
-them as they were. Groups only arrange what the Dashboard shows; its totals cover the
+Preferences' **Save** stores the horizons, sections, and groups with the rest of
+your preferences and redraws the Dashboard; if the book refuses them (an account
+named in two groups, say), Preferences stays open on the Dashboard tab with the
+reason. **Cancel** leaves them as they were. Groups only arrange what the Dashboard shows; its totals cover the
 whole book. Printing the Dashboard prints the sections it shows, in the order you
 arranged them. See
 [Dashboard and near-term cash](../USER_GUIDE.md#dashboard-and-near-term-cash).
@@ -328,7 +337,7 @@ Items are packed from the top left, each in the first place it fits, so a small 
 fills a gap a larger one leaves. While arranging, rows and figures do not open what
 they name, and an item with nothing to show yet still has its tile. **Done** saves
 the arrangement with the rest of your Dashboard settings (it is your own, as
-Configure Dashboard's are); **Cancel** puts it back as it was. The browser arranges
+those in Preferences are); **Cancel** puts it back as it was. The browser arranges
 the same Dashboard the same way.
 
 ## Exchange rates and security prices
@@ -399,7 +408,7 @@ opens with its full controls.
 
 The Dashboard is made of dashboard breadlets: its own sections, then **Spending this
 month** and **Income and spending** for the last six months, until you turn them off
-in **Configure Dashboard** or hide them in **Arrange Dashboard**. An add-on installed as a Python package adds its own
+in **Edit → Preferences → Dashboard** or hide them in **Arrange Dashboard**. An add-on installed as a Python package adds its own
 breadlets; one that fails to load is named at the top of its report.
 
 ## Online quotes
@@ -1069,17 +1078,20 @@ transaction data.
 ## Preferences
 
 **Edit → Preferences…** (Ctrl+,) gathers the settings that are not part of day-to-day
-work. They are kept in your own settings, not in a book:
+work, on two tabs. **Dashboard** holds the open book's Dashboard settings (see
+[Configure the Dashboard](#configure-the-dashboard)). **General** holds the rest,
+kept in your own settings, not in a book:
 
+- **Dates**: **Show dates as** chooses how every date is shown: as your computer's
+  locale writes them (the default), `2026-03-15`, `03/15/2026`, `15/03/2026`, or
+  `15.03.2026`. It also decides whether a typed `3/4` is month or day first. Saving
+  redraws every open view.
 - **Book**: the book BreadSched opens when it starts. **Choose…** picks another,
   and **Forget** starts without one.
 - **Registers**: **Double Line** (also **View → Double Line**) and **Row shading**,
   for every register.
 - **Online quotes**: the Alpha Vantage API key, the same key **Online Quotes…**
   keeps (see [Online quotes](#online-quotes)).
-- **Dashboard**: **Configure Dashboard…** opens the open book's Dashboard settings
-  (see [Configure the Dashboard](#configure-the-dashboard)); they are your own for
-  the book.
 - **Windows**: **Forget remembered window sizes** returns every window to its own
   size. BreadSched remembers the main window's size (and whether it was maximized)
   and an independent register window's size each time you close them, and the

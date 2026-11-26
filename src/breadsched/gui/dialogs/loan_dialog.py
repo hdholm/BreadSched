@@ -23,7 +23,7 @@ from ..gi_setup import Gtk
 from ..remote_book import OpenBook
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
-from ..widgets.date_entry import attach_date_keys, parse_date_text
+from ..widgets.date_entry import attach_date_keys, parse_date_text, shown_date
 
 __all__ = ["LoanDialog"]
 
@@ -76,7 +76,7 @@ class LoanDialog(BoundedWindow):
         grid.attach(self.years_spin, 1, row, 1, 1)
         row += 1
 
-        self.start_entry = attach_date_keys(Gtk.Entry(text=date.today().replace(day=1).isoformat()))
+        self.start_entry = attach_date_keys(Gtk.Entry(text=shown_date(date.today().replace(day=1))))
         self.start_entry.connect("changed", self._recalculate)
         grid.attach(Gtk.Label(label="First payment", xalign=0), 0, row, 1, 1)
         grid.attach(self.start_entry, 1, row, 1, 1)
