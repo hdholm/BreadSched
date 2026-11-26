@@ -253,7 +253,8 @@ cash-like.
 
 - **Payer and FSA together.** `FsaClaim.receivable` names the receivable whose payer
   covers part of the same expense; it is set only in the claim screens, never
-  inferred. `claim_summary` then splits the net paid amount into the payer share (what
+  inferred into a saved claim (a draft, below, may propose it for the user to save).
+  `claim_summary` then splits the net paid amount into the payer share (what
   is owed, or what was actually reimbursed if more), the FSA share (zero until an EOB
   responsibility is entered, then capped), and the household's share. An
   over-allocation is reported as *Needs review*; nothing is refused, and no posting
@@ -281,6 +282,24 @@ cash-like.
   and a linked refund back to an FSA the claim draws on links the repayment, so a
   claim form that lists only the healthcare side cannot leave a card payment
   outstanding.
+- **Claim from a transaction.** `services.claims.claim_draft` (the book server's
+  `fsa_claim_draft`, a read) starts a new claim from one transaction for every
+  interface's **Track as FSA Claim** and writes nothing; the claim editor or
+  `claims --track` saves it through `save_claim` with every ordinary check. The
+  transaction's positive expense splits are the payments (only those on expense
+  accounts earlier claims used, when that narrows them); its date is the service date
+  and its description the provider. Its FSA account is, in order: the transaction's
+  single FSA outflow (a card payment, also linked as the reimbursement, as
+  `direct_payment` does); the one FSA account the latest earlier claim on the same
+  expense account drew on; the only FSA account with a funding year whose service
+  window holds the date. Its funding year is the earliest covering the date, the order
+  grace-period claims use. A receivable linking the same cost that no other claim
+  names is proposed as the payer. Anything left ambiguous stays unchosen and
+  `ClaimDraft.notes` say what to choose, rather than guessing; a cost already on a
+  claim returns that claim as `existing`. A transaction with no expense cost
+  (`claim.draft.no_cost`), a receivable's own reclassification
+  (`claim.split.owned_posting`), and a book without an FSA account
+  (`claim.draft.no_fsa_account`) are refused.
 - **Repayments.** Splits paying money back into the allocation's FSA account are
   linked as repayments and tagged with the funding year. `year_status` takes a tagged
   positive split off `used` (reported as `repaid`) instead of treating it as payroll

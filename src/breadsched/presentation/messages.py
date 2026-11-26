@@ -96,6 +96,13 @@ _SERVICE_MESSAGES = {
         "That is BreadSched's own receivable reclassification; link the original "
         "transaction instead"
     ),
+    "claim.draft.no_cost": (
+        "That transaction spends nothing on an expense account, so it starts no claim; "
+        "attach an FSA reimbursement or refund to its claim in Review instead"
+    ),
+    "claim.draft.no_fsa_account": (
+        "This book has no FSA account; create one with a funding year first"
+    ),
     "claim.receivable.not_found": "The linked reimbursable expense no longer exists",
     "claim.receivable.taken": (
         "Another FSA claim already covers the rest of this reimbursable expense"

@@ -6,11 +6,11 @@ from dataclasses import dataclass
 from datetime import date
 
 from ..db.sqlite import DbSQLite
-from ..engine import fsa, fsa_claim_proposals, fsa_claims
+from ..engine import fsa, fsa_claim_proposals, fsa_claims, split_links
 from ..engine.fsa import FsaYearStatus
 from ..engine.fsa_claim_report import GROUPINGS, ClaimReport, claim_report
 from ..engine.fsa_claims import FsaClaimStatus, FsaClaimSummary
-from ..lib.account import AccountClass, AccountType, FsaFundingYear
+from ..lib.account import Account, AccountClass, AccountType, FsaFundingYear
 from ..lib.base import create_handle
 from ..lib.fsa_claim import (
     FsaClaim,
@@ -218,6 +218,207 @@ def accept_claim_links(
             continue
         linked += 1
     return ServiceResult.success(AcceptedClaimLinks(linked, len(chosen) - linked))
+
+
+# ------------------------------------------------------------ draft claims
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimDraft:
+    """A new claim started from one transaction, to review before saving.
+
+    Nothing is written. ``claim`` holds the defaults inferred from the
+    transaction's accounts; when an existing claim already links its cost,
+    ``claim`` is ``None`` and ``existing`` names that claim instead. ``notes``
+    say how each default was chosen, or what is left to choose, in order.
+    """
+
+    transaction: str
+    claim: ClaimInput | None = None
+    existing: str | None = None
+    notes: tuple[str, ...] = ()
+
+
+def claim_draft(db: DbSQLite, transaction: str) -> ServiceResult[ClaimDraft]:
+    """Start a new FSA claim from ``transaction``'s healthcare cost; writes nothing.
+
+    The cost is the transaction's spending on an expense account; it becomes the
+    claim's healthcare payment. Its date is the service date and its description
+    the provider. A payment made with the FSA card links its FSA side as the
+    reimbursement, as **Paid from the FSA card** does. The FSA account is the
+    transaction's own FSA account, else the one earlier claims on the same expense
+    account used, else the only FSA account with a funding year covering the
+    date; the funding year is the one covering the date (the earlier one inside a
+    grace period). A reimbursable expense tracking the same cost, not yet on
+    another claim, becomes the payer covering part.
+    """
+    found = db.get_transaction(transaction)
+    if found is None:
+        return ServiceResult.failure(ServiceError("transaction.not_found", ("transaction",)))
+    if found.handle in split_links.owned_postings(db):
+        return ServiceResult.failure(ServiceError("claim.split.owned_posting", ("transaction",)))
+    accounts = {account.handle: account for account in db.iter_accounts()}
+
+    def named(account: Account) -> str:
+        return db.full_name(account) or account.name
+
+    def on(split, test) -> bool:
+        account = accounts.get(split.account)
+        return account is not None and test(account)
+
+    costs = [
+        split
+        for split in found.splits
+        if split.value > 0 and on(split, lambda item: item.account_class is AccountClass.EXPENSE)
+    ]
+    if not costs:
+        return ServiceResult.failure(ServiceError("claim.draft.no_cost", ("transaction",)))
+    fsa_accounts = [account for account in accounts.values() if account.atype is AccountType.FSA]
+    if not fsa_accounts:
+        return ServiceResult.failure(ServiceError("claim.draft.no_fsa_account", ("transaction",)))
+    claims = sorted(db.iter_fsa_claims(), key=lambda item: (item.service_date, item.handle))
+    cost_links = {(found.handle, split.handle) for split in costs}
+    for claim in claims:
+        if any((link.transaction, link.split) in cost_links for link in claim.payments):
+            label = claim.provider or claim.description or "FSA claim"
+            return ServiceResult.success(
+                ClaimDraft(
+                    found.handle,
+                    existing=claim.handle,
+                    notes=(
+                        f"Already on the claim {claim.service_date.isoformat()} {label}; "
+                        "it is shown instead of a new one.",
+                    ),
+                )
+            )
+    notes: list[str] = []
+    # Each earlier claim's expense accounts, with the FSA accounts it drew on.
+    history: list[tuple[set[str], set[str]]] = []
+    for claim in claims:
+        spent = set()
+        for link in claim.payments:
+            linked = db.get_transaction(link.transaction)
+            for split in linked.splits if linked is not None else ():
+                if split.handle == link.split:
+                    spent.add(split.account)
+        history.append((spent, {allocation.account for allocation in claim.allocations}))
+    if len(costs) > 1:
+        claimed_before = {account for spent, _fsa in history for account in spent}
+        usual = [split for split in costs if split.account in claimed_before]
+        if usual and len(usual) < len(costs):
+            costs = usual
+            notes.append("Linked only the expenses on accounts earlier claims used.")
+        else:
+            notes.append("Linked every expense in the transaction; remove any that is not claimed.")
+    payments = tuple(ClaimLinkInput(found.handle, split.handle) for split in costs)
+    cost_accounts = {split.account for split in costs}
+    paid_from_fsa = [
+        split
+        for split in found.splits
+        if split.value < 0 and on(split, lambda item: item.atype is AccountType.FSA)
+    ]
+    fsa_account: Account | None = None
+    reimbursements: tuple[ClaimLinkInput, ...] = ()
+    if len(paid_from_fsa) == 1:
+        fsa_account = accounts[paid_from_fsa[0].account]
+        reimbursements = (ClaimLinkInput(found.handle, paid_from_fsa[0].handle),)
+        notes.append(
+            f"Paid from the FSA card: {named(fsa_account)} is the FSA account, and its "
+            "payment is linked as the reimbursement."
+        )
+    else:
+        # The FSA account the latest earlier claim on these expense accounts used.
+        for spent, drawn in reversed(history):
+            if spent & cost_accounts and len(drawn) == 1:
+                fsa_account = accounts.get(next(iter(drawn)))
+                if (
+                    fsa_account is not None
+                    and fsa_account.atype is AccountType.FSA
+                    and any(_covers(year, found.post_date) for year in fsa_account.fsa.years)
+                ):
+                    notes.append(
+                        f"{named(fsa_account)} is the FSA account earlier claims on this "
+                        "expense account used."
+                    )
+                    break
+                fsa_account = None
+        if fsa_account is None:
+            covering = [
+                account
+                for account in fsa_accounts
+                if any(_covers(year, found.post_date) for year in account.fsa.years)
+            ]
+            if len(covering) == 1:
+                fsa_account = covering[0]
+                notes.append(
+                    f"{named(fsa_account)} is the only FSA account with a funding year "
+                    f"covering {found.post_date.isoformat()}."
+                )
+            else:
+                notes.append(
+                    "Choose the FSA account: "
+                    + (
+                        "more than one has a funding year covering "
+                        if covering
+                        else "none has a funding year covering "
+                    )
+                    + f"{found.post_date.isoformat()}. Add an allocation for it."
+                )
+    allocations: tuple[ClaimAllocationInput, ...] = ()
+    if fsa_account is not None:
+        years = sorted(
+            (year for year in fsa_account.fsa.years if _covers(year, found.post_date)),
+            key=lambda year: year.start,
+        )
+        if years:
+            allocations = (
+                ClaimAllocationInput(fsa_account.handle, years[0].start, None, reimbursements),
+            )
+            if len(years) > 1:
+                notes.append(
+                    f"{found.post_date.isoformat()} is in a grace period: the claim uses "
+                    f"the earlier funding year, starting {years[0].start.isoformat()}."
+                )
+        else:
+            notes.append(
+                f"No funding year of {named(fsa_account)} covers "
+                f"{found.post_date.isoformat()}; add one to the account, then an allocation."
+            )
+    taken = {claim.receivable for claim in claims if claim.receivable}
+    receivable = next(
+        (
+            item
+            for item in sorted(db.iter_receivables(), key=lambda item: item.handle)
+            if item.handle not in taken
+            and any((link.transaction, link.split) in cost_links for link in item.expenses)
+        ),
+        None,
+    )
+    if receivable is not None:
+        notes.append(
+            f"{receivable.payer} covers part of this expense as a reimbursable expense; "
+            "the FSA claims the rest."
+        )
+    memo = next((split.memo.strip() for split in costs if split.memo.strip()), "")
+    return ServiceResult.success(
+        ClaimDraft(
+            found.handle,
+            ClaimInput(
+                service_date=found.post_date,
+                provider=found.description.strip(),
+                description=memo,
+                payments=payments,
+                allocations=allocations,
+                receivable=receivable.handle if receivable is not None else None,
+            ),
+            notes=tuple(notes),
+        )
+    )
+
+
+def _covers(year: FsaFundingYear, when: date) -> bool:
+    """Whether a service on ``when`` can be claimed against ``year``."""
+    return year.start <= when <= year.service_through
 
 
 # --------------------------------------------------------------------- reads

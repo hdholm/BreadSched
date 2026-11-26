@@ -189,6 +189,7 @@ from ..gen.services.categorization import (
 )
 from ..gen.services.claims import (
     AcceptedClaimLinks,
+    ClaimDraft,
     ClaimReportQuery,
     CloseClaim,
     DeleteClaim,
@@ -729,6 +730,9 @@ class LocalBookServer:
 
     def reopen_fsa_claim(self, request: ReopenClaim) -> SavedClaim:
         return unwrap(claim_service.reopen_claim(self.db, request))
+
+    def fsa_claim_draft(self, transaction: str) -> ClaimDraft:
+        return unwrap(claim_service.claim_draft(self.db, transaction))
 
     def fsa_claim_report(self, query: ClaimReportQuery) -> ClaimReport:
         return unwrap(claim_service.fsa_claim_report(self.db, query))

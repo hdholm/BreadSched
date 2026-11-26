@@ -7792,6 +7792,49 @@ class TestDashboardView:
         assert app.db.get_account(member.handle).group != "Property"
         assert "Property" not in str(app.db.get_metadata("dashboard"))
 
+    def test_a_group_of_a_parents_child_shows_on_the_dashboard_once_saved(self, view, app):
+        """A group holding a child of another group's parent account is shown and
+        counts that child; the parent's group counts the rest (each once)."""
+        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+
+        opened = []
+        original = DashboardDialog.present
+
+        def capture(dialog):
+            opened.append(dialog)
+            original(dialog)
+
+        DashboardDialog.present = capture
+        try:
+            view._on_configure(None)
+        finally:
+            DashboardDialog.present = original
+        [dialog] = opened
+        parent = app.db.get_account_by_name("Assets")
+        child = app.db.get_account_by_name("Assets:Checking Account")
+        before = view.board.net_worth
+        for name, account in (("Group A", parent), ("Group B", child)):
+            row = dialog.add_group()
+            row["name"].set_text(name)
+            dialog.add_account(row, account.handle)
+        dialog._on_save(None)
+        _spin(lambda: False, 0.3)
+
+        from breadsched.gen.engine import ledger
+
+        def balance(account):
+            return ledger.balance_recursive_amount(app.db, account.handle).value
+
+        shown = {group.name: group for group in view.board.groups}
+        assert set(shown) == {"Group A", "Group B"}
+        assert shown["Group B"].total == balance(child)
+        assert shown["Group A"].total == balance(parent) - balance(child)
+        text = view.section("groups").text()
+        assert "Group A" in text and "Group B" in text
+        assert "Assets:Checking Account" in text
+        # Groups only arrange rows: the book's totals do not move.
+        assert view.board.net_worth == before
+
     def test_the_group_dialog_refuses_an_account_in_two_groups(self, view, app):
         from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
 
@@ -11497,6 +11540,92 @@ class TestReceivablesDialog:
             )
         finally:
             reconcile.destroy()
+
+
+class TestTrackFsaClaim:
+    """Track as FSA Claim: a register transaction starts an unsaved claim."""
+
+    def _book(self, app, populated_book):
+        from breadsched.gen.lib import Account, AccountType, FsaFundingYear
+
+        app.open_book(populated_book)
+        db = app.db
+        rent_txn = next(t for t in db.iter_transactions() if t.description == "Rent")
+        rent = db.get_account_by_name("Expenses:Rent")
+        cost = next(s for s in rent_txn.splits if s.account == rent.handle)
+        start = date(rent_txn.post_date.year, 1, 1)
+        fsa = Account(
+            name="Health FSA",
+            atype=AccountType.FSA,
+            parent=db.get_account_by_name("Assets").handle,
+        )
+        fsa.fsa.years = [FsaFundingYear(start, date(start.year, 12, 31), Money("1500.00"))]
+        with db.transaction("FSA fixture") as txn:
+            db.add_account(fsa, txn)
+        window_register = db.get_account_by_name("Assets:Checking Account").handle
+        return db, rent_txn, cost, fsa, start, window_register
+
+    def test_tracking_opens_a_new_claim_with_inferred_defaults(self, app, window, populated_book):
+        db, rent_txn, cost, fsa, start, checking = self._book(app, populated_book)
+        window.open_register(checking)
+        view = window._views["register"]
+        assert view.sheet.select_transaction(rent_txn.handle)
+        dialog = view.track_selected_fsa_claim()
+        try:
+            assert dialog is not None
+            assert dialog.get_transient_for() is window
+            assert dialog.current is None  # a new claim, not yet saved
+            assert list(db.iter_fsa_claims()) == []
+            assert dialog.service.get_text() == rent_txn.post_date.isoformat()
+            assert dialog.provider.get_text() == "Rent"
+            assert [(link.transaction, link.split) for link in dialog.payments.links()] == [
+                (rent_txn.handle, cost.handle)
+            ]
+            [row] = dialog._allocation_rows
+            assert row.value().account == fsa.handle
+            assert row.value().funding_year_start == start
+            assert "nothing is saved until Save claim" in dialog.status.get_text()
+            assert "only FSA account" in dialog.status.get_text()
+            dialog._save(None)
+            [claim] = list(db.iter_fsa_claims())
+            assert [link.split for link in claim.payments] == [cost.handle]
+            assert [item.account for item in claim.allocations] == [fsa.handle]
+        finally:
+            dialog.destroy()
+        # Tracking it again shows the claim it is already on.
+        again = view.track_selected_fsa_claim()
+        try:
+            assert again.current is not None and again.current.handle == claim.handle
+            assert "Already on the claim" in again.status.get_text()
+        finally:
+            again.destroy()
+
+    def test_a_transaction_without_an_expense_is_refused_aloud(self, app, window, populated_book):
+        from breadsched.gen.lib.account import AccountClass
+
+        db, _rent_txn, _cost, _fsa, _start, checking = self._book(app, populated_book)
+        window.open_register(checking)
+        view = window._views["register"]
+        income = next(
+            row
+            for row in view.sheet.ledger_rows
+            if any(
+                db.get_account(split.account).account_class is AccountClass.INCOME
+                for split in row.transaction.splits
+            )
+        )
+        assert view.sheet.select_transaction(income.transaction.handle)
+        assert view.track_selected_fsa_claim() is None
+        assert "starts no claim" in view.entry_status.get_text()
+        assert view.entry_status.has_css_class("negative")
+        assert list(db.iter_fsa_claims()) == []
+
+    def test_the_command_is_on_the_register_row_menu(self, app, window, populated_book):
+        from breadsched.gui.view_catalog import VIEW_ACTIONS
+
+        names = {action.name: action for action in VIEW_ACTIONS["register"]}
+        assert names["track-fsa-claim"].row
+        assert names["track-fsa-claim"].handler == "track_selected_fsa_claim"
 
 
 class TestReconcileWindow:

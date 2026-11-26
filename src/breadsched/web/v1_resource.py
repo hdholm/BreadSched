@@ -91,7 +91,8 @@ Resources so far, all under ``/api/v1``:
   and ``/reopen``; ``GET /fsa-claims/report`` (``as_of``, ``by``, ``account``,
   ``funding_year``, ``provider``, ``status``, ``attention``); ``GET /fsa-years``
   (``as_of``); ``GET /fsa-claim-proposals`` (``account``) and
-  ``POST /fsa-claim-proposals/accept``.
+  ``POST /fsa-claim-proposals/accept``; ``GET /transactions/{handle}/fsa-claim-draft``
+  – a new claim's defaults inferred from a transaction, saving nothing.
 * ``GET /review`` – actuals awaiting Review; ``GET /review/{transaction}`` – what
   Review offers for one; ``POST /review/{transaction}/match``, ``/reject``, ``/skip``
   (``occurrence``), ``/unexpected``, and ``/claim``; ``GET /plan/occurrences``
@@ -400,6 +401,7 @@ __all__ = [
     "fsa_claim_remove",
     "fsa_claim_reopen_v1",
     "fsa_claim_report_get",
+    "fsa_claim_draft_get",
     "fsa_claim_store",
     "fsa_claims_get",
     "benefit_years_get",
@@ -1379,6 +1381,11 @@ def fsa_claim_lookup(api: Api, _path: Path, query: QueryParams) -> dict:
     reference = query.text("reference", required=True) or ""
     query.finish()
     return {"claim": to_data(api.book.find_fsa_claim(reference))}
+
+
+def fsa_claim_draft_get(api: Api, path: Path, query: QueryParams) -> dict:
+    query.finish()
+    return to_data(api.book.fsa_claim_draft(path["handle"]))
 
 
 def fsa_claim_store(api: Api, _path: Path, body: dict[str, Any]) -> dict:
