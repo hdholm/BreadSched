@@ -27,6 +27,11 @@ GitHub releases.
   add it first, and **Cancel** asks before closing without it. The browser's
   **Configure Dashboard…** is unchanged.
 
+- **Saving an FSA claim on the desktop shows that it took.** In **Manage FSA
+  Claims**, **Save claim** is greyed out until something in the form changes, and
+  again once the claim is saved, so you can tell it was saved before closing the
+  window.
+
 ## 2026.11.25.0
 
 The fifth beta, published as a GitHub pre-release; its Windows installer and Linux

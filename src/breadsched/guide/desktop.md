@@ -977,7 +977,11 @@ list of transactions, the ones linked to the claim stay at the top, each with
 amount, and choose whether to see transactions within 60 days of the service date
 (the default), in the claim's benefit year, or at any date. Linking a payment made
 with the FSA card links the FSA side too, so the claim counts as reimbursed by it.
-**Close claim** and **Reopen claim** keep a reason, and **Delete** asks first.
+**Save claim** is available only while the form differs from the claim as it was
+opened or last saved: it is greyed out on a new, empty claim and again once a save
+succeeds, with **Claim saved.** below until you change something, so you can see the
+claim was saved before closing the window. **Close claim** and **Reopen claim** keep a
+reason, and **Delete** asks first.
 
 The FSA Dashboard's **FSA claims** lists every claim of a benefit year that can still
 be claimed, settled or not, so a claim already filed is easy to tell from a new one,
