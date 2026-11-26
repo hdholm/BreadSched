@@ -11731,7 +11731,10 @@ class TestTrackFsaClaim:
             assert row.value().funding_year_start == start
             assert "nothing is saved until Save claim" in dialog.status.get_text()
             assert "only FSA account" in dialog.status.get_text()
+            # A drafted claim is unsaved, so Save claim is available at once.
+            assert dialog.save_button.get_sensitive()
             dialog._save(None)
+            assert not dialog.save_button.get_sensitive()
             [claim] = list(db.iter_fsa_claims())
             assert [link.split for link in claim.payments] == [cost.handle]
             assert [item.account for item in claim.allocations] == [fsa.handle]
