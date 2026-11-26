@@ -732,11 +732,22 @@ and an amount in either column for each line, completed and checked the same way
 retirement account, its investment activity. **Save** waits until the splits balance.
 The editor opens on **Basics** (name, kind, number, notes, and when it repeats);
 **Tags & documents** holds what every posting carries, as a transaction's own tab
-does; **Future changes** the future, per-leg, seasonal, skipped, and one-time amounts
-(its tab counts them, so a schedule with some says so); and **Advanced** the
-projection growth, weekend rule, automatic posting, and enter and remind days. A
-schedule whose amounts are formulas shows its formulas and variables instead of the
-grid. A scenario estimate, or an alternate of a baseline schedule, is edited in the
+does; **Future changes** the schedule's versions and skipped occurrences (its tab
+counts them, so a schedule with some says so); and **Advanced** the projection
+growth, weekend rule, automatic posting, and enter and remind days. A schedule whose
+amounts are formulas shows its formulas and variables instead of the grid, and its
+versions stay editable.
+
+On **Future changes**, the list names each version (**From** a date, **Every** month,
+**On** a date **only**); choosing one shows its legs on the same split grid, where a
+leg is added, removed, or changed by typing, and its column is its direction. An
+amount there may be a formula such as `base * 1.2` (see
+[Versions of a scheduled transaction](../USER_GUIDE.md#versions-of-a-scheduled-transaction)).
+To add one, choose its kind (**From a date on**, **On one date only**, or **Every
+year in a month**), its date or month, and **Add version**: it starts as the
+schedule then is, a month's as every leg `base * 1.0`. **Remove version** removes
+the chosen one. A version that does not balance is reported and stays chosen until
+it is corrected. A scenario estimate, or an alternate of a baseline schedule, is edited in the
 same editor without what only a posting has (kind, number, notes, tags, documents,
 automatic posting, and days in advance). Choose the **New Loan**
 toolbar icon in Scheduled to create a loan (see

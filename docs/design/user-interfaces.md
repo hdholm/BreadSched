@@ -251,7 +251,13 @@ rows); the browser uses `details.form-section`. A page or fold that holds someth
 says so in its title (`Future changes (2)`, `Tags & documents (1)`) or opens by
 itself, so nothing set is hidden from view. A field that applies only to some
 accounts (investment activity) shows only for those, or when it already holds a
-choice. The schedule and scenario schedule editors share `update_schedule_pages`;
+choice. A schedule's versions are typed as a register's splits too: the desktop's
+`widgets.versions_editor.VersionsEditor` shows the chosen version on a
+`version_sheet.VersionSheet` (a `SplitSheet` that keeps a formula as typed and offers
+no balancing line while one is present), and the browser's `versionsEditor` gives
+each version Increase and Decrease columns; both start a new version from the book's
+draft (`schedule_versions.starting_version`, over `/api/scheduled/version-start` in
+the browser). The schedule and scenario schedule editors share `update_schedule_pages`;
 the transaction editor's per-split planning purpose and investment activity are
 columns of its split grid that its **Planning detail** toggle adds
 (`SplitSheet.set_detail`).

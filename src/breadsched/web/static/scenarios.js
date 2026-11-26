@@ -27,23 +27,21 @@ async function scenarioEventPanel(handle, fromMonth) {
     const growthPolicy = editSource?.growth_policy || "auto";
     let refreshTimeline = () => {};
     const changed = () => refreshTimeline();
-    const futureEditor = timelineEditor(
-      "Future amounts", editSource?.amount_changes || [], true, changed);
-    const seasonalEditor = monthAmountEditor(editSource?.seasonal_amounts || [], changed);
+    const versions = versionsEditor(data.accounts, editSource?.versions || [],
+      async (chosen) => (await post("/api/scenario/event/version-start",
+        { ...saveBody(), new_version:chosen })).version, changed);
     const skipEditor = occurrenceTimelineEditor(
       "Skip occurrences", editSource?.skipped || [], false, changed);
-    const oneTimeEditor = occurrenceTimelineEditor(
-      "One-time amounts", editSource?.occurrence_adjustments || [], true, changed);
     const preview = schedulePreviewNode();
     const additionalSplits = planningSplitEditor(
       data.accounts, editSource?.additional_splits || [], changed);
-    const changeCount = [futureEditor, seasonalEditor, skipEditor, oneTimeEditor]
-      .reduce((total, editor) => { try { return total + editor.values().length; } catch (_e) { return total + 1; } }, 0);
+    let changeCount = versions.count();
+    try { changeCount += skipEditor.values().length; } catch (_e) { changeCount += 1; }
     const changesSection = el("details", {class:"form-section", open:changeCount ? "open" : null},
       el("summary", {}, changeCount ? `Future changes (${changeCount})` : "Future changes"),
-      futureEditor.node, seasonalEditor.node, skipEditor.node, oneTimeEditor.node);
+      versions.node, skipEditor.node);
     // One body for saving and for the preview of what a save would store.
-    const saveBody = () => { const v=Object.fromEntries(new FormData(form)); return {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, growth_policy:v.growth_policy, category:v.category, funding:v.funding, category_planning_flow:v.category_planning_flow || null, planning_flow:v.planning_flow || null, investment_activity:v.investment_activity || null, amount:v.amount, additional_splits:additionalSplits.values(), amount_changes:futureEditor.values().map((item)=>({start:item.when, amount:item.amount})), seasonal_amounts:seasonalEditor.values(), skipped:skipEditor.values(), occurrence_adjustments:oneTimeEditor.values(), frequency:v.frequency, interval:v.interval, start:v.start, end:v.end, count:v.count, weekend:v.weekend, estimate_evidence:editSource?.estimate_evidence || null}; };
+    const saveBody = () => { const v=Object.fromEntries(new FormData(form)); return {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, growth_policy:v.growth_policy, category:v.category, funding:v.funding, category_planning_flow:v.category_planning_flow || null, planning_flow:v.planning_flow || null, investment_activity:v.investment_activity || null, amount:v.amount, additional_splits:additionalSplits.values(), versions:versions.values(), skipped:skipEditor.values(), frequency:v.frequency, interval:v.interval, start:v.start, end:v.end, count:v.count, weekend:v.weekend, estimate_evidence:editSource?.estimate_evidence || null}; };
     const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); await post("/api/scenario/event/save", saveBody()); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
       sourceSelect ? el("label", {}, "Baseline schedule", sourceSelect) : null,
       el("label", {}, "Name", el("input", {name:"name", required:"required", value:editSource?.name || ""})),
@@ -87,18 +85,11 @@ async function scenarioEventPanel(handle, fromMonth) {
           frequency:values.frequency, interval:values.interval, start:values.start, end:values.end || null,
           count:values.count || null, weekend:values.weekend, amount:values.amount,
         };
-        try {
-          payload.amount_changes = futureEditor.values().map(
-            (item)=>({start:item.when, amount:item.amount}));
-          payload.skipped = skipEditor.values();
-          payload.occurrence_adjustments = oneTimeEditor.values();
-        } catch (_error) {}
+        try { payload.skipped = skipEditor.values(); } catch (_error) {}
         const result = await post("/api/scheduled/occurrences", payload);
         skipEditor.setOptions(result.occurrences);
-        oneTimeEditor.setOptions(result.occurrences);
       } catch (_error) {
         skipEditor.setOptions([]);
-        oneTimeEditor.setOptions([]);
       }
       try {
         preview.show((await post("/api/scenario/event/preview", saveBody())).preview || []);

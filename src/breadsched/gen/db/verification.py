@@ -454,17 +454,27 @@ def _verify_schedules(state: _VerificationState) -> list[BookIssue]:
                     sched.handle,
                 )
             )
-        if len(sched.occurrence_adjustments) != len(
-            {item.when for item in sched.occurrence_adjustments}
-        ):
+        keys = [(item.kind, item.start, item.month) for item in sched.versions]
+        if len(keys) != len(set(keys)):
             issues.append(
                 BookIssue(
-                    "scheduled.duplicate_adjustment",
-                    f"scheduled transaction {sched.name!r} has more than one amount "
-                    "adjustment for the same occurrence",
+                    "scheduled.duplicate_version",
+                    f"scheduled transaction {sched.name!r} has two versions for the same "
+                    "date or month",
                     sched.handle,
                 )
             )
+        for version in sched.versions:
+            if all(not split.formula for split in version.splits) and sum(
+                (split.amount or Money(0) for split in version.splits), Money(0)
+            ):
+                issues.append(
+                    BookIssue(
+                        "scheduled.version_unbalanced",
+                        f"scheduled transaction {sched.name!r} is unbalanced {version.label()}",
+                        sched.handle,
+                    )
+                )
         if all(not split.formula for split in sched.splits):
             residual = sum(
                 (split.amount or Money(0) for split in sched.splits),

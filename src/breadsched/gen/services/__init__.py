@@ -227,6 +227,7 @@ from .schedules import (
     SaveSchedule,
     SetAdvanceDays,
     SetScheduleDetails,
+    SetScheduleVersions,
     advance_days,
     build_fixed_scenario_schedule,
     build_fixed_schedule,
@@ -243,6 +244,7 @@ from .schedules import (
     save_schedule,
     set_advance_days,
     set_schedule_details,
+    set_schedule_versions,
 )
 from .tax import SetTaxMarks, TaxAccountMark, TaxMarks, set_tax_marks, tax_marks
 from .transactions import (
@@ -286,10 +288,12 @@ __all__ = [
     "AdvanceDays",
     "SetAdvanceDays",
     "SetScheduleDetails",
+    "SetScheduleVersions",
     "advance_days",
     "find_schedule",
     "set_advance_days",
     "set_schedule_details",
+    "set_schedule_versions",
     "DashboardGroupInput",
     "DashboardTileInput",
     "EMERGENCY_MONTHS_RANGE",

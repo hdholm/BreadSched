@@ -1,8 +1,7 @@
-"""Structured editors for effective-dated schedule changes and exceptions."""
+"""Structured editors for a schedule's exceptions: skipped occurrences and planning splits."""
 
 from __future__ import annotations
 
-import calendar
 from collections.abc import Callable, Iterable
 from datetime import date
 
@@ -12,10 +11,7 @@ from .date_entry import attach_date_keys, date_hint, parse_date_text, shown_date
 
 __all__ = [
     "DateListEditor",
-    "DatedAmountListEditor",
-    "MonthAmountListEditor",
     "PlanningSplitListEditor",
-    "SplitAmountTimelineEditor",
 ]
 
 
@@ -31,135 +27,6 @@ class _ListEditor(Gtk.Box):
         self._rows.remove(row)
         self._row_data = [item for item in self._row_data if item[0] is not row]
         self._on_changed()
-
-
-class DatedAmountListEditor(_ListEditor):
-    """Edit date/amount pairs, optionally selecting from valid occurrence dates."""
-
-    def __init__(
-        self,
-        on_changed: Callable[..., None],
-        add_label: str,
-        date_choices: Callable[[], Iterable[date]] | None = None,
-    ) -> None:
-        super().__init__(on_changed)
-        self._date_choices = date_choices
-        add = Gtk.Button(label=add_label, halign=Gtk.Align.START)
-        add.add_css_class("flat")
-        add.connect("clicked", lambda *_: self.add_row())
-        self.append(add)
-
-    def add_row(self, when: date | None = None, amount: str = "") -> None:
-        row = Gtk.Box(spacing=6)
-        date_entry = self._make_date_control(when)
-        amount_entry = Gtk.Entry(placeholder_text="Amount", hexpand=True)
-        if amount:
-            amount_entry.set_text(amount)
-        if self._date_choices is None:
-            date_entry.connect("changed", self._on_changed)
-        else:
-            date_entry.connect("notify::selected", self._on_changed)
-        amount_entry.connect("changed", self._on_changed)
-        remove = Gtk.Button(icon_name="list-remove-symbolic")
-        remove.set_tooltip_text("Remove")
-        remove.add_css_class("flat")
-        remove.connect("clicked", lambda *_: self._remove(row))
-        row.append(date_entry)
-        row.append(amount_entry)
-        row.append(remove)
-        self._rows.append(row)
-        self._row_data.append((row, date_entry, amount_entry))
-        self._on_changed()
-
-    def _make_date_control(self, when: date | None) -> Gtk.Widget:
-        if self._date_choices is None:
-            entry = attach_date_keys(Gtk.Entry(placeholder_text=date_hint(), hexpand=True))
-            if when is not None:
-                entry.set_text(shown_date(when))
-            return entry
-        choices = [shown_date(item) for item in self._date_choices()]
-        current = shown_date(when) if when is not None else None
-        if current is not None and current not in choices:
-            choices.insert(0, current)
-        dropdown = bounded_dropdown(choices or ["(no occurrences)"])
-        dropdown.set_hexpand(True)
-        if current in choices:
-            dropdown.set_selected(choices.index(current))
-        return dropdown
-
-    def _date_value(self, control: Gtk.Widget) -> str:
-        if self._date_choices is None:
-            return control.get_text().strip()
-        item = control.get_selected_item()
-        return item.get_string() if item is not None else ""
-
-    def refresh_date_choices(self) -> None:
-        if self._date_choices is None:
-            return
-        values = []
-        for when_text, amount in self.values():
-            try:
-                when = parse_date_text(when_text)
-            except ValueError:
-                continue
-            values.append((when, amount))
-        self.set_values(values)
-
-    def set_values(self, values: Iterable[tuple[date, str]]) -> None:
-        while child := self._rows.get_first_child():
-            self._rows.remove(child)
-        self._row_data.clear()
-        for when, amount in values:
-            self.add_row(when, amount)
-
-    def values(self) -> list[tuple[str, str]]:
-        return [
-            (self._date_value(date_entry), amount_entry.get_text().strip())
-            for _row, date_entry, amount_entry in self._row_data
-        ]
-
-
-class MonthAmountListEditor(_ListEditor):
-    """Edit unique calendar-month amount overrides."""
-
-    def __init__(self, on_changed: Callable[..., None]) -> None:
-        super().__init__(on_changed)
-        add = Gtk.Button(label="Add seasonal month", halign=Gtk.Align.START)
-        add.add_css_class("flat")
-        add.connect("clicked", lambda *_: self.add_row())
-        self.append(add)
-
-    def add_row(self, month: int = 1, amount: str = "") -> None:
-        row = Gtk.Box(spacing=6)
-        month_control = bounded_dropdown(list(calendar.month_name)[1:])
-        month_control.set_selected(max(0, min(11, month - 1)))
-        amount_entry = Gtk.Entry(placeholder_text="Amount", hexpand=True)
-        amount_entry.set_text(amount)
-        month_control.connect("notify::selected", self._on_changed)
-        amount_entry.connect("changed", self._on_changed)
-        remove = Gtk.Button(icon_name="list-remove-symbolic")
-        remove.set_tooltip_text("Remove")
-        remove.add_css_class("flat")
-        remove.connect("clicked", lambda *_: self._remove(row))
-        row.append(month_control)
-        row.append(amount_entry)
-        row.append(remove)
-        self._rows.append(row)
-        self._row_data.append((row, month_control, amount_entry))
-        self._on_changed()
-
-    def set_values(self, values: Iterable[tuple[int, str]]) -> None:
-        while child := self._rows.get_first_child():
-            self._rows.remove(child)
-        self._row_data.clear()
-        for month, amount in values:
-            self.add_row(month, amount)
-
-    def values(self) -> list[tuple[int, str]]:
-        return [
-            (month.get_selected() + 1, amount.get_text().strip())
-            for _row, month, amount in self._row_data
-        ]
 
 
 class DateListEditor(_ListEditor):
@@ -326,57 +193,4 @@ class PlanningSplitListEditor(_ListEditor):
                 direction.get_selected(),
             )
             for _row, account, value, purpose, activity, direction, memo in self._row_data
-        ]
-
-
-class SplitAmountTimelineEditor(_ListEditor):
-    """Edit exact signed amount changes for individual fixed split legs."""
-
-    def __init__(self, on_changed: Callable[..., None], account_names: list[str]) -> None:
-        super().__init__(on_changed)
-        self._account_names = account_names
-        add = Gtk.Button(label="Add leg amount change", halign=Gtk.Align.START)
-        add.add_css_class("flat")
-        add.connect("clicked", lambda *_: self.add_row())
-        self.append(add)
-
-    def add_row(self, account_index: int = 0, when: date | None = None, amount: str = "") -> None:
-        row = Gtk.Box(spacing=6)
-        account = bounded_dropdown(self._account_names)
-        account.set_hexpand(True)
-        account.set_selected(account_index)
-        when_entry = attach_date_keys(Gtk.Entry(placeholder_text=date_hint()))
-        when_entry.set_text(shown_date(when) if when is not None else "")
-        amount_entry = Gtk.Entry(placeholder_text="Signed ledger amount")
-        amount_entry.set_text(amount)
-        account.connect("notify::selected", self._on_changed)
-        when_entry.connect("changed", self._on_changed)
-        amount_entry.connect("changed", self._on_changed)
-        remove = Gtk.Button(icon_name="list-remove-symbolic")
-        remove.set_tooltip_text("Remove")
-        remove.add_css_class("flat")
-        remove.connect("clicked", lambda *_: self._remove(row))
-        row.append(account)
-        row.append(when_entry)
-        row.append(amount_entry)
-        row.append(remove)
-        self._rows.append(row)
-        self._row_data.append((row, account, when_entry, amount_entry))
-        self._on_changed()
-
-    def set_values(self, values: Iterable[tuple[int, date, str]]) -> None:
-        while child := self._rows.get_first_child():
-            self._rows.remove(child)
-        self._row_data.clear()
-        for account_index, when, amount in values:
-            self.add_row(account_index, when, amount)
-
-    def values(self) -> list[tuple[int, str, str]]:
-        return [
-            (
-                account.get_selected(),
-                when.get_text().strip(),
-                amount.get_text().strip(),
-            )
-            for _row, account, when, amount in self._row_data
         ]

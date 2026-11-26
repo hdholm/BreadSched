@@ -15,12 +15,9 @@ from ..lib.formula import FormulaError, evaluate
 from ..lib.money import Money
 from ..lib.recurrence import Recurrence
 from ..lib.scenario import ScenarioSchedule
+from ..lib.schedule_versions import BASE, BASE_TOTAL, ScheduledVersion, VersionKind
 from ..lib.scheduled import (
-    ScheduledAmountChange,
-    ScheduledMonthAmount,
-    ScheduledOccurrenceAdjustment,
     ScheduledSplit,
-    ScheduledSplitAmountChange,
     ScheduledTransaction,
     ScheduleGrowthPolicy,
 )
@@ -104,11 +101,10 @@ class FixedScheduleInput:
     auto_create: bool = False
     placeholder: bool = False
     growth_policy: ScheduleGrowthPolicy = ScheduleGrowthPolicy.AUTO
-    amount_changes: tuple[ScheduledAmountChange, ...] = ()
-    split_amount_changes: Mapping[str, tuple[ScheduledSplitAmountChange, ...]] | None = None
-    seasonal_amounts: tuple[ScheduledMonthAmount, ...] = ()
+    #: The whole transaction from a date on, on one date, or in a month every year
+    #: (``lib.schedule_versions``), each with all its legs.
+    versions: tuple[ScheduledVersion, ...] = ()
     skipped: tuple[date, ...] = ()
-    occurrence_adjustments: tuple[ScheduledOccurrenceAdjustment, ...] = ()
     estimate_evidence: dict[str, object] | None = None
     #: Enter and remind this many days in advance (#352); None keeps the stored value.
     advance_days: int | None = None
@@ -155,6 +151,8 @@ class FormulaScheduleInput:
     growth_policy: ScheduleGrowthPolicy
     skipped: tuple[date, ...] = ()
     source: ScheduledTransaction | None = None
+    #: The schedule's versions; None keeps the stored ones.
+    versions: tuple[ScheduledVersion, ...] | None = None
     #: Enter and remind this many days in advance (#352); None keeps the stored value.
     advance_days: int | None = None
     remind_days: int | None = None
@@ -176,6 +174,8 @@ class FormulaScenarioScheduleInput:
     skipped: tuple[date, ...] = ()
     source: ScheduledTransaction | None = None
     current: ScenarioSchedule | None = None
+    #: The scenario schedule's versions; None keeps the current ones.
+    versions: tuple[ScheduledVersion, ...] | None = None
 
 
 def _on_recurrence(recurrence, when: date) -> bool:
@@ -353,16 +353,12 @@ def build_fixed_schedule(
         candidate.description = candidate.name
     candidate.recurrence = Recurrence.from_dict(definition.recurrence.serialize())
     candidate.splits = splits.value
-    for split in candidate.splits:
-        split.amount_changes = list((definition.split_amount_changes or {}).get(split.account, ()))
     candidate.enabled = definition.enabled
     candidate.auto_create = definition.auto_create and not definition.placeholder
     candidate.placeholder = definition.placeholder
     candidate.growth_policy = definition.growth_policy
-    candidate.amount_changes = list(definition.amount_changes)
-    candidate.seasonal_amounts = list(definition.seasonal_amounts)
+    candidate.versions = [version.copy() for version in definition.versions]
     candidate.skipped = list(definition.skipped)
-    candidate.occurrence_adjustments = list(definition.occurrence_adjustments)
     if definition.advance_days is not None:
         candidate.advance_days = definition.advance_days
     if definition.remind_days is not None:
@@ -413,6 +409,8 @@ def build_formula_schedule(
     candidate.placeholder = request.placeholder
     candidate.growth_policy = request.growth_policy
     candidate.skipped = list(request.skipped)
+    if request.versions is not None:
+        candidate.versions = [version.copy() for version in request.versions]
     if request.advance_days is not None:
         candidate.advance_days = request.advance_days
     if request.remind_days is not None:
@@ -494,6 +492,8 @@ def build_formula_scenario_schedule(
     candidate.recurrence = Recurrence.from_dict(request.recurrence.serialize())
     candidate.growth_policy = request.growth_policy
     candidate.skipped = list(request.skipped)
+    if request.versions is not None:
+        candidate.versions = [version.copy() for version in request.versions]
     candidate.source_schedule = request.source_schedule
     return ServiceResult.success(candidate)
 
@@ -537,9 +537,6 @@ def build_fixed_scenario_schedule(
     if splits.value is None:
         return ServiceResult.failure(*splits.errors)
     definition = request.definition
-    for split in splits.value:
-        # Per-leg future amounts, as a baseline schedule's are kept.
-        split.amount_changes = list((definition.split_amount_changes or {}).get(split.account, ()))
     candidate = ScenarioSchedule(
         name=definition.name.strip(),
         recurrence=Recurrence.from_dict(definition.recurrence.serialize()),
@@ -548,10 +545,8 @@ def build_fixed_scenario_schedule(
         enabled=definition.enabled,
         placeholder=definition.placeholder if source is None else source.placeholder,
         growth_policy=definition.growth_policy,
-        amount_changes=list(definition.amount_changes),
-        seasonal_amounts=list(definition.seasonal_amounts),
+        versions=[version.copy() for version in definition.versions],
         skipped=list(definition.skipped),
-        occurrence_adjustments=list(definition.occurrence_adjustments),
         estimate_evidence=(
             definition.estimate_evidence
             if definition.estimate_evidence is not None
@@ -602,61 +597,10 @@ def _candidate_errors(
         if len(values) != len(set(values)):
             errors.append(ServiceError(code, (field,)))
 
-    amount_dates = [item.start for item in candidate.amount_changes]
-    unique_dates(amount_dates, "schedule.amount_changes.duplicate", "amount_changes")
-    if any(when < recurrence.start for when in amount_dates):
-        errors.append(ServiceError("schedule.amount_changes.before_start", ("amount_changes",)))
-    months = [item.month for item in candidate.seasonal_amounts]
-    if len(months) != len(set(months)):
-        errors.append(ServiceError("schedule.seasonal_amounts.duplicate", ("seasonal_amounts",)))
-
     unique_dates(candidate.skipped, "schedule.skipped.duplicate", "skipped")
     if any(not _on_recurrence(recurrence, when) for when in candidate.skipped):
         errors.append(ServiceError("schedule.skipped.not_occurrence", ("skipped",)))
-    adjustment_dates = [item.when for item in candidate.occurrence_adjustments]
-    unique_dates(
-        adjustment_dates,
-        "schedule.occurrence_adjustments.duplicate",
-        "occurrence_adjustments",
-    )
-    if any(not _on_recurrence(recurrence, when) for when in adjustment_dates):
-        errors.append(
-            ServiceError(
-                "schedule.occurrence_adjustments.not_occurrence",
-                ("occurrence_adjustments",),
-            )
-        )
-    if set(candidate.skipped) & set(adjustment_dates):
-        errors.append(
-            ServiceError(
-                "schedule.occurrence_conflict",
-                ("skipped", "occurrence_adjustments"),
-            )
-        )
-
-    split_change_dates: set[date] = set()
-    for index, split in enumerate(candidate.splits):
-        dates = [item.start for item in split.amount_changes]
-        unique_dates(
-            dates,
-            "schedule.split_amount_changes.duplicate",
-            f"splits.{index}.amount_changes",
-        )
-        if any(when < recurrence.start for when in dates):
-            errors.append(
-                ServiceError(
-                    "schedule.split_amount_changes.before_start",
-                    (f"splits.{index}.amount_changes",),
-                )
-            )
-        split_change_dates.update(dates)
-    for when in sorted(split_change_dates):
-        if sum(
-            (split.resolve(candidate.variables, when=when) for split in candidate.splits),
-            Money(0),
-        ) != Money(0):
-            errors.append(ServiceError("schedule.split_amount_changes.unbalanced", ("splits",)))
-            break
+    errors.extend(_version_errors(db, candidate))
 
     if isinstance(existing, ScheduledTransaction):
         editability = schedule_engine.schedule_editability(db, existing)
@@ -701,6 +645,83 @@ def _candidate_errors(
     if investment.scheduled_activity_problems(db, candidate):
         errors.append(ServiceError("schedule.investment.invalid", ("splits",)))
     return errors
+
+
+def _version_errors(
+    db: DbSQLite, candidate: ScheduledTransaction | ScenarioSchedule
+) -> list[ServiceError]:
+    """Each version names one date or month once, has at least two legs in existing
+    accounts, reads its formulas, and balances (its fixed legs exactly; with
+    formulas, on its first occurrence). A ``from`` version starts on or after the
+    schedule; a ``once`` version and a skip are on occurrences, never the same one.
+    """
+    errors: list[ServiceError] = []
+    recurrence = candidate.recurrence
+    seen: set[tuple] = set()
+    for index, version in enumerate(candidate.versions):
+        path = f"versions.{index}"
+        key = (version.kind, version.start, version.month)
+        if key in seen:
+            errors.append(ServiceError("schedule.versions.duplicate", (path,)))
+        seen.add(key)
+        if len(version.splits) < 2:
+            errors.append(ServiceError("schedule.versions.too_few", (f"{path}.splits",)))
+        for leg, split in enumerate(version.splits):
+            if db.get_account(split.account) is None:
+                errors.append(
+                    ServiceError("schedule.account.not_found", (f"{path}.splits.{leg}.account",))
+                )
+            if split.formula:
+                try:
+                    evaluate(split.formula, {**_formula_names(candidate), BASE: 1, BASE_TOTAL: 1})
+                except (FormulaError, ValueError, ArithmeticError):
+                    errors.append(
+                        ServiceError("schedule.versions.formula", (f"{path}.splits.{leg}.formula",))
+                    )
+        if version.kind is VersionKind.FROM and version.start is not None:
+            if version.start < recurrence.start:
+                errors.append(ServiceError("schedule.versions.before_start", (f"{path}.start",)))
+        if version.kind is VersionKind.ONCE and version.start is not None:
+            if not _on_recurrence(recurrence, version.start):
+                errors.append(ServiceError("schedule.versions.not_occurrence", (f"{path}.start",)))
+            if version.start in candidate.skipped:
+                errors.append(
+                    ServiceError("schedule.occurrence_conflict", ("skipped", f"{path}.start"))
+                )
+        if all(not split.formula for split in version.splits):
+            if sum((split.amount or Money(0) for split in version.splits), Money(0)):
+                errors.append(ServiceError("schedule.versions.unbalanced", (f"{path}.splits",)))
+        elif not errors:
+            when = _first_occurrence(candidate, version)
+            if when is not None and sum(
+                (value for _account, value in candidate.resolved_splits(when=when)), Money(0)
+            ).quantize(100):
+                errors.append(ServiceError("schedule.versions.unbalanced", (f"{path}.splits",)))
+    return errors
+
+
+def _formula_names(candidate: ScheduledTransaction | ScenarioSchedule) -> dict[str, object]:
+    """Every name a formula may use, each with a stand-in value, for a syntax check."""
+    names: dict[str, object] = {"period": 1, "i": 1}
+    for name, value in candidate.variables.items():
+        try:
+            names[name] = evaluate(value, {})
+        except (FormulaError, ValueError, ArithmeticError):
+            names[name] = 1
+    return names
+
+
+def _first_occurrence(
+    candidate: ScheduledTransaction | ScenarioSchedule, version: ScheduledVersion
+) -> date | None:
+    """The first occurrence a version applies to, within ten years."""
+    recurrence = candidate.recurrence
+    since = version.start or recurrence.start
+    until = date(min(since.year + 10, 9999), 12, 31)
+    return next(
+        (when for when in recurrence.occurrences(until, since=since) if version.applies(when)),
+        None,
+    )
 
 
 def save_schedule(db: DbSQLite, request: SaveSchedule) -> ServiceResult[SavedSchedule]:
@@ -814,6 +835,32 @@ def set_schedule_details(
         return ServiceResult.failure(ServiceError("schedule.not_found", ("schedule",)))
     edited = ScheduledTransaction.from_dict(stored.serialize())
     _apply_posting_details(edited, request)
+    saved = save_schedule(db, SaveSchedule(edited, stored.handle))
+    if not saved.ok:
+        return ServiceResult.failure(*saved.errors)
+    found = db.get_scheduled(stored.handle)
+    assert found is not None
+    return ServiceResult.success(found)
+
+
+@dataclass(frozen=True, slots=True)
+class SetScheduleVersions:
+    """Replace a baseline schedule's versions (``gen.lib.schedule_versions``),
+    keeping everything else; validated as every editor's save is."""
+
+    schedule: str
+    versions: tuple[ScheduledVersion, ...]
+
+
+def set_schedule_versions(
+    db: DbSQLite, request: SetScheduleVersions
+) -> ServiceResult[ScheduledTransaction]:
+    """Validate and save a schedule's versions, keeping everything else."""
+    stored = db.get_scheduled(request.schedule)
+    if stored is None:
+        return ServiceResult.failure(ServiceError("schedule.not_found", ("schedule",)))
+    edited = ScheduledTransaction.from_dict(stored.serialize())
+    edited.versions = [version.copy() for version in request.versions]
     saved = save_schedule(db, SaveSchedule(edited, stored.handle))
     if not saved.ok:
         return ServiceResult.failure(*saved.errors)

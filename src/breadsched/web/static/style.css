@@ -148,6 +148,11 @@ form.entry label[hidden] { display: none; }
 .timeline-row { display:grid; grid-template-columns:minmax(145px,1fr) minmax(110px,1fr) auto; gap:6px; margin:4px 0; }
 .timeline-editor.dates .timeline-row { grid-template-columns:minmax(145px,1fr) auto; }
 .timeline-row input { min-width:0; }
+.version { margin:6px 0; }
+.version > legend { font-weight:600; padding:0 4px; }
+.version-leg { display:grid; grid-template-columns:minmax(150px,2fr) minmax(90px,1.5fr) minmax(90px,1fr) minmax(90px,1fr) auto; gap:6px; margin:4px 0; }
+.version-leg input, .version-leg select { min-width:0; }
+@media (max-width: 700px) { .version-leg { grid-template-columns:1fr 1fr; } }
 .schedule-preview { margin-top:8px; display:grid; gap:4px; }
 .preview-row { display:grid; grid-template-columns:minmax(110px,1fr) minmax(90px,.7fr) minmax(120px,1fr); gap:10px; }
 .preview-row .num { text-align:right; font-variant-numeric:tabular-nums; }

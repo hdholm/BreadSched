@@ -328,11 +328,20 @@ create a fixed schedule. **Repeats** is **Every** a number and a unit (days, wee
 months, months on the same weekday or last weekday, or years), or twice a month or
 once; the first due date sets the day, and an amount may be a calculation such as
 `76.84*1.06`. The editor shows those fields first; **Splits and memos**, **Future
-changes** (future, seasonal, skipped, and one-time amounts, counted in its heading),
+changes** (versions and skipped occurrences, counted in its heading),
 and **Advanced** (projection growth, planning purposes, weekend rule, posting, and
 enter and remind days) open when you choose them, and Future changes opens by itself
 when a schedule has some. **Investment activity** appears under Advanced only for an
 investment or retirement account. The scenario event editor folds the same way.
+In Future changes each version of the schedule is a box of legs, each an account,
+a memo, and an amount in **Increase** or **Decrease**, as a register's splits are;
+an amount may be a formula such as `base * 1.2` (see
+[Versions of a scheduled transaction](../USER_GUIDE.md#versions-of-a-scheduled-transaction)).
+**Add leg** and **Remove leg** change its legs and **Remove version** removes it. To
+add a version, choose **From a date on**, **On one date only**, or **Every year in a
+month**, its date or month, and **Add version**: it starts as the schedule then is, a
+month's as every leg `base * 1.0`. A formula schedule's **Edit formulas…** has the
+same versions editor.
 **Enter**'s two-split form offers investment activity only when one of its accounts
 is an investment or retirement account. Review the
 result before relying on a projection. Scenario-only estimates and scenario changes

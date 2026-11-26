@@ -18,10 +18,10 @@ from breadsched.gen.services import ServiceError
 from breadsched.web.controls import input_money, service_error
 from breadsched.web.schedule_controls import (
     frequency_key,
-    parse_amount_changes,
-    parse_occurrence_adjustments,
     parse_skipped,
+    parse_versions,
     schedule_recurrence,
+    versions_json,
     weekend_key,
 )
 
@@ -119,19 +119,48 @@ def test_exceptions_must_fall_on_occurrences_and_be_unique():
     assert parse_skipped({"skipped": ["2026-03-05"]}, recurrence) == [date(2026, 3, 5)]
     with pytest.raises(ValueError, match="not an occurrence"):
         parse_skipped({"skipped": ["2026-03-06"]}, recurrence)
-    adjustments = parse_occurrence_adjustments(
-        {"occurrence_adjustments": [{"when": "2026-02-05", "amount": "12.50"}]}, recurrence
-    )
-    assert [(item.when, item.amount) for item in adjustments] == [
-        (date(2026, 2, 5), Money("12.50"))
-    ]
     with pytest.raises(ValueError, match="unique"):
-        parse_amount_changes(
+        parse_skipped({"skipped": ["2026-03-05", "2026-03-05"]}, recurrence)
+
+
+def test_versions_are_read_as_typed_and_written_back_the_same():
+    payload = {
+        "versions": [
             {
-                "amount_changes": [
-                    {"start": "2026-04-05", "amount": "1"},
-                    {"start": "2026-04-05", "amount": "2"},
-                ]
+                "kind": "month",
+                "month": 12,
+                "legs": [
+                    {"account": "expense", "formula": "base * 1.2", "direction": 1},
+                    {"account": "cash", "formula": "base * 1.2", "direction": -1},
+                ],
             },
-            recurrence.start,
-        )
+            {
+                "kind": "from",
+                "start": "2026-06-01",
+                "legs": [
+                    {"account": "expense", "amount": "110", "memo": "new rate"},
+                    {"account": "fee", "amount": "5"},
+                    {"account": "cash", "amount": "-115"},
+                ],
+            },
+        ]
+    }
+    versions = parse_versions(payload)
+    assert [version.kind.value for version in versions] == ["month", "from"]
+    assert versions[0].splits[1].direction == -1
+    assert [split.amount for split in versions[1].splits] == [
+        Money("110"),
+        Money("5"),
+        Money("-115"),
+    ]
+    written = versions_json(versions, {"expense": "Expenses:Rent"})
+    assert written[0]["legs"][0]["account_name"] == "Expenses:Rent"
+    assert parse_versions({"versions": written}) == versions
+    for bad in (
+        {"versions": [{"kind": "sometimes", "legs": []}]},
+        {"versions": [{"kind": "from", "legs": []}]},  # no date
+        {"versions": [{"kind": "month", "month": 13, "legs": []}]},
+        {"versions": [{"kind": "once", "start": "2026-01-01", "legs": [{"amount": "x"}]}]},
+    ):
+        with pytest.raises(ValueError):
+            parse_versions(bad)

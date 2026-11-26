@@ -27,6 +27,27 @@ GitHub releases.
   add it first, and **Cancel** asks before closing without it. The browser's
   **Configure Dashboard…** is unchanged.
 
+- **A schedule's changes are versions of the whole transaction.** The schedule
+  editors' **Future changes** has one versions editor in place of **Future
+  amounts**, **Per-leg future amounts**, **Seasonal month amounts**, and **One-time
+  amounts**. Each version is every leg of the transaction, typed as a register's
+  splits, so a change can add a leg, drop one, or change any amount: from a date on,
+  on one date only, or every year in one month. An amount may be a formula over
+  `base` (the leg's amount before the version) and `base_total` (the transaction's),
+  together with a formula schedule's own variables; a new month version starts as
+  every leg `base * 1.0`, ready for a factor. Month versions apply on top of the
+  dated version in force, and one-date versions on top of both. The desktop, the
+  browser (also for formula schedules), and scenario schedules all edit them, and
+  `breadsched scheduled-versions` lists, adds, and removes them.
+- **Books move to native schema 16.** Opening a book first saves a backup, then
+  keeps each schedule's (and each scenario schedule's) future, per-leg, seasonal,
+  and one-time amounts as versions with the same amounts. One result differs: a
+  seasonal month amount used to stop once a later whole-schedule amount change took
+  effect; as a month version it keeps applying on top of it. Earlier releases
+  cannot open a schema-16 book; keep the backup to go back.
+- A **pay change** is saved as a version from its start date. A paycheck with a
+  month version, or a one-date version on or after that date, is refused as before.
+
 ## 2026.11.25.0
 
 The fifth beta, published as a GitHub pre-release; its Windows installer and Linux

@@ -27,10 +27,7 @@ from breadsched.gen.lib import (
     ScheduledTransaction,
 )
 from breadsched.gen.lib.scheduled import (
-    ScheduledAmountChange,
-    ScheduledMonthAmount,
-    ScheduledOccurrenceAdjustment,
-    ScheduledSplitAmountChange,
+    ScheduledVersion,
     ScheduleGrowthPolicy,
 )
 from breadsched.gen.lib.transaction import InvestmentActivityKind, PlanningFlowKind
@@ -76,15 +73,34 @@ def _everything() -> SaveFixedSchedule:
             auto_create=True,
             placeholder=False,
             growth_policy=ScheduleGrowthPolicy.INFLATION,
-            amount_changes=(ScheduledAmountChange(date(2026, 6, 5), Money("1900")),),
-            split_amount_changes={
-                "parking": (ScheduledSplitAmountChange(date(2026, 6, 5), Money("-60")),)
-            },
-            seasonal_amounts=(ScheduledMonthAmount(12, Money("2000")),),
-            skipped=(date(2026, 3, 5),),
-            occurrence_adjustments=(
-                ScheduledOccurrenceAdjustment(date(2026, 4, 5), Money("1700")),
+            versions=(
+                ScheduledVersion(
+                    "from",
+                    [
+                        ScheduledSplit("rent", Money("1910"), memo="flat 2"),
+                        ScheduledSplit("parking", Money("-60"), memo="bay 4"),
+                        ScheduledSplit("checking", Money("-1850")),
+                    ],
+                    start=date(2026, 6, 5),
+                ),
+                ScheduledVersion(
+                    "month",
+                    [
+                        ScheduledSplit("rent", formula="base * 1.05"),
+                        ScheduledSplit("checking", formula="base * 1.05", direction=-1),
+                    ],
+                    month=12,
+                ),
+                ScheduledVersion(
+                    "once",
+                    [
+                        ScheduledSplit("rent", Money("1700")),
+                        ScheduledSplit("checking", Money("-1700")),
+                    ],
+                    start=date(2026, 4, 5),
+                ),
             ),
+            skipped=(date(2026, 3, 5),),
             estimate_evidence={"months": 6},
             advance_days=3,
             remind_days=9,
@@ -106,7 +122,9 @@ def test_a_fixed_request_survives_json_unchanged():
     item = decoded.definition
     assert item.amount == Money("1850.25") and item.growth_policy is ScheduleGrowthPolicy.INFLATION
     assert item.additional_splits[0].opposite_direction is True
-    assert item.split_amount_changes["parking"][0].amount == Money("-60")
+    assert item.versions[0].splits[1].amount == Money("-60")
+    assert item.versions[1].splits[1].direction == -1
+    assert [version.kind.value for version in item.versions] == ["from", "month", "once"]
     assert decoded.source.serialize() == request.source.serialize()
 
 

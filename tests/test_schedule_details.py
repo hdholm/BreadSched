@@ -139,7 +139,7 @@ def test_a_schema_14_book_is_brought_forward_with_a_backup(tmp_path):
     db = DbSQLite()
     db.load(str(path))
     try:
-        assert db.get_metadata("schema_version") == SCHEMA_VERSION == 15
+        assert db.get_metadata("schema_version") == SCHEMA_VERSION == 16
     finally:
         db.close()
     assert Path(f"{path}.pre-migration-v14.bak").exists()

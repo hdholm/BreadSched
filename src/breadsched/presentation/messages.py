@@ -289,7 +289,7 @@ _SERVICE_MESSAGES = {
     ),
     "payroll.schedule.formula": "A paycheck with formula amounts cannot take a pay change",
     "payroll.schedule.whole_amounts": (
-        "Remove the schedule's future, seasonal, or one-time whole amounts from that date "
+        "Remove the schedule's month versions, and its one-time versions from that date, "
         "before adding a pay change"
     ),
     "payroll.schedule.repeated_account": (
@@ -530,21 +530,17 @@ _SERVICE_MESSAGES = {
     "schedule.splits.too_few": "A schedule needs at least two splits",
     "schedule.recurrence.end_before_start": "The recurrence end precedes its start",
     "schedule.recurrence.count_invalid": "The recurrence count must be positive",
-    "schedule.amount_changes.duplicate": "Future amount dates must be unique",
-    "schedule.amount_changes.before_start": "Future amounts cannot precede the schedule",
-    "schedule.seasonal_amounts.duplicate": "Seasonal months must be unique",
     "schedule.skipped.duplicate": "Skipped dates must be unique",
     "schedule.skipped.not_occurrence": "A skipped date is not a scheduled occurrence",
-    "schedule.occurrence_adjustments.duplicate": "Adjusted occurrence dates must be unique",
-    "schedule.occurrence_adjustments.not_occurrence": (
-        "An adjusted date is not a scheduled occurrence"
+    "schedule.occurrence_conflict": (
+        "An occurrence cannot be both skipped and given a one-time version"
     ),
-    "schedule.occurrence_conflict": "An occurrence cannot be both skipped and adjusted",
-    "schedule.split_amount_changes.duplicate": "Per-split future dates must be unique",
-    "schedule.split_amount_changes.before_start": (
-        "Per-split future amounts cannot precede the schedule"
-    ),
-    "schedule.split_amount_changes.unbalanced": "Future split amounts do not balance",
+    "schedule.versions.duplicate": "Two versions are for the same date or month",
+    "schedule.versions.too_few": "A version needs at least two legs",
+    "schedule.versions.before_start": "A version cannot start before the schedule does",
+    "schedule.versions.not_occurrence": "A one-time version's date is not a scheduled occurrence",
+    "schedule.versions.unbalanced": "A version's legs do not balance",
+    "schedule.versions.formula": "Check the formula in a version's leg",
     "schedule.read_only": "This imported schedule is read-only",
     "schedule.formula.ownership": "Formula-owned schedule structure cannot be changed here",
     "schedule.formula.variables.invalid": "Check the formula variables",

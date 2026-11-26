@@ -28,6 +28,7 @@ from ..gen.lib import (
     Scenario,
     ScheduleGrowthPolicy,
 )
+from ..gen.lib.schedule_versions import starting_version
 from ..gen.services import (
     DuplicateScenario,
     FixedScheduleInput,
@@ -42,15 +43,15 @@ from .controls import input_amount, input_money
 from .schedule_controls import (
     frequency_key,
     parse_additional_splits,
-    parse_amount_changes,
-    parse_occurrence_adjustments,
-    parse_seasonal_amounts,
+    parse_new_version,
     parse_skipped,
+    parse_versions,
     schedule_recurrence,
     simple_parts,
+    versions_json,
     weekend_key,
 )
-from .schedule_resource import preview_rows
+from .schedule_resource import _names, preview_rows
 
 if TYPE_CHECKING:
     from .context import Api
@@ -263,7 +264,7 @@ def _events_handle(handle: object) -> str:
     return value
 
 
-def scenario_event_payload(change: ScenarioChangeView) -> dict:
+def scenario_event_payload(change: ScenarioChangeView, names: dict[str, str] | None = None) -> dict:
     item = change.schedule
     simple = simple_parts(change)
     return {
@@ -287,18 +288,8 @@ def scenario_event_payload(change: ScenarioChangeView) -> dict:
         "end": item.recurrence.end.isoformat() if item.recurrence.end else None,
         "count": item.recurrence.count,
         "weekend": weekend_key(item.recurrence.weekend_adjust),
-        "amount_changes": [
-            {"start": change.start.isoformat(), "amount": change.amount}
-            for change in item.amount_changes
-        ],
-        "seasonal_amounts": [
-            {"month": value.month, "amount": value.amount} for value in item.seasonal_amounts
-        ],
+        "versions": versions_json(item.versions, names or {}),
         "skipped": [when.isoformat() for when in item.skipped],
-        "occurrence_adjustments": [
-            {"when": change.when.isoformat(), "amount": change.amount}
-            for change in item.occurrence_adjustments
-        ],
         "estimate_evidence": item.estimate_evidence,
     }
 
@@ -489,6 +480,7 @@ def scenario_events(api: Api, handle: str | None) -> dict:
     """A scenario's estimates beside the baseline, from one book-server read (#358)."""
     view = api.book.scenario_events(_events_handle(handle))
     scenario = view.scenario
+    names = {account.handle: account.name for account in view.accounts}
     return {
         "scenario": {"handle": scenario.handle, "name": scenario.name},
         "accounts": [
@@ -516,25 +508,14 @@ def scenario_events(api: Api, handle: str | None) -> dict:
                 "end": item.recurrence.end.isoformat() if item.recurrence.end else None,
                 "count": item.recurrence.count,
                 "weekend": weekend_key(item.recurrence.weekend_adjust),
-                "amount_changes": [
-                    {"start": change.start.isoformat(), "amount": change.amount}
-                    for change in item.amount_changes
-                ],
-                "seasonal_amounts": [
-                    {"month": value.month, "amount": value.amount}
-                    for value in item.seasonal_amounts
-                ],
+                "versions": versions_json(item.versions, names),
                 "skipped": [when.isoformat() for when in item.skipped],
-                "occurrence_adjustments": [
-                    {"when": change.when.isoformat(), "amount": change.amount}
-                    for change in item.occurrence_adjustments
-                ],
                 "estimate_evidence": item.estimate_evidence,
             }
             for editor in view.baseline
             for item in (editor.schedule,)
         ],
-        "changes": [scenario_event_payload(change) for change in view.changes],
+        "changes": [scenario_event_payload(change, names) for change in view.changes],
     }
 
 
@@ -587,11 +568,7 @@ def _scenario_schedule_request(api: Api, payload: dict) -> SaveFixedScenarioSche
     except (ValueError, ArithmeticError):
         raise ValueError("enter a valid amount") from None
     recurrence = schedule_recurrence(payload)
-    start = recurrence.start
     skipped = parse_skipped(payload, recurrence)
-    adjustments = parse_occurrence_adjustments(payload, recurrence)
-    if set(skipped) & {item.when for item in adjustments}:
-        raise ValueError("an occurrence cannot be both skipped and overridden")
     planning_flow_raw = str(payload.get("planning_flow") or "").strip()
     try:
         planning_flow = PlanningFlowKind(planning_flow_raw) if planning_flow_raw else None
@@ -639,16 +616,17 @@ def _scenario_schedule_request(api: Api, payload: dict) -> SaveFixedScenarioSche
             enabled=True,
             placeholder=source.placeholder if source is not None else True,
             growth_policy=growth_policy,
-            amount_changes=tuple(parse_amount_changes(payload, start)),
-            seasonal_amounts=tuple(
-                parse_seasonal_amounts(payload)
-                if "seasonal_amounts" in payload
-                else source.seasonal_amounts
+            # A request without versions keeps the event's, else its schedule's.
+            versions=tuple(
+                parse_versions(payload)
+                if "versions" in payload
+                else existing_change.versions
+                if existing_change is not None
+                else source.versions
                 if source is not None
                 else ()
             ),
             skipped=tuple(skipped),
-            occurrence_adjustments=tuple(adjustments),
             estimate_evidence=(
                 payload.get("estimate_evidence")
                 if isinstance(payload.get("estimate_evidence"), dict)
@@ -673,3 +651,12 @@ def scenario_event_preview(api: Api, payload: dict) -> dict:
     """The upcoming occurrences of the scenario schedule a save would store, unsaved."""
     draft = api.book.draft_fixed_scenario_schedule(_scenario_schedule_request(api, payload))
     return {"preview": preview_rows(draft, payload)}
+
+
+def scenario_event_version_start(api: Api, payload: dict) -> dict:
+    """A new version for the scenario schedule an editor describes, unsaved."""
+    kind, start, month = parse_new_version(payload)
+    # A version can be added before the schedule is named; the draft needs a name.
+    payload = {**payload, "name": str(payload.get("name") or "").strip() or "New schedule"}
+    draft = api.book.draft_fixed_scenario_schedule(_scenario_schedule_request(api, payload))
+    return {"version": versions_json([starting_version(draft, kind, start, month)], _names(api))[0]}

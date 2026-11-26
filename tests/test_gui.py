@@ -64,9 +64,9 @@ from breadsched.gen.lib import (  # noqa: E402
     PeriodType,
     PlanningFlowKind,
     Recurrence,
-    ScheduledMonthAmount,
     ScheduledSplit,
     ScheduledTransaction,
+    ScheduledVersion,
     Split,
     Transaction,
 )
@@ -3866,8 +3866,12 @@ class TestScheduleEntry:
         assert dialog.growth_policy.get_parent() is pages.get_nth_page(3)
         assert dialog.skipped_editor.get_parent() is pages.get_nth_page(2)
         # The tab says how many future changes there are.
-        dialog.amount_changes_editor.add_row(date(2027, 1, 1), "200.00")
-        dialog.seasonal_amounts_editor.add_row(12, "300.00")
+        dialog.versions_editor.set_versions(
+            [
+                ScheduledVersion("from", [], start=date(2027, 1, 1)),
+                ScheduledVersion("month", [], month=12),
+            ]
+        )
         dialog._validate()
         assert pages.tab_label(FUTURE_CHANGES) == f"{FUTURE_CHANGES} (2)"
 
@@ -4039,7 +4043,6 @@ class TestScheduleEntry:
     def test_upcoming_follows_every_future_change(self, app, window, populated_book):
         """The editor's Upcoming list began at the schedule's first date and knew only
         the schedule-wide future amounts, so a per-leg change never showed."""
-        from breadsched.gen.lib import scheduled as schedlib
         from breadsched.gen.lib.recurrence import add_months
         from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
 
@@ -4053,18 +4056,20 @@ class TestScheduleEntry:
             name="Long-running rent",
             recurrence=Recurrence(PeriodType.MONTH, start=date(2019, 1, 1)),
             splits=[
-                ScheduledSplit(
-                    rent.handle,
-                    Money("1800.00"),
-                    amount_changes=[schedlib.ScheduledSplitAmountChange(change, "1900.00")],
-                ),
-                ScheduledSplit(
-                    bank.handle,
-                    Money("-1800.00"),
-                    amount_changes=[schedlib.ScheduledSplitAmountChange(change, "-1900.00")],
-                ),
+                ScheduledSplit(rent.handle, Money("1800.00")),
+                ScheduledSplit(bank.handle, Money("-1800.00")),
             ],
         )
+        source.versions = [
+            ScheduledVersion(
+                "from",
+                [
+                    ScheduledSplit(rent.handle, Money("1900.00")),
+                    ScheduledSplit(bank.handle, Money("-1900.00")),
+                ],
+                start=change,
+            )
+        ]
         source.last_posted = add_months(this_month, -1)
         with app.db.transaction("add long-running schedule") as txn:
             app.db.add_scheduled(source, txn)
@@ -4075,7 +4080,104 @@ class TestScheduleEntry:
         assert lines[0] == "Upcoming:"
         # It starts after the last occurrence posted, not in 2019.
         assert lines[1].startswith(this_month.isoformat())
-        assert f"{change.isoformat()}   {Money('1900.00').format()}   Future amount" in lines
+        assert f"{change.isoformat()}   {Money('1900.00').format()}   Changed version" in lines
+        dialog.destroy()
+
+    def test_versions_are_typed_as_the_registers_splits(self, app, window, populated_book):
+        """One editor for every change: a version from a date starts as the legs
+        then in force, one on a single date as that occurrence's amounts, and a
+        month's as every leg base * 1.0. A leg is added by typing on the grid."""
+        from breadsched.gen.lib import VersionKind
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        assert bank is not None and rent is not None
+        source = ScheduledTransaction(
+            name="Rent with versions",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(rent.handle, Money("1800.00")),
+                ScheduledSplit(bank.handle, Money("-1800.00")),
+            ],
+        )
+        with app.db.transaction("add schedule") as txn:
+            app.db.add_scheduled(source, txn)
+        dialog = ScheduleDialog(window, app.db, source=source)
+        editor = dialog.versions_editor
+
+        editor.kind.set_selected(0)  # From a date on
+        editor.when_entry.set_text("2027-01-01")
+        dated = editor.add_version()
+        assert dated is not None and dated.kind is VersionKind.FROM
+        assert [(leg.account, leg.amount) for leg in dated.splits] == [
+            (rent.handle, Money("1800.00")),
+            (bank.handle, Money("-1800.00")),
+        ]
+        # Raise the rent and add a fee leg, typed as a register's splits.
+        editor.panel.type_line(0, increase="1900")
+        editor.panel.type_line(1, decrease="1950")
+        editor.panel.type_line(2, account="Expenses:Rent", increase="50")
+        editor.when_entry.set_text("")
+        editor.kind.set_selected(2)  # Every year in a month
+        editor.month.set_selected(11)
+        december = editor.add_version()
+        assert december is not None
+        assert [(leg.formula, leg.direction) for leg in december.splits] == [
+            ("base * 1.0", 1),
+            ("base * 1.0", -1),
+        ]
+        editor.kind.set_selected(1)  # On one date only
+        editor.when_entry.set_text("2027-03-01")
+        once = editor.add_version()
+        assert once is not None
+        assert [leg.amount for leg in once.splits] == [
+            Money("1900.00"),
+            Money("-1950.00"),
+            Money("50.00"),
+        ]
+        assert dialog.pages.tab_label("Future changes") == "Future changes (3)"
+
+        dialog._on_save(None)
+        saved = app.db.get_scheduled(source.handle)
+        assert [version.label() for version in saved.versions] == [
+            "from 2027-01-01",
+            "every December",
+            "on 2027-03-01 only",
+        ]
+        assert [leg.value for leg in saved.legs_at(date(2027, 2, 1))] == [
+            Money("1900.00"),
+            Money("-1950.00"),
+            Money("50.00"),
+        ]
+        assert [leg.value for leg in saved.legs_at(date(2026, 6, 1))] == [
+            Money("1800.00"),
+            Money("-1800.00"),
+        ]
+
+    def test_an_unbalanced_version_is_reported_and_kept_chosen(self, app, window, populated_book):
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        dialog = ScheduleDialog(window, app.db)
+        dialog.name_entry.set_text("Rent")
+        dialog.splits_panel.type_line(0, account="Expenses:Rent", increase="100")
+        dialog.splits_panel.type_line(1, account="Assets:Checking Account", decrease="100")
+        editor = dialog.versions_editor
+        editor.when_entry.set_text("2030-01-01")
+        assert editor.add_version() is not None
+        editor.panel.type_line(0, increase="120")
+        assert editor.values() is None
+        assert "out of balance" in editor.problem
+        # Formulas cannot be balanced by typing; the book server checks them.
+        editor.panel.type_line(0, increase="base * 1.2")
+        editor.panel.type_line(1, decrease="base * 1.2")
+        [version] = editor.values()
+        assert [(leg.formula, leg.direction) for leg in version.splits] == [
+            ("base * 1.2", 1),
+            ("base * 1.2", -1),
+        ]
         dialog.destroy()
 
     def test_historical_estimate_draft_adjusts_all_review_fields(self, app, window, populated_book):
@@ -4092,8 +4194,10 @@ class TestScheduleEntry:
                 ScheduledSplit(rent.handle, Money("1800")),
                 ScheduledSplit(bank.handle, Money("-1800")),
             ],
-            seasonal_amounts=[ScheduledMonthAmount(1, "1900")],
         )
+        source.versions = [
+            ScheduledVersion.moving("month", source.splits, Money("1900"), month=1),
+        ]
         source.placeholder = True
         source.estimate_evidence = {"history_start": "2025-01-01", "selected_months": 12}
 
@@ -4103,7 +4207,15 @@ class TestScheduleEntry:
         dialog.splits_panel.type_line(1, decrease="1850")
         dialog.frequency.set_value(PeriodType.WEEK, 2)
         dialog.start_entry.set_text("2026-02-06")
-        dialog.seasonal_amounts_editor.set_values([(1, "2000"), (7, "1700")])
+        # A month version added in the editor starts as every leg base * 1.0.
+        dialog.versions_editor.kind.set_selected(2)
+        dialog.versions_editor.month.set_selected(6)
+        july = dialog.versions_editor.add_version()
+        assert july is not None
+        assert [(leg.formula, leg.direction) for leg in july.splits] == [
+            ("base * 1.0", 1),
+            ("base * 1.0", -1),
+        ]
         built = dialog.build()
 
         assert built.amount() == Money("1850")
@@ -4111,10 +4223,13 @@ class TestScheduleEntry:
         assert built.recurrence.interval == 2
         assert built.recurrence.start == date(2026, 2, 6)
         assert built.splits[0].planning_flow is PlanningFlowKind.DEBT_PRINCIPAL
-        assert [(item.month, item.amount) for item in built.seasonal_amounts] == [
-            (1, Money("2000")),
-            (7, Money("1700")),
+        assert [(item.kind.value, item.month) for item in built.versions] == [
+            ("month", 1),
+            ("month", 7),
         ]
+        # January's version still scales the transaction to 1900; July is the usual.
+        assert built.legs_at(date(2027, 1, 1))[0].value == Money("1900")
+        assert built.legs_at(date(2026, 7, 3))[0].value == Money("1850")
         assert built.estimate_evidence == source.estimate_evidence
 
     def test_duplicate_dialog_adds_an_independent_definition(self, app, window, populated_book):
@@ -6303,17 +6418,17 @@ class TestDerivedPlanView:
         assert baseline.splits[0].amount == Money("1800.00")
         assert baseline.growth_policy.value == "income"
 
-    def test_an_alternate_keeps_and_saves_per_leg_future_amounts(self, app, window, populated_book):
-        """A baseline's per-leg future amounts are loaded into its alternate, and
-        the alternate saves them, as a baseline schedule's editor does."""
+    def test_an_alternate_keeps_and_saves_its_versions(self, app, window, populated_book):
+        """A baseline's versions are loaded into its alternate, and the alternate
+        saves them, as a baseline schedule's editor does."""
         from breadsched.gen.lib import (
             Money,
             PeriodType,
             Recurrence,
             Scenario,
             ScheduledSplit,
-            ScheduledSplitAmountChange,
             ScheduledTransaction,
+            ScheduledVersion,
         )
         from breadsched.gui.dialogs.scenario_schedule_dialog import ScenarioScheduleDialog
 
@@ -6325,30 +6440,31 @@ class TestDerivedPlanView:
             name="Rent with a rise",
             recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
             splits=[
-                ScheduledSplit(
-                    rent.handle,
-                    Money("1800.00"),
-                    amount_changes=[ScheduledSplitAmountChange(change, Money("1900.00"))],
-                ),
-                ScheduledSplit(
-                    checking.handle,
-                    Money("-1800.00"),
-                    amount_changes=[ScheduledSplitAmountChange(change, Money("-1900.00"))],
-                ),
+                ScheduledSplit(rent.handle, Money("1800.00")),
+                ScheduledSplit(checking.handle, Money("-1800.00")),
             ],
         )
+        schedule.versions = [
+            ScheduledVersion(
+                "from",
+                [
+                    ScheduledSplit(rent.handle, Money("1900.00")),
+                    ScheduledSplit(checking.handle, Money("-1900.00")),
+                ],
+                start=change,
+            ),
+            ScheduledVersion.moving("month", schedule.splits, Money("2000.00"), month=12),
+        ]
         scenario = Scenario(name="Rent rises")
         with app.db.transaction("Scenario fixture") as txn:
             app.db.add_scheduled(schedule, txn)
             app.db.add_scenario(scenario, txn)
         dialog = ScenarioScheduleDialog(window, app.db, scenario, source=schedule)
-        assert len(dialog.split_amount_changes_editor.values()) == 2
+        assert len(dialog.versions_editor) == 2
         assert dialog.pages.tab_label("Future changes") == "Future changes (2)"
         dialog._on_save(None)
         [saved] = app.db.get_scenario(scenario.handle).schedule_overrides
-        assert [
-            [(item.start, item.amount) for item in split.amount_changes] for split in saved.splits
-        ] == [[(change, Money("1900.00"))], [(change, Money("-1900.00"))]]
+        assert saved.versions == schedule.versions
 
     def test_scenario_formula_schedule_preserves_protected_fields(
         self, app, window, populated_book
@@ -6359,10 +6475,9 @@ class TestDerivedPlanView:
             Recurrence,
             Scenario,
             ScenarioSchedule,
-            ScheduledAmountChange,
-            ScheduledOccurrenceAdjustment,
             ScheduledSplit,
             ScheduledTransaction,
+            ScheduledVersion,
         )
         from breadsched.gui.dialogs.scenario_schedule_dialog import ScenarioScheduleDialog
 
@@ -6376,9 +6491,11 @@ class TestDerivedPlanView:
                 ScheduledSplit(expense.handle, formula="base"),
                 ScheduledSplit(checking.handle, formula="-base"),
             ],
-            amount_changes=[ScheduledAmountChange(date(2027, 1, 1), Money("130"))],
-            occurrence_adjustments=[ScheduledOccurrenceAdjustment(date(2026, 3, 1), Money("140"))],
         )
+        source.versions = [
+            ScheduledVersion.moving("from", source.splits, Money("130"), start=date(2027, 1, 1)),
+            ScheduledVersion.moving("once", source.splits, Money("140"), start=date(2026, 3, 1)),
+        ]
         source.variables = {"base": "125"}
         current = ScenarioSchedule.from_scheduled(source)
         scenario = Scenario(name="Formula scenario", schedule_overrides=[current])
@@ -6400,12 +6517,7 @@ class TestDerivedPlanView:
             split.serialize() for split in current.splits
         ]
         assert rebuilt.variables == current.variables
-        assert [item.serialize() for item in rebuilt.amount_changes] == [
-            item.serialize() for item in current.amount_changes
-        ]
-        assert [item.serialize() for item in rebuilt.occurrence_adjustments] == [
-            item.serialize() for item in current.occurrence_adjustments
-        ]
+        assert rebuilt.versions == current.versions
         assert rebuilt.source_schedule == source.handle
 
     def test_scenario_formula_schedule_allows_validated_formula_edits(
@@ -9449,7 +9561,7 @@ class TestPayrollDialog:
         assert plan is not None
         assert {line.account: line.after for line in plan.lines}[dialog.tax].format() == "660.00"
         assert "Nothing is saved" in dialog.status.get_text()
-        assert app.db.get_scheduled(dialog.handle).splits[0].amount_changes == []
+        assert app.db.get_scheduled(dialog.handle).versions == []
 
         dialog.set_line_change(dialog.tax, "set", "700")
         assert dialog.save_change() is not None

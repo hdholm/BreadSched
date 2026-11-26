@@ -69,6 +69,7 @@ from ..gen.services import (
     SaveTransaction,
     SetAdvanceDays,
     SetScheduleDetails,
+    SetScheduleVersions,
     TagCount,
     TransactionInput,
 )
@@ -278,6 +279,10 @@ class BookApi(Protocol):
 
     def set_schedule_details(self, request: SetScheduleDetails) -> ScheduledTransaction:
         """Change only the number, notes, and tags a schedule's postings carry."""
+        ...
+
+    def set_schedule_versions(self, request: SetScheduleVersions) -> ScheduledTransaction:
+        """Replace a schedule's versions, keeping everything else."""
         ...
 
     def delete_schedule(self, schedule: str) -> SavedSchedule:

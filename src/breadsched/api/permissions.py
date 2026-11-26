@@ -101,6 +101,7 @@ _WRITE = {
     "resolve_next",
     "set_advance_days",
     "set_schedule_details",
+    "set_schedule_versions",
     "delete_schedule",
     "duplicate_schedule",
     "post_due",

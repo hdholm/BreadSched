@@ -18,7 +18,8 @@ from ..lib.account import Account, AccountClass
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence
 from ..lib.scenario import ScenarioSchedule
-from ..lib.scheduled import ScheduledMonthAmount, ScheduledSplit, ScheduledTransaction
+from ..lib.schedule_versions import ScheduledVersion, VersionKind
+from ..lib.scheduled import ScheduledSplit, ScheduledTransaction
 from ..lib.transaction import InvestmentActivityKind, PlanningFlowKind, Split
 from . import activity, planning
 from . import estimate_history as estimate_stats
@@ -176,7 +177,7 @@ class HistoricalEstimateProposal:
     scheduled_amount: Money = Money(0)
     seasonal: bool = False
     trend: str | None = None
-    seasonal_amounts: tuple[ScheduledMonthAmount, ...] = ()
+    seasonal_amounts: tuple[estimate_stats.MonthAmount, ...] = ()
     outlier_months: int = 0
     variability: str = "unknown"
     planning_flow: PlanningFlowKind | None = None
@@ -1020,6 +1021,33 @@ def propose_historical_estimates(
     return sorted(proposals, key=lambda item: (item.purpose_name, item.category_name))
 
 
+def _month_versions(db: DbSQLite, proposal: HistoricalEstimateProposal) -> list[ScheduledVersion]:
+    """A month version for each month the history shows differs: every leg as
+    ``base`` scaled by that month's typical amount over the usual one."""
+    usual = proposal.amount
+    if not usual:
+        return []
+    versions = []
+    for item in proposal.seasonal_amounts:
+        share = item.amount / usual
+        ratio = (Decimal(share.numerator) / Decimal(share.denominator)).quantize(
+            Decimal("0.000001")
+        )
+        legs = [
+            ScheduledSplit(
+                split.account,
+                formula=f"base * {format(ratio.normalize(), 'f')}",
+                memo=split.memo,
+                planning_flow=split.planning_flow,
+                investment_activity=split.investment_activity,
+                direction=-1 if split.amount is not None and split.amount < 0 else 1,
+            )
+            for split in _proposal_splits(db, proposal)
+        ]
+        versions.append(ScheduledVersion(VersionKind.MONTH, legs, month=item.month))
+    return versions
+
+
 def _proposal_splits(db: DbSQLite, proposal: HistoricalEstimateProposal) -> list[ScheduledSplit]:
     category = db.get_account(proposal.category)
     funding = db.get_account(proposal.funding)
@@ -1074,7 +1102,8 @@ def validate_historical_estimate_adjustment(
         raise ValueError(
             "choose an income/expense category, planning purpose, or investment activity"
         )
-    if len({item.month for item in adjusted.seasonal_amounts}) != len(adjusted.seasonal_amounts):
+    months = [item.month for item in adjusted.versions if item.kind is VersionKind.MONTH]
+    if len(set(months)) != len(months):
         raise ValueError("seasonal estimate months must be unique")
 
 
@@ -1088,9 +1117,7 @@ def draft_historical_estimate(
         recurrence=Recurrence.from_dict(proposal.recurrence.serialize()),
         splits=_proposal_splits(db, proposal),
         auto_create=False,
-        seasonal_amounts=[
-            ScheduledMonthAmount.from_dict(item.serialize()) for item in proposal.seasonal_amounts
-        ],
+        versions=_month_versions(db, proposal),
     )
     draft.placeholder = True
     draft.estimate_evidence = proposal.evidence.serialize()
@@ -1105,9 +1132,7 @@ def draft_scenario_estimate(db: DbSQLite, proposal: HistoricalEstimateProposal) 
         recurrence=Recurrence.from_dict(proposal.recurrence.serialize()),
         splits=_proposal_splits(db, proposal),
         placeholder=True,
-        seasonal_amounts=[
-            ScheduledMonthAmount.from_dict(item.serialize()) for item in proposal.seasonal_amounts
-        ],
+        versions=_month_versions(db, proposal),
         estimate_evidence=proposal.evidence.serialize(),
     )
     validate_historical_estimate_adjustment(db, draft)
