@@ -25,8 +25,12 @@ from ..gen.lib import (
     Money,
     PeriodType,
     Recurrence,
+    ScheduledSplit,
     ScheduledTransaction,
+    ScheduledVersion,
+    VersionKind,
 )
+from ..gen.lib.schedule_versions import MONTH_NAMES, sorted_versions, starting_version
 from ..gen.services import (
     DueDecision,
     DueQuotes,
@@ -408,6 +412,124 @@ def cmd_scheduled_details(args: argparse.Namespace) -> int:
                     f"  documents: {', '.join(sched.attachments) or '(none)'}",
                 ]
             ),
+        )
+        return 0
+
+
+def _version_key(text: str) -> tuple[VersionKind, date | None, int | None]:
+    """``from:DATE``, ``once:DATE``, or ``month:MONTH`` (a number or a month's name)."""
+    kind_text, _sep, when = text.partition(":")
+    try:
+        kind = VersionKind(kind_text.strip().lower())
+    except ValueError:
+        raise CommandError(f"{text!r}: give from:DATE, once:DATE, or month:MONTH") from None
+    when = when.strip()
+    if kind is VersionKind.MONTH:
+        if when.isdigit() and 1 <= int(when) <= 12:
+            return kind, None, int(when)
+        named = [
+            index
+            for index, name in enumerate(MONTH_NAMES, 1)
+            if when and name.lower().startswith(when.lower())
+        ]
+        if len(named) != 1:
+            raise CommandError(f"{text!r}: give the month as 1-12 or its name")
+        return kind, None, named[0]
+    start = parse_date(when) if when else None
+    if start is None:
+        raise CommandError(f"{text!r}: give the version's date as YYYY-MM-DD")
+    return kind, start, None
+
+
+def _version_leg(book, text: str) -> ScheduledSplit:
+    """``ACCOUNT=AMOUNT`` or ``ACCOUNT=FORMULA``; a leading ``-`` puts the leg in the
+    Decrease column (money out of the account), as the register's columns do."""
+    account, sep, value = text.partition("=")
+    value = value.strip()
+    if not sep or not account.strip() or not value:
+        raise CommandError(f"{text!r}: give each leg as ACCOUNT=AMOUNT or ACCOUNT=FORMULA")
+    handle = book.find_account(account.strip()).handle
+    decrease = value.startswith("-")
+    shown = value[1:].strip() if decrease else value
+    if any(character.isalpha() or character == "_" for character in shown):
+        return ScheduledSplit(handle, formula=shown, direction=-1 if decrease else 1)
+    try:
+        amount = Money(Decimal(shown))
+    except (InvalidOperation, ValueError):
+        raise CommandError(f"{text!r}: the amount is not a number or a formula") from None
+    return ScheduledSplit(handle, -amount if decrease else amount)
+
+
+def _versions_text(sched: ScheduledTransaction, names: dict[str, str]) -> str:
+    if not sched.versions:
+        return f"{sched.name}: no versions; every occurrence is the transaction as scheduled"
+    lines = [f"{sched.name}: versions"]
+    for version in sched.versions:
+        lines.append(f"  {version.label()}")
+        for leg in version.splits:
+            name = names.get(leg.account, leg.account)
+            if leg.formula:
+                column = "decrease" if leg.direction < 0 else "increase"
+                lines.append(f"    {name}  {leg.formula}  ({column})")
+            else:
+                lines.append(f"    {name}  {(leg.amount or Money(0)).format()}")
+    return "\n".join(lines)
+
+
+def cmd_scheduled_versions(args: argparse.Namespace) -> int:
+    """List, add, or remove a schedule's versions: each the whole transaction from a
+    date on, on one date only, or every year in one month."""
+    from ..gen.services import SetScheduleVersions
+
+    if args.leg and not args.add:
+        raise CommandError("--leg describes the version --add adds")
+    writing = bool(args.add or args.remove)
+    with book_api(args, "w" if writing else "r") as book:
+        sched = book.find_schedule(args.schedule)
+        names = {record.account.handle: record.full_name for record in book.accounts()}
+        if writing:
+            versions = [version.copy() for version in sched.versions]
+            for text in args.remove or ():
+                key = _version_key(text)
+                kept = [item for item in versions if (item.kind, item.start, item.month) != key]
+                if len(kept) == len(versions):
+                    raise CommandError(f"{sched.name} has no version {text!r}")
+                versions = kept
+            if args.add:
+                kind, start, month = _version_key(args.add)
+                if args.leg:
+                    version = ScheduledVersion(
+                        kind,
+                        [_version_leg(book, text) for text in args.leg],
+                        start=start,
+                        month=month,
+                    )
+                else:
+                    # Filled in from the schedule as it then is, as the editors do.
+                    draft = ScheduledTransaction.from_dict(sched.serialize())
+                    draft.versions = versions
+                    version = starting_version(draft, kind, start, month)
+                versions.append(version)
+            sched = book.set_schedule_versions(
+                SetScheduleVersions(sched.handle, tuple(sorted_versions(versions)))
+            )
+        emit(
+            {
+                "schedule": sched.handle,
+                "name": sched.name,
+                "versions": [
+                    {
+                        **version.serialize(),
+                        "label": version.label(),
+                        "account_names": [
+                            names.get(leg.account, leg.account) for leg in version.splits
+                        ],
+                    }
+                    for version in sched.versions
+                ],
+            },
+            args,
+            _versions_text(sched, names),
         )
         return 0
 
@@ -1156,6 +1278,31 @@ def register(add: AddCommand) -> None:
     )
     add_server_options(details_cmd)
     details_cmd.set_defaults(func=cmd_scheduled_details)
+
+    versions_cmd = add(
+        "scheduled-versions",
+        "List, add, or remove a schedule's versions (the whole transaction from a date, "
+        "on one date, or every year in a month)",
+    )
+    versions_cmd.add_argument("schedule", help="schedule id prefix or exact name")
+    versions_cmd.add_argument(
+        "--add",
+        metavar="KIND:WHEN",
+        help="add a version: from:YYYY-MM-DD, once:YYYY-MM-DD, or month:MONTH; without "
+        "--leg it starts as the schedule then is (a month's as every leg base * 1.0)",
+    )
+    versions_cmd.add_argument(
+        "--leg",
+        action="append",
+        metavar="ACCOUNT=AMOUNT",
+        help="a leg of the added version (repeat); an amount or a formula over base and "
+        "base_total; a leading '-' is the Decrease column",
+    )
+    versions_cmd.add_argument(
+        "--remove", action="append", metavar="KIND:WHEN", help="remove a version (repeatable)"
+    )
+    add_server_options(versions_cmd)
+    versions_cmd.set_defaults(func=cmd_scheduled_versions)
 
     review_cmd = add(
         "review",

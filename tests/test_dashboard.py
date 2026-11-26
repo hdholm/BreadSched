@@ -1535,7 +1535,9 @@ class TestHierarchicalGroups:
         assert investments.total == Money("125")
         assert [account.name for account in investments.accounts] == ["Assets:Direct holding"]
 
-    def test_selected_parent_owns_its_subtree_once_across_groups(self, db, holdings):
+    def test_a_descendant_in_another_group_is_counted_there_not_in_its_parent(self, db, holdings):
+        """A group of a selected parent's descendant shows, and counts it; the
+        parent's group counts the rest of the subtree, so nothing is counted twice."""
         parent, first, second, _taxable = holdings
         config = dashboard.DashboardConfig(
             groups=[
@@ -1548,11 +1550,48 @@ class TestHierarchicalGroups:
 
         board = dashboard.build(db, config, as_of=TODAY)
 
-        assert board.group("Other") is None
+        other = board.group("Other")
+        assert other is not None and other.total == Money("100")
+        assert [account.name for account in other.accounts] == ["Assets:Holdings:Plan A"]
         investments = board.group("Investments")
-        assert investments.total == Money("350")
+        # Plan B, repeated in the parent's own group, stays inside the parent.
+        assert investments.total == Money("250")
         assert [account.name for account in investments.accounts] == ["Assets:Holdings"]
+        [line] = investments.accounts
+        assert line.total == Money("250")
+        assert "Assets:Holdings:Plan A" not in "\n".join(line.members)
+        assert "Assets:Holdings:Plan B" in "\n".join(line.members)
+        assert other.total + investments.total == Money("350")
+        # Groups only arrange rows: the book's totals are unchanged.
         assert board.net_worth == Money("350")
+
+    def test_alternating_groups_down_a_branch_count_each_account_once(self, db, book):
+        with db.transaction("branch") as txn:
+            top = Account(name="Top", atype=AccountType.ASSET, parent=book.assets)
+            middle = Account(name="Middle", atype=AccountType.ASSET, parent=top.handle)
+            leaf = Account(name="Leaf", atype=AccountType.ASSET, parent=middle.handle)
+            for account in (top, middle, leaf):
+                db.add_account(account, txn)
+            for account, amount in ((top, "1"), (middle, "10"), (leaf, "100")):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, 1, 1), "Opening", account.handle, book.opening, amount
+                    ),
+                    txn,
+                )
+        config = dashboard.DashboardConfig(
+            groups=[
+                dashboard.GroupConfig("First", [top.handle, leaf.handle], "asset"),
+                dashboard.GroupConfig("Second", [middle.handle], "asset"),
+            ]
+        )
+
+        board = dashboard.build(db, config, as_of=TODAY)
+
+        # The leaf's nearest selected ancestor (Middle) is in another group, so the
+        # leaf counts in First beside Top, which counts only its own balance.
+        assert board.group("First").total == Money("101")
+        assert board.group("Second").total == Money("10")
 
     def test_liquidity_does_not_repeat_a_selected_descendant(self, db, holdings):
         parent, first, _second, _taxable = holdings

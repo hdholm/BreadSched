@@ -489,9 +489,9 @@ there first; Shift+F10 or the Menu key opens the menu for the cursor's row).
 **Edit Transaction…** opens it in the full editor, or, on the blank transaction, a
 new one holding what you typed. **Delete Transaction…** asks, then deletes it
 (Ctrl+Z restores it); it is greyed out on the blank transaction. **Make
-Scheduled…**, **Match to Plan…**, and **Track as Reimbursable…** save what you typed
-first, then start a schedule from the transaction, choose what it was for, or track
-its cost.
+Scheduled…**, **Match to Plan…**, **Track as Reimbursable…**, and **Track as FSA
+Claim…** save what you typed first, then start a schedule from the transaction,
+choose what it was for, track its cost, or start an FSA claim for it.
 
 A transaction with more than two splits shows **-- Split Transaction --** as its
 transfer; when you move onto it, its split lines open beneath it, each with a
@@ -732,11 +732,22 @@ and an amount in either column for each line, completed and checked the same way
 retirement account, its investment activity. **Save** waits until the splits balance.
 The editor opens on **Basics** (name, kind, number, notes, and when it repeats);
 **Tags & documents** holds what every posting carries, as a transaction's own tab
-does; **Future changes** the future, per-leg, seasonal, skipped, and one-time amounts
-(its tab counts them, so a schedule with some says so); and **Advanced** the
-projection growth, weekend rule, automatic posting, and enter and remind days. A
-schedule whose amounts are formulas shows its formulas and variables instead of the
-grid. A scenario estimate, or an alternate of a baseline schedule, is edited in the
+does; **Future changes** the schedule's versions and skipped occurrences (its tab
+counts them, so a schedule with some says so); and **Advanced** the projection
+growth, weekend rule, automatic posting, and enter and remind days. A schedule whose
+amounts are formulas shows its formulas and variables instead of the grid, and its
+versions stay editable.
+
+On **Future changes**, the list names each version (**From** a date, **Every** month,
+**On** a date **only**); choosing one shows its legs on the same split grid, where a
+leg is added, removed, or changed by typing, and its column is its direction. An
+amount there may be a formula such as `base * 1.2` (see
+[Versions of a scheduled transaction](../USER_GUIDE.md#versions-of-a-scheduled-transaction)).
+To add one, choose its kind (**From a date on**, **On one date only**, or **Every
+year in a month**), its date or month, and **Add version**: it starts as the
+schedule then is, a month's as every leg `base * 1.0`. **Remove version** removes
+the chosen one. A version that does not balance is reported and stays chosen until
+it is corrected. A scenario estimate, or an alternate of a baseline schedule, is edited in the
 same editor without what only a posting has (kind, number, notes, tags, documents,
 automatic posting, and days in advance). Choose the **New Loan**
 toolbar icon in Scheduled to create a loan (see
@@ -969,6 +980,18 @@ description, and EOB amount, the payments and refunds it links, and how much of 
 each FSA funding year covers. The window does not block the rest of BreadSched, so it
 can stay open beside a register; transactions you enter meanwhile are offered at
 once, and choosing it again brings the same window forward.
+
+To claim a transaction you already recorded, select it in a register and choose
+**Actions → Track as FSA Claim…** (also in its right-click menu). Typing not yet
+entered is saved first. Manage FSA Claims opens on a new claim filled in from the
+transaction: service date, provider, the healthcare payment, and an allocation to
+the FSA account and funding year worked out from its accounts (see
+[Track as FSA Claim](../USER_GUIDE.md#fsa-and-benefit-accounts)); the line above
+**Save claim** says how each was chosen, or what is left to choose. Enter the EOB
+amount if you have it and choose **Save claim**; nothing is recorded until then. A
+transaction already on a claim opens that claim, and one that cannot start a claim
+(it spends nothing on an expense account, or the book has no FSA account) gets an
+alert saying why.
 
 The chooser at the top starts with **New claim**; **New** chooses it and empties the
 form, and a saved claim then appears in the chooser with where it stands. In each

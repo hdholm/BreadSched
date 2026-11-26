@@ -313,10 +313,16 @@ sections `shows` names; CLI `--json` always carries every list plus `sections`.
 
 Dashboard group names are account-style colon-delimited paths. The engine builds
 the hierarchy and aggregate totals; GTK, web, and CLI only render the resulting
-local names, depths, headings, and values. A selected chart parent owns its entire
-account subtree. Selected descendants and repeated handles are removed before
-balance calculation, including across groups, so headings, net worth, and liquidity
-cannot count the same ledger value twice.
+local names, depths, headings, and values. A selected chart parent owns its account
+subtree, less any descendant another group selects: `resolve_groups` keeps a
+selected descendant in its own group when its nearest selected ancestor is in a
+different group, and `_carved_subtree` leaves that descendant's subtree out of the
+ancestor's row (its value, members, and loan end). A descendant selected again in
+its ancestor's own group, and a handle repeated anywhere, is removed (the first
+listing wins). Each account is therefore valued in exactly one row, so headings
+cannot count the same ledger value twice, and no configured group disappears
+because an ancestor elsewhere was selected; net worth and liquidity are computed
+from the whole book and never depend on groups.
 
 An FSA account contributes the remaining election availability of every plan
 year applicable on the Dashboard's as-of date, including overlapping run-out and

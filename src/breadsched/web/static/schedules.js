@@ -137,7 +137,7 @@ async function showScheduled() {
             onclick:()=>openScheduledEditor(data, s) }, "Edit…")
         : s.editor_mode === "formula" && s.editable
         ? el("button", { class:"action", type:"button",
-            onclick:()=>openFormulaScheduleEditor(s) }, "Edit formulas…")
+            onclick:()=>openFormulaScheduleEditor(s, data) }, "Edit formulas…")
         : el("span", { class:"muted" }, "Read-only"),
       s.account_linked ? null : s.simple ? el("button", { class:"action", type:"button",
         onclick:()=>openScheduledEditor(data, {
@@ -180,7 +180,7 @@ async function showScheduled() {
       } else if (source?.editor_mode === "fixed" && source?.simple) {
         openScheduledEditor(data, source);
       } else if (source?.editor_mode === "formula" && source?.editable) {
-        openFormulaScheduleEditor(source);
+        openFormulaScheduleEditor(source, data);
       }
       else switchTo("Scheduled");
     },
@@ -442,18 +442,14 @@ function openScheduledEditor(data, source) {
   const today = new Date().toISOString().slice(0, 10);
   let refreshTimeline = () => {};
   const changed = () => refreshTimeline();
-  const futureEditor = timelineEditor(
-    "Future amounts", source?.amount_changes || [], true, changed);
-  const seasonalEditor = monthAmountEditor(source?.seasonal_amounts || [], changed);
+  const versions = versionsEditor(accounts, source?.versions || [],
+    async (chosen) => (await post("/api/scheduled/version-start",
+      { ...saveBody(), new_version:chosen })).version, changed);
   const skipEditor = occurrenceTimelineEditor(
     "Skip occurrences", source?.skipped || [], false, changed);
-  const oneTimeEditor = occurrenceTimelineEditor(
-    "One-time amounts", source?.occurrence_adjustments || [], true, changed);
   const preview = schedulePreviewNode();
   const additionalSplits = planningSplitEditor(
     accounts, source?.additional_splits || [], changed);
-  const splitAmountChanges = splitAmountTimelineEditor(
-    accounts, source?.split_amount_changes || [], changed);
   const category = select("category", accounts.map((a) => [a.handle, a.name]),
     source?.category || accounts[0]?.handle);
   const funding = select("funding", accounts.map((a) => [a.handle, a.name]), source?.funding || accounts[0]?.handle);
@@ -494,20 +490,16 @@ function openScheduledEditor(data, source) {
   showInvestment();
   const changesSummary = el("summary", {}, "Future changes");
   const countChanges = () => {
-    let count = 0;
-    for (const editor of [futureEditor, seasonalEditor, skipEditor, oneTimeEditor,
-      splitAmountChanges]) {
-      try { count += editor.values().length; } catch (_error) { count += 1; }
-    }
+    let count = versions.count();
+    try { count += skipEditor.values().length; } catch (_error) { count += 1; }
     changesSummary.textContent = count ? `Future changes (${count})` : "Future changes";
     return count;
   };
   const section = (summary, ...children) => el("details", { class:"form-section" },
     typeof summary === "string" ? el("summary", {}, summary) : summary, ...children);
   const changes = section(changesSummary,
-    el("p", { class:"note" }, "Changes from a date onward, in particular months, or on single occurrences. Most schedules need none."),
-    futureEditor.node, splitAmountChanges.node, seasonalEditor.node, skipEditor.node,
-    oneTimeEditor.node);
+    el("p", { class:"note" }, "Versions of the whole transaction from a date onward, in a particular month every year, or on a single occurrence, and occurrences to skip. Most schedules need none."),
+    versions.node, skipEditor.node);
   if (countChanges()) changes.open = true;
   form.append(
     field("Name", el("input", { name:"name", value:source?.name || "", required:"required" })),
@@ -545,18 +537,11 @@ function openScheduledEditor(data, source) {
         frequency:values.frequency, interval:values.interval, start:values.start, end:values.end || null,
         count:values.count || null, weekend:values.weekend, amount:values.amount,
       };
-      try {
-        payload.amount_changes = futureEditor.values().map(
-          (item)=>({start:item.when, amount:item.amount}));
-        payload.skipped = skipEditor.values();
-        payload.occurrence_adjustments = oneTimeEditor.values();
-      } catch (_error) {}
+      try { payload.skipped = skipEditor.values(); } catch (_error) {}
       const result = await post("/api/scheduled/occurrences", payload);
       skipEditor.setOptions(result.occurrences);
-      oneTimeEditor.setOptions(result.occurrences);
     } catch (_error) {
       skipEditor.setOptions([]);
-      oneTimeEditor.setOptions([]);
     }
     // The schedule a save would store, so every future change counts.
     try {
@@ -582,10 +567,8 @@ function openScheduledEditor(data, source) {
       planning_flow: values.planning_flow || null, amount: values.amount,
       investment_activity: values.investment_activity || null,
       additional_splits: additionalSplits.values(),
-      split_amount_changes: splitAmountChanges.values(),
-      amount_changes: futureEditor.values().map((item)=>({start:item.when, amount:item.amount})),
-      seasonal_amounts: seasonalEditor.values(),
-      skipped: skipEditor.values(), occurrence_adjustments: oneTimeEditor.values(),
+      versions: versions.values(),
+      skipped: skipEditor.values(),
       frequency: values.frequency, interval: values.interval, start: values.start,
       end: values.end || null, count: values.count || null, weekend: values.weekend,
       auto: values.posting === "automatic" && values.kind !== "estimate",
@@ -607,7 +590,7 @@ function openScheduledEditor(data, source) {
   document.body.append(backdrop);
 }
 
-function openFormulaScheduleEditor(source) {
+function openFormulaScheduleEditor(source, data) {
   const backdrop = el("div", { class:"detail-backdrop" });
   const form = el("form", { class:"entry" });
   const field = (label, control) => el("label", {}, label, control);
@@ -617,6 +600,12 @@ function openFormulaScheduleEditor(source) {
   const weekend = select("weekend", [["none","Leave on the day"],
     ["previous","Friday before"],["next","Monday after"]], source.weekend || "none");
   const skipped = occurrenceTimelineEditor("Skip occurrences", source.skipped || [], false, ()=>{});
+  const referenced = new Set(source.account_handles || []);
+  const versions = versionsEditor(
+    (data?.accounts || []).filter((a) => !a.hidden || referenced.has(a.handle)),
+    source.versions || [],
+    async (chosen) => (await post("/api/scheduled/version-start",
+      { ...formulaBody(), new_version:chosen })).version);
   const formulaInputs = (source.formula_splits || []).map((item) => ({
     item,
     input:el("input", {value:item.formula, required:"required", spellcheck:"false"}),
@@ -636,6 +625,7 @@ function openFormulaScheduleEditor(source) {
     field("Variables (name=value; …)", el("input", {name:"variables", value:variableText,
       placeholder:"principal=200000; rate=0.05", spellcheck:"false"})),
     skipped.node,
+    versions.node,
     field("Repeats", frequency),
     field("First due", el("input", {name:"start", type:"date", value:source.start,
       required:"required"})),
@@ -661,27 +651,32 @@ function openFormulaScheduleEditor(source) {
   [frequency, form.elements.start, form.elements.end, form.elements.count, weekend]
     .forEach((control)=>control.addEventListener("change", refreshOccurrences));
   form.elements.start.addEventListener("input", refreshOccurrences);
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
+  // One body for saving and for starting a new version from what would be saved.
+  function formulaBody() {
     const values = Object.fromEntries(new FormData(form).entries());
     const variables = {};
+    for (const part of String(values.variables || "").split(";")) {
+      if (!part.trim()) continue;
+      const split = part.indexOf("=");
+      if (split < 1) throw new Error("Formula variables must use name=value entries.");
+      variables[part.slice(0, split).trim()] = part.slice(split + 1).trim();
+    }
+    return {
+      handle:source.handle, name:values.name, enabled:values.enabled === "true",
+      placeholder:values.kind === "estimate", growth_policy:values.growth_policy,
+      formulas:formulaInputs.map(({item,input})=>({index:item.index, formula:input.value})),
+      variables, skipped:skipped.values(), versions:versions.values(),
+      frequency:values.frequency, interval:values.interval, start:values.start,
+      end:values.end || null, count:values.count || null, weekend:values.weekend,
+      auto:values.posting === "automatic" && values.kind !== "estimate",
+      advance_days:values.advance_days, remind_days:values.remind_days,
+      ...postingValues(values),
+    };
+  }
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
     try {
-      for (const part of String(values.variables || "").split(";")) {
-        if (!part.trim()) continue;
-        const split = part.indexOf("=");
-        if (split < 1) throw new Error("Formula variables must use name=value entries.");
-        variables[part.slice(0, split).trim()] = part.slice(split + 1).trim();
-      }
-      await post("/api/scheduled/formula-save", {
-        handle:source.handle, name:values.name, enabled:values.enabled === "true",
-        placeholder:values.kind === "estimate", growth_policy:values.growth_policy,
-        formulas:formulaInputs.map(({item,input})=>({index:item.index, formula:input.value})),
-        variables, skipped:skipped.values(), frequency:values.frequency, interval:values.interval, start:values.start,
-        end:values.end || null, count:values.count || null, weekend:values.weekend,
-        auto:values.posting === "automatic" && values.kind !== "estimate",
-        advance_days:values.advance_days, remind_days:values.remind_days,
-        ...postingValues(values),
-      });
+      await post("/api/scheduled/formula-save", formulaBody());
       backdrop.remove(); say("Formula schedule updated."); render();
     } catch (error) { say(error.message, "error"); }
   });
@@ -690,7 +685,7 @@ function openFormulaScheduleEditor(source) {
     el("button", {class:"action primary", type:"submit"}, "Save")));
   backdrop.append(el("section", {class:"detail-dialog wide"},
     el("div", {class:"detail-heading"}, el("h2", {}, "Edit formula schedule")),
-    el("p", {class:"note"}, "Formula expressions, variables, recurrence, and metadata are editable. Split accounts and formula-owned amount timelines remain protected."),
+    el("p", {class:"note"}, "Formula expressions, variables, versions, recurrence, and metadata are editable. Split accounts remain protected."),
     form));
   document.body.append(backdrop);
   refreshOccurrences();

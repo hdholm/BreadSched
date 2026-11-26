@@ -396,6 +396,7 @@ class RegisterView(BaseView):
             edit_in_place=True,
             split=True,
             track_reimbursable=True,
+            track_fsa_claim=True,
             reconcile=self._reconcilable,
         )
 
@@ -724,6 +725,45 @@ class RegisterView(BaseView):
         parent = root if isinstance(root, Gtk.Window) else None
         return opener(expense=(transaction.handle, cost.handle), parent=parent)
 
+    def track_selected_fsa_claim(self, *_args):
+        """Open FSA claims on a new claim started from the cursor's transaction.
+
+        The book server infers the defaults from the transaction's accounts (the
+        healthcare payment, the FSA account and funding year, a payer covering
+        part); nothing is saved until **Save claim**. A cost already on a claim
+        opens that claim instead. Typing not yet entered is saved first and every
+        refusal is an alert, as for tracking a reimbursable expense.
+        """
+        if self.db is None or self.sheet is None:
+            return self._refuse_claim("Open a register before tracking an FSA claim.")
+        sheet = self.sheet
+        handle = sheet.draft.source.handle if sheet.draft.source is not None else None
+        if sheet.draft.dirty():
+            if not sheet.leave():
+                self.grid.sync()
+                return self._refuse_claim(
+                    f"Save the transaction first: {sheet.message or 'it could not be saved.'}"
+                )
+            handle = sheet.last_saved
+            if handle is not None:
+                sheet.select_transaction(handle)
+            self.grid.sync()
+        if handle is None:
+            return self._refuse_claim("Put the cursor on a transaction to track as an FSA claim.")
+        try:
+            draft = book_server(self.db).fsa_claim_draft(handle)
+        except ApiError as refused:
+            return self._refuse_claim(refused.message or refused.code)
+        root = self.get_root()
+        application = (root.get_application() if isinstance(root, Gtk.Window) else None) or (
+            self.manager.get_application() if self.manager is not None else None
+        )
+        opener = getattr(application, "on_fsa_claims", None)
+        if opener is None:
+            return self._refuse_claim("FSA claims cannot be opened from here.")
+        parent = root if isinstance(root, Gtk.Window) else None
+        return opener(draft=draft, parent=parent)
+
     def make_selected_scheduled(self, *_args):
         """Open a new scheduled transaction made from the cursor's transaction (#392).
 
@@ -805,6 +845,14 @@ class RegisterView(BaseView):
         self.set_entry_status(text, error=True)
         root = self.get_root()
         Gtk.AlertDialog(message="No scheduled transaction made", detail=text).show(
+            root if isinstance(root, Gtk.Window) else None
+        )
+        return None
+
+    def _refuse_claim(self, text: str) -> None:
+        self.set_entry_status(text, error=True)
+        root = self.get_root()
+        Gtk.AlertDialog(message="Not tracked as an FSA claim", detail=text).show(
             root if isinstance(root, Gtk.Window) else None
         )
         return None

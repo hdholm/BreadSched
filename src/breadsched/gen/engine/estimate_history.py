@@ -18,7 +18,6 @@ from statistics import median
 
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence
-from ..lib.scheduled import ScheduledMonthAmount
 from .estimate_rules import HistoricalEstimateRules
 
 __all__ = [
@@ -26,6 +25,7 @@ __all__ = [
     "EstimateConfidenceEvidence",
     "EstimateSeasonalityEvidence",
     "EstimateTrendEvidence",
+    "MonthAmount",
     "add_months",
     "cadence_evidence",
     "calendar_month_interval",
@@ -44,6 +44,14 @@ __all__ = [
     "typical_amount",
     "variability_label",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class MonthAmount:
+    """What a calendar month typically came to, in the history an estimate read."""
+
+    month: int
+    amount: Money
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,7 +98,7 @@ class EstimateSeasonalityEvidence:
 
     detected: bool
     variability: str
-    monthly_amounts: tuple[ScheduledMonthAmount, ...]
+    monthly_amounts: tuple[MonthAmount, ...]
     explanation: str
 
     def serialize(self) -> dict[str, object]:
@@ -511,14 +519,14 @@ def seasonal_amounts(
     monthly_by_month: dict[int, list[Money]],
     fraction: int,
     rules: HistoricalEstimateRules,
-) -> tuple[ScheduledMonthAmount, ...]:
+) -> tuple[MonthAmount, ...]:
     """Return repeated month-of-year magnitudes supported by at least two years."""
-    result: list[ScheduledMonthAmount] = []
+    result: list[MonthAmount] = []
     for month in range(1, 13):
         values = monthly_by_month.get(month, [])
         if len(values) < rules.seasonality.minimum_samples_per_month:
             continue
         typical = typical_amount(values, fraction)
         if typical:
-            result.append(ScheduledMonthAmount(month, abs(typical)))
+            result.append(MonthAmount(month, abs(typical)))
     return tuple(result)

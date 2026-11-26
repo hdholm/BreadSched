@@ -245,7 +245,7 @@ def test_payroll_view_fills_a_template_creates_a_paycheck_and_previews_a_raise(p
     page.get_by_role("button", name="Preview").click()
     page.wait_for_selector("text=take-home 5,500.00")
     [schedule] = [item for item in db.iter_scheduled() if item.name == "Job pay"]
-    assert all(not split.amount_changes for split in schedule.splits)
+    assert not schedule.versions
 
     page.get_by_role("button", name="Save pay change").click()
     page.wait_for_selector("text=Saved the pay change")
@@ -520,6 +520,61 @@ def test_a_register_expense_becomes_a_reimbursable(page, served):
     cost = next(s for s in visit.splits if s.account == expense.handle)
     assert (receivable.payer, receivable.expenses[0].split) == ("Dental plan", cost.handle)
     page.wait_for_selector("td:has-text('Dental plan')")
+
+
+def test_a_register_expense_starts_an_fsa_claim(page, served):
+    """FSA claim… opens the claims editor on an unsaved claim with inferred defaults."""
+    from breadsched.gen.lib import (
+        Account,
+        AccountClass,
+        AccountType,
+        FsaFundingYear,
+        Money,
+        Transaction,
+    )
+
+    db, _httpd = served
+    page.wait_for_selector("text=Pending bills")
+    _nav(page, "Register")
+    page.wait_for_selector("tr.entry-row")
+    account = page.locator("select").first.input_value()
+    expense = next(
+        a
+        for a in db.iter_accounts()
+        if a.account_class is AccountClass.EXPENSE and not a.placeholder and not a.hidden
+    )
+    existing = [a for a in db.iter_accounts() if a.atype is AccountType.FSA]
+    start = date(date.today().year, 1, 1)
+    fsa = Account(
+        name="Browser FSA",
+        atype=AccountType.FSA,
+        parent=db.get_account_by_name("Assets").handle,
+    )
+    fsa.fsa.years = [FsaFundingYear(start, date(start.year, 12, 31), Money("900"))]
+    visit = Transaction.simple(date.today(), "Browser clinic", expense.handle, account, Money("45"))
+    with db.transaction("Browser fixture") as txn:
+        for other in existing:  # the only FSA account, so it is inferred
+            other.atype = AccountType.ASSET
+            db.commit_account(other, txn)
+        db.add_account(fsa, txn)
+        db.add_transaction(visit, txn)
+    _nav(page, "Register")
+    page.locator("tr:has-text('Browser clinic')").get_by_role("button", name="FSA claim…").click()
+    page.wait_for_selector("text=New claim from the transaction")
+    assert page.locator("input[placeholder='Provider']").input_value() == "Browser clinic"
+    assert list(db.iter_fsa_claims()) == []
+    page.get_by_role("button", name="Save claim").click()
+    page.wait_for_selector("text=FSA claim saved.")
+
+    [claim] = list(db.iter_fsa_claims())
+    cost = next(s for s in visit.splits if s.account == expense.handle)
+    assert (claim.provider, [link.split for link in claim.payments]) == (
+        "Browser clinic",
+        [cost.handle],
+    )
+    assert [(item.account, item.funding_year_start) for item in claim.allocations] == [
+        (fsa.handle, start)
+    ]
 
 
 def test_an_open_receivable_shows_its_fsa_allocation(page, served):
@@ -1911,9 +1966,17 @@ def test_the_schedule_editor_folds_away_what_most_schedules_do_not_need(page, se
     form.locator("select[name=category]").select_option(expense.handle)
     form.locator("select[name=funding]").select_option(bank.handle)
     assert form.locator("select[name=investment_activity]").is_hidden()
+    form.locator("input[name=amount]").fill("100")
     form.locator("summary", has_text="Future changes").click()
-    form.get_by_role("button", name="Add date and amount").first.click()
+    versions = form.locator(".versions-editor")
+    versions.locator("input[aria-label='Version date']").fill("2030-01-01")
+    versions.get_by_role("button", name="Add version").click()
     form.locator("summary", has_text="Future changes (1)").wait_for()
+    # A version from a date starts as the transaction then in force, every leg.
+    legs = versions.locator(".version-leg")
+    assert legs.count() == 2
+    assert legs.first.locator("input[aria-label='Increase']").input_value() == "100.00"
+    assert legs.nth(1).locator("input[aria-label='Decrease']").input_value() == "100.00"
 
 
 def test_a_schedules_tags_and_notes_are_typed_in_its_editor(page, served):
@@ -2272,7 +2335,8 @@ def test_a_person_turns_on_two_step_sign_in_and_signs_in_with_a_code(served):
 
 
 def test_the_schedule_editors_upcoming_list_follows_its_future_changes(page, served):
-    """Upcoming began at the schedule's first date and ignored seasonal months."""
+    """Upcoming began at the schedule's first date and ignored month versions; a
+    new month version starts as every leg base * 1.0."""
     db, _httpd = served
     _nav(page, "Scheduled")
     page.get_by_role("button", name="New scheduled…").click()
@@ -2299,16 +2363,27 @@ def test_the_schedule_editors_upcoming_list_follows_its_future_changes(page, ser
 
     month = date.fromisoformat(first).month
     form.locator("summary", has_text="Future changes").click()
-    form.get_by_role("button", name="Add seasonal month").click()
-    seasonal = form.locator(".timeline-row").last
-    seasonal.locator("select").select_option(str(month))
-    seasonal.locator("input").fill("1700.00")
-    seasonal.locator("input").dispatch_event("change")
+    versions = form.locator(".versions-editor")
+    versions.locator("select[aria-label='New version']").select_option("month")
+    versions.locator("select[aria-label='Version month']").select_option(str(month))
+    versions.get_by_role("button", name="Add version").click()
+    legs = versions.locator(".version .version-leg")
+    legs.nth(1).wait_for()
+    # A month version starts as the usual transaction: every leg base * 1.0.
+    increase = legs.locator("input[aria-label='Increase']")
+    decrease = legs.locator("input[aria-label='Decrease']")
+    assert increase.first.input_value() == "base * 1.0"
+    assert decrease.nth(1).input_value() == "base * 1.0"
+    assert "Every " in versions.locator(".version legend").inner_text()
+    increase.first.fill("base * 1700 / 1800")
+    decrease.nth(1).fill("base_total * 1700 / 1800")
+    decrease.nth(1).dispatch_event("change")
+    # The preview first shows the month as added (base * 1.0), then as typed.
     page.wait_for_function(
-        "() => document.querySelector('.schedule-preview .preview-row')"
-        "?.textContent.includes('Seasonal amount')"
+        "() => { const row = document.querySelector('.schedule-preview .preview-row');"
+        " return row && row.textContent.includes('Month version')"
+        " && row.textContent.includes('1,700.00'); }"
     )
-    assert "1,700.00" in rows.first.inner_text()
 
 
 def test_changing_a_reconciled_split_asks_first(page, served):

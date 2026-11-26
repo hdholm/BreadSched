@@ -790,11 +790,9 @@ report.
 ## Scheduled activity
 
 Scheduled transactions support recurrence bounds, weekend adjustment, skipped
-occurrences, one-time overrides, future-effective amount changes, multiple splits,
-and bounded formulas. Use a new schedule for a fixed or formula-driven commitment or
-estimate, and review all split signs and purposes. Fixed multi-split schedules can
-change individual signed legs from an effective date, but every effective set must
-still balance. If an edit is rejected, the existing schedule is retained; complex
+occurrences, versions (below), multiple splits, and bounded formulas. Use a new
+schedule for a fixed or formula-driven commitment or estimate, and review all split
+signs and purposes. If an edit is rejected, the existing schedule is retained; complex
 imported definitions remain protected when a simple editor cannot preserve their
 structure.
 
@@ -809,17 +807,59 @@ rounded to the cent.
 The schedule editors show first what most schedules need: name, kind, its splits,
 and when it repeats. On the desktop the splits are typed on the register's own split
 grid, as a transaction's are, and a scenario estimate is edited in that same editor.
-Future changes (future, seasonal, skipped, and one-time amounts) and defaults set
+Future changes (versions and skipped occurrences) and defaults set
 once (projection growth, weekend rule, posting, enter and remind days) are a tab or
 a fold away, and a section that holds something says so. Their **Upcoming** list shows the next
 occurrences not yet entered, from the day after the last one posted (or from today,
 for an estimate or a schedule never posted), each at the amount it will have with
-every future change applied, including each split's future amounts and seasonal
-months. Investment activity is offered only for an
+every version applied, and says which kind of version it is (**Changed version**,
+**Month version**, **One-time version**). Investment activity is offered only for an
 investment or retirement account. The transaction editor likewise keeps tags and
 documents on a second tab and shows each split's planning purpose and investment
 activity on request ([desktop](guide/desktop.md#scheduled-activity),
 [browser](guide/web.md#scheduled-activity)).
+
+### Versions of a scheduled transaction
+
+A **version** is the whole transaction for some of a schedule's occurrences: every
+leg, with its account, memo, and amount, typed as a register's splits. A version
+can add a leg (a fee that starts next year), leave one out, or change any amount.
+There are three kinds:
+
+- **From a date on**: every occurrence from that date, until a later dated version.
+- **Every year in a month**: each occurrence in that calendar month, such as a
+  heating bill that is higher every January.
+- **On one date only**: that single occurrence.
+
+Versions are layered. An occurrence starts as the schedule's own splits; the latest
+dated version in force replaces them; that month's version, if any, applies on top;
+and a one-date version on top of both. So a month's version keeps applying after a
+later dated version changes the usual amount.
+
+An amount may be a **formula**. `base` is the leg's amount in the layer below (in
+the column it is typed in, so `base * 1.2` is 20% more in either column), and
+`base_total` is the amount the transaction below moved; a leg the layer below did not
+have has `base` 0. `base * 1.2` raises a leg by 20%, `base * 650 / base_total` scales
+the whole transaction to move 650, and `base + 25` adds 25. A formula schedule's
+variables, such as `principal`, may be used too, so a month's adjustment can follow
+an amount that changes over time.
+
+A new version starts from what the schedule then is: a version from a date as the
+legs in force the day before; a month's as every leg `base * 1.0`, so it is the
+usual transaction until you type a factor (`base * 1.15` for 15% more that month);
+and a one-date version as that occurrence's amounts. A version whose amounts are all
+numbers must balance; one with formulas must balance on its first occurrence. Each
+version names its date or month once, a dated version starts on or after the
+schedule, and a one-date version is on an occurrence that is not also skipped. Edit
+versions in the schedule editors' **Future changes** ([desktop](guide/desktop.md#scheduled-activity),
+[browser](guide/web.md#scheduled-activity)), or with
+[`breadsched scheduled-versions`](guide/cli.md#versions-of-a-schedule).
+
+Books from before schema 16 kept narrower changes: an amount from a date, each leg's
+amount from a date, a month's amount, and one date's amount. Opening such a book
+(after a backup) keeps each as a version with the same amounts. One thing differs:
+a month's amount used to stop applying once a whole-schedule amount change took
+effect, and as a version it keeps applying on top of it.
 
 To make a transaction you have recorded repeat, choose **Make Scheduled…** for it in
 a register: a new scheduled transaction opens with its splits, repeating monthly
@@ -945,11 +985,11 @@ of a date and groups its lines:
 
 A **pay change** sets a new gross from a date. Taxes scale with gross unless you
 choose otherwise; you may also scale any other line, set it to a new amount, or keep
-it. The net deposit takes the difference. The change is saved as per-line future
-amounts, so earlier paychecks, and the Plan and Projection before that date, keep
+it. The net deposit takes the difference. The change is saved as a version from
+that date, so earlier paychecks, and the Plan and Projection before that date, keep
 their amounts. A paycheck already changing after that date, one with formula
-amounts, or one with whole-schedule future, seasonal, or later one-time amounts is
-refused with a reason, and nothing is written.
+amounts, a month version, or a one-date version on or after that date is refused
+with a reason, and nothing is written.
 
 A **payroll template** describes one employer's paycheck: the income and deposit
 accounts, a usual gross, and each line as a fixed amount or a percentage of gross
@@ -989,7 +1029,9 @@ currency as of the Dashboard date; a missing quote makes the affected figure
 unavailable. Dashboard groups only arrange accounts into rows for reading: adding,
 removing, or rearranging groups never changes those totals, Needed within N days,
 Months covered, or the pending bills and income. Selecting a chart parent for a
-group includes its descendants in that group's row; the row shows only the group
+group includes its descendants in that group's row, except a descendant you put
+in another group: that account (with its own descendants) is counted in its own
+group and left out of the parent's row, so each account is counted once. The row shows only the group
 and the selected account's own valuation note, and hovering over the row lists every
 included account, one per line, with its quote date and source where it has one.
 
@@ -1640,6 +1682,29 @@ an **FSA reimbursement**. Linking a payment made with the FSA card as a claim's
 healthcare payment in the claims editor links its FSA side too, the same as **Paid
 from the FSA card**, and a refund to the card linked as a provider refund likewise
 repays the FSA.
+
+**Track as FSA Claim** starts a new claim from a transaction you already recorded,
+much as **Track as Reimbursable** starts a reimbursable expense
+([desktop](guide/desktop.md#fsa-claims), [browser](guide/web.md#fsa-claims),
+[command line](guide/cli.md#fsa-claims)). The claim editor opens with the
+transaction's date as the service date, its description as the provider, and its
+spending on expense accounts as the healthcare payment; nothing is saved until you
+save the claim. The FSA account and funding year are worked out from the
+transaction's accounts:
+
+- a payment made with the FSA card uses that FSA, and is linked as **Paid from the
+  FSA card**;
+- otherwise, the FSA that your latest earlier claim on the same expense account used;
+- otherwise, the only FSA account with a funding year covering the date.
+
+The funding year is the one covering the date; inside a grace period it is the
+earlier year. When a transaction spends on several expense accounts, only those
+earlier claims used are linked, if that narrows them. A reimbursable expense that
+already tracks the same cost becomes **Payer covers part**. Whatever cannot be told
+apart (two FSA accounts and no earlier claim, say) is left for you to choose, and a
+line under the claim says how each choice was made. A cost already on a claim opens
+that claim instead. A transaction that spends nothing on an expense account, such as
+an FSA reimbursement to your bank, starts no claim: attach it to its claim in Review.
 
 The FSA Dashboard lists every claim of a benefit year that can still be claimed,
 settled or not, so you can tell a claim already filed from a new one, as well as any

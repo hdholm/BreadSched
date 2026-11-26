@@ -49,6 +49,7 @@ from breadsched.gen.services import (
     ServiceError,
     SetAdvanceDays,
     SetScheduleDetails,
+    SetScheduleVersions,
     TransactionInput,
     TransactionSplitInput,
 )
@@ -1425,6 +1426,50 @@ def test_fsa_claims_alike(target, book):
     assert db.get_fsa_claim(saved.handle).serialize() == before
     assert api.delete_fsa_claim(saved.handle).handle == saved.handle
     assert db.get_fsa_claim(saved.handle) is None
+
+
+def test_fsa_claim_draft_alike(target, book):
+    """Track as FSA Claim: the draft reads the same either way and saves nothing."""
+    from breadsched.gen.lib import Account, AccountType, FsaFundingYear
+    from breadsched.gen.services.claims import ClaimLinkInput, SaveClaim
+
+    api, db = target.api, target.db
+    year = date(2026, 1, 1)
+    fsa = Account(name="Health FSA", atype=AccountType.FSA, parent=book.assets)
+    fsa.fsa.years = [FsaFundingYear(year, date(2026, 12, 31), Money("1500.00"))]
+    medical = Account(name="Medical", atype=AccountType.EXPENSE, parent=book.expenses)
+    with db.transaction("FSA") as txn:
+        db.add_account(fsa, txn)
+        db.add_account(medical, txn)
+    paid = Transaction.simple(date(2026, 3, 8), "Clinic", medical.handle, fsa.handle, "80")
+    with db.transaction("Clinic") as txn:
+        db.add_transaction(paid, txn)
+    cost = next(split for split in paid.splits if split.account == medical.handle)
+    card = next(split for split in paid.splits if split.account == fsa.handle)
+
+    draft = api.fsa_claim_draft(paid.handle)
+    assert list(db.iter_fsa_claims()) == []
+    assert draft.transaction == paid.handle and draft.existing is None
+    assert draft.claim is not None
+    assert draft.claim.payments == (ClaimLinkInput(paid.handle, cost.handle),)
+    [allocation] = draft.claim.allocations
+    assert (allocation.account, allocation.funding_year_start) == (fsa.handle, year)
+    assert allocation.reimbursements == (ClaimLinkInput(paid.handle, card.handle),)
+    assert draft.notes and "Paid from the FSA card" in draft.notes[0]
+
+    saved = api.save_fsa_claim(SaveClaim(draft.claim))
+    again = api.fsa_claim_draft(paid.handle)
+    assert (again.claim, again.existing) == (None, saved.handle)
+    for reference, status, code in (("no-such-transaction", 404, "transaction.not_found"),):
+        with pytest.raises(ApiError) as refused:
+            api.fsa_claim_draft(reference)
+        assert (refused.value.status, refused.value.code) == (status, code)
+    moved = Transaction.simple(date(2026, 3, 9), "Move", book.savings, book.checking, "5")
+    with db.transaction("Move") as txn:
+        db.add_transaction(moved, txn)
+    with pytest.raises(ApiError) as refused:
+        api.fsa_claim_draft(moved.handle)
+    assert (refused.value.status, refused.value.code) == (400, "claim.draft.no_cost")
 
 
 def test_plan_review_alike(target, book):
@@ -3615,3 +3660,39 @@ def test_a_card_statement_is_paid_alike(target, book):
     assert db.get_transaction(paid.transaction.handle).value_for(book.card) == Money("30")
     assert db.get_reconciliation(done.handle).minimum_payment == Money("25")
     assert api.card_payment_offer(done.handle).amount == Money("90")
+
+
+def test_schedule_versions_are_replaced_alike(target, book):
+    """A schedule's versions, replaced the same in process and over HTTP; a version
+    the service refuses leaves the stored schedule as it was."""
+    from breadsched.gen.lib import ScheduledVersion
+
+    api, db = target.api, target.db
+    [rent] = db.iter_scheduled()
+    start = rent.recurrence.start
+    later = date(start.year + 1, start.month, start.day)
+    raised = ScheduledVersion.moving("from", rent.splits, Money("2000.00"), start=later)
+    december = ScheduledVersion.moving("month", rent.splits, Money("2500.00"), month=12)
+    saved = api.set_schedule_versions(SetScheduleVersions(rent.handle, (raised, december)))
+    assert saved.versions == [raised, december]
+    assert db.get_scheduled(rent.handle).versions == [raised, december]
+    assert sum(leg.value for leg in saved.legs_at(later) if leg.value > 0) == Money("2000.00")
+
+    before = repr(db.get_scheduled(rent.handle).serialize())
+    unbalanced = ScheduledVersion(
+        "from",
+        [ScheduledSplit(rent.splits[0].account, Money("10")), *rent.splits[1:]],
+        start=later,
+    )
+    for request, status, code in (
+        (SetScheduleVersions("missing", ()), 404, "schedule.not_found"),
+        (SetScheduleVersions(rent.handle, (raised, raised)), 400, "schedule.versions.duplicate"),
+        (SetScheduleVersions(rent.handle, (unbalanced,)), 400, "schedule.versions.unbalanced"),
+    ):
+        with pytest.raises(ApiError) as refused:
+            api.set_schedule_versions(request)
+        assert refused.value.status == status
+        assert refused.value.code == code
+    assert repr(db.get_scheduled(rent.handle).serialize()) == before
+    # An empty tuple removes every version.
+    assert api.set_schedule_versions(SetScheduleVersions(rent.handle, ())).versions == []

@@ -21,13 +21,12 @@ from typing import Any
 from .base import PrimaryObject, create_handle
 from .money import Money, Rate
 from .recurrence import Recurrence
+from .schedule_versions import ResolvedLeg, ScheduledVersion, layered_legs, sorted_versions
 from .scheduled import (
-    ScheduledAmountChange,
-    ScheduledMonthAmount,
-    ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
     ScheduleGrowthPolicy,
+    versions_of,
 )
 
 __all__ = [
@@ -284,10 +283,8 @@ class ScenarioSchedule:
         enabled: bool = True,
         placeholder: bool = True,
         variables: dict[str, str] | None = None,
-        amount_changes: list[ScheduledAmountChange] | None = None,
-        seasonal_amounts: list[ScheduledMonthAmount] | None = None,
+        versions: list[ScheduledVersion] | None = None,
         skipped: list[date] | None = None,
-        occurrence_adjustments: list[ScheduledOccurrenceAdjustment] | None = None,
         growth_policy: ScheduleGrowthPolicy | str = ScheduleGrowthPolicy.AUTO,
         estimate_evidence: dict[str, Any] | None = None,
     ) -> None:
@@ -301,12 +298,10 @@ class ScenarioSchedule:
         self.placeholder = placeholder
         self.growth_policy = ScheduleGrowthPolicy(growth_policy)
         self.variables = dict(variables or {})
-        self.amount_changes = sorted(list(amount_changes or []), key=lambda item: item.start)
-        self.seasonal_amounts = sorted(list(seasonal_amounts or []), key=lambda item: item.month)
+        #: The whole transaction from a date on, on one date, or in a month every
+        #: year, layered on the template (``schedule_versions``).
+        self.versions: list[ScheduledVersion] = sorted_versions(versions or [])
         self.skipped = sorted(set(skipped or []))
-        self.occurrence_adjustments = sorted(
-            list(occurrence_adjustments or []), key=lambda item: item.when
-        )
         self.estimate_evidence = estimate_evidence
 
     @classmethod
@@ -327,79 +322,40 @@ class ScenarioSchedule:
             placeholder=schedule.placeholder,
             growth_policy=schedule.growth_policy,
             variables=dict(schedule.variables),
-            amount_changes=[
-                ScheduledAmountChange.from_dict(item.serialize())
-                for item in schedule.amount_changes
-            ],
-            seasonal_amounts=[
-                ScheduledMonthAmount.from_dict(item.serialize())
-                for item in schedule.seasonal_amounts
-            ],
+            versions=[item.copy() for item in schedule.versions],
             skipped=list(schedule.skipped),
-            occurrence_adjustments=[
-                ScheduledOccurrenceAdjustment.from_dict(item.serialize())
-                for item in schedule.occurrence_adjustments
-            ],
             estimate_evidence=schedule.estimate_evidence,
         )
 
     def context(self, when: date) -> dict[str, Any]:
         context: dict[str, Any] = dict(self.variables)
-        if any(split.formula for split in self.splits):
-            index = self.recurrence.index_of(when)
+        if self.has_formulas():
+            try:
+                index = self.recurrence.index_of(when)
+            except ValueError:
+                # Only the template's formulas need the period, on occurrences.
+                if any(split.formula for split in self.splits):
+                    raise
+                return context
             context["period"] = index
             context.setdefault("i", index)
         return context
 
-    def effective_amount(self, when: date) -> Money | None:
-        for adjustment in self.occurrence_adjustments:
-            if adjustment.when == when:
-                return adjustment.amount
-            if adjustment.when > when:
-                break
-        effective = None
-        for item in self.seasonal_amounts:
-            if item.month == when.month:
-                effective = item.amount
-                break
-        for change in self.amount_changes:
-            if change.start > when:
-                break
-            effective = change.amount
-        return effective
+    def has_formulas(self) -> bool:
+        return any(split.formula for split in self.splits) or any(
+            split.formula for version in self.versions for split in version.splits
+        )
+
+    def legs_at(self, when: date) -> list[ResolvedLeg]:
+        """The occurrence's legs, versions layered on the template."""
+        return layered_legs(self.splits, self.versions, self.context(when), when)
 
     def resolved_splits(self, when: date) -> list[tuple[str, Money]]:
-        context = self.context(when)
-        values = [(split.account, split.resolve(context, when=when)) for split in self.splits]
-        target = self.effective_amount(when)
-        if target is None:
-            return values
-        positive = Money(0)
-        for _account, value in values:
-            if value > 0:
-                positive = positive + value
-        if not positive:
-            return values
-        scale = target / positive
-        return [(account, value * scale) for account, value in values]
+        return [(leg.account, leg.value) for leg in self.legs_at(when)]
 
     def resolved_split_sources(self, when: date) -> list[str]:
-        """Return amount provenance for scenario legs in template order."""
-        sources = [split.amount_source(when) for split in self.splits]
-        if self.effective_amount(when) is None:
-            return sources
-        schedule_source = "seasonal scenario amount"
-        for adjustment in self.occurrence_adjustments:
-            if adjustment.when == when:
-                schedule_source = f"one-time scenario amount for {when.isoformat()}"
-                return [f"{source}; scaled by {schedule_source}" for source in sources]
-            if adjustment.when > when:
-                break
-        for change in self.amount_changes:
-            if change.start > when:
-                break
-            schedule_source = f"scenario amount effective {change.start.isoformat()}"
-        return [f"{source}; scaled by {schedule_source}" for source in sources]
+        """Where each resolved leg's amount comes from, in the same order."""
+        return [leg.source for leg in self.legs_at(when)]
 
     def occurrence_key(self, scenario_handle: str, when: date) -> str:
         return f"scenario:{scenario_handle}:{self.handle}:{when.isoformat()}"
@@ -416,10 +372,8 @@ class ScenarioSchedule:
             "placeholder": self.placeholder,
             "growth_policy": self.growth_policy.value,
             "variables": dict(self.variables),
-            "amount_changes": [item.serialize() for item in self.amount_changes],
-            "seasonal_amounts": [item.serialize() for item in self.seasonal_amounts],
+            "versions": [item.serialize() for item in self.versions],
             "skipped": [when.isoformat() for when in self.skipped],
-            "occurrence_adjustments": [item.serialize() for item in self.occurrence_adjustments],
             "estimate_evidence": self.estimate_evidence,
         }
 
@@ -436,17 +390,8 @@ class ScenarioSchedule:
             placeholder=data.get("placeholder", True),
             growth_policy=data.get("growth_policy", "auto"),
             variables=data.get("variables", {}),
-            amount_changes=[
-                ScheduledAmountChange.from_dict(item) for item in data.get("amount_changes", [])
-            ],
-            seasonal_amounts=[
-                ScheduledMonthAmount.from_dict(item) for item in data.get("seasonal_amounts", [])
-            ],
+            versions=versions_of(data),
             skipped=[date.fromisoformat(item) for item in data.get("skipped", [])],
-            occurrence_adjustments=[
-                ScheduledOccurrenceAdjustment.from_dict(item)
-                for item in data.get("occurrence_adjustments", [])
-            ],
             estimate_evidence=data.get("estimate_evidence"),
         )
 

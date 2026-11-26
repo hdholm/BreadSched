@@ -1,104 +1,125 @@
-// Editors several views share: dated amount timelines, occurrence
-// adjustments, Plan split rows, and the schedule preview.
+// Editors several views share: schedule versions, skipped occurrences, Plan
+// split rows, and the schedule preview.
 
-function timelineEditor(label, initial, withAmount, onChanged=()=>{}) {
-  const rows = el("div", {});
-  const box = el("div", { class:`timeline-editor${withAmount ? "" : " dates"}` },
-    el("strong", {}, label), rows);
-  const addRow = (item={}) => {
-    const row = el("div", { class:"timeline-row" });
-    const when = el("input", { type:"date", value:item.when || item.start || "" });
-    const amount = withAmount ? el("input", { inputmode:"decimal", placeholder:"Amount", value:item.amount || "" }) : null;
-    const remove = el("button", { class:"action", type:"button", onclick:()=>{ row.remove(); onChanged(); } }, "Remove");
-    row.append(when);
-    if (amount) row.append(amount);
-    row.append(remove);
-    rows.append(row);
-    when.addEventListener("change", onChanged);
-    if (amount) amount.addEventListener("change", onChanged);
-  };
-  (initial || []).forEach(addRow);
-  box.append(el("button", { class:"action", type:"button", onclick:()=>{ addRow(); onChanged(); } },
-    withAmount ? "Add date and amount" : "Add occurrence"));
-  return {
-    node:box,
-    values:()=>Array.from(rows.children).map((row)=>{
-      const inputs=row.querySelectorAll("input");
-      const when=inputs[0].value;
-      if (!when) throw new Error(`${label}: enter a date or remove the empty row.`);
-      if (!withAmount) return when;
-      const amount=inputs[1].value.trim();
-      if (!amount) throw new Error(`${label}: enter an amount or remove the empty row.`);
-      return {when, amount};
-    }),
-  };
+// A schedule's versions (gen/lib/schedule_versions.py): each the whole transaction
+// for some occurrences, from a date on, on one date only, or every year in one
+// month. Legs are typed as a register's splits: an account, a memo, and an amount
+// in the Increase or Decrease column. An amount may be a formula over base (the
+// leg's amount below, as its column shows it) and base_total (the transaction
+// below): base * 1.2 is 20% more. start(kind, when, month) asks the server for a
+// new version filled in from what the schedule then is.
+const VERSION_MONTHS = ["January","February","March","April","May","June",
+  "July","August","September","October","November","December"];
+const VERSION_KINDS = [["from","From a date on"],["once","On one date only"],
+  ["month","Every year in a month"]];
+const isVersionFormula = (text) => /[A-Za-z_]/.test(text);
+
+function versionLabel(version) {
+  if (version.kind === "month") return `Every ${VERSION_MONTHS[Number(version.month) - 1]}`;
+  if (version.kind === "once") return `On ${version.start} only`;
+  return `From ${version.start}`;
 }
 
-function monthAmountEditor(initial, onChanged=()=>{}) {
-  const names = ["January","February","March","April","May","June",
-    "July","August","September","October","November","December"];
-  const rows = el("div", {});
-  const box = el("div", {class:"timeline-editor"},
-    el("strong", {}, "Seasonal month amounts"), rows,
-    el("p", {class:"note"}, "Override the ordinary estimate in selected calendar months."));
-  const addRow = (item={}) => {
-    const row = el("div", {class:"timeline-row"});
-    const month = el("select", {}, names.map((name,index)=>el("option", {
-      value:String(index+1), selected:Number(item.month || 1)===index+1 ? "selected" : null,
-    }, name)));
-    const amount = el("input", {inputmode:"decimal", placeholder:"Amount",
-      value:item.amount ?? ""});
-    const remove = el("button", {class:"action",type:"button",
-      onclick:()=>{row.remove();onChanged();}}, "Remove");
-    row.append(month, amount, remove); rows.append(row);
-    [month, amount].forEach((control)=>control.addEventListener("change", onChanged));
+function versionsEditor(accounts, initial, start, onChanged=()=>{}) {
+  const list = el("div", { class:"versions" });
+  const message = el("p", { class:"note error", role:"status" });
+  const kind = el("select", { "aria-label":"New version" },
+    VERSION_KINDS.map(([value, label]) => el("option", { value }, label)));
+  const when = el("input", { type:"date", "aria-label":"Version date" });
+  const month = el("select", { "aria-label":"Version month" },
+    VERSION_MONTHS.map((name, index) => el("option", { value:String(index + 1) }, name)));
+  const showWhen = () => { when.hidden = kind.value === "month"; month.hidden = kind.value !== "month"; };
+  kind.addEventListener("change", showWhen);
+  const accountOptions = (handle) => {
+    const choices = accounts.some((entry) => entry.handle === handle) || !handle
+      ? accounts : [{ handle, name:handle }, ...accounts];
+    return choices.map((entry) => el("option", {
+      value:entry.handle, selected:entry.handle === handle ? "selected" : null }, entry.name));
   };
-  (initial || []).forEach(addRow);
-  box.append(el("button", {class:"action",type:"button",
-    onclick:()=>{addRow();onChanged();}}, "Add seasonal month"));
-  return {node:box, values:()=>{
-    const values=Array.from(rows.children).map((row)=>({
-      month:Number(row.querySelector("select").value),
-      amount:row.querySelector("input").value.trim(),
-    }));
-    if (values.some((item)=>!item.amount)) throw new Error("Seasonal amounts: enter an amount or remove the row.");
-    if (new Set(values.map((item)=>item.month)).size !== values.length) throw new Error("Seasonal amounts: each month may appear once.");
-    return values;
-  }};
-}
-
-function splitAmountTimelineEditor(accounts, initial, onChanged=()=>{}) {
-  const rows = el("div", {});
-  const box = el("div", { class:"timeline-editor" },
-    el("strong", {}, "Per-leg future amounts"), rows,
-    el("p", { class:"note" },
-      "Use exact signed ledger amounts. Changes sharing a date must leave all legs balanced."));
-  const addRow = (item={}) => {
-    const row = el("div", { class:"timeline-row" });
-    const account = el("select", {}, accounts.map((entry)=>el("option", {
-      value:entry.handle, selected:entry.handle===item.account ? "selected" : null,
-    }, entry.name)));
-    const when = el("input", { type:"date", value:item.start || "" });
-    const amount = el("input", { inputmode:"decimal", placeholder:"Signed ledger amount",
-      value:item.amount ?? "" });
+  const legRow = (rows, leg={}) => {
+    const formula = leg.formula || "";
+    const amount = leg.amount == null ? "" : String(leg.amount);
+    const negative = formula ? Number(leg.direction) < 0 : amount.startsWith("-");
+    const shown = formula || amount.replace(/^-/, "");
+    const row = el("div", { class:"version-leg" });
+    const account = el("select", { "aria-label":"Account" }, accountOptions(leg.account));
+    const memo = el("input", { "aria-label":"Memo", placeholder:"Memo", value:leg.memo || "" });
+    const increase = el("input", { "aria-label":"Increase", placeholder:"Increase",
+      spellcheck:"false", value:negative ? "" : shown });
+    const decrease = el("input", { "aria-label":"Decrease", placeholder:"Decrease",
+      spellcheck:"false", value:negative ? shown : "" });
+    // Typing in one column empties the other, as the register's split grid does.
+    increase.addEventListener("input", () => { if (increase.value) decrease.value = ""; });
+    decrease.addEventListener("input", () => { if (decrease.value) increase.value = ""; });
     const remove = el("button", { class:"action", type:"button",
-      onclick:()=>{ row.remove(); onChanged(); } }, "Remove");
-    row.append(account, when, amount, remove);
+      onclick:() => { row.remove(); onChanged(); } }, "Remove leg");
+    row.dataset.planningFlow = leg.planning_flow || "";
+    row.dataset.investmentActivity = leg.investment_activity || "";
+    row.append(account, memo, increase, decrease, remove);
+    [account, memo, increase, decrease].forEach((control) =>
+      control.addEventListener("change", onChanged));
     rows.append(row);
-    [account, when, amount].forEach((control)=>control.addEventListener("change", onChanged));
   };
-  (initial || []).forEach(addRow);
-  box.append(el("button", { class:"action", type:"button",
-    onclick:()=>{ addRow(); onChanged(); } }, "Add leg amount change"));
+  const addVersion = (version) => {
+    const rows = el("div", { class:"version-legs" });
+    const box = el("fieldset", { class:"timeline-editor version" },
+      el("legend", {}, versionLabel(version)), rows);
+    box.dataset.kind = version.kind;
+    box.dataset.start = version.start || "";
+    box.dataset.month = version.month == null ? "" : String(version.month);
+    (version.legs || []).forEach((leg) => legRow(rows, leg));
+    box.append(el("div", { class:"toolbar compact" },
+      el("button", { class:"action", type:"button",
+        onclick:() => { legRow(rows); onChanged(); } }, "Add leg"),
+      el("button", { class:"action", type:"button",
+        onclick:() => { box.remove(); onChanged(); } }, "Remove version")));
+    const key = (item) => [item.kind === "month" ? 1 : item.kind === "once" ? 2 : 0,
+      item.kind === "month" ? String(item.month).padStart(2, "0") : item.start].join(":");
+    const after = Array.from(list.children).find((other) => key(other.dataset) > key(version));
+    list.insertBefore(box, after || null);
+  };
+  (initial || []).forEach(addVersion);
+  const add = el("button", { class:"action", type:"button", onclick:async () => {
+    message.textContent = "";
+    const chosen = { kind:kind.value, start:kind.value === "month" ? null : when.value,
+      month:kind.value === "month" ? Number(month.value) : null };
+    if (chosen.kind !== "month" && !chosen.start) { message.textContent = "Enter the version's date."; return; }
+    if (Array.from(list.children).some((box) => box.dataset.kind === chosen.kind
+      && (chosen.kind === "month" ? Number(box.dataset.month) === chosen.month
+        : box.dataset.start === chosen.start))) {
+      message.textContent = "There is already a version for that date or month."; return;
+    }
+    try {
+      addVersion(await start(chosen));
+      onChanged();
+    } catch (error) { message.textContent = error.message; }
+  } }, "Add version");
+  showWhen();
+  const node = el("div", { class:"timeline-editor versions-editor" },
+    el("strong", {}, "Versions"),
+    el("p", { class:"note" }, "Each version is the whole transaction, typed as a register's splits: add a leg, remove one, or change any amount. An amount may be a formula: base is the leg's amount before this version (in its own column) and base_total the amount the transaction moved; base * 1.2 is 20% more. A month's version applies on top of the dated one in force, and a one-date version on top of both."),
+    list, el("div", { class:"toolbar compact" }, kind, when, month, add), message);
   return {
-    node:box,
-    values:()=>Array.from(rows.children).map((row)=>{
-      const account=row.querySelector("select").value;
-      const inputs=row.querySelectorAll("input");
-      if (!inputs[0].value || !inputs[1].value.trim()) {
-        throw new Error("Per-leg future amounts: complete the account, date, and amount.");
-      }
-      return {account, start:inputs[0].value, amount:inputs[1].value.trim()};
+    node,
+    count:() => list.children.length,
+    values:() => Array.from(list.children).map((box) => {
+      const label = box.querySelector("legend").textContent;
+      const legs = Array.from(box.querySelectorAll(".version-leg")).map((row) => {
+        const [account] = row.querySelectorAll("select");
+        const [memo, increase, decrease] = row.querySelectorAll("input");
+        const up = increase.value.trim();
+        const down = decrease.value.trim();
+        if (up && down) throw new Error(`${label}: enter each leg in one column.`);
+        const text = up || down;
+        const leg = { account:account.value, memo:memo.value.trim(),
+          planning_flow:row.dataset.planningFlow || null,
+          investment_activity:row.dataset.investmentActivity || null };
+        if (isVersionFormula(text)) return { ...leg, formula:text, direction:down ? -1 : 1 };
+        return { ...leg, amount:text || "0", direction:down ? -1 : 1 };
+      });
+      if (legs.length < 2) throw new Error(`${label}: a version needs at least two legs.`);
+      return { kind:box.dataset.kind, start:box.dataset.start || null,
+        month:box.dataset.month ? Number(box.dataset.month) : null, legs };
     }),
   };
 }

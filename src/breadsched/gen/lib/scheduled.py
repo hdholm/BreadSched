@@ -8,6 +8,7 @@ evaluated with :mod:`decimal`, never with :func:`eval`.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -17,6 +18,16 @@ from .base import PrimaryObject
 from .formula import FormulaError, evaluate
 from .money import Money
 from .recurrence import Recurrence
+from .schedule_versions import (
+    BASE,
+    BASE_TOTAL,
+    ResolvedLeg,
+    ScheduledVersion,
+    VersionKind,
+    layered_legs,
+    sorted_versions,
+    versions_from_legacy,
+)
 from .transaction import (
     InvestmentActivityKind,
     PlanningFlowKind,
@@ -30,11 +41,9 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ScheduleGrowthPolicy",
-    "ScheduledAmountChange",
-    "ScheduledSplitAmountChange",
-    "ScheduledMonthAmount",
-    "ScheduledOccurrenceAdjustment",
     "ScheduledSplit",
+    "ScheduledVersion",
+    "VersionKind",
     "occurrence_preview",
     "ScheduledTransaction",
 ]
@@ -51,94 +60,6 @@ class ScheduleGrowthPolicy(str, Enum):
     INFLATION = "inflation"
 
 
-class ScheduledAmountChange:
-    """An effective-dated amount for a simple fixed scheduled transaction."""
-
-    __slots__ = ("start", "amount")
-
-    def __init__(self, start: date, amount: Money | str | int) -> None:
-        self.start = start
-        self.amount = amount if isinstance(amount, Money) else Money(amount)
-        if self.amount <= 0:
-            raise ValueError("scheduled amount change must be greater than zero")
-
-    def serialize(self) -> dict[str, Any]:
-        return {
-            "start": self.start.isoformat(),
-            "amount": [self.amount.numerator, self.amount.denominator],
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ScheduledAmountChange:
-        return cls(date.fromisoformat(data["start"]), Money(*data["amount"]))
-
-
-class ScheduledSplitAmountChange:
-    """An exact effective-dated amount for one fixed template leg."""
-
-    __slots__ = ("start", "amount")
-
-    def __init__(self, start: date, amount: Money | str | int) -> None:
-        self.start = start
-        self.amount = amount if isinstance(amount, Money) else Money(amount)
-
-    def serialize(self) -> dict[str, Any]:
-        return {
-            "start": self.start.isoformat(),
-            "amount": [self.amount.numerator, self.amount.denominator],
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ScheduledSplitAmountChange:
-        return cls(date.fromisoformat(data["start"]), Money(*data["amount"]))
-
-
-class ScheduledMonthAmount:
-    """Recurring month-of-year amount for a simple monthly schedule."""
-
-    __slots__ = ("month", "amount")
-
-    def __init__(self, month: int, amount: Money | str | int) -> None:
-        if not 1 <= month <= 12:
-            raise ValueError("seasonal month must be between 1 and 12")
-        self.month = month
-        self.amount = amount if isinstance(amount, Money) else Money(amount)
-        if self.amount <= 0:
-            raise ValueError("seasonal amount must be greater than zero")
-
-    def serialize(self) -> dict[str, Any]:
-        return {
-            "month": self.month,
-            "amount": [self.amount.numerator, self.amount.denominator],
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ScheduledMonthAmount:
-        return cls(int(data["month"]), Money(*data["amount"]))
-
-
-class ScheduledOccurrenceAdjustment:
-    """A one-time amount override for one scheduled occurrence date."""
-
-    __slots__ = ("when", "amount")
-
-    def __init__(self, when: date, amount: Money | str | int) -> None:
-        self.when = when
-        self.amount = amount if isinstance(amount, Money) else Money(amount)
-        if self.amount <= 0:
-            raise ValueError("scheduled occurrence amount must be greater than zero")
-
-    def serialize(self) -> dict[str, Any]:
-        return {
-            "when": self.when.isoformat(),
-            "amount": [self.amount.numerator, self.amount.denominator],
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ScheduledOccurrenceAdjustment:
-        return cls(date.fromisoformat(data["when"]), Money(*data["amount"]))
-
-
 def occurrence_preview(
     definition: ScheduledTransaction | ScenarioSchedule,
     today: date,
@@ -149,9 +70,8 @@ def occurrence_preview(
 
     The list starts at the first occurrence not yet entered: the day after the last
     one posted, or today when none was (an estimate is never posted). Each amount
-    is what the definition resolves to on that date, so every future change counts:
-    the schedule's and each leg's future amounts, seasonal months, and one-time
-    amounts.
+    is what the definition resolves to on that date, so every version counts: from a
+    date on, a month's, and one date's.
     """
     last_posted = getattr(definition, "last_posted", None)
     if definition.placeholder or last_posted is None:
@@ -181,14 +101,13 @@ def occurrence_preview(
 def _preview_status(definition: ScheduledTransaction | ScenarioSchedule, when: date) -> str:
     if when in definition.skipped:
         return "Skipped"
-    if any(item.when == when for item in definition.occurrence_adjustments):
-        return "One-time amount"
-    if any(change.start <= when for change in definition.amount_changes) or any(
-        change.start <= when for split in definition.splits for change in split.amount_changes
-    ):
-        return "Future amount"
-    if any(item.month == when.month for item in definition.seasonal_amounts):
-        return "Seasonal amount"
+    applying = {item.kind for item in definition.versions if item.applies(when)}
+    if VersionKind.ONCE in applying:
+        return "One-time version"
+    if VersionKind.MONTH in applying:
+        return "Month version"
+    if VersionKind.FROM in applying:
+        return "Changed version"
     return "Normal"
 
 
@@ -202,7 +121,7 @@ class ScheduledSplit:
         "memo",
         "planning_flow",
         "investment_activity",
-        "amount_changes",
+        "direction",
     )
 
     def __init__(
@@ -213,9 +132,14 @@ class ScheduledSplit:
         memo: str = "",
         planning_flow: PlanningFlowKind | str | None = None,
         investment_activity: InvestmentActivityKind | str | None = None,
-        amount_changes: list[ScheduledSplitAmountChange] | None = None,
+        direction: int = 1,
     ) -> None:
         self.account = account
+        #: For a formula, the way it moves money, as a register's two amount columns
+        #: do: 1 (the default) is the formula's own sign, the Increase column; -1 is
+        #: the Decrease column, where the formula gives the amount taken out and its
+        #: ``base`` is the amount below as that column shows it (``schedule_versions``).
+        self.direction = -1 if direction == -1 else 1
         self.amount = (
             None if amount is None else (amount if isinstance(amount, Money) else Money(amount))
         )
@@ -240,14 +164,8 @@ class ScheduledSplit:
             if isinstance(investment_activity, InvestmentActivityKind)
             else InvestmentActivityKind(investment_activity)
         )
-        self.amount_changes = sorted(list(amount_changes or []), key=lambda item: item.start)
 
-    def resolve(
-        self,
-        variables: dict[str, Any] | None = None,
-        *,
-        when: date | None = None,
-    ) -> Money:
+    def resolve(self, variables: Mapping[str, Any] | None = None) -> Money:
         """The amount this leg contributes, evaluating a formula if there is one.
 
         An imported formula may name variables only GnuCash can supply. Raising
@@ -257,8 +175,11 @@ class ScheduledSplit:
         the user can still see and fix it.
         """
         if self.formula:
+            given = dict(variables or {})
+            if self.direction == -1 and "base" in given:
+                given["base"] = -given["base"]
             try:
-                return Money(evaluate(self.formula, variables or {}))
+                return Money(evaluate(self.formula, given)) * self.direction
             except (FormulaError, ValueError, ArithmeticError):
                 LOG.warning(
                     "scheduled split on account %s has an unusable formula %r; treating it as zero",
@@ -266,27 +187,7 @@ class ScheduledSplit:
                     self.formula,
                 )
                 return Money(0)
-        effective = self.amount or Money(0)
-        if when is not None:
-            for change in self.amount_changes:
-                if change.start > when:
-                    break
-                effective = change.amount
-        return effective
-
-    def amount_source(self, when: date | None = None) -> str:
-        """Explain which fixed/formula definition supplied this leg's amount."""
-        if self.formula:
-            return "formula expression"
-        effective_change = None
-        if when is not None:
-            for change in self.amount_changes:
-                if change.start > when:
-                    break
-                effective_change = change
-        if effective_change is not None:
-            return f"per-leg amount effective {effective_change.start.isoformat()}"
-        return "fixed template amount"
+        return self.amount or Money(0)
 
     def serialize(self) -> dict[str, Any]:
         return {
@@ -300,11 +201,12 @@ class ScheduledSplit:
             "investment_activity": (
                 self.investment_activity.value if self.investment_activity else None
             ),
-            "amount_changes": [item.serialize() for item in self.amount_changes],
+            # Written only for a formula taking money out, so other legs are unchanged.
+            **({"direction": -1} if self.direction == -1 and self.formula else {}),
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ScheduledSplit:
+    def from_dict(cls, data: Mapping[str, Any]) -> ScheduledSplit:
         amount = data.get("amount")
         return cls(
             account=data["account"],
@@ -313,11 +215,38 @@ class ScheduledSplit:
             memo=data.get("memo", ""),
             planning_flow=data.get("planning_flow"),
             investment_activity=data.get("investment_activity"),
-            amount_changes=[
-                ScheduledSplitAmountChange.from_dict(item)
-                for item in data.get("amount_changes", [])
-            ],
+            direction=int(data.get("direction", 1) or 1),
         )
+
+
+def versions_of(data: Mapping[str, Any]) -> list[ScheduledVersion]:
+    """A stored schedule's versions, converting the changes written before schema 16."""
+    if "versions" in data:
+        return sorted_versions(ScheduledVersion.from_dict(item) for item in data["versions"] or [])
+    return versions_from_legacy(
+        data.get("splits", []),
+        data.get("amount_changes", []) or [],
+        data.get("seasonal_amounts", []) or [],
+        data.get("occurrence_adjustments", []) or [],
+    )
+
+
+def formula_problem(
+    splits: list[ScheduledSplit], versions: list[ScheduledVersion], context: Mapping[str, Any]
+) -> str | None:
+    """The first formula, of the template or a version, the evaluator cannot read."""
+    variables = {**context, BASE: Money(0), BASE_TOTAL: Money(1)}
+    labelled = [(split, "") for split in splits] + [
+        (split, f" ({version.label()})") for version in versions for split in version.splits
+    ]
+    for split, where in labelled:
+        if not split.formula:
+            continue
+        try:
+            evaluate(split.formula, variables)
+        except (FormulaError, ValueError, ArithmeticError) as exc:
+            return f"formula {split.formula!r}{where}: {exc}"
+    return None
 
 
 class ScheduledTransaction(PrimaryObject):
@@ -337,10 +266,8 @@ class ScheduledTransaction(PrimaryObject):
         advance_days: int = 0,
         currency: str | None = None,
         remind_days: int = 0,
-        amount_changes: list[ScheduledAmountChange] | None = None,
-        seasonal_amounts: list[ScheduledMonthAmount] | None = None,
+        versions: list[ScheduledVersion] | None = None,
         skipped: list[date] | None = None,
-        occurrence_adjustments: list[ScheduledOccurrenceAdjustment] | None = None,
         growth_policy: ScheduleGrowthPolicy | str = ScheduleGrowthPolicy.AUTO,
     ) -> None:
         super().__init__(handle)
@@ -360,11 +287,9 @@ class ScheduledTransaction(PrimaryObject):
         self.remind_days = remind_days
         self.currency = currency
         self.growth_policy = ScheduleGrowthPolicy(growth_policy)
-        self.amount_changes = sorted(list(amount_changes or []), key=lambda item: item.start)
-        self.seasonal_amounts = sorted(list(seasonal_amounts or []), key=lambda item: item.month)
-        self.occurrence_adjustments = sorted(
-            list(occurrence_adjustments or []), key=lambda item: item.when
-        )
+        #: The whole transaction from a date on, on one date, or in a month every
+        #: year (``schedule_versions``), layered on the template legs.
+        self.versions: list[ScheduledVersion] = sorted_versions(versions or [])
         self.last_posted: date | None = None
         self.variables: dict[str, str] = {}
         #: An estimated item: a planning figure rather than a commitment. It shapes
@@ -420,26 +345,6 @@ class ScheduledTransaction(PrimaryObject):
                 total = total + value
         return total
 
-    def effective_amount(self, when: date | None) -> Money | None:
-        """One-time override, or latest effective-dated amount in force."""
-        if when is None:
-            return None
-        for adjustment in self.occurrence_adjustments:
-            if adjustment.when == when:
-                return adjustment.amount
-            if adjustment.when > when:
-                break
-        effective = None
-        for item in self.seasonal_amounts:
-            if item.month == when.month:
-                effective = item.amount
-                break
-        for change in self.amount_changes:
-            if change.start > when:
-                break
-            effective = change.amount
-        return effective
-
     def context(
         self, when: date | None = None, variables: dict[str, Any] | None = None
     ) -> dict[str, Any]:
@@ -450,12 +355,21 @@ class ScheduledTransaction(PrimaryObject):
         never falls.
         """
         merged: dict[str, Any] = dict(self.variables)
-        if when is not None and any(split.formula for split in self.splits):
+        index: int | None = None
+        if when is not None and self.has_formulas():
             # Import validation and editor previews begin with the recurrence's
             # nominal anchor.  A weekend rule can move that first cash date, so
             # the anchor itself is not necessarily returned by ``occurrences``.
             # It still unambiguously identifies period one.
-            index = 1 if when == self.recurrence.start else self.recurrence.index_of(when)
+            try:
+                index = 1 if when == self.recurrence.start else self.recurrence.index_of(when)
+            except ValueError:
+                # Only the template's formulas (a loan's) need the period, and only
+                # on occurrences; a version's formula on any other date does not.
+                if any(split.formula for split in self.splits):
+                    raise
+                index = None
+        if when is not None and self.has_formulas() and index is not None:
             merged["period"] = index
             # GnuCash's loan assistant writes the period as `i`. Both names are
             # offered so an imported mortgage evaluates without being rewritten.
@@ -463,43 +377,30 @@ class ScheduledTransaction(PrimaryObject):
         merged.update(variables or {})
         return merged
 
+    def has_formulas(self) -> bool:
+        """Whether any leg, of the template or of a version, is a formula."""
+        return any(split.formula for split in self.splits) or any(
+            split.formula for version in self.versions for split in version.splits
+        )
+
+    def legs_at(
+        self, when: date | None = None, variables: dict[str, Any] | None = None
+    ) -> list[ResolvedLeg]:
+        """The occurrence's legs: each leg's definition, amount, and its source
+        (the template, or the version it comes from), with formulas evaluated."""
+        return layered_legs(self.splits, self.versions, self.context(when, variables), when)
+
     def resolved_splits(
         self,
         variables: dict[str, Any] | None = None,
         when: date | None = None,
     ) -> list[tuple[str, Money]]:
-        """Each leg as ``(account, amount)``, with formulas evaluated."""
-        merged = self.context(when, variables)
-        values = [(split.account, split.resolve(merged, when=when)) for split in self.splits]
-        target = self.effective_amount(when)
-        if target is None:
-            return values
-        positive = Money(0)
-        for _account, value in values:
-            if value > 0:
-                positive = positive + value
-        if not positive:
-            return values
-        scale = target / positive
-        return [(account, value * scale) for account, value in values]
+        """Each leg as ``(account, amount)``, with versions and formulas applied."""
+        return [(leg.account, leg.value) for leg in self.legs_at(when, variables)]
 
     def resolved_split_sources(self, when: date | None = None) -> list[str]:
-        """Return the provenance of every resolved leg in template order."""
-        sources = [split.amount_source(when) for split in self.splits]
-        if when is None or self.effective_amount(when) is None:
-            return sources
-        schedule_source = "seasonal schedule amount"
-        for adjustment in self.occurrence_adjustments:
-            if adjustment.when == when:
-                schedule_source = f"one-time schedule amount for {when.isoformat()}"
-                return [f"{source}; scaled by {schedule_source}" for source in sources]
-            if adjustment.when > when:
-                break
-        for change in self.amount_changes:
-            if change.start > when:
-                break
-            schedule_source = f"schedule amount effective {change.start.isoformat()}"
-        return [f"{source}; scaled by {schedule_source}" for source in sources]
+        """Where each resolved leg's amount comes from, in the same order."""
+        return [leg.source for leg in self.legs_at(when)]
 
     def imbalance(
         self,
@@ -551,8 +452,8 @@ class ScheduledTransaction(PrimaryObject):
         # cents; ppmt and ipmt sum to pmt to thirty digits, not to two. Round each
         # leg to the currency's smallest unit and give the last leg the remainder,
         # so the stored transaction balances exactly rather than by a hair.
-        resolved = self.resolved_splits(variables=variables, when=when)
-        values = [value.quantize(fraction) for _account, value in resolved]
+        legs = self.legs_at(when, variables)
+        values = [leg.value.quantize(fraction) for leg in legs]
         if values:
             residual = Money(0)
             for value in values:
@@ -562,7 +463,7 @@ class ScheduledTransaction(PrimaryObject):
             # schedule into a silently wrong one.
             if residual and not residual.quantize(fraction):
                 values[-1] = values[-1] - residual
-        for split, value in zip(self.splits, values, strict=False):
+        for split, value in zip((leg.split for leg in legs), values, strict=True):
             txn.add_split(
                 Split(
                     split.account,
@@ -579,14 +480,7 @@ class ScheduledTransaction(PrimaryObject):
     def formula_problem(self, when: date | None = None) -> str | None:
         """Explain the first formula that the safe evaluator cannot resolve."""
         context = self.context(when or self.recurrence.start)
-        for split in self.splits:
-            if not split.formula:
-                continue
-            try:
-                evaluate(split.formula, context)
-            except (FormulaError, ValueError, ArithmeticError) as exc:
-                return f"formula {split.formula!r}: {exc}"
-        return None
+        return formula_problem(self.splits, self.versions, context)
 
     @property
     def usable(self) -> bool:
@@ -642,9 +536,7 @@ class ScheduledTransaction(PrimaryObject):
             **({"remind_days": self.remind_days} if self.remind_days else {}),
             "currency": self.currency,
             "growth_policy": self.growth_policy.value,
-            "amount_changes": [item.serialize() for item in self.amount_changes],
-            "seasonal_amounts": [item.serialize() for item in self.seasonal_amounts],
-            "occurrence_adjustments": [item.serialize() for item in self.occurrence_adjustments],
+            "versions": [item.serialize() for item in self.versions],
             "last_posted": self.last_posted.isoformat() if self.last_posted else None,
             "variables": dict(self.variables),
             "placeholder": self.placeholder,
@@ -668,27 +560,13 @@ class ScheduledTransaction(PrimaryObject):
         self.description = data.get("description", "")
         self.recurrence = Recurrence.from_dict(data["recurrence"])
         self.splits = [ScheduledSplit.from_dict(s) for s in data.get("splits", [])]
+        self.versions = versions_of(data)
         self.enabled = data.get("enabled", True)
         self.auto_create = data.get("auto_create", False)
         self.advance_days = int(data.get("advance_days", 0) or 0)
         self.remind_days = int(data.get("remind_days", 0) or 0)
         self.currency = data.get("currency")
         self.growth_policy = ScheduleGrowthPolicy(data.get("growth_policy", "auto"))
-        self.amount_changes = sorted(
-            [ScheduledAmountChange.from_dict(item) for item in data.get("amount_changes", [])],
-            key=lambda item: item.start,
-        )
-        self.seasonal_amounts = sorted(
-            [ScheduledMonthAmount.from_dict(item) for item in data.get("seasonal_amounts", [])],
-            key=lambda item: item.month,
-        )
-        self.occurrence_adjustments = sorted(
-            [
-                ScheduledOccurrenceAdjustment.from_dict(item)
-                for item in data.get("occurrence_adjustments", [])
-            ],
-            key=lambda item: item.when,
-        )
         raw = data.get("last_posted")
         self.last_posted = date.fromisoformat(raw) if raw else None
         self.variables = dict(data.get("variables", {}))

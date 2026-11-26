@@ -17,6 +17,7 @@ from ...gen.lib import (
 from ...gen.lib.fsa_claim import FsaClaimEvent
 from ...gen.services import (
     ClaimAllocationInput,
+    ClaimDraft,
     ClaimInput,
     ClaimLinkInput,
     ClaimRejectionInput,
@@ -314,16 +315,28 @@ class FsaClaimsDialog(BoundedWindow):
 
     @classmethod
     def present_for(
-        cls, parent: Gtk.Window | None, db: OpenBook, claim_handle: str | None = None
+        cls,
+        parent: Gtk.Window | None,
+        db: OpenBook,
+        claim_handle: str | None = None,
+        *,
+        draft: ClaimDraft | None = None,
     ) -> FsaClaimsDialog:
-        """Show the book's claims window, opening one only if none is open (#366)."""
+        """Show the book's claims window, opening one only if none is open (#366).
+
+        ``draft`` is a new claim started from a transaction, shown unsaved.
+        """
         existing = _OPEN.get(id(db))
         if existing is not None and existing.db is db:
             if claim_handle is not None:
                 existing.show_claim(claim_handle)
+            if draft is not None:
+                existing.load_draft(draft)
             existing.present()
             return existing
         dialog = cls(parent, db, claim_handle)
+        if draft is not None:
+            dialog.load_draft(draft)
         dialog.present()
         return dialog
 
@@ -535,6 +548,42 @@ class FsaClaimsDialog(BoundedWindow):
             self._choosing = False
         self._load(None)
         self.status.set_text("")
+
+    def load_draft(self, draft: ClaimDraft) -> None:
+        """Show a new claim started from a transaction, unsaved, and say how its
+        defaults were chosen; a cost already claimed shows that claim instead."""
+        if draft.claim is None:
+            if draft.existing is not None:
+                self.show_claim(draft.existing)
+            self.status.set_text(" ".join(draft.notes))
+            return
+        claim = draft.claim
+        self.new_claim()
+        self.service.set_text(shown_date(claim.service_date))
+        self.provider.set_text(claim.provider)
+        self.description.set_text(claim.description)
+        self.payments.set_links(claim.payments)
+        self.refunds.set_links(claim.refunds)
+        self._clear_allocations()
+        for allocation in claim.allocations:
+            self._add_allocation(allocation)
+        self._anchor(claim.service_date)
+        self.payer.set_selected(
+            next(
+                (
+                    index + 1
+                    for index, item in enumerate(self.receivables)
+                    if item.handle == claim.receivable
+                ),
+                0,
+            )
+        )
+        self.status.set_text(
+            " ".join(
+                ("New claim from the transaction; nothing is saved until Save claim.",)
+                + draft.notes
+            )
+        )
 
     def _years(self) -> list:
         return [year for account in self.fsa_accounts for year in account.years]

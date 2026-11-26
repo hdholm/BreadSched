@@ -82,6 +82,7 @@ from ..gen.services import (
     SaveTransaction,
     SetAdvanceDays,
     SetScheduleDetails,
+    SetScheduleVersions,
     TagCount,
     TransactionInput,
 )
@@ -105,6 +106,7 @@ from ..gen.services.categorization import (
 )
 from ..gen.services.claims import (
     AcceptedClaimLinks,
+    ClaimDraft,
     ClaimReportQuery,
     ClaimStanding,
     CloseClaim,
@@ -526,6 +528,11 @@ class HttpBookClient:
             "tags": list(request.tags) if request.tags is not None else None,
         }
         path = f"/schedules/{quote(request.schedule, safe='')}/details"
+        return ScheduledTransaction.from_dict(self._call("PATCH", path, body=body)["schedule"])
+
+    def set_schedule_versions(self, request: SetScheduleVersions) -> ScheduledTransaction:
+        body = {"versions": [version.serialize() for version in request.versions]}
+        path = f"/schedules/{quote(request.schedule, safe='')}/versions"
         return ScheduledTransaction.from_dict(self._call("PATCH", path, body=body)["schedule"])
 
     def delete_schedule(self, schedule: str) -> SavedSchedule:
@@ -1188,6 +1195,10 @@ class HttpBookClient:
         body = {"on": request.on, "note": request.note}
         path = f"/fsa-claims/{quote(request.handle, safe='')}/reopen"
         return from_data(SavedClaim, self._call("POST", path, body=body))
+
+    def fsa_claim_draft(self, transaction: str) -> ClaimDraft:
+        path = f"/transactions/{quote(transaction, safe='')}/fsa-claim-draft"
+        return from_data(ClaimDraft, self._call("GET", path))
 
     def fsa_claim_report(self, query: ClaimReportQuery) -> ClaimReport:
         params = {

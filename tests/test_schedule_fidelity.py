@@ -20,12 +20,9 @@ from breadsched.gen.lib import (
     PeriodType,
     PlanningFlowKind,
     Recurrence,
-    ScheduledAmountChange,
-    ScheduledMonthAmount,
-    ScheduledOccurrenceAdjustment,
     ScheduledSplit,
-    ScheduledSplitAmountChange,
     ScheduledTransaction,
+    ScheduledVersion,
     ScheduleGrowthPolicy,
     WeekendAdjust,
 )
@@ -57,11 +54,13 @@ def test_native_schedule_matrix_round_trips_without_normalization(db, book):
         auto_create=True,
         advance_days=9,
         growth_policy=ScheduleGrowthPolicy.NONE,
-        amount_changes=[ScheduledAmountChange(date(2026, 7, 1), "550")],
-        seasonal_amounts=[ScheduledMonthAmount(12, "600")],
         skipped=[date(2026, 3, 2)],
-        occurrence_adjustments=[ScheduledOccurrenceAdjustment(date(2026, 5, 1), "575")],
     )
+    source.versions = [
+        ScheduledVersion.moving("from", source.splits, Money("550"), start=date(2026, 7, 1)),
+        ScheduledVersion.moving("month", source.splits, Money("600"), month=12),
+        ScheduledVersion.moving("once", source.splits, Money("575"), start=date(2026, 5, 1)),
+    ]
     source.variables = {"employee_rate": "0.05"}
     source.last_posted = date(2026, 1, 15)
 
@@ -361,12 +360,20 @@ def test_source_refresh_retains_only_breadsched_owned_schedule_state(db, gnucash
     assert imported is not None
     expense = next(split for split in imported.splits if split.resolve() > 0)
     expense.planning_flow = PlanningFlowKind.BENEFIT_FUNDING
-    expense.amount_changes = [ScheduledSplitAmountChange(date(2026, 7, 1), "1950")]
     imported.description = "Local planning note"
     imported.growth_policy = ScheduleGrowthPolicy.NONE
-    imported.amount_changes = [ScheduledAmountChange(date(2026, 7, 1), "1900")]
-    imported.seasonal_amounts = [ScheduledMonthAmount(12, "2000")]
-    imported.occurrence_adjustments = [ScheduledOccurrenceAdjustment(date(2026, 5, 1), "1850")]
+    imported.versions = [
+        ScheduledVersion(
+            "from",
+            [
+                ScheduledSplit(split.account, "1950" if split is expense else "-1950")
+                for split in imported.splits
+            ],
+            start=date(2026, 7, 1),
+        ),
+        ScheduledVersion.moving("month", imported.splits, Money("2000"), month=12),
+        ScheduledVersion.moving("once", imported.splits, Money("1850"), start=date(2026, 5, 1)),
+    ]
     imported.variables = {"annual_rate": "0.04"}
     imported.skipped = [date(2026, 2, 1)]
     imported.last_posted = date(2026, 1, 1)
@@ -388,15 +395,15 @@ def test_source_refresh_retains_only_breadsched_owned_schedule_state(db, gnucash
     assert refreshed.recurrence.interval == 2
     assert refreshed.description == "Local planning note"
     assert refreshed.growth_policy is ScheduleGrowthPolicy.NONE
-    assert refreshed.amount_changes[0].amount == Money("1900")
-    assert refreshed.seasonal_amounts[0].amount == Money("2000")
-    assert refreshed.occurrence_adjustments[0].amount == Money("1850")
+    # Versions are BreadSched's own: a refresh keeps every one as it was.
+    assert [version.serialize() for version in refreshed.versions] == [
+        version.serialize() for version in imported.versions
+    ]
     assert refreshed.variables == {"annual_rate": "0.04"}
     assert refreshed.skipped == [date(2026, 2, 1)]
     assert refreshed.last_posted == date(2026, 1, 1)
     retained_expense = next(split for split in refreshed.splits if split.resolve() > 0)
     assert retained_expense.planning_flow is PlanningFlowKind.BENEFIT_FUNDING
-    assert retained_expense.amount_changes[0].amount == Money("1950")
 
 
 @pytest.mark.parametrize("source_kind", ["sqlite", "xml"])

@@ -766,9 +766,9 @@ class TestBookVerification:
     def test_duplicate_schedule_realization_and_ambiguous_definition_are_reported(self, db, book):
         from breadsched.gen.lib import (
             Recurrence,
-            ScheduledOccurrenceAdjustment,
             ScheduledSplit,
             ScheduledTransaction,
+            ScheduledVersion,
         )
 
         when = date(2026, 2, 5)
@@ -779,9 +779,17 @@ class TestBookVerification:
                 ScheduledSplit(book.utilities, "10"),
                 ScheduledSplit(book.checking, "-9"),
             ],
-            occurrence_adjustments=[
-                ScheduledOccurrenceAdjustment(when, "10"),
-                ScheduledOccurrenceAdjustment(when, "11"),
+            versions=[
+                ScheduledVersion(
+                    "once",
+                    [ScheduledSplit(book.utilities, "10"), ScheduledSplit(book.checking, "-10")],
+                    start=when,
+                ),
+                ScheduledVersion(
+                    "once",
+                    [ScheduledSplit(book.utilities, "11"), ScheduledSplit(book.checking, "-10")],
+                    start=when,
+                ),
             ],
         )
         scheduled.skipped = [when, when]
@@ -798,7 +806,8 @@ class TestBookVerification:
 
         codes = {issue.code for issue in db.verify_book()}
         assert "scheduled.unbalanced" in codes
-        assert "scheduled.duplicate_adjustment" in codes
+        assert "scheduled.duplicate_version" in codes
+        assert "scheduled.version_unbalanced" in codes
         assert "scheduled.duplicate_skip" in codes
         assert "scheduled.duplicate_occurrence" in codes
 

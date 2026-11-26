@@ -34,13 +34,11 @@ from .scenario import (
     ScenarioSchedule,
 )
 from .scheduled import (
-    ScheduledAmountChange,
-    ScheduledMonthAmount,
-    ScheduledOccurrenceAdjustment,
     ScheduledSplit,
-    ScheduledSplitAmountChange,
     ScheduledTransaction,
+    ScheduledVersion,
     ScheduleGrowthPolicy,
+    VersionKind,
     occurrence_preview,
 )
 from .split_link import SplitLink
@@ -97,12 +95,10 @@ __all__ = [
     "Scenario",
     "ScenarioSchedule",
     "SplitLink",
-    "ScheduledAmountChange",
-    "ScheduledMonthAmount",
     "ScheduleGrowthPolicy",
-    "ScheduledOccurrenceAdjustment",
     "ScheduledSplit",
-    "ScheduledSplitAmountChange",
+    "ScheduledVersion",
+    "VersionKind",
     "ScheduledTransaction",
     "LotPick",
     "Split",

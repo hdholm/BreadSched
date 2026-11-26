@@ -294,6 +294,27 @@ it posts carries (`''` clears one); link its documents with `attachments
 --schedule` ([Tags and linked documents](#tags-and-linked-documents)). See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
+### Versions of a schedule
+
+```bash
+breadsched scheduled-versions household.breadsched Rent
+breadsched scheduled-versions household.breadsched Rent --add month:january
+breadsched scheduled-versions household.breadsched Rent --add from:2027-01-01 --leg "Expenses:Rent=1900" --leg "Assets:Checking=-1900"
+breadsched scheduled-versions household.breadsched Heating --add month:12 --leg "Expenses:Utilities=base * 1.3" --leg "Assets:Checking=-base * 1.3"
+breadsched scheduled-versions household.breadsched Rent --remove month:1
+```
+
+`scheduled-versions` lists a schedule's versions and their legs. `--add` adds one:
+`from:DATE`, `once:DATE`, or `month:MONTH` (1 to 12 or the month's name). Without
+`--leg` it starts as the schedule then is, as the editors' **Add version** does (a
+month's as every leg `base * 1.0`); each `--leg ACCOUNT=AMOUNT` gives a leg instead,
+an amount or a formula over `base` and `base_total`, with a leading `-` for the
+Decrease column (money out of the account). `--remove KIND:WHEN` removes one
+(repeatable). A version that is refused, such as one that does not balance, changes
+nothing. `--json` gives each version as it is stored, with its `label` and
+`account_names`. See
+[Versions of a scheduled transaction](../USER_GUIDE.md#versions-of-a-scheduled-transaction).
+
 ### Share a book with a running server
 
 ```bash
@@ -593,6 +614,22 @@ breadsched claims BOOK --history 3f2a
 `--close` stops pursuing what is left to reimburse on a claim (named by its handle
 or the start of one), `--reopen` takes it up again, and `--history` lists the
 claim's EOB changes, closings, and reopenings.
+
+```sh
+breadsched claims BOOK --draft 7c1e     # the claim --track would save; saves nothing
+breadsched claims BOOK --track 7c1e     # save it as a new claim
+```
+
+`--draft` and `--track` start a claim from a transaction (named by its handle or
+the start of one), as **Track as FSA Claim** does on the desktop: its date, its
+description as the provider, its spending on expense accounts as the healthcare
+payment, and the FSA account and funding year worked out from its accounts, each
+line explaining how it was chosen (see
+[FSA and benefit accounts](../USER_GUIDE.md#fsa-and-benefit-accounts)). `--json`
+gives the draft as `claim`, `existing`, and `notes`; `--track` adds the saved
+claim's `handle`. `--track` refuses a transaction already on a claim, naming it,
+and one whose FSA account cannot be told apart; add that claim in the desktop or
+browser claims editor instead.
 
 ## Savings goals
 

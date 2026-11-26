@@ -165,11 +165,37 @@ estimate as a duplicate occurrence.
 
 ## Schedules and formulas
 
-Schedules are templates for dated future events. Recurrence, occurrence overrides,
-skips, whole-schedule and per-leg amount changes, and formula-driven splits are part
-of the schedule semantics. Per-leg timelines store exact signed ledger amounts and
-must remain balanced at every effective boundary; their source follows each planned
-split into Plan and Projection explanations.
+Schedules are templates for dated future events. Recurrence, skips, versions, and
+formula-driven splits are part of the schedule semantics.
+
+A **version** (`gen.lib.schedule_versions.ScheduledVersion`, schema 16) is the whole
+transaction for some occurrences: a list of `ScheduledSplit` legs that may add,
+drop, or change any leg. Its kind is `from` (a date on), `month` (one calendar month
+every year), or `once` (one date). `layered_legs` resolves an occurrence: the
+template, then the latest `from` version in force, then that month's version, then
+that date's `once` version, each applied to the layer below. A version leg's formula
+sees the schedule's variables plus `base` (the leg on the same account below, 0 for a
+new leg) and `base_total` (the positive total below); `direction = -1` marks a leg
+typed in the Decrease column, whose `base` is negated going in and whose result is
+negated coming out, so `base * 1.2` means 20% more in either column. A formula over
+`base_total` when the layer below moved nothing keeps the leg's `base`. Each
+`ResolvedLeg` carries its source (`amount from 2027-01-01`, `formula every
+December`), which follows each planned split into Plan and Projection explanations.
+The service (`_version_errors`) refuses a duplicate date or month, fewer than two
+legs, an unknown account, a formula that does not read, a `from` version before the
+schedule, a `once` version off the recurrence or on a skipped date, and a version
+that does not balance (exactly for fixed legs; for formulas, on its first
+occurrence). `starting_version` gives the editors' (and `scheduled-versions`') new
+version: a `from` version as the legs in force the day before, a `month` version as
+every leg `base * 1.0`, a `once` version as that occurrence's amounts.
+
+Schema 16 (`migrations._v15_to_v16`) rewrites the four narrower schema-15 changes,
+in schedules and in each scenario's schedules, with `versions_from_legacy`: each date
+where the transaction's or a leg's amount changed becomes a `from` version with the
+amounts then in force (exact for fixed legs), each seasonal month a `month` version
+and each one-time amount a `once` version, both `base * A / base_total`. The one
+semantic change is deliberate: a month version keeps applying after a later `from`
+version, where a seasonal amount stopped once a whole-schedule amount took effect.
 Imported schedules must be preserved losslessly when BreadSched cannot reproduce
 them safely.
 
@@ -321,13 +347,13 @@ line pays it down.
 A pay change (`plan_pay_change`) is computed from the breakdown on its start date:
 the new gross (several income legs are scaled in proportion), each other line set,
 scaled by new/old gross, or kept, the first deposit absorbing the difference. The
-service saves it as `ScheduledSplitAmountChange` entries on each changed leg at the
-start date (gross, net, and every changed line), through `save_schedule`, so the
+service saves it as a `from` version at the start date with every leg as a fixed
+amount (gross, net, and every changed line), through `save_schedule`, so the
 schedule's balance validation and undo apply and earlier occurrences keep their
-amounts. It refuses a start before the recurrence, formula legs, whole-schedule
-amount changes, seasonal amounts, one-time amounts on or after the start (all of
-which would rescale the legs), an account on two legs, and any per-leg change after
-the start, rather than reinterpreting them.
+amounts. It refuses a start before the recurrence, formula legs, month versions,
+`once` versions on or after the start (which would change the legs it computed), an
+account on two legs, and any `from` version after the start, rather than
+reinterpreting them.
 
 ## Loans and mortgages
 

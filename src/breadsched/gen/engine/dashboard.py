@@ -968,25 +968,31 @@ def _enrich_linked_properties(db: DbSQLite, groups: list[GroupConfig], claimed: 
 
 
 def _deduplicate_group_accounts(db: DbSQLite, groups: list[GroupConfig]) -> list[GroupConfig]:
-    """Keep each selected account subtree once, with a selected parent winning.
+    """Keep each selected account once, a descendant counted by the nearest group.
 
     Selecting a parent already selects its descendants through recursive balance
-    calculation. This normalization applies across groups as well as within one
-    group so an explicitly repeated child cannot inflate headings or net worth.
+    calculation, so a descendant selected again in the *same* group as its nearest
+    selected ancestor is redundant and dropped. A descendant whose nearest selected
+    ancestor is in *another* group stays in its own group and is counted there; the
+    ancestor's row then leaves that subtree out (:func:`_carved_subtree`), so every
+    account is counted once and no configured group silently vanishes.
     """
-    selected = {handle for group in groups for handle in group.accounts}
+    group_of: dict[str, int] = {}
+    for index, group in enumerate(groups):
+        for handle in group.accounts:
+            group_of.setdefault(handle, index)
     owner: dict[str, int] = {}
     for index, group in enumerate(groups):
         for handle in group.accounts:
-            if handle in owner:
+            if handle in owner or group_of.get(handle) != index:
                 continue
             account = db.get_account(handle)
             parent = account.parent if account is not None else None
             redundant = False
             visited: set[str] = set()
             while parent and parent not in visited:
-                if parent in selected:
-                    redundant = True
+                if parent in group_of:
+                    redundant = group_of[parent] == index
                     break
                 visited.add(parent)
                 ancestor = db.get_account(parent)
@@ -1058,6 +1064,9 @@ def _hierarchical_results(
     paid_off: set[str],
 ) -> list[GroupResult]:
     """Build generated headings and flattened pre-order rows from group paths."""
+    # Every account a row selects: a selected account's row leaves out the
+    # subtree of any descendant another group selects and counts.
+    counted = frozenset(handle for group in groups for handle in group.accounts)
     roots: dict[str, _GroupNode] = {}
     for group in groups:
         parts = _group_path(group.name)
@@ -1074,7 +1083,7 @@ def _hierarchical_results(
 
     flattened: list[GroupResult] = []
     for node in roots.values():
-        built = _build_group_node(db, node, today, paid_off, depth=0)
+        built = _build_group_node(db, node, today, paid_off, depth=0, counted=counted)
         if built:
             flattened.extend(built)
     return flattened
@@ -1087,11 +1096,12 @@ def _build_group_node(
     paid_off: set[str],
     *,
     depth: int,
+    counted: frozenset[str] = frozenset(),
 ) -> list[GroupResult]:
     child_rows: list[GroupResult] = []
     children: list[GroupResult] = []
     for child in node.children.values():
-        rows = _build_group_node(db, child, today, paid_off, depth=depth + 1)
+        rows = _build_group_node(db, child, today, paid_off, depth=depth + 1, counted=counted)
         if rows:
             children.append(rows[0])
             child_rows.extend(rows)
@@ -1099,9 +1109,9 @@ def _build_group_node(
     direct_kind = node.groups[0].kind if node.groups else None
     direct_accounts = [handle for group in node.groups for handle in group.accounts]
     lines, assets, debts, liquid, notes, missing, liquid_missing = _direct_group_totals(
-        db, direct_accounts, direct_kind, today, paid_off
+        db, direct_accounts, direct_kind, today, paid_off, counted
     )
-    loan_end = _loan_end_date(db, direct_accounts, paid_off)
+    loan_end = _loan_end_date(db, direct_accounts, paid_off, counted)
     member_lines: list[str] = []
     for line in lines:
         member_lines.append(f"{line.name}: {line.note}" if line.note else line.name)
@@ -1176,6 +1186,7 @@ def _direct_group_totals(
     kind: str | None,
     today: date,
     paid_off: set[str],
+    counted: frozenset[str] = frozenset(),
 ) -> tuple[list[GroupAccountResult], Money, Money, Money, list[str], list[str], list[str]]:
     lines: list[GroupAccountResult] = []
     assets = Money(0)
@@ -1190,7 +1201,7 @@ def _direct_group_totals(
         account = db.get_account(handle)
         if account is None or account.hidden:
             continue
-        line = _account_group_result(db, account, today)
+        line = _account_group_result(db, account, today, counted)
         lines.append(line)
         if line.note:
             notes.append(line.note)
@@ -1218,10 +1229,29 @@ def _withheld(db: DbSQLite, handles: tuple[str, ...], today: date) -> Completene
     return Completeness.of(excluded, policy=Policy.WITHHOLD, as_of=today)
 
 
-def _account_group_result(db: DbSQLite, account: Account, today: date) -> GroupAccountResult:
+def _carved_subtree(
+    db: DbSQLite, account: Account, counted: frozenset[str] = frozenset()
+) -> list[Account]:
+    """``account`` and its descendants, less each descendant subtree another
+    group counts (``counted`` holds every account a group row selects)."""
+    subtree = [account]
+    # Depth first in chart order, as ``descendants`` lists them.
+    stack = [child for child in db.child_accounts(account.handle) if child.handle not in counted]
+    while stack:
+        node = stack.pop(0)
+        subtree.append(node)
+        stack = [
+            child for child in db.child_accounts(node.handle) if child.handle not in counted
+        ] + stack
+    return subtree
+
+
+def _account_group_result(
+    db: DbSQLite, account: Account, today: date, counted: frozenset[str] = frozenset()
+) -> GroupAccountResult:
     name = db.full_name(account) or account.name
     if account.atype is not AccountType.FSA:
-        subtree = [account, *db.descendants(account.handle)]
+        subtree = _carved_subtree(db, account, counted)
         aggregate = valuation.aggregate_value(db, accounts=subtree, as_of=today)
         total = aggregate.amount.value if aggregate.amount is not None else None
         own = valuation.account_value(db, account, as_of=today)
@@ -1294,14 +1324,16 @@ def _account_group_result(db: DbSQLite, account: Account, today: date) -> GroupA
     )
 
 
-def _loan_end_date(db: DbSQLite, handles: list[str], paid_off: set[str]) -> date | None:
+def _loan_end_date(
+    db: DbSQLite, handles: list[str], paid_off: set[str], counted: frozenset[str] = frozenset()
+) -> date | None:
     """Latest finite scheduled repayment date for loans selected by a group."""
     loans: set[str] = set()
     for handle in handles:
         account = db.get_account(handle)
         if account is None:
             continue
-        for candidate in (account, *db.descendants(account.handle)):
+        for candidate in _carved_subtree(db, account, counted):
             if candidate.handle in paid_off:
                 continue
             if candidate.account_class is not AccountClass.LIABILITY:
