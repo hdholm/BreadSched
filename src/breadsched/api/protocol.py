@@ -93,6 +93,7 @@ from ..gen.services.categorization import (
 )
 from ..gen.services.claims import (
     AcceptedClaimLinks,
+    ClaimDraft,
     ClaimReportQuery,
     ClaimStanding,
     CloseClaim,
@@ -814,6 +815,10 @@ class BookApi(Protocol):
     def close_fsa_claim(self, request: CloseClaim) -> SavedClaim: ...
 
     def reopen_fsa_claim(self, request: ReopenClaim) -> SavedClaim: ...
+
+    def fsa_claim_draft(self, transaction: str) -> ClaimDraft:
+        """A new claim started from a transaction's healthcare cost; writes nothing."""
+        ...
 
     def fsa_claim_report(self, query: ClaimReportQuery) -> ClaimReport:
         """Claims grouped and totalled, with the reasons any needs attention."""

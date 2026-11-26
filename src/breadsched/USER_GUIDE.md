@@ -1029,7 +1029,9 @@ currency as of the Dashboard date; a missing quote makes the affected figure
 unavailable. Dashboard groups only arrange accounts into rows for reading: adding,
 removing, or rearranging groups never changes those totals, Needed within N days,
 Months covered, or the pending bills and income. Selecting a chart parent for a
-group includes its descendants in that group's row; the row shows only the group
+group includes its descendants in that group's row, except a descendant you put
+in another group: that account (with its own descendants) is counted in its own
+group and left out of the parent's row, so each account is counted once. The row shows only the group
 and the selected account's own valuation note, and hovering over the row lists every
 included account, one per line, with its quote date and source where it has one.
 
@@ -1680,6 +1682,29 @@ an **FSA reimbursement**. Linking a payment made with the FSA card as a claim's
 healthcare payment in the claims editor links its FSA side too, the same as **Paid
 from the FSA card**, and a refund to the card linked as a provider refund likewise
 repays the FSA.
+
+**Track as FSA Claim** starts a new claim from a transaction you already recorded,
+much as **Track as Reimbursable** starts a reimbursable expense
+([desktop](guide/desktop.md#fsa-claims), [browser](guide/web.md#fsa-claims),
+[command line](guide/cli.md#fsa-claims)). The claim editor opens with the
+transaction's date as the service date, its description as the provider, and its
+spending on expense accounts as the healthcare payment; nothing is saved until you
+save the claim. The FSA account and funding year are worked out from the
+transaction's accounts:
+
+- a payment made with the FSA card uses that FSA, and is linked as **Paid from the
+  FSA card**;
+- otherwise, the FSA that your latest earlier claim on the same expense account used;
+- otherwise, the only FSA account with a funding year covering the date.
+
+The funding year is the one covering the date; inside a grace period it is the
+earlier year. When a transaction spends on several expense accounts, only those
+earlier claims used are linked, if that narrows them. A reimbursable expense that
+already tracks the same cost becomes **Payer covers part**. Whatever cannot be told
+apart (two FSA accounts and no earlier claim, say) is left for you to choose, and a
+line under the claim says how each choice was made. A cost already on a claim opens
+that claim instead. A transaction that spends nothing on an expense account, such as
+an FSA reimbursement to your bank, starts no claim: attach it to its claim in Review.
 
 The FSA Dashboard lists every claim of a benefit year that can still be claimed,
 settled or not, so you can tell a claim already filed from a new one, as well as any

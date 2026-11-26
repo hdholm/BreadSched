@@ -93,6 +93,62 @@ def fsa_claims(api: Api, query: QueryParams) -> dict[str, object]:
     return {"claims": rows, "candidates": _candidates(view.candidates)}
 
 
+def _link_json(link: ClaimLinkInput) -> dict[str, str]:
+    # Key order matches the editor's option values, which it compares as text.
+    return {"transaction": link.transaction, "split": link.split}
+
+
+def fsa_claim_draft(api: Api, query: QueryParams) -> dict[str, object]:
+    """A new claim's defaults inferred from one transaction; nothing is saved.
+
+    ``claim`` is shaped like a stored claim in ``fsa_claims`` (without a handle), so
+    the editor loads it the same way; ``existing`` names a claim that already
+    links the cost, and ``notes`` say how each default was chosen.
+    """
+    transaction = query.text("transaction", required=True) or ""
+    query.finish()
+    draft = api.book.fsa_claim_draft(transaction)
+    claim = draft.claim
+    return {
+        "transaction": draft.transaction,
+        "existing": draft.existing,
+        "notes": list(draft.notes),
+        "claim": (
+            {
+                "handle": None,
+                "service_date": claim.service_date.isoformat(),
+                "provider": claim.provider,
+                "description": claim.description,
+                "eob_responsibility": (
+                    _decimal(claim.eob_responsibility)
+                    if claim.eob_responsibility is not None
+                    else None
+                ),
+                "payments": [_link_json(link) for link in claim.payments],
+                "refunds": [_link_json(link) for link in claim.refunds],
+                "receivable": claim.receivable,
+                "allocations": [
+                    {
+                        "account": item.account,
+                        "funding_year_start": item.funding_year_start.isoformat(),
+                        "target": (
+                            [item.target.numerator, item.target.denominator]
+                            if item.target is not None
+                            else None
+                        ),
+                        "reimbursements": [_link_json(link) for link in item.reimbursements],
+                        "repayments": [_link_json(link) for link in item.repayments],
+                        "rejections": [],
+                    }
+                    for item in claim.allocations
+                ],
+            }
+            if claim is not None
+            else None
+        ),
+    }
+
+
 def _candidate(item: ClaimCandidate) -> dict[str, object]:
     return {
         "transaction": item.transaction,

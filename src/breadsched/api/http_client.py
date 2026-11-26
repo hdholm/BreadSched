@@ -106,6 +106,7 @@ from ..gen.services.categorization import (
 )
 from ..gen.services.claims import (
     AcceptedClaimLinks,
+    ClaimDraft,
     ClaimReportQuery,
     ClaimStanding,
     CloseClaim,
@@ -1194,6 +1195,10 @@ class HttpBookClient:
         body = {"on": request.on, "note": request.note}
         path = f"/fsa-claims/{quote(request.handle, safe='')}/reopen"
         return from_data(SavedClaim, self._call("POST", path, body=body))
+
+    def fsa_claim_draft(self, transaction: str) -> ClaimDraft:
+        path = f"/transactions/{quote(transaction, safe='')}/fsa-claim-draft"
+        return from_data(ClaimDraft, self._call("GET", path))
 
     def fsa_claim_report(self, query: ClaimReportQuery) -> ClaimReport:
         params = {

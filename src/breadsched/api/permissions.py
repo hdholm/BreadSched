@@ -260,6 +260,7 @@ _READ = {
     "fsa_claim_standing",
     "find_fsa_claim",
     "fsa_claim_report",
+    "fsa_claim_draft",
     "benefit_years",
     "claim_link_proposals",
     "review_queue",

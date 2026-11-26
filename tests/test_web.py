@@ -5894,6 +5894,79 @@ def test_fsa_claim_can_use_multiple_allocations(client):
     assert claim["rejected"] == "100.00"
 
 
+def test_a_register_transaction_starts_an_fsa_claim_draft(client):
+    """Track as FSA Claim in the browser: defaults inferred, nothing saved."""
+    _status, accounts = client.get("/api/accounts")
+    fsa_account = next(row for row in accounts if row["name"] == "401(k)")
+    client.post("/api/account/type", {"handle": fsa_account["handle"], "type": "FSA"})
+    client.post(
+        "/api/account/fsa-years",
+        {
+            "handle": fsa_account["handle"],
+            "years": [{"start": "2026-01-01", "through": "2026-12-31", "election": "900.00"}],
+        },
+    )
+    _status, made = client.post(
+        "/api/transaction",
+        {
+            "date": "2026-02-10",
+            "description": "Dental service",
+            "to": "Expenses:Rent",
+            "from": "Assets:Checking",
+            "amount": "125.00",
+        },
+    )
+    handle = made["handle"]
+    before = sorted(item.handle for item in client.database.iter_fsa_claims())
+    status, draft = client.get(
+        "/api/fsa/claim-draft?" + urllib.parse.urlencode({"transaction": handle})
+    )
+    assert status == 200
+    assert sorted(item.handle for item in client.database.iter_fsa_claims()) == before
+    assert draft["existing"] is None and draft["transaction"] == handle
+    claim = draft["claim"]
+    assert (claim["handle"], claim["service_date"], claim["provider"]) == (
+        None,
+        "2026-02-10",
+        "Dental service",
+    )
+    stored = client.database.get_transaction(handle)
+    rent = next(
+        split
+        for split in stored.splits
+        if client.database.full_name(split.account) == "Expenses:Rent"
+    )
+    # Keys in the editor's own order: it compares links as JSON text.
+    assert list(claim["payments"][0]) == ["transaction", "split"]
+    assert claim["payments"] == [{"transaction": handle, "split": rent.handle}]
+    [allocation] = claim["allocations"]
+    assert (allocation["account"], allocation["funding_year_start"]) == (
+        fsa_account["handle"],
+        "2026-01-01",
+    )
+    assert any("only FSA account" in note for note in draft["notes"])
+    # Saved as drafted, it is the claim; drafting again names it.
+    status, saved = client.post("/api/fsa/claim/save", claim)
+    assert status == 200
+    _status, again = client.get(
+        "/api/fsa/claim-draft?" + urllib.parse.urlencode({"transaction": handle})
+    )
+    assert (again["claim"], again["existing"]) == (None, saved["handle"])
+
+    # Refusals keep the error contract.
+    def refused(path: str) -> tuple[int, str]:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get(path)
+        return caught.value.code, json.loads(caught.value.read()).get("code", "")
+
+    assert refused("/api/fsa/claim-draft")[0] == 400
+    assert refused("/api/fsa/claim-draft?transaction=nope") == (404, "transaction.not_found")
+    assert refused(f"/api/fsa/claim-draft?transaction={handle}&extra=1")[0] == 400
+    _status, scripts, _headers = page_scripts(client)
+    assert "FSA claim…".encode() in scripts
+    assert b"/api/fsa/claim-draft?transaction=" in scripts
+
+
 def test_review_can_attach_actual_to_existing_fsa_claim(client):
     _status, accounts = client.get("/api/accounts")
     fsa_account = next(row for row in accounts if row["name"] == "401(k)")
