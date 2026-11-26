@@ -38,6 +38,8 @@ __all__ = ["FsaClaimsDialog"]
 
 #: The claim chooser's first entry, for entering a claim not yet saved.
 NEW_CLAIM = "New claim"
+#: What the status line says once a claim is saved, until the form changes again.
+SAVED = "Claim saved."
 
 #: The open claims window for each book.
 _OPEN: weakref.WeakValueDictionary[int, FsaClaimsDialog] = weakref.WeakValueDictionary()
@@ -61,8 +63,14 @@ class _LinkList(Gtk.Box):
     year was a check box in one small scrolling box.
     """
 
-    def __init__(self, candidates: list[tuple[str, str, date, str]]) -> None:
+    def __init__(
+        self,
+        candidates: list[tuple[str, str, date, str]],
+        on_changed: Callable[[], None] = lambda: None,
+    ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        #: Called when a link is added or removed.
+        self.on_changed = on_changed
         self._candidates: list[tuple[ClaimLinkInput, date, str]] = []
         self._linked: list[ClaimLinkInput] = []
         self._anchor: date | None = None
@@ -113,11 +121,13 @@ class _LinkList(Gtk.Box):
         if link not in self._linked:
             self._linked.append(link)
             self._render()
+            self.on_changed()
 
     def remove_link(self, link: ClaimLinkInput) -> None:
         if link in self._linked:
             self._linked.remove(link)
             self._render()
+            self.on_changed()
 
     def _label(self, link: ClaimLinkInput) -> str:
         return next(
@@ -188,7 +198,14 @@ def _event_text(event: FsaClaimEvent) -> str:
 
 
 class _AllocationRow(Gtk.Frame):
-    def __init__(self, fsa_accounts: tuple, candidates, allocation=None, repayments=()) -> None:
+    def __init__(
+        self,
+        fsa_accounts: tuple,
+        candidates,
+        allocation=None,
+        repayments=(),
+        on_changed: Callable[[], None] = lambda: None,
+    ) -> None:
         super().__init__()
         #: The FSA accounts with their funding years, as the book server listed them.
         self.accounts = list(fsa_accounts)
@@ -204,10 +221,10 @@ class _AllocationRow(Gtk.Frame):
         top.append(self.target)
         box.append(top)
         box.append(Gtk.Label(label="Reimbursement/payment splits", xalign=0))
-        self.reimburse = _LinkList(candidates)
+        self.reimburse = _LinkList(candidates, on_changed)
         box.append(self.reimburse)
         box.append(Gtk.Label(label="Repaid to the FSA (money paid back into it)", xalign=0))
-        self.repay = _LinkList(list(repayments))
+        self.repay = _LinkList(list(repayments), on_changed)
         box.append(self.repay)
         box.append(Gtk.Label(label="Rejected/failed attempts (date | amount | reason)", xalign=0))
         self.rejections = Gtk.Entry(placeholder_text="2026-03-01 | 125.00 | receipt required")
@@ -234,6 +251,21 @@ class _AllocationRow(Gtk.Frame):
                     for item in allocation.rejections
                 )
             )
+        for dropdown in (self.account, self.year):
+            dropdown.connect("notify::selected", lambda *_: on_changed())
+        for entry in (self.target, self.rejections):
+            entry.connect("changed", lambda *_: on_changed())
+
+    def state(self) -> tuple:
+        """What this allocation holds as entered, to tell whether it changed."""
+        return (
+            self.account.get_selected(),
+            self.year.get_selected(),
+            self.target.get_text(),
+            tuple(self.reimburse.links()),
+            tuple(self.repay.links()),
+            self.rejections.get_text(),
+        )
 
     def _refresh_years(self, *_args) -> None:
         if not self.accounts:
@@ -377,10 +409,10 @@ class FsaClaimsDialog(BoundedWindow):
         self.reimbursement_candidates = reimbursements
         self.repayment_candidates = repayments
         outer.append(Gtk.Label(label="Healthcare payments", xalign=0))
-        self.payments = _LinkList(payments)
+        self.payments = _LinkList(payments, self._form_changed)
         outer.append(self.payments)
         outer.append(Gtk.Label(label="Provider refunds / credits", xalign=0))
-        self.refunds = _LinkList(refunds)
+        self.refunds = _LinkList(refunds, self._form_changed)
         outer.append(self.refunds)
         self.service.connect("changed", self._service_changed)
 
@@ -414,9 +446,15 @@ class FsaClaimsDialog(BoundedWindow):
         outer.append(closing)
         self.status = Gtk.Label(xalign=0, wrap=True)
         outer.append(self.status)
-        save = Gtk.Button(label="Save claim")
-        save.connect("clicked", self._save)
-        self.actions(outer, primary=save)
+        # Save claim is available only while the form differs from the claim as it
+        # was loaded or last saved, so its greying out shows the save took.
+        self.save_button = Gtk.Button(label="Save claim")
+        self.save_button.connect("clicked", self._save)
+        self.actions(outer, primary=self.save_button)
+        self._saved_state: tuple | None = None
+        for entry in (self.service, self.provider, self.description, self.eob, self.eob_note):
+            entry.connect("changed", self._form_changed)
+        self.payer.connect("notify::selected", self._form_changed)
         # The form scrolls; its buttons stay on screen (dialog audit, #148).
         scroll_body(self)
         # The dialog is not modal: it can stay open beside a register, and the
@@ -602,10 +640,15 @@ class FsaClaimsDialog(BoundedWindow):
 
     def _add_allocation(self, allocation=None) -> None:
         row = _AllocationRow(
-            self.fsa_accounts, self.reimbursement_candidates, allocation, self.repayment_candidates
+            self.fsa_accounts,
+            self.reimbursement_candidates,
+            allocation,
+            self.repayment_candidates,
+            self._form_changed,
         )
         self.allocations.append(row)
         self._allocation_rows.append(row)
+        self._form_changed()
         try:
             service_date = parse_date_text(self.service.get_text().strip())
         except ValueError:
@@ -652,6 +695,38 @@ class FsaClaimsDialog(BoundedWindow):
         )
         self._show_shared()
         self._show_standing()
+        # What was loaded is what is saved: nothing to save until it changes.
+        self._saved_state = self._form_state()
+        self._form_changed()
+
+    def _form_state(self) -> tuple:
+        """Everything the form would save, as entered."""
+        return (
+            self.service.get_text(),
+            self.provider.get_text(),
+            self.description.get_text(),
+            self.eob.get_text(),
+            self.eob_note.get_text(),
+            self.payer.get_selected(),
+            tuple(self.payments.links()),
+            tuple(self.refunds.links()),
+            tuple(row.state() for row in self._allocation_rows),
+        )
+
+    def is_changed(self) -> bool:
+        """Whether the form differs from the claim as loaded or last saved."""
+        return self._saved_state is None or self._form_state() != self._saved_state
+
+    def _form_changed(self, *_args) -> None:
+        if not hasattr(self, "save_button"):
+            return  # still being built
+        changed = self.is_changed()
+        self.save_button.set_sensitive(changed)
+        self.save_button.set_tooltip_text(
+            None if changed else "Nothing to save: the claim is as it was loaded or saved"
+        )
+        if changed and self.status.get_text() == SAVED:
+            self.status.set_text("")
 
     def _show_standing(self) -> None:
         """The saved claim's status, what is owed either way, and its history."""
@@ -767,7 +842,7 @@ class FsaClaimsDialog(BoundedWindow):
         self._reload_claims(saved.handle)
         # Reload what was saved: a payment from the FSA card links its FSA side too.
         self._load(self.current)
-        self.status.set_text("Claim saved.")
+        self.status.set_text(SAVED)
 
     def _delete(self, _button) -> None:
         if self.current is None:

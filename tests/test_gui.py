@@ -10496,6 +10496,61 @@ class TestFsaClaimsWindow:
         finally:
             dialog.destroy()
 
+    def test_save_claim_is_greyed_until_something_changes(self, app, window, populated_book):
+        """Save claim gave no sign that a save took: it is now available only while
+        the form differs from the claim as loaded or last saved."""
+        from breadsched.gui.dialogs.fsa_claims_dialog import SAVED, FsaClaimsDialog
+
+        db, fsa, expense, _checking, start, made = self._book(app, populated_book)
+        dialog = FsaClaimsDialog.present_for(window, db)
+        try:
+            save = dialog.save_button
+            # A new, empty claim has nothing to save yet.
+            assert not save.get_sensitive()
+            dialog.provider.set_text("Clinic")
+            assert save.get_sensitive()
+            # Typing it back as it was leaves nothing to save again.
+            dialog.provider.set_text("")
+            assert not save.get_sensitive()
+            dialog.service.set_text(start.isoformat())
+            dialog.provider.set_text("Clinic")
+            dialog.payments.add(self._link(made["bank"], expense.handle))
+            dialog._save(None)
+            assert dialog.status.get_text() == SAVED
+            assert not save.get_sensitive()
+            assert "Nothing to save" in save.get_tooltip_text()
+
+            # Each kind of change makes it available, and saying "saved" stops.
+            dialog.description.set_text("Check-up")
+            assert save.get_sensitive() and dialog.status.get_text() == ""
+            dialog.description.set_text("")
+            assert not save.get_sensitive()
+            dialog.payments.remove_link(self._link(made["bank"], expense.handle))
+            assert save.get_sensitive()
+            dialog.payments.add(self._link(made["bank"], expense.handle))
+            assert not save.get_sensitive()
+            dialog._add_allocation()
+            assert save.get_sensitive()
+            [row] = dialog._allocation_rows
+            row.target.set_text("25")
+            dialog._save(None)
+            assert not save.get_sensitive()
+            row = dialog._allocation_rows[0]
+            row.rejections.set_text(f"{start.isoformat()} | 5 | receipt required")
+            assert save.get_sensitive()
+            row.rejections.set_text("")
+            assert not save.get_sensitive()
+
+            # Choosing another claim, or New, loads it with nothing to save.
+            dialog.provider.set_text("Edited")
+            dialog.new_claim()
+            assert not save.get_sensitive()
+            dialog.claim_select.set_selected(1)
+            assert dialog.provider.get_text() == "Clinic"
+            assert not save.get_sensitive()
+        finally:
+            dialog.destroy()
+
     def test_a_payment_from_the_fsa_card_reimburses_the_claim(self, app, window, populated_book):
         from breadsched.gui.dialogs.fsa_claims_dialog import FsaClaimsDialog
 
@@ -11676,7 +11731,10 @@ class TestTrackFsaClaim:
             assert row.value().funding_year_start == start
             assert "nothing is saved until Save claim" in dialog.status.get_text()
             assert "only FSA account" in dialog.status.get_text()
+            # A drafted claim is unsaved, so Save claim is available at once.
+            assert dialog.save_button.get_sensitive()
             dialog._save(None)
+            assert not dialog.save_button.get_sensitive()
             [claim] = list(db.iter_fsa_claims())
             assert [link.split for link in claim.payments] == [cost.handle]
             assert [item.account for item in claim.allocations] == [fsa.handle]

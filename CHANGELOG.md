@@ -63,6 +63,11 @@ GitHub releases.
 - A **pay change** is saved as a version from its start date. A paycheck with a
   month version, or a one-date version on or after that date, is refused as before.
 
+- **Saving an FSA claim on the desktop shows that it took.** In **Manage FSA
+  Claims**, **Save claim** is greyed out until something in the form changes, and
+  again once the claim is saved, so you can tell it was saved before closing the
+  window.
+
 ## 2026.11.25.0
 
 The fifth beta, published as a GitHub pre-release; its Windows installer and Linux
