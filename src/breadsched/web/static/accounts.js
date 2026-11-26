@@ -798,7 +798,7 @@ function openTransactionDocuments(row) {
 }
 
 
-async function openFsaClaimsEditor(initialHandle=null) {
+async function openFsaClaimsEditor(initialHandle=null, draft=null) {
   const data = await get("/api/fsa/claims");
   const backdrop = el("div", {
     class:"detail-backdrop",
@@ -1044,6 +1044,21 @@ async function openFsaClaimsEditor(initialHandle=null) {
   if (initialHandle) {
     const initial = data.claims.find((claim)=>claim.handle === initialHandle);
     if (initial) loadClaim(initial);
+  }
+  // A new claim started from a register transaction (FSA claim…): unsaved until
+  // Save claim; a cost already claimed opens that claim instead.
+  if (draft) {
+    const existing = draft.existing
+      ? data.claims.find((claim)=>claim.handle === draft.existing) : null;
+    if (existing) loadClaim(existing);
+    else if (draft.claim) {
+      loadClaim(draft.claim);
+      editingHandle = null;
+    }
+    const notes = draft.claim
+      ? ["New claim from the transaction; nothing is saved until Save claim.", ...draft.notes]
+      : draft.notes;
+    if (notes.length) say(notes.join(" "));
   }
   const form = el("section", { class:"detail-dialog wide" },
     el("h2", {}, "FSA claims"), list,
@@ -1520,6 +1535,13 @@ async function showRegister() {
     value: a.handle, selected: a.handle === state.account ? "selected" : null,
   }, a.full_name)));
 
+  const trackFsaClaim = async (transaction) => {
+    try {
+      const draft = await get(
+        `/api/fsa/claim-draft?transaction=${encodeURIComponent(transaction)}`);
+      await openFsaClaimsEditor(null, draft);
+    } catch (error) { say(error.message, "error"); }
+  };
   const makeScheduled = async (transaction) => {
     try {
       const schedules = await get("/api/scheduled?days=90");
@@ -1578,6 +1600,10 @@ async function showRegister() {
         el("button", { class:"action", type:"button",
           title:"Count each split, for part or all of its amount, toward a planned item",
           onclick:()=>openTransactionMatch(row.handle, render) }, "Match to plan…"),
+        el("button", { class:"action", type:"button",
+          title:"Start an FSA claim for this healthcare cost, its FSA account and year "
+            + "inferred from the transaction's accounts",
+          onclick:()=>trackFsaClaim(row.handle) }, "FSA claim…"),
         el("button", { class:"action", type:"button",
           title:"Track this expense as owed back by an insurer, employer, or other payer",
           onclick:()=>{ state.receivableFrom = row.handle; switchTo("Reimbursable Expenses"); } },

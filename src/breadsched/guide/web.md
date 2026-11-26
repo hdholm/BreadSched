@@ -525,7 +525,14 @@ scenario's change, and that scenario's Projection shows the gross and net cost (
 
 On the **FSA Dashboard**, the claims editor keeps each claim's service date,
 provider, EOB amount, linked payments and refunds, and funding-year allocations,
-and closes, reopens, or deletes a claim (deleting asks first). See
+and closes, reopens, or deletes a claim (deleting asks first).
+
+Choose **FSA claim…** on a register row to start a claim for that transaction: the
+claims editor opens on a new claim with the service date, provider, healthcare
+payment, and an allocation to the FSA account and funding year worked out from the
+transaction's accounts, and the message line says how each was chosen or what is
+left to choose. Nothing is saved until **Save claim**. A transaction already on a
+claim opens that claim; one that cannot start a claim says why. See
 [FSA and benefit accounts](../USER_GUIDE.md#fsa-and-benefit-accounts).
 
 ## Import files

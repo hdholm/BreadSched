@@ -36,6 +36,7 @@ from .widgets.date_entry import date_style, set_date_style
 from .widgets.presented import when_presented
 
 if TYPE_CHECKING:
+    from ..gen.services import ClaimDraft
     from .book_sharing import SharedBook
 
 __all__ = ["BreadSchedApplication", "main"]
@@ -638,14 +639,26 @@ class BreadSchedApplication(Gtk.Application):
         dialog.present()
         return dialog
 
-    def on_fsa_claims(self, *_args, claim: str | None = None):
-        """Manage FSA claims from any view; the open claims window is brought forward."""
+    def on_fsa_claims(
+        self,
+        *_args,
+        claim: str | None = None,
+        draft: ClaimDraft | None = None,
+        parent: Gtk.Window | None = None,
+    ):
+        """Manage FSA claims from any view; the open claims window is brought forward.
+
+        ``draft`` is a new claim started from a transaction (Track as FSA Claim),
+        shown unsaved; ``parent`` is the window the command came from.
+        """
         if self.db is None:
             self._report("Open a book before managing FSA claims.")
             return None
         from .dialogs.fsa_claims_dialog import FsaClaimsDialog
 
-        return FsaClaimsDialog.present_for(self.props.active_window, self.db, claim)
+        return FsaClaimsDialog.present_for(
+            parent or self.props.active_window, self.db, claim, draft=draft
+        )
 
     def on_gnucash_writeback(self, *_args):
         """Preview, then write chosen changes back to the imported GnuCash book."""

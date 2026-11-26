@@ -26,6 +26,21 @@ GitHub releases.
   is chosen in a group's list but **Add** was not pressed, **Save** asks whether to
   add it first, and **Cancel** asks before closing without it. The browser's
   **Configure Dashboard…** is unchanged.
+- **A Dashboard group holding a sub-account of another group's account now shows.**
+  When one group held a parent account (say `Assets:Investments`) and another held
+  one of its sub-accounts (`Assets:Investments:Brokerage`), the second group
+  disappeared from the Dashboard though Configure Dashboard still listed it. The
+  sub-account is now counted in its own group and left out of the parent's row, so
+  each account is counted once; the parent's group total falls by that amount.
+  Net worth, Assets, Debts, and Liquid do not change.
+- **Track a transaction as an FSA claim.** **Track as FSA Claim…** on a desktop
+  register row, **FSA claim…** in the browser register, and `breadsched claims
+  --draft`/`--track` start a new claim from a transaction you already recorded, as
+  **Track as Reimbursable** does for reimbursable expenses. The service date,
+  provider, healthcare payment, FSA account, and funding year are filled in from the
+  transaction and its accounts (a payment made with the FSA card is linked as **Paid
+  from the FSA card**), and each choice is explained; nothing is saved until you save
+  the claim. A transaction already on a claim opens that claim.
 
 ## 2026.11.25.0
 

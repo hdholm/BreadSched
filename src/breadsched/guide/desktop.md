@@ -489,9 +489,9 @@ there first; Shift+F10 or the Menu key opens the menu for the cursor's row).
 **Edit Transaction…** opens it in the full editor, or, on the blank transaction, a
 new one holding what you typed. **Delete Transaction…** asks, then deletes it
 (Ctrl+Z restores it); it is greyed out on the blank transaction. **Make
-Scheduled…**, **Match to Plan…**, and **Track as Reimbursable…** save what you typed
-first, then start a schedule from the transaction, choose what it was for, or track
-its cost.
+Scheduled…**, **Match to Plan…**, **Track as Reimbursable…**, and **Track as FSA
+Claim…** save what you typed first, then start a schedule from the transaction,
+choose what it was for, track its cost, or start an FSA claim for it.
 
 A transaction with more than two splits shows **-- Split Transaction --** as its
 transfer; when you move onto it, its split lines open beneath it, each with a
@@ -969,6 +969,18 @@ description, and EOB amount, the payments and refunds it links, and how much of 
 each FSA funding year covers. The window does not block the rest of BreadSched, so it
 can stay open beside a register; transactions you enter meanwhile are offered at
 once, and choosing it again brings the same window forward.
+
+To claim a transaction you already recorded, select it in a register and choose
+**Actions → Track as FSA Claim…** (also in its right-click menu). Typing not yet
+entered is saved first. Manage FSA Claims opens on a new claim filled in from the
+transaction: service date, provider, the healthcare payment, and an allocation to
+the FSA account and funding year worked out from its accounts (see
+[Track as FSA Claim](../USER_GUIDE.md#fsa-and-benefit-accounts)); the line above
+**Save claim** says how each was chosen, or what is left to choose. Enter the EOB
+amount if you have it and choose **Save claim**; nothing is recorded until then. A
+transaction already on a claim opens that claim, and one that cannot start a claim
+(it spends nothing on an expense account, or the book has no FSA account) gets an
+alert saying why.
 
 The chooser at the top starts with **New claim**; **New** chooses it and empties the
 form, and a saved claim then appears in the chooser with where it stands. In each

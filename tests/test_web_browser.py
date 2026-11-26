@@ -522,6 +522,61 @@ def test_a_register_expense_becomes_a_reimbursable(page, served):
     page.wait_for_selector("td:has-text('Dental plan')")
 
 
+def test_a_register_expense_starts_an_fsa_claim(page, served):
+    """FSA claim… opens the claims editor on an unsaved claim with inferred defaults."""
+    from breadsched.gen.lib import (
+        Account,
+        AccountClass,
+        AccountType,
+        FsaFundingYear,
+        Money,
+        Transaction,
+    )
+
+    db, _httpd = served
+    page.wait_for_selector("text=Pending bills")
+    _nav(page, "Register")
+    page.wait_for_selector("tr.entry-row")
+    account = page.locator("select").first.input_value()
+    expense = next(
+        a
+        for a in db.iter_accounts()
+        if a.account_class is AccountClass.EXPENSE and not a.placeholder and not a.hidden
+    )
+    existing = [a for a in db.iter_accounts() if a.atype is AccountType.FSA]
+    start = date(date.today().year, 1, 1)
+    fsa = Account(
+        name="Browser FSA",
+        atype=AccountType.FSA,
+        parent=db.get_account_by_name("Assets").handle,
+    )
+    fsa.fsa.years = [FsaFundingYear(start, date(start.year, 12, 31), Money("900"))]
+    visit = Transaction.simple(date.today(), "Browser clinic", expense.handle, account, Money("45"))
+    with db.transaction("Browser fixture") as txn:
+        for other in existing:  # the only FSA account, so it is inferred
+            other.atype = AccountType.ASSET
+            db.commit_account(other, txn)
+        db.add_account(fsa, txn)
+        db.add_transaction(visit, txn)
+    _nav(page, "Register")
+    page.locator("tr:has-text('Browser clinic')").get_by_role("button", name="FSA claim…").click()
+    page.wait_for_selector("text=New claim from the transaction")
+    assert page.locator("input[placeholder='Provider']").input_value() == "Browser clinic"
+    assert list(db.iter_fsa_claims()) == []
+    page.get_by_role("button", name="Save claim").click()
+    page.wait_for_selector("text=FSA claim saved.")
+
+    [claim] = list(db.iter_fsa_claims())
+    cost = next(s for s in visit.splits if s.account == expense.handle)
+    assert (claim.provider, [link.split for link in claim.payments]) == (
+        "Browser clinic",
+        [cost.handle],
+    )
+    assert [(item.account, item.funding_year_start) for item in claim.allocations] == [
+        (fsa.handle, start)
+    ]
+
+
 def test_an_open_receivable_shows_its_fsa_allocation(page, served):
     # Issue #192: an FSA claim linked to cover the rest of the bill.
     from breadsched.gen.lib import AccountClass, Money, Transaction
