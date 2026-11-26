@@ -8,6 +8,13 @@ GitHub releases.
 
 ## Unreleased
 
+## 2026.11.26.0
+
+The sixth beta, published as a GitHub pre-release; its Windows installer and Linux
+packages are still not code-signed, so check them against `SHA256SUMS`. Books move
+to native schema 16 when first opened for writing, after a backup; 2026.11.25.0 and
+earlier cannot open a schema-16 book.
+
 - **Choose how the desktop shows dates.** **Edit → Preferences → Dates** shows
   every desktop date (registers, lists, dialogs, date fields, reports, the
   Dashboard, and printing) as your computer's locale writes dates, which is the new
