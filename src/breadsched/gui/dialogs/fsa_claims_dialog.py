@@ -1,4 +1,11 @@
-"""Create and maintain FSA healthcare service episodes."""
+"""Create and maintain FSA healthcare service episodes.
+
+The claim's **Healthcare payments**, **Provider refunds / credits**, and **FSA
+allocations** are sections whose arrow is closed when the window opens: each then
+shows only what the claim already holds (its linked transactions, its allocations
+and what they link). Opening a section adds the means of adding to it: the search
+and the transactions to add from, and **Add allocation**.
+"""
 
 from __future__ import annotations
 
@@ -78,7 +85,14 @@ class _LinkList(Gtk.Box):
         self.linked_box = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.linked_box.add_css_class("boxed-list")
         self.append(self.linked_box)
+        #: Said when nothing is linked and the list to add from is closed.
+        self.empty = Gtk.Label(label="None linked", xalign=0)
+        self.empty.add_css_class("dim-label")
+        self.append(self.empty)
+        #: Whether the search and the transactions to add from are shown.
+        self.adding = False
         filters = Gtk.Box(spacing=6)
+        self.filters = filters
         self.search = Gtk.SearchEntry(
             hexpand=True, placeholder_text="Search date, description, amount"
         )
@@ -95,7 +109,17 @@ class _LinkList(Gtk.Box):
         scroll = Gtk.ScrolledWindow(child=self.candidate_box, min_content_height=140)
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.append(scroll)
+        self.candidate_scroll = scroll
         self.set_candidates(candidates)
+        self.set_adding(False)
+
+    def set_adding(self, on: bool) -> None:
+        """Show (or hide) the search and the transactions to add from; what is
+        linked stays shown either way."""
+        self.adding = on
+        self.filters.set_visible(on)
+        self.candidate_scroll.set_visible(on)
+        self.empty.set_visible(not on and not self._linked)
 
     def set_candidates(self, candidates: list[tuple[str, str, date, str]]) -> None:
         self._candidates = [
@@ -146,6 +170,8 @@ class _LinkList(Gtk.Box):
             row.append(remove)
             self.linked_box.append(row)
         self.linked_box.set_visible(bool(self._linked))
+        if hasattr(self, "candidate_scroll"):
+            self.empty.set_visible(not self.adding and not self._linked)
         self._show_candidates()
 
     def visible_candidates(self) -> list[tuple[ClaimLinkInput, date, str]]:
@@ -229,6 +255,7 @@ class _AllocationRow(Gtk.Frame):
         box.append(Gtk.Label(label="Rejected/failed attempts (date | amount | reason)", xalign=0))
         self.rejections = Gtk.Entry(placeholder_text="2026-03-01 | 125.00 | receipt required")
         box.append(self.rejections)
+        self.set_adding(False)
         if allocation is not None:
             for index, account in enumerate(self.accounts):
                 if account.handle == allocation.account:
@@ -266,6 +293,11 @@ class _AllocationRow(Gtk.Frame):
             tuple(self.repay.links()),
             self.rejections.get_text(),
         )
+
+    def set_adding(self, on: bool) -> None:
+        """Show (or hide) the transactions to add from for each of its lists."""
+        self.reimburse.set_adding(on)
+        self.repay.set_adding(on)
 
     def _refresh_years(self, *_args) -> None:
         if not self.accounts:
@@ -408,22 +440,31 @@ class FsaClaimsDialog(BoundedWindow):
         payments, refunds, reimbursements, repayments = self._candidates()
         self.reimbursement_candidates = reimbursements
         self.repayment_candidates = repayments
-        outer.append(Gtk.Label(label="Healthcare payments", xalign=0))
         self.payments = _LinkList(payments, self._form_changed)
+        self.payments_section = self._section("Healthcare payments", self.payments.set_adding)
+        outer.append(self.payments_section)
         outer.append(self.payments)
-        outer.append(Gtk.Label(label="Provider refunds / credits", xalign=0))
         self.refunds = _LinkList(refunds, self._form_changed)
+        self.refunds_section = self._section("Provider refunds / credits", self.refunds.set_adding)
+        outer.append(self.refunds_section)
         outer.append(self.refunds)
         self.service.connect("changed", self._service_changed)
 
         allocation_bar = Gtk.Box(spacing=6)
-        allocation_bar.append(Gtk.Label(label="FSA allocations", xalign=0))
-        add = Gtk.Button(label="Add allocation")
-        add.connect("clicked", lambda *_: self._add_allocation())
-        allocation_bar.append(add)
+        self.allocations_section = self._section("FSA allocations", self._show_allocation_adding)
+        allocation_bar.append(self.allocations_section)
+        self.add_allocation_button = Gtk.Button(label="Add allocation")
+        self.add_allocation_button.connect("clicked", lambda *_: self._add_allocation())
+        allocation_bar.append(self.add_allocation_button)
         outer.append(allocation_bar)
         self.allocations = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        outer.append(Gtk.ScrolledWindow(child=self.allocations, min_content_height=180))
+        self.allocations_empty = Gtk.Label(label="No allocations", xalign=0)
+        self.allocations_empty.add_css_class("dim-label")
+        outer.append(self.allocations_empty)
+        self.allocations_scroll = Gtk.ScrolledWindow(child=self.allocations)
+        self.allocations_scroll.set_propagate_natural_height(True)
+        outer.append(self.allocations_scroll)
+        self._show_allocation_adding(False)
         # Where the saved claim stands, and its corrections (EOB changes,
         # closings, reopenings), oldest first.
         self.standing = Gtk.Label(xalign=0, wrap=True)
@@ -630,6 +671,27 @@ class FsaClaimsDialog(BoundedWindow):
             return
         self._anchor(service_date)
 
+    @staticmethod
+    def _section(title: str, show: Callable[[bool], None]) -> Gtk.Expander:
+        """A section's heading: its arrow shows (or hides) the means of adding to it,
+        closed to begin with."""
+        expander = Gtk.Expander(label=title, expanded=False)
+        expander.connect("notify::expanded", lambda widget, _p: show(widget.get_expanded()))
+        return expander
+
+    def _show_allocation_adding(self, on: bool) -> None:
+        self.add_allocation_button.set_visible(on)
+        # Room for the transactions to add from only while they are shown.
+        self.allocations_scroll.set_min_content_height(180 if on else 0)
+        for row in self._allocation_rows:
+            row.set_adding(on)
+        self._show_allocations_empty()
+
+    def _show_allocations_empty(self) -> None:
+        self.allocations_empty.set_visible(
+            not self._allocation_rows and not self.allocations_section.get_expanded()
+        )
+
     def _clear_allocations(self) -> None:
         child = self.allocations.get_first_child()
         while child is not None:
@@ -637,6 +699,7 @@ class FsaClaimsDialog(BoundedWindow):
             self.allocations.remove(child)
             child = following
         self._allocation_rows.clear()
+        self._show_allocations_empty()
 
     def _add_allocation(self, allocation=None) -> None:
         row = _AllocationRow(
@@ -648,6 +711,8 @@ class FsaClaimsDialog(BoundedWindow):
         )
         self.allocations.append(row)
         self._allocation_rows.append(row)
+        row.set_adding(self.allocations_section.get_expanded())
+        self._show_allocations_empty()
         self._form_changed()
         try:
             service_date = parse_date_text(self.service.get_text().strip())

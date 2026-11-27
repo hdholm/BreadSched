@@ -8,6 +8,12 @@ GitHub releases.
 
 ## Unreleased
 
+- **The desktop FSA claims window shows what a claim holds first.** **Healthcare
+  payments**, **Provider refunds / credits**, and **FSA allocations** each have an
+  arrow, closed when the window opens, so each section lists only the claim's
+  linked transactions and allocations. Opening a section adds its search, the
+  transactions to add from, and **Add allocation**.
+
 ## 2026.11.26.0
 
 The sixth beta, published as a GitHub pre-release; its Windows installer and Linux
