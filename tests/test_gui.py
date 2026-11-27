@@ -4264,16 +4264,25 @@ class TestScheduleEntry:
         finally:
             dialog.destroy()
 
-    def test_a_cell_that_does_not_read_yet_is_left_and_shown_on_enter(
+    def test_an_account_must_exist_but_an_amount_is_shown_on_enter(
         self, app, window, populated_book
     ):
         dialog, editor, _accounts = self._three_leg_version(app, window, populated_book)
         sheet, grid = editor.sheet, editor.panel.grid
         try:
-            # An account that matches nothing, and an amount that does not read, are
-            # kept as typed; leaving them is never refused.
+            # An account cell is left only with an account that exists, or none.
             sheet.move_to(1, "transfer")
             sheet.set_text("Nowhere at all")
+            assert not sheet.settle()
+            assert not sheet.move_to(2, "decrease")
+            assert (sheet.cursor, sheet.column) == (1, "transfer")
+            assert "No account matches" in sheet.message
+            sheet.set_text("Expenses:Groceries")
+            assert sheet.settle()
+            # An amount that does not read yet is kept as typed; leaving it is
+            # never refused.
+            sheet.move_to(1, "increase")
+            sheet.set_text("50+")
             assert sheet.settle()
             assert sheet.move_to(2, "decrease")
             grid.sync(focus=False)
@@ -4284,14 +4293,14 @@ class TestScheduleEntry:
             editor.list.select_row(editor.list.get_row_at_index(1))
             assert editor.selected == 1
             editor.list.select_row(editor.list.get_row_at_index(0))
-            assert sheet.lines[1].account == "Nowhere at all"
+            assert sheet.lines[1].increase == "50+"
             # Enter shows the version that cannot be read and the line to correct.
             editor.list.select_row(editor.list.get_row_at_index(1))
             assert sheet.enter() is False
             assert editor.selected == 0
-            assert (sheet.cursor, sheet.column) == (1, "transfer")
-            assert "account" in editor.message.get_text().lower()
-            sheet.set_text("Expenses:Groceries")
+            assert (sheet.cursor, sheet.column) == (1, "increase")
+            assert "amount" in editor.message.get_text().lower()
+            sheet.set_text("50")
             assert sheet.settle()
             grid.sync(focus=False)
             assert dialog.save_button.get_sensitive()

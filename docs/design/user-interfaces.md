@@ -254,8 +254,10 @@ accounts (investment activity) shows only for those, or when it already holds a
 choice. A schedule's versions are typed as a register's splits too: the desktop's
 `widgets.versions_editor.VersionsEditor` shows the chosen version on a
 `version_sheet.VersionSheet` (a `SplitSheet` that keeps a formula as typed and offers
-no balancing line while one is present). Unlike the register, nothing typed there is
-refused as a cell is left: each version keeps its lines as typed, the dialog reads
+no balancing line while one is present). An account (or planning purpose or activity)
+cell is left only with one that exists, or none, as in the register; unlike the
+register, an amount that does not read yet is not refused as its cell is left. Each
+version keeps its lines as typed, the dialog reads
 them quietly on every change (`VersionSheet.legs(quiet=True)` keeps the cursor and
 column), and only Enter (`VersionsEditor.show_problem`) moves the cursor to the line
 to correct. The browser's `versionsEditor` gives

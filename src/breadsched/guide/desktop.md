@@ -746,8 +746,9 @@ amount there may be a formula such as `base * 1.2` (see
 To add one, choose its kind (**From a date on**, **On one date only**, or **Every
 year in a month**), its date or month, and **Add version**: it starts as the
 schedule then is, a month's as every leg `base * 1.0`. **Remove version** removes
-the chosen one. To leave a leg out, clear its cells, in any order: nothing you type
-there has to be corrected before you move on, and you can choose another version
+the chosen one. To leave a leg out, clear its cells, in any order. An account cell
+takes an account that exists, or none, as in the register; an amount that does not
+work out yet can be left and corrected later, and you can choose another version
 meanwhile, which keeps what you typed. Until every version reads (each leg with an
 account and an amount, and the version balancing), the editor's status names the
 first that does not and **Save** waits; **Enter** on the grid shows that version

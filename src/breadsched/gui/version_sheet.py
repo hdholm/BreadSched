@@ -12,11 +12,12 @@ the Decrease column takes money out: there ``base`` is the amount below as that
 column shows it, so ``base * 1.2`` means 20% more in either column. A version with a
 formula cannot be balanced by typing; the editor checks its first occurrence.
 
-Nothing typed here is forced to change before the schedule is saved: leaving a cell
-never stops on an account, amount, or choice that does not read yet, and reading
-the legs while the user types (:meth:`VersionSheet.legs` with ``quiet``) never moves
-the cursor. Only an explicit check (Enter, or the editor's save) puts the cursor
-on the line to correct.
+An account cell is left only with an account that exists, or none, as in the
+register (and so are the planning purpose and activity). Nothing else is forced to
+change before the schedule is saved: leaving an amount that does not read yet is
+never refused, and reading the legs while the user types (:meth:`VersionSheet.legs`
+with ``quiet``) never moves the cursor. Only an explicit check (Enter, or the
+editor's save) puts the cursor on the line to correct.
 
 Nothing here imports GTK.
 """
@@ -106,12 +107,17 @@ class VersionSheet(SplitSheet):
         return None if self._has_formula() else super().balancing_line()
 
     def _settle_line(self, row: SheetRow) -> bool:
-        if self.column in ("increase", "decrease") and is_formula(self.cell_text()):
+        if self.column not in ("increase", "decrease"):
+            # An account (or planning purpose or activity) is one that exists, or
+            # none, when its cell is left, as in the register.
+            return super()._settle_line(row)
+        if is_formula(self.cell_text()):
             return True  # a formula is kept as typed
         held = (self.message, self.error)
         if not super()._settle_line(row):
-            # Kept as typed: what does not read yet is reported when the version is
-            # checked or the schedule saved, never by stopping the cursor here.
+            # An amount is kept as typed: one that does not read yet is reported
+            # when the version is checked or the schedule saved, never by
+            # stopping the cursor here.
             self.message, self.error = held
         return True
 
