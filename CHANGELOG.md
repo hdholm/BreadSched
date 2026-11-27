@@ -8,6 +8,12 @@ GitHub releases.
 
 ## Unreleased
 
+## 2026.11.27.0
+
+The seventh beta, published as a GitHub pre-release; its Windows installer and Linux
+packages are still not code-signed, so check them against `SHA256SUMS`. Books stay
+at native schema 16, so 2026.11.26.0 still opens a book this version has used.
+
 - **The desktop FSA claims window shows what a claim holds first.** **Healthcare
   payments**, **Provider refunds / credits**, and **FSA allocations** each have an
   arrow, closed when the window opens, so each section lists only the claim's
