@@ -12,23 +12,35 @@ the Decrease column takes money out: there ``base`` is the amount below as that
 column shows it, so ``base * 1.2`` means 20% more in either column. A version with a
 formula cannot be balanced by typing; the editor checks its first occurrence.
 
+Nothing typed here is forced to change before the schedule is saved: leaving a cell
+never stops on an account, amount, or choice that does not read yet, and reading
+the legs while the user types (:meth:`VersionSheet.legs` with ``quiet``) never moves
+the cursor. Only an explicit check (Enter, or the editor's save) puts the cursor
+on the line to correct.
+
 Nothing here imports GTK.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 
 from ..gen.lib.money import Money
 from ..gen.lib.scheduled import ScheduledSplit
 from .split_entry import ACTIVITIES, PURPOSES, Line, SheetRow
 from .split_sheet import SplitSheet
 
-__all__ = ["VersionSheet", "is_formula"]
+__all__ = ["VersionSheet", "copy_line", "is_formula"]
 
 #: A word in an amount cell makes it a formula: ``base``, ``base_total``, a variable,
 #: or a function such as ``ipmt``.
 _WORD = re.compile(r"[A-Za-z_]")
+
+
+def copy_line(line: Line) -> Line:
+    """An independent copy of a typed line."""
+    return replace(line, settled=dict(line.settled))
 
 
 def is_formula(text: str) -> bool:
@@ -42,6 +54,10 @@ class VersionSheet(SplitSheet):
     def load(self, splits: list[ScheduledSplit]) -> None:
         """Show ``splits`` as lines: a fixed amount in the column its sign gives, a
         formula in the column its direction gives."""
+        self.load_lines(self.lines_of(splits))
+
+    def lines_of(self, splits: list[ScheduledSplit]) -> list[Line]:
+        """``splits`` as the lines :meth:`load` shows, without showing them."""
         lines = []
         for split in splits:
             if split.formula:
@@ -63,10 +79,21 @@ class VersionSheet(SplitSheet):
                     activity=(split.investment_activity.label if split.investment_activity else ""),
                 )
             )
-        self.draft.lines = [*lines, Line()]
+        return lines
+
+    def load_lines(self, lines: list[Line]) -> None:
+        """Show ``lines`` as typed (a version's lines, readable or not), with the
+        empty line after them, and the cursor on the first."""
+        self.draft.lines = [copy_line(line) for line in lines if line.has_input()]
+        self.draft.lines.append(Line())
         self.cursor = 0
+        self.message, self.error = "", False
         self._rebuild()
         self.snapshot = self.state()
+
+    def typed_lines(self) -> list[Line]:
+        """The lines as typed, without the empty last one, to keep and show again."""
+        return [copy_line(line) for line in self.draft.lines if line.has_input()]
 
     def _has_formula(self) -> bool:
         return any(is_formula(line.amount_text()[0]) for line in self.draft.lines)
@@ -81,11 +108,46 @@ class VersionSheet(SplitSheet):
     def _settle_line(self, row: SheetRow) -> bool:
         if self.column in ("increase", "decrease") and is_formula(self.cell_text()):
             return True  # a formula is kept as typed
-        return super()._settle_line(row)
+        held = (self.message, self.error)
+        if not super()._settle_line(row):
+            # Kept as typed: what does not read yet is reported when the version is
+            # checked or the schedule saved, never by stopping the cursor here.
+            self.message, self.error = held
+        return True
 
-    def legs(self) -> list[ScheduledSplit] | None:
+    def legs(self, *, quiet: bool = False) -> list[ScheduledSplit] | None:
         """The lines as the version's legs, or None with the reason in
-        :attr:`message` and the cursor on the line to correct."""
+        :attr:`message`. Unless ``quiet``, the cursor moves to the line to correct;
+        quietly, the cursor, column, and message stay as they are and the reason is
+        returned in :attr:`problem`."""
+        if not quiet:
+            found = self._legs()
+            self.problem = "" if found is not None else self.message
+            return found
+        held = (self.cursor, self.column, self.message, self.error)
+        self._quiet = True
+        try:
+            found = self._legs()
+            self.problem = "" if found is not None else self.message
+        finally:
+            self._quiet = False
+            self.cursor, self.column, self.message, self.error = held
+        return found
+
+    def legs_of(self, lines: list[Line]) -> tuple[list[ScheduledSplit] | None, str]:
+        """``lines`` read as legs, quietly, without showing them: the legs or None,
+        and the reason they cannot be read."""
+        shown = self.draft.lines
+        self.draft.lines = [*lines, Line()]
+        try:
+            return self.legs(quiet=True), self.problem
+        finally:
+            self.draft.lines = shown
+
+    #: Why the lines last read (:meth:`legs`) cannot be legs, or "".
+    problem = ""
+
+    def _legs(self) -> list[ScheduledSplit] | None:
         legs: list[ScheduledSplit] = []
         for index, line in enumerate(self.draft.lines):
             if not line.has_input():

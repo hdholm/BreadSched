@@ -254,7 +254,11 @@ accounts (investment activity) shows only for those, or when it already holds a
 choice. A schedule's versions are typed as a register's splits too: the desktop's
 `widgets.versions_editor.VersionsEditor` shows the chosen version on a
 `version_sheet.VersionSheet` (a `SplitSheet` that keeps a formula as typed and offers
-no balancing line while one is present), and the browser's `versionsEditor` gives
+no balancing line while one is present). Unlike the register, nothing typed there is
+refused as a cell is left: each version keeps its lines as typed, the dialog reads
+them quietly on every change (`VersionSheet.legs(quiet=True)` keeps the cursor and
+column), and only Enter (`VersionsEditor.show_problem`) moves the cursor to the line
+to correct. The browser's `versionsEditor` gives
 each version Increase and Decrease columns; both start a new version from the book's
 draft (`schedule_versions.starting_version`, over `/api/scheduled/version-start` in
 the browser). The schedule and scenario schedule editors share `update_schedule_pages`;

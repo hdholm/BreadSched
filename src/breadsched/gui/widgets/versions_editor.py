@@ -15,6 +15,13 @@ A new version starts from what the schedule is then:
   transaction until a factor is typed (``base * 1.2`` for 20% more).
 * **On one date only**: that occurrence's legs as amounts, ready to change.
 
+Nothing is forced to change while it is typed. Each version keeps its lines as
+typed, readable or not, so another version can be chosen at any time; a leg is
+left out by clearing its cells. The versions are read quietly as the user types
+(the cursor never moves), and the first that cannot be read is named in the
+editor's status, with Save unavailable until it reads. Enter on the grid shows that
+version and puts the cursor on the line to correct.
+
 The schedule's own validation (each version balancing, its date on the schedule)
 is the book server's; this page reports a version it cannot read.
 """
@@ -32,6 +39,7 @@ from ...gen.lib.schedule_versions import (
 )
 from ...gen.lib.scheduled import ScheduledTransaction
 from ..gi_setup import Gtk
+from ..split_entry import Line
 from ..version_sheet import VersionSheet
 from .choice import bounded_dropdown
 from .date_entry import attach_date_keys, date_hint, parse_date_text, shown_date
@@ -87,7 +95,10 @@ class VersionsEditor(Gtk.Box):
         self.records = list(records)
         self.on_changed = on_changed
         self.draft = draft
+        #: Each version's kind, date, and month (its legs as last read)...
         self.versions: list[ScheduledVersion] = []
+        #: ...and its lines as typed, in the same order.
+        self.lines: list[list[Line]] = []
         self.selected: int | None = None
         #: Why the chosen version's legs cannot be read, or "".
         self.problem = ""
@@ -125,7 +136,7 @@ class VersionsEditor(Gtk.Box):
         self.append(self.message)
 
         self.sheet = VersionSheet(db, self.records, currency=currency)
-        self.sheet.on_enter = lambda: False
+        self.sheet.on_enter = self.show_problem
         self.panel = SplitsPanel(self.sheet, self._on_sheet_changed)
         self.append(self.panel)
         self._show_when()
@@ -135,15 +146,35 @@ class VersionsEditor(Gtk.Box):
 
     def set_versions(self, versions) -> None:
         self.versions = sorted_versions(version.copy() for version in versions)
+        self.lines = [self.sheet.lines_of(version.splits) for version in self.versions]
         self.selected = 0 if self.versions else None
+        self.problem = ""
         self._render()
 
     def values(self) -> list[ScheduledVersion] | None:
-        """Every version, the chosen one as typed; None when its legs cannot be
-        read (the reason is :attr:`problem`)."""
-        if not self._commit():
+        """Every version as typed; None when one cannot be read (the reason, naming
+        the version, is :attr:`problem`). Reading moves nothing on the grid."""
+        versions, bad, problem = self._read()
+        if bad is not None:
+            self.problem = f"{version_label(self.versions[bad])}: {problem}"
             return None
-        return [version.copy() for version in self.versions]
+        self.problem = ""
+        return versions
+
+    def show_problem(self) -> bool:
+        """Show the first version that cannot be read, with the cursor on the line
+        to correct and the reason beneath; True when every version reads."""
+        _versions, bad, _problem = self._read()
+        if bad is None:
+            self.message.set_text("")
+            return True
+        if bad != self.selected:
+            self.selected = bad
+            self._render()
+        self.sheet.legs()
+        self.message.set_text(self.sheet.message)
+        self.panel.grid.sync(focus=False)
+        return False
 
     def __len__(self) -> int:
         return len(self.versions)
@@ -158,8 +189,6 @@ class VersionsEditor(Gtk.Box):
     def add_version(self) -> ScheduledVersion | None:
         """Add a version of the kind, date, or month chosen beside **Add version**,
         filled in from the schedule as it then is, and choose it."""
-        if not self._commit():
-            return None
         kind = KINDS[self.kind.get_selected()][0]
         start = None
         month = None
@@ -181,9 +210,20 @@ class VersionsEditor(Gtk.Box):
         if schedule is None:
             version = ScheduledVersion(kind, [], start=start, month=month)
         else:
-            schedule.versions = list(self.versions)
+            # Started from the versions that read now; one still being typed is
+            # left out of what the new one starts from.
+            schedule.versions = self._readable()
             version = starting_version(schedule, kind, start, month)
-        self.versions = sorted_versions([*self.versions, version])
+        self._keep_shown()
+        pairs = sorted(
+            [
+                *zip(self.versions, self.lines, strict=True),
+                (version, self.sheet.lines_of(version.splits)),
+            ],
+            key=lambda pair: pair[0].sort_key(),
+        )
+        self.versions = [pair[0] for pair in pairs]
+        self.lines = [pair[1] for pair in pairs]
         self.selected = self.versions.index(version)
         self.message.set_text("")
         self._render()
@@ -194,6 +234,7 @@ class VersionsEditor(Gtk.Box):
         if self.selected is None:
             return
         del self.versions[self.selected]
+        del self.lines[self.selected]
         self.selected = 0 if self.versions else None
         self.problem = ""
         self.message.set_text("")
@@ -202,22 +243,35 @@ class VersionsEditor(Gtk.Box):
 
     # --------------------------------------------------------------- showing
 
-    def _commit(self) -> bool:
-        """Read the chosen version's legs from the grid; False with :attr:`problem`."""
-        if self.selected is None or self._loading:
-            self.problem = ""
-            return True
-        legs = self.sheet.legs()
-        if legs is None:
-            self.problem = self.sheet.message or "Check the version's legs."
-            self.message.set_text(self.problem)
-            return False
-        self.problem = ""
-        version = self.versions[self.selected]
-        self.versions[self.selected] = ScheduledVersion(
-            version.kind, legs, start=version.start, month=version.month
-        )
-        return True
+    def _keep_shown(self) -> None:
+        """Keep the shown version's lines as typed."""
+        if self.selected is not None and not self._loading:
+            self.lines[self.selected] = self.sheet.typed_lines()
+
+    def _read(self) -> tuple[list[ScheduledVersion], int | None, str]:
+        """Each version's legs read quietly from its lines: the versions read, the
+        index of the first that cannot be read (or None), and why."""
+        self._keep_shown()
+        versions: list[ScheduledVersion] = []
+        for index, (version, lines) in enumerate(zip(self.versions, self.lines, strict=True)):
+            legs, problem = self.sheet.legs_of(lines)
+            if legs is None:
+                return versions, index, problem or "check its legs."
+            versions.append(
+                ScheduledVersion(version.kind, legs, start=version.start, month=version.month)
+            )
+        return versions, None, ""
+
+    def _readable(self) -> list[ScheduledVersion]:
+        self._keep_shown()
+        readable = []
+        for version, lines in zip(self.versions, self.lines, strict=True):
+            legs, _problem = self.sheet.legs_of(lines)
+            if legs is not None:
+                readable.append(
+                    ScheduledVersion(version.kind, legs, start=version.start, month=version.month)
+                )
+        return readable
 
     def _render(self) -> None:
         self._loading = True
@@ -227,9 +281,9 @@ class VersionsEditor(Gtk.Box):
                 self.list.append(Gtk.Label(label=version_label(version), xalign=0))
             if self.selected is not None:
                 self.list.select_row(self.list.get_row_at_index(self.selected))
-                self.sheet.load(self.versions[self.selected].splits)
+                self.sheet.load_lines(self.lines[self.selected])
             else:
-                self.sheet.load([])
+                self.sheet.load_lines([])
             self.panel.set_visible(self.selected is not None)
             self.remove_button.set_sensitive(self.selected is not None)
             self.panel.grid.sync(focus=False)
@@ -242,19 +296,19 @@ class VersionsEditor(Gtk.Box):
         index = row.get_index()
         if index == self.selected:
             return
-        if not self._commit():
-            # Stay on the version that cannot be read, saying why.
-            self._loading = True
-            try:
-                assert self.selected is not None
-                self.list.select_row(self.list.get_row_at_index(self.selected))
-            finally:
-                self._loading = False
-            return
+        # Another version may be chosen at any time: this one keeps its lines as
+        # typed, readable or not.
+        self._keep_shown()
+        self.message.set_text("")
         self.selected = index
         self._render()
 
     def _on_sheet_changed(self, *_args) -> None:
-        if not self._loading:
-            self.message.set_text("")
-            self.on_changed()
+        if self._loading:
+            return
+        if self.message.get_text():
+            # A reason shown by Enter stays until the versions read; it follows
+            # what is typed meanwhile, without moving the cursor.
+            _versions, bad, problem = self._read()
+            self.message.set_text("" if bad is None else problem)
+        self.on_changed()

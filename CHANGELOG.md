@@ -8,6 +8,15 @@ GitHub releases.
 
 ## Unreleased
 
+- **A version's legs are edited without being forced.** In the desktop schedule
+  editors' **Future changes**, clearing a leg's account (to leave the leg out) no
+  longer pulls the cursor back to that cell on every key, so another leg's amount
+  can be changed first, and Tab and the arrow keys go where they are pressed. No
+  cell has to be corrected before moving on, and another version can be chosen
+  meanwhile, keeping what was typed. A leg whose cells are all cleared is left out.
+  Until every version reads, the status names the first that does not and Save
+  waits; Enter on the grid shows it with the cursor on the line to correct.
+
 ## 2026.11.26.0
 
 The sixth beta, published as a GitHub pre-release; its Windows installer and Linux
