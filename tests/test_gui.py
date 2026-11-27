@@ -10624,6 +10624,66 @@ class TestFsaClaimsWindow:
         finally:
             dialog.destroy()
 
+    def test_sections_show_only_what_is_linked_until_opened(self, app, window, populated_book):
+        """The claims window was cluttered: every section showed its search and
+        everything it could add. Each section's arrow is now closed when the window
+        opens, showing only what the claim holds; opening it adds the means of
+        adding to it."""
+        from breadsched.gui.dialogs.fsa_claims_dialog import FsaClaimsDialog
+
+        db, fsa, expense, _checking, start, made = self._book(app, populated_book)
+        dialog = FsaClaimsDialog.present_for(window, db)
+        try:
+            payments, refunds = dialog.payments, dialog.refunds
+            for section in (
+                dialog.payments_section,
+                dialog.refunds_section,
+                dialog.allocations_section,
+            ):
+                assert not section.get_expanded()
+            # Closed: no search, no transactions to add from, no Add allocation.
+            for links in (payments, refunds):
+                assert not links.filters.get_visible()
+                assert not links.candidate_scroll.get_visible()
+                assert links.empty.get_visible()
+            assert not dialog.add_allocation_button.get_visible()
+            assert dialog.allocations_empty.get_visible()
+
+            # Opening a section adds its search and the transactions to add from.
+            dialog.payments_section.set_expanded(True)
+            assert payments.filters.get_visible() and payments.candidate_scroll.get_visible()
+            assert not payments.empty.get_visible()
+            assert not refunds.filters.get_visible()  # each section on its own
+            payments.add(self._link(made["bank"], expense.handle))
+            dialog.payments_section.set_expanded(False)
+            # What is linked stays shown with the section closed.
+            assert payments.linked_box.get_visible() and not payments.empty.get_visible()
+            assert not payments.filters.get_visible()
+
+            dialog.allocations_section.set_expanded(True)
+            assert dialog.add_allocation_button.get_visible()
+            dialog._add_allocation()
+            [row] = dialog._allocation_rows
+            assert row.reimburse.filters.get_visible() and row.repay.filters.get_visible()
+            assert not dialog.allocations_empty.get_visible()
+            dialog.allocations_section.set_expanded(False)
+            # The allocation itself stays; only what it could add from is hidden.
+            assert row.get_parent() is not None and row.account.get_visible()
+            assert not row.reimburse.filters.get_visible()
+            assert not row.repay.candidate_scroll.get_visible()
+            assert not dialog.add_allocation_button.get_visible()
+
+            # A saved claim opens the same way: closed, its links shown.
+            dialog.service.set_text(start.isoformat())
+            dialog.provider.set_text("Clinic")
+            dialog._save(None)
+            assert not dialog.payments_section.get_expanded()
+            assert payments.linked_box.get_visible() and not payments.filters.get_visible()
+            [row] = dialog._allocation_rows
+            assert not row.reimburse.filters.get_visible()
+        finally:
+            dialog.destroy()
+
     def test_save_claim_is_greyed_until_something_changes(self, app, window, populated_book):
         """Save claim gave no sign that a save took: it is now available only while
         the form differs from the claim as loaded or last saved."""

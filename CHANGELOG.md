@@ -8,6 +8,11 @@ GitHub releases.
 
 ## Unreleased
 
+- **The desktop FSA claims window shows what a claim holds first.** **Healthcare
+  payments**, **Provider refunds / credits**, and **FSA allocations** each have an
+  arrow, closed when the window opens, so each section lists only the claim's
+  linked transactions and allocations. Opening a section adds its search, the
+  transactions to add from, and **Add allocation**.
 - **A version's legs are edited without being forced.** In the desktop schedule
   editors' **Future changes**, clearing a leg's account (to leave the leg out) no
   longer pulls the cursor back to that cell on every key, so another leg's amount

@@ -999,11 +999,14 @@ transaction already on a claim opens that claim, and one that cannot start a cla
 alert saying why.
 
 The chooser at the top starts with **New claim**; **New** chooses it and empties the
-form, and a saved claim then appears in the chooser with where it stands. In each
-list of transactions, the ones linked to the claim stay at the top, each with
-**Remove**. Below them, **Add** links another: search by date, description, or
-amount, and choose whether to see transactions within 60 days of the service date
-(the default), in the claim's benefit year, or at any date. Linking a payment made
+form, and a saved claim then appears in the chooser with where it stands.
+**Healthcare payments**, **Provider refunds / credits**, and **FSA allocations**
+each have an arrow, closed when the window opens, so each shows only what the claim
+already holds: its linked transactions, each with **Remove**, and its allocations
+with what they link. Open a section's arrow to add to it: **Add allocation** appears,
+and below each list's linked transactions, **Add** links another: search by date,
+description, or amount, and choose whether to see transactions within 60 days of
+the service date (the default), in the claim's benefit year, or at any date. Linking a payment made
 with the FSA card links the FSA side too, so the claim counts as reimbursed by it.
 **Save claim** is available only while the form differs from the claim as it was
 opened or last saved: it is greyed out on a new, empty claim and again once a save
