@@ -13,6 +13,15 @@ GitHub releases.
   arrow, closed when the window opens, so each section lists only the claim's
   linked transactions and allocations. Opening a section adds its search, the
   transactions to add from, and **Add allocation**.
+- **A version's legs are edited without being forced.** In the desktop schedule
+  editors' **Future changes**, clearing a leg's account (to leave the leg out) no
+  longer pulls the cursor back to that cell on every key, so another leg's amount
+  can be changed first, and Tab and the arrow keys go where they are pressed. An
+  account cell still takes only an account that exists, or none; an amount that does
+  not work out yet can be left and corrected later, and another version can be
+  chosen meanwhile, keeping what was typed. A leg whose cells are all cleared is left out.
+  Until every version reads, the status names the first that does not and Save
+  waits; Enter on the grid shows it with the cursor on the line to correct.
 
 ## 2026.11.26.0
 

@@ -4156,7 +4156,7 @@ class TestScheduleEntry:
             Money("-1800.00"),
         ]
 
-    def test_an_unbalanced_version_is_reported_and_kept_chosen(self, app, window, populated_book):
+    def test_an_unbalanced_version_is_reported_and_named(self, app, window, populated_book):
         from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
 
         app.open_book(populated_book)
@@ -4170,6 +4170,7 @@ class TestScheduleEntry:
         editor.panel.type_line(0, increase="120")
         assert editor.values() is None
         assert "out of balance" in editor.problem
+        assert editor.problem.startswith("From ")
         # Formulas cannot be balanced by typing; the book server checks them.
         editor.panel.type_line(0, increase="base * 1.2")
         editor.panel.type_line(1, decrease="base * 1.2")
@@ -4179,6 +4180,133 @@ class TestScheduleEntry:
             ("base * 1.2", -1),
         ]
         dialog.destroy()
+
+    def _three_leg_version(self, app, window, populated_book):
+        """A schedule whose version from 2027 has a fee leg, open in the editor."""
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        fee = app.db.get_account_by_name("Expenses:Groceries")
+        source = ScheduledTransaction(
+            name="Rent with a fee",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(rent.handle, Money("1800.00")),
+                ScheduledSplit(bank.handle, Money("-1800.00")),
+            ],
+        )
+        source.versions = [
+            ScheduledVersion(
+                "from",
+                [
+                    ScheduledSplit(rent.handle, Money("1900.00")),
+                    ScheduledSplit(fee.handle, Money("50.00")),
+                    ScheduledSplit(bank.handle, Money("-1950.00")),
+                ],
+                start=date(2027, 1, 1),
+            ),
+            ScheduledVersion.moving("month", source.splits, Money("2000.00"), month=12),
+        ]
+        with app.db.transaction("add schedule") as txn:
+            app.db.add_scheduled(source, txn)
+        dialog = ScheduleDialog(window, app.db, source=source)
+        return dialog, dialog.versions_editor, (rent, fee, bank)
+
+    def test_clearing_a_legs_cells_never_moves_the_cursor(self, app, window, populated_book):
+        """Clearing a leg's account pulled the cursor back to it on every keystroke
+        (each change re-read the versions, and an unreadable leg moved the cursor),
+        so another leg's amount could not be changed first. Now a leg is left out by
+        clearing its cells in any order, and the cursor stays where it is put."""
+        dialog, editor, (rent, _fee, bank) = self._three_leg_version(app, window, populated_book)
+        sheet, grid = editor.sheet, editor.panel.grid
+        try:
+            # Clear the fee leg's account first: its amount is still there.
+            sheet.move_to(1, "transfer")
+            sheet.set_text("")
+            assert sheet.settle()
+            grid.sync(focus=False)  # every change re-reads the versions
+            assert (sheet.cursor, sheet.column) == (1, "transfer")
+            assert not dialog.save_button.get_sensitive()
+            assert "choose an account" in dialog.status.get_text().lower()
+            # Tab and the arrows go where they are asked, not back to the fee leg.
+            assert sheet.tab()
+            grid.sync(focus=False)
+            assert (sheet.cursor, sheet.column) == (1, "increase")
+            assert sheet.move(1)
+            grid.sync(focus=False)
+            assert sheet.cursor == 2
+            # Change the balancing leg before finishing with the fee leg.
+            sheet.move_to(2, "decrease")
+            sheet.set_text("1900.00")
+            assert sheet.settle()
+            grid.sync(focus=False)
+            assert (sheet.cursor, sheet.column) == (2, "decrease")
+            # Clearing the fee's amount leaves its line blank, and it is left out.
+            sheet.move_to(1, "increase")
+            sheet.set_text("")
+            assert sheet.settle()
+            grid.sync(focus=False)
+            assert (sheet.cursor, sheet.column) == (1, "increase")
+            assert dialog.save_button.get_sensitive()
+            dated = editor.values()[0]
+            assert [(leg.account, leg.amount) for leg in dated.splits] == [
+                (rent.handle, Money("1900.00")),
+                (bank.handle, Money("-1900.00")),
+            ]
+            dialog._on_save(None)
+            saved = app.db.get_scheduled(dialog.source.handle)
+            assert [leg.value for leg in saved.legs_at(date(2027, 2, 1))] == [
+                Money("1900.00"),
+                Money("-1900.00"),
+            ]
+        finally:
+            dialog.destroy()
+
+    def test_an_account_must_exist_but_an_amount_is_shown_on_enter(
+        self, app, window, populated_book
+    ):
+        dialog, editor, _accounts = self._three_leg_version(app, window, populated_book)
+        sheet, grid = editor.sheet, editor.panel.grid
+        try:
+            # An account cell is left only with an account that exists, or none.
+            sheet.move_to(1, "transfer")
+            sheet.set_text("Nowhere at all")
+            assert not sheet.settle()
+            assert not sheet.move_to(2, "decrease")
+            assert (sheet.cursor, sheet.column) == (1, "transfer")
+            assert "No account matches" in sheet.message
+            sheet.set_text("Expenses:Groceries")
+            assert sheet.settle()
+            # An amount that does not read yet is kept as typed; leaving it is
+            # never refused.
+            sheet.move_to(1, "increase")
+            sheet.set_text("50+")
+            assert sheet.settle()
+            assert sheet.move_to(2, "decrease")
+            grid.sync(focus=False)
+            assert sheet.cursor == 2
+            assert not dialog.save_button.get_sensitive()
+            assert "from" in dialog.status.get_text().lower()
+            # Another version may be chosen meanwhile; each keeps its lines as typed.
+            editor.list.select_row(editor.list.get_row_at_index(1))
+            assert editor.selected == 1
+            editor.list.select_row(editor.list.get_row_at_index(0))
+            assert sheet.lines[1].increase == "50+"
+            # Enter shows the version that cannot be read and the line to correct.
+            editor.list.select_row(editor.list.get_row_at_index(1))
+            assert sheet.enter() is False
+            assert editor.selected == 0
+            assert (sheet.cursor, sheet.column) == (1, "increase")
+            assert "amount" in editor.message.get_text().lower()
+            sheet.set_text("50")
+            assert sheet.settle()
+            grid.sync(focus=False)
+            assert dialog.save_button.get_sensitive()
+            assert sheet.enter() is True
+        finally:
+            dialog.destroy()
 
     def test_historical_estimate_draft_adjusts_all_review_fields(self, app, window, populated_book):
         from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
