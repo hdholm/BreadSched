@@ -44,13 +44,14 @@ def scheduled_activity_problems(
     schedule: ScheduledTransaction | ScenarioSchedule,
 ) -> list[str]:
     """Validate classifications at a schedule's first occurrence."""
-    resolved = schedule.resolved_splits(when=schedule.recurrence.start)
+    # The first occurrence's legs, versions applied (a version may add or drop one).
+    legs = schedule.legs_at(schedule.recurrence.start)
     return _activity_problems(
         db,
         [
-            (account, amount, split.investment_activity)
-            for split, (account, amount) in zip(schedule.splits, resolved, strict=True)
-            if split.investment_activity is not None
+            (leg.account, leg.value, leg.split.investment_activity)
+            for leg in legs
+            if leg.split.investment_activity is not None
         ],
     )
 

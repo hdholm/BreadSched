@@ -180,7 +180,10 @@ typed in the Decrease column, whose `base` is negated going in and whose result 
 negated coming out, so `base * 1.2` means 20% more in either column. A formula over
 `base_total` when the layer below moved nothing keeps the leg's `base`. Each
 `ResolvedLeg` carries its source (`amount from 2027-01-01`, `formula every
-December`), which follows each planned split into Plan and Projection explanations.
+December`), which follows each planned split into Plan and Projection explanations. A
+planned occurrence's splits are its legs (`legs_at`), each with its own planning
+purpose, investment activity, and source, never the template's splits paired with
+them by position: a version may add or drop a leg.
 The service (`_version_errors`) refuses a duplicate date or month, fewer than two
 legs, an unknown account, a formula that does not read, a `from` version before the
 schedule, a `once` version off the recurrence or on a skipped date, and a version

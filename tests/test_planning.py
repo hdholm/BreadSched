@@ -180,6 +180,71 @@ class TestEventDomain:
         }
         assert projected_sources[book.brokerage] == "amount from 2026-07-01"
 
+    def test_a_version_with_more_or_fewer_legs_plans_and_projects(self, db, book):
+        """The projection failed ("zip() argument 2 is shorter than argument 1") once a
+        version added a leg: the Plan paired the template's splits with the legs of
+        the occurrence one for one. Each leg now carries its own purpose and source."""
+        from breadsched.gen.engine.investment import scheduled_activity_problems
+        from breadsched.gen.lib import PlanningFlowKind
+
+        effective = date(2026, 7, 1)
+        rent = ScheduledTransaction(
+            name="Rent with a fee from July",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(book.rent, Money("1800")),
+                ScheduledSplit(book.checking, Money("-1800")),
+            ],
+        )
+        rent.versions = [
+            ScheduledVersion(
+                "from",
+                [
+                    ScheduledSplit(book.rent, Money("1800")),
+                    ScheduledSplit(
+                        book.utilities,
+                        Money("50"),
+                        planning_flow=PlanningFlowKind.RETIREMENT_SAVING,
+                    ),
+                    ScheduledSplit(book.checking, Money("-1850")),
+                ],
+                start=effective,
+            ),
+            # A month with one leg fewer than the template has.
+            ScheduledVersion(
+                "month",
+                [
+                    ScheduledSplit(book.rent, Money("900")),
+                    ScheduledSplit(book.checking, Money("-900")),
+                ],
+                month=12,
+            ),
+        ]
+        with db.transaction("rent") as txn:
+            db.add_scheduled(rent, txn)
+
+        [before] = planning.scheduled_events(db, date(2026, 6, 1), date(2026, 6, 1))
+        [after] = planning.scheduled_events(db, effective, effective)
+        assert len(before.expected_splits) == 2
+        assert [(split.account, split.amount) for split in after.expected_splits] == [
+            (book.rent, Money("1800")),
+            (book.utilities, Money("50")),
+            (book.checking, Money("-1850")),
+        ]
+        # The added leg's own purpose, not the template split at its position.
+        assert after.expected_splits[1].planning_flow is PlanningFlowKind.RETIREMENT_SAVING
+        assert after.expected_splits[1].amount_source == "amount from 2026-07-01"
+        [december] = planning.scheduled_events(db, date(2026, 12, 1), date(2026, 12, 1))
+        assert [split.amount for split in december.expected_splits] == [
+            Money("900"),
+            Money("-900"),
+        ]
+
+        scenario = Scenario(name="Fee", start=date(2026, 1, 1), years=1, assumptions=_flat())
+        result = projection.project(db, scenario)
+        assert len(result.rows) == 12
+        assert scheduled_activity_problems(db, rent) == []
+
     def test_seasonal_amount_profile_round_trips_and_posts_resolved_amount(self):
         schedule = ScheduledTransaction(
             name="Seasonal utilities",

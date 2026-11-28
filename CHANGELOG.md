@@ -8,6 +8,12 @@ GitHub releases.
 
 ## Unreleased
 
+- **The projection works with a version that adds or drops a leg.** A schedule
+  whose future change (a version) had more or fewer legs than the schedule itself
+  stopped the Projection and the Plan with "zip() argument 2 is shorter than
+  argument 1". Each occurrence's legs are now planned as they are, each with its own
+  planning purpose and investment activity.
+
 - **One Edit FSA Claims command.** On the FSA Dashboard, Edit FSA Claim and Manage
   FSA Claims did the same thing; **Edit FSA Claims…** now opens the selected claim,
   or the claims window as it opens anywhere when none is selected. Every view's
