@@ -84,6 +84,15 @@ def _transaction_words(transaction: Transaction) -> set[str]:
     }
 
 
+def _fully_paid(claim: FsaClaim, summary: FsaClaimSummary) -> bool:
+    """Whether a claim's payments already cover it: what its EOB says the household
+    owes, or, before an EOB, any payment at all (the amount it is for)."""
+    responsibility = claim.eob_responsibility
+    if responsibility is not None:
+        return summary.net_paid >= responsibility
+    return summary.net_paid > 0
+
+
 def suggest_claims_for_transaction(
     db: DbSQLite,
     transaction: Transaction,
@@ -142,6 +151,9 @@ def suggest_claims_for_transaction(
             if role == "repayment" and not over:
                 continue
             if role == "direct_refund" and summary.net_paid <= 0:
+                continue
+            if role in {"payment", "direct_payment"} and _fully_paid(claim, summary):
+                # Its payments already cover it: another payment belongs elsewhere.
                 continue
             if role in {"repayment", "direct_refund"}:
                 # Money goes back to an FSA the claim was reimbursed from.

@@ -7968,6 +7968,82 @@ class TestDashboardView:
         summary = fsa_claims.claim_summary(db, db.get_fsa_claim(claim.handle))
         assert summary.paid == Money("40.00")
 
+    def test_fsa_dashboard_proposes_links_for_the_selected_claim(self, app, window, populated_book):
+        """Field report: the proposed links stayed the same whichever claim was
+        selected. They are the selected claim's, with the others counted."""
+        from breadsched.gen.engine import fsa_claims
+        from breadsched.gen.lib import FsaClaim, FsaClaimAllocation, FsaFundingYear, Transaction
+
+        app.open_book(populated_book)
+        db = app.db
+        accounts = {a.name: a for a in db.iter_accounts()}
+        start = date.today().replace(month=1, day=1)
+        account = Account(
+            name="Health FSA", atype=AccountType.FSA, parent=accounts["Assets"].handle
+        )
+        account.fsa.years = [
+            FsaFundingYear(start, start.replace(month=12, day=31), Money("500"), None)
+        ]
+        medical = Account(
+            name="Medical", atype=AccountType.EXPENSE, parent=accounts["Expenses"].handle
+        )
+        with db.transaction("FSA") as txn:
+            db.add_account(account, txn)
+            db.add_account(medical, txn)
+        claims = {}
+        for provider, amount, day in (("Clinic", "40", 2), ("Lab", "75", 20)):
+            claims[provider] = fsa_claims.save_claim(
+                db,
+                FsaClaim(
+                    service_date=start.replace(day=day),
+                    provider=provider,
+                    eob_responsibility=Money(amount),
+                    allocations=[FsaClaimAllocation(account.handle, start)],
+                ),
+            )
+            with db.transaction("statement") as txn:
+                db.add_transaction(
+                    Transaction.simple(
+                        start.replace(day=day),
+                        f"{provider} card",
+                        medical.handle,
+                        account.handle,
+                        amount,
+                    ),
+                    txn,
+                )
+        window.show_category("fsa-dashboard")
+        view = window._views["fsa-dashboard"]
+        view.refresh()
+        selection = view.claim_view.get_model()
+
+        def choose(provider):
+            handle = claims[provider].handle
+            for index in range(selection.get_n_items()):
+                if unwrap(selection.get_item(index)).summary.claim.handle == handle:
+                    selection.set_selected(index)
+                    return
+            raise AssertionError(provider)
+
+        def shown():
+            return [key[0] for _check, key in view._proposal_checks]
+
+        for provider in ("Lab", "Clinic", "Lab"):
+            choose(provider)
+            assert shown() == [claims[provider].handle]
+            assert view.proposal_heading.get_label() == (
+                "Proposed claim links for the selected claim (1 other claim has some)"
+            )
+        # Linking the Lab's leaves the Clinic's to be found from the heading.
+        view._on_link_selected()
+        choose("Lab")
+        assert shown() == []
+        assert view.proposal_heading.get_visible()
+        assert view.proposal_heading.get_label() == (
+            "No proposed claim links for the selected claim (1 other claim has some)"
+        )
+        assert not view.proposal_grid.get_visible()
+
     def test_fsa_claims_needing_attention_are_flagged_and_reported(
         self, app, window, populated_book
     ):
