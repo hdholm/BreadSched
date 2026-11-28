@@ -8,6 +8,12 @@ GitHub releases.
 
 ## Unreleased
 
+## 2026.11.28.0
+
+The eighth beta, published as a GitHub pre-release; its Windows installer and Linux
+packages are still not code-signed, so check them against `SHA256SUMS`. Books stay
+at native schema 16, so 2026.11.27.0 still opens a book this version has used.
+
 - **The projection works with a version that adds or drops a leg.** A schedule
   whose future change (a version) had more or fewer legs than the schedule itself
   stopped the Projection and the Plan with "zip() argument 2 is shorter than
