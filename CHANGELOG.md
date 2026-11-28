@@ -8,6 +8,35 @@ GitHub releases.
 
 ## Unreleased
 
+- **Needed and Available keep every jar's money back.** Pay due within the
+  liquidity period used to be set against the whole of each bill due in it, so money
+  already in a bill's jar could show as Available. *Needed within N days* now counts
+  everything already in a bill's or an estimate's jar, plus what the bills and
+  estimates due in the period still need beyond their jars after the pay scheduled
+  in it; pay never releases jar money. Estimates (groceries, say) are kept back the
+  same way, and the cash-flow chart steps down on each estimate's date too.
+- **A Dashboard asset shows its own loan.** In a group, an asset whose linked loan
+  is in the group now has one row with its value, what its loans owe, its equity,
+  loan-to-value, and loan end; the loan, which you never chose, is no longer listed
+  as an item of the group.
+- **Reorder Dashboard groups, and choose their accounts several at a time.**
+  Preferences → Dashboard → Groups has up and down arrows on each group, and the
+  Dashboard lists groups in that order. **Add accounts…** is a searchable checklist:
+  check several (or **Check all shown** after a search, then uncheck a few) and
+  **Add checked**; **Remove checked** takes several out at once.
+- **Desktop dialogs move freely and leave the main window working.** Dialogs such
+  as the startup review of scheduled transactions due were modal, so some window
+  managers attached them to the main window and they blocked it until closed. Only
+  confirmations and progress windows are modal now; a dialog still open when its
+  book closes is closed with it.
+- **Accounts keeps its collapsed branches and sort.** A branch you collapse stays
+  collapsed, and the sort column and order stay, through edits, tab switches, and
+  restarts.
+- **The FSA Dashboard proposes links for the claim selected.** Its proposed claim
+  links did not change when another claim was chosen; they are now the selected
+  claim's, and the heading counts the other claims with some. A claim whose payments
+  already cover it is not proposed another payment.
+
 ## 2026.11.28.0
 
 The eighth beta, published as a GitHub pre-release; its Windows installer and Linux

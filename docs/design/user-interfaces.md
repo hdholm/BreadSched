@@ -100,6 +100,19 @@ repeat, each with that one meaning; a test enforces it. The menu model is rebuil
 when the view changes: opening a submenu moves focus into its popover, and
 rebuilding the same view's model then destroyed the open submenu and crashed GTK.
 
+Desktop dialogs are not modal: a `BoundedWindow` moves on its own and leaves the
+main window working, is destroyed with the window it is transient for, and
+`ViewManager.book_closing` closes every dialog standing over the window (each reads
+the book it opened with; the user guide stays). Only confirmations, alerts, and
+progress windows (undo, calculating a projection) are modal, and a source test lists
+them. The startup reviews (held GnuCash changes, then the due review) still open one
+at a time through `queue_modal`, each waiting for the one before it to close.
+
+The Accounts view expands every branch except those the user collapsed, which are
+kept for each book (section `accounts-collapsed`, the book's key from
+`ViewManager.book_state_key`); `views._base.remember_sort` keeps the column it is
+sorted by and the order with the table's other column settings.
+
 The reconcile window (`dialogs/reconciliation_dialog`) is the one statement
 dialog that is not modal: `ReconciliationDialog.present_for` keeps one per book and
 account and brings it forward, and the window follows `database-changed` (coalesced
@@ -260,7 +273,7 @@ a book (`open_book_announced`) is wrapped as "upgrading your book" or "opening
 your book". Work run off the main thread, such as imports and reports behind a
 progress dialog, keeps the loop ticking and needs no announcement.
 
-A modal dialog behind another window looks like a freeze rather than being one.
+A modal window (a confirmation) behind another window looks like a freeze rather than being one.
 When the main window becomes active it presents the visible modal windows that
 stand over it (`_belongs_to` follows their transient-for chain), and
 `app.show-all-windows` (**View → Bring All Windows Forward**) presents every

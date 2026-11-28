@@ -101,7 +101,12 @@ laptop screen however long your account names and notes are: a long name in a ch
 shows it in full), the toolbar and the tab row show a left and a right arrow at their ends when
 they are wider than the window (click one, or turn the mouse wheel over the row, to
 see the rest; the view's own controls below scroll sideways), the Dashboard's summary cards wrap
-onto more rows, and dialogs open within the screen and scroll inside. Scrollbars are
+onto more rows, and dialogs open within the screen and scroll inside. A dialog moves
+on its own and leaves the main window working while it is open, so you can look
+something up in a register while an editor is open; only a question to answer first
+(a confirmation) or a window showing work that must finish holds the rest back. A
+dialog closes with the window it was opened from, and when its book closes.
+Scrollbars are
 always shown, so a list with more out of view says so. A long choice list, such as
 every list of accounts, has a search field when it opens: type part of a name to
 keep only the choices that contain it.
@@ -279,7 +284,9 @@ funding years, or an investment's return and cost method. **Open Register** (or
 double-clicking the account) opens its register. **Delete Account** (on the
 toolbar, in the menus, or in the editor) asks first, and refuses an account the
 book still needs, saying why. The account selected stays selected, and in view,
-when the chart is redrawn after an edit. Its table shows each account's **Balance** in what it holds (its
+when the chart is redrawn after an edit. A branch you collapse stays collapsed, and
+the column you sort by (and its order) stays, through edits, tab switches, and the
+next start; collapsed branches are remembered for each book. Its table shows each account's **Balance** in what it holds (its
 own currency, or shares for a security), its **Value** in the reporting currency,
 the **Price** that values a security or foreign currency, and the **Last Quote
 Update** (the quote's date and source). See [Accounts](../USER_GUIDE.md#accounts).
@@ -297,14 +304,17 @@ arrangement of this book: anyone else it is shared with keeps theirs.
   [Reports and breadlets](#reports-and-breadlets)). The summary figures name the
   horizons they were judged against.
 - **Groups**: each group's name (a `:` nests one group in another), its kind, and
-  its accounts. A group lists only its own accounts, each with a remove button;
-  **Add an account…** is a searchable list (type part of a name) and **Add** puts
-  the chosen account in the group. An account is in at most one group, so adding it
-  to one takes it out of another, and the tab says so. Groups are never made from
-  account types: you choose each group's accounts. If an account is chosen in a group's
-  list but **Add** was not pressed, **Save** asks whether to add it first (**Add and
-  save**), save without it, or go back, and **Cancel** asks before closing without
-  it.
+  its accounts, in the order the Dashboard lists them: the up and down arrows beside
+  a group move it. A group lists only its own accounts, each with a check and a
+  remove button; check several and **Remove checked** takes them out together.
+  **Add accounts…** opens a checklist of the chart with a search (type part of a
+  name): check the accounts to add, or **Check all shown** after a search and
+  uncheck a few, then **Add checked**. An account is in at most one group, so adding
+  it to one takes it out of another, and the tab says so. Groups are never made from
+  account types: you choose each group's accounts. If an account is checked to add
+  but **Add checked** was not pressed, **Save** asks whether to add it first (**Add
+  and save**), save without it, or go back, and **Cancel** asks before closing
+  without it.
 - **Columns**: the columns each Dashboard table shows. These are yours, remembered
   on this computer rather than in the book, and change as soon as you tick them.
 
@@ -932,7 +942,9 @@ When FSA statement lines clearly belong on claims, the FSA Dashboard lists them
 first under **Proposed claim links** (only lines within, or within 30 days of, a
 funding year of their FSA account), each ticked: untick any that does not belong,
 then choose **Link Lines** on the toolbar (**Actions → Link Chosen Statement
-Lines**).
+Lines**). The lines shown are those of the claim selected in the claims table, so
+choosing another claim shows its own; the heading counts the other claims that have
+some.
 Import and reconciliation results say when proposals are waiting.
 
 The FSA Dashboard lists open claims with a **Needs attention** column saying what
@@ -1181,8 +1193,8 @@ Use these File menu commands regularly:
   PyGObject packages. The [command line](cli.md) continues to work without GTK.
 - **Edit → Undo** reverses the last change, including a whole import or a batch of
   accepted proposals.
-- If a window seems not to respond, a dialog waiting for an answer may be hidden
-  behind another window. Bringing the main window forward brings such a dialog
+- If a window seems not to respond, a question waiting for an answer may be hidden
+  behind another window. Bringing the main window forward brings such a question
   with it, and **View → Bring All Windows Forward** brings every BreadSched window
   forward, dialogs on top.
 - If BreadSched stops responding altogether for 20 seconds, a separate window,

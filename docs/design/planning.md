@@ -643,6 +643,16 @@ the target date on, a closed goal sets nothing aside, and amounts stay exact unt
 they are quantized once to the reporting fraction. Goals are limited to
 reporting-currency asset accounts, so no conversion is implied.
 
+The liquidity requirement (`Dashboard.required_liquid`, *Needed within N days*)
+keeps every jar's money back: each overdue bill's unpaid amount, every bill's and
+estimate's `held` (`Dashboard.jar_rows`, `jars_held`; an overdue row's `held` fills
+the next occurrence, a generated card payment's is the payment itself and is counted
+once, and an estimate's past date is not owed), plus what the bills and estimates
+due within the period still need beyond their jars less the pay scheduled in the
+period, never below zero. Pay in the period funds only what the jars lack; it never
+releases money already in a jar. The cash-flow chart steps down by the same bills
+and estimates.
+
 The Dashboard subtracts `goals_held` from Available alongside the liquidity
 requirement: the whole earmark of a goal in a cash-like account, but only the part
 of a non-cash account's earmarks its balance does not yet cover. Liquid, months
