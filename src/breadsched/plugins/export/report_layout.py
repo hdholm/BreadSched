@@ -424,21 +424,32 @@ def _groups_blocks(board: Dashboard) -> tuple[Block, ...]:
                 "heading" if group.heading else "",
             )
         )
-        # Each account in the group, under it, with its own balance.
+        # Each account in the group, under it, with its own balance; an asset with
+        # its linked loans in the group shows what they owe, its equity, and LTV.
         for account in group.accounts:
+            withheld = bool(account.missing_quotes)
+            debt = None if withheld else account.debt
+            equity = None if withheld else account.equity
+            ratio = None if withheld else account.loan_to_value
             rows.append(
                 TableRow(
                     (
                         Cell(
                             account.name,
                             indent=group.depth + 1,
-                            hint="\n".join([account.note, *account.members]).strip(),
+                            hint="\n".join(
+                                [
+                                    account.note,
+                                    *account.members,
+                                    *(f"Loan: {loan}" for loan in account.loans),
+                                ]
+                            ).strip(),
                         ),
                         _amount(account.total),
-                        _text(""),
-                        _text(""),
-                        _text(""),
-                        _text(""),
+                        _amount(debt) if account.loans else _text(""),
+                        _amount(equity) if account.loans else _text(""),
+                        Cell(f"{ratio:.1%}" if ratio is not None else "", numeric=True),
+                        _text(account.loan_end or ""),
                     )
                 )
             )

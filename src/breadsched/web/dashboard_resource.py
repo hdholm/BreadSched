@@ -110,6 +110,21 @@ def dashboard_report(
                         "source": account.source,
                         "note": account.note,
                         "members": list(account.members),
+                        "loans": list(account.loans),
+                        "debt": (
+                            str(account.debt.to_decimal()) if account.debt is not None else None
+                        ),
+                        "equity": (
+                            str(account.equity.to_decimal()) if account.equity is not None else None
+                        ),
+                        "loan_to_value": (
+                            float(account.loan_to_value)
+                            if account.loan_to_value is not None
+                            else None
+                        ),
+                        "loan_end": (
+                            account.loan_end.isoformat() if account.loan_end is not None else None
+                        ),
                     }
                     for account in group.accounts
                 ],

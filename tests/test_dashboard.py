@@ -1080,10 +1080,14 @@ class TestLoansPairWithTheirAssets:
 
         group = dashboard.build(db, config, as_of=TODAY).group(house.name)
 
-        assert [account.name for account in group.accounts] == [
-            "Assets:Home Easton",
-            "Liabilities:Mortgage Easton",
-        ]
+        # The loan is not a line of its own: it is shown on the asset's line.
+        [line] = group.accounts
+        assert line.name == "Assets:Home Easton"
+        assert line.loans == ("Liabilities:Mortgage Easton",)
+        assert line.total == Money("490200.00")
+        assert line.debt == Money("385938.50")
+        assert line.equity == Money("104261.50")
+        assert line.loan_to_value == Decimal("0.7873")
         assert group.kind == "property"
         assert group.loan_to_value == Decimal("0.7873")
 
@@ -1098,6 +1102,35 @@ class TestLoansPairWithTheirAssets:
         assert group.kind == "property"
         assert group.loan_to_value == Decimal("0.7873")
 
+    def test_an_asset_group_shows_the_loan_on_that_assets_row_only(self, db, book, linked):
+        """Field report: in a group of assets, the house's equity and loan showed
+        only in the group's total, and its loan, never chosen, was listed as an
+        item of the group. The loan changes only the house's row."""
+        from breadsched.plugins.export.report_layout import _groups_blocks
+
+        house, _mortgage = linked
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig("Holdings", [house.handle, book.checking], "asset")]
+        )
+        board = dashboard.build(db, config, as_of=TODAY)
+        group = board.group("Holdings")
+        assert [line.name for line in group.accounts] == [
+            "Assets:Home Easton",
+            db.full_name(db.get_account(book.checking)),
+        ]
+        home, checking = group.accounts
+        assert home.equity == Money("104261.50") and home.loan_to_value == Decimal("0.7873")
+        assert checking.debt is None and checking.loans == ()
+        # Shown that way: the house's row has its owed amount, equity, and LTV.
+        _heading, table = _groups_blocks(board)
+        rows = {row.cells[0].text: row for row in table.rows}
+        assert "Liabilities:Mortgage Easton" not in rows
+        cells = [cell.text for cell in rows["Assets:Home Easton"].cells]
+        assert cells[1:5] == ["490,200.00", "385,938.50", "104,261.50", "78.7%"]
+        assert "Loan: Liabilities:Mortgage Easton" in rows["Assets:Home Easton"].cells[0].hint
+        checking_cells = [cell.text for cell in rows[checking.name].cells]
+        assert checking_cells[2:5] == ["", "", ""]
+
     def test_grouping_only_the_loan_adds_its_linked_asset(self, db, linked):
         house, mortgage = linked
         config = dashboard.DashboardConfig(
@@ -1106,10 +1139,8 @@ class TestLoansPairWithTheirAssets:
 
         group = dashboard.build(db, config, as_of=TODAY).group(house.name)
 
-        assert {account.name for account in group.accounts} == {
-            "Assets:Home Easton",
-            "Liabilities:Mortgage Easton",
-        }
+        assert [account.name for account in group.accounts] == ["Assets:Home Easton"]
+        assert group.accounts[0].loans == ("Liabilities:Mortgage Easton",)
         assert group.loan_to_value == Decimal("0.7873")
 
     def test_a_bounded_repayment_schedule_supplies_the_loan_end(self, db, book, linked):
@@ -1783,7 +1814,8 @@ class TestPaidOffLoans:
         group = dashboard.build(db, as_of=TODAY).group("Property")
 
         assert group is not None
-        assert any(account.name.endswith("Future loan") for account in group.accounts)
+        [line] = group.accounts
+        assert any(loan.endswith("Future loan") for loan in line.loans)
 
     def test_paid_off_loan_is_removed_while_an_active_loan_on_same_asset_remains(self, db, book):
         asset = Account(name="Property", atype=AccountType.ASSET, parent=book.assets)
@@ -1817,10 +1849,10 @@ class TestPaidOffLoans:
 
         group = dashboard.build(db, as_of=TODAY).group("Property")
 
-        assert [account.name.rsplit(":", 1)[-1] for account in group.accounts] == [
-            "Property",
-            "Active loan",
-        ]
+        [line] = group.accounts
+        assert line.name.rsplit(":", 1)[-1] == "Property"
+        assert [loan.rsplit(":", 1)[-1] for loan in line.loans] == ["Active loan"]
+        assert line.debt == Money("25")
         assert group.value == Money("100")
         assert group.debt == Money("25")
         assert group.equity == Money("75")

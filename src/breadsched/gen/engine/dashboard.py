@@ -317,6 +317,24 @@ class GroupAccountResult:
     missing_quotes: tuple[str, ...] = ()
     #: Descendants included by inference, one line each with any quote evidence.
     members: tuple[str, ...] = ()
+    #: For an asset whose linked loans are in the same group: what they owe, their
+    #: names, and the latest repayment date. The loans are not lines of their own;
+    #: they only change this asset's row (its equity and loan-to-value).
+    debt: Money | None = None
+    loans: tuple[str, ...] = ()
+    loan_end: date | None = None
+
+    @property
+    def equity(self) -> Money | None:
+        if self.total is None or self.debt is None:
+            return None
+        return self.total - self.debt
+
+    @property
+    def loan_to_value(self) -> Decimal | None:
+        if self.total is None or self.debt is None or not self.total:
+            return None
+        return (self.debt.rate() / self.total.rate()).quantize(Decimal("0.0001"))
 
 
 @dataclass
@@ -1195,6 +1213,16 @@ def _direct_group_totals(
     notes: list[str] = []
     missing: list[str] = []
     liquid_missing: list[str] = []
+    # A loan whose linked asset is in the same group is shown on that asset's line,
+    # not as a line of its own; the group's totals count it either way.
+    present = {handle for handle in handles if handle not in paid_off}
+    asset_of = {
+        loan.handle: asset.handle
+        for loan, asset in linked_pairs(db)
+        if loan.handle in present and asset.handle in present
+    }
+    by_handle: dict[str, GroupAccountResult] = {}
+    folded: dict[str, list[tuple[Account, GroupAccountResult]]] = {}
     for handle in handles:
         if handle in paid_off:
             continue
@@ -1202,7 +1230,11 @@ def _direct_group_totals(
         if account is None or account.hidden:
             continue
         line = _account_group_result(db, account, today, counted)
-        lines.append(line)
+        if handle in asset_of:
+            folded.setdefault(asset_of[handle], []).append((account, line))
+        else:
+            lines.append(line)
+            by_handle[handle] = line
         if line.note:
             notes.append(line.note)
         missing.extend(line.missing_quotes)
@@ -1215,6 +1247,28 @@ def _direct_group_totals(
             assets = assets + amount
         if kind == "liquid":
             liquid = liquid + amount
+    for asset_handle, loans in folded.items():
+        asset_line = by_handle.get(asset_handle)
+        if asset_line is None:
+            # The asset itself was withheld (hidden, say): its loans stay lines.
+            lines.extend(line for _loan, line in loans)
+            continue
+        owed = [line.total for _loan, line in loans]
+        asset_line.debt = None if None in owed else sum(owed, Money(0))  # type: ignore[arg-type]
+        asset_line.loans = tuple(
+            f"{line.name}: {line.note}" if line.note else line.name for _loan, line in loans
+        )
+        asset_line.missing_quotes = tuple(
+            dict.fromkeys(
+                [
+                    *asset_line.missing_quotes,
+                    *(q for _loan, line in loans for q in line.missing_quotes),
+                ]
+            )
+        )
+        asset_line.loan_end = _loan_end_date(
+            db, [loan.handle for loan, _line in loans], paid_off, counted
+        )
     return lines, assets, debts, liquid, notes, missing, liquid_missing
 
 

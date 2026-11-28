@@ -308,7 +308,6 @@ class DashboardSettings(Gtk.Box):
         check_shown = Gtk.Button(label="Check all shown")
         clear = Gtk.Button(label="Clear checks")
         add = Gtk.Button(label="Add checked")
-        add.add_css_class("suggested-action")
         for button in (check_shown, clear, add):
             buttons.append(button)
         chooser.append(buttons)
