@@ -38,7 +38,7 @@ class ScenarioManagerDialog(BoundedWindow):
     """Rename, duplicate, delete, and edit a saved scenario's assumptions and drawdowns."""
 
     def __init__(self, parent: Gtk.Window | None, db: OpenBook, manager) -> None:
-        super().__init__(title="Manage scenarios", transient_for=parent, modal=True)
+        super().__init__(title="Manage scenarios", transient_for=parent)
         self.db = db
         self.manager = manager
         self._baseline = baseline_scenario(manager, db)
@@ -442,9 +442,7 @@ class AccountAssumptionsDialog(BoundedWindow):
     """Edit optional annual Projection rates for individual accounts."""
 
     def __init__(self, parent, db, accounts, values, callback) -> None:
-        super().__init__(
-            title="Account-specific projection rates", transient_for=parent, modal=True
-        )
+        super().__init__(title="Account-specific projection rates", transient_for=parent)
         self.db = db
         self.accounts = accounts
         self.callback = callback
@@ -515,7 +513,6 @@ class AssumptionTimelineDialog(BoundedWindow):
         super().__init__(
             title=f"Dated assumptions — {scenario.name}",
             transient_for=parent,
-            modal=True,
         )
         self.db = db
         self.scenario = scenario
@@ -648,7 +645,6 @@ class AssumptionPeriodDialog(BoundedWindow):
         super().__init__(
             title="Edit dated assumptions" if period is not None else "Add dated assumptions",
             transient_for=parent,
-            modal=True,
         )
         self.db = db
         self.period = period

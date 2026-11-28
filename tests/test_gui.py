@@ -411,6 +411,85 @@ class TestBranding:
         )
 
 
+class TestDialogsDoNotBlock:
+    """A dialog moves on its own and leaves the main window working (a modal
+    dialog is attached to its window by some window managers and blocks every
+    other window of the application); only a confirmation or a progress window is
+    modal."""
+
+    #: The windows that stay modal: they ask a question to answer first, or show
+    #: work that must finish (file, then what the line opens).
+    MODAL = {
+        ("app.py", "Gtk.AlertDialog"),
+        ("undo.py", "Undoing"),
+        ("views/projection.py", "Calculating projection"),
+        ("views/scheduled.py", "Duplicate scheduled transaction"),
+        ("views/scheduled.py", "Delete scheduled transaction"),
+        ("dialogs/scenario_manager_dialog.py", "Delete scenario"),
+        ("widgets/confirm.py", "Gtk.AlertDialog"),
+    }
+
+    def test_only_confirmations_and_progress_windows_are_modal(self):
+        root = Path(__file__).resolve().parents[1] / "src" / "breadsched" / "gui"
+        found = set()
+        for path in root.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            for match in re.finditer(r"modal=True|set_modal\(True\)", text):
+                # The call the keyword belongs to: the nearest opening before it.
+                start = max(
+                    text.rfind("AlertDialog(", 0, match.start()),
+                    text.rfind("title=", 0, match.start()),
+                )
+                opened = text[start : match.start()]
+                name = path.relative_to(root).as_posix()
+                if opened.startswith("AlertDialog("):
+                    found.add((name, "Gtk.AlertDialog"))
+                else:
+                    found.add((name, opened.split('"')[1].rstrip("…")))
+        assert found == self.MODAL
+
+    def test_a_dialog_is_not_modal_and_closes_with_its_window(self, app, window, populated_book):
+        from breadsched.gui.dialogs.rules_dialog import RulesDialog
+
+        app.open_book(populated_book)
+        window.present()
+        dialog = RulesDialog(window, app.db)
+        dialog.present()
+        try:
+            assert _spin(dialog.get_mapped)
+            assert dialog.get_modal() is False
+            assert dialog.get_destroy_with_parent() is True
+            assert window.get_sensitive()
+        finally:
+            dialog.destroy()
+
+    def test_the_dialogs_over_a_window_close_with_its_book_and_the_guide_stays(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.dialogs.rules_dialog import RulesDialog
+        from breadsched.gui.user_guide import UserGuideWindow
+        from breadsched.gui.widgets.bounded import BoundedWindow
+
+        app.open_book(populated_book)
+        window.present()
+        dialog = RulesDialog(window, app.db)
+        dialog.present()
+        child = BoundedWindow(title="Child", transient_for=dialog)
+        child.present()
+        guide = UserGuideWindow(app, window)
+        guide.present()
+        try:
+            assert _spin(dialog.get_mapped)
+            # A dialog still open when the book closes reads the closed book.
+            window.book_closing()
+            open_now = Gtk.Window.list_toplevels()
+            assert dialog not in open_now and child not in open_now
+            assert guide in open_now
+        finally:
+            guide.destroy()
+            window.destroy()
+
+
 class TestStartupDialogsTakeTurns:
     """One modal dialog at a time over the main window.
 
@@ -3271,7 +3350,7 @@ class TestMenuBarAndToolbar:
     def test_help_from_a_modal_dialog_opens_a_usable_guide_at_its_topic(
         self, app, window, populated_book
     ):
-        # #314: the import dialog is modal, and a guide in the same window group
+        # #314: the import dialog was modal, and a guide in the same window group
         # shared its grab, so no control in the guide took input until the dialog
         # closed; the guide also opened at the part's beginning, not the topic.
         from breadsched.gui.dialogs.import_dialog import ImportDialog
@@ -3285,7 +3364,6 @@ class TestMenuBarAndToolbar:
         guide = None
         try:
             assert _spin(dialog.get_mapped)
-            assert dialog.get_modal()
             [button] = [
                 widget
                 for widget in _descendants(dialog)
@@ -6798,13 +6876,13 @@ class TestImportReview:
         changes = pending_import_changes(app.db)
         return ImportReviewDialog(window, app.db, changes), changes
 
-    def test_dialog_is_modal_and_defaults_to_deciding_later(self, held_book, window):
+    def test_dialog_is_not_modal_and_defaults_to_deciding_later(self, held_book, window):
         from breadsched.gen.services import HeldImportDecision
 
         app, _handles = held_book
         dialog, changes = self._dialog(app, window)
         assert len(changes) == 2
-        assert dialog.get_modal() is True
+        assert dialog.get_modal() is False
         assert dialog.get_transient_for() is window
         assert dialog.get_destroy_with_parent() is True
         assert all(dialog.decision(i) is HeldImportDecision.LATER for i in range(2))
@@ -7295,9 +7373,10 @@ class TestDueReview:
         dialog, due = self._dialog(due_book, window)
         assert len(dialog.choosers) == len(due) > 0
 
-    def test_due_dialog_is_modal_transient_and_destroyed_with_parent(self, due_book, window):
+    def test_due_dialog_is_not_modal_transient_and_destroyed_with_parent(self, due_book, window):
+        # It moves on its own and leaves the main window usable.
         dialog, _ = self._dialog(due_book, window)
-        assert dialog.get_modal() is True
+        assert dialog.get_modal() is False
         assert dialog.get_transient_for() is window
         assert dialog.get_destroy_with_parent() is True
 
@@ -7337,7 +7416,7 @@ class TestDueReview:
         review = dialog.review
         try:
             assert isinstance(review, PostedTransactionsDialog)
-            assert review.get_modal() and review.get_transient_for() is window
+            assert not review.get_modal() and review.get_transient_for() is window
             listed = review.transactions()
             assert len(listed) == 2 == due_book.db.summary()["txn"]
             assert review.listed == [txn.handle for txn in listed]

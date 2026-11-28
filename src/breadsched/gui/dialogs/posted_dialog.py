@@ -46,7 +46,7 @@ class PostedTransactionsDialog(BoundedWindow):
         *,
         skipped: int = 0,
     ) -> None:
-        super().__init__(title="Posted transactions", transient_for=parent, modal=True)
+        super().__init__(title="Posted transactions", transient_for=parent)
         self.set_destroy_with_parent(True)
         self.db = db
         self.handles = list(handles)

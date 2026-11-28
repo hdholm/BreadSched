@@ -154,7 +154,7 @@ class ScenarioSchedulePickerDialog(BoundedWindow):
         action_label: str,
         callback: Callable[[ScheduledTransaction], None],
     ) -> None:
-        super().__init__(title=title, transient_for=parent, modal=True)
+        super().__init__(title=title, transient_for=parent)
         self._callback = callback
         self._schedules = [
             editor.schedule for editor in book_server(db).schedules_view(0).definitions

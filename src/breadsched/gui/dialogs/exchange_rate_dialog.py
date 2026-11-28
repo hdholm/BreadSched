@@ -29,7 +29,7 @@ class ExchangeRateDialog(BoundedWindow):
     """Choose two currencies, a date, and an exact rate."""
 
     def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
-        super().__init__(title="Exchange rate", transient_for=parent, modal=True)
+        super().__init__(title="Exchange rate", transient_for=parent)
         self.set_destroy_with_parent(True)
         self.db = db
         self.currencies = list(book_server(db).currencies())

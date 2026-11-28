@@ -32,7 +32,7 @@ class LoanDialog(BoundedWindow):
     """Enter a loan's terms and create its scheduled payment."""
 
     def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
-        super().__init__(title="Set up a loan", transient_for=parent, modal=True)
+        super().__init__(title="Set up a loan", transient_for=parent)
         self.db = db
         self.set_default_size(620, 620)
 

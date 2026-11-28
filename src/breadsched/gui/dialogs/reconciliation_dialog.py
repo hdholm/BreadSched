@@ -868,7 +868,6 @@ class ReconciliationDialog(BoundedWindow):
                 "The statement and its checks are discarded. No transaction has been "
                 "changed by reconciling it."
             ),
-            modal=True,
             buttons=["Keep reconciling", "Abandon"],
             cancel_button=0,
             default_button=0,
@@ -1040,7 +1039,7 @@ class ReconciliationDialog(BoundedWindow):
 
     def ask_minimum(self) -> BoundedWindow:
         """Ask the statement's minimum payment, then save the payment again."""
-        window = BoundedWindow(title="Minimum payment", transient_for=self, modal=True)
+        window = BoundedWindow(title="Minimum payment", transient_for=self)
         box = window.frame("reconcile")
         box.append(
             Gtk.Label(

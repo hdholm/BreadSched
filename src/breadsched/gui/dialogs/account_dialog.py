@@ -63,7 +63,6 @@ class AccountDialog(BoundedWindow):
         super().__init__(
             title="Edit account" if account is not None else "New account",
             transient_for=parent,
-            modal=True,
         )
         self.db = db
         self.account = account
@@ -425,7 +424,6 @@ class AccountDialog(BoundedWindow):
         window = BoundedWindow(
             title="Imported account details",
             transient_for=self,
-            modal=True,
         )
         window.set_default_size(620, 420)
         box = window.frame("accounts")

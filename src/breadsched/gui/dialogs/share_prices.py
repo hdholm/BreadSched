@@ -68,7 +68,7 @@ class SharePricesDialog(BoundedWindow):
         failures: Sequence[QuoteFailure],
         on_done: Callable[[tuple[LegPrice, ...] | None], None],
     ) -> None:
-        super().__init__(title="Share prices", transient_for=parent, modal=True)
+        super().__init__(title="Share prices", transient_for=parent)
         self.set_destroy_with_parent(True)
         # As tall as its table needs (fit_to_screen keeps it on the screen): a
         # fixed height left the table one line tall under the notes above it.

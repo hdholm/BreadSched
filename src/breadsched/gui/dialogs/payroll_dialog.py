@@ -87,7 +87,7 @@ class PayrollDialog(BoundedWindow):
     def __init__(
         self, parent: Gtk.Window | None, db: OpenBook, schedule: str | None = None
     ) -> None:
-        super().__init__(title="Payroll", transient_for=parent, modal=True)
+        super().__init__(title="Payroll", transient_for=parent)
         self.set_destroy_with_parent(True)
         self.set_default_size(900, 680)
         self.db = db

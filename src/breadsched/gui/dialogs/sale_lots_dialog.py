@@ -30,7 +30,7 @@ class SaleLotsDialog(BoundedWindow):
         split: str,
         on_saved: Callable[[SaleLots], None] | None = None,
     ) -> None:
-        super().__init__(title="Choose lots sold", transient_for=parent, modal=True)
+        super().__init__(title="Choose lots sold", transient_for=parent)
         self.db = db
         self.transaction = transaction
         self.split = split

@@ -674,7 +674,7 @@ class ProjectionView(BaseView):
             return
         names = [s.name for s in self._scenarios]
         picker = bounded_dropdown(["None", *names])
-        dialog = BoundedWindow(title="Compare with", transient_for=self.get_root(), modal=True)
+        dialog = BoundedWindow(title="Compare with", transient_for=self.get_root())
         box = dialog.frame("plan")
         box.append(Gtk.Label(label="Overlay another scenario's net worth"))
         box.append(picker)

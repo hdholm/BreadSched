@@ -70,7 +70,7 @@ class CsvImportDialog(BoundedWindow):
     NUMBER_FORMATS = ("auto", "dot", "comma")
 
     def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
-        super().__init__(title="Import CSV statement", transient_for=parent, modal=True)
+        super().__init__(title="Import CSV statement", transient_for=parent)
         self.set_destroy_with_parent(True)
         self.db = db
         #: Inspects, previews, and imports through the book server (#358).

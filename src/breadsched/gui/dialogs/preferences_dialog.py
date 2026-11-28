@@ -57,7 +57,7 @@ class PreferencesDialog(BoundedWindow):
     """The user's settings, in one window."""
 
     def __init__(self, parent: Gtk.Window | None, application) -> None:
-        super().__init__(title="Preferences", transient_for=parent, modal=True)
+        super().__init__(title="Preferences", transient_for=parent)
         self.set_destroy_with_parent(True)
         self.application = application
         self.settings = application.settings

@@ -843,7 +843,6 @@ class BreadSchedApplication(Gtk.Application):
     def on_about(self, *_args) -> None:
         about = Gtk.AboutDialog(
             transient_for=self.props.active_window,
-            modal=True,
             program_name=APP_NAME,
             version=__version__,
             comments="Plan cash flow from scheduled financial events and compare "
