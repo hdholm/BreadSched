@@ -2,8 +2,9 @@
 
 The synthetic sample book, seen on 2026-03-15, has cash in the bank, bills and
 wages scheduled each month, and a liquidity period of 30 days. The chart starts
-at liquid cash less overdue bills and moves on each bill's and each pay's date,
-using the same bills and income the *Needed* figure counts.
+at liquid cash less overdue bills and moves on each bill's, each estimate's, and
+each pay's date, using the same bills, estimates, and income the *Needed* figure
+counts.
 """
 
 from __future__ import annotations
@@ -35,7 +36,14 @@ def board(tmp_path):
 
 def _expected_end(board) -> Money:
     horizon = AS_OF + timedelta(days=board.config.liquidity_days)
-    bills = sum((bill.amount for bill in board.bills if bill.next_due <= horizon), Money(0))
+    bills = sum(
+        (
+            bill.amount
+            for bill in board.jar_rows
+            if bill.next_due <= horizon and not (bill.estimate and bill.next_due < AS_OF)
+        ),
+        Money(0),
+    )
     return board.liquid - bills + board.income_within(board.config.liquidity_days)
 
 
@@ -49,7 +57,7 @@ def test_the_chart_runs_daily_from_today_through_the_liquidity_period(board):
     assert len(chart.categories) == 31
     [series] = chart.series
     assert series.name == "Cash on hand"
-    # Every bill and every pay inside the period has moved the line by its amount.
+    # Every bill, estimate, and pay inside the period has moved the line by its amount.
     assert series.values[-1] == _expected_end(board)
     assert not chart.empty
 
@@ -62,7 +70,9 @@ def test_each_bill_and_pay_moves_the_line_on_its_own_date(board):
     income = sum(
         (amount for when, amount in board._income_events if when == bill.next_due), Money(0)
     )
-    others = sum((item.amount for item in board.bills if item.next_due == bill.next_due), Money(0))
+    others = sum(
+        (item.amount for item in board.jar_rows if item.next_due == bill.next_due), Money(0)
+    )
     assert values[day] - values[day - 1] == income - others
 
 
@@ -94,6 +104,7 @@ def test_a_long_period_is_drawn_by_the_week(board):
 
 def test_nothing_dated_in_the_period_draws_nothing(board):
     board.pending = []
+    board.estimates = []
     board._income_events = []
 
     assert board.cash_flow_chart().empty

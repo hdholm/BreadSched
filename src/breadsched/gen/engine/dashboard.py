@@ -612,34 +612,51 @@ class Dashboard:
     # ------------------------------------------------------------- the verdict
 
     @property
-    def required_liquid(self) -> Money:
-        """Near-term bills plus protected reserves, less dated future income.
+    def jar_rows(self) -> list[BillRow]:
+        """Every bill and every estimate the Dashboard keeps money back for."""
+        return [*self.bills, *(row for row in self.estimates if not row.income)]
 
-        A normal bill inside the liquidity window already includes its reserve,
-        so that reserve is not counted twice. A reserve attached to an overdue
-        bill is for the *next* occurrence and remains additional to the unpaid
-        obligation.
+    @property
+    def jars_held(self) -> Money:
+        """What is already in the jars of bills and estimates: cash that has been
+        set aside, so later pay cannot free it."""
+        return sum((row.held for row in self.jar_rows), Money(0))
+
+    @property
+    def required_liquid(self) -> Money:
+        """What today's cash must cover: every bill already overdue, everything
+        already in a bill's or an estimate's jar, and what the bills and estimates
+        due in the liquidity period still need beyond their jars, less the pay
+        scheduled in that period.
+
+        Money already in a jar has been allocated, so pay arriving later funds only
+        what the jars still lack; it never makes jar money available again. Of an
+        overdue bill, the unpaid amount is owed now, and its jar (``held``) is
+        filling for the *next* occurrence; a card payment's jar is the payment
+        itself, so it is counted once.
         """
         horizon = self.as_of + timedelta(days=self.config.liquidity_days)
-        overdue = sum((bill.amount for bill in self.bills if bill.next_due < self.as_of), Money(0))
-        upcoming = sum(
-            (bill.amount for bill in self.bills if self.as_of <= bill.next_due <= horizon),
-            Money(0),
-        )
-        funded_upcoming = upcoming - self.income_within(self.config.liquidity_days)
-        if funded_upcoming < 0:
-            funded_upcoming = Money(0)
-        reserves = sum(
-            (
-                bill.held
-                for bill in self.bills
-                if bill.next_due > horizon or (bill.next_due < self.as_of and not bill.generated)
-            ),
-            Money(0),
-        )
-        # Future income can fund future bills. It cannot retroactively erase an
-        # obligation whose due date has already passed.
-        return overdue + funded_upcoming + reserves
+        overdue = Money(0)
+        held = Money(0)
+        still_needed = Money(0)
+        for row in self.jar_rows:
+            if row.next_due < self.as_of:
+                # An estimate is never posted, so a past date is not owed: only its
+                # jar, filling for the next occurrence, is kept.
+                if not row.estimate:
+                    overdue = overdue + row.amount
+                if not row.generated:
+                    held = held + row.held
+                continue
+            held = held + row.held
+            if row.next_due <= horizon and row.amount > row.held:
+                still_needed = still_needed + (row.amount - row.held)
+        unfunded = still_needed - self.income_within(self.config.liquidity_days)
+        if unfunded < 0:
+            unfunded = Money(0)
+        # Future income can fund what the jars lack. It cannot retroactively erase
+        # an obligation whose due date has already passed, nor release jar money.
+        return overdue + held + unfunded
 
     def income_within(self, days: int) -> Money:
         """Income on actual scheduled dates from today through ``days`` ahead."""
@@ -652,10 +669,11 @@ class Dashboard:
     def cash_flow_chart(self, currency: str = "") -> ChartModel:
         """Cash on hand, day by day, over the liquidity period.
 
-        It starts at today's liquid cash less every overdue bill, then adds each
-        scheduled income and subtracts each bill on its date: the same bills and
-        income, on the same dates, that :attr:`required_liquid` counts, so the chart
-        and the *Needed* figure agree. The lowest day is marked. With nothing dated
+        It starts at today's liquid cash less every overdue bill (an estimate's
+        past date is not owed), then adds each
+        scheduled income and subtracts each bill and estimate on its date: the same
+        bills, estimates, and income, on the same dates, that :attr:`required_liquid`
+        counts. The lowest day is marked. With nothing dated
         inside the period the chart is empty.
         """
         days = max(1, self.config.liquidity_days)
@@ -664,7 +682,9 @@ class Dashboard:
         horizon = self.as_of + timedelta(days=days)
         changes: dict[date, Money] = {}
         balance = self.liquid
-        for bill in self.bills:
+        for bill in self.jar_rows:
+            if bill.next_due < self.as_of and bill.estimate:
+                continue
             if bill.next_due < self.as_of:
                 balance = balance - bill.amount
             elif bill.next_due <= horizon:

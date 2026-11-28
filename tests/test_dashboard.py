@@ -717,6 +717,77 @@ class TestLiquidityAndEmergencyFund:
         expected = gross - household.income_within(30)
         assert household.required_liquid == max(Money(0), expected)
 
+    @staticmethod
+    def _jar_book(db, book, *, groceries: bool = False):
+        """Pay of 2,000 on the 1st (received) and the 25th, rent of 1,800 on the
+        30th, and 5,000 in checking; seen on March 15."""
+        with db.transaction("jar book") as txn:
+            db.add_transaction(
+                Transaction.simple(date(2026, 1, 1), "Open", book.checking, book.opening, "5000"),
+                txn,
+            )
+            for day in (1, 25):
+                pay = ScheduledTransaction(
+                    name=f"Pay on the {day}",
+                    recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, day)),
+                    splits=[
+                        ScheduledSplit(book.checking, Money("2000")),
+                        ScheduledSplit(book.salary, Money("-2000")),
+                    ],
+                )
+                pay.last_posted = date(2026, 3, day) if day == 1 else date(2026, 2, day)
+                db.add_scheduled(pay, txn)
+            rent = ScheduledTransaction(
+                name="Rent",
+                recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 30)),
+                splits=[
+                    ScheduledSplit(book.rent, Money("1800")),
+                    ScheduledSplit(book.checking, Money("-1800")),
+                ],
+            )
+            rent.last_posted = date(2026, 2, 28)
+            db.add_scheduled(rent, txn)
+            if groceries:
+                estimate = ScheduledTransaction(
+                    name="Groceries",
+                    recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 20)),
+                    splits=[
+                        ScheduledSplit(book.groceries, Money("600")),
+                        ScheduledSplit(book.checking, Money("-600")),
+                    ],
+                )
+                estimate.placeholder = True  # an estimate, never posted for you
+                db.add_scheduled(estimate, txn)
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig("Cash", [book.checking], "liquid")]
+        )
+        return dashboard.build(db, config, as_of=date(2026, 3, 15))
+
+    def test_pay_in_the_period_never_frees_what_is_already_in_a_jar(self, db, book):
+        """Field report: Needed seemed to count only what the bills need beyond
+        their jars, and Available not to take out what is already in them. Half of
+        the rent is in its jar from the pay of March 1; the pay of March 25 can
+        fund only the other half, so the 900 in the jar stays spoken for."""
+        board = self._jar_book(db, book)
+        [rent] = [bill for bill in board.bills if bill.name == "Rent"]
+        assert rent.next_due == date(2026, 3, 30)
+        assert rent.held == Money("900")
+        assert board.income_within(30) >= Money("2000")
+        # Was max(0, 1,800 - pay in the period) = 0.
+        assert board.required_liquid == Money("900")
+        assert board.available == Money("5000") - Money("900") - board.config.reserve
+
+    def test_an_estimates_jar_is_kept_back_too(self, db, book):
+        """Groceries of 600 on the 20th: the pay of February 25 and March 1 is all
+        the pay in its cycle, so its jar for March 20 is full, and kept back like
+        the rent's. A past date of an estimate is not owed."""
+        board = self._jar_book(db, book, groceries=True)
+        groceries = [row for row in board.estimates if row.name == "Groceries"]
+        assert sum((row.held for row in groceries), Money(0)) == Money("600")
+        assert board.jars_held == Money("1500")
+        assert board.required_liquid == Money("1500")
+        assert board.available == Money("5000") - Money("1500") - board.config.reserve
+
     def test_available_is_liquid_less_what_is_spoken_for(self, household):
         assert household.available == (
             household.liquid - household.required_liquid - household.config.reserve
