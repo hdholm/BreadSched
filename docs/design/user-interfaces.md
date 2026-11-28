@@ -226,6 +226,19 @@ as stale, so nothing saved is lost. On the next activation
 `log`) holding the start of the log, the home directory masked as `~`. On POSIX,
 `SIGUSR1` writes every thread's stack to `stacks-on-request.log`.
 
+A crash ends the process before it can ask anything, so `gui/crash_reports.CrashGuard`
+(also started only by the launcher) opens `crash-<time>-<pid>.log` in the data
+folder's `crash-reports` and arms `faulthandler.enable` on it, so a fatal signal (a
+segmentation fault or abort in GTK or another native library) writes every
+thread's stack there; its `sys.excepthook` and `threading.excepthook` add any
+unhandled Python error (GTK reports one raised in a callback and carries on). It
+leaves `running.json` naming the log, which a clean exit removes along with an
+empty log. At the next start `crash_to_offer` reads the marker before the new
+guard replaces it: a marker whose log holds something is a crash, offered once by
+`BreadSchedApplication.offer_crash_report` as a hang is, unless `last-hang.json`
+shows the run was quit from the not-responding prompt. A process killed outright
+writes nothing and is not offered.
+
 Work that blocks the loop by design says so with `watchdog.busy(doing, allow)`, a
 context manager that is a no-op without a running watchdog. Inside it the watchdog
 waits `max(STALL_SECONDS, allow)` (`BUSY_SECONDS`, 180, by default) before asking,
@@ -667,8 +680,8 @@ parallel transaction models:
   Double Line still alternates.
 - **Enter and Cancel.** `RegisterGrid.enter` and `RegisterGrid.cancel` are the one
   path for the Enter and Escape keys, the register toolbar's **Enter** and **Cancel**
-  buttons (which do not take focus), and the `register-enter` and `register-cancel`
-  view actions (as GnuCash's register toolbar has them).
+  buttons (which do not take focus), and the `register-cancel` view action. Enter
+  and Edit in Place are not menu commands: in the register they are a key away.
 - **Shared display settings.** Both are settings for every register, not toolbar
   controls: `views.register.apply_register_display()` redraws each live
   `RegisterView` (a `WeakSet`) after View → Double Line or Preferences → Save, and

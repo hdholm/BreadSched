@@ -8,6 +8,21 @@ GitHub releases.
 
 ## Unreleased
 
+- **The register's right-click menu always has the transaction's commands.**
+  A right-click on the cell being edited showed the text field's Cut, Copy, Paste,
+  and Delete instead of the row's commands (Track as Reimbursable, Track as FSA
+  Claim, and the rest), so the full menu appeared only after clicking elsewhere on
+  the row.
+- **Fewer register commands in the Actions menu.** Edit Transaction in Place and
+  Enter Transaction are gone: the register already edits in place, and Enter (the
+  key or the toolbar's Enter button) saves. Cancel Transaction stays.
+- **Preferences → Dashboard → Groups no longer has Suggest from accounts**, which
+  only removed every group: Dashboard groups are never made from account types.
+- **A desktop crash is reported.** When BreadSched closes on its own (for example
+  after a fault in GTK), where it was is written to a crash log, and the next start
+  offers **Report problem…** with the version and the start of that log filled in,
+  as it does after a freeze.
+
 ## 2026.11.27.0
 
 The seventh beta, published as a GitHub pre-release; its Windows installer and Linux
