@@ -319,20 +319,17 @@ def _scheduled_event(
     reporting_currency: str,
     today: date | None = None,
 ) -> PlannedEvent:
+    # The legs of this occurrence, versions applied: a version may add or drop a
+    # leg, so they are not the template's splits one for one.
     expected = tuple(
         PlannedSplit(
-            account,
-            amount,
-            split.planning_flow,
-            split.investment_activity,
-            source,
+            leg.account,
+            leg.value,
+            leg.split.planning_flow,
+            leg.split.investment_activity,
+            leg.source,
         )
-        for split, (account, amount), source in zip(
-            schedule.splits,
-            schedule.resolved_splits(when=when),
-            schedule.resolved_split_sources(when),
-            strict=True,
-        )
+        for leg in schedule.legs_at(when)
     )
     expected_amount = _positive_total(expected)
     on = today or date.today()
@@ -478,20 +475,17 @@ def _scenario_schedule_event(
     when: date,
     actual: Transaction | None,
 ) -> PlannedEvent:
+    # The legs of this occurrence, versions applied: a version may add or drop a
+    # leg, so they are not the template's splits one for one.
     expected = tuple(
         PlannedSplit(
-            account,
-            amount,
-            split.planning_flow,
-            split.investment_activity,
-            source,
+            leg.account,
+            leg.value,
+            leg.split.planning_flow,
+            leg.split.investment_activity,
+            leg.source,
         )
-        for split, (account, amount), source in zip(
-            schedule.splits,
-            schedule.resolved_splits(when),
-            schedule.resolved_split_sources(when),
-            strict=True,
-        )
+        for leg in schedule.legs_at(when)
     )
     expected_amount = _positive_total(expected)
     key = schedule.occurrence_key(scenario.handle, when)

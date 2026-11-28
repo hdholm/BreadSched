@@ -8,6 +8,12 @@ GitHub releases.
 
 ## Unreleased
 
+- **The projection works with a version that adds or drops a leg.** A schedule
+  whose future change (a version) had more or fewer legs than the schedule itself
+  stopped the Projection and the Plan with "zip() argument 2 is shorter than
+  argument 1". Each occurrence's legs are now planned as they are, each with its own
+  planning purpose and investment activity.
+
 - **The register's right-click menu always has the transaction's commands.**
   A right-click on the cell being edited showed the text field's Cut, Copy, Paste,
   and Delete instead of the row's commands (Track as Reimbursable, Track as FSA
