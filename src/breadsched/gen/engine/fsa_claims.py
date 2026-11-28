@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
@@ -85,9 +85,16 @@ def _transaction_words(transaction: Transaction) -> set[str]:
 
 
 def suggest_claims_for_transaction(
-    db: DbSQLite, transaction: Transaction
+    db: DbSQLite,
+    transaction: Transaction,
+    *,
+    claims: Sequence[tuple[FsaClaim, FsaClaimSummary]] | None = None,
 ) -> list[FsaClaimSuggestion]:
-    """Rank claims and explain the most likely attachment role for one transaction."""
+    """Rank claims and explain the most likely attachment role for one transaction.
+
+    ``claims`` is every claim with its summary, read once by a caller suggesting for
+    many transactions (``fsa_claim_proposals``); without it they are read here.
+    """
     eligible: list[tuple[str, Split, str | None]] = []
     for split in transaction.splits:
         account = db.get_account(split.account)
@@ -112,8 +119,12 @@ def suggest_claims_for_transaction(
 
     txn_words = _transaction_words(transaction)
     suggestions: list[FsaClaimSuggestion] = []
-    for claim in iter_claims(db):
-        summary = claim_summary(db, claim)
+    known = (
+        claims
+        if claims is not None
+        else [(claim, claim_summary(db, claim)) for claim in iter_claims(db)]
+    )
+    for claim, summary in known:
         over = summary.status is FsaClaimStatus.OVER_REIMBURSED
         if summary.status is FsaClaimStatus.CLOSED:
             continue

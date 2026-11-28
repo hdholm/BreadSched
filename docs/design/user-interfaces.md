@@ -130,13 +130,20 @@ line.
 The FSA claims window (`dialogs/fsa_claims_dialog`) is likewise not modal and
 one per book (`FsaClaimsDialog.present_for`): it is the application action
 `app.fsa-claims`, listed in every view's Actions menu (on the FSA Dashboard, as that
-view's own command and toolbar icon instead, beside **Edit FSA Claim**, which opens
-the claim selected in the dashboard's claims table, and **Link Chosen Statement
-Lines**), and it refreshes its candidate
+view's own **Edit FSA Claims**, which opens the claim selected in the dashboard's
+claims table or, with none, the window as it opens anywhere; beside it **Link Chosen
+Statement Lines**), and it refreshes its candidate
 transactions on `database-changed`. Its chooser's first entry is the new claim. Each
 link list pins the linked splits above a candidate list filtered by search text and
 by range (60 days around the service date, the claim's benefit year, or all) and
-capped at `SHOWN_LIMIT` rows.
+capped at `SHOWN_LIMIT` rows; a list's arrow (`_section`, a `Gtk.Expander`) shows the
+candidates only when opened, and activating a row (a double-click, not a single
+click) adds a candidate or removes a linked split. The window is a `FormPages`:
+**Claim** holds the service, provider, description, EOB amount, payments, and each
+allocation's account, year, target, and reimbursements; **Advanced** holds the EOB
+change note, the payer, provider refunds, each allocation's repayments and rejected
+attempts (`_AllocationRow.advanced`, a frame named for the allocation), the history,
+and closing, its title counting what it holds (`advanced_count`).
 
 The Dashboard is where a book opens and its tab is pinned first
 (`viewmanager.HOME_VIEW`, `_Tab.pinned`): it has no close button, cannot be moved,
@@ -180,6 +187,11 @@ revision changes. A view that can split its refresh into a read and a draw overr
 Dashboard, reading its claims and benefit years once); its redraw after a
 change, or when shown out of date, then keeps the old figures under an **Updating…**
 label and draws the new ones when they arrive, rereading if the book changed meanwhile.
+`BaseView.show_stale` marks the old figures while they are read (the FSA Dashboard
+greys its content, so stale figures are not taken for current ones), and a view with
+`FIRST_DRAW_IN_BACKGROUND` (the FSA Dashboard) draws even its first time this way,
+saying **Loading…**: its first read on a large book blocked the loop long enough to
+bring up the not-responding prompt.
 `ViewManager._prefill` redraws hidden tabs of such views (`BACKGROUND_VIEWS`) shortly
 after the book opens and after each change, so switching to them is immediate.
 Registers read the same way: a full read is `book.register_view(account, None)` (every

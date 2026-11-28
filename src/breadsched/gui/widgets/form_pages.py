@@ -38,6 +38,13 @@ class FormGrid(Gtk.Grid):
         self._next += 1
         return caption
 
+    def wide(self, widget: Gtk.Widget) -> Gtk.Widget:
+        """A widget across the page, label column included (a section, a list)."""
+        widget.set_hexpand(True)
+        self.attach(widget, 0, self._next, 2, 1)
+        self._next += 1
+        return widget
+
     def note(self, text: str) -> Gtk.Label:
         """A line of explanation across the page."""
         label = Gtk.Label(label=text, xalign=0, wrap=True)

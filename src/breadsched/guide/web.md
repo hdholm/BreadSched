@@ -490,8 +490,8 @@ owed and the account holding it.
 expenses: gross and net cost**, and a Plan cell's detail shows its gross cost and
 what was reimbursed or expected back below the Plan, Actual, and Variance cards.
 
-**FSA Dashboard** first lists **Proposed claim links**, FSA statement lines that
-clearly belong on one claim, each checked; **Link selected** links them. Import and
+**FSA Dashboard** first lists **Proposed claim links**, FSA statement lines near one
+of their FSA account's funding years that clearly belong on one claim, each checked; **Link selected** links them. Import and
 reconciliation say when proposals are waiting.
 
 **FSA Dashboard** lists **FSA claims**: every claim of a benefit year that can still
