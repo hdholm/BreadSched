@@ -238,3 +238,57 @@ def test_the_dashboard_lists_every_claim_of_an_open_benefit_year(db, claims):
     listed = {line.handle for line in later.dashboard_lines}
     assert made["done"].handle not in listed
     assert made["waiting"].handle in listed
+
+
+def _split_claim(db, account, provider, service, payment, target, *, eob=None):
+    claim = FsaClaim(
+        service_date=service,
+        provider=provider,
+        eob_responsibility=Money(eob) if eob is not None else None,
+        payments=[payment],
+        allocations=[FsaClaimAllocation(account.handle, YEAR, target=Money(target))],
+    )
+    fsa_claims.save_claim(db, claim)
+    return claim
+
+
+def test_a_payment_shared_by_two_claims_counts_each_claims_part_once(db, book):
+    """Field report: one healthcare payment on two claims, each for part of it,
+    was shown at its full amount on each and counted twice in the totals, though
+    each claim's allocation said its part."""
+    health = _fsa(db, book)
+    payment = _paid(db, book, date(2026, 8, 3), "300.00", "Clinic, two visits")
+    first = _split_claim(db, health, "Clinic", date(2026, 8, 1), payment, "120.00")
+    second = _split_claim(db, health, "Clinic", date(2026, 8, 2), payment, "180.00")
+
+    one = fsa_claims.claim_summary(db, db.get_fsa_claim(first.handle))
+    two = fsa_claims.claim_summary(db, db.get_fsa_claim(second.handle))
+    assert (one.paid, two.paid) == (Money("120.00"), Money("180.00"))
+    assert fsa_claims.link_share(db, first, "payment", payment) == (Money("120.00"), 2)
+
+    report = claim_report(db, as_of=date(2026, 9, 1))
+    assert report.totals.net_paid == Money("300.00")  # the payment, once
+    by_handle = {line.handle: line for line in report.lines}
+    assert by_handle[first.handle].summary.net_paid == Money("120.00")
+
+
+def test_a_shared_payment_without_targets_follows_the_eobs_or_is_halved(db, book):
+    health = _fsa(db, book)
+    payment = _paid(db, book, date(2026, 8, 3), "100.00")
+    first = _claim(db, health, "Lab", date(2026, 8, 1), [payment], eob="25.00")
+    second = _claim(db, health, "Lab", date(2026, 8, 2), [payment], eob="75.00")
+    assert fsa_claims.claim_summary(db, first).paid == Money("25.00")
+    assert fsa_claims.claim_summary(db, second).paid == Money("75.00")
+
+    other = _paid(db, book, date(2026, 8, 4), "90.00")
+    a = _claim(db, health, "X", date(2026, 8, 3), [other])
+    b = _claim(db, health, "Y", date(2026, 8, 3), [other])
+    assert fsa_claims.claim_summary(db, a).paid == Money("45.00")
+    assert fsa_claims.claim_summary(db, b).paid == Money("45.00")
+
+
+def test_a_payment_on_one_claim_still_counts_in_full(db, book):
+    health = _fsa(db, book)
+    payment = _paid(db, book, date(2026, 8, 3), "60.00")
+    claim = _claim(db, health, "Clinic", date(2026, 8, 1), [payment])
+    assert fsa_claims.claim_summary(db, claim).paid == Money("60.00")

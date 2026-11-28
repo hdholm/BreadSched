@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import weakref
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -810,6 +811,71 @@ def _sum_links(db: DbSQLite, links: list[SplitLink]) -> Money:
     return split_links.sum_links(db, links, _missing_link)
 
 
+# --------------------------------------------------- payments shared by claims
+
+#: Each book's payment and refund links by the claims that share them, with the
+#: book revision they were read at.
+_SHARED: weakref.WeakKeyDictionary[
+    DbSQLite, tuple[int, dict[tuple[str, str, str], list[FsaClaim]]]
+] = weakref.WeakKeyDictionary()
+
+
+def _sharing(db: DbSQLite) -> dict[tuple[str, str, str], list[FsaClaim]]:
+    """Every stored claim on each (kind, transaction, split) payment or refund link,
+    read once per book revision (a claim summary is asked for every claim)."""
+    revision = db.revision()
+    cached = _SHARED.get(db)
+    if cached is not None and cached[0] == revision:
+        return cached[1]
+    found: dict[tuple[str, str, str], list[FsaClaim]] = {}
+    for claim in iter_claims(db):
+        for kind, links in (("payment", claim.payments), ("refund", claim.refunds)):
+            for link in links:
+                found.setdefault((kind, link.transaction, link.split), []).append(claim)
+    _SHARED[db] = (revision, found)
+    return found
+
+
+def _claim_weight(claim: FsaClaim) -> Money:
+    """How much of a shared payment a claim is for: its allocations' targets, or
+    without them its EOB responsibility; zero when it says neither."""
+    targets = [item.target for item in claim.allocations if item.target is not None]
+    if targets:
+        return sum(targets, Money(0))
+    return claim.eob_responsibility or Money(0)
+
+
+def link_share(db: DbSQLite, claim: FsaClaim, kind: str, link: SplitLink) -> tuple[Money, int]:
+    """What of one linked payment or refund (``kind``) counts for ``claim``, and how
+    many claims share it.
+
+    One payment can cover several claims (two visits paid together). Each claim
+    counts its share of it, in proportion to what each claim is for (its
+    allocation targets, or its EOB responsibility), and equally when none says;
+    so the shares add up to the payment, which is never counted twice.
+    """
+    _transaction, split = split_links.resolve_link(db, link, _missing_link)
+    whole = abs(split.value)
+    stored = _sharing(db).get((kind, link.transaction, link.split), [])
+    others = [item for item in stored if item.handle != claim.handle]
+    if not others:
+        return whole, 1
+    sharers = [claim, *others]
+    weights = [_claim_weight(item) for item in sharers]
+    total = sum(weights, Money(0))
+    if total <= 0 or any(weight <= 0 for weight in weights):
+        return whole / len(sharers), len(sharers)
+    return whole * (weights[0] / total), len(sharers)
+
+
+def _sum_shares(db: DbSQLite, claim: FsaClaim, kind: str, links: list[SplitLink]) -> Money:
+    total = Money(0)
+    for link in links:
+        share, _count = link_share(db, claim, kind, link)
+        total = total + share
+    return total
+
+
 def _linked_receivable(db: DbSQLite, claim: FsaClaim) -> Receivable:
     receivable = db.get_receivable(claim.receivable or "")
     if receivable is None:
@@ -846,8 +912,9 @@ def claim_summary(
     as_of: date | None = None,
 ) -> FsaClaimSummary:
     when = as_of or date.today()
-    paid = _sum_links(db, claim.payments)
-    refunds = _sum_links(db, claim.refunds)
+    # A payment or refund shared with other claims counts only this claim's share.
+    paid = _sum_shares(db, claim, "payment", claim.payments)
+    refunds = _sum_shares(db, claim, "refund", claim.refunds)
     net_paid = paid - refunds
     reimbursed = Money(0)
     repaid = Money(0)

@@ -1633,6 +1633,12 @@ have either or both; with both, grace-period claims use the earlier year first a
 the carryover is what is still unused when the run-out ends. The FSA Dashboard shows
 what each year carried in and carried over. Claims can associate
 healthcare payments, reimbursements, allocations, refunds, and rejected attempts.
+One payment can be on several claims (two visits paid together): each claim then
+counts only its part of it, in proportion to what each claim is for, its
+allocations' amounts (or, without them, its EOB responsibility), and equally when
+neither says. So with allocations of 120 and 180 on a payment of 300, the claims
+show 120 and 180 paid, and the totals count the 300 once. A refund shared by claims
+is divided the same way.
 Use FSA Dashboard to review open and recently closed benefit years and unresolved
 claims. Money waiting in an FSA is an FSA asset: net worth, never liquidity.
 

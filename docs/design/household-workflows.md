@@ -234,7 +234,11 @@ movement and the cash bridge has no residual for FSA-paid expense.
 [Presentation settings and financial records](storage.md#presentation-settings-and-financial-records))
 linking payments, provider refunds, and per-funding-year allocations with their
 reimbursements, rejections, and repayments. `engine.fsa_claims.claim_summary`
-recomputes paid, refunded, reimbursed, repaid, remaining, and status. FSA reimbursements
+recomputes paid, refunded, reimbursed, repaid, remaining, and status. A payment or
+refund linked to several claims counts each claim's share (`link_share`), in
+proportion to each claim's allocation targets, else its EOB responsibility, else
+equally, so the shares add up to the split and report totals count it once; the
+claims sharing each link are read once per book revision. FSA reimbursements
 need no reclassification because the money is already in the FSA asset, which is not
 cash-like.
 

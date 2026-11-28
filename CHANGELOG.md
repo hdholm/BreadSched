@@ -8,6 +8,12 @@ GitHub releases.
 
 ## Unreleased
 
+- **A payment on two FSA claims is counted once.** A healthcare payment linked to
+  several claims, each for part of it, counted in full on every claim, so the FSA
+  Dashboard showed the whole payment on each and its totals counted it more than
+  once. Each claim now counts its part, in proportion to its allocation amounts (or
+  its EOB responsibility), and the totals count the payment once.
+
 ## 2026.11.28.0
 
 The eighth beta, published as a GitHub pre-release; its Windows installer and Linux
