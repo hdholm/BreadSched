@@ -824,7 +824,8 @@ _SHARED: weakref.WeakKeyDictionary[
 
 
 def _sharing(db: DbSQLite) -> dict[tuple[str, str, str], list[FsaClaim]]:
-    """Every stored claim on each (kind, transaction, split) payment or refund link,
+    """Every stored claim on each (kind, transaction, split) link of its payments,
+    refunds, reimbursements, and repayments,
     read once per book revision (a claim summary is asked for every claim)."""
     revision = db.revision()
     cached = _SHARED.get(db)
@@ -832,25 +833,40 @@ def _sharing(db: DbSQLite) -> dict[tuple[str, str, str], list[FsaClaim]]:
         return cached[1]
     found: dict[tuple[str, str, str], list[FsaClaim]] = {}
     for claim in iter_claims(db):
-        for kind, links in (("payment", claim.payments), ("refund", claim.refunds)):
+        kinds = [("payment", claim.payments), ("refund", claim.refunds)]
+        for allocation in claim.allocations:
+            kinds.append(("reimbursement", allocation.reimbursements))
+            kinds.append(("repayment", allocation.repayments))
+        for kind, links in kinds:
             for link in links:
-                found.setdefault((kind, link.transaction, link.split), []).append(claim)
+                sharers = found.setdefault((kind, link.transaction, link.split), [])
+                if all(item.handle != claim.handle for item in sharers):
+                    sharers.append(claim)
     _SHARED[db] = (revision, found)
     return found
 
 
-def _claim_weight(claim: FsaClaim) -> Money:
-    """How much of a shared payment a claim is for: its allocations' targets, or
-    without them its EOB responsibility; zero when it says neither."""
+def _claim_weight(db: DbSQLite, claim: FsaClaim, transaction: str) -> Money:
+    """How much of a shared link a claim is for: its allocations' targets, or
+    without them its EOB responsibility, or without that what it paid in the same
+    transaction (an FSA card paying several visits, each its own expense leg); zero
+    when it says none of these."""
     targets = [item.target for item in claim.allocations if item.target is not None]
     if targets:
         return sum(targets, Money(0))
-    return claim.eob_responsibility or Money(0)
+    if claim.eob_responsibility is not None:
+        return claim.eob_responsibility
+    total = Money(0)
+    for link in claim.payments:
+        if link.transaction == transaction:
+            _txn, split = split_links.resolve_link(db, link, _missing_link)
+            total = total + abs(split.value)
+    return total
 
 
 def link_share(db: DbSQLite, claim: FsaClaim, kind: str, link: SplitLink) -> tuple[Money, int]:
-    """What of one linked payment or refund (``kind``) counts for ``claim``, and how
-    many claims share it.
+    """What of one linked payment, refund, reimbursement, or repayment (``kind``)
+    counts for ``claim``, and how many claims share it.
 
     One payment can cover several claims (two visits paid together). Each claim
     counts its share of it, in proportion to what each claim is for (its
@@ -864,7 +880,7 @@ def link_share(db: DbSQLite, claim: FsaClaim, kind: str, link: SplitLink) -> tup
     if not others:
         return whole, 1
     sharers = [claim, *others]
-    weights = [_claim_weight(item) for item in sharers]
+    weights = [_claim_weight(db, item, link.transaction) for item in sharers]
     total = sum(weights, Money(0))
     if total <= 0 or any(weight <= 0 for weight in weights):
         return whole / len(sharers), len(sharers)
@@ -937,8 +953,10 @@ def claim_summary(
         year_status = fsa.year_status(db, account, year, as_of=when)
         available = available + year_status.remaining
         contributions_open = contributions_open or when <= year.through
-        reimbursed = reimbursed + _sum_links(db, allocation.reimbursements)
-        repaid = repaid + _sum_links(db, allocation.repayments)
+        # FSA money shared with other claims (one FSA card payment for several
+        # visits) counts only this claim's share, as a shared payment does.
+        reimbursed = reimbursed + _sum_shares(db, claim, "reimbursement", allocation.reimbursements)
+        repaid = repaid + _sum_shares(db, claim, "repayment", allocation.repayments)
         for rejection in allocation.rejections:
             if rejection.amount < 0:
                 raise ValueError("rejected reimbursement amount must not be negative")

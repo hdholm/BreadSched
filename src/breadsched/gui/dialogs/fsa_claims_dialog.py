@@ -96,6 +96,9 @@ class _LinkList(Gtk.Box):
         self._linked: list[ClaimLinkInput] = []
         self._anchor: date | None = None
         self._window: tuple[date, date] | None = None
+        #: Transactions other claims link legs of (one payment for several visits):
+        #: their other legs are offered whatever the date range.
+        self.related: set[str] = set()
         # Double-clicking a linked transaction removes it, and one to add adds it
         # (Enter too): a shortcut for the Remove and Add buttons on each row.
         self.linked_box = Gtk.ListBox(
@@ -216,7 +219,9 @@ class _LinkList(Gtk.Box):
         for link, when, label in self._candidates:
             if link in self._linked:
                 continue
-            if key == "near" and self._anchor is not None:
+            if link.transaction in self.related:
+                pass  # another leg of a payment other claims share
+            elif key == "near" and self._anchor is not None:
                 if abs((when - self._anchor).days) > NEAR_DAYS:
                     continue
             elif key == "year" and self._window is not None:
@@ -225,6 +230,18 @@ class _LinkList(Gtk.Box):
             if any(word not in label.casefold() for word in words):
                 continue
             shown.append((link, when, label))
+        # Only the first SHOWN_LIMIT are listed, so the likeliest come first: the
+        # other legs of a payment other claims share, then the nearest to the
+        # service date (newest first without one). In chart order, a long FSA
+        # history listed only its oldest transactions under Any date.
+        anchor = self._anchor
+
+        def order(item: tuple[ClaimLinkInput, date, str]) -> tuple[int, int]:
+            link, when, _label = item
+            distance = abs((when - anchor).days) if anchor is not None else -when.toordinal()
+            return (0 if link.transaction in self.related else 1, distance)
+
+        shown.sort(key=order)
         return shown
 
     def _show_candidates(self) -> None:
@@ -830,6 +847,14 @@ class FsaClaimsDialog(BoundedWindow):
         for links in (row.reimburse, row.repay):
             links.set_anchor(service_date, window)
 
+    def _relate(self, claim: FsaClaim | None) -> None:
+        """Offer the other legs of payments and refunds that other claims link: one
+        payment covering several visits is linked a leg per claim, and a visit
+        long before the payment would otherwise be outside the date range."""
+        others = [item for item in self.claims if claim is None or item.handle != claim.handle]
+        self.payments.related = {link.transaction for item in others for link in item.payments}
+        self.refunds.related = {link.transaction for item in others for link in item.refunds}
+
     def _load_selected(self, *_args) -> None:
         if self._choosing:
             return
@@ -838,6 +863,7 @@ class FsaClaimsDialog(BoundedWindow):
 
     def _load(self, claim: FsaClaim | None) -> None:
         self.current = claim
+        self._relate(claim)
         self.service.set_text(shown_date(claim.service_date) if claim else shown_date(date.today()))
         self.provider.set_text(claim.provider if claim else "")
         self.description.set_text(claim.description if claim else "")

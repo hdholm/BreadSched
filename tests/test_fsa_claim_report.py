@@ -14,6 +14,7 @@ from breadsched.gen.lib import (
     FsaClaimRejection,
     FsaFundingYear,
     Money,
+    Split,
     SplitLink,
     Transaction,
 )
@@ -332,3 +333,37 @@ def test_an_eob_equal_to_what_was_paid_is_fully_reimbursed(db, book):
     summary = fsa_claims.claim_summary(db, claim)
     assert summary.status is fsa_claims.FsaClaimStatus.FULLY_REIMBURSED
     assert summary.unbilled == Money(0)
+
+
+def test_one_fsa_card_payment_for_several_visits_reimburses_each_its_part(db, book):
+    """Paid from the FSA card, one FSA leg pays three visits, each its own expense
+    leg and claim: saving each claim links that FSA leg as its reimbursement, and
+    each counts only its part of it (the part it paid), not the whole."""
+    health = _fsa(db, book)
+    medical = book.groceries
+    paid = Transaction(
+        post_date=date(2026, 8, 3),
+        description="Clinic",
+        splits=[
+            Split(account=medical, value=Money("50")),
+            Split(account=medical, value=Money("60")),
+            Split(account=medical, value=Money("70")),
+            Split(account=health.handle, value=Money("-180")),
+        ],
+    )
+    with db.transaction("Clinic") as txn:
+        db.add_transaction(paid, txn)
+    made = []
+    for index in range(3):
+        claim = FsaClaim(
+            service_date=date(2026, 8, 1),
+            provider=f"Visit {index + 1}",
+            payments=[SplitLink(paid.handle, paid.splits[index].handle)],
+            allocations=[FsaClaimAllocation(health.handle, YEAR)],
+        )
+        made.append(fsa_claims.save_claim(db, claim))
+    summaries = [fsa_claims.claim_summary(db, db.get_fsa_claim(c.handle)) for c in made]
+    assert [s.paid for s in summaries] == [Money("50"), Money("60"), Money("70")]
+    assert [s.reimbursed for s in summaries] == [Money("50"), Money("60"), Money("70")]
+    report = claim_report(db, as_of=date(2026, 9, 1))
+    assert report.totals.reimbursed == Money("180")

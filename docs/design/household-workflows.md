@@ -243,7 +243,12 @@ responsibility above the net paid is `unbilled`: a claim whose payments are all
 reimbursed stays **Partially reimbursed** (attention `bill`) until the next bill is
 linked, and funding-year targets may reach the EOB rather than what was paid.
 Payment candidates are expense legs (`ClaimCandidate`, with the leg's account and
-memo), so a payment split by leg links each claim to its own part. FSA reimbursements
+memo), so a payment split by leg links each claim to its own part. The desktop
+offers the other legs of a payment other claims link whatever the date range
+(`_LinkList.related`) and lists candidates nearest the service date first, since
+only `SHOWN_LIMIT` are shown. Reimbursements and repayments are shared the same
+way, and a claim without targets or EOB weighs a shared link by what it paid in
+the same transaction (one FSA card leg paying several visits). FSA reimbursements
 need no reclassification because the money is already in the FSA asset, which is not
 cash-like.
 

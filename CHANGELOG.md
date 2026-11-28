@@ -17,6 +17,12 @@ GitHub releases.
   the browser's claim editor) lists every expense leg of a transaction on its own;
   it now names each leg's account and memo, so a payment split into one leg per claim
   can be told apart and each claim linked to its own part.
+- **Every claim sharing a payment is offered its leg.** A payment for several
+  visits, a leg per visit, was not offered to a claim whose visit was more than 60
+  days before the payment, and **All dates** listed only the oldest 200
+  transactions. The legs of a payment other claims link are now always offered, and
+  the list shows the transactions nearest the service date first. One FSA card leg
+  paying several visits counts on each claim as the part that claim paid.
 - **A claim stays open while its EOB is more than was paid.** With every payment
   reimbursed but an EOB saying more is owed, a claim showed **Fully reimbursed**; it
   is now **Partially reimbursed** and needs attention, since another bill is

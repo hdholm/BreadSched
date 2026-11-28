@@ -1643,6 +1643,10 @@ payment's expense side into one leg per claim in the register (120 and 180 to
 Medical, say, against one card payment of 300): every expense leg is offered on its
 own, with its account and memo, and each claim links its leg. Splitting the paying
 side (two card payments for one 300 expense) still leaves one 300 expense leg.
+Once one claim links a leg of a payment, the other legs of that payment are offered
+to every other claim, however far its visit is from the payment's date. Paid from
+the FSA card, one FSA leg paying several visits counts on each claim as the part
+that claim paid.
 
 A claim stays open while its EOB says you owe more than its payments: with 200
 paid and reimbursed but an EOB of 300, it is **Partially reimbursed**, not fully,
