@@ -8,6 +8,27 @@ GitHub releases.
 
 ## Unreleased
 
+- **One Edit FSA Claims command.** On the FSA Dashboard, Edit FSA Claim and Manage
+  FSA Claims did the same thing; **Edit FSA Claims…** now opens the selected claim,
+  or the claims window as it opens anywhere when none is selected. Every view's
+  Actions menu names it the same way.
+- **The FSA Dashboard no longer freezes while it reads.** It proposed claim links by
+  rereading every claim for each FSA statement line, which took seconds on a long
+  FSA history and could bring up the not-responding prompt; it reads them once now.
+  The first time it is shown it says **Loading…** while it reads in the background,
+  and when it is read again its old figures are greyed under **Updating…**.
+- **Proposed claim links stay near an FSA year.** Only FSA statement lines within,
+  or within 30 days of, one of their account's funding years (start to run-out) are
+  proposed, so lines from years before any FSA year was set up no longer appear.
+- **The FSA claims window is simpler.** A **Claim** tab holds what most claims need;
+  the EOB change note, a payer covering part, provider refunds, repayments, rejected
+  attempts, the history, and closing are on an **Advanced** tab, which counts what it
+  holds. Each allocation's **Reimbursements** and **Repaid to the FSA** lists now
+  collapse too, and **Payer covers part** says why it offers only None when no
+  expense is tracked as reimbursable.
+- **Double-click to link a transaction to a claim.** In the claims window,
+  double-clicking a transaction to add adds it, and double-clicking a linked one
+  removes it, as the Add and Remove buttons do.
 - **The register's right-click menu always has the transaction's commands.**
   A right-click on the cell being edited showed the text field's Cut, Copy, Paste,
   and Delete instead of the row's commands (Track as Reimbursable, Track as FSA

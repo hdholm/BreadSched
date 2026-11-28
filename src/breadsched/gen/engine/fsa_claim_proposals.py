@@ -13,24 +13,33 @@ A movement is proposed only when all of these hold:
   refund (funding, repayments, and transfers need no claim);
 - exactly one claim suggests it in the role that flow takes, with a matching
   amount (:func:`fsa_claims.suggest_claims_for_transaction`);
-- that claim has not already been proposed for an earlier movement in this batch.
+- that claim has not already been proposed for an earlier movement in this batch;
+- it falls within, or within ``NEAR_DAYS`` of, one of its FSA account's funding
+  years, from the year's start to the end of its run-out: a movement in an FSA
+  account from before (or long after) any year set up for it belongs to no claim
+  BreadSched can settle.
 
-Anything else is left to Review, which explains it.
+Anything else is left to Review, which explains it. Every claim and its summary is
+read once for the whole batch.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 from ..db.sqlite import DbSQLite
 from ..lib.account import AccountType
 from ..lib.money import Money
 from . import fsa_flows
-from .fsa_claims import iter_claims, suggest_claims_for_transaction
+from .fsa_claims import claim_summary, iter_claims, suggest_claims_for_transaction
 from .fsa_flows import FsaFlowKind
 
-__all__ = ["FsaClaimProposal", "propose_claim_links"]
+__all__ = ["NEAR_DAYS", "FsaClaimProposal", "propose_claim_links"]
+
+#: How far before a funding year's start, or after its run-out, a movement may be
+#: and still be proposed.
+NEAR_DAYS = 30
 
 #: The claim role each flow that needs a claim takes.
 _ROLE = {
@@ -56,9 +65,9 @@ class FsaClaimProposal:
     reason: str
 
 
-def _linked_splits(db: DbSQLite) -> set[tuple[str, str]]:
+def _linked_splits(claims) -> set[tuple[str, str]]:
     linked: set[tuple[str, str]] = set()
-    for claim in iter_claims(db):
+    for claim in claims:
         links = [*claim.payments, *claim.refunds]
         for allocation in claim.allocations:
             links.extend(allocation.reimbursements)
@@ -81,7 +90,18 @@ def propose_claim_links(db: DbSQLite, *, account: str | None = None) -> list[Fsa
     accounts = {item.handle: item for item in db.iter_accounts()}
     if not any(item.atype is AccountType.FSA for item in accounts.values()):
         return []
-    linked = _linked_splits(db)
+    near = timedelta(days=NEAR_DAYS)
+    windows = {
+        handle: [
+            (year.start - near, (year.runout_through or year.through) + near)
+            for year in item.fsa.years
+        ]
+        for handle, item in accounts.items()
+        if item.atype is AccountType.FSA
+    }
+    claims = list(iter_claims(db))
+    known = [(claim, claim_summary(db, claim)) for claim in claims]
+    linked = _linked_splits(claims)
     movements = []
     for transaction in db.iter_transactions():
         if account is not None and not any(s.account == account for s in transaction.splits):
@@ -92,6 +112,11 @@ def propose_claim_links(db: DbSQLite, *, account: str | None = None) -> list[Fsa
                 continue
             if (transaction.handle, split.handle) in linked:
                 continue
+            if not any(
+                first <= transaction.post_date <= last
+                for first, last in windows.get(split.account, ())
+            ):
+                continue
             kind = fsa_flows.classify(transaction, split, accounts)
             if kind in _ROLE:
                 movements.append((transaction, split, _ROLE[kind]))
@@ -101,7 +126,7 @@ def propose_claim_links(db: DbSQLite, *, account: str | None = None) -> list[Fsa
     for transaction, split, role in movements:
         fits = [
             suggestion
-            for suggestion in suggest_claims_for_transaction(db, transaction)
+            for suggestion in suggest_claims_for_transaction(db, transaction, claims=known)
             if suggestion.role == role
             and suggestion.split_handle == split.handle
             and "amount match" in suggestion.reason

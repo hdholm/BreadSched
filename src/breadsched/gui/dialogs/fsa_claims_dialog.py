@@ -40,11 +40,15 @@ from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
 from ..widgets.confirm import delete_button
 from ..widgets.date_entry import attach_date_keys, date_hint, parse_date_text, shown_date
+from ..widgets.form_pages import FormPages
 
 __all__ = ["FsaClaimsDialog"]
 
 #: The claim chooser's first entry, for entering a claim not yet saved.
 NEW_CLAIM = "New claim"
+#: The window's tabs: what most claims need, and what happens rarely.
+CLAIM_PAGE = "Claim"
+ADVANCED_PAGE = "Advanced"
 #: What the status line says once a claim is saved, until the form changes again.
 SAVED = "Claim saved."
 
@@ -82,8 +86,13 @@ class _LinkList(Gtk.Box):
         self._linked: list[ClaimLinkInput] = []
         self._anchor: date | None = None
         self._window: tuple[date, date] | None = None
-        self.linked_box = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        # Double-clicking a linked transaction removes it, and one to add adds it
+        # (Enter too): a shortcut for the Remove and Add buttons on each row.
+        self.linked_box = Gtk.ListBox(
+            selection_mode=Gtk.SelectionMode.NONE, activate_on_single_click=False
+        )
         self.linked_box.add_css_class("boxed-list")
+        self.linked_box.connect("row-activated", self._on_linked_activated)
         self.append(self.linked_box)
         #: Said when nothing is linked and the list to add from is closed.
         self.empty = Gtk.Label(label="None linked", xalign=0)
@@ -105,7 +114,10 @@ class _LinkList(Gtk.Box):
         self.count.add_css_class("dim")
         filters.append(self.count)
         self.append(filters)
-        self.candidate_box = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        self.candidate_box = Gtk.ListBox(
+            selection_mode=Gtk.SelectionMode.NONE, activate_on_single_click=False
+        )
+        self.candidate_box.connect("row-activated", self._on_candidate_activated)
         scroll = Gtk.ScrolledWindow(child=self.candidate_box, min_content_height=140)
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.append(scroll)
@@ -159,10 +171,22 @@ class _LinkList(Gtk.Box):
             "(a transaction outside this list)",
         )
 
+    def _on_linked_activated(self, _box, row: Gtk.ListBoxRow) -> None:
+        link = getattr(row.get_child(), "link", None)
+        if link is not None:
+            self.remove_link(link)
+
+    def _on_candidate_activated(self, _box, row: Gtk.ListBoxRow) -> None:
+        link = getattr(row.get_child(), "link", None)
+        if link is not None:
+            self.add(link)
+
     def _render(self) -> None:
         self.linked_box.remove_all()
         for link in self._linked:
             row = Gtk.Box(spacing=6)
+            row.link = link
+            row.set_tooltip_text("Double-click to remove")
             text = Gtk.Label(label=self._label(link), xalign=0, hexpand=True, wrap=True)
             row.append(text)
             remove = Gtk.Button(label="Remove")
@@ -198,6 +222,8 @@ class _LinkList(Gtk.Box):
         shown = self.visible_candidates()
         for link, _when, label in shown[:SHOWN_LIMIT]:
             row = Gtk.Box(spacing=6)
+            row.link = link
+            row.set_tooltip_text("Double-click to add")
             row.append(Gtk.Label(label=label, xalign=0, hexpand=True, wrap=True))
             add = Gtk.Button(label="Add")
             add.connect("clicked", lambda _b, item=link: self.add(item))
@@ -212,6 +238,14 @@ class _LinkList(Gtk.Box):
         return len(self._candidates)
 
 
+def _section(title: str, show: Callable[[bool], None]) -> Gtk.Expander:
+    """A section's heading: its arrow shows (or hides) the means of adding to it,
+    closed to begin with."""
+    expander = Gtk.Expander(label=title, expanded=False)
+    expander.connect("notify::expanded", lambda widget, _p: show(widget.get_expanded()))
+    return expander
+
+
 def _event_text(event: FsaClaimEvent) -> str:
     def amount(value: Money | None) -> str:
         return value.format() if value is not None else "none"
@@ -224,6 +258,10 @@ def _event_text(event: FsaClaimEvent) -> str:
 
 
 class _AllocationRow(Gtk.Frame):
+    """One FSA allocation: its account, year, target, and reimbursements on the
+    Claim tab (this frame), and its repayments and rejected attempts, which happen
+    rarely, in :attr:`advanced` on the Advanced tab."""
+
     def __init__(
         self,
         fsa_accounts: tuple,
@@ -237,6 +275,10 @@ class _AllocationRow(Gtk.Frame):
         self.accounts = list(fsa_accounts)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.set_child(box)
+        #: The rarely used part, shown on the Advanced tab under the allocation's name.
+        self.advanced = Gtk.Frame()
+        advanced = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.advanced.set_child(advanced)
         top = Gtk.Box(spacing=6)
         self.account = bounded_dropdown([account.name for account in self.accounts])
         self.account.connect("notify::selected", self._refresh_years)
@@ -246,16 +288,22 @@ class _AllocationRow(Gtk.Frame):
         self.target = Gtk.Entry(placeholder_text="Target amount (optional)")
         top.append(self.target)
         box.append(top)
-        box.append(Gtk.Label(label="Reimbursement/payment splits", xalign=0))
+        # Each list's arrow shows the transactions to add from, closed at first.
         self.reimburse = _LinkList(candidates, on_changed)
+        self.reimburse_section = _section("Reimbursements", self.reimburse.set_adding)
+        box.append(self.reimburse_section)
         box.append(self.reimburse)
-        box.append(Gtk.Label(label="Repaid to the FSA (money paid back into it)", xalign=0))
         self.repay = _LinkList(list(repayments), on_changed)
-        box.append(self.repay)
-        box.append(Gtk.Label(label="Rejected/failed attempts (date | amount | reason)", xalign=0))
+        self.repay_section = _section(
+            "Repaid to the FSA (money paid back into it)", self.repay.set_adding
+        )
+        advanced.append(self.repay_section)
+        advanced.append(self.repay)
+        advanced.append(
+            Gtk.Label(label="Rejected or failed attempts (date | amount | reason)", xalign=0)
+        )
         self.rejections = Gtk.Entry(placeholder_text="2026-03-01 | 125.00 | receipt required")
-        box.append(self.rejections)
-        self.set_adding(False)
+        advanced.append(self.rejections)
         if allocation is not None:
             for index, account in enumerate(self.accounts):
                 if account.handle == allocation.account:
@@ -278,7 +326,9 @@ class _AllocationRow(Gtk.Frame):
                     for item in allocation.rejections
                 )
             )
+        self._name_advanced()
         for dropdown in (self.account, self.year):
+            dropdown.connect("notify::selected", lambda *_: self._name_advanced())
             dropdown.connect("notify::selected", lambda *_: on_changed())
         for entry in (self.target, self.rejections):
             entry.connect("changed", lambda *_: on_changed())
@@ -295,9 +345,28 @@ class _AllocationRow(Gtk.Frame):
         )
 
     def set_adding(self, on: bool) -> None:
-        """Show (or hide) the transactions to add from for each of its lists."""
-        self.reimburse.set_adding(on)
-        self.repay.set_adding(on)
+        """Open (or close) both lists' arrows, showing (or hiding) the transactions
+        to add from."""
+        self.reimburse_section.set_expanded(on)
+        self.repay_section.set_expanded(on)
+
+    def name(self) -> str:
+        """The allocation as the Advanced tab names it: its account and year."""
+        if not self.accounts:
+            return "FSA allocation"
+        account = self.accounts[min(self.account.get_selected(), len(self.accounts) - 1)]
+        years = account.years
+        if not years:
+            return account.name
+        year = years[min(self.year.get_selected(), len(years) - 1)]
+        return f"{account.name}, {shown_date(year.start)} – {shown_date(year.through)}"
+
+    def _name_advanced(self) -> None:
+        self.advanced.set_label(self.name())
+
+    def holds_advanced(self) -> bool:
+        """Whether its Advanced part holds anything (a repayment or a rejection)."""
+        return bool(self.repay.links() or self.rejections.get_text().strip())
 
     def _refresh_years(self, *_args) -> None:
         if not self.accounts:
@@ -406,48 +475,35 @@ class FsaClaimsDialog(BoundedWindow):
         top.append(delete)
         outer.append(top)
 
-        fields = Gtk.Grid(column_spacing=8, row_spacing=6)
+        # The few things most claims need on the first tab; what happens rarely (an
+        # EOB changed, a payer covering part, a provider refund, a repayment or a
+        # rejected attempt, closing) a tab away, as the schedule editor keeps its
+        # future changes (#383).
+        self.pages = FormPages()
+        self.pages.set_vexpand(True)
+        outer.append(self.pages)
+        claim_page = self.pages.page(CLAIM_PAGE)
+        advanced_page = self.pages.page(ADVANCED_PAGE)
+
         self.service = attach_date_keys(Gtk.Entry(placeholder_text=date_hint()))
         self.provider = Gtk.Entry(placeholder_text="Provider")
         self.description = Gtk.Entry(placeholder_text="Description")
         self.eob = Gtk.Entry(placeholder_text="EOB patient responsibility")
-        self.eob_note = Gtk.Entry(placeholder_text="Why the EOB changed (kept in the history)")
-        # A payer (an insurer) covering part of this same expense leaves the FSA
-        # only the rest (issue #192); linked only from here, never inferred.
-        self.receivables = list(view.candidates.receivables)
-        self.payer = bounded_dropdown(["None"] + [item.name for item in self.receivables])
-        self.payer.set_tooltip_text(
-            "A reimbursable expense whose payer covers part of this bill; "
-            "the FSA then claims only the rest"
-        )
-        for row, (label, widget) in enumerate(
-            (
-                ("Service date", self.service),
-                ("Provider", self.provider),
-                ("Description", self.description),
-                ("EOB responsibility", self.eob),
-                ("EOB change note", self.eob_note),
-                ("Payer covers part", self.payer),
-            )
+        for label, widget in (
+            ("Service date", self.service),
+            ("Provider", self.provider),
+            ("Description", self.description),
+            ("EOB responsibility", self.eob),
         ):
-            fields.attach(Gtk.Label(label=label, xalign=0), 0, row, 1, 1)
-            fields.attach(widget, 1, row, 1, 1)
-        outer.append(fields)
-        self.shared = Gtk.Label(xalign=0, wrap=True)
-        self.shared.set_visible(False)
-        outer.append(self.shared)
+            claim_page.add(label, widget)
 
         payments, refunds, reimbursements, repayments = self._candidates()
         self.reimbursement_candidates = reimbursements
         self.repayment_candidates = repayments
         self.payments = _LinkList(payments, self._form_changed)
         self.payments_section = self._section("Healthcare payments", self.payments.set_adding)
-        outer.append(self.payments_section)
-        outer.append(self.payments)
-        self.refunds = _LinkList(refunds, self._form_changed)
-        self.refunds_section = self._section("Provider refunds / credits", self.refunds.set_adding)
-        outer.append(self.refunds_section)
-        outer.append(self.refunds)
+        claim_page.wide(self.payments_section)
+        claim_page.wide(self.payments)
         self.service.connect("changed", self._service_changed)
 
         allocation_bar = Gtk.Box(spacing=6)
@@ -456,22 +512,68 @@ class FsaClaimsDialog(BoundedWindow):
         self.add_allocation_button = Gtk.Button(label="Add allocation")
         self.add_allocation_button.connect("clicked", lambda *_: self._add_allocation())
         allocation_bar.append(self.add_allocation_button)
-        outer.append(allocation_bar)
+        claim_page.wide(allocation_bar)
         self.allocations = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.allocations_empty = Gtk.Label(label="No allocations", xalign=0)
         self.allocations_empty.add_css_class("dim-label")
-        outer.append(self.allocations_empty)
+        claim_page.wide(self.allocations_empty)
         self.allocations_scroll = Gtk.ScrolledWindow(child=self.allocations)
         self.allocations_scroll.set_propagate_natural_height(True)
-        outer.append(self.allocations_scroll)
+        claim_page.wide(self.allocations_scroll)
         self._show_allocation_adding(False)
-        # Where the saved claim stands, and its corrections (EOB changes,
-        # closings, reopenings), oldest first.
+        # Where the saved claim stands.
         self.standing = Gtk.Label(xalign=0, wrap=True)
-        outer.append(self.standing)
+        claim_page.wide(self.standing)
+
+        advanced_page.note("For what happens rarely; each part says when it is used.")
+        self.eob_note = Gtk.Entry(placeholder_text="Why the EOB changed (kept in the history)")
+        advanced_page.add("EOB change note", self.eob_note)
+        # A payer (an insurer) covering part of this same expense leaves the FSA
+        # only the rest (issue #192); linked only from here, never inferred.
+        self.receivables = list(view.candidates.receivables)
+        self.payer = bounded_dropdown(["None"] + [item.name for item in self.receivables])
+        self.payer.set_tooltip_text(
+            "A reimbursable expense whose payer covers part of this bill; "
+            "the FSA then claims only the rest"
+        )
+        advanced_page.add("Payer covers part", self.payer)
+        # The list holds reimbursable expenses: with none tracked it can only be
+        # None, which said nothing about why.
+        self.payer_note = advanced_page.note(
+            "An expense tracked as reimbursable (Track as Reimbursable on a register "
+            "row) whose payer, such as an insurer, covers part of this bill; the FSA "
+            "is then claimed for only the rest."
+            if self.receivables
+            else "No expense is tracked as reimbursable yet. When an insurer or another "
+            "payer covers part of this bill, choose Track as Reimbursable on its "
+            "register row; it can then be chosen here, and the FSA is claimed for only "
+            "the rest."
+        )
+        self.payer.set_sensitive(bool(self.receivables))
+        self.shared = Gtk.Label(xalign=0, wrap=True)
+        self.shared.set_visible(False)
+        advanced_page.wide(self.shared)
+        self.refunds = _LinkList(refunds, self._form_changed)
+        self.refunds_section = self._section("Provider refunds / credits", self.refunds.set_adding)
+        advanced_page.wide(self.refunds_section)
+        advanced_page.wide(self.refunds)
+        heading = Gtk.Label(label="Repayments and rejected attempts", xalign=0)
+        heading.add_css_class("total-row")
+        advanced_page.wide(heading)
+        self.advanced_allocations = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        advanced_page.wide(self.advanced_allocations)
+        self.advanced_empty = Gtk.Label(
+            label="An allocation's repayments and rejected attempts are listed here.",
+            xalign=0,
+            wrap=True,
+        )
+        self.advanced_empty.add_css_class("dim-label")
+        advanced_page.wide(self.advanced_empty)
+        # The claim's corrections (EOB changes, closings, reopenings), oldest first,
+        # and closing or reopening it with a reason.
         self.history = Gtk.Label(xalign=0, wrap=True)
         self.history.add_css_class("dim-label")
-        outer.append(self.history)
+        advanced_page.wide(self.history)
         closing = Gtk.Box(spacing=6)
         self.close_reason = Gtk.Entry(placeholder_text="Why close, or why reopen", hexpand=True)
         closing.append(self.close_reason)
@@ -484,7 +586,7 @@ class FsaClaimsDialog(BoundedWindow):
         self.reopen_button = Gtk.Button(label="Reopen claim")
         self.reopen_button.connect("clicked", self._reopen_claim)
         closing.append(self.reopen_button)
-        outer.append(closing)
+        advanced_page.wide(closing)
         self.status = Gtk.Label(xalign=0, wrap=True)
         outer.append(self.status)
         # Save claim is available only while the form differs from the claim as it
@@ -671,26 +773,20 @@ class FsaClaimsDialog(BoundedWindow):
             return
         self._anchor(service_date)
 
-    @staticmethod
-    def _section(title: str, show: Callable[[bool], None]) -> Gtk.Expander:
-        """A section's heading: its arrow shows (or hides) the means of adding to it,
-        closed to begin with."""
-        expander = Gtk.Expander(label=title, expanded=False)
-        expander.connect("notify::expanded", lambda widget, _p: show(widget.get_expanded()))
-        return expander
+    _section = staticmethod(_section)
 
     def _show_allocation_adding(self, on: bool) -> None:
+        # Each allocation's lists have arrows of their own (Reimbursements, Repaid
+        # to the FSA): this one only offers Add allocation.
         self.add_allocation_button.set_visible(on)
-        # Room for the transactions to add from only while they are shown.
-        self.allocations_scroll.set_min_content_height(180 if on else 0)
-        for row in self._allocation_rows:
-            row.set_adding(on)
         self._show_allocations_empty()
 
     def _show_allocations_empty(self) -> None:
         self.allocations_empty.set_visible(
             not self._allocation_rows and not self.allocations_section.get_expanded()
         )
+        if hasattr(self, "advanced_empty"):
+            self.advanced_empty.set_visible(not self._allocation_rows)
 
     def _clear_allocations(self) -> None:
         child = self.allocations.get_first_child()
@@ -698,6 +794,8 @@ class FsaClaimsDialog(BoundedWindow):
             following = child.get_next_sibling()
             self.allocations.remove(child)
             child = following
+        for row in self._allocation_rows:
+            self.advanced_allocations.remove(row.advanced)
         self._allocation_rows.clear()
         self._show_allocations_empty()
 
@@ -710,8 +808,8 @@ class FsaClaimsDialog(BoundedWindow):
             self._form_changed,
         )
         self.allocations.append(row)
+        self.advanced_allocations.append(row.advanced)
         self._allocation_rows.append(row)
-        row.set_adding(self.allocations_section.get_expanded())
         self._show_allocations_empty()
         self._form_changed()
         try:
@@ -792,6 +890,19 @@ class FsaClaimsDialog(BoundedWindow):
         )
         if changed and self.status.get_text() == SAVED:
             self.status.set_text("")
+        self.pages.set_count(ADVANCED_PAGE, self.advanced_count())
+
+    def advanced_count(self) -> int:
+        """How many things the Advanced tab holds, for its title: a provider refund
+        linked, a payer, an EOB change note, an allocation's repayments or rejected
+        attempts, and a closing."""
+        return (
+            bool(self.refunds.links())
+            + (self.payer.get_selected() > 0)
+            + bool(self.eob_note.get_text().strip())
+            + sum(row.holds_advanced() for row in self._allocation_rows)
+            + bool(self.current is not None and self.current.closed_on is not None)
+        )
 
     def _show_standing(self) -> None:
         """The saved claim's status, what is owed either way, and its history."""

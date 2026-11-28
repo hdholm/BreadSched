@@ -66,6 +66,10 @@ class BaseView(Gtk.Box):
     #: What should trigger a repaint, as the storage signals name it: a kind's
     #: ``-add``/``-update``/``-delete``, or ``database-changed`` for every change.
     WATCHES: tuple[str, ...] = ("database-changed",)
+    #: Draw even the first time in the background (``background_refresh``), saying
+    #: "Loading…", for a view whose first read can take long enough to look like a
+    #: freeze (the FSA Dashboard); others draw the first time in place.
+    FIRST_DRAW_IN_BACKGROUND = False
     #: The view's key among the window's views (``view_catalog.CATEGORIES``); its
     #: commands are ``view_catalog.VIEW_ACTIONS[KEY]``.
     KEY = ""
@@ -162,6 +166,8 @@ class BaseView(Gtk.Box):
             self._stale = True
             self._full_refresh_pending = True
             return
+        if self.FIRST_DRAW_IN_BACKGROUND and self.refresh_in_background():
+            return
         self.refresh()
         self._mark_fresh()
 
@@ -189,8 +195,11 @@ class BaseView(Gtk.Box):
         if self._background_running:
             # Already being redrawn in the background; it shows when ready.
             return
-        if self._drawn_on is not None and self.refresh_in_background():
-            # Out of date but drawn before: keep showing that while it updates.
+        if (
+            self._drawn_on is not None or self.FIRST_DRAW_IN_BACKGROUND
+        ) and self.refresh_in_background():
+            # Out of date but drawn before: keep showing that, greyed, while it
+            # updates; never drawn, it says it is loading.
             return
         self._on_map_refresh()
         self._mark_fresh()
@@ -227,13 +236,16 @@ class BaseView(Gtk.Box):
         read, show = job
         changes = self._changes
         self._background_running = True
+        self.updating_label.set_label("Loading…" if self._drawn_on is None else "Updating…")
         self.updating_label.set_visible(True)
+        self.show_stale(True)
 
         def answer(result: Any, error: BaseException | None) -> None:
             if self.db is not db or not db.is_open:
                 return
             self._background_running = False
             self.updating_label.set_visible(False)
+            self.show_stale(False)
             if error is not None:
                 LOG.warning("background redraw failed; redrawing in place: %s", error)
                 self.refresh()
@@ -248,6 +260,11 @@ class BaseView(Gtk.Box):
 
         reader.submit(db.revision(), read, answer)
         return True
+
+    def show_stale(self, stale: bool) -> None:
+        """While a background redraw runs, show that what is drawn is out of date; a
+        view whose content is not one widget overrides this. By default nothing
+        changes but the "Updating…" line."""
 
     def invalidate(self) -> None:
         """Something every view shows changed (a setting): redraw now or when shown."""
