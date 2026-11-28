@@ -957,6 +957,79 @@ class TestAccountTree:
         model = view.column_view.get_model()
         assert model.get_n_items() > 0
 
+    @staticmethod
+    def _row_named(model, name):
+        for index in range(model.get_n_items()):
+            row = model.get_item(index)
+            if unwrap(row).name == name:
+                return row
+        return None
+
+    def test_a_collapsed_branch_stays_collapsed_through_refreshes_and_restarts(
+        self, app, window, populated_book
+    ):
+        """Every redraw rebuilt the tree fully expanded, so a collapsed group opened
+        again after any change, tab switch, or restart."""
+        from breadsched.gen.utils.settings import Settings
+        from breadsched.gui.views.accounts import COLLAPSED_SECTION
+
+        app.open_book(populated_book)
+        window.show_category("accounts")
+        view = window._views["accounts"]
+        assets = self._row_named(view.column_view.get_model(), "Assets")
+        assert assets is not None and assets.get_expanded()  # branches open by default
+        assets.set_expanded(False)
+        view.refresh()  # what any change to the book does
+        assert not self._row_named(view.column_view.get_model(), "Assets").get_expanded()
+        window.show_category("dashboard")
+        window.show_category("accounts")
+        assert not self._row_named(view.column_view.get_model(), "Assets").get_expanded()
+        # Kept on disk for this book, so the next run has it.
+        stored = Settings(app.view_settings.path.stem, app.view_settings.directory)
+        _settings, key = window.book_state_key()
+        assert app.db.get_account_by_name("Assets").handle in stored.get(COLLAPSED_SECTION, key)
+        # A window opened later (as after a restart) starts with it collapsed.
+        later = ViewManager(app, prompt_due_on_open=False)
+        try:
+            later.show_category("accounts")
+            model = later._views["accounts"].column_view.get_model()
+            assert not self._row_named(model, "Assets").get_expanded()
+            assert self._row_named(model, "Expenses").get_expanded()
+            # Expanding it again is remembered too.
+            self._row_named(model, "Assets").set_expanded(True)
+            view._collapsed_loaded_for = None  # read again, as a new run would
+            view.refresh()
+            assert self._row_named(view.column_view.get_model(), "Assets").get_expanded()
+        finally:
+            later.destroy()
+
+    def test_the_sort_column_and_order_are_remembered(self, app, window, populated_book):
+        from breadsched.gui.gi_setup import Gtk
+
+        app.open_book(populated_book)
+        window.show_category("accounts")
+        view = window._views["accounts"]
+        columns = view.column_view.get_columns()
+        balance = next(
+            columns.get_item(i)
+            for i in range(columns.get_n_items())
+            if columns.get_item(i).get_title() == "Balance"
+        )
+        view.column_view.sort_by_column(balance, Gtk.SortType.DESCENDING)
+        assert app.view_settings.get("columns:accounts", "sort") == "Balance"
+        assert app.view_settings.get("columns:accounts", "sort-order") == "descending"
+        view.refresh()
+        sorter = view.column_view.get_sorter()
+        assert sorter.get_primary_sort_column() is balance
+        later = ViewManager(app, prompt_due_on_open=False)
+        try:
+            later.show_category("accounts")
+            restored = later._views["accounts"].column_view.get_sorter()
+            assert restored.get_primary_sort_column().get_title() == "Balance"
+            assert restored.get_primary_sort_order() == Gtk.SortType.DESCENDING
+        finally:
+            later.destroy()
+
     def test_summary_cards_are_rendered(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("accounts")

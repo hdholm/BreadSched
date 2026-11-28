@@ -701,6 +701,46 @@ def sorted_model(column_view: Gtk.ColumnView, model):
     return Gtk.SortListModel.new(model, sorter)
 
 
+def remember_sort(column_view: Gtk.ColumnView, section: str, settings=None) -> None:
+    """Keep the column a table is sorted by, and its order, between runs.
+
+    The column is remembered by its title, as :func:`column_menu` remembers the
+    rest of a table's layout; a title no longer shown sorts by nothing.
+    """
+    if settings is None:
+        return
+    columns = column_view.get_columns()
+    by_title = {
+        columns.get_item(i).get_title(): columns.get_item(i) for i in range(columns.get_n_items())
+    }
+    restoring = {"busy": True}
+    chosen = by_title.get(settings.get(section, "sort") or "")
+    if chosen is not None and chosen.get_sorter() is not None:
+        descending = settings.get(section, "sort-order") == "descending"
+        column_view.sort_by_column(
+            chosen, Gtk.SortType.DESCENDING if descending else Gtk.SortType.ASCENDING
+        )
+    restoring["busy"] = False
+    sorter = column_view.get_sorter()
+    if sorter is None:
+        return
+
+    def remember(*_args) -> None:
+        if restoring["busy"]:
+            return
+        primary = sorter.get_primary_sort_column()
+        if primary is None:
+            settings.remove(section, "sort")
+            settings.remove(section, "sort-order")
+        else:
+            settings.set(section, "sort", primary.get_title())
+            descending = sorter.get_primary_sort_order() == Gtk.SortType.DESCENDING
+            settings.set(section, "sort-order", "descending" if descending else "ascending")
+        settings.save()
+
+    sorter.connect("changed", remember)
+
+
 def column_menu(
     view_id: str,
     column_view: Gtk.ColumnView,

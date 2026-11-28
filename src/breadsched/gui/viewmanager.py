@@ -1327,6 +1327,12 @@ class ViewManager(Gtk.ApplicationWindow):
         digest = hashlib.sha256(str(Path(path).resolve()).encode("utf-8")).hexdigest()
         return settings, digest[:24]
 
+    def book_state_key(self) -> tuple[Settings, str] | None:
+        """Where a view keeps what it remembers of this book between runs (the
+        Accounts view's collapsed branches): the interface-state file and this
+        book's key in it."""
+        return self._tab_settings()
+
     def _remember_tabs(self) -> None:
         """Keep this book's open tabs, so reopening it brings them back."""
         if self._restoring_tabs or not self._tabs:
