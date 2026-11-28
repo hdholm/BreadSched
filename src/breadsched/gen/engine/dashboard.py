@@ -1274,7 +1274,8 @@ def _direct_group_totals(
             lines.extend(line for _loan, line in loans)
             continue
         owed = [line.total for _loan, line in loans]
-        asset_line.debt = None if None in owed else sum(owed, Money(0))  # type: ignore[arg-type]
+        known = [amount for amount in owed if amount is not None]
+        asset_line.debt = sum(known, Money(0)) if len(known) == len(owed) else None
         asset_line.loans = tuple(
             f"{line.name}: {line.note}" if line.note else line.name for _loan, line in loans
         )

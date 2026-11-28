@@ -510,7 +510,7 @@ class DashboardSettings(Gtk.Box):
         Saving or closing would otherwise lose them without a word, since only
         **Add checked** puts an account in the group.
         """
-        found = []
+        found: list[Unadded] = []
         for row in self.rows:
             group = row["name"].get_text().strip() or "an unnamed group"
             found.extend(Unadded(group, self.names[handle], row) for handle in self.checked(row))
