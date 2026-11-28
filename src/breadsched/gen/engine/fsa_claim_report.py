@@ -193,6 +193,14 @@ def _attention(
     reopened = summary.reopened_by
     if reopened is not None:
         found.append(ClaimAttention("reopened", _reopened_text(summary, reopened)))
+    if summary.unbilled > 0 and status in {FsaClaimStatus.OPEN, FsaClaimStatus.PARTIAL}:
+        found.append(
+            ClaimAttention(
+                "bill",
+                f"The EOB says {summary.unbilled.format()} more is owed than was paid: "
+                "link the next bill's payment when it comes, or correct the EOB",
+            )
+        )
     waited = (when - summary.claim.service_date).days
     if status is FsaClaimStatus.WAITING_EOB and waited > EOB_WAIT_DAYS:
         found.append(ClaimAttention("eob", f"No EOB entered {waited} days after the service"))

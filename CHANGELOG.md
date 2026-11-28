@@ -13,6 +13,14 @@ GitHub releases.
   Dashboard showed the whole payment on each and its totals counted it more than
   once. Each claim now counts its part, in proportion to its allocation amounts (or
   its EOB responsibility), and the totals count the payment once.
+- **Each leg of a payment shows its account and memo.** The FSA claims window (and
+  the browser's claim editor) lists every expense leg of a transaction on its own;
+  it now names each leg's account and memo, so a payment split into one leg per claim
+  can be told apart and each claim linked to its own part.
+- **A claim stays open while its EOB is more than was paid.** With every payment
+  reimbursed but an EOB saying more is owed, a claim showed **Fully reimbursed**; it
+  is now **Partially reimbursed** and needs attention, since another bill is
+  expected.
 
 ## 2026.11.28.0
 

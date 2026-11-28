@@ -15425,3 +15425,49 @@ class TestDateStyle:
         assert view.document is document  # kept as made, for export
         assert "05/03/2026" in _texts(view)
         assert print_operation(document) is not None
+
+
+def test_each_leg_of_a_split_payment_is_offered_with_its_account_and_memo(
+    app, window, populated_book
+):
+    """A payment split into one leg per claim lists each leg on its own, told
+    apart by its account and memo, so each claim links only its part."""
+    from breadsched.gen.lib import FsaFundingYear
+    from breadsched.gen.lib.account import AccountClass
+    from breadsched.gui.dialogs.fsa_claims_dialog import FsaClaimsDialog
+
+    app.open_book(populated_book)
+    db = app.db
+    start = date.today().replace(month=1, day=1)
+    assets = next(a for a in db.iter_accounts() if a.name == "Assets")
+    checking = next(a for a in db.iter_accounts() if a.atype is AccountType.BANK)
+    expense = next(a for a in db.iter_accounts() if a.account_class is AccountClass.EXPENSE)
+    account = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
+    account.fsa.years = [
+        FsaFundingYear(start, start.replace(month=12, day=31), Money("1000"), None)
+    ]
+    paid = Transaction(
+        post_date=start,
+        description="Clinic",
+        splits=[
+            Split(account=expense.handle, value=Money("120"), memo="First visit"),
+            Split(account=expense.handle, value=Money("180"), memo="Second visit"),
+            Split(account=checking.handle, value=Money("-300")),
+        ],
+    )
+    with db.transaction("FSA") as txn:
+        db.add_account(account, txn)
+        db.add_transaction(paid, txn)
+    dialog = FsaClaimsDialog(window, db)
+    try:
+        labels = [
+            label
+            for link, _when, label in dialog.payments._candidates
+            if link.transaction == paid.handle
+        ]
+        name = db.full_name(expense) or expense.name
+        assert len(labels) == 2
+        assert labels[0].endswith(f"Clinic — {name} · First visit — 120.00")
+        assert labels[1].endswith(f"Clinic — {name} · Second visit — 180.00")
+    finally:
+        dialog.destroy()

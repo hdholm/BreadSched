@@ -64,6 +64,16 @@ NEAR_DAYS = 60
 SHOWN_LIMIT = 200
 
 
+def candidate_label(item) -> str:
+    """One leg a claim could link: its date, description, account, memo, and amount.
+    A transaction split into several legs lists each, told apart by account and memo."""
+    memo = f" · {item.memo}" if item.memo else ""
+    return (
+        f"{shown_date(item.date)} {item.description} — {item.account_name}{memo} — "
+        f"{item.amount.format()}"
+    )
+
+
 class _LinkList(Gtk.Box):
     """Linked splits pinned on top, and a searchable, limited list to add from.
 
@@ -103,7 +113,7 @@ class _LinkList(Gtk.Box):
         filters = Gtk.Box(spacing=6)
         self.filters = filters
         self.search = Gtk.SearchEntry(
-            hexpand=True, placeholder_text="Search date, description, amount"
+            hexpand=True, placeholder_text="Search date, description, account, memo, amount"
         )
         self.search.connect("search-changed", lambda *_: self._show_candidates())
         filters.append(self.search)
@@ -742,7 +752,7 @@ class FsaClaimsDialog(BoundedWindow):
                     item.transaction,
                     item.split,
                     item.date,
-                    f"{shown_date(item.date)} {item.description} — {item.amount.format()}",
+                    candidate_label(item),
                 )
                 for item in found
             ]

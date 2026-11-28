@@ -238,7 +238,12 @@ recomputes paid, refunded, reimbursed, repaid, remaining, and status. A payment 
 refund linked to several claims counts each claim's share (`link_share`), in
 proportion to each claim's allocation targets, else its EOB responsibility, else
 equally, so the shares add up to the split and report totals count it once; the
-claims sharing each link are read once per book revision. FSA reimbursements
+claims sharing each link are read once per book revision. Without a payer, an EOB
+responsibility above the net paid is `unbilled`: a claim whose payments are all
+reimbursed stays **Partially reimbursed** (attention `bill`) until the next bill is
+linked, and funding-year targets may reach the EOB rather than what was paid.
+Payment candidates are expense legs (`ClaimCandidate`, with the leg's account and
+memo), so a payment split by leg links each claim to its own part. FSA reimbursements
 need no reclassification because the money is already in the FSA asset, which is not
 cash-like.
 

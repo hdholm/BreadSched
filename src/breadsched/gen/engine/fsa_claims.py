@@ -322,6 +322,9 @@ class FsaClaimSummary:
     over_reimbursed: Money = Money(0)
     #: What a closed claim gave up: it was never reimbursed.
     forgone: Money = Money(0)
+    #: What the EOB says the household owes beyond what it has paid so far: a bill
+    #: still expected, which keeps the claim open.
+    unbilled: Money = Money(0)
     #: The correction that reopened this claim while money is still to come:
     #: an EOB raised after reimbursement, or the claim reopened by hand.
     reopened_by: FsaClaimEvent | None = None
@@ -963,6 +966,7 @@ def claim_summary(
 
     # Money paid back to the FSA undoes that much reimbursement.
     reimbursed = reimbursed - repaid
+    unbilled = Money(0)
     if net_paid < 0:
         reimbursable = Money(0)
         status = FsaClaimStatus.NEEDS_REVIEW
@@ -973,12 +977,19 @@ def claim_summary(
         reimbursable = min(net_paid, responsibility)
         if payer is not None:
             reimbursable = min(reimbursable, max(net_paid - payer_share, Money(0)))
+        else:
+            # The EOB says more is owed than was paid: another bill is expected,
+            # and the claim stays open for it however much was reimbursed so far.
+            unbilled = max(responsibility - net_paid, Money(0))
         if over_allocated > 0:
             status = FsaClaimStatus.NEEDS_REVIEW
-        elif has_targets and target_total > reimbursable:
+        elif has_targets and target_total > reimbursable + unbilled:
             status = FsaClaimStatus.NEEDS_REVIEW
         elif reimbursed > reimbursable:
             status = FsaClaimStatus.OVER_REIMBURSED
+        elif unbilled > 0 and reimbursable > 0 and reimbursed >= reimbursable:
+            # Everything paid so far is reimbursed, but not the whole EOB.
+            status = FsaClaimStatus.PARTIAL
         elif reimbursable > 0 and reimbursed >= reimbursable:
             status = FsaClaimStatus.FULLY_REIMBURSED
         elif available <= 0 and not (dependent_care and contributions_open):
@@ -1033,6 +1044,7 @@ def claim_summary(
         repaid=repaid,
         over_reimbursed=over_reimbursed,
         forgone=forgone,
+        unbilled=unbilled,
         reopened_by=reopened_by,
     )
 

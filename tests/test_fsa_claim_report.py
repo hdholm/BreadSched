@@ -292,3 +292,43 @@ def test_a_payment_on_one_claim_still_counts_in_full(db, book):
     payment = _paid(db, book, date(2026, 8, 3), "60.00")
     claim = _claim(db, health, "Clinic", date(2026, 8, 1), [payment])
     assert fsa_claims.claim_summary(db, claim).paid == Money("60.00")
+
+
+def test_an_eob_above_what_was_paid_keeps_the_claim_open_for_the_next_bill(db, book):
+    """Field report: payments and reimbursements matched, but the EOB said more
+    was owed; the claim showed fully reimbursed, though another bill is coming."""
+    health = _fsa(db, book)
+    payment = _paid(db, book, date(2026, 8, 3), "200.00")
+    back = _reimbursed(db, book, health, date(2026, 8, 20), "200.00")
+    claim = _claim(
+        db, health, "Surgeon", date(2026, 8, 1), [payment], eob="300.00", reimbursed=[back]
+    )
+    summary = fsa_claims.claim_summary(db, claim)
+    assert summary.status is fsa_claims.FsaClaimStatus.PARTIAL
+    assert summary.unbilled == Money("100.00")
+    assert not summary.status.settled
+    report = claim_report(db, as_of=date(2026, 9, 1))
+    assert _codes(report, claim) == ["bill"]
+    [item] = next(line for line in report.lines if line.handle == claim.handle).attention
+    assert item.text.startswith("The EOB says 100.00 more is owed than was paid")
+    # The next bill arrives and is reimbursed: now it is settled.
+    second = _paid(db, book, date(2026, 9, 3), "100.00")
+    again = _reimbursed(db, book, health, date(2026, 9, 20), "100.00")
+    claim.payments.append(second)
+    claim.allocations[0].reimbursements.append(again)
+    fsa_claims.save_claim(db, claim)
+    settled = fsa_claims.claim_summary(db, db.get_fsa_claim(claim.handle))
+    assert settled.status is fsa_claims.FsaClaimStatus.FULLY_REIMBURSED
+    assert settled.unbilled == Money(0)
+
+
+def test_an_eob_equal_to_what_was_paid_is_fully_reimbursed(db, book):
+    health = _fsa(db, book)
+    payment = _paid(db, book, date(2026, 8, 3), "200.00")
+    back = _reimbursed(db, book, health, date(2026, 8, 20), "200.00")
+    claim = _claim(
+        db, health, "Clinic", date(2026, 8, 1), [payment], eob="200.00", reimbursed=[back]
+    )
+    summary = fsa_claims.claim_summary(db, claim)
+    assert summary.status is fsa_claims.FsaClaimStatus.FULLY_REIMBURSED
+    assert summary.unbilled == Money(0)

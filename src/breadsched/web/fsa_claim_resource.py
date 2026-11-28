@@ -158,6 +158,7 @@ def _candidate(item: ClaimCandidate) -> dict[str, object]:
         "account": item.account,
         "account_name": item.account_name,
         "amount": _decimal(item.amount),
+        "memo": item.memo,
     }
 
 

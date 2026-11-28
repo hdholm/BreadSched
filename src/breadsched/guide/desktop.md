@@ -1017,7 +1017,9 @@ Each list (**Healthcare payments**, **Provider refunds / credits**,
 closed when the window opens, so it shows only what the claim already holds: its
 linked transactions, each with **Remove**, and its allocations. Open an arrow to
 add: **Add allocation** appears, and below a list's linked transactions, **Add**
-links another: search by date, description, or amount, and choose whether to see
+links another. Each leg of a transaction is listed on its own with its account and
+memo (a payment split into one leg per claim shows each leg and its amount): search
+by date, description, account, memo, or amount, and choose whether to see
 transactions within 60 days of the service date (the default), in the claim's
 benefit year, or at any date. Double-click a transaction (or press **Enter** on it)
 to add it, or a linked one to remove it. Linking a payment made with the FSA card
