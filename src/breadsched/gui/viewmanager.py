@@ -431,7 +431,25 @@ class ViewManager(Gtk.ApplicationWindow):
             reports.close_all()
             reports.destroy()
             self.reports_window = None
+        self._close_book_dialogs()
         self._detach_views()
+
+    def _close_book_dialogs(self) -> None:
+        """Close the dialogs opened over this window: they are not modal, so one can
+        still be open when the book closes, and each reads the book it opened with.
+        The user guide, which reads no book, stays."""
+        from .user_guide import UserGuideWindow
+
+        registers = {id(window) for window, _view in self._register_windows}
+        for window in Gtk.Window.list_toplevels():
+            if (
+                window is not self
+                and isinstance(window, BoundedWindow)
+                and not isinstance(window, UserGuideWindow)
+                and id(window) not in registers
+                and _belongs_to(window, (self,))
+            ):
+                window.destroy()
 
     def _raise_waiting_dialogs(self, *_args) -> list:
         """Present the visible modal windows over this one when it becomes active."""
@@ -1308,6 +1326,12 @@ class ViewManager(Gtk.ApplicationWindow):
             return None
         digest = hashlib.sha256(str(Path(path).resolve()).encode("utf-8")).hexdigest()
         return settings, digest[:24]
+
+    def book_state_key(self) -> tuple[Settings, str] | None:
+        """Where a view keeps what it remembers of this book between runs (the
+        Accounts view's collapsed branches): the interface-state file and this
+        book's key in it."""
+        return self._tab_settings()
 
     def _remember_tabs(self) -> None:
         """Keep this book's open tabs, so reopening it brings them back."""

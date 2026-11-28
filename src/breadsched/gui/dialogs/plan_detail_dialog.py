@@ -40,7 +40,6 @@ class PlanDetailDialog(BoundedWindow):
         super().__init__(
             title=f"{detail.full_name} — {period_label}",
             transient_for=parent,
-            modal=True,
         )
         self.set_default_size(900, 620)
         self.db = db

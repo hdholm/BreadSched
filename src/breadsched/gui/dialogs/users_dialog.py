@@ -39,7 +39,7 @@ class UsersDialog(BoundedWindow):
         book_id: str | None = None,
         book_name: str = "",
     ) -> None:
-        super().__init__(title="Users and devices", transient_for=parent, modal=True)
+        super().__init__(title="Users and devices", transient_for=parent)
         self.set_destroy_with_parent(True)
         self.directory = directory if directory is not None else UserDirectory()
         #: The open book, whose sharing this window also shows.

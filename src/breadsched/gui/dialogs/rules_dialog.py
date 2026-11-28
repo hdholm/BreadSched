@@ -32,7 +32,7 @@ class RulesDialog(BoundedWindow):
     """Ordered rule list and editor above the proposals awaiting acceptance."""
 
     def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
-        super().__init__(title="Categorization rules", transient_for=parent, modal=True)
+        super().__init__(title="Categorization rules", transient_for=parent)
         self.set_destroy_with_parent(True)
         self.set_default_size(900, 640)
         self.db = db

@@ -318,7 +318,7 @@ every scheduled estimate (such as groceries) is a jar, and so is every
    in an estimate over the period it really covers, such as a yearly one. A
    scheduled payment's money stays in its jar until it is paid or skipped.
 4. **Views read the same dated events.** The Dashboard holds the jars of
-   commitments that are filling now; the Plan compares planned and actual amounts
+   commitments and estimates that are filling now; the Plan compares planned and actual amounts
    by category; [Budget jars](#budget-jars) shows each jar's fills, planned and
    actual draws, and level by period and account; and the Projection carries
    scheduled payments, estimates, and goals forward. Grouping by month, quarter, or
@@ -333,9 +333,9 @@ estimate, starting in June, plans about 600 of groceries on the 20th of each mon
   It contains the June 1 and June 15 paychecks, each half of the cycle's income, so
   each sets aside 300. If the June 15 paycheck never arrives, the June 1 paycheck
   alone is the cycle's income that counts and sets aside the whole 600.
-- *Dashboard.* The paycheck appears as next income. The groceries estimate is not
-  a bill, so the Dashboard does not hold it; a commitment such as rent would be
-  held there by exactly this rule (300 after June 1, 600 after June 15).
+- *Dashboard.* The paycheck appears as next income. The groceries estimate's jar
+  is kept back by exactly this rule (300 after June 1, 600 after June 15), as a
+  commitment such as rent would be, so neither counts as Available.
 - *Actual.* On June 21 you spend 550 at the market. Review offers the June 20
   groceries occurrence as a match; choose **Match**. The transaction keeps the
   planned date and amount.
@@ -1016,9 +1016,10 @@ cannot be closed or moved; in the browser it is the first view.
 **Cash flow over the next N days** charts the cash you will have on hand each day
 of the liquidity period (the N in *Needed within N days*). The line starts at
 today's liquid cash, less any bill already overdue, then steps down on the date of
-each bill and up on each scheduled pay. Its lowest day is marked, which is the day
-to watch: if the line goes below zero, a bill falls due before the money to pay it
-arrives. It uses the same bills and pay that *Needed* counts, so the two agree. A
+each bill and each estimate and up on each scheduled pay. Its lowest day is marked,
+which is the day to watch: if the line goes below zero, a bill falls due before the
+money to pay it arrives. It uses the same bills, estimates, and pay that *Needed*
+counts. A
 period longer than about two months is drawn by the week. The chart is not shown
 when nothing is scheduled inside the period, and the Dashboard settings can hide
 it.
@@ -1034,6 +1035,11 @@ in another group: that account (with its own descendants) is counted in its own
 group and left out of the parent's row, so each account is counted once. The row shows only the group
 and the selected account's own valuation note, and hovering over the row lists every
 included account, one per line, with its quote date and source where it has one.
+Groups are listed in the order you give them. An asset whose linked loan is in the
+same group (a loan's linked asset is set on the loan; choosing either one brings the
+other into the group) has one row: the asset's value, what its loans owe, its
+equity, loan-to-value, and loan end, with each loan named when you hover over the
+row. The loan is not a row of its own.
 
 When there are no committed outgoings, Emergency fund and Months covered say
 “No committed outgoings” instead of presenting zero as a measured need or duration.
@@ -1052,11 +1058,22 @@ no payment day or payment schedule is not part of Needed within 30 days; the
 Dashboard says so in a “Card payments not set up” note until you configure the
 card's payment behavior (see [Credit-card payments](#credit-card-payments)).
 
-Dashboard keeps expected income and committed bills separate. Each bill is a
-[jar](#jars-how-the-pieces-fit-together), and **In the jar** is what of current cash
-is already in it. A bill's jar fills on actual income dates in proportion to the
-income received during that bill cycle. If there is no identified income before the
-due date, the jar holds the full bill.
+Dashboard keeps expected income and committed bills separate. Each bill and each
+estimate is a [jar](#jars-how-the-pieces-fit-together), and **In the jar** is what of
+current cash is already in it. A jar fills on actual income dates in proportion to
+the income received during its cycle. If there is no identified income before the
+due date, the jar holds the full amount.
+
+**Needed within N days** is what today's cash must cover: every bill already
+overdue, everything already in a bill's or an estimate's jar, and what the bills
+and estimates due within the N days still need beyond their jars, less the pay
+scheduled in those days. Money in a jar has already been set aside, so pay arriving
+later only funds what the jars still lack; it never makes jar money available
+again. **Available** is Liquid less Needed, less what savings goals keep out, less
+the reserve. For example, with rent of 1,800 due on the 30th, half of it in its jar
+from the pay of the 1st, and 2,000 of pay due on the 25th, Needed counts the 900 in
+the jar; the pay of the 25th covers the other 900. An estimate's past date is not
+owed: only its jar, filling for the next occurrence, is kept back.
 
 When a schedule has missed two or more dates, Dashboard shows it once: the missed
 date range and count, the total, and how often it recurs (for example “every
@@ -1722,8 +1739,11 @@ when it falls within, or within 30 days of, one of its FSA account's funding yea
 when exactly one claim fits it with a matching amount, and each claim is proposed at
 most once at a time; anything else waits for you in Review. A reimbursement is
 proposed once the claim has the payment you made, and a refund to the FSA card even
-after the claim is fully reimbursed. Import and reconciliation say when proposals are
-waiting.
+after the claim is fully reimbursed. A claim whose payments already cover it (what
+its EOB says you owe, or before an EOB, any payment) is not proposed another payment.
+On the desktop the proposed links shown are those of the claim selected in the
+claims table, and the heading counts the other claims that have some. Import and
+reconciliation say when proposals are waiting.
 
 Claims change after they are filed. When a corrected EOB arrives, change the
 claim's EOB and say why in **EOB change note**: the claim keeps a history of each

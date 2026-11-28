@@ -22,7 +22,7 @@ class SaveScenarioDialog(BoundedWindow):
     """
 
     def __init__(self, parent: Gtk.Window | None, db: OpenBook, scenario: Scenario) -> None:
-        super().__init__(title="Save scenario", transient_for=parent, modal=True)
+        super().__init__(title="Save scenario", transient_for=parent)
         self.db = db
         self.scenario = scenario
         self.set_default_size(420, 260)

@@ -49,9 +49,7 @@ class DrawdownsDialog(BoundedWindow):
         scenario: Scenario,
         saved_callback: Callable[[str], None] | None = None,
     ) -> None:
-        super().__init__(
-            title=f"Retirement drawdowns — {scenario.name}", transient_for=parent, modal=True
-        )
+        super().__init__(title=f"Retirement drawdowns — {scenario.name}", transient_for=parent)
         self.db = db
         self.scenario = scenario
         self.saved_callback = saved_callback
@@ -159,7 +157,6 @@ class DrawdownEditDialog(BoundedWindow):
         super().__init__(
             title="Edit drawdown" if drawdown is not None else "Add drawdown",
             transient_for=parent,
-            modal=True,
         )
         self.db = db
         self.scenario = scenario

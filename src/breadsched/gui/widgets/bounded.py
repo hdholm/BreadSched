@@ -165,7 +165,13 @@ def _descendants(widget: Gtk.Widget):
 
 
 class BoundedWindow(Gtk.Window):
-    """A dialog window that opens within the screen and answers Escape and Enter."""
+    """A dialog window that opens within the screen and answers Escape and Enter.
+
+    A dialog is not modal: it moves on its own and the main window keeps working
+    while it is open (only a confirmation or a progress window is modal). It closes
+    with the window it was opened from, and when that window's book closes
+    (``ViewManager.book_closing``).
+    """
 
     #: The key a resized size is remembered under; None for a plain BoundedWindow
     #: unless its creator names one (a subclass defaults to its class name).
@@ -173,6 +179,8 @@ class BoundedWindow(Gtk.Window):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
+        if "destroy_with_parent" not in kwargs:
+            self.set_destroy_with_parent(True)
         self._primary: Gtk.Widget | None = None
         #: The size the window opened at, to tell whether it was resized (#349).
         self._opened_size: tuple[int, int] | None = None

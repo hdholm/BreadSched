@@ -91,7 +91,7 @@ class OnlineQuotesDialog(BoundedWindow):
         settings: Settings | None = None,
         fetcher_factory=None,
     ) -> None:
-        super().__init__(title="Online quotes", transient_for=parent, modal=True)
+        super().__init__(title="Online quotes", transient_for=parent)
         self.db = db
         self.settings = settings if settings is not None else Settings()
         self.fetcher_factory = fetcher_factory or (

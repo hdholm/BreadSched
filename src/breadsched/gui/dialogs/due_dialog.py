@@ -89,7 +89,7 @@ class DueDialog(BoundedWindow):
     def __init__(
         self, parent: Gtk.Window | None, db: OpenBook, reviews: list[DueScheduleReview]
     ) -> None:
-        super().__init__(title="Scheduled transactions due", transient_for=parent, modal=True)
+        super().__init__(title="Scheduled transactions due", transient_for=parent)
         self.set_destroy_with_parent(True)
         self.db = db
         self.book = book_server(db)

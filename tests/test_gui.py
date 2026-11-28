@@ -411,6 +411,90 @@ class TestBranding:
         )
 
 
+def settings_checked(dialog, row):
+    """The accounts checked to add to a Preferences Dashboard group."""
+    return dialog.dashboard.checked(row)
+
+
+class TestDialogsDoNotBlock:
+    """A dialog moves on its own and leaves the main window working (a modal
+    dialog is attached to its window by some window managers and blocks every
+    other window of the application); only a confirmation or a progress window is
+    modal."""
+
+    #: The windows that stay modal: they ask a question to answer first, or show
+    #: work that must finish (file, then what the line opens).
+    MODAL = {
+        ("app.py", "Gtk.AlertDialog"),
+        ("undo.py", "Undoing"),
+        ("views/projection.py", "Calculating projection"),
+        ("views/scheduled.py", "Duplicate scheduled transaction"),
+        ("views/scheduled.py", "Delete scheduled transaction"),
+        ("dialogs/scenario_manager_dialog.py", "Delete scenario"),
+        ("widgets/confirm.py", "Gtk.AlertDialog"),
+    }
+
+    def test_only_confirmations_and_progress_windows_are_modal(self):
+        root = Path(__file__).resolve().parents[1] / "src" / "breadsched" / "gui"
+        found = set()
+        for path in root.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            for match in re.finditer(r"modal=True|set_modal\(True\)", text):
+                # The call the keyword belongs to: the nearest opening before it.
+                start = max(
+                    text.rfind("AlertDialog(", 0, match.start()),
+                    text.rfind("title=", 0, match.start()),
+                )
+                opened = text[start : match.start()]
+                name = path.relative_to(root).as_posix()
+                if opened.startswith("AlertDialog("):
+                    found.add((name, "Gtk.AlertDialog"))
+                else:
+                    found.add((name, opened.split('"')[1].rstrip("…")))
+        assert found == self.MODAL
+
+    def test_a_dialog_is_not_modal_and_closes_with_its_window(self, app, window, populated_book):
+        from breadsched.gui.dialogs.rules_dialog import RulesDialog
+
+        app.open_book(populated_book)
+        window.present()
+        dialog = RulesDialog(window, app.db)
+        dialog.present()
+        try:
+            assert _spin(dialog.get_mapped)
+            assert dialog.get_modal() is False
+            assert dialog.get_destroy_with_parent() is True
+            assert window.get_sensitive()
+        finally:
+            dialog.destroy()
+
+    def test_the_dialogs_over_a_window_close_with_its_book_and_the_guide_stays(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.dialogs.rules_dialog import RulesDialog
+        from breadsched.gui.user_guide import UserGuideWindow
+        from breadsched.gui.widgets.bounded import BoundedWindow
+
+        app.open_book(populated_book)
+        window.present()
+        dialog = RulesDialog(window, app.db)
+        dialog.present()
+        child = BoundedWindow(title="Child", transient_for=dialog)
+        child.present()
+        guide = UserGuideWindow(app, window)
+        guide.present()
+        try:
+            assert _spin(dialog.get_mapped)
+            # A dialog still open when the book closes reads the closed book.
+            window.book_closing()
+            open_now = Gtk.Window.list_toplevels()
+            assert dialog not in open_now and child not in open_now
+            assert guide in open_now
+        finally:
+            guide.destroy()
+            window.destroy()
+
+
 class TestStartupDialogsTakeTurns:
     """One modal dialog at a time over the main window.
 
@@ -877,6 +961,79 @@ class TestAccountTree:
         view = window._views["accounts"]
         model = view.column_view.get_model()
         assert model.get_n_items() > 0
+
+    @staticmethod
+    def _row_named(model, name):
+        for index in range(model.get_n_items()):
+            row = model.get_item(index)
+            if unwrap(row).name == name:
+                return row
+        return None
+
+    def test_a_collapsed_branch_stays_collapsed_through_refreshes_and_restarts(
+        self, app, window, populated_book
+    ):
+        """Every redraw rebuilt the tree fully expanded, so a collapsed group opened
+        again after any change, tab switch, or restart."""
+        from breadsched.gen.utils.settings import Settings
+        from breadsched.gui.views.accounts import COLLAPSED_SECTION
+
+        app.open_book(populated_book)
+        window.show_category("accounts")
+        view = window._views["accounts"]
+        assets = self._row_named(view.column_view.get_model(), "Assets")
+        assert assets is not None and assets.get_expanded()  # branches open by default
+        assets.set_expanded(False)
+        view.refresh()  # what any change to the book does
+        assert not self._row_named(view.column_view.get_model(), "Assets").get_expanded()
+        window.show_category("dashboard")
+        window.show_category("accounts")
+        assert not self._row_named(view.column_view.get_model(), "Assets").get_expanded()
+        # Kept on disk for this book, so the next run has it.
+        stored = Settings(app.view_settings.path.stem, app.view_settings.directory)
+        _settings, key = window.book_state_key()
+        assert app.db.get_account_by_name("Assets").handle in stored.get(COLLAPSED_SECTION, key)
+        # A window opened later (as after a restart) starts with it collapsed.
+        later = ViewManager(app, prompt_due_on_open=False)
+        try:
+            later.show_category("accounts")
+            model = later._views["accounts"].column_view.get_model()
+            assert not self._row_named(model, "Assets").get_expanded()
+            assert self._row_named(model, "Expenses").get_expanded()
+            # Expanding it again is remembered too.
+            self._row_named(model, "Assets").set_expanded(True)
+            view._collapsed_loaded_for = None  # read again, as a new run would
+            view.refresh()
+            assert self._row_named(view.column_view.get_model(), "Assets").get_expanded()
+        finally:
+            later.destroy()
+
+    def test_the_sort_column_and_order_are_remembered(self, app, window, populated_book):
+        from breadsched.gui.gi_setup import Gtk
+
+        app.open_book(populated_book)
+        window.show_category("accounts")
+        view = window._views["accounts"]
+        columns = view.column_view.get_columns()
+        balance = next(
+            columns.get_item(i)
+            for i in range(columns.get_n_items())
+            if columns.get_item(i).get_title() == "Balance"
+        )
+        view.column_view.sort_by_column(balance, Gtk.SortType.DESCENDING)
+        assert app.view_settings.get("columns:accounts", "sort") == "Balance"
+        assert app.view_settings.get("columns:accounts", "sort-order") == "descending"
+        view.refresh()
+        sorter = view.column_view.get_sorter()
+        assert sorter.get_primary_sort_column() is balance
+        later = ViewManager(app, prompt_due_on_open=False)
+        try:
+            later.show_category("accounts")
+            restored = later._views["accounts"].column_view.get_sorter()
+            assert restored.get_primary_sort_column().get_title() == "Balance"
+            assert restored.get_primary_sort_order() == Gtk.SortType.DESCENDING
+        finally:
+            later.destroy()
 
     def test_summary_cards_are_rendered(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -3271,7 +3428,7 @@ class TestMenuBarAndToolbar:
     def test_help_from_a_modal_dialog_opens_a_usable_guide_at_its_topic(
         self, app, window, populated_book
     ):
-        # #314: the import dialog is modal, and a guide in the same window group
+        # #314: the import dialog was modal, and a guide in the same window group
         # shared its grab, so no control in the guide took input until the dialog
         # closed; the guide also opened at the part's beginning, not the topic.
         from breadsched.gui.dialogs.import_dialog import ImportDialog
@@ -3285,7 +3442,6 @@ class TestMenuBarAndToolbar:
         guide = None
         try:
             assert _spin(dialog.get_mapped)
-            assert dialog.get_modal()
             [button] = [
                 widget
                 for widget in _descendants(dialog)
@@ -6798,13 +6954,13 @@ class TestImportReview:
         changes = pending_import_changes(app.db)
         return ImportReviewDialog(window, app.db, changes), changes
 
-    def test_dialog_is_modal_and_defaults_to_deciding_later(self, held_book, window):
+    def test_dialog_is_not_modal_and_defaults_to_deciding_later(self, held_book, window):
         from breadsched.gen.services import HeldImportDecision
 
         app, _handles = held_book
         dialog, changes = self._dialog(app, window)
         assert len(changes) == 2
-        assert dialog.get_modal() is True
+        assert dialog.get_modal() is False
         assert dialog.get_transient_for() is window
         assert dialog.get_destroy_with_parent() is True
         assert all(dialog.decision(i) is HeldImportDecision.LATER for i in range(2))
@@ -7295,9 +7451,10 @@ class TestDueReview:
         dialog, due = self._dialog(due_book, window)
         assert len(dialog.choosers) == len(due) > 0
 
-    def test_due_dialog_is_modal_transient_and_destroyed_with_parent(self, due_book, window):
+    def test_due_dialog_is_not_modal_transient_and_destroyed_with_parent(self, due_book, window):
+        # It moves on its own and leaves the main window usable.
         dialog, _ = self._dialog(due_book, window)
-        assert dialog.get_modal() is True
+        assert dialog.get_modal() is False
         assert dialog.get_transient_for() is window
         assert dialog.get_destroy_with_parent() is True
 
@@ -7337,7 +7494,7 @@ class TestDueReview:
         review = dialog.review
         try:
             assert isinstance(review, PostedTransactionsDialog)
-            assert review.get_modal() and review.get_transient_for() is window
+            assert not review.get_modal() and review.get_transient_for() is window
             listed = review.transactions()
             assert len(listed) == 2 == due_book.db.summary()["txn"]
             assert review.listed == [txn.handle for txn in listed]
@@ -7811,6 +7968,82 @@ class TestDashboardView:
         summary = fsa_claims.claim_summary(db, db.get_fsa_claim(claim.handle))
         assert summary.paid == Money("40.00")
 
+    def test_fsa_dashboard_proposes_links_for_the_selected_claim(self, app, window, populated_book):
+        """Field report: the proposed links stayed the same whichever claim was
+        selected. They are the selected claim's, with the others counted."""
+        from breadsched.gen.engine import fsa_claims
+        from breadsched.gen.lib import FsaClaim, FsaClaimAllocation, FsaFundingYear, Transaction
+
+        app.open_book(populated_book)
+        db = app.db
+        accounts = {a.name: a for a in db.iter_accounts()}
+        start = date.today().replace(month=1, day=1)
+        account = Account(
+            name="Health FSA", atype=AccountType.FSA, parent=accounts["Assets"].handle
+        )
+        account.fsa.years = [
+            FsaFundingYear(start, start.replace(month=12, day=31), Money("500"), None)
+        ]
+        medical = Account(
+            name="Medical", atype=AccountType.EXPENSE, parent=accounts["Expenses"].handle
+        )
+        with db.transaction("FSA") as txn:
+            db.add_account(account, txn)
+            db.add_account(medical, txn)
+        claims = {}
+        for provider, amount, day in (("Clinic", "40", 2), ("Lab", "75", 20)):
+            claims[provider] = fsa_claims.save_claim(
+                db,
+                FsaClaim(
+                    service_date=start.replace(day=day),
+                    provider=provider,
+                    eob_responsibility=Money(amount),
+                    allocations=[FsaClaimAllocation(account.handle, start)],
+                ),
+            )
+            with db.transaction("statement") as txn:
+                db.add_transaction(
+                    Transaction.simple(
+                        start.replace(day=day),
+                        f"{provider} card",
+                        medical.handle,
+                        account.handle,
+                        amount,
+                    ),
+                    txn,
+                )
+        window.show_category("fsa-dashboard")
+        view = window._views["fsa-dashboard"]
+        view.refresh()
+        selection = view.claim_view.get_model()
+
+        def choose(provider):
+            handle = claims[provider].handle
+            for index in range(selection.get_n_items()):
+                if unwrap(selection.get_item(index)).summary.claim.handle == handle:
+                    selection.set_selected(index)
+                    return
+            raise AssertionError(provider)
+
+        def shown():
+            return [key[0] for _check, key in view._proposal_checks]
+
+        for provider in ("Lab", "Clinic", "Lab"):
+            choose(provider)
+            assert shown() == [claims[provider].handle]
+            assert view.proposal_heading.get_label() == (
+                "Proposed claim links for the selected claim (1 other claim has some)"
+            )
+        # Linking the Lab's leaves the Clinic's to be found from the heading.
+        view._on_link_selected()
+        choose("Lab")
+        assert shown() == []
+        assert view.proposal_heading.get_visible()
+        assert view.proposal_heading.get_label() == (
+            "No proposed claim links for the selected claim (1 other claim has some)"
+        )
+        assert not view.proposal_grid.get_visible()
+
     def test_fsa_claims_needing_attention_are_flagged_and_reported(
         self, app, window, populated_book
     ):
@@ -8035,11 +8268,11 @@ class TestDashboardView:
         row = dialog.add_group()
         row["name"].set_text("Property")
         row["kind"].set_selected(3)
-        # Accounts are added through the group's searchable picker (#381).
-        row["picker"].set_selected(1)
+        # Accounts are added through the group's searchable checklist (#381).
+        dialog.choose(row, dialog.accounts[0].handle)
         dialog._add_picked(row)
         assert row["accounts"] == [dialog.accounts[0].handle]
-        assert row["picker"].get_selected() == 0
+        assert dialog.checked(row) == []  # the checks are cleared once added
         assert dialog.save()
 
         # Kept as the computer account's own arrangement, members and all (decision
@@ -8050,6 +8283,66 @@ class TestDashboardView:
         assert any(g.name == "Property" and member.handle in g.accounts for g in saved.groups)
         assert app.db.get_account(member.handle).group != "Property"
         assert "Property" not in str(app.db.get_metadata("dashboard"))
+
+    def test_several_accounts_are_checked_added_and_removed_together(self, view, app):
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
+
+        dialog = DashboardSettings(app.db)
+        row = dialog.add_group()
+        row["name"].set_text("Spending")
+        assert not row["adder"].get_expanded() and row["choices"] == {}  # built when opened
+        row["adder"].set_expanded(True)
+        # Search, check every account shown, then uncheck one.
+        row["search"].set_text("Expenses")
+        row["search"].emit("search-changed")
+        shown = [h for h, check in row["choices"].items() if check.get_visible()]
+        assert len(shown) == 3  # Expenses and its two children
+        dialog.check_shown(row, True)
+        rent = app.db.get_account_by_name("Expenses:Rent").handle
+        row["choices"][rent].set_active(False)
+        assert row["add"].get_sensitive()
+        dialog._add_picked(row)
+        assert set(row["accounts"]) == set(shown) - {rent}
+        # Added accounts leave the list to add from.
+        assert not any(row["choices"][h].get_visible() for h in row["accounts"])
+        # Check two members and remove them at once.
+        assert not row["drop_checked"].get_sensitive()
+        removed = row["accounts"][:2]
+        for handle in removed:
+            row["member_checks"][handle].set_active(True)
+        assert row["drop_checked"].get_sensitive()
+        row["drop_checked"].emit("clicked")
+        assert not set(removed) & set(row["accounts"])
+        assert not row["drop_checked"].get_sensitive()
+
+    def test_groups_are_reordered_and_saved_in_that_order(self, view, app):
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
+
+        dialog = DashboardSettings(app.db)
+        for name, account in (
+            ("First", "Assets:Checking Account"),
+            ("Second", "Expenses:Rent"),
+            ("Third", "Income:Salary"),
+        ):
+            row = dialog.add_group()
+            row["name"].set_text(name)
+            dialog.add_account(row, app.db.get_account_by_name(account).handle)
+        first, second, third = dialog.rows
+        assert not first["up"].get_sensitive() and not third["down"].get_sensitive()
+        third["up"].emit("clicked")
+        first["down"].emit("clicked")
+        assert [r["name"].get_text() for r in dialog.rows] == ["Third", "First", "Second"]
+        # The cards are in the same order on the page.
+        shown = []
+        child = dialog.group_box.get_first_child()
+        while child is not None:
+            shown.append(child)
+            child = child.get_next_sibling()
+        assert shown == [r["frame"] for r in dialog.rows]
+        assert [r["up"].get_sensitive() for r in dialog.rows] == [False, True, True]
+        assert dialog.save()
+        view.refresh()
+        assert [g.name for g in view.board.groups] == ["Third", "First", "Second"]
 
     def test_a_group_of_a_parents_child_shows_on_the_dashboard_once_saved(self, view, app):
         """A group holding a child of another group's parent account is shown and
@@ -14018,8 +14311,8 @@ class TestPreferences:
         settings = dialog.dashboard
         row = settings.add_group()
         row["name"].set_text("Chosen")
-        row["picker"].set_selected(1)  # chosen, but Add never pressed
         chosen = settings.accounts[0]
+        settings.choose(row, chosen.handle)  # checked, but Add checked never pressed
         [item] = settings.unadded()
         assert (item.group, item.account) == ("Chosen", settings.names[chosen.handle])
 
@@ -14041,7 +14334,7 @@ class TestPreferences:
         dialog.settle_unadded(0, saving=True)
         assert dialog.get_visible() and dialog.notebook.get_current_page() == 1
         assert "Chosen" not in saved_groups()
-        assert row["picker"].get_selected() == 1
+        assert settings_checked(dialog, row) == [chosen.handle]
         # Add and save: the account joins the group, then everything is saved.
         dialog.primary().emit("clicked")
         dialog.settle_unadded(2, saving=True)

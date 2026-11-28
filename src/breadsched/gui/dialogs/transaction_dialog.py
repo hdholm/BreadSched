@@ -39,7 +39,6 @@ class TransactionDialog(BoundedWindow):
         super().__init__(
             title=title or ("Edit transaction" if transaction is not None else "New transaction"),
             transient_for=parent,
-            modal=True,
         )
         self.db = db
         self.set_default_size(760, 560)

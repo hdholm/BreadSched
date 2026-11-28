@@ -386,9 +386,7 @@ class ResolutionView(BaseView):
         ]
         if not claims or not roles:
             return
-        dialog = BoundedWindow(
-            title="Attach to FSA claim", transient_for=self.get_root(), modal=True
-        )
+        dialog = BoundedWindow(title="Attach to FSA claim", transient_for=self.get_root())
         box = dialog.frame("fsa-claims")
         claim_pick = bounded_dropdown([f"{item.label} — {item.reason}" for item in claims])
         role_pick = bounded_dropdown(

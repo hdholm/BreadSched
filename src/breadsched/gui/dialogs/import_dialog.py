@@ -47,7 +47,7 @@ class ImportDialog(BoundedWindow):
     """Choose a GnuCash file, check what it is, then import it."""
 
     def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
-        super().__init__(title="Import financial data", transient_for=parent, modal=True)
+        super().__init__(title="Import financial data", transient_for=parent)
         self.db = db
         self.path: str | None = None
         self._job: BackgroundJob[ImportResult, tuple[str, int, int]] | None = None

@@ -57,7 +57,7 @@ class PreferencesDialog(BoundedWindow):
     """The user's settings, in one window."""
 
     def __init__(self, parent: Gtk.Window | None, application) -> None:
-        super().__init__(title="Preferences", transient_for=parent, modal=True)
+        super().__init__(title="Preferences", transient_for=parent)
         self.set_destroy_with_parent(True)
         self.application = application
         self.settings = application.settings
@@ -266,16 +266,19 @@ class PreferencesDialog(BoundedWindow):
         return True
 
     def ask_unadded(self, *, saving: bool) -> None:
-        """An account is chosen in a group's picker but **Add** was not chosen."""
+        """An account is checked to add to a group, but **Add checked** was not chosen."""
+        assert self.dashboard is not None
+        several = len(self.dashboard.unadded()) > 1
+        what = "accounts" if several else "account"
         if saving:
-            message = "Add the chosen account before saving?"
-            buttons = ["Go back", "Save without it", "Add and save"]
+            message = f"Add the chosen {what} before saving?"
+            buttons = ["Go back", f"Save without {'them' if several else 'it'}", "Add and save"]
         else:
-            message = "Close without adding the chosen account?"
+            message = f"Close without adding the chosen {what}?"
             buttons = ["Go back", "Close without saving"]
         detail = (
-            "An account is chosen in a Dashboard group but was not added with its "
-            "Add button:\n" + self._unadded_text()
+            f"{'Accounts are' if several else 'An account is'} checked in a Dashboard "
+            "group but not added with its Add checked button:\n" + self._unadded_text()
         )
         self.unadded_question = (message, buttons)
         alert = Gtk.AlertDialog(

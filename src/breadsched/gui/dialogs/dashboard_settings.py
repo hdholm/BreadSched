@@ -48,13 +48,10 @@ _EXPLANATION = {
     "liability": "Owed",
 }
 
-#: The first entry of each group's account picker, which adds nothing.
-_PICK = "Add an account…"
-
 
 @dataclass(frozen=True)
 class Unadded:
-    """An account chosen in a group's picker but never added with its **Add**."""
+    """An account checked to add to a group but never added with **Add checked**."""
 
     group: str
     account: str
@@ -262,6 +259,7 @@ class DashboardSettings(Gtk.Box):
         header = Gtk.Box(spacing=8)
         name = Gtk.Entry(placeholder_text="Investments:Plan A")
         name.set_hexpand(True)
+        name.update_property([Gtk.AccessibleProperty.LABEL], ["Group name"])
         if group:
             name.set_text(group.name)
         header.append(name)
@@ -270,21 +268,50 @@ class DashboardSettings(Gtk.Box):
         kind.set_selected(KINDS.index(group.kind) if group else 0)
         header.append(kind)
 
+        # The groups show on the Dashboard in this order.
+        up = Gtk.Button(icon_name="go-up-symbolic")
+        up.set_tooltip_text("Move this group up")
+        header.append(up)
+        down = Gtk.Button(icon_name="go-down-symbolic")
+        down.set_tooltip_text("Move this group down")
+        header.append(down)
         remove = Gtk.Button(icon_name="list-remove-symbolic")
         remove.set_tooltip_text("Remove this group")
         header.append(remove)
         frame.append(header)
 
-        # The group's accounts, each with its own remove button, then a searchable
-        # picker to add another: the whole chart is never listed under each group.
+        # The group's accounts, each with a check to remove several at once and its
+        # own remove button.
         members = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         frame.append(members)
-        adder = Gtk.Box(spacing=8)
-        picker = bounded_dropdown([_PICK, *(self.names[a.handle] for a in self.accounts)])
-        picker.set_hexpand(True)
-        adder.append(picker)
-        add = Gtk.Button(label="Add")
-        adder.append(add)
+        drop_checked = Gtk.Button(label="Remove checked")
+        drop_checked.set_halign(Gtk.Align.START)
+        drop_checked.set_sensitive(False)
+        frame.append(drop_checked)
+
+        # Accounts to add: a searchable checklist, closed until wanted, so the whole
+        # chart is never listed under every group. Check several (or every account
+        # the search shows, then uncheck a few) and add them together.
+        adder = Gtk.Expander(label="Add accounts…")
+        chooser = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        search = Gtk.SearchEntry(placeholder_text="Search accounts")
+        search.update_property([Gtk.AccessibleProperty.LABEL], ["Search accounts to add"])
+        chooser.append(search)
+        candidates = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        scroller = Gtk.ScrolledWindow(child=candidates)
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_min_content_height(160)
+        scroller.set_max_content_height(240)
+        scroller.set_propagate_natural_height(True)
+        chooser.append(scroller)
+        buttons = Gtk.Box(spacing=8)
+        check_shown = Gtk.Button(label="Check all shown")
+        clear = Gtk.Button(label="Clear checks")
+        add = Gtk.Button(label="Add checked")
+        for button in (check_shown, clear, add):
+            buttons.append(button)
+        chooser.append(buttons)
+        adder.set_child(chooser)
         frame.append(adder)
 
         row = {
@@ -293,22 +320,106 @@ class DashboardSettings(Gtk.Box):
             "kind": kind,
             "accounts": [],
             "members": members,
-            "picker": picker,
+            "member_checks": {},
+            "drop_checked": drop_checked,
+            "adder": adder,
+            "search": search,
+            "candidates": candidates,
+            "choices": {},
+            "add": add,
+            "up": up,
+            "down": down,
         }
         self.rows.append(row)
         self.group_box.append(frame)
+        up.connect("clicked", lambda *_: self.move_group(row, -1))
+        down.connect("clicked", lambda *_: self.move_group(row, 1))
         remove.connect("clicked", lambda *_: self._remove(row))
+        drop_checked.connect("clicked", lambda *_: self.remove_checked(row))
+        adder.connect("notify::expanded", lambda *_: self._fill_choices(row))
+        search.connect("search-changed", lambda *_: self._filter_choices(row))
+        check_shown.connect("clicked", lambda *_: self.check_shown(row, True))
+        clear.connect("clicked", lambda *_: self.check_shown(row, False, shown_only=False))
         add.connect("clicked", lambda *_: self._add_picked(row))
         for handle in group.accounts if group else ():
             self.add_account(row, handle)
+        self._update_moves()
         return row
 
-    def _add_picked(self, row: dict) -> None:
-        index = row["picker"].get_selected()
-        if index < 1:
+    # ------------------------------------------------------------- the order
+
+    def move_group(self, row: dict, step: int) -> None:
+        """Move a group up (-1) or down (1); the Dashboard lists them in this order."""
+        index = self.rows.index(row)
+        target = index + step
+        if not 0 <= target < len(self.rows):
             return
-        self.add_account(row, self.accounts[index - 1].handle)
-        row["picker"].set_selected(0)
+        self.rows.insert(target, self.rows.pop(index))
+        before = self.rows[target - 1]["frame"] if target else None
+        self.group_box.reorder_child_after(row["frame"], before)
+        self._update_moves()
+
+    def _update_moves(self) -> None:
+        for index, row in enumerate(self.rows):
+            row["up"].set_sensitive(index > 0)
+            row["down"].set_sensitive(index < len(self.rows) - 1)
+
+    # ---------------------------------------------------------- the accounts
+
+    def _fill_choices(self, row: dict) -> None:
+        """The checklist is built the first time it is opened."""
+        if row["choices"] or not row["adder"].get_expanded():
+            return
+        for account in self.accounts:
+            check = Gtk.CheckButton(label=self.names[account.handle])
+            check.connect("toggled", lambda *_: self._update_add(row))
+            row["choices"][account.handle] = check
+            row["candidates"].append(check)
+        self._filter_choices(row)
+
+    def _filter_choices(self, row: dict) -> None:
+        """Show the accounts matching the search that are not in the group yet."""
+        text = row["search"].get_text().strip().casefold()
+        for handle, check in row["choices"].items():
+            check.set_visible(
+                handle not in row["accounts"]
+                and (not text or text in self.names[handle].casefold())
+            )
+        self._update_add(row)
+
+    def choose(self, row: dict, handle: str, chosen: bool = True) -> None:
+        """Check (or uncheck) ``handle`` in the group's list of accounts to add."""
+        if not row["choices"]:
+            row["adder"].set_expanded(True)
+            self._fill_choices(row)
+        check = row["choices"].get(handle)
+        if check is not None:
+            check.set_active(chosen)
+
+    def check_shown(self, row: dict, chosen: bool, *, shown_only: bool = True) -> None:
+        """Check or uncheck every account the search shows (or every one)."""
+        for check in row["choices"].values():
+            if not shown_only or check.get_visible():
+                check.set_active(chosen and check.get_visible())
+
+    def checked(self, row: dict) -> list[str]:
+        """The accounts checked to add that are not in the group yet, in chart order."""
+        return [
+            handle
+            for handle, check in row["choices"].items()
+            if check.get_active() and handle not in row["accounts"]
+        ]
+
+    def _update_add(self, row: dict) -> None:
+        row["add"].set_sensitive(bool(self.checked(row)))
+
+    def _add_picked(self, row: dict) -> None:
+        """Add every checked account to the group, then clear the checks."""
+        for handle in self.checked(row):
+            self.add_account(row, handle)
+        for check in row["choices"].values():
+            check.set_active(False)
+        self._filter_choices(row)
 
     def add_account(self, row: dict, handle: str) -> None:
         """Put ``handle`` in ``row``'s group, taking it out of any other group."""
@@ -322,6 +433,11 @@ class DashboardSettings(Gtk.Box):
                 self.status.set_text(f"Moved {self.names[handle]} from {group}.")
         row["accounts"].append(handle)
         line = Gtk.Box(spacing=8)
+        check = Gtk.CheckButton()
+        check.update_property([Gtk.AccessibleProperty.LABEL], [f"Check {self.names[handle]}"])
+        check.connect("toggled", lambda *_: self._update_drop(row))
+        line.append(check)
+        row["member_checks"][handle] = check
         label = Gtk.Label(label=self.names[handle], xalign=0)
         label.set_hexpand(True)
         label.set_ellipsize(Pango.EllipsizeMode.END)
@@ -333,21 +449,37 @@ class DashboardSettings(Gtk.Box):
         line.append(drop)
         line.handle = handle
         row["members"].append(line)
+        self._filter_choices(row)
 
     def remove_account(self, row: dict, handle: str) -> None:
         if handle not in row["accounts"]:
             return
         row["accounts"].remove(handle)
+        row["member_checks"].pop(handle, None)
         child = row["members"].get_first_child()
         while child is not None:
             if getattr(child, "handle", None) == handle:
                 row["members"].remove(child)
                 break
             child = child.get_next_sibling()
+        self._filter_choices(row)
+        self._update_drop(row)
+
+    def remove_checked(self, row: dict) -> None:
+        """Take every checked account out of the group."""
+        for handle, check in list(row["member_checks"].items()):
+            if check.get_active():
+                self.remove_account(row, handle)
+
+    def _update_drop(self, row: dict) -> None:
+        row["drop_checked"].set_sensitive(
+            any(check.get_active() for check in row["member_checks"].values())
+        )
 
     def _remove(self, row: dict) -> None:
         self.rows.remove(row)
         self.group_box.remove(row["frame"])
+        self._update_moves()
 
     # ----------------------------------------------------------------- saving
 
@@ -373,27 +505,22 @@ class DashboardSettings(Gtk.Box):
         )
 
     def unadded(self) -> list[Unadded]:
-        """Accounts chosen in a group's picker but not yet added with **Add**.
+        """Accounts checked to add to a group but not yet added with **Add checked**.
 
         Saving or closing would otherwise lose them without a word, since only
-        **Add** puts an account in the group.
+        **Add checked** puts an account in the group.
         """
-        found = []
+        found: list[Unadded] = []
         for row in self.rows:
-            index = row["picker"].get_selected()
-            if index < 1 or index > len(self.accounts):
-                continue
-            handle = self.accounts[index - 1].handle
-            if handle in row["accounts"]:
-                continue
             group = row["name"].get_text().strip() or "an unnamed group"
-            found.append(Unadded(group, self.names[handle], row))
+            found.extend(Unadded(group, self.names[handle], row) for handle in self.checked(row))
         return found
 
     def add_unadded(self) -> None:
-        """Add every account chosen but not yet added, as its **Add** would."""
-        for item in self.unadded():
-            self._add_picked(item.row)
+        """Add every account checked but not yet added, as **Add checked** would."""
+        for row in self.rows:
+            if self.checked(row):
+                self._add_picked(row)
 
     def save(self) -> bool:
         """Store the settings; False, with the reason shown, if they were refused."""

@@ -16,7 +16,7 @@ class VerificationDialog(BoundedWindow):
     """Verify one native book without freezing or modifying its open writer."""
 
     def __init__(self, parent: Gtk.Window | None, path: str) -> None:
-        super().__init__(title="Verify book", transient_for=parent, modal=True)
+        super().__init__(title="Verify book", transient_for=parent)
         self.path = path
         self._job: BackgroundJob[BookVerification, None] = BackgroundJob()
         self._close_when_done = False

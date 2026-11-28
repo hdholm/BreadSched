@@ -122,7 +122,6 @@ class ScheduleDialog(BoundedWindow):
                 else "Edit scheduled transaction"
             ),
             transient_for=parent,
-            modal=True,
         )
         self.db = db
         self.source = source

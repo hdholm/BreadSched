@@ -50,9 +50,7 @@ class ImportReviewDialog(BoundedWindow):
     def __init__(
         self, parent: Gtk.Window | None, db: OpenBook, changes: list[HeldImportChange]
     ) -> None:
-        super().__init__(
-            title="GnuCash changes to reconciled transactions", transient_for=parent, modal=True
-        )
+        super().__init__(title="GnuCash changes to reconciled transactions", transient_for=parent)
         self.set_destroy_with_parent(True)
         self.db = db
         self.changes = list(changes)

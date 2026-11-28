@@ -46,7 +46,7 @@ class SavingsGoalsDialog(BoundedWindow):
     """Goal list with each goal's progress, above the goal editor."""
 
     def __init__(self, parent: Gtk.Window | None, db: OpenBook, today: date | None = None) -> None:
-        super().__init__(title="Savings Goals", transient_for=parent, modal=True)
+        super().__init__(title="Savings Goals", transient_for=parent)
         self.set_destroy_with_parent(True)
         self.set_default_size(900, 640)
         self.db = db

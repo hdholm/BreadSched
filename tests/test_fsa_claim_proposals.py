@@ -173,3 +173,38 @@ def test_an_fsa_account_without_a_year_proposes_nothing(db, book):
         db.add_account(medical, txn)
     _post(db, date(2026, 3, 6), "Clinic card", medical.handle, account.handle, "80.00")
     assert propose_claim_links(db) == []
+
+
+def test_a_claim_already_paid_in_full_is_not_proposed_another_payment(db, book, fsa):
+    """Field report: links were proposed for a claim already fully funded. Paid
+    in full by card, the dentist's claim still takes its reimbursement, but an FSA
+    card payment of the same amount belongs on another claim, not this one."""
+    account, medical = fsa
+    dentist = _claim(db, account, date(2026, 3, 8), "Dentist", "200")
+    charge = _post(db, date(2026, 3, 8), "Dentist", medical, book.card, "200")
+    fsa_claims.attach_transaction_to_claim(db, dentist.handle, charge.handle, role="payment")
+    _post(db, date(2026, 3, 9), "Dentist card", medical, account, "200.00")
+    reimbursed = _post(db, date(2026, 3, 25), "Dentist claim paid", book.checking, account, "200")
+
+    proposals = propose_claim_links(db)
+
+    assert [(p.claim, p.transaction, p.role) for p in proposals] == [
+        (dentist.handle, reimbursed.handle, "reimbursement")
+    ]
+
+
+def test_a_claim_with_a_payment_and_no_eob_is_not_proposed_another(db, book, fsa):
+    account, medical = fsa
+    claim = fsa_claims.save_claim(
+        db,
+        FsaClaim(
+            service_date=date(2026, 3, 5),
+            provider="Clinic",
+            allocations=[FsaClaimAllocation(account, YEAR)],
+        ),
+    )
+    first = _post(db, date(2026, 3, 6), "Clinic card", medical, account, "80.00")
+    fsa_claims.attach_transaction_to_claim(db, claim.handle, first.handle, role="direct_payment")
+    _post(db, date(2026, 3, 7), "Clinic card", medical, account, "80.00")
+
+    assert [p for p in propose_claim_links(db) if p.role == "direct_payment"] == []

@@ -11,6 +11,8 @@ would be technically correct and useless.
 
 from __future__ import annotations
 
+import json
+
 from ...api import ApiError  # noqa: E402
 from ...api.local import book_server  # noqa: E402
 from ...gen.lib.account import Account  # noqa: E402
@@ -26,6 +28,7 @@ from ._base import (
     attach_row_menu,
     column,
     mark_row,
+    remember_sort,
     scroll_to_row,
     sorted_model,
     table_section,
@@ -33,6 +36,9 @@ from ._base import (
 )  # noqa: E402
 
 __all__ = ["AccountTreeView"]
+
+#: The interface-state section holding each book's collapsed account branches.
+COLLAPSED_SECTION = "accounts-collapsed"
 
 
 class AccountTreeView(BaseView):
@@ -62,6 +68,14 @@ class AccountTreeView(BaseView):
         #: account's children in the server's order (#358).
         self._lines: dict[str, ChartLine] = {}
         self._children: dict[str | None, list[Account]] = {}
+        #: The accounts whose branch is collapsed, kept for each book between runs;
+        #: every other branch opens expanded.
+        self._collapsed: set[str] = set()
+        self._collapsed_loaded_for: object = None
+        self._laying_out = False
+        #: Which layout the rows being watched belong to: a replaced tree's rows
+        #: collapse as it is torn down, which is not the user collapsing them.
+        self._layout = 0
         self._build()
 
     def _build(self) -> None:
@@ -119,6 +133,7 @@ class AccountTreeView(BaseView):
             getattr(self.manager.get_application(), "view_settings", None),
             table_label="account",
         )
+        remember_sort(self.column_view, "columns:accounts", self._view_settings())
         for side in ("start", "end"):
             getattr(self.table, f"set_margin_{side}")(8)
         self.table.scroller.set_vexpand(True)
@@ -143,6 +158,7 @@ class AccountTreeView(BaseView):
             expander = item.get_child()
             mark_row(item)
             expander.set_list_row(tree_row)
+            self._watch(tree_row)
             account = tree_row.get_item().payload
             label = expander.get_child()
             # Shown hidden accounts say so, as the account choices do (#397).
@@ -237,12 +253,26 @@ class AccountTreeView(BaseView):
         view, rather than the selection jumping back to the top of the chart.
         """
         kept = self.selected_account()
+        self._load_collapsed()
         model = Gtk.TreeListModel.new(
             self._children_store(None),
             False,  # passthrough: rows are our Row objects, not raw items
-            True,  # autoexpand every level
+            False,  # each branch opens unless the user collapsed it
             self._create_child_model,
         )
+        self._layout += 1
+        self._laying_out = True
+        try:
+            index = 0
+            while index < model.get_n_items():
+                tree_row = model.get_row(index)
+                self._watch(tree_row)
+                handle = getattr(tree_row.get_item().payload, "handle", None)
+                if tree_row.is_expandable() and handle not in self._collapsed:
+                    tree_row.set_expanded(True)  # its children follow it, and are visited
+                index += 1
+        finally:
+            self._laying_out = False
         selection = Gtk.SingleSelection(model=sorted_model(self.column_view, model))
         selection.connect("notify::selected", self._on_selection_changed)
         self.column_view.set_model(selection)
@@ -253,6 +283,53 @@ class AccountTreeView(BaseView):
                     scroll_to_row(self.column_view, index)
                     break
         self._on_selection_changed()
+
+    # -------------------------------------------------------- collapsed branches
+
+    def _view_settings(self):
+        return getattr(self.manager.get_application(), "view_settings", None)
+
+    def _collapsed_place(self):
+        """The interface-state file and this book's key in it, if any."""
+        state = getattr(self.manager, "book_state_key", None)
+        return state() if state is not None else None
+
+    def _load_collapsed(self) -> None:
+        place = self._collapsed_place()
+        if place is None or place == self._collapsed_loaded_for:
+            return
+        self._collapsed_loaded_for = place
+        settings, key = place
+        try:
+            stored = json.loads(settings.get(COLLAPSED_SECTION, key) or "[]")
+        except ValueError:
+            stored = []
+        self._collapsed = {item for item in stored if isinstance(item, str)}
+
+    def _watch(self, tree_row) -> None:
+        """Notice the user collapsing or expanding this row's branch (once a row)."""
+        if getattr(tree_row, "_layout", None) != self._layout:
+            tree_row._layout = self._layout
+            tree_row.connect("notify::expanded", self._on_expanded)
+
+    def _on_expanded(self, tree_row, _param) -> None:
+        if self._laying_out or getattr(tree_row, "_layout", None) != self._layout:
+            return
+        handle = getattr(tree_row.get_item().payload, "handle", None)
+        if handle is None:
+            return
+        if tree_row.get_expanded():
+            self._collapsed.discard(handle)
+        else:
+            self._collapsed.add(handle)
+        place = self._collapsed_place()
+        if place is None:
+            return
+        settings, key = place
+        # Only accounts still in the chart are kept, so the list cannot grow.
+        known = [handle for handle in sorted(self._collapsed) if handle in self._lines]
+        settings.set(COLLAPSED_SECTION, key, json.dumps(known, separators=(",", ":")))
+        settings.save()
 
     def _children_store(self, parent: str | None) -> Gio.ListStore:
         store = Gio.ListStore.new(Row)

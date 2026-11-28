@@ -717,6 +717,77 @@ class TestLiquidityAndEmergencyFund:
         expected = gross - household.income_within(30)
         assert household.required_liquid == max(Money(0), expected)
 
+    @staticmethod
+    def _jar_book(db, book, *, groceries: bool = False):
+        """Pay of 2,000 on the 1st (received) and the 25th, rent of 1,800 on the
+        30th, and 5,000 in checking; seen on March 15."""
+        with db.transaction("jar book") as txn:
+            db.add_transaction(
+                Transaction.simple(date(2026, 1, 1), "Open", book.checking, book.opening, "5000"),
+                txn,
+            )
+            for day in (1, 25):
+                pay = ScheduledTransaction(
+                    name=f"Pay on the {day}",
+                    recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, day)),
+                    splits=[
+                        ScheduledSplit(book.checking, Money("2000")),
+                        ScheduledSplit(book.salary, Money("-2000")),
+                    ],
+                )
+                pay.last_posted = date(2026, 3, day) if day == 1 else date(2026, 2, day)
+                db.add_scheduled(pay, txn)
+            rent = ScheduledTransaction(
+                name="Rent",
+                recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 30)),
+                splits=[
+                    ScheduledSplit(book.rent, Money("1800")),
+                    ScheduledSplit(book.checking, Money("-1800")),
+                ],
+            )
+            rent.last_posted = date(2026, 2, 28)
+            db.add_scheduled(rent, txn)
+            if groceries:
+                estimate = ScheduledTransaction(
+                    name="Groceries",
+                    recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 20)),
+                    splits=[
+                        ScheduledSplit(book.groceries, Money("600")),
+                        ScheduledSplit(book.checking, Money("-600")),
+                    ],
+                )
+                estimate.placeholder = True  # an estimate, never posted for you
+                db.add_scheduled(estimate, txn)
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig("Cash", [book.checking], "liquid")]
+        )
+        return dashboard.build(db, config, as_of=date(2026, 3, 15))
+
+    def test_pay_in_the_period_never_frees_what_is_already_in_a_jar(self, db, book):
+        """Field report: Needed seemed to count only what the bills need beyond
+        their jars, and Available not to take out what is already in them. Half of
+        the rent is in its jar from the pay of March 1; the pay of March 25 can
+        fund only the other half, so the 900 in the jar stays spoken for."""
+        board = self._jar_book(db, book)
+        [rent] = [bill for bill in board.bills if bill.name == "Rent"]
+        assert rent.next_due == date(2026, 3, 30)
+        assert rent.held == Money("900")
+        assert board.income_within(30) >= Money("2000")
+        # Was max(0, 1,800 - pay in the period) = 0.
+        assert board.required_liquid == Money("900")
+        assert board.available == Money("5000") - Money("900") - board.config.reserve
+
+    def test_an_estimates_jar_is_kept_back_too(self, db, book):
+        """Groceries of 600 on the 20th: the pay of February 25 and March 1 is all
+        the pay in its cycle, so its jar for March 20 is full, and kept back like
+        the rent's. A past date of an estimate is not owed."""
+        board = self._jar_book(db, book, groceries=True)
+        groceries = [row for row in board.estimates if row.name == "Groceries"]
+        assert sum((row.held for row in groceries), Money(0)) == Money("600")
+        assert board.jars_held == Money("1500")
+        assert board.required_liquid == Money("1500")
+        assert board.available == Money("5000") - Money("1500") - board.config.reserve
+
     def test_available_is_liquid_less_what_is_spoken_for(self, household):
         assert household.available == (
             household.liquid - household.required_liquid - household.config.reserve
@@ -1080,10 +1151,14 @@ class TestLoansPairWithTheirAssets:
 
         group = dashboard.build(db, config, as_of=TODAY).group(house.name)
 
-        assert [account.name for account in group.accounts] == [
-            "Assets:Home Easton",
-            "Liabilities:Mortgage Easton",
-        ]
+        # The loan is not a line of its own: it is shown on the asset's line.
+        [line] = group.accounts
+        assert line.name == "Assets:Home Easton"
+        assert line.loans == ("Liabilities:Mortgage Easton",)
+        assert line.total == Money("490200.00")
+        assert line.debt == Money("385938.50")
+        assert line.equity == Money("104261.50")
+        assert line.loan_to_value == Decimal("0.7873")
         assert group.kind == "property"
         assert group.loan_to_value == Decimal("0.7873")
 
@@ -1098,6 +1173,35 @@ class TestLoansPairWithTheirAssets:
         assert group.kind == "property"
         assert group.loan_to_value == Decimal("0.7873")
 
+    def test_an_asset_group_shows_the_loan_on_that_assets_row_only(self, db, book, linked):
+        """Field report: in a group of assets, the house's equity and loan showed
+        only in the group's total, and its loan, never chosen, was listed as an
+        item of the group. The loan changes only the house's row."""
+        from breadsched.plugins.export.report_layout import _groups_blocks
+
+        house, _mortgage = linked
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig("Holdings", [house.handle, book.checking], "asset")]
+        )
+        board = dashboard.build(db, config, as_of=TODAY)
+        group = board.group("Holdings")
+        assert [line.name for line in group.accounts] == [
+            "Assets:Home Easton",
+            db.full_name(db.get_account(book.checking)),
+        ]
+        home, checking = group.accounts
+        assert home.equity == Money("104261.50") and home.loan_to_value == Decimal("0.7873")
+        assert checking.debt is None and checking.loans == ()
+        # Shown that way: the house's row has its owed amount, equity, and LTV.
+        _heading, table = _groups_blocks(board)
+        rows = {row.cells[0].text: row for row in table.rows}
+        assert "Liabilities:Mortgage Easton" not in rows
+        cells = [cell.text for cell in rows["Assets:Home Easton"].cells]
+        assert cells[1:5] == ["490,200.00", "385,938.50", "104,261.50", "78.7%"]
+        assert "Loan: Liabilities:Mortgage Easton" in rows["Assets:Home Easton"].cells[0].hint
+        checking_cells = [cell.text for cell in rows[checking.name].cells]
+        assert checking_cells[2:5] == ["", "", ""]
+
     def test_grouping_only_the_loan_adds_its_linked_asset(self, db, linked):
         house, mortgage = linked
         config = dashboard.DashboardConfig(
@@ -1106,10 +1210,8 @@ class TestLoansPairWithTheirAssets:
 
         group = dashboard.build(db, config, as_of=TODAY).group(house.name)
 
-        assert {account.name for account in group.accounts} == {
-            "Assets:Home Easton",
-            "Liabilities:Mortgage Easton",
-        }
+        assert [account.name for account in group.accounts] == ["Assets:Home Easton"]
+        assert group.accounts[0].loans == ("Liabilities:Mortgage Easton",)
         assert group.loan_to_value == Decimal("0.7873")
 
     def test_a_bounded_repayment_schedule_supplies_the_loan_end(self, db, book, linked):
@@ -1783,7 +1885,8 @@ class TestPaidOffLoans:
         group = dashboard.build(db, as_of=TODAY).group("Property")
 
         assert group is not None
-        assert any(account.name.endswith("Future loan") for account in group.accounts)
+        [line] = group.accounts
+        assert any(loan.endswith("Future loan") for loan in line.loans)
 
     def test_paid_off_loan_is_removed_while_an_active_loan_on_same_asset_remains(self, db, book):
         asset = Account(name="Property", atype=AccountType.ASSET, parent=book.assets)
@@ -1817,10 +1920,10 @@ class TestPaidOffLoans:
 
         group = dashboard.build(db, as_of=TODAY).group("Property")
 
-        assert [account.name.rsplit(":", 1)[-1] for account in group.accounts] == [
-            "Property",
-            "Active loan",
-        ]
+        [line] = group.accounts
+        assert line.name.rsplit(":", 1)[-1] == "Property"
+        assert [loan.rsplit(":", 1)[-1] for loan in line.loans] == ["Active loan"]
+        assert line.debt == Money("25")
         assert group.value == Money("100")
         assert group.debt == Money("25")
         assert group.equity == Money("75")

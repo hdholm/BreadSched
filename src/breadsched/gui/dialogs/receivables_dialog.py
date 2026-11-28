@@ -79,7 +79,7 @@ class ReceivablesDialog(BoundedWindow):
         expense: tuple[str, str] | None = None,
     ) -> None:
         """``expense`` is a (transaction, split) cost to track as a new receivable."""
-        super().__init__(title="Reimbursable expenses", transient_for=parent, modal=True)
+        super().__init__(title="Reimbursable expenses", transient_for=parent)
         self.set_destroy_with_parent(True)
         self.set_default_size(960, 680)
         self.db = db

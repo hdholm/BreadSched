@@ -4,7 +4,8 @@ Its commands follow the window's rule (``view_catalog``): **Edit FSA Claims** op
 the claim selected in the claims table (also by double-clicking it, or from its
 right-click menu), or the claims window as it opens anywhere when none is
 selected, and **Link Chosen Statement Lines** links the proposed lines ticked; both
-are toolbar icons and Actions menu items. The ticks and the report's
+are toolbar icons and Actions menu items. The proposed links shown are the selected
+claim's, with how many other claims have some. The ticks and the report's
 grouping only choose what the view shows and what a command acts on.
 """
 
@@ -97,6 +98,8 @@ class FsaDashboardView(BaseView):
         self.proposal_actions = proposal_actions
         content.append(proposal_actions)
         self._proposal_checks: list[tuple[Gtk.CheckButton, tuple[str, str, str]]] = []
+        #: Every proposed link as last read; those of the selected claim are shown.
+        self._proposals: tuple = ()
 
         self.fsa_heading = self._heading("FSA benefit years")
         content.append(self.fsa_heading)
@@ -224,17 +227,39 @@ class FsaDashboardView(BaseView):
 
     def _show(self, data) -> None:
         proposals, years, claims, grouped = data
-        self._render_proposals(proposals)
+        self._proposals = tuple(proposals)
         self._render_years(years)
         self._render_claims(claims)
+        # Shown for the claim selected, which the claims table has just settled.
+        self._render_proposals(self._proposals)
         self._render_report(grouped)
 
     def _render_proposals(self, proposals) -> None:
+        """The proposed links of the claim selected in the claims table (all of them
+        when none is), with how many other claims have some."""
         _empty(self.proposal_grid)
         self._proposal_checks = []
-        for widget in (self.proposal_heading, self.proposal_grid, self.proposal_actions):
+        selected = self._selected_claim()
+        heading = "Proposed claim links"
+        if selected is not None and proposals:
+            others = len({item.claim for item in proposals if item.claim != selected})
+            proposals = [item for item in proposals if item.claim == selected]
+            heading = (
+                "Proposed claim links for the selected claim"
+                if proposals
+                else "No proposed claim links for the selected claim"
+            )
+            if others:
+                heading += f" ({others} other claim{'s have' if others != 1 else ' has'} some)"
+            # Shown while any claim has a proposal, so the others can be found.
+            self.proposal_heading.set_visible(True)
+        else:
+            self.proposal_heading.set_visible(bool(proposals))
+        self.proposal_heading.set_label(heading)
+        for widget in (self.proposal_grid, self.proposal_actions):
             widget.set_visible(bool(proposals))
         if not proposals:
+            self._update_commands()
             return
         headings = ("", "Date", "Transaction", "Amount", "Claim", "As", "Why")
         for column_index, heading in enumerate(headings):
@@ -336,13 +361,17 @@ class FsaDashboardView(BaseView):
         for line in lines:
             store.append(Row(line))
         selection = Gtk.SingleSelection(model=sorted_model(self.claim_view, store))
-        selection.connect("notify::selected", lambda *_a: self._update_commands())
+        selection.connect("notify::selected", lambda *_a: self._on_claim_selected())
         self.claim_view.set_model(selection)
         if kept is not None:
             for index in range(selection.get_n_items()):
                 if unwrap(selection.get_item(index)).summary.claim.handle == kept:
                     selection.set_selected(index)
                     break
+        self._update_commands()
+
+    def _on_claim_selected(self) -> None:
+        self._render_proposals(self._proposals)
         self._update_commands()
 
     def _selected_claim(self) -> str | None:

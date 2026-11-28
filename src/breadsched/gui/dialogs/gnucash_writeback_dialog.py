@@ -26,7 +26,7 @@ class GnuCashWritebackDialog(BoundedWindow):
     """One row per writable transaction, each chosen explicitly."""
 
     def __init__(self, parent: Gtk.Window | None, db: OpenBook) -> None:
-        super().__init__(title="Write changes to GnuCash", transient_for=parent, modal=True)
+        super().__init__(title="Write changes to GnuCash", transient_for=parent)
         self.set_destroy_with_parent(True)
         self.set_default_size(820, 520)
         self.db = db

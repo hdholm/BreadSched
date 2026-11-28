@@ -317,6 +317,24 @@ class GroupAccountResult:
     missing_quotes: tuple[str, ...] = ()
     #: Descendants included by inference, one line each with any quote evidence.
     members: tuple[str, ...] = ()
+    #: For an asset whose linked loans are in the same group: what they owe, their
+    #: names, and the latest repayment date. The loans are not lines of their own;
+    #: they only change this asset's row (its equity and loan-to-value).
+    debt: Money | None = None
+    loans: tuple[str, ...] = ()
+    loan_end: date | None = None
+
+    @property
+    def equity(self) -> Money | None:
+        if self.total is None or self.debt is None:
+            return None
+        return self.total - self.debt
+
+    @property
+    def loan_to_value(self) -> Decimal | None:
+        if self.total is None or self.debt is None or not self.total:
+            return None
+        return (self.debt.rate() / self.total.rate()).quantize(Decimal("0.0001"))
 
 
 @dataclass
@@ -594,34 +612,51 @@ class Dashboard:
     # ------------------------------------------------------------- the verdict
 
     @property
-    def required_liquid(self) -> Money:
-        """Near-term bills plus protected reserves, less dated future income.
+    def jar_rows(self) -> list[BillRow]:
+        """Every bill and every estimate the Dashboard keeps money back for."""
+        return [*self.bills, *(row for row in self.estimates if not row.income)]
 
-        A normal bill inside the liquidity window already includes its reserve,
-        so that reserve is not counted twice. A reserve attached to an overdue
-        bill is for the *next* occurrence and remains additional to the unpaid
-        obligation.
+    @property
+    def jars_held(self) -> Money:
+        """What is already in the jars of bills and estimates: cash that has been
+        set aside, so later pay cannot free it."""
+        return sum((row.held for row in self.jar_rows), Money(0))
+
+    @property
+    def required_liquid(self) -> Money:
+        """What today's cash must cover: every bill already overdue, everything
+        already in a bill's or an estimate's jar, and what the bills and estimates
+        due in the liquidity period still need beyond their jars, less the pay
+        scheduled in that period.
+
+        Money already in a jar has been allocated, so pay arriving later funds only
+        what the jars still lack; it never makes jar money available again. Of an
+        overdue bill, the unpaid amount is owed now, and its jar (``held``) is
+        filling for the *next* occurrence; a card payment's jar is the payment
+        itself, so it is counted once.
         """
         horizon = self.as_of + timedelta(days=self.config.liquidity_days)
-        overdue = sum((bill.amount for bill in self.bills if bill.next_due < self.as_of), Money(0))
-        upcoming = sum(
-            (bill.amount for bill in self.bills if self.as_of <= bill.next_due <= horizon),
-            Money(0),
-        )
-        funded_upcoming = upcoming - self.income_within(self.config.liquidity_days)
-        if funded_upcoming < 0:
-            funded_upcoming = Money(0)
-        reserves = sum(
-            (
-                bill.held
-                for bill in self.bills
-                if bill.next_due > horizon or (bill.next_due < self.as_of and not bill.generated)
-            ),
-            Money(0),
-        )
-        # Future income can fund future bills. It cannot retroactively erase an
-        # obligation whose due date has already passed.
-        return overdue + funded_upcoming + reserves
+        overdue = Money(0)
+        held = Money(0)
+        still_needed = Money(0)
+        for row in self.jar_rows:
+            if row.next_due < self.as_of:
+                # An estimate is never posted, so a past date is not owed: only its
+                # jar, filling for the next occurrence, is kept.
+                if not row.estimate:
+                    overdue = overdue + row.amount
+                if not row.generated:
+                    held = held + row.held
+                continue
+            held = held + row.held
+            if row.next_due <= horizon and row.amount > row.held:
+                still_needed = still_needed + (row.amount - row.held)
+        unfunded = still_needed - self.income_within(self.config.liquidity_days)
+        if unfunded < 0:
+            unfunded = Money(0)
+        # Future income can fund what the jars lack. It cannot retroactively erase
+        # an obligation whose due date has already passed, nor release jar money.
+        return overdue + held + unfunded
 
     def income_within(self, days: int) -> Money:
         """Income on actual scheduled dates from today through ``days`` ahead."""
@@ -634,10 +669,11 @@ class Dashboard:
     def cash_flow_chart(self, currency: str = "") -> ChartModel:
         """Cash on hand, day by day, over the liquidity period.
 
-        It starts at today's liquid cash less every overdue bill, then adds each
-        scheduled income and subtracts each bill on its date: the same bills and
-        income, on the same dates, that :attr:`required_liquid` counts, so the chart
-        and the *Needed* figure agree. The lowest day is marked. With nothing dated
+        It starts at today's liquid cash less every overdue bill (an estimate's
+        past date is not owed), then adds each
+        scheduled income and subtracts each bill and estimate on its date: the same
+        bills, estimates, and income, on the same dates, that :attr:`required_liquid`
+        counts. The lowest day is marked. With nothing dated
         inside the period the chart is empty.
         """
         days = max(1, self.config.liquidity_days)
@@ -646,7 +682,9 @@ class Dashboard:
         horizon = self.as_of + timedelta(days=days)
         changes: dict[date, Money] = {}
         balance = self.liquid
-        for bill in self.bills:
+        for bill in self.jar_rows:
+            if bill.next_due < self.as_of and bill.estimate:
+                continue
             if bill.next_due < self.as_of:
                 balance = balance - bill.amount
             elif bill.next_due <= horizon:
@@ -1195,6 +1233,16 @@ def _direct_group_totals(
     notes: list[str] = []
     missing: list[str] = []
     liquid_missing: list[str] = []
+    # A loan whose linked asset is in the same group is shown on that asset's line,
+    # not as a line of its own; the group's totals count it either way.
+    present = {handle for handle in handles if handle not in paid_off}
+    asset_of = {
+        loan.handle: asset.handle
+        for loan, asset in linked_pairs(db)
+        if loan.handle in present and asset.handle in present
+    }
+    by_handle: dict[str, GroupAccountResult] = {}
+    folded: dict[str, list[tuple[Account, GroupAccountResult]]] = {}
     for handle in handles:
         if handle in paid_off:
             continue
@@ -1202,7 +1250,11 @@ def _direct_group_totals(
         if account is None or account.hidden:
             continue
         line = _account_group_result(db, account, today, counted)
-        lines.append(line)
+        if handle in asset_of:
+            folded.setdefault(asset_of[handle], []).append((account, line))
+        else:
+            lines.append(line)
+            by_handle[handle] = line
         if line.note:
             notes.append(line.note)
         missing.extend(line.missing_quotes)
@@ -1215,6 +1267,29 @@ def _direct_group_totals(
             assets = assets + amount
         if kind == "liquid":
             liquid = liquid + amount
+    for asset_handle, loans in folded.items():
+        asset_line = by_handle.get(asset_handle)
+        if asset_line is None:
+            # The asset itself was withheld (hidden, say): its loans stay lines.
+            lines.extend(line for _loan, line in loans)
+            continue
+        owed = [line.total for _loan, line in loans]
+        known = [amount for amount in owed if amount is not None]
+        asset_line.debt = sum(known, Money(0)) if len(known) == len(owed) else None
+        asset_line.loans = tuple(
+            f"{line.name}: {line.note}" if line.note else line.name for _loan, line in loans
+        )
+        asset_line.missing_quotes = tuple(
+            dict.fromkeys(
+                [
+                    *asset_line.missing_quotes,
+                    *(q for _loan, line in loans for q in line.missing_quotes),
+                ]
+            )
+        )
+        asset_line.loan_end = _loan_end_date(
+            db, [loan.handle for loan, _line in loans], paid_off, counted
+        )
     return lines, assets, debts, liquid, notes, missing, liquid_missing
 
 

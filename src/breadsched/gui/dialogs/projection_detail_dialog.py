@@ -24,7 +24,7 @@ class ProjectionDetailDialog(BoundedWindow):
         book: BookApi,
         result: projection.Projection,
     ) -> None:
-        super().__init__(title="Projection explanation", transient_for=parent, modal=True)
+        super().__init__(title="Projection explanation", transient_for=parent)
         self.book = book
         self._names = {record.account.handle: record.account.name for record in book.accounts()}
         self.result = result
