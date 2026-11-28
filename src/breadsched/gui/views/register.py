@@ -393,7 +393,6 @@ class RegisterView(BaseView):
             delete_transaction=self.cursor_transaction() is not None,
             make_scheduled=True,
             match_to_plan=True,
-            edit_in_place=True,
             split=True,
             track_reimbursable=True,
             track_fsa_claim=True,
@@ -582,13 +581,6 @@ class RegisterView(BaseView):
         if self._focus_source:
             GLib.source_remove(self._focus_source)
         self._focus_source = 0
-
-    def edit_selected_in_place(self, *_args) -> bool:
-        """Typing goes into the transaction under the cursor; this puts focus there."""
-        if self.sheet is None:
-            return False
-        self.grid.sync()
-        return True
 
     def toggle_split(self) -> bool:
         if self.sheet is None:

@@ -202,10 +202,6 @@ class DashboardSettings(Gtk.Box):
         add = Gtk.Button(label="Add group", icon_name="list-add-symbolic")
         add.connect("clicked", lambda *_: self.add_group())
         controls.append(add)
-        reset = Gtk.Button(label="Suggest from accounts")
-        reset.set_tooltip_text("Rebuild the groups from the chart of accounts")
-        reset.connect("clicked", self._on_reset)
-        controls.append(reset)
         page.append(controls)
         return page
 
@@ -352,12 +348,6 @@ class DashboardSettings(Gtk.Box):
     def _remove(self, row: dict) -> None:
         self.rows.remove(row)
         self.group_box.remove(row["frame"])
-
-    def _on_reset(self, _button) -> None:
-        for row in list(self.rows):
-            self._remove(row)
-        for group in book_server(self.db).default_dashboard_settings().groups:
-            self.add_group(group)
 
     # ----------------------------------------------------------------- saving
 

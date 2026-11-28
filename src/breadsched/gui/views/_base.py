@@ -593,6 +593,10 @@ def attach_row_menu(owner: BaseView, widget: Gtk.Widget, names=None, select_at=N
             open_at(x, y)
 
     click = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
+    # Ahead of a child's own menu, as the keys below are: a right-click on the
+    # register's cell editor showed the text field's Cut/Copy/Paste menu instead of
+    # the row's commands, so the right menu appeared only off the edited cell.
+    click.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
     click.connect("pressed", on_pressed)
     widget.add_controller(click)
 
