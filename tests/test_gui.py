@@ -1252,11 +1252,39 @@ class TestRegisterGrid:
         assert any(t.description == "Hardware" for t in app.db.iter_transactions())
         assert sheet.rows[sheet.cursor].kind == "blank" and not sheet.draft.dirty()
 
-    def test_enter_and_cancel_are_register_actions(self, app, window, populated_book):
+    def test_a_right_click_on_the_edited_cell_opens_the_rows_commands(
+        self, app, window, populated_book
+    ):
+        """The row menu sometimes showed only the text field's Cut/Copy/Paste/Delete:
+        a right-click on the cell being edited went to the cell editor's own menu
+        first. The row menu's click now runs ahead of it, as its keys do."""
+        from breadsched.gui.gi_setup import Gdk
+
+        view = _grid_register(app, window, populated_book)
+        clicks = [
+            controller
+            for controller in view.grid.observe_controllers()
+            if isinstance(controller, Gtk.GestureClick)
+            and controller.get_button() == Gdk.BUTTON_SECONDARY
+        ]
+        assert clicks
+        assert all(
+            click.get_propagation_phase() is Gtk.PropagationPhase.CAPTURE for click in clicks
+        )
+        # The editor sits inside the grid, so the grid's capture phase sees its clicks.
+        assert view.grid.editor.is_ancestor(view.grid)
+        # Every row command is in that menu, Track as FSA Claim included.
+        labels = _menu_labels(view.grid.row_menu.get_menu_model())
+        assert "Track as _FSA Claim…" in labels.values()
+        assert "Track as Rei_mbursable…" in labels.values()
+
+    def test_cancel_is_a_register_action_and_enter_a_key(self, app, window, populated_book):
         labels = _menu_labels(app.get_menubar())
-        # E is Edit Transaction's, beside it in the register's commands.
-        assert labels["win.register-enter"] == "E_nter Transaction"
         assert labels["win.register-cancel"] == "_Cancel Transaction"
+        # Entering and editing in place are the register's own keys and Enter
+        # button; as menu commands they added nothing.
+        assert "win.register-enter" not in labels
+        assert "win.register-edit-in-place" not in labels
         view = _grid_register(app, window, populated_book)
         view.sheet.to_blank()
         view.sheet.column = "description"
@@ -8055,6 +8083,32 @@ class TestDashboardView:
         # Groups only arrange rows: the book's totals do not move.
         assert view.board.net_worth == before
 
+    def test_groups_are_never_suggested_from_account_types(self, view, app):
+        """Suggest from accounts rebuilt the groups from a default that, by design,
+        holds none: it only wiped every group. It is gone; groups are chosen."""
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
+
+        dialog = DashboardSettings(app.db)
+        labels = []
+        stack = [
+            dialog.notebook.get_nth_page(index) for index in range(dialog.notebook.get_n_pages())
+        ]
+        while stack:
+            widget = stack.pop()
+            if isinstance(widget, Gtk.Button) and widget.get_label():
+                labels.append(widget.get_label())
+            if isinstance(widget, Gtk.Label):
+                labels.append(widget.get_label())
+            child = widget.get_first_child()
+            while child is not None:
+                stack.append(child)
+                child = child.get_next_sibling()
+        assert "Groups" in {
+            dialog.notebook.get_tab_label_text(dialog.notebook.get_nth_page(index))
+            for index in range(dialog.notebook.get_n_pages())
+        }
+        assert labels and "Suggest from accounts" not in labels
+
     def test_the_group_dialog_refuses_an_account_in_two_groups(self, view, app):
         from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
 
@@ -14837,6 +14891,33 @@ class TestIssue397:
         assert "log=BreadSched+" in url and "most+recent+call+first" in url
         from urllib.parse import unquote_plus
 
+        assert str(Path.home()) not in unquote_plus(url)
+
+    def test_a_crash_last_time_is_offered_for_reporting_once(self, app, tmp_path, monkeypatch):
+        """A crash ended the process with nothing said, then or later: the next start
+        now offers to report it, the start of its log filled in."""
+        from urllib.parse import unquote_plus
+
+        from breadsched.gui.crash_reports import CrashReport
+
+        log = tmp_path / "crash-20261128-101500-42.log"
+        log.write_text(
+            f"Fatal Python error: Segmentation fault\n\nCurrent thread 0x1 (most recent "
+            f'call first):\n  File "{Path.home()}/breadsched/gui/app.py", line 10\n',
+            encoding="utf-8",
+        )
+        app.crash_report = CrashReport("2026-11-28T10:15:00", log)
+        opened = []
+        monkeypatch.setattr(app, "_open_issue_form", lambda url: opened.append(url) or url)
+        app.offer_crash_report()
+        assert "closed unexpectedly" in app.crash_alert.get_message()
+        assert str(log) in app.crash_alert.get_detail()
+        assert app.crash_report is None  # offered once
+        assert app.offer_crash_report() is False
+        app.report_crash(CrashReport("2026-11-28T10:15:00", log))
+        [url] = opened
+        assert "template=bug_report.yml" in url and "crashed" in unquote_plus(url)
+        assert "Segmentation fault" in unquote_plus(url)
         assert str(Path.home()) not in unquote_plus(url)
 
     def test_slow_work_announced_is_given_longer_and_named(self, tmp_path):

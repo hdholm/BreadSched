@@ -97,15 +97,23 @@ def main(argv: list[str] | None = None) -> int:
     # the next start offers to report it. Only here, not in tests, which drive
     # GTK without running its main loop between steps.
     from ..gen.utils.user_paths import data_directory
+    from .crash_reports import CrashGuard, crash_to_offer
     from .watchdog import Watchdog
 
     application.hang_reports = data_directory() / "hang-reports"
+    # Record a crash (a fatal signal's stacks, an unhandled error) and offer to
+    # report the last run's on activation; a run quit from the not-responding
+    # prompt is offered as a hang instead.
+    crash_reports = data_directory() / "crash-reports"
+    application.crash_report = crash_to_offer(crash_reports, application.hang_reports)
+    guard = CrashGuard(crash_reports).start()
     watchdog = Watchdog(application.hang_reports).start()
     # Gio parses trailing arguments as files to open, which drives do_open.
     try:
         return application.run([sys.argv[0]] + ([book] if book else []))
     finally:
         watchdog.stop()
+        guard.stop()
 
 
 if __name__ == "__main__":  # pragma: no cover

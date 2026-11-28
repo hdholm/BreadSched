@@ -1831,7 +1831,7 @@ class TestBookServerBoundaries:
                 "gui/viewmanager.py",
                 ("_refresh_status", "_account_record", "_scenario_exists", "open_register_tab"),
             ),
-            ("gui/dialogs/dashboard_settings.py", ("_on_reset", "save")),
+            ("gui/dialogs/dashboard_settings.py", ("save",)),
             ("gui/dialogs/historical_estimates_dialog.py", ("__init__",)),
             (
                 "gui/register_sheet.py",
@@ -2318,6 +2318,8 @@ class TestDesktopDates:
     NOT_SHOWN = {
         ("gui/watchdog.py", "_record"),
         ("gui/watchdog.py", "write_log"),
+        ("gui/crash_reports.py", "start"),
+        ("gui/crash_reports.py", "_write"),
         ("gui/dialogs/breadlets_dialog.py", "given"),
         ("gui/dialogs/net_worth_history_dialog.py", "_export_change"),
         ("gui/views/scheduled.py", "_next_key"),

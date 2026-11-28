@@ -38,6 +38,7 @@ from .widgets.presented import when_presented
 if TYPE_CHECKING:
     from ..gen.services import ClaimDraft
     from .book_sharing import SharedBook
+    from .crash_reports import CrashReport
 
 __all__ = ["BreadSchedApplication", "main"]
 
@@ -95,6 +96,9 @@ class BreadSchedApplication(Gtk.Application):
         #: Where the watchdog keeps hang logs and reports (set by the launcher,
         #: which runs it); a hang report left there is offered on activation.
         self.hang_reports: Path | None = None
+        #: The crash the last run left (``crash_reports.pending_crash``, read by the
+        #: launcher before this run's guard replaced it), offered on activation.
+        self.crash_report: CrashReport | None = None
 
     # ------------------------------------------------------------- life cycle
 
@@ -141,6 +145,8 @@ class BreadSchedApplication(Gtk.Application):
         window.present()
         if self.hang_reports is not None:
             GLib.idle_add(self.offer_hang_report)
+        if self.crash_report is not None:
+            GLib.idle_add(self.offer_crash_report)
 
     @staticmethod
     def _needs_upgrade(path: str) -> bool:
@@ -869,7 +875,7 @@ class BreadSchedApplication(Gtk.Application):
         alert = Gtk.AlertDialog(
             message="BreadSched stopped responding last time",
             detail=(
-                f"On {report.when.replace('T', ' at ')}, BreadSched had not responded for "
+                f"On {_shown_moment(report.when)}, BreadSched had not responded for "
                 f"{report.seconds:.0f} seconds and was quit. Where it was stuck is in "
                 f"{report.log}.\n\nReporting the problem opens a GitHub bug report "
                 "with this version, what happened, and the start of that log filled in. "
@@ -892,6 +898,54 @@ class BreadSchedApplication(Gtk.Application):
 
         alert.choose(self.props.active_window, None, answered)
         return False
+
+    def offer_crash_report(self, *_args):
+        """After the last run crashed, offer once to report it.
+
+        The bug form gets what happened and the start of the crash log (each
+        thread's stack or the unhandled error, the home directory masked); the whole
+        log stays on this computer to attach.
+        """
+        report, self.crash_report = self.crash_report, None
+        if report is None:
+            return False
+        alert = Gtk.AlertDialog(
+            message="BreadSched closed unexpectedly last time",
+            detail=(
+                f"The run started {_shown_moment(report.when)} ended without "
+                f"closing normally. What it recorded is in {report.log}.\n\nReporting "
+                "the problem opens a GitHub bug report with this version, what happened, "
+                "and the start of that log filled in. Nothing from your book is included."
+            ),
+            buttons=["Not now", "Report problem…"],
+            cancel_button=0,
+            default_button=1,
+            modal=True,
+        )
+        self.crash_alert = alert
+
+        def answered(dialog, result) -> None:
+            try:
+                choice = dialog.choose_finish(result)
+            except GLib.Error:
+                return
+            if choice == 1:
+                self.report_crash(report)
+
+        alert.choose(self.props.active_window, None, answered)
+        return False
+
+    def report_crash(self, report) -> str:
+        """Open the bug form with a crash's details filled in."""
+        from .watchdog import log_excerpt
+
+        return self._open_issue_form(
+            issue_url(
+                "bug",
+                what="BreadSched closed unexpectedly (it crashed). What I was doing just before: ",
+                log=log_excerpt(report.log),
+            )
+        )
 
     def report_hang(self, report) -> str:
         """Open the bug form with a freeze's details filled in."""
@@ -1200,3 +1254,16 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
+
+
+def _shown_moment(stamp: str) -> str:
+    """An ISO timestamp from a hang or crash record, in the desktop's date style."""
+    from datetime import datetime
+
+    from .widgets.date_entry import shown_date
+
+    try:
+        moment = datetime.fromisoformat(stamp)
+    except ValueError:
+        return stamp
+    return f"{shown_date(moment.date())} at {moment:%H:%M}"

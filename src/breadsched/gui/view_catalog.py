@@ -233,12 +233,6 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             row=True,
         ),
         ViewAction(
-            "edit-in-place",
-            "Edit Transaction _in Place",
-            "edit_selected_in_place",
-            row=True,
-        ),
-        ViewAction(
             "split",
             "Show Transaction Sp_lits",
             "toggle_split",
@@ -256,7 +250,8 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             "track_selected_fsa_claim",
             row=True,
         ),
-        ViewAction("enter", "E_nter Transaction", "enter_transaction"),
+        # Enter and Edit in Place are the register's own keys and Enter button, not
+        # menu commands; Cancel stays, as Escape is easy to miss.
         ViewAction("cancel", "_Cancel Transaction", "cancel_transaction"),
         # GnuCash's Blank: to the new transaction at the end (Ctrl+End, Shift+Page Down).
         ViewAction(

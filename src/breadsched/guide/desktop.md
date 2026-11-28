@@ -300,8 +300,8 @@ arrangement of this book: anyone else it is shared with keeps theirs.
   its accounts. A group lists only its own accounts, each with a remove button;
   **Add an account…** is a searchable list (type part of a name) and **Add** puts
   the chosen account in the group. An account is in at most one group, so adding it
-  to one takes it out of another, and the tab says so. **Suggest from accounts**
-  proposes groups from the chart of accounts. If an account is chosen in a group's
+  to one takes it out of another, and the tab says so. Groups are never made from
+  account types: you choose each group's accounts. If an account is chosen in a group's
   list but **Add** was not pressed, **Save** asks whether to add it first (**Add and
   save**), save without it, or go back, and **Cancel** asks before closing without
   it.
@@ -453,7 +453,7 @@ the transaction, like **Enter**. From a transfer to an expense, **Tab** goes str
 to the money-out column (**Withdrawal** or **Charge**), where the expense belongs;
 after that one step it follows the usual order. **Escape** puts the transaction back as it was
 (the blank one empties). The register's **Enter** and **Cancel** buttons, and
-**Actions → Enter Transaction** and **Cancel Transaction**, do the same as the keys,
+**Actions → Cancel Transaction**, do the same as the keys,
 so you can save or abandon what you typed without them. Dates, amounts, and **Num** take the shortcuts in
 [Typing shortcuts in the register](../USER_GUIDE.md#typing-shortcuts-in-the-register):
 for example `+` for the next day or `100/3` for an amount.
@@ -1181,3 +1181,9 @@ Use these File menu commands regularly:
   opens a GitHub bug report with the version, what happened, and the start of the
   log filled in (nothing from your book). On Linux, `kill -USR1 <process id>` writes
   where every thread is to `stacks-on-request.log` in the same folder at any time.
+- If BreadSched crashes (closes on its own, for example after a fault in GTK), where
+  each thread was is written to a crash log in the `crash-reports` folder of the same
+  data folder, and so is any unexpected error it recovered from. When you start
+  BreadSched again it says **BreadSched closed unexpectedly last time** and offers
+  **Report problem…**, filled in the same way. A run that was simply killed, or lost
+  power, leaves nothing to report.
