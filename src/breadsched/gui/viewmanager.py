@@ -767,11 +767,6 @@ class ViewManager(Gtk.ApplicationWindow):
                     item.label.replace("_", ""),
                 )
             )
-        # The view's commands end the toolbar; in a window narrower than it they
-        # would be past the right arrow, so the bar scrolls to show them.
-        last = self.view_tools.get_last_child() or self.view_heading
-        if self.view_heading.get_visible():
-            self.toolbar_bar.reveal_span(self.view_heading, last)
         shown = self._shown_view()
         if shown is not None:
             self.apply_view_commands(shown)

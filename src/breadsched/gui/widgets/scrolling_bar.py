@@ -4,8 +4,7 @@ The toolbar and the tab row used to sit in horizontal scrolled windows, whose
 scrollbar took a line of its own and was easy to miss. ``ScrollingBar`` scrolls its
 row without a scrollbar and shows a left and a right arrow only while the row is
 wider than the window; each arrow is greyed out at its end, and the mouse wheel
-scrolls the row too. ``reveal`` brings one child into view (the current tab), and
-``reveal_span`` a run of them (the toolbar's commands for the view shown).
+scrolls the row too. ``reveal`` brings one child into view (the current tab).
 """
 
 from __future__ import annotations
@@ -37,8 +36,6 @@ class ScrollingBar(Gtk.Box):
         # The adjustment changes while GTK lays the row out; showing or hiding an
         # arrow then would resize the bar mid-layout, so it waits for idle.
         self._update_source = 0
-        #: The run of children to bring into view once the row is laid out.
-        self._span: tuple[Gtk.Widget, Gtk.Widget] | None = None
         adjustment.connect("changed", lambda *_: self._queue_update())
         adjustment.connect("value-changed", lambda *_: self._queue_update())
         # A vertical wheel (most mice have no other) scrolls the row sideways.
@@ -76,8 +73,6 @@ class ScrollingBar(Gtk.Box):
 
     def _update(self) -> None:
         adjustment = self.scroller.get_hadjustment()
-        if self._span is not None and self._apply_span(*self._span):
-            self._span = None
         overflowing = self.overflowing
         for arrow in (self.left, self.right):
             arrow.set_visible(overflowing)
@@ -113,30 +108,3 @@ class ScrollingBar(Gtk.Box):
             adjustment.set_value(start)
         elif start + width > value + page:
             adjustment.set_value(start + width - page)
-
-    def reveal_span(self, first: Gtk.Widget, last: Gtk.Widget) -> None:
-        """Scroll so the children from ``first`` to ``last`` are in view, or as much
-        of them as fits, from ``first`` on. The row may not be laid out yet (its
-        children just changed), so it is done again once it is."""
-        self._span = (first, last)
-        if self._apply_span(first, last):
-            self._span = None
-        self._queue_update()
-
-    def _apply_span(self, first: Gtk.Widget, last: Gtk.Widget) -> bool:
-        found_first, start = first.compute_bounds(self.child)
-        found_last, end = last.compute_bounds(self.child)
-        if not (found_first and found_last) or end.get_width() <= 0:
-            return False
-        adjustment = self.scroller.get_hadjustment()
-        page = adjustment.get_page_size()
-        upper = adjustment.get_upper()
-        if page <= 0 or upper < end.get_x() + end.get_width() - 0.5:
-            return False  # not laid out with these children yet
-        left, right = start.get_x(), end.get_x() + end.get_width()
-        value = adjustment.get_value()
-        if right > value + page:
-            value = right - page
-        value = min(value, left)  # the start of the run wins when it cannot all fit
-        adjustment.set_value(max(0.0, min(value, upper - page)))
-        return True
