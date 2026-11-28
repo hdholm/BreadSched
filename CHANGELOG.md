@@ -8,6 +8,26 @@ GitHub releases.
 
 ## Unreleased
 
+- **A payment on two FSA claims is counted once.** A healthcare payment linked to
+  several claims, each for part of it, counted in full on every claim, so the FSA
+  Dashboard showed the whole payment on each and its totals counted it more than
+  once. Each claim now counts its part, in proportion to its allocation amounts (or
+  its EOB responsibility), and the totals count the payment once.
+- **Each leg of a payment shows its account and memo.** The FSA claims window (and
+  the browser's claim editor) lists every expense leg of a transaction on its own;
+  it now names each leg's account and memo, so a payment split into one leg per claim
+  can be told apart and each claim linked to its own part.
+- **Every claim sharing a payment is offered its leg.** A payment for several
+  visits, a leg per visit, was not offered to a claim whose visit was more than 60
+  days before the payment, and **All dates** listed only the oldest 200
+  transactions. The legs of a payment other claims link are now always offered, and
+  the list shows the transactions nearest the service date first. One FSA card leg
+  paying several visits counts on each claim as the part that claim paid.
+- **A claim stays open while its EOB is more than was paid.** With every payment
+  reimbursed but an EOB saying more is owed, a claim showed **Fully reimbursed**; it
+  is now **Partially reimbursed** and needs attention, since another bill is
+  expected.
+
 ## 2026.11.28.0
 
 The eighth beta, published as a GitHub pre-release; its Windows installer and Linux

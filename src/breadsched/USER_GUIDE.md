@@ -1633,6 +1633,25 @@ have either or both; with both, grace-period claims use the earlier year first a
 the carryover is what is still unused when the run-out ends. The FSA Dashboard shows
 what each year carried in and carried over. Claims can associate
 healthcare payments, reimbursements, allocations, refunds, and rejected attempts.
+One payment can be on several claims (two visits paid together): each claim then
+counts only its part of it, in proportion to what each claim is for, its
+allocations' amounts (or, without them, its EOB responsibility), and equally when
+neither says. So with allocations of 120 and 180 on a payment of 300, the claims
+show 120 and 180 paid, and the totals count the 300 once. A refund shared by claims
+is divided the same way. To link exactly part of a payment instead, split the
+payment's expense side into one leg per claim in the register (120 and 180 to
+Medical, say, against one card payment of 300): every expense leg is offered on its
+own, with its account and memo, and each claim links its leg. Splitting the paying
+side (two card payments for one 300 expense) still leaves one 300 expense leg.
+Once one claim links a leg of a payment, the other legs of that payment are offered
+to every other claim, however far its visit is from the payment's date. Paid from
+the FSA card, one FSA leg paying several visits counts on each claim as the part
+that claim paid.
+
+A claim stays open while its EOB says you owe more than its payments: with 200
+paid and reimbursed but an EOB of 300, it is **Partially reimbursed**, not fully,
+and needs attention because another bill is expected. Link that bill's payment
+when it comes (or correct the EOB), and the claim settles once it is reimbursed.
 Use FSA Dashboard to review open and recently closed benefit years and unresolved
 claims. Money waiting in an FSA is an FSA asset: net worth, never liquidity.
 

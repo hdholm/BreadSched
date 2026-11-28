@@ -436,6 +436,8 @@ class ClaimCandidate:
     account_name: str
     #: The split's size, without its sign.
     amount: Money
+    #: The split's own memo, which tells two legs of one transaction apart.
+    memo: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -497,6 +499,7 @@ def claim_candidates(db: DbSQLite) -> ClaimCandidates:
                 account.handle,
                 db.full_name(account) or account.name,
                 abs(split.value),
+                split.memo,
             )
             if account.account_class is AccountClass.EXPENSE and split.value > 0:
                 payments.append(item)

@@ -848,7 +848,7 @@ async function openFsaClaimsEditor(initialHandle=null, draft=null) {
   };
   const candidateOptions = (rows) => rows.map((item) => el("option", {
     value:linkValue(item), "data-date":item.date,
-  }, `${item.date} ${item.description} — ${item.account_name} ${money(item.amount)}`));
+  }, `${item.date} ${item.description} — ${item.account_name}${item.memo ? ` · ${item.memo}` : ""} — ${money(item.amount)}`));
   const refreshClaimCandidates = (paymentLinks=null, refundLinks=null) => {
     const window = claimWindow();
     const within = (item) => !window || window.start <= item.date;

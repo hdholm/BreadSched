@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import weakref
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -321,6 +322,9 @@ class FsaClaimSummary:
     over_reimbursed: Money = Money(0)
     #: What a closed claim gave up: it was never reimbursed.
     forgone: Money = Money(0)
+    #: What the EOB says the household owes beyond what it has paid so far: a bill
+    #: still expected, which keeps the claim open.
+    unbilled: Money = Money(0)
     #: The correction that reopened this claim while money is still to come:
     #: an EOB raised after reimbursement, or the claim reopened by hand.
     reopened_by: FsaClaimEvent | None = None
@@ -810,6 +814,87 @@ def _sum_links(db: DbSQLite, links: list[SplitLink]) -> Money:
     return split_links.sum_links(db, links, _missing_link)
 
 
+# --------------------------------------------------- payments shared by claims
+
+#: Each book's payment and refund links by the claims that share them, with the
+#: book revision they were read at.
+_SHARED: weakref.WeakKeyDictionary[
+    DbSQLite, tuple[int, dict[tuple[str, str, str], list[FsaClaim]]]
+] = weakref.WeakKeyDictionary()
+
+
+def _sharing(db: DbSQLite) -> dict[tuple[str, str, str], list[FsaClaim]]:
+    """Every stored claim on each (kind, transaction, split) link of its payments,
+    refunds, reimbursements, and repayments,
+    read once per book revision (a claim summary is asked for every claim)."""
+    revision = db.revision()
+    cached = _SHARED.get(db)
+    if cached is not None and cached[0] == revision:
+        return cached[1]
+    found: dict[tuple[str, str, str], list[FsaClaim]] = {}
+    for claim in iter_claims(db):
+        kinds = [("payment", claim.payments), ("refund", claim.refunds)]
+        for allocation in claim.allocations:
+            kinds.append(("reimbursement", allocation.reimbursements))
+            kinds.append(("repayment", allocation.repayments))
+        for kind, links in kinds:
+            for link in links:
+                sharers = found.setdefault((kind, link.transaction, link.split), [])
+                if all(item.handle != claim.handle for item in sharers):
+                    sharers.append(claim)
+    _SHARED[db] = (revision, found)
+    return found
+
+
+def _claim_weight(db: DbSQLite, claim: FsaClaim, transaction: str) -> Money:
+    """How much of a shared link a claim is for: its allocations' targets, or
+    without them its EOB responsibility, or without that what it paid in the same
+    transaction (an FSA card paying several visits, each its own expense leg); zero
+    when it says none of these."""
+    targets = [item.target for item in claim.allocations if item.target is not None]
+    if targets:
+        return sum(targets, Money(0))
+    if claim.eob_responsibility is not None:
+        return claim.eob_responsibility
+    total = Money(0)
+    for link in claim.payments:
+        if link.transaction == transaction:
+            _txn, split = split_links.resolve_link(db, link, _missing_link)
+            total = total + abs(split.value)
+    return total
+
+
+def link_share(db: DbSQLite, claim: FsaClaim, kind: str, link: SplitLink) -> tuple[Money, int]:
+    """What of one linked payment, refund, reimbursement, or repayment (``kind``)
+    counts for ``claim``, and how many claims share it.
+
+    One payment can cover several claims (two visits paid together). Each claim
+    counts its share of it, in proportion to what each claim is for (its
+    allocation targets, or its EOB responsibility), and equally when none says;
+    so the shares add up to the payment, which is never counted twice.
+    """
+    _transaction, split = split_links.resolve_link(db, link, _missing_link)
+    whole = abs(split.value)
+    stored = _sharing(db).get((kind, link.transaction, link.split), [])
+    others = [item for item in stored if item.handle != claim.handle]
+    if not others:
+        return whole, 1
+    sharers = [claim, *others]
+    weights = [_claim_weight(db, item, link.transaction) for item in sharers]
+    total = sum(weights, Money(0))
+    if total <= 0 or any(weight <= 0 for weight in weights):
+        return whole / len(sharers), len(sharers)
+    return whole * (weights[0] / total), len(sharers)
+
+
+def _sum_shares(db: DbSQLite, claim: FsaClaim, kind: str, links: list[SplitLink]) -> Money:
+    total = Money(0)
+    for link in links:
+        share, _count = link_share(db, claim, kind, link)
+        total = total + share
+    return total
+
+
 def _linked_receivable(db: DbSQLite, claim: FsaClaim) -> Receivable:
     receivable = db.get_receivable(claim.receivable or "")
     if receivable is None:
@@ -846,8 +931,9 @@ def claim_summary(
     as_of: date | None = None,
 ) -> FsaClaimSummary:
     when = as_of or date.today()
-    paid = _sum_links(db, claim.payments)
-    refunds = _sum_links(db, claim.refunds)
+    # A payment or refund shared with other claims counts only this claim's share.
+    paid = _sum_shares(db, claim, "payment", claim.payments)
+    refunds = _sum_shares(db, claim, "refund", claim.refunds)
     net_paid = paid - refunds
     reimbursed = Money(0)
     repaid = Money(0)
@@ -867,8 +953,10 @@ def claim_summary(
         year_status = fsa.year_status(db, account, year, as_of=when)
         available = available + year_status.remaining
         contributions_open = contributions_open or when <= year.through
-        reimbursed = reimbursed + _sum_links(db, allocation.reimbursements)
-        repaid = repaid + _sum_links(db, allocation.repayments)
+        # FSA money shared with other claims (one FSA card payment for several
+        # visits) counts only this claim's share, as a shared payment does.
+        reimbursed = reimbursed + _sum_shares(db, claim, "reimbursement", allocation.reimbursements)
+        repaid = repaid + _sum_shares(db, claim, "repayment", allocation.repayments)
         for rejection in allocation.rejections:
             if rejection.amount < 0:
                 raise ValueError("rejected reimbursement amount must not be negative")
@@ -896,6 +984,7 @@ def claim_summary(
 
     # Money paid back to the FSA undoes that much reimbursement.
     reimbursed = reimbursed - repaid
+    unbilled = Money(0)
     if net_paid < 0:
         reimbursable = Money(0)
         status = FsaClaimStatus.NEEDS_REVIEW
@@ -906,12 +995,19 @@ def claim_summary(
         reimbursable = min(net_paid, responsibility)
         if payer is not None:
             reimbursable = min(reimbursable, max(net_paid - payer_share, Money(0)))
+        else:
+            # The EOB says more is owed than was paid: another bill is expected,
+            # and the claim stays open for it however much was reimbursed so far.
+            unbilled = max(responsibility - net_paid, Money(0))
         if over_allocated > 0:
             status = FsaClaimStatus.NEEDS_REVIEW
-        elif has_targets and target_total > reimbursable:
+        elif has_targets and target_total > reimbursable + unbilled:
             status = FsaClaimStatus.NEEDS_REVIEW
         elif reimbursed > reimbursable:
             status = FsaClaimStatus.OVER_REIMBURSED
+        elif unbilled > 0 and reimbursable > 0 and reimbursed >= reimbursable:
+            # Everything paid so far is reimbursed, but not the whole EOB.
+            status = FsaClaimStatus.PARTIAL
         elif reimbursable > 0 and reimbursed >= reimbursable:
             status = FsaClaimStatus.FULLY_REIMBURSED
         elif available <= 0 and not (dependent_care and contributions_open):
@@ -966,6 +1062,7 @@ def claim_summary(
         repaid=repaid,
         over_reimbursed=over_reimbursed,
         forgone=forgone,
+        unbilled=unbilled,
         reopened_by=reopened_by,
     )
 

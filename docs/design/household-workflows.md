@@ -234,7 +234,21 @@ movement and the cash bridge has no residual for FSA-paid expense.
 [Presentation settings and financial records](storage.md#presentation-settings-and-financial-records))
 linking payments, provider refunds, and per-funding-year allocations with their
 reimbursements, rejections, and repayments. `engine.fsa_claims.claim_summary`
-recomputes paid, refunded, reimbursed, repaid, remaining, and status. FSA reimbursements
+recomputes paid, refunded, reimbursed, repaid, remaining, and status. A payment or
+refund linked to several claims counts each claim's share (`link_share`), in
+proportion to each claim's allocation targets, else its EOB responsibility, else
+equally, so the shares add up to the split and report totals count it once; the
+claims sharing each link are read once per book revision. Without a payer, an EOB
+responsibility above the net paid is `unbilled`: a claim whose payments are all
+reimbursed stays **Partially reimbursed** (attention `bill`) until the next bill is
+linked, and funding-year targets may reach the EOB rather than what was paid.
+Payment candidates are expense legs (`ClaimCandidate`, with the leg's account and
+memo), so a payment split by leg links each claim to its own part. The desktop
+offers the other legs of a payment other claims link whatever the date range
+(`_LinkList.related`) and lists candidates nearest the service date first, since
+only `SHOWN_LIMIT` are shown. Reimbursements and repayments are shared the same
+way, and a claim without targets or EOB weighs a shared link by what it paid in
+the same transaction (one FSA card leg paying several visits). FSA reimbursements
 need no reclassification because the money is already in the FSA asset, which is not
 cash-like.
 

@@ -15425,3 +15425,141 @@ class TestDateStyle:
         assert view.document is document  # kept as made, for export
         assert "05/03/2026" in _texts(view)
         assert print_operation(document) is not None
+
+
+def test_each_leg_of_a_split_payment_is_offered_with_its_account_and_memo(
+    app, window, populated_book
+):
+    """A payment split into one leg per claim lists each leg on its own, told
+    apart by its account and memo, so each claim links only its part."""
+    from breadsched.gen.lib import FsaFundingYear
+    from breadsched.gen.lib.account import AccountClass
+    from breadsched.gui.dialogs.fsa_claims_dialog import FsaClaimsDialog
+
+    app.open_book(populated_book)
+    db = app.db
+    start = date.today().replace(month=1, day=1)
+    assets = next(a for a in db.iter_accounts() if a.name == "Assets")
+    checking = next(a for a in db.iter_accounts() if a.atype is AccountType.BANK)
+    expense = next(a for a in db.iter_accounts() if a.account_class is AccountClass.EXPENSE)
+    account = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
+    account.fsa.years = [
+        FsaFundingYear(start, start.replace(month=12, day=31), Money("1000"), None)
+    ]
+    paid = Transaction(
+        post_date=start,
+        description="Clinic",
+        splits=[
+            Split(account=expense.handle, value=Money("120"), memo="First visit"),
+            Split(account=expense.handle, value=Money("180"), memo="Second visit"),
+            Split(account=checking.handle, value=Money("-300")),
+        ],
+    )
+    with db.transaction("FSA") as txn:
+        db.add_account(account, txn)
+        db.add_transaction(paid, txn)
+    dialog = FsaClaimsDialog(window, db)
+    try:
+        labels = [
+            label
+            for link, _when, label in dialog.payments._candidates
+            if link.transaction == paid.handle
+        ]
+        name = db.full_name(expense) or expense.name
+        assert len(labels) == 2
+        assert labels[0].endswith(f"Clinic — {name} · First visit — 120.00")
+        assert labels[1].endswith(f"Clinic — {name} · Second visit — 180.00")
+    finally:
+        dialog.destroy()
+
+
+def _fsa_book_with_card_payment(app, populated_book, paid_on, amounts):
+    from breadsched.gen.lib import FsaFundingYear
+    from breadsched.gen.lib.account import AccountClass
+
+    app.open_book(populated_book)
+    db = app.db
+    start = date(paid_on.year, 1, 1)
+    assets = next(a for a in db.iter_accounts() if a.name == "Assets")
+    expense = next(a for a in db.iter_accounts() if a.account_class is AccountClass.EXPENSE)
+    card = next(a for a in db.iter_accounts() if a.atype is AccountType.CREDIT)
+    fsa = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
+    fsa.fsa.years = [FsaFundingYear(start, start.replace(month=12, day=31), Money("1000"), None)]
+    splits = [
+        Split(account=expense.handle, value=Money(amount), memo=f"Visit {index + 1}")
+        for index, amount in enumerate(amounts)
+    ]
+    total = sum((Money(amount) for amount in amounts), Money(0))
+    splits.append(Split(account=card.handle, value=-total))
+    paid = Transaction(post_date=paid_on, description="Clinic", splits=splits)
+    with db.transaction("FSA") as txn:
+        db.add_account(fsa, txn)
+        db.add_transaction(paid, txn)
+    return db, expense, card, paid
+
+
+def test_a_card_payment_for_several_visits_is_offered_to_each_visits_claim(
+    app, window, populated_book
+):
+    """Field report: a credit-card payment for three visits, a leg per visit, was
+    not offered to the third claim: its visit was long before the payment, outside
+    Near the service date. Legs of a payment other claims link are always offered."""
+    from datetime import timedelta
+
+    from breadsched.gui.dialogs.fsa_claims_dialog import FsaClaimsDialog
+
+    paid_on = date(date.today().year, 6, 1)
+    _db, _expense, _card, paid = _fsa_book_with_card_payment(
+        app, populated_book, paid_on, ("50", "60", "70")
+    )
+    dialog = FsaClaimsDialog(window, app.db)
+    try:
+        for index, days_before in enumerate((20, 50, 120)):
+            dialog.new_claim()
+            dialog.service.set_text((paid_on - timedelta(days=days_before)).isoformat())
+            dialog.provider.set_text(f"Visit {index + 1}")
+            offered = [
+                link
+                for link, _when, _label in dialog.payments.visible_candidates()
+                if link.transaction == paid.handle
+            ]
+            leg = paid.splits[index].handle
+            assert leg in {link.split for link in offered}, index
+            dialog.payments.add(next(link for link in offered if link.split == leg))
+            dialog._save(None)
+            assert dialog.status.get_text() == "Claim saved."
+    finally:
+        dialog.destroy()
+
+
+def test_any_date_lists_the_nearest_transactions_first(app, window, populated_book):
+    """Only the first 200 candidates are listed: they are the nearest to the
+    service date, so a long history no longer hides a recent payment."""
+    from datetime import timedelta
+
+    from breadsched.gui.dialogs import fsa_claims_dialog
+    from breadsched.gui.dialogs.fsa_claims_dialog import RANGES, FsaClaimsDialog
+
+    paid_on = date(date.today().year, 12, 1)
+    db, expense, card, paid = _fsa_book_with_card_payment(app, populated_book, paid_on, ("80",))
+    with db.transaction("history") as txn:
+        for day in range(fsa_claims_dialog.SHOWN_LIMIT + 20):
+            db.add_transaction(
+                Transaction.simple(
+                    date(paid_on.year, 1, 1) + timedelta(days=day % 300),
+                    f"Pharmacy {day}",
+                    expense.handle,
+                    card.handle,
+                    "5",
+                ),
+                txn,
+            )
+    dialog = FsaClaimsDialog(window, db)
+    try:
+        dialog.new_claim()
+        dialog.service.set_text((paid_on - timedelta(days=100)).isoformat())
+        dialog.payments.range.set_selected([key for key, _l in RANGES].index("all"))
+        shown = dialog.payments.visible_candidates()[: fsa_claims_dialog.SHOWN_LIMIT]
+        assert paid.handle in {link.transaction for link, _when, _label in shown}
+    finally:
+        dialog.destroy()
