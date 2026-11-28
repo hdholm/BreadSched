@@ -145,3 +145,31 @@ def test_the_command_line_lists_and_links_proposals(db, book, fsa, tmp_path, cap
     assert payload["linked"] == 1 and payload["proposals"][0]["claim"] == clinic.handle
     assert main(["claims", str(path), "--proposals"]) == 0
     assert "No proposed claim links." in capsys.readouterr().out
+
+
+def test_only_movements_near_an_fsa_year_are_proposed(db, book, fsa):
+    """The FSA Dashboard proposed lines from years before any FSA year was set up,
+    matched to this year's claims by amount alone. A movement is proposed only
+    within, or within NEAR_DAYS of, a funding year of its own FSA account."""
+    from breadsched.gen.engine.fsa_claim_proposals import NEAR_DAYS
+
+    account, medical = fsa
+    claim = _claim(db, account, date(2026, 1, 2), "Clinic", "80")
+    _post(db, date(2019, 1, 2), "Clinic card", medical, account, "80.00")  # years before
+    early = date(2025, 12, 31)  # a day before the year: near enough
+    assert (YEAR - early).days <= NEAR_DAYS
+    near = _post(db, early, "Clinic card", medical, account, "80.00")
+
+    proposals = propose_claim_links(db)
+
+    assert [(p.claim, p.transaction) for p in proposals] == [(claim.handle, near.handle)]
+
+
+def test_an_fsa_account_without_a_year_proposes_nothing(db, book):
+    account = Account(name="Old FSA", atype=AccountType.FSA, parent=book.assets)
+    medical = Account(name="Medical", atype=AccountType.EXPENSE, parent=book.expenses)
+    with db.transaction("FSA") as txn:
+        db.add_account(account, txn)
+        db.add_account(medical, txn)
+    _post(db, date(2026, 3, 6), "Clinic card", medical.handle, account.handle, "80.00")
+    assert propose_claim_links(db) == []

@@ -265,7 +265,12 @@ cash-like.
   splits no claim links whose flow needs a claim (direct payment, reimbursement,
   provider refund) and proposes the one claim that suggests it in that flow's role
   with an amount match, oldest first and at most one movement per claim per batch;
-  anything ambiguous is left to Review. `services.claims.accept_claim_links`
+  anything ambiguous is left to Review. A movement is considered only within
+  `NEAR_DAYS` (30) of one of its own FSA account's funding years (start to run-out),
+  so lines from before any year was set up are never matched to this year's claims,
+  and every claim and its summary is read once for the batch
+  (`suggest_claims_for_transaction(..., claims=)`), where each movement used to read
+  them all again (seconds on a long FSA history). `services.claims.accept_claim_links`
   recomputes before linking, as `accept_reimbursements` does for receivables, and
   import and reconciliation surfaces report waiting proposals through
   `presentation.claim_link_notice`. `suggest_claims_for_transaction` considers a fully

@@ -1717,6 +1717,8 @@ lists it under **Proposed claim links** with the claim and the role it takes
 and why; untick any that does not belong, then choose **Link Lines** on the desktop
 toolbar (**Actions → Link Chosen Statement Lines**) or **Link selected** in the
 browser to link the ticked ones. A line is proposed only
+when it falls within, or within 30 days of, one of its FSA account's funding years
+(from the year's start to the end of its run-out), and only
 when exactly one claim fits it with a matching amount, and each claim is proposed at
 most once at a time; anything else waits for you in Review. A reimbursement is
 proposed once the claim has the payment you made, and a refund to the FSA card even

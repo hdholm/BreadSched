@@ -929,7 +929,8 @@ the write-off becomes, which a charge recorded to a Receivable account must name
 A warning appears when a linked expense is also on an FSA claim.
 
 When FSA statement lines clearly belong on claims, the FSA Dashboard lists them
-first under **Proposed claim links**, each ticked: untick any that does not belong,
+first under **Proposed claim links** (only lines within, or within 30 days of, a
+funding year of their FSA account), each ticked: untick any that does not belong,
 then choose **Link Lines** on the toolbar (**Actions → Link Chosen Statement
 Lines**).
 Import and reconciliation results say when proposals are waiting.
@@ -952,15 +953,17 @@ the FSA card** for money moving between the FSA card and a provider, **Healthcar
 payment** and **Provider refund** for a charge paid another way, and **FSA
 reimbursement** or **Repaid to the FSA** for money between the FSA and your bank.
 
-In **Manage FSA Claims**, a changed EOB is kept in the claim's history with the
-**EOB change note**. Link money you paid back into the FSA under **Repaid to the
-FSA** in the claim's allocation. **Close claim** stops pursuing what is left and
-**Reopen claim** takes it up again, each with the reason typed beside them; the line
-above shows the claim's status, anything repaid or still to repay, and what a closed
-claim gave up.
+In **Edit FSA Claims**, on the claim's **Advanced** tab, a changed EOB is kept in
+the claim's history with the **EOB change note**. Link money you paid back into the
+FSA under **Repaid to the FSA** for the claim's allocation. **Close claim** stops
+pursuing what is left and **Reopen claim** takes it up again, each with the reason
+typed beside them; the **Claim** tab's last line shows the claim's status, anything
+repaid or still to repay, and what a closed claim gave up.
 
-When the FSA pays what the insurer does not, open **Manage FSA Claims** on the FSA
-Dashboard, choose the reimbursable expense under **Payer covers part**, and save the claim.
+When the FSA pays what the insurer does not, open **Edit FSA Claims**, and on the
+claim's **Advanced** tab choose the reimbursable expense under **Payer covers part**,
+and save the claim. The list holds expenses tracked as reimbursable (**Track as
+Reimbursable** on a register row); with none tracked it says so and cannot be opened.
 The claim and the reimbursable expense then show what the payer, the FSA, and you each pay,
 and **Needs review** when that comes to more than was paid. See
 [Reimbursable expenses](../USER_GUIDE.md#reimbursable-expenses).
@@ -979,16 +982,16 @@ Actual, and Variance line.
 
 ## FSA claims
 
-**Actions → Manage FSA Claims…** opens the claims editor from any view (on the FSA
-Dashboard it is also a toolbar icon): each claim's service date, provider,
-description, and EOB amount, the payments and refunds it links, and how much of it
-each FSA funding year covers. The window does not block the rest of BreadSched, so it
+**Actions → Edit FSA Claims…** opens the claims editor from any view (on the FSA
+Dashboard it is also a toolbar icon, and opens the claim selected there): each
+claim's service date, provider, description, and EOB amount, the payments and
+refunds it links, and how much of it each FSA funding year covers. The window does not block the rest of BreadSched, so it
 can stay open beside a register; transactions you enter meanwhile are offered at
 once, and choosing it again brings the same window forward.
 
 To claim a transaction you already recorded, select it in a register and choose
 **Actions → Track as FSA Claim…** (also in its right-click menu). Typing not yet
-entered is saved first. Manage FSA Claims opens on a new claim filled in from the
+entered is saved first. The claims editor opens on a new claim filled in from the
 transaction: service date, provider, the healthcare payment, and an allocation to
 the FSA account and funding year worked out from its accounts (see
 [Track as FSA Claim](../USER_GUIDE.md#fsa-and-benefit-accounts)); the line above
@@ -999,15 +1002,26 @@ transaction already on a claim opens that claim, and one that cannot start a cla
 alert saying why.
 
 The chooser at the top starts with **New claim**; **New** chooses it and empties the
-form, and a saved claim then appears in the chooser with where it stands.
-**Healthcare payments**, **Provider refunds / credits**, and **FSA allocations**
-each have an arrow, closed when the window opens, so each shows only what the claim
-already holds: its linked transactions, each with **Remove**, and its allocations
-with what they link. Open a section's arrow to add to it: **Add allocation** appears,
-and below each list's linked transactions, **Add** links another: search by date,
-description, or amount, and choose whether to see transactions within 60 days of
-the service date (the default), in the claim's benefit year, or at any date. Linking a payment made
-with the FSA card links the FSA side too, so the claim counts as reimbursed by it.
+form, and a saved claim then appears in the chooser with where it stands. The claim
+is on two tabs. **Claim** holds what most claims need: the service date, provider,
+description, EOB amount, **Healthcare payments**, and **FSA allocations**, each
+allocation with its account, funding year, target, and **Reimbursements**.
+**Advanced** holds what happens rarely, each part saying when it is used: the **EOB
+change note**, **Payer covers part**, **Provider refunds / credits**, each
+allocation's **Repaid to the FSA** and rejected attempts, the claim's history, and
+closing or reopening it; its title counts what it holds, so **Advanced (2)** says
+two things are there.
+
+Each list (**Healthcare payments**, **Provider refunds / credits**,
+**Reimbursements**, **Repaid to the FSA**) and **FSA allocations** has an arrow,
+closed when the window opens, so it shows only what the claim already holds: its
+linked transactions, each with **Remove**, and its allocations. Open an arrow to
+add: **Add allocation** appears, and below a list's linked transactions, **Add**
+links another: search by date, description, or amount, and choose whether to see
+transactions within 60 days of the service date (the default), in the claim's
+benefit year, or at any date. Double-click a transaction (or press **Enter** on it)
+to add it, or a linked one to remove it. Linking a payment made with the FSA card
+links the FSA side too, so the claim counts as reimbursed by it.
 **Save claim** is available only while the form differs from the claim as it was
 opened or last saved: it is greyed out on a new, empty claim and again once a save
 succeeds, with **Claim saved.** below until you change something, so you can see the
@@ -1016,9 +1030,12 @@ reason, and **Delete** asks first.
 
 The FSA Dashboard's **FSA claims** lists every claim of a benefit year that can still
 be claimed, settled or not, so a claim already filed is easy to tell from a new one,
-and any older claim still open. Select one and choose **Edit Claim** (on the
-toolbar, in the Actions menu, or in its right-click menu), or double-click it, to
-open it in Manage FSA Claims; it stays selected when the list is redrawn. See
+and any older claim still open. Select one and choose **Edit Claims** (on the
+toolbar, **Actions → Edit FSA Claims…**, or its right-click menu), or double-click
+it, to open it in the claims editor; with none selected, **Edit Claims** opens the
+editor as it opens anywhere. A claim stays selected when the list is redrawn. The
+FSA Dashboard reads a large book in the background: it says **Loading…** the first
+time, and **Updating…** over greyed figures while it reads them again. See
 [FSA and benefit accounts](../USER_GUIDE.md#fsa-and-benefit-accounts).
 
 ## Import files

@@ -121,13 +121,16 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
         ),
     ),
     "fsa-dashboard": (
+        # One command for claims: the selected claim if there is one, otherwise the
+        # claims window as it opens anywhere (Edit FSA Claim and Manage FSA Claims
+        # did the same thing twice).
         ViewAction(
-            "edit-claim",
-            "_Edit FSA Claim…",
-            "edit_selected_claim",
+            "edit-claims",
+            "Edit _FSA Claims…",
+            "edit_claims",
             "document-edit-symbolic",
             True,
-            caption="Edit Claim",
+            caption="Edit Claims",
             row=True,
         ),
         ViewAction(
@@ -137,13 +140,6 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             "insert-object-symbolic",
             True,
             caption="Link Lines",
-        ),
-        ViewAction(
-            "manage-claims",
-            "Manage _FSA Claims…",
-            "_on_fsa_claims",
-            "folder-documents-symbolic",
-            toolbar=True,
         ),
     ),
     "accounts": (

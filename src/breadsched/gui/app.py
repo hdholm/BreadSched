@@ -1065,7 +1065,7 @@ class ActionsMenu:
             ("Categorization _Rules…", "app.rules"),
             ("Rei_mbursable Expenses…", "app.receivables"),
             ("Savings _Goals…", "app.savings-goals"),
-            ("Manage _FSA Claims…", "app.fsa-claims"),
+            ("Edit _FSA Claims…", "app.fsa-claims"),
         ):
             if action not in listed and not (action == "app.fsa-claims" and key == "fsa-dashboard"):
                 general.append(label, action)

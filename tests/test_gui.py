@@ -10132,16 +10132,15 @@ class TestViewActions:
         window.show_category("accounts")
         assert self._labels(window._views["accounts"]) == []
         window.show_category("fsa-dashboard")
-        # Link Lines and Edit Claim are toolbar icons, not a button per claim.
+        # Link Lines and Edit Claims are toolbar icons, not a button per claim.
         assert self._labels(window._views["fsa-dashboard"]) == []
 
     def test_view_icons_follow_the_current_view(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("fsa-dashboard")
         assert self._tools(window) == [
-            "win.fsa-dashboard-edit-claim",
+            "win.fsa-dashboard-edit-claims",
             "win.fsa-dashboard-link-proposals",
-            "win.fsa-dashboard-manage-claims",
         ]
         window.show_category("register")
         assert self._tools(window) == [
@@ -10344,17 +10343,23 @@ class TestViewActions:
         window.lookup_action("accounts-hide-empty").activate(None)
         assert view._show_zero is True
 
-    def test_manage_claims_action_opens_the_claims_dialog(
+    def test_edit_claims_opens_the_claims_window_with_no_claim_selected(
         self, app, window, populated_book, monkeypatch
     ):
+        """Edit FSA Claim and Manage FSA Claims did the same thing: one command now
+        opens the selected claim, or the claims window as it is when none is."""
         app.open_book(populated_book)
         window.show_category("fsa-dashboard")
         opened = []
         monkeypatch.setattr(
             window._views["fsa-dashboard"], "_open_claim", lambda *a: opened.append(a)
         )
-        window.lookup_action("fsa-dashboard-manage-claims").activate(None)
-        assert opened == [()]
+        action = window.lookup_action("fsa-dashboard-edit-claims")
+        assert action.get_enabled()  # nothing selected, and still available
+        action.activate(None)
+        assert opened == [(None,)]
+        assert window.lookup_action("fsa-dashboard-manage-claims") is None
+        assert window.lookup_action("fsa-dashboard-edit-claim") is None
 
 
 class TestRowCommands:
@@ -10624,6 +10629,37 @@ class TestFsaClaimsWindow:
         finally:
             dialog.destroy()
 
+    def test_double_clicking_a_transaction_adds_or_removes_it(self, app, window, populated_book):
+        """A shortcut for each row's Add and Remove: activating a row (a double-click
+        or Enter) adds a transaction to add, or removes a linked one; one click does
+        nothing."""
+        from breadsched.gui.dialogs.fsa_claims_dialog import FsaClaimsDialog
+
+        db, _fsa, expense, _checking, start, made = self._book(app, populated_book)
+        dialog = FsaClaimsDialog.present_for(window, db)
+        try:
+            payments = dialog.payments
+            dialog.payments_section.set_expanded(True)
+            dialog.service.set_text(start.isoformat())
+            payments.range.set_selected(2)  # every date
+            assert not payments.candidate_box.get_activate_on_single_click()
+            assert not payments.linked_box.get_activate_on_single_click()
+            wanted = self._link(made["bank"], expense.handle)
+            index = next(
+                i
+                for i in range(len(payments.visible_candidates()))
+                if payments.candidate_box.get_row_at_index(i).get_child().link == wanted
+            )
+            payments.candidate_box.emit(
+                "row-activated", payments.candidate_box.get_row_at_index(index)
+            )
+            assert payments.links() == [wanted]
+            assert dialog.save_button.get_sensitive()
+            payments.linked_box.emit("row-activated", payments.linked_box.get_row_at_index(0))
+            assert payments.links() == []
+        finally:
+            dialog.destroy()
+
     def test_sections_show_only_what_is_linked_until_opened(self, app, window, populated_book):
         """The claims window was cluttered: every section showed its search and
         everything it could add. Each section's arrow is now closed when the window
@@ -10664,13 +10700,22 @@ class TestFsaClaimsWindow:
             assert dialog.add_allocation_button.get_visible()
             dialog._add_allocation()
             [row] = dialog._allocation_rows
-            assert row.reimburse.filters.get_visible() and row.repay.filters.get_visible()
             assert not dialog.allocations_empty.get_visible()
-            dialog.allocations_section.set_expanded(False)
-            # The allocation itself stays; only what it could add from is hidden.
-            assert row.get_parent() is not None and row.account.get_visible()
+            # An allocation's Reimbursements and Repaid lists have arrows of their own,
+            # closed at first.
+            assert not row.reimburse.filters.get_visible()
+            assert not row.repay.filters.get_visible()
+            row.reimburse_section.set_expanded(True)
+            assert row.reimburse.filters.get_visible()
+            assert not row.repay.filters.get_visible()
+            row.repay_section.set_expanded(True)
+            assert row.repay.candidate_scroll.get_visible()
+            row.set_adding(False)
             assert not row.reimburse.filters.get_visible()
             assert not row.repay.candidate_scroll.get_visible()
+            dialog.allocations_section.set_expanded(False)
+            # The allocation itself stays; only Add allocation is hidden.
+            assert row.get_parent() is not None and row.account.get_visible()
             assert not dialog.add_allocation_button.get_visible()
 
             # A saved claim opens the same way: closed, its links shown.
@@ -10681,6 +10726,60 @@ class TestFsaClaimsWindow:
             assert payments.linked_box.get_visible() and not payments.filters.get_visible()
             [row] = dialog._allocation_rows
             assert not row.reimburse.filters.get_visible()
+        finally:
+            dialog.destroy()
+
+    def test_what_happens_rarely_is_on_the_advanced_tab(self, app, window, populated_book):
+        """The claims window was a cluttered mess: the Claim tab now holds what most
+        claims need, and EOB changes, a payer, provider refunds, repayments, rejected
+        attempts, the history, and closing are on Advanced, its title counting them."""
+        from breadsched.gui.dialogs.fsa_claims_dialog import (
+            ADVANCED_PAGE,
+            CLAIM_PAGE,
+            FsaClaimsDialog,
+        )
+
+        db, _fsa, expense, _checking, start, made = self._book(app, populated_book)
+        dialog = FsaClaimsDialog.present_for(window, db)
+        try:
+            pages = dialog.pages
+            assert pages.get_current_page() == 0
+            claim = pages.get_nth_page(0)
+            advanced = pages.get_nth_page(1)
+            assert pages.tab_label(CLAIM_PAGE) == CLAIM_PAGE
+            assert pages.tab_label(ADVANCED_PAGE) == ADVANCED_PAGE  # holds nothing yet
+            for widget in (dialog.service, dialog.provider, dialog.eob, dialog.payments):
+                assert widget.is_ancestor(claim)
+            assert dialog.allocations.is_ancestor(claim)
+            for widget in (
+                dialog.eob_note,
+                dialog.payer,
+                dialog.refunds,
+                dialog.history,
+                dialog.close_button,
+                dialog.reopen_button,
+            ):
+                assert widget.is_ancestor(advanced)
+            # With no expense tracked as reimbursable, the payer list says why it is
+            # only None, and cannot be opened.
+            assert not dialog.payer.get_sensitive()
+            assert "Track as Reimbursable" in dialog.payer_note.get_label()
+            # An allocation: its reimbursements on Claim, its repayments and rejected
+            # attempts on Advanced under its name.
+            dialog._add_allocation()
+            [row] = dialog._allocation_rows
+            assert row.reimburse.is_ancestor(claim)
+            assert row.repay.is_ancestor(advanced) and row.rejections.is_ancestor(advanced)
+            assert "Health FSA" in row.advanced.get_label()
+            assert not dialog.advanced_empty.get_visible()
+            # The Advanced tab counts what it holds.
+            dialog.eob_note.set_text("Corrected EOB")
+            row.rejections.set_text(f"{start.isoformat()} | 5 | receipt required")
+            dialog.refunds.add(self._link(made["bank"], expense.handle))
+            assert pages.tab_label(ADVANCED_PAGE) == f"{ADVANCED_PAGE} (3)"
+            dialog._clear_allocations()
+            assert row.advanced.get_parent() is None
+            assert dialog.advanced_empty.get_visible()
         finally:
             dialog.destroy()
 
@@ -10818,6 +10917,10 @@ class TestFsaClaimsWindow:
         window.show_category("register")
         sections = TestViewSpecificChrome()._sections(app)
         assert any("app.fsa-claims" in _menu_actions(section) for _label, section in sections)
+        # The same name in every view as on the FSA Dashboard.
+        labels = _menu_labels(app.get_menubar())
+        assert labels["app.fsa-claims"] == "Edit _FSA Claims…"
+        assert "Manage _FSA Claims…" not in labels.values()
         dialog = app.on_fsa_claims()
         try:
             # One claims window per book: asking again brings it forward.
@@ -10831,7 +10934,7 @@ class TestFsaClaimsWindow:
             for action in _menu_actions(section)
         ]
         assert "app.fsa-claims" not in everywhere
-        assert "win.fsa-dashboard-manage-claims" in everywhere
+        assert "win.fsa-dashboard-edit-claims" in everywhere
 
     def test_the_dashboard_lists_settled_claims_of_an_open_year(self, app, window, populated_book):
         from breadsched.gen.services import ClaimInput, SaveClaim, save_claim
@@ -10883,8 +10986,8 @@ class TestFsaClaimsWindow:
         opened = []
         monkeypatch.setattr(view, "_open_claim", lambda *args: opened.append(args))
         assert view.claim_view.get_model().get_selected() == 0
-        assert window.lookup_action("fsa-dashboard-edit-claim").get_enabled()
-        window.lookup_action("fsa-dashboard-edit-claim").activate(None)
+        assert window.lookup_action("fsa-dashboard-edit-claims").get_enabled()
+        window.lookup_action("fsa-dashboard-edit-claims").activate(None)
         assert opened == [(saved.handle,)]
         assert isinstance(view.claim_view.row_menu, Gtk.PopoverMenu)
         # It stays selected when the dashboard is drawn again.
@@ -12657,6 +12760,56 @@ class TestBackgroundRedraw:
         assert window.wait_for_background()
         assert plan._report is not before and not plan.updating_label.get_visible()
         assert plan.is_current()
+
+    def test_the_fsa_dashboard_loads_in_the_background_and_greys_stale_figures(
+        self, app, window, populated_book, monkeypatch
+    ):
+        """Opening the FSA Dashboard read everything in place, long enough on a large
+        book to bring up the not-responding prompt; switching back left old figures
+        live with no sign they were being replaced. It now loads in the background,
+        saying so, and greys the figures while they are read again."""
+        from breadsched.gen.lib import Transaction
+        from breadsched.gui.views.fsa_dashboard import FsaDashboardView
+
+        app.open_book(populated_book)
+        window.present()
+        assert _spin(window.get_mapped)
+        assert _spin(lambda: window._prefill_source is None and not window.snapshot_reader.busy)
+        window.wait_for_background()
+        assert "fsa-dashboard" not in window._views  # made when first shown
+        drawn: list[str] = []
+        original = FsaDashboardView.refresh
+        monkeypatch.setattr(
+            FsaDashboardView, "refresh", lambda self: (drawn.append("in place"), original(self))
+        )
+        window.show_category("fsa-dashboard")
+        view = window._views["fsa-dashboard"]
+        assert drawn == []  # nothing read on GTK's loop
+        assert view.updating_label.get_visible()
+        assert view.updating_label.get_label() == "Loading…"
+        assert window.wait_for_background()
+        assert _spin(lambda: not view.refreshing_in_background)
+        assert not view.updating_label.get_visible() and view.content.get_sensitive()
+        assert view.is_current() and drawn == []
+
+        # A change while another view is shown: back on it, the old figures are
+        # greyed under "Updating…" until the new ones are in.
+        window.show_category("accounts")
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        with app.db.transaction("Rent") as txn:
+            app.db.add_transaction(
+                Transaction.simple(date.today(), "Rent", rent.handle, checking.handle, "9"), txn
+            )
+        window.wait_for_background()
+        view._stale = True  # out of date again, whatever was prefilled meanwhile
+        window.show_category("fsa-dashboard")
+        assert _spin(lambda: view.refreshing_in_background)
+        assert view.updating_label.get_label() == "Updating…"
+        assert not view.content.get_sensitive()
+        assert window.wait_for_background()
+        assert _spin(lambda: not view.refreshing_in_background)
+        assert view.content.get_sensitive() and drawn == []
 
     def test_restored_registers_are_read_in_the_background(
         self, app, window, populated_book, tmp_path, monkeypatch

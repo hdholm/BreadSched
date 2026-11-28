@@ -1,9 +1,10 @@
 """Dedicated FSA benefit-year and healthcare-claim dashboard.
 
-Its commands follow the window's rule (``view_catalog``): **Edit FSA Claim** opens
+Its commands follow the window's rule (``view_catalog``): **Edit FSA Claims** opens
 the claim selected in the claims table (also by double-clicking it, or from its
-right-click menu), and **Link Chosen Statement Lines** links the proposed lines
-ticked; both are toolbar icons and Actions menu items. The ticks and the report's
+right-click menu), or the claims window as it opens anywhere when none is
+selected, and **Link Chosen Statement Lines** links the proposed lines ticked; both
+are toolbar icons and Actions menu items. The ticks and the report's
 grouping only choose what the view shows and what a command acts on.
 """
 
@@ -36,6 +37,9 @@ class FsaDashboardView(BaseView):
     """Benefit availability and open claims, separate from household liquidity."""
 
     KEY = "fsa-dashboard"
+    #: Its first read (every claim, proposal, and benefit year) can take long enough
+    #: on a large book to look like a freeze: it loads in the background.
+    FIRST_DRAW_IN_BACKGROUND = True
     WATCHES = (
         "database-changed",
         "account-add",
@@ -58,12 +62,13 @@ class FsaDashboardView(BaseView):
         title.add_css_class("category-title")
         title.set_hexpand(True)
         bar.append(title)
-        # Edit FSA Claim, Link Chosen Statement Lines, and Manage FSA Claims are
-        # toolbar icons and Actions menu items while this view is shown (#156).
+        # Edit FSA Claims and Link Chosen Statement Lines are toolbar icons and
+        # Actions menu items while this view is shown (#156).
         self.append_toolbar(bar)
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         content.set_margin_bottom(12)
+        self.content = content
         scroller = Gtk.ScrolledWindow(child=content, vexpand=True)
         scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         self.append(scroller)
@@ -100,7 +105,7 @@ class FsaDashboardView(BaseView):
 
         # Every claim of a benefit year that can still be claimed, settled or not,
         # so a new claim is easy to tell from one already filed (#366). Selecting
-        # one is what Edit FSA Claim opens.
+        # one is what Edit FSA Claims opens.
         self.claim_view = Gtk.ColumnView()
         self.claim_view.add_css_class("data-table")
         self.claim_view.set_show_row_separators(True)
@@ -124,7 +129,7 @@ class FsaDashboardView(BaseView):
             self.claim_view.append_column(
                 column(title, bind, expand=expand, numeric=numeric, sort_key=key)
             )
-        self.claim_view.connect("activate", lambda *_a: self.edit_selected_claim())
+        self.claim_view.connect("activate", lambda *_a: self.edit_claims())
         attach_row_menu(self, self.claim_view)
         self.claim_section = table_section(
             self.claim_view,
@@ -165,6 +170,9 @@ class FsaDashboardView(BaseView):
         content.append(report_row)
         self.report_grid = self._grid()
         content.append(self.report_grid)
+        # Edit FSA Claims works before the first read is in (it then opens the claims
+        # window as it is); it no longer waits for the background read.
+        self._update_commands()
 
     @staticmethod
     def _heading(text: str) -> Gtk.Label:
@@ -193,6 +201,11 @@ class FsaDashboardView(BaseView):
             return None
         by = self._grouping()
         return (lambda book: self._read(book, by)), self._show
+
+    def show_stale(self, stale: bool) -> None:
+        """Grey the figures while they are being read again, so out-of-date ones
+        are not taken for current ones (and cannot be acted on meanwhile)."""
+        self.content.set_sensitive(not stale)
 
     def _grouping(self) -> str:
         return GROUPINGS[min(self.report_by.get_selected(), len(GROUPINGS) - 1)][0]
@@ -338,15 +351,16 @@ class FsaDashboardView(BaseView):
         selected = selection.get_selected_item() if selection is not None else None
         return unwrap(selected).summary.claim.handle if selected is not None else None
 
-    def edit_selected_claim(self, _button=None) -> None:
-        """Open the selected claim in Manage FSA Claims."""
-        handle = self._selected_claim()
-        if handle is not None and self.db is not None:
-            self._open_claim(handle)
+    def edit_claims(self, _button=None) -> None:
+        """Open the claims window on the selected claim, or as it opens anywhere
+        when no claim is selected."""
+        if self.db is not None:
+            self._open_claim(self._selected_claim())
 
     def _update_commands(self) -> None:
         self.enable_commands(
-            edit_claim=self._selected_claim() is not None,
+            # With no claim selected it opens the claims window as it is.
+            edit_claims=True,
             link_proposals=any(check.get_active() for check, _key in self._proposal_checks),
         )
 
@@ -391,9 +405,6 @@ class FsaDashboardView(BaseView):
 
         assert self.db is not None
         FsaClaimsDialog.present_for(self.get_root(), self.db, claim_handle)
-
-    def _on_fsa_claims(self, _button) -> None:
-        self._open_claim()
 
 
 def _attention_text(line) -> str:
