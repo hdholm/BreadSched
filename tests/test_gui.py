@@ -411,6 +411,11 @@ class TestBranding:
         )
 
 
+def settings_checked(dialog, row):
+    """The accounts checked to add to a Preferences Dashboard group."""
+    return dialog.dashboard.checked(row)
+
+
 class TestDialogsDoNotBlock:
     """A dialog moves on its own and leaves the main window working (a modal
     dialog is attached to its window by some window managers and blocks every
@@ -8187,11 +8192,11 @@ class TestDashboardView:
         row = dialog.add_group()
         row["name"].set_text("Property")
         row["kind"].set_selected(3)
-        # Accounts are added through the group's searchable picker (#381).
-        row["picker"].set_selected(1)
+        # Accounts are added through the group's searchable checklist (#381).
+        dialog.choose(row, dialog.accounts[0].handle)
         dialog._add_picked(row)
         assert row["accounts"] == [dialog.accounts[0].handle]
-        assert row["picker"].get_selected() == 0
+        assert dialog.checked(row) == []  # the checks are cleared once added
         assert dialog.save()
 
         # Kept as the computer account's own arrangement, members and all (decision
@@ -8202,6 +8207,66 @@ class TestDashboardView:
         assert any(g.name == "Property" and member.handle in g.accounts for g in saved.groups)
         assert app.db.get_account(member.handle).group != "Property"
         assert "Property" not in str(app.db.get_metadata("dashboard"))
+
+    def test_several_accounts_are_checked_added_and_removed_together(self, view, app):
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
+
+        dialog = DashboardSettings(app.db)
+        row = dialog.add_group()
+        row["name"].set_text("Spending")
+        assert not row["adder"].get_expanded() and row["choices"] == {}  # built when opened
+        row["adder"].set_expanded(True)
+        # Search, check every account shown, then uncheck one.
+        row["search"].set_text("Expenses")
+        row["search"].emit("search-changed")
+        shown = [h for h, check in row["choices"].items() if check.get_visible()]
+        assert len(shown) == 3  # Expenses and its two children
+        dialog.check_shown(row, True)
+        rent = app.db.get_account_by_name("Expenses:Rent").handle
+        row["choices"][rent].set_active(False)
+        assert row["add"].get_sensitive()
+        dialog._add_picked(row)
+        assert set(row["accounts"]) == set(shown) - {rent}
+        # Added accounts leave the list to add from.
+        assert not any(row["choices"][h].get_visible() for h in row["accounts"])
+        # Check two members and remove them at once.
+        assert not row["drop_checked"].get_sensitive()
+        removed = row["accounts"][:2]
+        for handle in removed:
+            row["member_checks"][handle].set_active(True)
+        assert row["drop_checked"].get_sensitive()
+        row["drop_checked"].emit("clicked")
+        assert not set(removed) & set(row["accounts"])
+        assert not row["drop_checked"].get_sensitive()
+
+    def test_groups_are_reordered_and_saved_in_that_order(self, view, app):
+        from breadsched.gui.dialogs.dashboard_settings import DashboardSettings
+
+        dialog = DashboardSettings(app.db)
+        for name, account in (
+            ("First", "Assets:Checking Account"),
+            ("Second", "Expenses:Rent"),
+            ("Third", "Income:Salary"),
+        ):
+            row = dialog.add_group()
+            row["name"].set_text(name)
+            dialog.add_account(row, app.db.get_account_by_name(account).handle)
+        first, second, third = dialog.rows
+        assert not first["up"].get_sensitive() and not third["down"].get_sensitive()
+        third["up"].emit("clicked")
+        first["down"].emit("clicked")
+        assert [r["name"].get_text() for r in dialog.rows] == ["Third", "First", "Second"]
+        # The cards are in the same order on the page.
+        shown = []
+        child = dialog.group_box.get_first_child()
+        while child is not None:
+            shown.append(child)
+            child = child.get_next_sibling()
+        assert shown == [r["frame"] for r in dialog.rows]
+        assert [r["up"].get_sensitive() for r in dialog.rows] == [False, True, True]
+        assert dialog.save()
+        view.refresh()
+        assert [g.name for g in view.board.groups] == ["Third", "First", "Second"]
 
     def test_a_group_of_a_parents_child_shows_on_the_dashboard_once_saved(self, view, app):
         """A group holding a child of another group's parent account is shown and
@@ -14170,8 +14235,8 @@ class TestPreferences:
         settings = dialog.dashboard
         row = settings.add_group()
         row["name"].set_text("Chosen")
-        row["picker"].set_selected(1)  # chosen, but Add never pressed
         chosen = settings.accounts[0]
+        settings.choose(row, chosen.handle)  # checked, but Add checked never pressed
         [item] = settings.unadded()
         assert (item.group, item.account) == ("Chosen", settings.names[chosen.handle])
 
@@ -14193,7 +14258,7 @@ class TestPreferences:
         dialog.settle_unadded(0, saving=True)
         assert dialog.get_visible() and dialog.notebook.get_current_page() == 1
         assert "Chosen" not in saved_groups()
-        assert row["picker"].get_selected() == 1
+        assert settings_checked(dialog, row) == [chosen.handle]
         # Add and save: the account joins the group, then everything is saved.
         dialog.primary().emit("clicked")
         dialog.settle_unadded(2, saving=True)
